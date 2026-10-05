@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +25,8 @@ func requireEnv(t *testing.T, names ...string) {
 }
 
 // vmDir returns a short directory path because Unix socket paths are limited to 108 bytes.
-// The directory is kept when the test fails so its console log can be inspected.
+// The directory is kept when the test fails, and the console tail is logged too because
+// the directory is unreachable when the test runs in the Nix sandbox.
 func vmDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "cl")
@@ -34,11 +36,24 @@ func vmDir(t *testing.T) string {
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Logf("kept VM directory %s", dir)
+			logConsoleTail(t, filepath.Join(dir, "console.log"), 200)
 			return
 		}
 		os.RemoveAll(dir)
 	})
 	return dir
+}
+
+func logConsoleTail(t *testing.T, path string, n int) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	t.Logf("last %d lines of %s:\n%s", len(lines), path, strings.Join(lines, "\n"))
 }
 
 func startVM(t *testing.T, dir, vars string, disks ...string) *lab.VM {
