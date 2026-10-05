@@ -3,9 +3,12 @@ package e2e
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
+
+	"chalkos/internal/imagesign"
 )
 
 var secureBootEnv = []string{
@@ -54,5 +57,46 @@ func TestSecureBootRejectsUnsignedImage(t *testing.T) {
 	defer cancel()
 	if _, err := vm.Console.WaitFor(ctx, regexp.MustCompile(`Access Denied`)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestVerityRejectsTamperedStore corrupts the store in a correctly signed image and expects
+// dm-verity to stop the boot.
+func TestVerityRejectsTamperedStore(t *testing.T) {
+	requireEnv(t, secureBootEnv...)
+	dir := vmDir(t)
+	disk := prepareDisk(t, dir, diskOpts{
+		sign: true,
+		mutate: func(t *testing.T, raw string, parts []imagesign.Partition) {
+			store, err := imagesign.FindPartition(parts, "usr-x86-64")
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.OpenFile(raw, os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			garbage := make([]byte, 8192)
+			for i := range garbage {
+				garbage[i] = 0xa5
+			}
+			if _, err := f.WriteAt(garbage, store.Offset); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("corrupted %s at offset %d", filepath.Base(raw), store.Offset)
+		},
+	})
+	vm := startVM(t, dir, os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), disk)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	failure := regexp.MustCompile(`data block \d+ is corrupted|CHALKTEST done`)
+	m, err := vm.Console.WaitFor(ctx, failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m[0] == "CHALKTEST done" {
+		t.Fatal("tampered image booted to the probe")
 	}
 }
