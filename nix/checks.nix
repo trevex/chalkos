@@ -10,6 +10,20 @@ let
     pkgs.dosfstools
   ];
 
+  # Tests skip when a tool or variable is missing, so a check must not pass on skipped or zero tests.
+  runTests = command: ''
+    set -o pipefail
+    ${command} 2>&1 | tee "$TMPDIR/test.log"
+    if grep -q -- '--- SKIP' "$TMPDIR/test.log"; then
+      echo "error: a test was skipped" >&2
+      exit 1
+    fi
+    if ! grep -q -- '--- PASS' "$TMPDIR/test.log"; then
+      echo "error: no test ran" >&2
+      exit 1
+    fi
+  '';
+
   e2e =
     name: pattern:
     pkgs.runCommand "chalkos-e2e-${name}"
@@ -24,7 +38,7 @@ let
       }
       ''
         export HOME=$TMPDIR
-        chalklab-e2e -test.v -test.run '${pattern}' -test.timeout 60m
+        ${runTests "chalklab-e2e -test.v -test.run '${pattern}' -test.timeout 60m"}
         touch $out
       '';
 in
@@ -35,7 +49,7 @@ in
     CHALKOS_TEST_EFI = "${pkgs.systemd}/lib/systemd/boot/efi/systemd-bootx64.efi";
     buildPhase = ''
       runHook preBuild
-      go test -v ./internal/... ./cmd/...
+      ${runTests "go test -v ./internal/... ./cmd/..."}
       runHook postBuild
     '';
     doCheck = false;
