@@ -1,9 +1,12 @@
 { pkgs, self }:
+let
+  qemu = import ./qemu.nix { inherit pkgs; };
+in
 pkgs.mkShell {
   packages = with pkgs; [
     go
     gopls
-    qemu_kvm
+    qemu
     swtpm
     mtools
     sbsigntool
