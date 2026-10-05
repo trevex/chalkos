@@ -14,7 +14,7 @@ import (
 const usage = `usage: chalkctl <command> [flags]
 
 commands:
-  sign    sign the EFI binaries on a chalkos disk image for Secure Boot`
+  sign    sign the boot loader and UKIs of a chalkos disk image for Secure Boot`
 
 func main() {
 	if len(os.Args) < 2 {

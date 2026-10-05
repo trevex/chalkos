@@ -55,7 +55,7 @@ func writeTestSigner(t *testing.T, dir string) (keyPath, certPath string) {
 	return keyPath, certPath
 }
 
-func TestSignImageSignsEveryEFIBinary(t *testing.T) {
+func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir", "sbsign", "sbverify"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not in PATH", tool)
@@ -79,18 +79,27 @@ func TestSignImageSignsEveryEFIBinary(t *testing.T) {
 	}
 	mustRun(t, "mkfs.vfat", "--offset", strconv.Itoa(offset/512), image, strconv.Itoa(32<<10))
 	fat := fmt.Sprintf("%s@@%d", image, offset)
-	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux")
+	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux", "::/EFI/tools")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTX64.EFI")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_0.1.0.efi")
+	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/tools/shell.efi")
 
 	if err := SignImage(context.Background(), image, Partition{Type: "esp", Offset: offset}, key, cert); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, f := range []string{"::/EFI/BOOT/BOOTX64.EFI", "::/EFI/Linux/chalkos_0.1.0.efi"} {
+	verify := func(f string) error {
 		out := filepath.Join(dir, "check.efi")
 		os.Remove(out)
 		mustRun(t, "mcopy", "-n", "-i", fat, f, out)
-		mustRun(t, "sbverify", "--cert", cert, out)
+		return exec.Command("sbverify", "--cert", cert, out).Run()
+	}
+	for _, f := range []string{"::/EFI/BOOT/BOOTX64.EFI", "::/EFI/Linux/chalkos_0.1.0.efi"} {
+		if err := verify(f); err != nil {
+			t.Errorf("%s is not signed: %v", f, err)
+		}
+	}
+	if verify("::/EFI/tools/shell.efi") == nil {
+		t.Error("::/EFI/tools/shell.efi was signed")
 	}
 }

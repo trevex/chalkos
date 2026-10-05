@@ -5,21 +5,24 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 )
 
-// SignImage signs every EFI binary under /EFI on the image's ESP in place with sbsign.
+// SignImage signs the boot loader (/EFI/BOOT/BOOT*.EFI) and the UKIs (/EFI/Linux/*.efi) on
+// the image's ESP in place with sbsign. Other EFI binaries stay unsigned so that whatever
+// else lands on the ESP does not gain the cluster's db signature.
 // The image's verity-protected store is untouched; the UKI's signature covers the store
 // because the UKI command line carries the store's verity root hash.
 func SignImage(ctx context.Context, image string, esp Partition, key, cert string) error {
 	fat := fmt.Sprintf("%s@@%d", image, esp.Offset)
-	files, err := listEFIBinaries(ctx, fat)
+	files, err := listSignedBinaries(ctx, fat)
 	if err != nil {
 		return err
 	}
 	if len(files) == 0 {
-		return fmt.Errorf("no EFI binaries on the ESP of %s", image)
+		return fmt.Errorf("no boot loader or UKI on the ESP of %s", image)
 	}
 
 	tmp, err := os.MkdirTemp("", "imagesign")
@@ -44,7 +47,11 @@ func SignImage(ctx context.Context, image string, esp Partition, key, cert strin
 	return nil
 }
 
-func listEFIBinaries(ctx context.Context, fat string) ([]string, error) {
+// signedPatterns are matched against upper-cased paths because FAT names are
+// case-insensitive. path.Match's * does not cross "/", so only direct children match.
+var signedPatterns = []string{"::/EFI/BOOT/BOOT*.EFI", "::/EFI/LINUX/*.EFI"}
+
+func listSignedBinaries(ctx context.Context, fat string) ([]string, error) {
 	out, err := mtools(ctx, "mdir", "-/", "-b", "-i", fat, "::/EFI")
 	if err != nil {
 		return nil, err
@@ -52,8 +59,11 @@ func listEFIBinaries(ctx context.Context, fat string) ([]string, error) {
 	var files []string
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.EqualFold(filepath.Ext(line), ".efi") {
-			files = append(files, line)
+		for _, p := range signedPatterns {
+			if ok, _ := path.Match(p, strings.ToUpper(line)); ok {
+				files = append(files, line)
+				break
+			}
 		}
 	}
 	return files, nil

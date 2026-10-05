@@ -1,4 +1,4 @@
-// Package imagesign signs the EFI binaries of chalkos disk images for Secure Boot.
+// Package imagesign signs the boot loader and UKIs of chalkos disk images for Secure Boot.
 package imagesign
 
 import (
