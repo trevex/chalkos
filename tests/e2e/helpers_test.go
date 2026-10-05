@@ -1,5 +1,6 @@
-// Package e2e boots chalkos images in chalklab VMs. Tests skip unless the CHALKLAB_*
-// variables point at firmware, keys, and images (the dev shell and Nix checks set them).
+// Package e2e boots chalkos images in chalklab VMs. The dev shell sets the firmware and key
+// variables; tests that boot the image skip unless CHALKLAB_IMAGE_DIR is exported too, e.g.
+// export CHALKLAB_IMAGE_DIR=$(nix build .#test-image --no-link --print-out-paths)
 package e2e
 
 import (
