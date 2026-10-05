@@ -24,6 +24,8 @@ let
       }
 
       fact root_fstype "$(findmnt -n -o FSTYPE /)"
+      # A whole-item match, so options such as errors=remount-ro do not count as read-only.
+      fact etc_ro "$(findmnt -n -o OPTIONS /etc | tr ',' '\n' | grep -cx ro || true)"
       fact usr_verity "$(veritysetup status usr 2>/dev/null | awk '$1 == "status:" {print $2}' || true)"
       sb=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
       fact secureboot "$(od -An -t u1 -j4 -N1 "$sb" 2>/dev/null | tr -d ' ' || true)"
