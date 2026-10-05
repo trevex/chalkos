@@ -1,6 +1,6 @@
 # The image chalklab e2e tests boot: the base modules plus the probe, with small partitions.
 {
-  imports = [ ../../modules/testing/probe.nix ];
+  imports = [ ./probe.nix ];
 
   chalkos.disk = {
     espSize = "256M";

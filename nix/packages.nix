@@ -41,7 +41,7 @@ in
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
         self.nixosModules.base
-        ./testing/test-image.nix
+        ../modules/testing/test-image.nix
       ];
     }).config.system.build.image;
 
