@@ -44,4 +44,22 @@ in
         ./testing/test-image.nix
       ];
     }).config.system.build.image;
+
+  chalklab-e2e = pkgs.buildGoModule {
+    pname = "chalklab-e2e";
+    version = "0.1.0";
+    src = goSrc;
+    vendorHash = null;
+    doCheck = false;
+    buildPhase = ''
+      runHook preBuild
+      go test -c -o chalklab-e2e ./tests/e2e
+      runHook postBuild
+    '';
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 chalklab-e2e $out/bin/chalklab-e2e
+      runHook postInstall
+    '';
+  };
 }
