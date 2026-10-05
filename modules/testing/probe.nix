@@ -36,6 +36,8 @@ let
       done
       if mountpoint -q /state; then fact state_boots "$(count_boots /state/chalktest/boots)"; fi
       if mountpoint -q /var; then fact var_boots "$(count_boots /var/lib/chalktest/boots)"; fi
+      # Tests may hard-reset the VM right after "done", which would drop unflushed counters.
+      sync
       fact "done" 1
     '';
   };
