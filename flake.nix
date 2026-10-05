@@ -10,6 +10,7 @@
       pkgs = nixpkgs.legacyPackages.${system};
     in
     {
+      nixosModules.base = ./modules/base;
       packages.${system} = import ./nix/packages.nix { inherit pkgs nixpkgs self; };
       checks.${system} = import ./nix/checks.nix { inherit pkgs self; };
       devShells.${system}.default = import ./nix/shell.nix { inherit pkgs self; };

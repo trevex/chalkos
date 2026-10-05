@@ -35,4 +35,13 @@ in
       }
     '';
   };
+
+  test-image =
+    (nixpkgs.lib.nixosSystem {
+      system = pkgs.stdenv.hostPlatform.system;
+      modules = [
+        self.nixosModules.base
+        ./testing/test-image.nix
+      ];
+    }).config.system.build.image;
 }
