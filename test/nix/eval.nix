@@ -109,6 +109,18 @@ let
         };
       }
     ]).nodes.n1.storage;
+  # Node n1 with the given networkd configuration.
+  networkCluster =
+    network:
+    cluster [
+      {
+        chalkos.nodes.n1 = {
+          role = "worker";
+          storage.system.disk = "/dev/vda";
+          inherit network;
+        };
+      }
+    ];
   storageOf = c: c.manifest.nodes.n1.identity.storage;
   # Node n1's rendered storage section with the given definitions.
   nodeStorage = storage: storageOf (storageCluster [ { chalkos.nodes.n1.storage = storage; } ]);
@@ -215,6 +227,7 @@ lib.runTests {
     expected = {
       hostname = "n1";
       network = { };
+      networkUnits = { };
       labels = { };
       taints = [
         {
@@ -227,6 +240,72 @@ lib.runTests {
         rack.location = "a1";
       };
     };
+  };
+  testNetworkUnits = {
+    expr =
+      (networkCluster {
+        networks."10-uplink" = {
+          name = "enp1s0";
+          DHCP = "no";
+          address = [ "10.0.0.11/24" ];
+          gateway = [ "10.0.0.1" ];
+          routes = [
+            {
+              Destination = "10.1.0.0/16";
+              Gateway = "10.0.0.2";
+            }
+          ];
+        };
+        networks."20-off".enable = false;
+        netdevs."30-vlan" = {
+          netdevConfig = {
+            Name = "vlan10";
+            Kind = "vlan";
+          };
+          vlanConfig.Id = 10;
+        };
+        links."40-nic" = {
+          matchConfig.MACAddress = "aa:bb:cc:dd:ee:01";
+          linkConfig.Name = "uplink";
+        };
+      }).manifest.nodes.n1.identity.networkUnits;
+    expected = {
+      "10-uplink.network" = ''
+        [Match]
+        Name=enp1s0
+
+        [Network]
+        DHCP=no
+        Address=10.0.0.11/24
+        Gateway=10.0.0.1
+
+        [Route]
+        Destination=10.1.0.0/16
+        Gateway=10.0.0.2
+
+      '';
+      "30-vlan.netdev" = ''
+        [NetDev]
+        Kind=vlan
+        Name=vlan10
+
+        [VLAN]
+        Id=10
+
+      '';
+      "40-nic.link" = ''
+        [Match]
+        MACAddress=aa:bb:cc:dd:ee:01
+
+        [Link]
+        Name=uplink
+
+      '';
+    };
+  };
+  testNetworkRejectsUnknownKind = {
+    expr = fails (networkCluster { network = { }; }).manifest.nodes.n1.identity.networkUnits;
+    expected = true;
   };
   testManifestIsJson = {
     expr = builtins.isString (builtins.toJSON twoNodes.manifest);

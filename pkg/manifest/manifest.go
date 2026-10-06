@@ -45,10 +45,12 @@ type Node struct {
 
 // Identity is the node's identity without secrets, as delivered to the node.
 type Identity struct {
-	Hostname string            `json:"hostname"`
-	Network  map[string]any    `json:"network"`
-	Labels   map[string]string `json:"labels"`
-	Taints   []Taint           `json:"taints"`
+	Hostname string         `json:"hostname"`
+	Network  map[string]any `json:"network"`
+	// NetworkUnits are the systemd-networkd unit files rendered from Network, by file name.
+	NetworkUnits map[string]string `json:"networkUnits"`
+	Labels       map[string]string `json:"labels"`
+	Taints       []Taint           `json:"taints"`
 	// Storage is how the node partitions, encrypts and mounts its disks.
 	Storage    storage.Section            `json:"storage"`
 	Extensions map[string]json.RawMessage `json:"extensions"`

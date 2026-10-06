@@ -22,6 +22,9 @@
             }
           }
         },
+        "networkUnits": {
+          "10-uplink.network": "[Match]\nName=enp1s0\n\n[Network]\nAddress=10.0.0.11/24\nGateway=10.0.0.1\n\n"
+        },
         "labels": {},
         "taints": [],
         "storage": {
@@ -48,6 +51,7 @@
       "identity": {
         "hostname": "w1",
         "network": {},
+        "networkUnits": {},
         "labels": { "node.kubernetes.io/storage": "ssd" },
         "taints": [{ "key": "dedicated", "value": "storage", "effect": "NoSchedule" }],
         "storage": {
