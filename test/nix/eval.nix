@@ -39,7 +39,6 @@ let
       chalkos.roles.worker.nixosModules = [ { chalkos.node.consumers.orphan.keys = [ "demo.key" ]; } ];
     }
   ]);
-  failedAssertions = config: map (a: a.message) (lib.filter (a: !a.assertion) config.assertions);
 
   rackExtension =
     { lib, ... }:
@@ -139,12 +138,12 @@ lib.runTests {
       };
     };
   };
-  testConsumerWithServicePassesAssertions = {
-    expr = failedAssertions withConsumer;
+  testConsumerWithServiceDoesNotWarn = {
+    expr = withConsumer.warnings;
     expected = [ ];
   };
-  testConsumerWithoutServiceFails = {
-    expr = lib.any (lib.hasInfix "orphan") (failedAssertions withOrphanConsumer);
+  testConsumerWithoutServiceWarns = {
+    expr = lib.any (lib.hasInfix "chalkos.node.consumers.orphan") withOrphanConsumer.warnings;
     expected = true;
   };
   testNodeFilePath = {

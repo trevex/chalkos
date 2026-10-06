@@ -41,19 +41,20 @@ in
 
   config = {
     # The credential settings below would otherwise create an empty unit for a misspelled name.
-    assertions = lib.mapAttrsToList (
-      name: _:
-      let
-        service = config.systemd.services.${name};
-      in
-      {
-        assertion = service.serviceConfig ? ExecStart || service.script != "";
-        message = ''
-          chalkos.node.consumers.${name} names no service: systemd.services.${name} defines
-          neither serviceConfig.ExecStart nor script.
-        '';
-      }
-    ) cfg.consumers;
+    # A warning, not an assertion: units from systemd.packages have no ExecStart in the config.
+    warnings = lib.concatLists (
+      lib.mapAttrsToList (
+        name: _:
+        let
+          service = config.systemd.services.${name};
+        in
+        lib.optional (!(service.serviceConfig ? ExecStart || service.script != "")) ''
+          chalkos.node.consumers.${name} may name no service: systemd.services.${name} defines
+          neither serviceConfig.ExecStart nor script. Ignore this if the unit comes from
+          systemd.packages.
+        ''
+      ) cfg.consumers
+    );
 
     systemd.services = lib.mapAttrs (_: c: {
       serviceConfig.LoadCredential = map (key: "${key}:${credentialPath key}") c.keys;
