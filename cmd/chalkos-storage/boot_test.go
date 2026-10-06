@@ -392,6 +392,62 @@ func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
 	}
 }
 
+// writeSection records a section given as JSON.
+func writeSection(t *testing.T, b *boot, section string) {
+	t.Helper()
+	path := filepath.Join(b.stateDir, "storage", "storage.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(section), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetUpRefusesReferenceToPinnedDisk(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = firstBootRules(b)
+	writeStorage(t, b, "recovery-key")
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new disk, ordered before the pinned one, references the pinned data disk by its path.
+	writeSection(t, b, `{
+	  "disks": {
+	    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
+	    "alpha": {"ref": "/dev/vdb", "seed": "`+dataSeed+`", "repart": {"10-alpha.conf": "[Partition]\nLabel=alpha\n"}},
+	    "data": {"ref": {"serial": "chalk-data"}, "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
+	  },
+	  "volumes": {
+	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
+	    "alpha": {"disk": "alpha", "label": "alpha", "format": "ext4", "mountPoint": "/srv/alpha", "encryption": "tpm2", "size": null},
+	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
+	  },
+	  "fallback": "recovery-key"
+	}`)
+	r.calls = nil
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range r.calls {
+		if strings.Contains(call, "disks/alpha") {
+			t.Errorf("ran repart for a reference to a pinned disk: %s", call)
+		}
+	}
+	pins, err := storage.ReadPins(filepath.Join(b.storageDir(), "disks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pins.Disks["alpha"]; ok {
+		t.Error("pinned a disk that another disk name already holds")
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["alpha"].Error, "disk data already uses") {
+		t.Errorf("alpha status = %+v", s.Disks["alpha"])
+	}
+}
+
 func contains(list []string, s string) bool {
 	for _, item := range list {
 		if item == s {

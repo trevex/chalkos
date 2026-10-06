@@ -178,45 +178,82 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 	pins.Disks[storage.SystemDisk] = system
 
 	devices := map[string]string{storage.SystemDisk: b.bootDisk}
-	claimed := map[string]storage.Identity{storage.SystemDisk: bootDisk.Identity}
+	claimed := []claim{{storage.SystemDisk, bootDisk}}
+	fail := func(name string, err error) {
+		log.Printf("disk %s: %v", name, err)
+		status.Disks[name] = storage.DiskStatus{Error: err.Error()}
+	}
+
+	// Every pinned disk is claimed before any reference is resolved, so a new reference can
+	// never land on a disk that holds another disk name's volumes, whatever the names' order.
+	var unpinned []string
 	for _, name := range section.DiskNames() {
 		if name == storage.SystemDisk {
 			continue
 		}
-		disk, err := b.locate(ctx, name, section.Disks[name], *pins, claimed)
-		if err != nil {
-			log.Printf("disk %s: %v", name, err)
-			status.Disks[name] = storage.DiskStatus{Error: err.Error()}
+		pin, ok := pins.Disks[name]
+		if !ok {
+			unpinned = append(unpinned, name)
 			continue
 		}
-		if _, ok := pins.Disks[name]; !ok {
-			pins.Disks[name] = storage.Pin{Ref: section.Disks[name].Ref, Identity: disk.Identity, Partitions: map[string]string{}}
+		disk, found, err := b.host.Find(pin.Identity)
+		if err == nil && !found {
+			err = fmt.Errorf("pinned disk %s is missing", pin.Identity)
 		}
-		claimed[name] = disk.Identity
+		if err == nil {
+			err = checkUnclaimed(name, disk, claimed)
+		}
+		// A missing disk still keeps its identity from being pinned to another name.
+		claimed = append(claimed, claim{name, storage.BlockDisk{Device: disk.Device, Identity: pin.Identity}})
+		if err != nil {
+			fail(name, err)
+			continue
+		}
+		devices[name] = disk.Device
+	}
+
+	for _, name := range unpinned {
+		d := section.Disks[name]
+		disk, err := b.resolveNew(ctx, d, claimed)
+		if err != nil {
+			fail(name, err)
+			continue
+		}
+		pins.Disks[name] = storage.Pin{Ref: d.Ref, Identity: disk.Identity, Partitions: map[string]string{}}
+		claimed = append(claimed, claim{name, disk})
 		devices[name] = disk.Device
 	}
 	return devices, nil
 }
 
-func (b *boot) locate(ctx context.Context, name string, d storage.Disk, pins storage.Pins, claimed map[string]storage.Identity) (storage.BlockDisk, error) {
-	if pin, ok := pins.Disks[name]; ok {
-		disk, found, err := b.host.Find(pin.Identity)
-		if err != nil {
-			return storage.BlockDisk{}, err
+// claim is a physical disk that a disk name holds.
+type claim struct {
+	name string
+	disk storage.BlockDisk
+}
+
+// checkUnclaimed refuses a disk that another disk name already holds.
+func checkUnclaimed(name string, disk storage.BlockDisk, claimed []claim) error {
+	for _, c := range claimed {
+		if c.name == name {
+			continue
 		}
-		if !found {
-			return storage.BlockDisk{}, fmt.Errorf("pinned disk %s is missing", pin.Identity)
+		if (c.disk.Device != "" && c.disk.Device == disk.Device) || c.disk.Identity.Same(disk.Identity) {
+			return fmt.Errorf("%s is the disk %s already uses", disk, c.name)
 		}
-		return disk, nil
 	}
+	return nil
+}
+
+// resolveNew resolves the reference of a disk that is not pinned yet and checks that the disk
+// may be pinned and partitioned.
+func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) (storage.BlockDisk, error) {
 	disk, err := b.host.Resolve(d.Ref)
 	if err != nil {
 		return storage.BlockDisk{}, err
 	}
-	for other, id := range claimed {
-		if id.Same(disk.Identity) {
-			return storage.BlockDisk{}, fmt.Errorf("%s resolves to %s, which disk %s already uses", d.Ref, disk, other)
-		}
+	if err := checkUnclaimed("", disk, claimed); err != nil {
+		return storage.BlockDisk{}, fmt.Errorf("%s: %w", d.Ref, err)
 	}
 	if err := b.checkUnused(ctx, disk); err != nil {
 		return storage.BlockDisk{}, err
