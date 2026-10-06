@@ -40,7 +40,7 @@ in
     (nixpkgs.lib.nixosSystem {
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
-        self.nixosModules.base
+        ../modules/node
         ../modules/testing/test-image.nix
       ];
     }).config.system.build.image;

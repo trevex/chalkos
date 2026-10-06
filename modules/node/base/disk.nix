@@ -28,31 +28,35 @@ in
 {
   imports = [ "${modulesPath}/image/repart.nix" ];
 
-  options.chalkos.disk = {
-    espSize = lib.mkOption {
-      type = lib.types.str;
-      default = "1G";
-      description = "Size of the EFI system partition, which holds the UKIs of both slots.";
-    };
-    storeSize = lib.mkOption {
-      type = lib.types.str;
-      default = "3G";
-      description = "Size of each store slot's erofs data partition.";
-    };
-    storeVeritySize = lib.mkOption {
-      type = lib.types.str;
-      default = "128M";
-      description = "Size of each store slot's dm-verity hash partition.";
-    };
-    stateSize = lib.mkOption {
-      type = lib.types.str;
-      default = "128M";
-      description = "Size of the STATE partition holding node identity and secrets.";
-    };
-    varMinSize = lib.mkOption {
-      type = lib.types.str;
-      default = "4G";
-      description = "Minimum size of the VAR partition; it grows to fill the disk.";
+  options.chalkos = lib.mkOption {
+    type = lib.types.submodule {
+      options.disk = {
+        espSize = lib.mkOption {
+          type = lib.types.str;
+          default = "1G";
+          description = "Size of the EFI system partition, which holds the UKIs of both slots.";
+        };
+        storeSize = lib.mkOption {
+          type = lib.types.str;
+          default = "3G";
+          description = "Size of each store slot's erofs data partition.";
+        };
+        storeVeritySize = lib.mkOption {
+          type = lib.types.str;
+          default = "128M";
+          description = "Size of each store slot's dm-verity hash partition.";
+        };
+        stateSize = lib.mkOption {
+          type = lib.types.str;
+          default = "128M";
+          description = "Size of the STATE partition holding node identity and secrets.";
+        };
+        varMinSize = lib.mkOption {
+          type = lib.types.str;
+          default = "4G";
+          description = "Minimum size of the VAR partition; it grows to fill the disk.";
+        };
+      };
     };
   };
 
