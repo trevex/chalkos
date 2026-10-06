@@ -176,6 +176,38 @@ lib.runTests {
       ])).networking.hostName;
     expected = "shared";
   };
+  testRoleRunsChalkd = {
+    expr =
+      let
+        services = (role (cluster [ ])).systemd.services;
+      in
+      {
+        chalkd = services.chalkd.wantedBy;
+        identity = services.chalkos-identity.before;
+      };
+    expected = {
+      chalkd = [ "multi-user.target" ];
+      identity = [
+        "sysinit.target"
+        "network-pre.target"
+        "systemd-networkd.service"
+      ];
+    };
+  };
+  testRoleCarriesOSCA = {
+    expr =
+      let
+        pub = builtins.toFile "secrets.pub.json" ''{"version": 1, "osCA": {"certificate": "PEM"}}'';
+      in
+      {
+        withCA = (role (cluster [ { chalkos.cluster.osCA = pub; } ])).environment.etc ? "chalkos/os-ca.crt";
+        withoutCA = (role (cluster [ ])).environment.etc ? "chalkos/os-ca.crt";
+      };
+    expected = {
+      withCA = true;
+      withoutCA = false;
+    };
+  };
   testWrongNodeTypeFails = {
     expr =
       fails

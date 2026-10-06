@@ -65,7 +65,7 @@ let
           ++ lib.optional (builtins.pathExists (roleDefaults name)) (roleDefaults name)
           ++ config.nixosModules;
         };
-        image = config.nixos.config.system.build.image;
+        image = config.nixos.config.system.build.chalkosImage;
       };
     };
 in

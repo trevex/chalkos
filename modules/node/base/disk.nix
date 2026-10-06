@@ -12,6 +12,8 @@ let
   inherit (import ../../cluster/storage.nix { inherit lib; }) partitionType;
   inherit (pkgs.stdenv.hostPlatform) efiArch;
   inherit (config.image.repart.verityStore) partitionIds;
+  # The system region's repart definitions, as the initrd applies them.
+  systemDefinitions = config.boot.initrd.systemd.contents."/etc/repart.d".source;
   fixed = size: {
     SizeMinBytes = size;
     SizeMaxBytes = size;
@@ -134,5 +136,14 @@ in
       };
     };
     services.udev.extraRules = bootDiskRules;
+
+    # Install recreates STATE from these definitions, and the installer writes a role image's
+    # system region with them, so they travel with the image.
+    environment.etc."chalkos/repart.d".source = systemDefinitions;
+    system.build.chalkosImage = pkgs.runCommand "${config.image.repart.name}-image" { } ''
+      mkdir $out
+      ln -s ${config.system.build.image}/* $out/
+      ln -s ${systemDefinitions} $out/repart.d
+    '';
   };
 }

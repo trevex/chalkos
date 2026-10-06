@@ -4,5 +4,6 @@
     ./settings.nix
     ./base
     ./runtime
+    ./chalkd.nix
   ];
 }

@@ -33,6 +33,7 @@ in
   };
 
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
+  chalkd = pkgs.callPackage ./chalkd.nix { };
 
   test-image = testCluster.roles.test.image;
   test-storage-image = testCluster.roles.storage.image;
