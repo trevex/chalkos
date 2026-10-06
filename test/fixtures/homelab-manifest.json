@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 0,
+  "cluster": {
+    "name": "homelab",
+    "endpoint": "https://10.0.0.10:6443"
+  },
+  "roles": {
+    "controlplane": { "image": "chalkos.homelab.roles.controlplane.image" },
+    "worker": { "image": "chalkos.homelab.roles.worker.image" }
+  },
+  "nodes": {
+    "cp1": {
+      "role": "controlplane",
+      "install": { "disk": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001" },
+      "identity": {
+        "hostname": "cp1",
+        "network": {
+          "networks": {
+            "10-uplink": {
+              "matchConfig": { "Name": "enp1s0" },
+              "address": ["10.0.0.11/24"],
+              "gateway": ["10.0.0.1"]
+            }
+          }
+        },
+        "labels": {},
+        "taints": [],
+        "extensions": { "rack": { "location": "rack-a/u12" } }
+      }
+    },
+    "w1": {
+      "role": "worker",
+      "install": { "disk": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002" },
+      "identity": {
+        "hostname": "w1",
+        "network": {},
+        "labels": { "node.kubernetes.io/storage": "ssd" },
+        "taints": [{ "key": "dedicated", "value": "storage", "effect": "NoSchedule" }],
+        "extensions": { "rack": { "location": "rack-a/u14" } }
+      }
+    }
+  }
+}

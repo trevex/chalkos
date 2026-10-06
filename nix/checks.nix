@@ -57,6 +57,16 @@ in
   e2e-secureboot = e2e "secureboot" "^TestSecureBoot";
   e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$";
 
+  manifest-golden =
+    let
+      homelab = self.lib.mkCluster { modules = [ ../examples/homelab/cluster.nix ]; };
+      generated = pkgs.writeText "homelab-manifest.json" (builtins.toJSON homelab.manifest);
+    in
+    pkgs.runCommand "chalkos-manifest-golden" { nativeBuildInputs = [ pkgs.jq ]; } ''
+      diff -u <(jq -S . ${../test/fixtures/homelab-manifest.json}) <(jq -S . ${generated})
+      touch $out
+    '';
+
   eval =
     let
       failures = import ../test/nix/eval.nix {
