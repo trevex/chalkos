@@ -175,3 +175,80 @@ func TestPartitionTypes(t *testing.T) {
 		t.Errorf("PartitionTypes() = %v, want %v", got, want)
 	}
 }
+
+func TestValidate(t *testing.T) {
+	valid, err := ReadSection(writeSection(t, sectionJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("the valid section was refused: %v", err)
+	}
+	// Each case breaks one rule of a copy of the valid section.
+	for _, c := range []struct {
+		name   string
+		change func(s *Section)
+		want   string
+	}{
+		{"disk name escaping the directory", func(s *Section) { s.Disks["../x"] = s.Disks["longhorn"] }, `disk name "../x"`},
+		{"upper-case disk name", func(s *Section) { s.Disks["Longhorn"] = s.Disks["longhorn"] }, `disk name "Longhorn"`},
+		{"disk name ending in a dash", func(s *Section) { s.Disks["longhorn-"] = s.Disks["longhorn"] }, `disk name "longhorn-"`},
+		{"disk name of 33 characters", func(s *Section) { s.Disks[strings.Repeat("a", 33)] = s.Disks["longhorn"] }, "disk name"},
+		{"definition file name with a slash", func(s *Section) {
+			s.Disks["longhorn"].Repart["../../etc/x.conf"] = "[Partition]\n"
+		}, `definition file "../../etc/x.conf"`},
+		{"definition file name without .conf", func(s *Section) { s.Disks["longhorn"].Repart["10-longhorn"] = "" }, `definition file "10-longhorn"`},
+		{"definition file name ..", func(s *Section) { s.Disks["longhorn"].Repart[".."] = "" }, `definition file ".."`},
+		{"hidden definition file", func(s *Section) { s.Disks["longhorn"].Repart[".conf"] = "" }, `definition file ".conf"`},
+		{"volume name escaping a path", func(s *Section) { s.Volumes["../data"] = Volume{Disk: "system", Label: "../data"} }, `volume name "../data"`},
+		{"label other than the name", func(s *Section) { s.Volumes["data"] = Volume{Disk: "system", Label: "state"} }, `volume data has the label "state"`},
+		{"reserved name state", func(s *Section) { s.Volumes["state"] = Volume{Disk: "system", Label: "state"} }, "reserved"},
+		{"reserved name esp", func(s *Section) { s.Volumes["esp"] = Volume{Disk: "system", Label: "esp"} }, "reserved"},
+		{"reserved name store", func(s *Section) { s.Volumes["store"] = Volume{Disk: "system", Label: "store"} }, "reserved"},
+		{"reserved name store-verity", func(s *Section) { s.Volumes["store-verity"] = Volume{Disk: "system", Label: "store-verity"} }, "reserved"},
+		{"VAR on another disk", func(s *Section) { v := s.Volumes["var"]; v.Disk = "longhorn"; s.Volumes["var"] = v }, "VAR"},
+		{"VAR mounted elsewhere", func(s *Section) { v := s.Volumes["var"]; v.MountPoint = "/srv"; s.Volumes["var"] = v }, "VAR"},
+		{"volume on an unknown disk", func(s *Section) { s.Volumes["data"] = Volume{Disk: "nope", Label: "data"} }, "unknown disk"},
+		{"duplicate mount point", func(s *Section) {
+			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/var/lib/longhorn"}
+		}, "mount point /var/lib/longhorn"},
+		{"mount point /var", func(s *Section) {
+			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/var"}
+		}, "mount point"},
+		{"mount point below /state", func(s *Section) {
+			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/state/x"}
+		}, "mount point"},
+		{"mount point with a newline", func(s *Section) {
+			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/srv/x\nExecStart=/bin/sh"}
+		}, "mount point"},
+		{"mount point with ..", func(s *Section) {
+			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/srv/../nix"}
+		}, "mount point"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, err := ReadSection(writeSection(t, sectionJSON))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.change(&s)
+			if err := s.Validate(); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestWriteDefinitionsValidates(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "disks")
+	s, err := ReadSection(writeSection(t, sectionJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Disks["longhorn"].Repart["../../escaped.conf"] = "[Partition]\n"
+	if err := WriteDefinitions(dir, s); err == nil {
+		t.Fatal("wrote a definition outside the directory")
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("wrote into %s for an invalid section: %v", dir, err)
+	}
+}

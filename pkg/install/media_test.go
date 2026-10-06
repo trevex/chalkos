@@ -545,3 +545,18 @@ func TestOpenExclusiveGivesUpWhenLocked(t *testing.T) {
 		t.Errorf("waited %s for the lock, past the context's deadline", waited)
 	}
 }
+
+func TestFromMediaRefusesInvalidSection(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, target)
+	r.add(mediaRules(i)...)
+	req := mediaRequest(t, testImage(t))
+	req.Section.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "state", Format: "ext4"}
+	err := i.FromMedia(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), `label "state"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v before refusing", r.calls)
+	}
+}

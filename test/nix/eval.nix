@@ -743,8 +743,11 @@ lib.runTests {
       { volumes.${lib.concatStrings (lib.replicate 33 "a")}.size = "1G"; }
       { volumes.var.size = "1G"; }
       { volumes.state.size = "1G"; }
+      { volumes.esp.size = "1G"; }
+      { volumes.store.size = "1G"; }
+      { volumes.store-verity.size = "1G"; }
     ];
-    expected = lib.replicate 5 true;
+    expected = lib.replicate 8 true;
   };
   testStorageRejectsMountPoint = {
     expr =

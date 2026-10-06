@@ -145,3 +145,14 @@ func TestDialOptions(t *testing.T) {
 		}
 	}
 }
+
+// Without a server name, the CA would accept the certificate of any node it issued.
+func TestCARequiresServerName(t *testing.T) {
+	ca, _ := pki.NewCA("chalkos OS CA", time.Now())
+	caCert, _ := pki.ParseCertificate([]byte(ca.Certificate))
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+	if c, err := Dial("127.0.0.1", Options{CA: pool}); err == nil || c != nil {
+		t.Fatalf("Dial = %v, %v; want a refusal before connecting", c, err)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -30,6 +31,16 @@ import (
 const (
 	maintenance = nodev1.Mode_MODE_MAINTENANCE
 	normal      = nodev1.Mode_MODE_NORMAL
+)
+
+const (
+	// maxMessageBytes limits each request message, as received and after decompression. The
+	// largest is an install message: a header carries the identity, certificates and repart
+	// definitions, a few KiB each, and an image chunk from chalkctl is 1 MiB.
+	maxMessageBytes = 4 << 20
+	// maxLogStreams limits concurrent Logs calls, each of which holds a journalctl process
+	// until the client goes away.
+	maxLogStreams = 8
 )
 
 // Paths are the files chalkd reads and writes; tests point them at temporary directories.
@@ -86,6 +97,8 @@ type Server struct {
 	// mu serialises calls that change the node.
 	mu        sync.Mutex
 	installed bool
+	// logStreams counts the Logs calls running.
+	logStreams atomic.Int32
 }
 
 // permission is where an RPC may be called and the least role it needs.
@@ -109,7 +122,7 @@ type roleKey struct{}
 
 // Handler serves the API. Roles come from the verified client certificate's Organization.
 func (s *Server) Handler() http.Handler {
-	_, h := nodev1connect.NewNodeServiceHandler(s, connect.WithInterceptors(authorizer{s}))
+	_, h := nodev1connect.NewNodeServiceHandler(s, connect.WithInterceptors(authorizer{s}), connect.WithReadMaxBytes(maxMessageBytes))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role := ""
 		switch {

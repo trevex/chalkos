@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -158,16 +159,23 @@ func TestApplyIdentityNeedsFallbackForEncryptedVolume(t *testing.T) {
 // by-partuuid link.
 func partitionLink(t *testing.T, s *Server, disk, name, devnum string, number string) {
 	t.Helper()
+	addPartition(t, s, disk, name, devnum, number, extraUUID, "disk/by-partuuid/"+extraUUID)
+}
+
+// addPartition adds a partition with the PARTUUID udev reports for it, and a link below /dev.
+func addPartition(t *testing.T, s *Server, disk, name, devnum, number, uuid, link string) {
+	t.Helper()
 	dir := filepath.Join(s.Host.SysRoot, "block", disk, name)
 	write(t, filepath.Join(dir, "partition"), number+"\n")
 	write(t, filepath.Join(dir, "dev"), devnum+"\n")
 	write(t, filepath.Join(dir, "size"), "2048\n")
+	write(t, filepath.Join(s.Host.UdevRoot, "b"+devnum), "E:ID_PART_ENTRY_UUID="+uuid+"\n")
 	write(t, filepath.Join(s.Host.DevRoot, name), "")
-	link := filepath.Join(s.Host.DevRoot, "disk", "by-partuuid", extraUUID)
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+	path := filepath.Join(s.Host.DevRoot, link)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("../../"+name, link); err != nil {
+	if err := os.Symlink(strings.Repeat("../", strings.Count(link, "/"))+name, path); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -187,7 +195,7 @@ func TestResetVolume(t *testing.T) {
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	for i, want := range []string{
 		"systemctl stop srv-extra.mount systemd-cryptsetup@extra.service",
-		"wipefs --all /dev/disk/by-partuuid/" + extraUUID,
+		"wipefs --all /dev/vdb1",
 		"sfdisk --delete /dev/vdb 1",
 		"blkid -p -o export /dev/vdb",
 		"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system") + " --seed=2869f04c-5655-50f4-28b9-6b2eb9700a02 /dev/disk/chalk-boot-disk",
@@ -250,4 +258,176 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// editSection returns a rendered storage section changed by f.
+func editSection(t *testing.T, rendered string, f func(s *storage.Section)) string {
+	t.Helper()
+	var s storage.Section
+	if err := json.Unmarshal([]byte(rendered), &s); err != nil {
+		t.Fatal(err)
+	}
+	f(&s)
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// withSystemVolume adds the volume data to the system disk, encrypted as given.
+func withSystemVolume(t *testing.T, rendered, encryption string) string {
+	return editSection(t, rendered, func(s *storage.Section) {
+		s.Disks[storage.SystemDisk].Repart["60-data.conf"] = "[Partition]\nLabel=data\n"
+		s.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "data", Format: "ext4", MountPoint: "/srv/data", Encryption: encryption, Size: "1G"}
+	})
+}
+
+// invalidSections break the rules a node checks a delivered section by.
+func invalidSections(t *testing.T) map[string]string {
+	return map[string]string{
+		"disk name leaving the directory": editSection(t, section("", "ext4"), func(s *storage.Section) {
+			s.Disks["../x"] = s.Disks["extra"]
+		}),
+		"definition file with a slash": editSection(t, section("", "ext4"), func(s *storage.Section) {
+			s.Disks["extra"].Repart["../../x.conf"] = "[Partition]\n"
+		}),
+		"label of another partition": editSection(t, section("", "ext4"), func(s *storage.Section) {
+			s.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "state", Format: "ext4", Encryption: "none", Size: "1G"}
+		}),
+	}
+}
+
+func TestApplyIdentityRefusesInvalidSection(t *testing.T) {
+	for name, invalid := range invalidSections(t) {
+		t.Run(name, func(t *testing.T) {
+			s, r := installedServer(t, section("", "ext4"), true)
+			_, err := apply(s, identityWith("rack-b", invalid), secret)
+			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
+				t.Fatalf("err = %v", err)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("ran %v", r.calls)
+			}
+		})
+	}
+}
+
+func TestResetVolumeRefusesInvalidSection(t *testing.T) {
+	for name, invalid := range invalidSections(t) {
+		t.Run(name, func(t *testing.T) {
+			s, r := installedServer(t, section("", "ext4"), true)
+			partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+			err := reset(s, "extra", identityWith("rack-a", invalid))
+			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
+				t.Fatalf("err = %v", err)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("ran %v", r.calls)
+			}
+		})
+	}
+}
+
+// systemVolumeServer is an installed server whose system disk carries the volume data at vda9.
+func systemVolumeServer(t *testing.T, partUUID string) (*Server, *fakeRunner) {
+	t.Helper()
+	recorded := withSystemVolume(t, section("", ""), storage.EncryptionTPM2)
+	s, r := installedServer(t, recorded, false)
+	dir := filepath.Join(s.Paths.StateDir, "storage")
+	write(t, filepath.Join(dir, "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`", "data": "`+extraUUID+`"}}}}`)
+	addPartition(t, s, "vda", "vda9", "253:9", "9", partUUID, "disk/chalk-boot/data")
+	return s, r
+}
+
+func TestResetVolumeOnSystemDisk(t *testing.T) {
+	s, r := systemVolumeServer(t, extraUUID)
+	next := editSection(t, withSystemVolume(t, section("", ""), storage.EncryptionTPM2), func(s *storage.Section) {
+		v := s.Volumes["data"]
+		v.Format = "xfs"
+		s.Volumes["data"] = v
+	})
+	if err := reset(s, "data", identityWith("rack-a", next)); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{
+		"systemctl stop srv-data.mount systemd-cryptsetup@data.service",
+		"wipefs --all /dev/vda9",
+		"sfdisk --delete /dev/vda 9",
+	} {
+		if i >= len(r.calls) || r.calls[i] != want {
+			t.Fatalf("command %d: want %q (all: %v)", i, want, r.calls)
+		}
+	}
+}
+
+func TestResetVolumeChecksPartUUID(t *testing.T) {
+	const other = "0f1e2d3c-4b5a-4968-8776-655443322110"
+	next := identityWith("rack-a", section("", "xfs"))
+	for _, c := range []struct {
+		name  string
+		setUp func(t *testing.T) (*Server, *fakeRunner, string)
+		want  string
+	}{
+		{"pinned disk, partition with another PARTUUID", func(t *testing.T) (*Server, *fakeRunner, string) {
+			s, r := installedServer(t, section("", "ext4"), true)
+			addPartition(t, s, "vdb", "vdb1", "253:17", "1", other, "disk/by-partuuid/"+extraUUID)
+			return s, r, next
+		}, "PARTUUID"},
+		{"pinned disk, no recorded PARTUUID", func(t *testing.T) (*Server, *fakeRunner, string) {
+			s, r := installedServer(t, section("", "ext4"), true)
+			partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+			write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}}, "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {}}}}`)
+			return s, r, next
+		}, "no recorded partition"},
+		{"system disk, partition with another PARTUUID", func(t *testing.T) (*Server, *fakeRunner, string) {
+			s, r := systemVolumeServer(t, other)
+			return s, r, identityWith("rack-a", withSystemVolume(t, section("", ""), storage.EncryptionTPM2))
+		}, "PARTUUID"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, r, identity := c.setUp(t)
+			volume := "extra"
+			if strings.HasPrefix(c.name, "system") {
+				volume = "data"
+			}
+			err := reset(s, volume, identity)
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("ran %v", r.calls)
+			}
+		})
+	}
+}
+
+func TestResetVolumeNeedsFallbackForEveryEncryptedVolume(t *testing.T) {
+	s, r := installedServer(t, section("", "ext4"), true)
+	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+	// The reset volume becomes unencrypted, but the identity adds the encrypted volume data.
+	next := withSystemVolume(t, editSection(t, section("", "xfs"), func(s *storage.Section) {
+		v := s.Volumes["extra"]
+		v.Encryption = storage.EncryptionNone
+		s.Volumes["extra"] = v
+	}), storage.EncryptionTPM2)
+	_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "extra", Identity: identityWith("rack-a", next)}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "volume data") || !strings.Contains(err.Error(), "no fallback secret") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
+	}
+}
+
+func TestResetVolumeRefusesRemoval(t *testing.T) {
+	s, r := installedServer(t, section("", "ext4"), true)
+	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+	err := reset(s, "extra", identityWith("rack-a", section("", "")))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer has volume extra") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
+	}
 }

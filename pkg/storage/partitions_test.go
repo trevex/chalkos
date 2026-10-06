@@ -66,18 +66,18 @@ func TestPartitions(t *testing.T) {
 
 func TestPartitionOf(t *testing.T) {
 	h := newHost(t, nvmeSystem, virtioDisk)
-	addPartition(t, h, "nvme0n1", "nvme0n1p7", "259:7", 7, 2048, nil, "disk/chalk-boot/var")
-	addPartition(t, h, "vdb", "vdb1", "253:17", 1, 2048, nil, "disk/by-partuuid/d506b831-fde9-4335-b2be-9710f18219a6")
+	addPartition(t, h, "nvme0n1", "nvme0n1p7", "259:7", 7, 2048, map[string]string{"ID_PART_ENTRY_UUID": "7AD19BDF-77FF-4273-8A5C-D403D2A5F95B"}, "disk/chalk-boot/var")
+	addPartition(t, h, "vdb", "vdb1", "253:17", 1, 2048, map[string]string{"ID_PART_ENTRY_UUID": "d506b831-fde9-4335-b2be-9710f18219a6"}, "disk/by-partuuid/d506b831-fde9-4335-b2be-9710f18219a6")
 	for dev, want := range map[string]struct {
-		disk   string
-		number int
+		disk, device, uuid string
+		number             int
 	}{
-		"/dev/disk/chalk-boot/var":                                   {"nvme0n1", 7},
-		"/dev/disk/by-partuuid/d506b831-fde9-4335-b2be-9710f18219a6": {"vdb", 1},
+		"/dev/disk/chalk-boot/var":                                   {"nvme0n1", "/dev/nvme0n1p7", "7ad19bdf-77ff-4273-8a5c-d403d2a5f95b", 7},
+		"/dev/disk/by-partuuid/d506b831-fde9-4335-b2be-9710f18219a6": {"vdb", "/dev/vdb1", "d506b831-fde9-4335-b2be-9710f18219a6", 1},
 	} {
-		disk, number, err := h.PartitionOf(dev)
-		if err != nil || disk != want.disk || number != want.number {
-			t.Errorf("PartitionOf(%s) = %s, %d, %v; want %s, %d", dev, disk, number, err, want.disk, want.number)
+		disk, p, err := h.PartitionOf(dev)
+		if err != nil || disk != want.disk || p.Number != want.number || p.Device != want.device || p.UUID != want.uuid {
+			t.Errorf("PartitionOf(%s) = %s, %+v, %v; want %s, %+v", dev, disk, p, err, want.disk, want)
 		}
 	}
 	if _, _, err := h.PartitionOf("/dev/vdb"); err == nil {

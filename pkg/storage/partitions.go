@@ -80,32 +80,39 @@ func (h Host) partition(dir, name string) (Partition, error) {
 	}, nil
 }
 
-// PartitionOf returns the disk a partition device, or a link to one, belongs to and the
-// partition's number.
-func (h Host) PartitionOf(dev string) (disk string, number int, err error) {
+// PartitionOf follows a partition device, or a link to one, to the kernel's partition and
+// returns the disk it belongs to and the partition as sysfs and the udev database describe it.
+// The partition's Device names the kernel device, so commands act on what was checked, not on
+// a link that may change.
+func (h Host) PartitionOf(dev string) (disk string, p Partition, err error) {
 	rel, ok := strings.CutPrefix(dev, "/dev/")
 	if !ok {
-		return "", 0, fmt.Errorf("%s is not below /dev", dev)
+		return "", Partition{}, fmt.Errorf("%s is not below /dev", dev)
 	}
 	target, err := filepath.EvalSymlinks(filepath.Join(h.DevRoot, rel))
 	if err != nil {
-		return "", 0, fmt.Errorf("%s: %w", dev, err)
+		return "", Partition{}, fmt.Errorf("%s: %w", dev, err)
 	}
 	name := filepath.Base(target)
 	matches, err := filepath.Glob(filepath.Join(h.SysRoot, "block", "*", name, "partition"))
 	if err != nil {
-		return "", 0, err
+		return "", Partition{}, err
 	}
 	if len(matches) != 1 {
-		return "", 0, fmt.Errorf("%s is %s, which is not a partition", dev, "/dev/"+name)
+		return "", Partition{}, fmt.Errorf("%s is %s, which is not a partition", dev, "/dev/"+name)
 	}
 	s, err := readTrimmed(matches[0])
 	if err != nil {
-		return "", 0, err
+		return "", Partition{}, err
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return "", 0, fmt.Errorf("partition %s: %w", name, err)
+		return "", Partition{}, fmt.Errorf("partition %s: %w", name, err)
 	}
-	return filepath.Base(filepath.Dir(filepath.Dir(matches[0]))), n, nil
+	p, err = h.partition(filepath.Dir(matches[0]), name)
+	if err != nil {
+		return "", Partition{}, err
+	}
+	p.Number = n
+	return filepath.Base(filepath.Dir(filepath.Dir(matches[0]))), p, nil
 }

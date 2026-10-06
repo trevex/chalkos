@@ -40,6 +40,9 @@ func parseIdentity(data string) (delivered, error) {
 	if _, ok := id.Storage.Disks[storage.SystemDisk]; !ok {
 		return delivered{}, failed(connect.CodeInvalidArgument, "the identity's storage section has no system disk")
 	}
+	if err := id.Storage.Validate(); err != nil {
+		return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
+	}
 	return delivered{data: []byte(data), section: id.Storage}, nil
 }
 
@@ -93,13 +96,13 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 // volumes get the fallback keyslot, and the generator's units for new volumes start. Volumes
 // that moved to another mount point are unmounted first.
 func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Section, secret string, changes []storage.Change) error {
+	if err := checkFallback(recorded, section, secret); err != nil {
+		return err
+	}
 	added := map[string]bool{}
-	for name, v := range section.Volumes {
+	for name := range section.Volumes {
 		if _, ok := recorded.Volumes[name]; !ok {
 			added[name] = true
-			if v.Encryption == storage.EncryptionTPM2 && section.Fallback != storage.FallbackNone && secret == "" {
-				return failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but no fallback secret was sent", name, section.Fallback)
-			}
 		}
 	}
 	st := s.storage()
@@ -176,6 +179,20 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 	return nil
 }
 
+// checkFallback refuses before anything changes when a volume the section adds to recorded is
+// encrypted and the fallback secret it would be enrolled with is missing.
+func checkFallback(recorded, section storage.Section, secret string) error {
+	if section.Fallback == storage.FallbackNone || secret != "" {
+		return nil
+	}
+	for _, name := range sortedNames(section.Volumes) {
+		if _, ok := recorded.Volumes[name]; !ok && section.Volumes[name].Encryption == storage.EncryptionTPM2 {
+			return failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but no fallback secret was sent", name, section.Fallback)
+		}
+	}
+	return nil
+}
+
 func (s *Server) stopUnits(ctx context.Context, units []string) error {
 	if len(units) == 0 {
 		return nil
@@ -238,7 +255,11 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	if name == storage.VarVolume {
 		return nil, failed(connect.CodeFailedPrecondition, "VAR holds the running node's data and cannot be reset while it runs")
 	}
-	if nv, ok := d.section.Volumes[name]; ok && nv.Disk != v.Disk {
+	nv, ok := d.section.Volumes[name]
+	if !ok {
+		return nil, failed(connect.CodeFailedPrecondition, "the identity no longer has volume %s; a reset recreates a volume, it does not remove one", name)
+	}
+	if nv.Disk != v.Disk {
 		return nil, failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
 	}
 	var others []string
@@ -250,20 +271,21 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	if len(others) > 0 {
 		return nil, failed(connect.CodeFailedPrecondition, "the identity changes other volumes destructively too: %s", strings.Join(others, "; "))
 	}
-	if nv, ok := d.section.Volumes[name]; ok && nv.Encryption == storage.EncryptionTPM2 && d.section.Fallback != storage.FallbackNone && req.Msg.FallbackSecret == "" {
-		return nil, failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but no fallback secret was sent", name, d.section.Fallback)
-	}
-
-	if err := s.deleteVolume(ctx, name, v, pins); err != nil {
-		return nil, err
-	}
-	// The volume is gone, so it is created again like a new one.
+	// Once deleted, the volume is created again like a new one.
 	without := recorded
 	without.Volumes = map[string]storage.Volume{}
 	for n, vol := range recorded.Volumes {
 		if n != name {
 			without.Volumes[n] = vol
 		}
+	}
+	// Every volume created after the deletion needs the secret, so check it before deleting.
+	if err := checkFallback(without, d.section, req.Msg.FallbackSecret); err != nil {
+		return nil, err
+	}
+
+	if err := s.deleteVolume(ctx, name, v, pins); err != nil {
+		return nil, err
 	}
 	changes := storage.Classify(without, d.section)
 	if err := s.applyStorage(ctx, without, d.section, req.Msg.FallbackSecret, changes); err != nil {
@@ -274,7 +296,9 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 }
 
 // deleteVolume stops a volume's units, wipes its partition and deletes it, after checking the
-// partition lies on the disk the volume's disk name is pinned to.
+// partition lies on the disk the volume's disk name is pinned to and carries the PARTUUID
+// recorded for the volume. The link is resolved once; the commands act on the partition that
+// was checked.
 func (s *Server) deleteVolume(ctx context.Context, name string, v storage.Volume, pins storage.Pins) error {
 	st := s.storage()
 	units, err := node.Generate(st.StorageDir(), cryptsetupPath)
@@ -282,40 +306,43 @@ func (s *Server) deleteVolume(ctx context.Context, name string, v storage.Volume
 		return failed(connect.CodeInternal, "%v", err)
 	}
 	pin, ok := pins.Disks[v.Disk]
-	uuid := pin.Partitions[name]
+	uuid := strings.ToLower(pin.Partitions[name])
 	if !ok || uuid == "" {
 		return failed(connect.CodeFailedPrecondition, "volume %s has no recorded partition", name)
 	}
-	var dev, want string
+	var link, want string
 	if v.Disk == storage.SystemDisk {
-		dev = filepath.Join(s.Paths.BootPartitions, v.Label)
+		link = filepath.Join(s.Paths.BootPartitions, v.Label)
 		boot, err := s.Host.ResolvePath(s.Paths.BootDisk)
 		if err != nil {
 			return failed(connect.CodeFailedPrecondition, "find the boot disk: %v", err)
 		}
 		want = boot.Name
 	} else {
-		dev = "/dev/disk/by-partuuid/" + uuid
+		link = "/dev/disk/by-partuuid/" + uuid
 		disk, found, err := s.Host.Find(pin.Identity)
 		if err != nil || !found {
 			return failed(connect.CodeFailedPrecondition, "the pinned disk of volume %s is missing", name)
 		}
 		want = disk.Name
 	}
-	disk, number, err := s.Host.PartitionOf(dev)
+	disk, part, err := s.Host.PartitionOf(link)
 	if err != nil {
 		return failed(connect.CodeFailedPrecondition, "find the partition of volume %s: %v", name, err)
 	}
 	if disk != want {
 		return failed(connect.CodeFailedPrecondition, "the partition of volume %s is on %s, not on its pinned disk %s; refusing to touch it", name, disk, want)
 	}
+	if part.UUID != uuid {
+		return failed(connect.CodeFailedPrecondition, "%s has the PARTUUID %q, not the %s recorded for volume %s; refusing to touch it", part.Device, part.UUID, uuid, name)
+	}
 	if err := s.stopUnits(ctx, reverse(units.Of(name))); err != nil {
 		return err
 	}
-	if _, err := s.Run.Run(ctx, "wipefs", "--all", dev); err != nil {
+	if _, err := s.Run.Run(ctx, "wipefs", "--all", part.Device); err != nil {
 		return failed(connect.CodeInternal, "wipe volume %s: %v", name, err)
 	}
-	if _, err := s.Run.Run(ctx, "sfdisk", "--delete", "/dev/"+disk, strconv.Itoa(number)); err != nil {
+	if _, err := s.Run.Run(ctx, "sfdisk", "--delete", "/dev/"+disk, strconv.Itoa(part.Number)); err != nil {
 		return failed(connect.CodeInternal, "delete the partition of volume %s: %v", name, err)
 	}
 	delete(pin.Partitions, name)

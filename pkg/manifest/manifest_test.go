@@ -59,6 +59,12 @@ func TestDecodeGoldenManifest(t *testing.T) {
 	if st.Volumes["var"].Size != "200G" || st.Fallback != "recovery-key" || st.Encryption != "tpm2" {
 		t.Errorf("w1 storage = %+v", st)
 	}
+	// A node validates the section it receives; what the cluster definition renders passes.
+	for name, n := range m.Nodes {
+		if err := n.Identity.Storage.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
 }
 
 func TestDecodeRejectsUnsupportedVersion(t *testing.T) {

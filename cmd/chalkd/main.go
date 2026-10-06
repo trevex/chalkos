@@ -167,12 +167,20 @@ func serve() error {
 	if err != nil {
 		return err
 	}
-	server := &http.Server{
-		Handler:           srv.Handler(),
-		TLSConfig:         chalkd.TLSConfig(creds.cert, creds.clientCAs),
+	return httpServer(srv.Handler(), chalkd.TLSConfig(creds.cert, creds.clientCAs)).ServeTLS(ln, "", "")
+}
+
+// httpServer bounds what a client can hold without sending requests: the time to send headers,
+// their size, and idle connections. It sets no read or write timeout, which would cut off
+// Install while it streams an image and Logs while it follows the journal.
+func httpServer(h http.Handler, cfg *tls.Config) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		TLSConfig:         cfg,
 		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
 	}
-	return server.ServeTLS(ln, "", "")
 }
 
 // announceAddresses prints the node's addresses, with the fingerprint, whenever they change, so

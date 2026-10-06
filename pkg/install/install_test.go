@@ -579,6 +579,9 @@ func TestInPlaceRefusals(t *testing.T) {
 		{"unknown policy", func(t *testing.T, i *Installer, req *Request) {
 			req.Section.Encryption = "kms"
 		}, "kms"},
+		{"disk name leaving the definitions directory", func(t *testing.T, i *Installer, req *Request) {
+			req.Section.Disks["../x"] = req.Section.Disks[storage.SystemDisk]
+		}, `disk name "../x"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := &fakeRunner{}

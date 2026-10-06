@@ -94,6 +94,11 @@ func mountPoints(mountInfo string) (map[string]bool, error) {
 }
 
 func (s *Server) Logs(ctx context.Context, req *connect.Request[nodev1.LogsRequest], stream *connect.ServerStream[nodev1.LogsResponse]) error {
+	if s.logStreams.Add(1) > maxLogStreams {
+		s.logStreams.Add(-1)
+		return failed(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
+	}
+	defer s.logStreams.Add(-1)
 	r, err := s.Journal(ctx, req.Msg.Unit, req.Msg.Follow)
 	if err != nil {
 		return failed(connect.CodeInternal, "read the journal: %v", err)

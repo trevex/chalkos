@@ -2,10 +2,15 @@ package chalkd
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"io"
+	"math/big"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -19,6 +24,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
@@ -175,7 +181,49 @@ func newCreds(t *testing.T) creds {
 	}
 	pair, _ := tls.X509KeyPair([]byte(c.node.Certificate), []byte(c.node.Key))
 	c.clients[pki.RoleNode] = &pair
+	c.clients[unknownOrganization] = clientWithOrganization(t, ca, []string{"root"})
+	c.clients[noOrganization] = clientWithOrganization(t, ca, nil)
 	return c
+}
+
+// Clients whose certificates the OS CA issued without a role.
+const (
+	unknownOrganization = "unknown organization"
+	noOrganization      = "no organization"
+)
+
+// deniedEverything is what a client without a role gets in normal mode.
+var deniedEverything = map[string]connect.Code{
+	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
+	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied,
+	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
+}
+
+// clientWithOrganization issues a client certificate with the Organization given, bypassing the
+// role check of pki.IssueClient.
+func clientWithOrganization(t *testing.T, ca pki.CertKey, organization []string) *tls.Certificate {
+	t.Helper()
+	caCert, caKey, err := ca.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: "intruder", Organization: organization},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
 // serve starts s with its normal-mode node certificate, or a self-signed one in maintenance
@@ -224,6 +272,10 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
 	case "ApplyIdentity":
 		_, err = c.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: "{}"}))
+	case "ResetVolume":
+		_, err = c.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data", Identity: "{}"}))
+	case "Disks":
+		_, err = c.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
 	case "Logs":
 		var s *connect.ServerStreamForClient[nodev1.LogsResponse]
 		if s, err = c.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{})); err == nil {
@@ -252,21 +304,25 @@ func TestAuthorisation(t *testing.T) {
 		codes map[string]map[string]connect.Code
 	}{
 		{"normal", normal, true, map[string]map[string]connect.Code{
-			pki.RoleReader:   {"Info": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition},
-			pki.RoleOperator: {"Reboot": 0, "ApplyIdentity": connect.CodePermissionDenied},
+			pki.RoleReader:   {"Info": 0, "Disks": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition},
+			pki.RoleOperator: {"Reboot": 0, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied},
 			// The identity "{}" lacks a storage section; refusing it means the call got through.
-			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "Reboot": 0},
+			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0},
+			// A certificate of the OS CA without a role's Organization grants nothing.
+			unknownOrganization: deniedEverything,
+			noOrganization:      deniedEverything,
 			// A node certificate carries no ClientAuth extended key usage, so presenting it as a
 			// client certificate fails the TLS handshake itself, before authorisation runs.
 			pki.RoleNode: {"Info": connect.CodeUnavailable},
 		}},
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
-			pki.RoleReader: {"Info": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition},
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition},
 			// A header without a target is refused after authorisation.
-			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition},
+			pki.RoleAdmin:       {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition},
+			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[string]map[string]connect.Code{
-			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0},
+			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0, "Disks": 0, "ResetVolume": connect.CodeFailedPrecondition},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -426,5 +482,135 @@ func TestRebootAfterResponse(t *testing.T) {
 	case <-rebooted:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the node did not reboot")
+	}
+}
+
+// A procedure without an entry is refused, so a new one must be given its modes and role.
+func TestEveryProcedureHasPermissions(t *testing.T) {
+	methods := nodev1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods()
+	if methods.Len() == 0 {
+		t.Fatal("the service has no methods")
+	}
+	for i := 0; i < methods.Len(); i++ {
+		procedure := "/" + nodev1connect.NodeServiceName + "/" + string(methods.Get(i).Name())
+		if _, ok := permissions[procedure]; !ok {
+			t.Errorf("%s has no entry in permissions", procedure)
+		}
+	}
+	if len(permissions) != methods.Len() {
+		t.Errorf("permissions has %d entries for %d procedures", len(permissions), methods.Len())
+	}
+}
+
+func TestRequestSizeLimit(t *testing.T) {
+	c := newCreds(t)
+	s, r := installedServer(t, section("", ""), false)
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
+	ctx := context.Background()
+
+	large := strings.Repeat("x", maxMessageBytes+1)
+	_, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: large}))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("err = %v, want resource exhausted", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
+	}
+	// Below the limit, the request reaches the handler, which refuses what is not an identity.
+	_, err = conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: large[:maxMessageBytes-1024]}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("err = %v, want the handler's refusal", err)
+	}
+	if code := call(conn, "Info"); code != 0 {
+		t.Errorf("Info after an oversized request: %v", code)
+	}
+}
+
+// An install message carries a chunk of the image well below the limit.
+func TestImageChunkFitsRequestLimit(t *testing.T) {
+	const chunkSize = 1 << 20
+	if maxMessageBytes < 2*chunkSize {
+		t.Errorf("maxMessageBytes = %d leaves no room for a %d-byte image chunk", maxMessageBytes, chunkSize)
+	}
+}
+
+func TestLogsLimitsStreams(t *testing.T) {
+	c := newCreds(t)
+	s, _ := newTestServer(t, normal, vda)
+	started := make(chan struct{}, maxLogStreams+2)
+	s.Journal = func(ctx context.Context, _ string, _ bool) (io.ReadCloser, error) {
+		started <- struct{}{}
+		pr, pw := io.Pipe()
+		go func() {
+			<-ctx.Done()
+			pw.Close()
+		}()
+		return pr, nil
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
+	// follow opens a stream and reports how it ended, once it does.
+	follow := func(ctx context.Context) <-chan error {
+		done := make(chan error, 1)
+		go func() {
+			stream, err := conn.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Follow: true}))
+			if err == nil {
+				for stream.Receive() {
+				}
+				err = stream.Err()
+			}
+			done <- err
+		}()
+		return done
+	}
+	waitStarted := func() {
+		t.Helper()
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("a stream did not reach the journal")
+		}
+	}
+
+	var cancels []context.CancelFunc
+	defer func() {
+		for _, cancel := range cancels {
+			cancel()
+		}
+	}()
+	for range maxLogStreams {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancels = append(cancels, cancel)
+		follow(ctx)
+		waitStarted()
+	}
+	over, cancelOver := context.WithCancel(context.Background())
+	cancels = append(cancels, cancelOver)
+	select {
+	case err := <-follow(over):
+		if connect.CodeOf(err) != connect.CodeResourceExhausted {
+			t.Fatalf("err = %v, want resource exhausted", err)
+		}
+	case <-started:
+		t.Fatalf("stream %d reached the journal", maxLogStreams+1)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream over the limit was not refused")
+	}
+
+	// A stream that ends frees its slot.
+	cancels[0]()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancels = append(cancels, cancel)
+		done := follow(ctx)
+		select {
+		case <-started:
+			return
+		case err := <-done:
+			if connect.CodeOf(err) != connect.CodeResourceExhausted || time.Now().After(deadline) {
+				t.Fatalf("err = %v after a stream ended", err)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 }

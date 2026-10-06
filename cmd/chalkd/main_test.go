@@ -95,3 +95,14 @@ func TestLoadCredentials(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPServerLimits(t *testing.T) {
+	s := httpServer(nil, nil)
+	if s.ReadHeaderTimeout == 0 || s.IdleTimeout == 0 || s.MaxHeaderBytes == 0 {
+		t.Errorf("server = %+v, want header and idle limits", s)
+	}
+	// Install and Logs stream for as long as they need.
+	if s.ReadTimeout != 0 || s.WriteTimeout != 0 {
+		t.Errorf("read timeout %v, write timeout %v; want none", s.ReadTimeout, s.WriteTimeout)
+	}
+}

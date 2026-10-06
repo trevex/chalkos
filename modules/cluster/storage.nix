@@ -24,8 +24,12 @@ let
     "SizeMaxBytes"
     "MountPoint"
   ];
-  # Labels the system region and VAR use.
+  # Labels the system region and VAR use. A volume on the system disk with one of them would
+  # share its link below /dev/disk/chalk-boot with a partition of the image.
   reservedNames = [
+    "esp"
+    "store"
+    "store-verity"
     "state"
     "var"
   ];

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -152,8 +153,12 @@ func ReadSection(path string) (Section, error) {
 }
 
 // WriteDefinitions writes each disk's repart definitions to dir/<disk>/ and removes definition
-// files the section no longer contains.
+// files the section no longer contains. It refuses an invalid section, whose names could lead
+// outside dir.
 func WriteDefinitions(dir string, s Section) error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
 	for name, disk := range s.Disks {
 		diskDir := filepath.Join(dir, name)
 		if err := os.MkdirAll(diskDir, 0o755); err != nil {
@@ -212,4 +217,98 @@ func (s Section) DiskNames() []string {
 		names = append([]string{SystemDisk}, names...)
 	}
 	return names
+}
+
+var (
+	// validName is the cluster definition's rule for volume names, which also name disks and
+	// label partitions: at most 32 characters, starting and ending with a letter or digit.
+	validName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
+	// validDefinitionFile is a repart.d file name: no path, no hidden file.
+	validDefinitionFile = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*\.conf$`)
+	// validMountPoint keeps mount points free of characters that change a unit file's meaning.
+	validMountPoint = regexp.MustCompile(`^(/[A-Za-z0-9._-]+)+$`)
+)
+
+// reservedNames are the labels of the system region and VAR. A volume with one of them would
+// share its link below /dev/disk/chalk-boot with a partition of the image.
+var reservedNames = []string{"esp", "store", "store-verity", "state", VarVolume}
+
+// forbiddenMountPoints hold the root, the store, STATE and VAR; nothing else is mounted on them
+// or below /nix and /state.
+var forbiddenMountPoints = []string{"/", "/nix", "/state", "/var"}
+
+// Validate checks a section the node did not render itself, as the cluster definition checks
+// it: names and labels that are safe in paths and unit names, no reserved labels, definition
+// files that stay in their directory, and mount points that are unique and safe in unit files.
+func (s Section) Validate() error {
+	var problems []string
+	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
+	for _, name := range sortedKeys(s.Disks) {
+		if !validName.MatchString(name) {
+			add("disk name %q must match %s", name, validName)
+			continue
+		}
+		for _, file := range sortedKeys(s.Disks[name].Repart) {
+			if !validDefinitionFile.MatchString(file) {
+				add("disk %s: definition file %q must be a plain file name ending in .conf", name, file)
+			}
+		}
+	}
+	mounts := map[string]string{}
+	for _, name := range sortedKeys(s.Volumes) {
+		v := s.Volumes[name]
+		if !validName.MatchString(name) {
+			add("volume name %q must match %s", name, validName)
+			continue
+		}
+		if v.Label != name {
+			add("volume %s has the label %q; a volume's label is its name", name, v.Label)
+		}
+		if name == VarVolume {
+			if v.Disk != SystemDisk || v.MountPoint != "/var" {
+				add("VAR must be on the system disk and mounted at /var")
+			}
+		} else if slices.Contains(reservedNames, name) {
+			add("volume name %s is reserved", name)
+		}
+		if _, ok := s.Disks[v.Disk]; !ok {
+			add("volume %s is on the unknown disk %q", name, v.Disk)
+		}
+		if v.MountPoint == "" {
+			continue
+		}
+		if other, ok := mounts[v.MountPoint]; ok {
+			add("volumes %s and %s have the same mount point %s", other, name, v.MountPoint)
+		}
+		mounts[v.MountPoint] = name
+		if name != VarVolume && !safeMountPoint(v.MountPoint) {
+			add("volume %s: mount point %q must be an absolute path of A-Z, a-z, 0-9, ., _ and -, other than /, /nix, /state and /var, and not below /nix or /state", name, v.MountPoint)
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("invalid storage section: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func safeMountPoint(p string) bool {
+	if !validMountPoint.MatchString(p) || slices.Contains(forbiddenMountPoints, p) ||
+		strings.HasPrefix(p, "/nix/") || strings.HasPrefix(p, "/state/") {
+		return false
+	}
+	for _, part := range strings.Split(p, "/") {
+		if part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

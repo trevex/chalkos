@@ -71,6 +71,9 @@ func (r Request) validate() error {
 	if _, ok := r.Section.Disks[storage.SystemDisk]; !ok {
 		return errors.New("the identity's storage section has no system disk")
 	}
+	if err := r.Section.Validate(); err != nil {
+		return err
+	}
 	switch r.Section.Encryption {
 	case storage.EncryptionTPM2, storage.EncryptionNone:
 	default:

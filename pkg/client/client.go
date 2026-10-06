@@ -59,6 +59,10 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	if modes != 1 {
 		return nil, errors.New("exactly one of a fingerprint, insecure or a CA must be given")
 	}
+	// The CA issues every node's certificate; only the name tells this node from the others.
+	if o.CA != nil && o.ServerName == "" {
+		return nil, errors.New("verifying the node by the CA needs the node's name")
+	}
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
 		endpoint = net.JoinHostPort(endpoint, Port)
 	}
