@@ -113,6 +113,7 @@ let
   # Node n1's rendered storage section with the given definitions.
   nodeStorage = storage: storageOf (storageCluster [ { chalkos.nodes.n1.storage = storage; } ]);
   invalidStorage = storage: fails (nodeStorage storage);
+  storageErrors = (import ../../modules/cluster/storage.nix { inherit lib; }).errors;
   # Partition types hash the label; see modules/cluster/storage.nix.
   varType = "65f335d7-a1f7-f6df-b954-a97d9a5db9e6";
 in
@@ -655,6 +656,57 @@ lib.runTests {
           "/srv/"
         ];
     expected = lib.replicate 9 true;
+  };
+  testStorageRejectsDuplicateMountPoints = {
+    expr = map invalidStorage [
+      {
+        volumes.a = {
+          size = "1G";
+          mountPoint = "/srv/data";
+        };
+        volumes.b = {
+          size = "1G";
+          mountPoint = "/srv/data";
+        };
+      }
+      {
+        volumes.a = {
+          size = "1G";
+          mountPoint = "/var";
+        };
+      }
+      {
+        volumes.a = {
+          size = "1G";
+          mountPoint = "/srv/data";
+        };
+        volumes.b = {
+          enable = false;
+          size = "1G";
+          mountPoint = "/srv/data";
+        };
+      }
+    ];
+    expected = [
+      true
+      true
+      false
+    ];
+  };
+  testStorageDuplicateMountPointError = {
+    expr = storageErrors (nodeOptions {
+      volumes.a = {
+        size = "1G";
+        mountPoint = "/srv/data";
+      };
+      volumes.b = {
+        size = "1G";
+        mountPoint = "/srv/data";
+      };
+    });
+    expected = [
+      "volumes.a and volumes.b have the same mountPoint /srv/data"
+    ];
   };
   testStorageRejectsMountedRawOrSwap = {
     expr = map invalidStorage [

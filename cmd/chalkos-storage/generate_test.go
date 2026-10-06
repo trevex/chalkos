@@ -87,3 +87,36 @@ func sortedKeys(m map[string]string) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+func TestGenerateRefusesSharedMountPoint(t *testing.T) {
+	state := t.TempDir()
+	dir := filepath.Join(state, "storage")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	section := `{
+	  "disks": {"system": {"ref": "/dev/vda", "seed": "2869f04c-5655-50f4-28b9-6b2eb9700a02", "repart": {}}},
+	  "volumes": {
+	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": "2G"},
+	    "one": {"disk": "system", "label": "one", "format": "ext4", "mountPoint": "/srv/data", "encryption": "none", "size": "1G"},
+	    "two": {"disk": "system", "label": "two", "format": "ext4", "mountPoint": "/srv/data", "encryption": "none", "size": "1G"}
+	  },
+	  "fallback": "recovery-key"
+	}`
+	pins := `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"},
+	  "partitions": {"one": "1b9a3f0e-2c4d-4e5f-8a6b-7c8d9e0f1a2b", "two": "2c0b4e1f-3d5e-4f60-9b7c-8d9eaf102b3c"}}}}`
+	for name, content := range map[string]string{"storage.json": section, "disks.json": pins} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := t.TempDir()
+	err := runGenerate([]string{"--state", state, out})
+	if err == nil || !strings.Contains(err.Error(), "one") || !strings.Contains(err.Error(), "two") {
+		t.Fatalf("err = %v, want both volumes named", err)
+	}
+	if files := readTree(t, out); len(files) != 0 {
+		t.Errorf("wrote %v for a section with a shared mount point", files)
+	}
+}

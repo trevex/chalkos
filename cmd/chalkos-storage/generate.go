@@ -31,17 +31,19 @@ func runGenerate(args []string) error {
 	return units.write(flags.Arg(0))
 }
 
-// unitSet is the generator's output: unit files by name and the units each target wants.
+// unitSet is the generator's output: unit files by name, the volume each unit belongs to, and
+// the units each target wants.
 type unitSet struct {
-	files map[string]string
-	wants map[string][]string
+	files  map[string]string
+	owners map[string]string
+	wants  map[string][]string
 }
 
 // generate builds units for every volume except VAR, which the initrd mounts: a cryptsetup
 // service for encrypted volumes, and a mount or swap unit for formatted ones. All are only
 // wanted, so a missing disk fails its units without holding up the boot.
 func generate(storageDir, cryptsetup string) (unitSet, error) {
-	units := unitSet{files: map[string]string{}, wants: map[string][]string{}}
+	units := unitSet{files: map[string]string{}, owners: map[string]string{}, wants: map[string][]string{}}
 	section, err := storage.ReadSection(filepath.Join(storageDir, "storage.json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return units, nil
@@ -72,22 +74,34 @@ func generate(storageDir, cryptsetup string) (unitSet, error) {
 		source, cryptUnit := dev, ""
 		if v.Encryption == storage.EncryptionTPM2 {
 			cryptUnit = "systemd-cryptsetup@" + escapeName(name) + ".service"
-			units.add(cryptUnit, "cryptsetup.target", cryptsetupUnit(name, dev, cryptsetup, section.Fallback != storage.FallbackNone))
+			if err := units.add(name, cryptUnit, "cryptsetup.target", cryptsetupUnit(name, dev, cryptsetup, section.Fallback != storage.FallbackNone)); err != nil {
+				return units, err
+			}
 			source = "/dev/mapper/" + name
 		}
 		switch {
 		case v.Format == "swap":
-			units.add(escapePath(source)+".swap", "swap.target", swapUnit(name, source, cryptUnit))
+			err = units.add(name, escapePath(source)+".swap", "swap.target", swapUnit(name, source, cryptUnit))
 		case v.Format != "" && v.MountPoint != "":
-			units.add(escapePath(v.MountPoint)+".mount", "local-fs.target", mountUnit(name, source, v, cryptUnit))
+			err = units.add(name, escapePath(v.MountPoint)+".mount", "local-fs.target", mountUnit(name, source, v, cryptUnit))
+		}
+		if err != nil {
+			return units, err
 		}
 	}
 	return units, nil
 }
 
-func (u unitSet) add(name, wantedBy, content string) {
+// add refuses a unit name another volume already uses: one unit would silently replace the
+// other, such as two volumes with the same mount point.
+func (u unitSet) add(volume, name, wantedBy, content string) error {
+	if other, ok := u.owners[name]; ok {
+		return fmt.Errorf("volumes %s and %s both need the unit %s", other, volume, name)
+	}
 	u.files[name] = content
+	u.owners[name] = volume
 	u.wants[wantedBy] = append(u.wants[wantedBy], name)
+	return nil
 }
 
 func (u unitSet) write(dir string) error {

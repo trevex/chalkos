@@ -128,12 +128,27 @@ in
         lib.optional (storage.var.size == null) "var"
         ++ lib.attrNames (lib.filterAttrs (_: v: v.disk == null && v.size == null) enabledVolumes);
       fillingError = "at most one volume per disk may have size = null; on the system disk these do: ${lib.concatStringsSep ", " filling}";
+      # VAR is mounted at /var, so it takes part like any volume.
+      mounts = [
+        {
+          name = "var";
+          mountPoint = "/var";
+        }
+      ]
+      ++ lib.mapAttrsToList (name: v: {
+        name = "volumes.${name}";
+        inherit (v) mountPoint;
+      }) (lib.filterAttrs (_: v: v.mountPoint != null) enabledVolumes);
+      mountErrors = lib.mapAttrsToList (
+        path: ms: "${lib.concatMapStringsSep " and " (m: m.name) ms} have the same mountPoint ${path}"
+      ) (lib.filterAttrs (_: ms: lib.length ms > 1) (lib.groupBy (m: m.mountPoint) mounts));
     in
     lib.concatLists (lib.mapAttrsToList (volumeErrors storage) enabledVolumes)
     ++ lib.concatLists (
       lib.mapAttrsToList (name: v: map (sharedError name) (sharedWith name v)) ownDisks
     )
-    ++ lib.optional (lib.length filling > 1) fillingError;
+    ++ lib.optional (lib.length filling > 1) fillingError
+    ++ mountErrors;
 
   # The identity's storage section. On the system disk VAR comes first and volumes follow in
   # name order; a volume with its own disk names that disk.
