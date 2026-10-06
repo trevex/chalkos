@@ -1,0 +1,421 @@
+package chalkd
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"io"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage"
+)
+
+// fakeRunner records commands and answers them from the first rule whose prefix matches.
+type fakeRunner struct {
+	mu    sync.Mutex
+	rules []rule
+	calls []string
+	envs  map[string][]string
+}
+
+type rule struct {
+	prefix string
+	out    string
+	err    error
+}
+
+func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return f.RunWithEnv(ctx, nil, name, args...)
+}
+
+func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, args ...string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	line := strings.Join(append([]string{name}, args...), " ")
+	f.calls = append(f.calls, line)
+	if env != nil {
+		if f.envs == nil {
+			f.envs = map[string][]string{}
+		}
+		f.envs[line] = env
+	}
+	for _, r := range f.rules {
+		if strings.HasPrefix(line, r.prefix) {
+			return []byte(r.out), r.err
+		}
+	}
+	return nil, nil
+}
+
+func write(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type testDisk struct {
+	name, devnum string
+	props        map[string]string
+}
+
+var (
+	vda = testDisk{"vda", "253:0", map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
+	vdb = testDisk{"vdb", "253:16", map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-extra"}}
+)
+
+// newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
+// boot disk and carries VAR as vda7.
+func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, *fakeRunner) {
+	t.Helper()
+	root := t.TempDir()
+	h := storage.Host{
+		SysRoot:  filepath.Join(root, "sys"),
+		UdevRoot: filepath.Join(root, "udev"),
+		DevRoot:  filepath.Join(root, "dev"),
+	}
+	for _, d := range disks {
+		dir := filepath.Join(h.SysRoot, "block", d.name)
+		write(t, filepath.Join(dir, "dev"), d.devnum+"\n")
+		write(t, filepath.Join(dir, "size"), strconv.Itoa(16<<30/512)+"\n")
+		write(t, filepath.Join(dir, "queue", "rotational"), "1\n")
+		var props string
+		for k, v := range d.props {
+			props += "E:" + k + "=" + v + "\n"
+		}
+		write(t, filepath.Join(h.UdevRoot, "b"+d.devnum), props)
+		write(t, filepath.Join(h.DevRoot, d.name), "")
+	}
+	if err := os.MkdirAll(filepath.Join(h.DevRoot, "disk", "chalk-boot"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../vda", filepath.Join(h.DevRoot, "disk", "chalk-boot-disk")); err != nil {
+		t.Fatal(err)
+	}
+	r := &fakeRunner{}
+	s := &Server{
+		Mode: mode,
+		Paths: Paths{
+			StateDir:       filepath.Join(root, "state"),
+			BootDisk:       "/dev/disk/chalk-boot-disk",
+			BootPartitions: "/dev/disk/chalk-boot",
+			OSRelease:      filepath.Join(root, "os-release"),
+			EFIVars:        filepath.Join(root, "efivars"),
+			TPM:            filepath.Join(root, "tpm"),
+			StorageStatus:  filepath.Join(root, "run", "storage-status.json"),
+			MountInfo:      filepath.Join(root, "mountinfo"),
+		},
+		Run:       r,
+		Host:      h,
+		InPlace:   func(context.Context, install.Request) error { return errors.New("no install expected") },
+		FromMedia: func(context.Context, install.MediaRequest) error { return errors.New("no install expected") },
+		Journal: func(context.Context, string, bool) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("")), nil
+		},
+		RebootNode: func() {},
+	}
+	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
+	return s, r
+}
+
+// creds holds the OS CA and client certificates of each role.
+type creds struct {
+	ca      pki.CertKey
+	pool    *x509.CertPool
+	clients map[string]*tls.Certificate
+	node    pki.CertKey
+}
+
+func newCreds(t *testing.T) creds {
+	t.Helper()
+	now := time.Now()
+	ca, err := pki.NewCA("chalkos OS CA", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _ := pki.ParseCertificate([]byte(ca.Certificate))
+	c := creds{ca: ca, pool: x509.NewCertPool(), clients: map[string]*tls.Certificate{}}
+	c.pool.AddCert(cert)
+	for _, role := range []string{pki.RoleAdmin, pki.RoleOperator, pki.RoleReader} {
+		ck, err := pki.IssueClient(ca, role, role, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pair, _ := tls.X509KeyPair([]byte(ck.Certificate), []byte(ck.Key))
+		c.clients[role] = &pair
+	}
+	if c.node, err = pki.IssueNode(ca, "n1", []string{"n1"}, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	pair, _ := tls.X509KeyPair([]byte(c.node.Certificate), []byte(c.node.Key))
+	c.clients[pki.RoleNode] = &pair
+	return c
+}
+
+// serve starts s with its normal-mode node certificate, or a self-signed one in maintenance
+// mode; clientCAs nil accepts any client.
+func serve(t *testing.T, s *Server, c creds, clientCAs *x509.CertPool) string {
+	t.Helper()
+	cert := c.node
+	if s.Mode == maintenance {
+		var err error
+		if cert, err = pki.SelfSigned("chalkd", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pair, err := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.Key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.AnyClient = clientCAs == nil
+	srv := httptest.NewUnstartedServer(s.Handler())
+	srv.EnableHTTP2 = true
+	srv.TLS = TLSConfig(pair, clientCAs)
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv.Listener.Addr().String()
+}
+
+func dial(t *testing.T, addr string, cert *tls.Certificate) *client.Conn {
+	t.Helper()
+	c, err := client.Dial(addr, client.Options{Insecure: true, Certificate: cert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// call runs one RPC and returns its error code; 0 when it succeeded.
+func call(c *client.Conn, procedure string) connect.Code {
+	ctx := context.Background()
+	var err error
+	switch procedure {
+	case "Info":
+		_, err = c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	case "Status":
+		_, err = c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	case "Reboot":
+		_, err = c.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
+	case "ApplyIdentity":
+		_, err = c.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: "{}"}))
+	case "Logs":
+		var s *connect.ServerStreamForClient[nodev1.LogsResponse]
+		if s, err = c.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{})); err == nil {
+			for s.Receive() {
+			}
+			err = s.Err()
+		}
+	case "Install":
+		stream := c.Install(ctx)
+		stream.Send(&nodev1.InstallRequest{})
+		_, err = stream.CloseAndReceive()
+	}
+	if err == nil {
+		return 0
+	}
+	return connect.CodeOf(err)
+}
+
+func TestAuthorisation(t *testing.T) {
+	c := newCreds(t)
+	for _, tc := range []struct {
+		name      string
+		mode      nodev1.Mode
+		clientCAs bool
+		// codes holds, by role (empty: no certificate), the outcome of each procedure.
+		codes map[string]map[string]connect.Code
+	}{
+		{"normal", normal, true, map[string]map[string]connect.Code{
+			pki.RoleReader:   {"Info": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition},
+			pki.RoleOperator: {"Reboot": 0},
+			pki.RoleAdmin:    {"Reboot": 0},
+			// A node certificate carries no ClientAuth extended key usage, so presenting it as a
+			// client certificate fails the TLS handshake itself, before authorisation runs.
+			pki.RoleNode: {"Info": connect.CodeUnavailable},
+		}},
+		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
+			pki.RoleReader: {"Info": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition},
+			// A header without a target is refused after authorisation.
+			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument},
+		}},
+		{"maintenance on a generic image", maintenance, false, map[string]map[string]connect.Code{
+			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newTestServer(t, tc.mode, vda)
+			write(t, filepath.Join(s.Paths.StateDir, "identity.json"), "{}")
+			write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), "{}")
+			var pool *x509.CertPool
+			if tc.clientCAs {
+				pool = c.pool
+			}
+			addr := serve(t, s, c, pool)
+			for role, codes := range tc.codes {
+				conn := dial(t, addr, c.clients[role])
+				for procedure, want := range codes {
+					if got := call(conn, procedure); got != want {
+						t.Errorf("%s as %q: code %v, want %v", procedure, role, got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestClientWithoutCertificateIsRejected(t *testing.T) {
+	c := newCreds(t)
+	for _, mode := range []nodev1.Mode{normal, maintenance} {
+		s, _ := newTestServer(t, mode, vda)
+		called := false
+		s.Journal = func(context.Context, string, bool) (io.ReadCloser, error) {
+			called = true
+			return io.NopCloser(strings.NewReader("")), nil
+		}
+		addr := serve(t, s, c, c.pool)
+		conn := dial(t, addr, nil)
+		if code := call(conn, "Info"); code == 0 {
+			t.Errorf("%v: a client without a certificate was served", mode)
+		}
+		if call(conn, "Logs"); called {
+			t.Errorf("%v: a client without a certificate reached a handler", mode)
+		}
+	}
+}
+
+func TestInfo(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	s.Installer = true
+	s.Fingerprint = "ab01"
+	write(t, s.Paths.OSRelease, "ID=nixos\nIMAGE_ID=\"chalkos-installer\"\nIMAGE_VERSION=\"0.1.0\"\n")
+	write(t, filepath.Join(s.Paths.EFIVars, "SecureBoot-"+globalVariable), "\x06\x00\x00\x00\x01")
+	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+globalVariable), "\x06\x00\x00\x00\x00")
+	write(t, filepath.Join(s.Paths.TPM, "tpm0", "dev"), "10:224\n")
+
+	resp, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.Msg
+	if got.Mode != maintenance || got.ImageId != "chalkos-installer" || got.Version != "0.1.0" || !got.Installer ||
+		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" {
+		t.Errorf("info = %+v", got)
+	}
+}
+
+func TestDisks(t *testing.T) {
+	s, _ := newTestServer(t, normal, vda, vdb)
+	dir := filepath.Join(s.Host.SysRoot, "block", "vda", "vda7")
+	write(t, filepath.Join(dir, "partition"), "7\n")
+	write(t, filepath.Join(dir, "dev"), "253:7\n")
+	write(t, filepath.Join(dir, "size"), "2048\n")
+	write(t, filepath.Join(s.Host.UdevRoot, "b253:7"), "E:ID_PART_ENTRY_NAME=var\nE:ID_FS_TYPE=crypto_LUKS\n")
+	write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "size": 1, "type": "hdd"}, "partitions": {}}}}`)
+
+	resp, err := s.Disks(context.Background(), connect.NewRequest(&nodev1.DisksRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disks := resp.Msg.Disks
+	if len(disks) != 2 || disks[0].Usage != "boot" || disks[1].Usage != "disk extra" || disks[1].Serial != "chalk-extra" {
+		t.Fatalf("disks = %+v", disks)
+	}
+	p := disks[0].Partitions
+	if len(p) != 1 || p[0].Number != 7 || p[0].Label != "var" || p[0].Content != "crypto_LUKS" || p[0].Size != 1<<20 {
+		t.Errorf("vda partitions = %+v", p)
+	}
+}
+
+func TestStatus(t *testing.T) {
+	s, r := newTestServer(t, normal, vda)
+	identityJSON := `{"hostname": "n1"}`
+	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), identityJSON)
+	write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), `{
+	  "disks": {"system": {"ref": "/dev/vda", "seed": "s", "repart": {}}, "extra": {"ref": {"serial": "chalk-extra"}, "seed": "e", "repart": {}}},
+	  "volumes": {
+	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2"},
+	    "extra": {"disk": "extra", "label": "extra", "format": "ext4", "mountPoint": "/srv/extra", "encryption": "tpm2"}
+	  },
+	  "fallback": "recovery-key", "encryption": "tpm2"}`)
+	write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "p", "size": 1, "type": "hdd"}, "partitions": {"var": "a"}}}}`)
+	write(t, s.Paths.StorageStatus, `{"installed": true, "disks": {"system": {"device": "/dev/disk/chalk-boot-disk"}, "extra": {"error": "no disk matches {serial \"chalk-extra\"}"}}}`)
+	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
+	r.rules = []rule{{prefix: "systemctl list-units --state=failed", out: "systemd-cryptsetup@extra.service loaded failed failed Unlock chalkos volume extra\nsrv-extra.mount loaded failed failed chalkos volume extra\n"}}
+
+	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.Msg
+	if got.IdentityVersion != IdentityVersion([]byte(identityJSON)) {
+		t.Errorf("identity version = %s", got.IdentityVersion)
+	}
+	if !reflect.DeepEqual(got.FailedUnits, []string{"systemd-cryptsetup@extra.service", "srv-extra.mount"}) {
+		t.Errorf("failed units = %v", got.FailedUnits)
+	}
+	if len(got.Disks) != 2 || got.Disks[0].Name != "extra" || !strings.Contains(got.Disks[0].Error, "no disk matches") {
+		t.Errorf("disks = %+v", got.Disks)
+	}
+	if len(got.Volumes) != 2 || got.Volumes[0].Name != "extra" || got.Volumes[0].Present || got.Volumes[0].Mounted ||
+		got.Volumes[1].Name != "var" || !got.Volumes[1].Present || !got.Volumes[1].Mounted {
+		t.Errorf("volumes = %+v", got.Volumes)
+	}
+}
+
+func TestLogsStreamsJournal(t *testing.T) {
+	c := newCreds(t)
+	s, _ := newTestServer(t, normal, vda)
+	var unit string
+	var follow bool
+	s.Journal = func(_ context.Context, u string, f bool) (io.ReadCloser, error) {
+		unit, follow = u, f
+		return io.NopCloser(strings.NewReader("line one\nline two\n")), nil
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
+	stream, err := conn.Logs(context.Background(), connect.NewRequest(&nodev1.LogsRequest{Unit: "chalkd.service", Follow: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for stream.Receive() {
+		lines = append(lines, stream.Msg().Line)
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(lines, []string{"line one", "line two"}) || unit != "chalkd.service" || !follow {
+		t.Errorf("lines = %v, unit = %q, follow = %v", lines, unit, follow)
+	}
+}
+
+func TestRebootAfterResponse(t *testing.T) {
+	s, _ := newTestServer(t, normal, vda)
+	rebooted := make(chan struct{})
+	s.RebootNode = func() { close(rebooted) }
+	if _, err := s.Reboot(context.Background(), connect.NewRequest(&nodev1.RebootRequest{})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-rebooted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the node did not reboot")
+	}
+}
