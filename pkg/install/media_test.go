@@ -333,6 +333,8 @@ func TestFromMediaChecksTarget(t *testing.T) {
 		{"file system", []*rule{{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, "carries data (ext4)"},
 		{"partition table and file system", []*rule{{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nPTTYPE=gpt\nTYPE=iso9660\n"}}, "carries data (gpt iso9660)"},
 		{"image only", []*rule{gpt, table(espPart, usrVerity, usrPart)}, ""},
+		{"ESP only", []*rule{gpt, table(espPart)}, "carries partition 1 (ESP) and no chalkos store; pass --wipe-disk"},
+		{"more than the image", []*rule{gpt, table(espPart, usrVerity, usrPart, part{4, strings.ToUpper(typeUsrX86Verity), "_empty"})}, "carries 4 partitions, more than a role image's 3; pass --wipe-disk"},
 		{"STATE", []*rule{gpt, table(espPart, usrPart, statePart)}, "partition 6 (chalkos STATE); pass --wipe-disk to replace it"},
 		{"VAR", []*rule{gpt, table(espPart, usrPart, varPart)}, "partition 7 (chalkos VAR); pass --wipe-disk"},
 		{"installed node", []*rule{gpt, table(espPart, usrPart, statePart, varPart)}, "partition 6 (chalkos STATE), partition 7 (chalkos VAR)"},

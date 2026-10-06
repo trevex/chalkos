@@ -96,6 +96,10 @@ const (
 	typeUsrArmVerity = "6e11a4e7-fbca-4ded-b9e9-e1a512bb664e"
 )
 
+// imagePartitions is how many partitions a role image brings: its ESP and store slot A's
+// verity and data partitions. The system region adds slot B together with STATE.
+const imagePartitions = 3
+
 // mib is how much of a disk's start and end is zeroed to drop old partition tables, and how
 // much of the image is held back until it is verified.
 const mib = 1 << 20
@@ -166,7 +170,8 @@ func (i *Installer) refuseBootDisk(target storage.BlockDisk) error {
 // checkTarget refuses a disk with data unless it is empty or carries only what an earlier
 // attempt wrote before creating STATE: the image's ESP and store partitions. STATE, VAR and
 // volume partitions have the same types in every cluster, so any of them may belong to an
-// installed node.
+// installed node. An ESP without a store may be a separate ESP disk or another system's boot
+// disk.
 func (i *Installer) checkTarget(ctx context.Context, disk storage.BlockDisk) error {
 	out, err := i.Run.Run(ctx, "blkid", "-p", "-o", "export", disk.Device)
 	var te *node.ToolError
@@ -190,21 +195,43 @@ func (i *Installer) checkTarget(ctx context.Context, disk storage.BlockDisk) err
 	if err != nil {
 		return err
 	}
-	image := map[string]bool{typeESP: true, typeUsrX86: true, typeUsrX86Verity: true, typeUsrArm: true, typeUsrArmVerity: true}
-	var found []string
+	if len(table.Partitions) == 0 {
+		return nil
+	}
+	store := map[string]bool{typeUsrX86: true, typeUsrX86Verity: true, typeUsrArm: true, typeUsrArmVerity: true}
+	var found, all []string
+	hasStore := false
 	for _, p := range table.Partitions {
-		if !image[p.Type] {
-			found = append(found, fmt.Sprintf("partition %d (%s)", p.Number, describe(p)))
+		desc := fmt.Sprintf("partition %d (%s)", p.Number, describe(p))
+		all = append(all, desc)
+		switch {
+		case store[p.Type]:
+			hasStore = true
+		case p.Type != typeESP:
+			found = append(found, desc)
 		}
 	}
-	if len(found) > 0 {
+	switch {
+	case len(found) > 0:
 		return fmt.Errorf("the target disk %s carries %s; pass --wipe-disk to replace it", disk, strings.Join(found, ", "))
+	case !hasStore:
+		return fmt.Errorf("the target disk %s carries %s and no chalkos store; pass --wipe-disk to replace it", disk, strings.Join(all, ", "))
+	case len(table.Partitions) > imagePartitions:
+		return fmt.Errorf("the target disk %s carries %d partitions, more than a role image's %d; pass --wipe-disk to replace it", disk, len(table.Partitions), imagePartitions)
 	}
 	return nil
 }
 
-// describe names a partition that is not part of the image.
+// describe names a partition found on the target.
 func describe(p partition) string {
+	switch p.Type {
+	case typeESP:
+		return "ESP"
+	case typeUsrX86, typeUsrArm:
+		return "chalkos store"
+	case typeUsrX86Verity, typeUsrArmVerity:
+		return "chalkos store verity"
+	}
 	if p.Type != storage.PartitionType(p.Name) {
 		return fmt.Sprintf("type %s, label %q", p.Type, p.Name)
 	}
