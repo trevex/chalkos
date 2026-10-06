@@ -94,19 +94,29 @@ type Installer struct {
 	WorkDir string
 	// MountInfo is the mount table of chalkd's mount namespace.
 	MountInfo string
-	Now       func() time.Time
+	// OpenDisk opens a disk for writing the image.
+	OpenDisk func(path string) (Disk, error)
+	// Loader is the boot loader's path on the ESP, for the UEFI boot entry.
+	Loader string
+	Now    func() time.Time
 }
 
-// Default installs on the running node.
-func Default() *Installer {
+// Default installs on the running node: in place at /state, from media at /run/chalkd/target.
+func Default(inPlace bool) *Installer {
+	stateDir := "/state"
+	if !inPlace {
+		stateDir = "/run/chalkd/target"
+	}
 	return &Installer{
 		Run:         node.ExecRunner{},
 		Host:        storage.DefaultHost(),
-		StateDir:    "/state",
+		StateDir:    stateDir,
 		BootDisk:    "/dev/disk/chalk-boot-disk",
 		Definitions: "/etc/chalkos/repart.d",
 		WorkDir:     "/run/chalkd/install",
 		MountInfo:   "/proc/self/mountinfo",
+		OpenDisk:    openExclusive,
+		Loader:      `\EFI\BOOT\BOOTX64.EFI`,
 		Now:         time.Now,
 	}
 }

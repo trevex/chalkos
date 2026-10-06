@@ -143,6 +143,8 @@ func newTestInstaller(t *testing.T, r *fakeRunner, disks ...testDisk) *Installer
 		Definitions: filepath.Join(root, "repart.d"),
 		WorkDir:     filepath.Join(root, "work"),
 		MountInfo:   filepath.Join(root, "mountinfo"),
+		OpenDisk:    func(string) (Disk, error) { return nil, fmt.Errorf("unexpected open") },
+		Loader:      `\EFI\BOOT\BOOTX64.EFI`,
 		Now:         func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) },
 	}
 }
