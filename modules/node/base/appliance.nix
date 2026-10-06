@@ -6,7 +6,7 @@
     "${modulesPath}/profiles/perlless.nix"
   ];
 
-  system.image.id = "chalkos";
+  system.image.id = lib.mkDefault "chalkos";
   system.image.version = lib.mkDefault "0.1.0";
   system.stateVersion = "26.05";
 

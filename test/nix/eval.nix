@@ -208,6 +208,15 @@ lib.runTests {
       withoutCA = false;
     };
   };
+  testClusterBuildsInstaller = {
+    expr =
+      let
+        pub = builtins.toFile "secrets.pub.json" ''{"version": 1, "osCA": {"certificate": "PEM"}}'';
+        installer = (cluster [ { chalkos.cluster.osCA = pub; } ]).installer;
+      in
+      lib.isDerivation installer && lib.hasInfix "chalkos-installer" installer.name;
+    expected = true;
+  };
   testWrongNodeTypeFails = {
     expr =
       fails

@@ -63,6 +63,12 @@ in
   e2e-secureboot = e2e "secureboot" "^TestSecureBoot" testImage;
   e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$" testImage;
   e2e-install = e2e "install" "^TestInstallInPlace$" testImage;
+  e2e-installer = e2e "installer" "^TestInstallerInstallsOntoBlankDisk$" (
+    testImage // { CHALKLAB_INSTALLER_DIR = "${chalkPkgs.test-installer}"; }
+  );
+  e2e-iso = e2e "iso" "^TestInstallerISOBoots$" {
+    CHALKLAB_GENERIC_INSTALLER_DIR = "${chalkPkgs.installer}";
+  };
   e2e-storage = e2e "storage" "^TestStorage" {
     CHALKLAB_STORAGE_IMAGE_DIR = "${chalkPkgs.test-storage-image}";
   };

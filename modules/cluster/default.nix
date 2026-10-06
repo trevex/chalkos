@@ -7,6 +7,7 @@
     ./options/nodes.nix
     ./options/storage.nix
     ./options/warnings.nix
+    ./options/installer.nix
     ./options/manifest.nix
   ];
 }

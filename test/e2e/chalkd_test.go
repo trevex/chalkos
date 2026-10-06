@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"os"
 	"os/exec"
@@ -121,3 +122,44 @@ func installInPlace(t *testing.T, n *node, name string) {
 }
 
 var fingerprintRE = regexp.MustCompile(`certificate fingerprint ([0-9a-f]{64})`)
+
+// dialNode connects to an installed node as a client with the certificate, verifying the node
+// by the test OS CA and its name.
+func dialNode(t *testing.T, n *node, name string, cert *tls.Certificate) *client.Conn {
+	t.Helper()
+	ca, err := pki.ParseCertificate([]byte(secrets(t).OSCA.Certificate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	c, err := client.Dial(n.addr, client.Options{CA: pool, ServerName: name, Certificate: cert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func info(c *client.Conn) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err := c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	return err
+}
+
+// waitForNode waits until the installed node serves its node certificate.
+func waitForNode(t *testing.T, n *node, name string) {
+	t.Helper()
+	c := dialNode(t, n, name, clientCertificate(t, pki.RoleAdmin))
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		err := info(c)
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the installed node did not answer: %v", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}

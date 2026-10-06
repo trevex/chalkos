@@ -2,8 +2,6 @@ package e2e
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,30 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
 )
-
-// dialInstalled connects to an installed node as a client with the certificate, verifying the
-// node by the test OS CA.
-func dialInstalled(t *testing.T, n *node, cert *tls.Certificate) *client.Conn {
-	t.Helper()
-	ca, err := pki.ParseCertificate([]byte(secrets(t).OSCA.Certificate))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
-	c, err := client.Dial(n.addr, client.Options{CA: pool, ServerName: "chalklab", Certificate: cert})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
-}
-
-func info(c *client.Conn) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	_, err := c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
-	return err
-}
 
 // TestInstallInPlace installs the test image where it runs and checks the installed node: VAR
 // is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
@@ -74,7 +48,7 @@ func TestInstallInPlace(t *testing.T) {
 		"state_keyslots": "2",
 		"var_keyslots":   "2",
 	})
-	waitForInstalled(t, n)
+	waitForNode(t, n, "chalklab")
 
 	out, err := chalkctl(t, n, "base", "status", "chalklab")
 	if err != nil || !strings.Contains(out, "(the cluster definition's)") || !regexp.MustCompile(`\s/var\s+mounted`).MatchString(out) {
@@ -83,7 +57,7 @@ func TestInstallInPlace(t *testing.T) {
 	if err := info(anonymous); err == nil {
 		t.Error("an installed node served a client without a certificate")
 	}
-	reader := dialInstalled(t, n, clientCertificate(t, pki.RoleReader))
+	reader := dialNode(t, n, "chalklab", clientCertificate(t, pki.RoleReader))
 	if err := info(reader); err != nil {
 		t.Errorf("a reader could not call Info: %v", err)
 	}
@@ -115,21 +89,4 @@ func TestInstallInPlace(t *testing.T) {
 		"extra_disk":     "vdb",
 		"extra_boots":    "1",
 	})
-}
-
-// waitForInstalled waits until chalkd serves the node certificate after the install's reboot.
-func waitForInstalled(t *testing.T, n *node) {
-	t.Helper()
-	c := dialInstalled(t, n, clientCertificate(t, pki.RoleAdmin))
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
-		err := info(c)
-		if err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the installed node did not answer: %v", err)
-		}
-		time.Sleep(2 * time.Second)
-	}
 }

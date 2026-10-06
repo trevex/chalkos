@@ -5,6 +5,7 @@
   lib,
   pkgs,
   modulesPath,
+  utils,
   ...
 }:
 let
@@ -12,12 +13,18 @@ let
   inherit (import ../../cluster/storage.nix { inherit lib; }) partitionType;
   inherit (pkgs.stdenv.hostPlatform) efiArch;
   inherit (config.image.repart.verityStore) partitionIds;
-  # The system region's repart definitions, as the initrd applies them.
-  systemDefinitions = config.boot.initrd.systemd.contents."/etc/repart.d".source;
-  fixed = size: {
-    SizeMinBytes = size;
-    SizeMaxBytes = size;
-  };
+  # The system region's repart definitions, built as NixOS builds them for the initrd.
+  systemDefinitions = utils.systemdUtils.lib.definitions "repart.d" (pkgs.formats.ini {
+    listsAsDuplicateKeys = true;
+  }) (lib.mapAttrs (_: partition: { Partition = partition; }) config.systemd.repart.partitions);
+  fixed =
+    size:
+    lib.optionalAttrs (size != null) {
+      SizeMinBytes = size;
+      SizeMaxBytes = size;
+    };
+  # A store partition of the image; null sizes it to its contents.
+  storePartition = size: { Minimize = if size == null then "best" else "off"; } // fixed size;
   arch =
     {
       x86_64 = "x86-64";
@@ -43,14 +50,17 @@ in
           description = "Size of the EFI system partition, which holds the UKIs of both slots.";
         };
         storeSize = lib.mkOption {
-          type = lib.types.str;
+          type = lib.types.nullOr lib.types.str;
           default = "3G";
-          description = "Size of each store slot's erofs data partition.";
+          description = ''
+            Size of each store slot's erofs data partition; null sizes it to its contents, for
+            images that are never upgraded.
+          '';
         };
         storeVeritySize = lib.mkOption {
-          type = lib.types.str;
+          type = lib.types.nullOr lib.types.str;
           default = "128M";
-          description = "Size of each store slot's dm-verity hash partition.";
+          description = "Size of each store slot's dm-verity hash partition; null sizes it to its contents.";
         };
         stateSize = lib.mkOption {
           type = lib.types.str;
@@ -64,7 +74,7 @@ in
   config = {
     image.repart = {
       enable = true;
-      name = "chalkos";
+      name = lib.mkDefault "chalkos";
       verityStore.enable = true;
       # repart formats erofs with the 512-byte sector size, and libblkid rejects checksummed erofs
       # with blocks of 1 KiB or less; without a detected filesystem, udev never marks the verity
@@ -80,14 +90,8 @@ in
           }
           // fixed cfg.espSize;
         };
-        ${partitionIds.store-verity}.repartConfig = {
-          Minimize = "off";
-        }
-        // fixed cfg.storeVeritySize;
-        ${partitionIds.store}.repartConfig = {
-          Minimize = "off";
-        }
-        // fixed cfg.storeSize;
+        ${partitionIds.store-verity}.repartConfig = storePartition cfg.storeVeritySize;
+        ${partitionIds.store}.repartConfig = storePartition cfg.storeSize;
       };
     };
 

@@ -40,6 +40,20 @@ in
 
   test-image = testing.cluster.roles.test.image;
   test-storage-image = testing.cluster.roles.storage.image;
+  test-installer = testing.cluster.installer;
+
+  # The installer of a cluster without an OS CA: it accepts any client until it installs a node.
+  installer =
+    (self.lib.mkCluster {
+      modules = [
+        {
+          chalkos.cluster = {
+            name = "generic";
+            endpoint = "https://127.0.0.1:6443";
+          };
+        }
+      ];
+    }).installer;
 
   chalklab-e2e = goModule {
     pname = "chalklab-e2e";
