@@ -13,20 +13,15 @@ let
   ];
   strip = attrs: removeAttrs attrs [ "_module" ];
 
-  node =
-    name: n:
-    if !(cfg.roles ? ${n.role}) then
-      throw ''chalkos.nodes.${name}.role is "${n.role}", but the defined roles are: ${lib.concatStringsSep ", " (lib.attrNames cfg.roles)}''
-    else
-      {
-        inherit (n) role;
-        install.disk = n.install.disk;
-        identity = {
-          inherit (n) hostname network labels;
-          taints = map strip n.taints;
-          extensions = removeAttrs n coreNodeOptions;
-        };
-      };
+  node = _: n: {
+    inherit (n) role;
+    install.disk = n.install.disk;
+    identity = {
+      inherit (n) hostname network labels;
+      taints = map strip n.taints;
+      extensions = removeAttrs n coreNodeOptions;
+    };
+  };
 in
 {
   options.chalkos.manifest = lib.mkOption {

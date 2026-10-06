@@ -174,7 +174,7 @@ lib.runTests {
           {
             chalkos.nodes.n1.role = "nope";
           }
-        ]).manifest;
+        ]).nodes.n1.role;
     expected = true;
   };
   testFlakeModuleNamesClusters = {

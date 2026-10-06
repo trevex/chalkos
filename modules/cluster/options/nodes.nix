@@ -1,11 +1,16 @@
-{ lib, ... }:
+{ config, lib, ... }:
 let
   taint = lib.types.submodule {
     options = {
-      key = lib.mkOption { type = lib.types.str; };
+      key = lib.mkOption {
+        type = lib.types.str;
+        example = "dedicated";
+        description = "Taint key.";
+      };
       value = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
+        description = "Taint value; null for a taint without a value.";
       };
       effect = lib.mkOption {
         type = lib.types.enum [
@@ -13,6 +18,7 @@ let
           "PreferNoSchedule"
           "NoExecute"
         ];
+        description = "What happens to pods that do not tolerate the taint.";
       };
     };
   };
@@ -22,7 +28,7 @@ let
     {
       options = {
         role = lib.mkOption {
-          type = lib.types.str;
+          type = lib.types.enum (lib.attrNames config.chalkos.roles);
           description = "Role whose image this node runs; must name an entry of `chalkos.roles`.";
         };
         hostname = lib.mkOption {

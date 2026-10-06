@@ -42,6 +42,7 @@ let
         nixos = lib.mkOption {
           type = lib.types.raw;
           readOnly = true;
+          internal = true;
           description = "The evaluated NixOS system of this role.";
         };
         image = lib.mkOption {
