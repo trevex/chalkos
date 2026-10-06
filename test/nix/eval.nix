@@ -30,6 +30,31 @@ let
     chalkos.node.consumers.demo.keys = [ "demo.key" ];
   };
   withConsumer = role (cluster [ { chalkos.roles.worker.nixosModules = [ consumerModule ]; } ]);
+
+  rackExtension =
+    { lib, ... }:
+    {
+      options.chalkos.nodes = lib.mkOption {
+        type = lib.types.attrsOf (
+          lib.types.submodule { options.rack.location = lib.mkOption { type = lib.types.str; }; }
+        );
+      };
+    };
+  twoNodes = cluster [
+    rackExtension
+    {
+      chalkos.nodes.n1 = {
+        role = "worker";
+        rack.location = "a1";
+        taints = [
+          {
+            key = "dedicated";
+            effect = "NoSchedule";
+          }
+        ];
+      };
+    }
+  ];
 in
 lib.runTests {
   testRoleReadsClusterEndpoint = {
@@ -80,5 +105,45 @@ lib.runTests {
   testNodeFilePath = {
     expr = withConsumer.chalkos.node.file;
     expected = "/run/chalkos/node.json";
+  };
+  testManifestVersion = {
+    expr = twoNodes.manifest.schemaVersion;
+    expected = 0;
+  };
+  testManifestRoleImagePath = {
+    expr = twoNodes.manifest.roles.worker.image;
+    expected = "chalkos.t.roles.worker.image";
+  };
+  testManifestIdentity = {
+    expr = twoNodes.manifest.nodes.n1.identity;
+    expected = {
+      hostname = "n1";
+      network = { };
+      labels = { };
+      taints = [
+        {
+          key = "dedicated";
+          value = null;
+          effect = "NoSchedule";
+        }
+      ];
+      extensions = {
+        rack.location = "a1";
+      };
+    };
+  };
+  testManifestIsJson = {
+    expr = builtins.isString (builtins.toJSON twoNodes.manifest);
+    expected = true;
+  };
+  testUnknownRoleFails = {
+    expr =
+      fails
+        (cluster [
+          {
+            chalkos.nodes.n1.role = "nope";
+          }
+        ]).manifest;
+    expected = true;
   };
 }

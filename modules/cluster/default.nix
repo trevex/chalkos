@@ -5,5 +5,6 @@
     ./options/secure-boot.nix
     ./options/roles.nix
     ./options/nodes.nix
+    ./options/manifest.nix
   ];
 }
