@@ -71,6 +71,11 @@ func generate(storageDir, cryptsetup string) (unitSet, error) {
 			continue
 		}
 		dev := "/dev/disk/by-partuuid/" + uuid
+		// Another disk carrying a copy of the system disk has the same PARTUUIDs; only the
+		// boot disk's partitions get these links.
+		if v.Disk == storage.SystemDisk {
+			dev = "/dev/disk/chalk-boot/" + v.Label
+		}
 		source, cryptUnit := dev, ""
 		if v.Encryption == storage.EncryptionTPM2 {
 			cryptUnit = "systemd-cryptsetup@" + escapeName(name) + ".service"

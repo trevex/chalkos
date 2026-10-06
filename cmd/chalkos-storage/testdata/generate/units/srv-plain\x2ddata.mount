@@ -5,7 +5,7 @@ After=local-fs-pre.target
 Wants=systemd-growfs@srv-plain\x2ddata.service
 
 [Mount]
-What=/dev/disk/by-partuuid/1b9a3f0e-2c4d-4e5f-8a6b-7c8d9e0f1a2b
+What=/dev/disk/chalk-boot/plain
 Where=/srv/plain-data
 Type=ext4
 Options=nofail
