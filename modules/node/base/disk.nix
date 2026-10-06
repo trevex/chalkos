@@ -9,6 +9,7 @@
 }:
 let
   cfg = config.chalkos.disk;
+  inherit (import ../../cluster/storage.nix { inherit lib; }) partitionType;
   inherit (pkgs.stdenv.hostPlatform) efiArch;
   inherit (config.image.repart.verityStore) partitionIds;
   fixed = size: {
@@ -114,7 +115,8 @@ in
       }
       // fixed cfg.storeSize;
       "50-state" = {
-        Type = "linux-generic";
+        # A type of its own, like VAR and volumes, so no other definition takes STATE over.
+        Type = partitionType "state";
         Label = "state";
         Format = "ext4";
         Encrypt = "tpm2";

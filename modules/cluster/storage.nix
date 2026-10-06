@@ -41,7 +41,9 @@ let
     builtins.match "[a-z0-9]([a-z0-9-]*[a-z0-9])?" name != null && builtins.stringLength name <= 32;
   validMountPoint =
     path:
-    builtins.match "(/[^/]+)+" path != null
+    # Mount points go verbatim into unit files, where spaces, newlines or backslashes would
+    # change their meaning.
+    builtins.match "(/[A-Za-z0-9._-]+)+" path != null
     && !lib.elem "." (lib.splitString "/" path)
     && !lib.elem ".." (lib.splitString "/" path)
     && !lib.elem path forbiddenMountPoints
@@ -91,7 +93,7 @@ let
         }
         {
           failed = v.mountPoint != null && !validMountPoint v.mountPoint;
-          message = "${at}.mountPoint must be an absolute path other than /, /nix, /state and /var, and not below /nix or /state";
+          message = "${at}.mountPoint must be an absolute path of the characters A-Z, a-z, 0-9, ., _, - and /, other than /, /nix, /state and /var, and not below /nix or /state";
         }
         {
           failed = v.format == null && v.mountPoint != null;
@@ -112,6 +114,9 @@ let
     ++ map (key: "${at}.repart must not set ${key}; it comes from the typed options") reservedKeys;
 in
 {
+  # GPT type UUID of the partition with the label. STATE, which the image defines, uses it too.
+  inherit partitionType;
+
   # Evaluation errors in a node's storage options; empty when they are valid.
   errors =
     storage:

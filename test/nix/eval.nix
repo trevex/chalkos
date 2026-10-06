@@ -654,8 +654,27 @@ lib.runTests {
           "/var"
           "/srv/../nix"
           "/srv/"
+          "/srv/my data"
+          "/srv/d\\x2data"
+          "/srv/dätä"
+          "/srv/a:b"
+          "/srv/a\nb"
         ];
-    expected = lib.replicate 9 true;
+    expected = lib.replicate 14 true;
+  };
+  testStorageAllowsMountPointCharacters = {
+    expr =
+      (nodeStorage {
+        volumes.data = {
+          size = "1G";
+          mountPoint = "/srv/My_data-2.0";
+        };
+      }).volumes.data.mountPoint;
+    expected = "/srv/My_data-2.0";
+  };
+  testStateHasItsOwnPartitionType = {
+    expr = (role (cluster [ ])).systemd.repart.partitions."50-state".Type;
+    expected = "480b7842-1236-1abb-0339-e5503b43122a";
   };
   testStorageRejectsDuplicateMountPoints = {
     expr = map invalidStorage [
