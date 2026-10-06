@@ -49,6 +49,12 @@ func (a Identity) Same(b Identity) bool {
 	}
 }
 
+// Recognisable reports whether the disk can be found again by this identity. Model, size and
+// type are shared by identical disks, so they never identify one alone.
+func (i Identity) Recognisable() bool {
+	return i.WWN != "" || i.Serial != "" || i.Path != ""
+}
+
 func (i Identity) String() string {
 	parts := []string{fmt.Sprintf("model %q", i.Model), "size " + formatSize(i.Size)}
 	if i.Serial != "" {

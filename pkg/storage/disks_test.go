@@ -231,3 +231,19 @@ func TestIdentitySame(t *testing.T) {
 		}
 	}
 }
+
+func TestIdentityRecognisable(t *testing.T) {
+	for _, c := range []struct {
+		id   Identity
+		want bool
+	}{
+		{Identity{WWN: "w"}, true},
+		{Identity{Serial: "s"}, true},
+		{Identity{Path: "p"}, true},
+		{Identity{Model: "m", Size: 1 << 30, Type: "hdd"}, false},
+	} {
+		if got := c.id.Recognisable(); got != c.want {
+			t.Errorf("%+v.Recognisable() = %v, want %v", c.id, got, c.want)
+		}
+	}
+}

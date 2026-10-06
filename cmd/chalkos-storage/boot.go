@@ -173,15 +173,22 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 	if pinned && !system.Identity.Same(bootDisk.Identity) {
 		return nil, fmt.Errorf("VAR lives on the disk %s, which is missing: the node booted from %s", system.Identity, bootDisk)
 	}
-	system.Ref = section.Disks[storage.SystemDisk].Ref
-	system.Identity = bootDisk.Identity
-	pins.Disks[storage.SystemDisk] = system
 
-	devices := map[string]string{storage.SystemDisk: b.bootDisk}
+	devices := map[string]string{}
 	claimed := []claim{{storage.SystemDisk, bootDisk}}
 	fail := func(name string, err error) {
 		log.Printf("disk %s: %v", name, err)
 		status.Disks[name] = storage.DiskStatus{Error: err.Error()}
+	}
+
+	// A pin the next boot cannot match would stop that boot as if VAR's disk were missing.
+	if !pinned && !bootDisk.Identity.Recognisable() {
+		fail(storage.SystemDisk, unrecognisable(bootDisk))
+	} else {
+		system.Ref = section.Disks[storage.SystemDisk].Ref
+		system.Identity = bootDisk.Identity
+		pins.Disks[storage.SystemDisk] = system
+		devices[storage.SystemDisk] = b.bootDisk
 	}
 
 	// Every pinned disk is claimed before any reference is resolved, so a new reference can
@@ -212,6 +219,17 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 		devices[name] = disk.Device
 	}
 
+	if len(unpinned) == 0 {
+		return devices, nil
+	}
+	// Identities come from the udev database, which udev fills in as it processes each disk; a
+	// disk pinned before that would be pinned by a weaker identity than it has.
+	if _, err := b.run.run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
+		for _, name := range unpinned {
+			fail(name, fmt.Errorf("udev has not processed every disk, so the reference is resolved on a later boot: %w", err))
+		}
+		return devices, nil
+	}
 	for _, name := range unpinned {
 		d := section.Disks[name]
 		disk, err := b.resolveNew(ctx, d, claimed)
@@ -245,6 +263,10 @@ func checkUnclaimed(name string, disk storage.BlockDisk, claimed []claim) error 
 	return nil
 }
 
+func unrecognisable(disk storage.BlockDisk) error {
+	return fmt.Errorf("%s cannot be recognised again: udev reports no WWN, serial or path for it; it is not pinned and is tried again on the next boot", disk)
+}
+
 // resolveNew resolves the reference of a disk that is not pinned yet and checks that the disk
 // may be pinned and partitioned.
 func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) (storage.BlockDisk, error) {
@@ -254,6 +276,9 @@ func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) 
 	}
 	if err := checkUnclaimed("", disk, claimed); err != nil {
 		return storage.BlockDisk{}, fmt.Errorf("%s: %w", d.Ref, err)
+	}
+	if !disk.Identity.Recognisable() {
+		return storage.BlockDisk{}, unrecognisable(disk)
 	}
 	if err := b.checkUnused(ctx, disk); err != nil {
 		return storage.BlockDisk{}, err

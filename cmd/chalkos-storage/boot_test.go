@@ -220,6 +220,7 @@ func TestSetUpFirstBoot(t *testing.T) {
 	}
 
 	assertCalls(t, r.calls, []string{
+		"udevadm settle --timeout=30",
 		"blkid -p -o export /dev/vdb",
 		"systemd-repart --dry-run=no --json=short --definitions=" + b.storageDir() + "/disks/system --seed=" + systemSeed + " /dev/disk/chalk-boot-disk",
 		"systemd-repart --dry-run=no --json=short --definitions=" + b.storageDir() + "/disks/data --seed=" + dataSeed + " --empty=allow /dev/vdb",
@@ -275,6 +276,97 @@ func TestSetUpUsesPinnedDisks(t *testing.T) {
 		if strings.HasPrefix(call, "blkid -p -o export") {
 			t.Errorf("probed a pinned disk again: %s", call)
 		}
+		if strings.HasPrefix(call, "udevadm settle") {
+			t.Errorf("waited for udev without a reference to resolve: %s", call)
+		}
+	}
+}
+
+func TestSetUpRefusesUnidentifiableDisk(t *testing.T) {
+	r := &fakeRunner{}
+	anonymous := dataDisk
+	anonymous.props = map[string]string{"ID_MODEL": "QEMU_HARDDISK"}
+	b := newTestBoot(t, r, bootDisk, anonymous)
+	r.rules = firstBootRules(b)
+	writeSection(t, b, `{
+	  "disks": {
+	    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
+	    "data": {"ref": "/dev/vdb", "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
+	  },
+	  "volumes": {
+	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
+	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
+	  },
+	  "fallback": "recovery-key"
+	}`)
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range r.calls {
+		if strings.Contains(call, "/dev/vdb") {
+			t.Errorf("touched a disk that cannot be recognised again: %s", call)
+		}
+	}
+	pins, err := storage.ReadPins(filepath.Join(b.storageDir(), "disks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pins.Disks["data"]; ok {
+		t.Error("pinned a disk without WWN, serial or path")
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, "cannot be recognised") {
+		t.Errorf("data status = %+v", s.Disks["data"])
+	}
+}
+
+func TestSetUpRefusesUnidentifiableBootDisk(t *testing.T) {
+	r := &fakeRunner{}
+	anonymous := bootDisk
+	anonymous.props = nil
+	b := newTestBoot(t, r, anonymous, dataDisk)
+	r.rules = firstBootRules(b)
+	writeStorage(t, b, "recovery-key")
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatalf("an unidentifiable boot disk stopped the boot: %v", err)
+	}
+	for _, call := range r.calls {
+		if strings.Contains(call, "disks/system") || strings.HasPrefix(call, "mount") {
+			t.Errorf("set up VAR on a disk that cannot be recognised again: %s", call)
+		}
+	}
+	pins, err := storage.ReadPins(filepath.Join(b.storageDir(), "disks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pins.Disks["system"]; ok {
+		t.Error("pinned a boot disk without WWN, serial or path")
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["system"].Error, "cannot be recognised") {
+		t.Errorf("system status = %+v", s.Disks["system"])
+	}
+}
+
+func TestSetUpWaitsForUdevBeforeResolving(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = append([]rule{{prefix: "udevadm settle", err: &toolError{command: "udevadm settle", code: 1, stderr: "timeout"}}}, firstBootRules(b)...)
+	writeStorage(t, b, "recovery-key")
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range r.calls {
+		if strings.Contains(call, "/dev/vdb") {
+			t.Errorf("resolved a reference before udev settled: %s", call)
+		}
+	}
+	if !contains(r.calls, "mount -t ext4 /dev/mapper/var "+b.varDir) {
+		t.Errorf("VAR not mounted: %v", r.calls)
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, "udev") {
+		t.Errorf("data status = %+v", s.Disks["data"])
 	}
 }
 
