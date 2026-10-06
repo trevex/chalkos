@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -171,4 +172,23 @@ Description=chalkos swap volume %s
 What=%s
 Options=nofail
 `, name, requires(cryptUnit), source)
+}
+
+// Of returns the names of a volume's units, in the order they start.
+func (u Units) Of(volume string) []string {
+	var names []string
+	for name, owner := range u.owners {
+		if owner == volume {
+			names = append(names, name)
+		}
+	}
+	// The cryptsetup service comes before the mount or swap unit on it.
+	sort.Slice(names, func(i, j int) bool {
+		ci, cj := strings.HasPrefix(names[i], "systemd-cryptsetup@"), strings.HasPrefix(names[j], "systemd-cryptsetup@")
+		if ci != cj {
+			return ci
+		}
+		return names[i] < names[j]
+	})
+	return names
 }
