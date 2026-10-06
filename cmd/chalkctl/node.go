@@ -14,12 +14,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"connectrpc.com/connect"
-	"golang.org/x/term"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
@@ -67,7 +67,7 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := a.loadSecrets(n.secrets, n.cluster.flake)
+	secrets, err := a.loadSecrets(ctx, n.secrets, n.cluster.flake)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +121,9 @@ func (p pinning) dial(addr string, cert *tls.Certificate) (*client.Conn, error) 
 }
 
 // fallbackSecret returns the secret enrolled as the second keyslot of the node's encrypted
-// volumes: its derived recovery key, or the operator's password.
-func (a *app) fallbackSecret(t *target, passwordFile string, confirm bool) (string, error) {
+// volumes: its derived recovery key, or the operator's password. A password typed on the
+// terminal is asked twice when confirm is set.
+func (a *app) fallbackSecret(ctx context.Context, t *target, passwordFile string, confirm bool) (string, error) {
 	switch t.node.Identity.Storage.Fallback {
 	case storage.FallbackNone:
 		return "", nil
@@ -134,28 +135,25 @@ func (a *app) fallbackSecret(t *target, passwordFile string, confirm bool) (stri
 			if err != nil {
 				return "", err
 			}
-			// Only the newline that ends the file's line; the rest belongs to the password.
-			password := strings.TrimSuffix(string(data), "\n")
+			// Only the line ending that ends the file's line, LF or CRLF; the rest belongs to
+			// the password.
+			password := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
 			if password == "" {
 				return "", fmt.Errorf("%s is empty", passwordFile)
 			}
 			return password, nil
 		}
-		return a.askPassword(t.name, confirm)
+		return a.askPassword(ctx, t.name, confirm)
 	}
 	return "", fmt.Errorf("node %s has the unknown fallback %q", t.name, t.node.Identity.Storage.Fallback)
 }
 
-func (a *app) askPassword(node string, confirm bool) (string, error) {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		return "", fmt.Errorf("node %s unlocks with a password when its TPM fails; pass --password-file", node)
-	}
-	defer tty.Close()
+func (a *app) askPassword(ctx context.Context, node string, confirm bool) (string, error) {
 	read := func(prompt string) (string, error) {
-		fmt.Fprint(tty, prompt)
-		p, err := term.ReadPassword(int(tty.Fd()))
-		fmt.Fprintln(tty)
+		p, err := a.readSecret(ctx, prompt)
+		if errors.Is(err, errNoTerminal) {
+			return "", fmt.Errorf("node %s unlocks with a password when its TPM fails and there is no terminal to ask for it; pass --password-file", node)
+		}
 		return string(p), err
 	}
 	password, err := read(fmt.Sprintf("Password that unlocks %s when its TPM fails: ", node))
@@ -175,6 +173,42 @@ func (a *app) askPassword(node string, confirm bool) (string, error) {
 		}
 	}
 	return password, nil
+}
+
+// fallbackFor returns the fallback secret when delivering the identity enrolls it: on an
+// encrypted volume the node does not have yet, or on the volume reset recreates. The node's
+// status says which volumes it has. A password typed on the terminal is confirmed: the node
+// checks it against its existing fallback keyslot only when it has one.
+func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, passwordFile, reset string) (string, error) {
+	if t.node.Identity.Storage.Fallback == storage.FallbackNone {
+		return "", nil
+	}
+	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		return "", fmt.Errorf("ask %s for its volumes: %w", t.name, err)
+	}
+	var existing []string
+	for _, v := range resp.Msg.Volumes {
+		existing = append(existing, v.Name)
+	}
+	if !fallbackNeeded(t.node.Identity.Storage, existing, reset) {
+		return "", nil
+	}
+	return a.fallbackSecret(ctx, t, passwordFile, true)
+}
+
+// fallbackNeeded tells whether the section enrolls the fallback keyslot on a volume besides the
+// existing ones, or on the volume reset recreates.
+func fallbackNeeded(section storage.Section, existing []string, reset string) bool {
+	if section.Fallback == storage.FallbackNone {
+		return false
+	}
+	for name, v := range section.Volumes {
+		if v.Encryption == storage.EncryptionTPM2 && (name == reset || !slices.Contains(existing, name)) {
+			return true
+		}
+	}
+	return false
 }
 
 // identityJSON is the identity as the node records it; Status compares its version.
@@ -253,7 +287,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackSecret(t, *passwordFile, true)
+	fallback, err := a.fallbackSecret(ctx, t, *passwordFile, true)
 	if err != nil {
 		return err
 	}
@@ -290,10 +324,13 @@ func (a *app) install(ctx context.Context, args []string) error {
 			return err
 		}
 		if *signKey != "" || *signCert != "" {
-			if raw, err = signedCopy(ctx, raw, *signKey, *signCert); err != nil {
+			signed, cleanup, err := signedCopy(ctx, raw, *signKey, *signCert)
+			if err != nil {
 				return err
 			}
-			defer os.RemoveAll(filepath.Dir(raw))
+			// Removed once the install has finished or failed.
+			defer cleanup()
+			raw = signed
 		}
 		if image, err = os.Open(raw); err != nil {
 			return err
@@ -370,37 +407,51 @@ func readDefinitions(dir string) (map[string]string, error) {
 	return defs, nil
 }
 
-// signedCopy signs a copy of a raw image; images in the Nix store are read-only.
-func signedCopy(ctx context.Context, raw, key, cert string) (string, error) {
+// signedCopy signs a copy of a raw image; images in the Nix store are read-only. The copy is as
+// large as the image, so it goes to the user's cache directory instead of the temporary
+// directory, which often lives in memory. cleanup removes it.
+func signedCopy(ctx context.Context, raw, key, cert string) (signed string, cleanup func(), err error) {
 	if key == "" || cert == "" {
-		return "", errors.New("signing needs both --sign-key and --sign-cert")
+		return "", nil, errors.New("signing needs both --sign-key and --sign-cert")
 	}
-	dir, err := os.MkdirTemp("", "chalkctl")
-	if err != nil {
-		return "", err
-	}
-	out := filepath.Join(dir, filepath.Base(raw))
 	src, err := os.Open(raw)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer src.Close()
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", nil, fmt.Errorf("find a directory for the signed image: %w", err)
+	}
+	parent := filepath.Join(cache, "chalkctl")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", nil, err
+	}
+	dir, err := os.MkdirTemp(parent, "signed-")
+	if err != nil {
+		return "", nil, err
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dir)
+		}
+	}()
+	out := filepath.Join(dir, filepath.Base(raw))
 	dst, err := os.Create(out)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	if _, err := io.Copy(dst, src); err != nil {
+	if _, err = io.Copy(dst, src); err != nil {
 		dst.Close()
-		return "", err
+		return "", nil, fmt.Errorf("copy %s: %w", raw, err)
 	}
-	if err := dst.Close(); err != nil {
-		return "", err
+	if err = dst.Close(); err != nil {
+		return "", nil, err
 	}
-	if err := signImage(ctx, out, filepath.Join(filepath.Dir(raw), "repart-output.json"), key, cert); err != nil {
-		os.RemoveAll(dir)
-		return "", err
+	if err = signImage(ctx, out, filepath.Join(filepath.Dir(raw), "repart-output.json"), key, cert); err != nil {
+		return "", nil, err
 	}
-	return out, nil
+	return out, func() { os.RemoveAll(dir) }, nil
 }
 
 func (a *app) disks(ctx context.Context, args []string) error {
@@ -437,7 +488,7 @@ func (a *app) disks(ctx context.Context, args []string) error {
 		// certificate when there is a secrets file for an image with an OS CA.
 		var cert *tls.Certificate
 		if n.secrets.path != "" {
-			secrets, err := a.loadSecrets(n.secrets, n.cluster.flake)
+			secrets, err := a.loadSecrets(ctx, n.secrets, n.cluster.flake)
 			if err != nil {
 				return err
 			}
@@ -504,7 +555,7 @@ func (a *app) applyIdentity(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackSecret(t, *passwordFile, false)
+	fallback, err := a.fallbackFor(ctx, conn, t, *passwordFile, "")
 	if err != nil {
 		return err
 	}
@@ -546,7 +597,7 @@ func (a *app) resetVolume(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackSecret(t, *passwordFile, false)
+	fallback, err := a.fallbackFor(ctx, conn, t, *passwordFile, pos[1])
 	if err != nil {
 		return err
 	}

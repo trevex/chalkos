@@ -40,25 +40,47 @@ type app struct {
 	nix func(ctx context.Context, args ...string) ([]byte, error)
 	// home is the user's home directory, where age and SSH keys are looked up.
 	home string
+	// readSecret asks for a secret on the terminal without echoing it.
+	readSecret func(ctx context.Context, prompt string) ([]byte, error)
 }
 
 func main() {
 	home, _ := os.UserHomeDir()
-	a := &app{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, nix: runNix, home: home}
+	a := &app{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, nix: runNix, home: home, readSecret: ttySecret}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 	err := a.run(ctx, os.Args[1:])
-	if errors.Is(err, errUsage) {
+	status := exitStatus(err)
+	// A command Ctrl-C ended exits as after SIGINT, also where the error lost errInterrupted on
+	// the way, as age's error for an SSH key's passphrase does.
+	if err != nil && ctx.Err() != nil {
+		status = 130
+	}
+	stop()
+	switch status {
+	case 0:
+	case 2:
 		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
-	}
-	if err != nil {
+	default:
 		fmt.Fprintln(os.Stderr, "chalkctl:", err)
-		os.Exit(1)
 	}
+	os.Exit(status)
 }
 
 var errUsage = errors.New("usage")
+
+// exitStatus is chalkctl's exit status after err: 2 after a usage error and 130, as after
+// SIGINT, when a prompt was interrupted.
+func exitStatus(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, errUsage):
+		return 2
+	case errors.Is(err, errInterrupted):
+		return 130
+	}
+	return 1
+}
 
 func (a *app) run(ctx context.Context, args []string) error {
 	if len(args) == 0 {

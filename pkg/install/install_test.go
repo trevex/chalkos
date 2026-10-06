@@ -64,6 +64,10 @@ func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, ar
 	return f.apply(name, args, out)
 }
 
+func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, args ...string) ([]byte, error) {
+	return f.RunWithEnv(ctx, nil, name, args...)
+}
+
 func (f *fakeRunner) answer(line string) ([]byte, error) {
 	for _, r := range f.rules {
 		if !strings.HasPrefix(line, r.prefix) {

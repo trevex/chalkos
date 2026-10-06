@@ -61,9 +61,19 @@ func installedServer(t *testing.T, recorded string, extraPinned bool) (*Server, 
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
 		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
+		{prefix: "cryptsetup luksDump --dump-json-metadata", out: luksDump},
 	}
 	return s, r
 }
+
+// luksDump is the header of a LUKS2 device with the TPM2 keyslot 0 and the password keyslot 2.
+const luksDump = `{"keyslots": {"0": {"type": "luks2"}, "2": {"type": "luks2"}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}}, "segments": {}}`
+
+const (
+	stateDevice = "/dev/disk/chalk-boot/state"
+	dumpState   = "cryptsetup luksDump --dump-json-metadata " + stateDevice
+	testState   = "cryptsetup open --test-passphrase --key-slot=2 --key-file=- " + stateDevice
+)
 
 func apply(s *Server, identity, fallback string) (*nodev1.ApplyIdentityResponse, error) {
 	resp, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: identity, FallbackSecret: fallback}))
@@ -85,6 +95,8 @@ func TestApplyIdentityAddsVolume(t *testing.T) {
 	partition := "/dev/disk/by-partuuid/" + newUUID
 	enroll := "systemd-cryptenroll --unlock-tpm2-device=auto --password --wipe-slot=password " + partition
 	want := []string{
+		dumpState,
+		testState,
 		"udevadm settle --timeout=30",
 		"blkid -p -o export /dev/vdb",
 		"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system") + " --seed=2869f04c-5655-50f4-28b9-6b2eb9700a02 /dev/disk/chalk-boot-disk",
@@ -102,6 +114,9 @@ func TestApplyIdentityAddsVolume(t *testing.T) {
 	}
 	if env := r.envs[enroll]; !reflect.DeepEqual(env, []string{"NEWPASSWORD=" + secret}) {
 		t.Errorf("enrollment environment = %v", env)
+	}
+	if r.inputs[testState] != secret {
+		t.Errorf("the secret was not checked against STATE's password keyslot on standard input: %v", r.inputs)
 	}
 	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" || resp.Changes[0].Destructive ||
 		!reflect.DeepEqual(resp.RestartedUnits, []string{"rack-location"}) {
@@ -194,6 +209,8 @@ func TestResetVolume(t *testing.T) {
 	}
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	for i, want := range []string{
+		dumpState,
+		testState,
 		"systemctl stop srv-extra.mount systemd-cryptsetup@extra.service",
 		"wipefs --all /dev/vdb1",
 		"sfdisk --delete /dev/vdb 1",
@@ -351,6 +368,8 @@ func TestResetVolumeOnSystemDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, want := range []string{
+		dumpState,
+		testState,
 		"systemctl stop srv-data.mount systemd-cryptsetup@data.service",
 		"wipefs --all /dev/vda9",
 		"sfdisk --delete /dev/vda 9",
@@ -395,8 +414,8 @@ func TestResetVolumeChecksPartUUID(t *testing.T) {
 			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
-			if len(r.calls) != 0 {
-				t.Errorf("ran %v", r.calls)
+			if changed := withoutChecks(r.calls); len(changed) != 0 {
+				t.Errorf("ran %v", changed)
 			}
 		})
 	}
@@ -429,5 +448,146 @@ func TestResetVolumeRefusesRemoval(t *testing.T) {
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v", r.calls)
+	}
+}
+
+// withoutChecks drops the commands that only read a device to check the fallback secret.
+func withoutChecks(calls []string) []string {
+	var out []string
+	for _, c := range calls {
+		if !strings.HasPrefix(c, "cryptsetup luksDump ") && !strings.HasPrefix(c, "cryptsetup open --test-passphrase ") {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// plainSystem makes STATE and VAR unencrypted.
+func plainSystem(s *storage.Section) {
+	s.Encryption = storage.EncryptionNone
+	v := s.Volumes[storage.VarVolume]
+	v.Encryption = storage.EncryptionNone
+	s.Volumes[storage.VarVolume] = v
+}
+
+// mismatch makes cryptsetup reject every passphrase, as it does a wrong one.
+func mismatch(r *fakeRunner) {
+	r.rules = append([]rule{{prefix: "cryptsetup open --test-passphrase", err: &node.ToolError{Command: "cryptsetup open", Code: 2, Stderr: "No key available with this passphrase."}}}, r.rules...)
+}
+
+func TestApplyIdentityRefusesMismatchingFallbackSecret(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+	mismatch(r)
+	_, err := apply(s, identityWith("rack-b", section("", "ext4")), "mistyped")
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the fallback secret does not match the node's existing fallback keyslot") {
+		t.Fatalf("err = %v", err)
+	}
+	if !reflect.DeepEqual(r.calls, []string{dumpState, testState}) {
+		t.Errorf("commands = %v, want only the check", r.calls)
+	}
+	if r.inputs[testState] != "mistyped" {
+		t.Errorf("inputs = %v", r.inputs)
+	}
+	if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
+		t.Error("recorded a refused identity")
+	}
+}
+
+func TestApplyIdentityRefusesWhenTheCheckFails(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	r.rules = append([]rule{{prefix: "cryptsetup open", err: &node.ToolError{Command: "cryptsetup open", Code: 4, Stderr: "Device does not exist."}}}, r.rules...)
+	_, err := apply(s, identityWith("rack-b", section("", "ext4")), secret)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || strings.Contains(err.Error(), secret) {
+		t.Fatalf("err = %v", err)
+	}
+	if !reflect.DeepEqual(r.calls, []string{dumpState, testState}) {
+		t.Errorf("commands = %v, want only the check", r.calls)
+	}
+}
+
+func TestResetVolumeRefusesMismatchingFallbackSecret(t *testing.T) {
+	s, r := installedServer(t, section("", "ext4"), true)
+	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+	mismatch(r)
+	err := reset(s, "extra", identityWith("rack-a", section("", "xfs")))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("err = %v", err)
+	}
+	if !reflect.DeepEqual(r.calls, []string{dumpState, testState}) {
+		t.Errorf("commands = %v, want only the check", r.calls)
+	}
+}
+
+// TestFallbackCheckDevice checks the secret against STATE, else VAR, else another encrypted
+// volume the node keeps, and skips the check when the node has none.
+func TestFallbackCheckDevice(t *testing.T) {
+	addData := func(rendered string) string { return withSystemVolume(t, rendered, storage.EncryptionTPM2) }
+	for _, c := range []struct {
+		name               string
+		recorded, next     string
+		extraPinned, reset bool
+		want               string
+	}{
+		{"STATE", section("", ""), section("", "ext4"), false, false, stateDevice},
+		{"VAR", editSection(t, section("", ""), func(s *storage.Section) {
+			s.Encryption = storage.EncryptionNone
+		}), editSection(t, section("", "ext4"), func(s *storage.Section) {
+			s.Encryption = storage.EncryptionNone
+		}), false, false, "/dev/disk/chalk-boot/var"},
+		{"another volume", editSection(t, section("", "ext4"), plainSystem), addData(editSection(t, section("", "ext4"), plainSystem)), true, false, "/dev/disk/by-partuuid/" + extraUUID},
+		{"none encrypted", editSection(t, section("", ""), plainSystem), editSection(t, section("", "ext4"), plainSystem), false, false, ""},
+		{"no fallback recorded", editSection(t, section("", ""), func(s *storage.Section) {
+			s.Fallback = storage.FallbackNone
+		}), section("", "ext4"), false, false, ""},
+		{"only the reset volume encrypted", editSection(t, section("", "ext4"), plainSystem), editSection(t, section("", "xfs"), plainSystem), true, true, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, r := installedServer(t, c.recorded, c.extraPinned)
+			var err error
+			if c.reset {
+				partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+				err = reset(s, "extra", identityWith("rack-a", c.next))
+			} else {
+				_, err = apply(s, identityWith("rack-a", c.next), secret)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var checks []string
+			for _, call := range r.calls {
+				if strings.HasPrefix(call, "cryptsetup") {
+					checks = append(checks, call)
+				}
+			}
+			var want []string
+			if c.want != "" {
+				want = []string{"cryptsetup luksDump --dump-json-metadata " + c.want, "cryptsetup open --test-passphrase --key-slot=2 --key-file=- " + c.want}
+			}
+			if !reflect.DeepEqual(checks, want) {
+				t.Errorf("checks = %v, want %v", checks, want)
+			}
+			if !contains(r.calls, "systemd-cryptenroll --unlock-tpm2-device=auto --password --wipe-slot=password /dev/disk/by-partuuid/"+newUUID) &&
+				!contains(r.calls, "systemd-cryptenroll --unlock-tpm2-device=auto --password --wipe-slot=password /dev/disk/chalk-boot/data") {
+				t.Errorf("no fallback keyslot was enrolled: %v", r.calls)
+			}
+		})
+	}
+}
+
+func TestPasswordSlots(t *testing.T) {
+	for dump, want := range map[string][]string{
+		luksDump: {"2"},
+		`{"keyslots": {"0": {}, "1": {}, "10": {}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}, "1": {"type": "systemd-recovery", "keyslots": ["10"]}}}`: {"1"},
+		`{"keyslots": {"0": {}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}}}`:                                                                           nil,
+		`{"keyslots": {"3": {}, "1": {}}, "tokens": {}}`:                                                                                                                  {"1", "3"},
+	} {
+		got, err := passwordSlots([]byte(dump))
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("passwordSlots(%s) = %v, %v, want %v", dump, got, err, want)
+		}
+	}
+	if _, err := passwordSlots([]byte(`{"keyslots": {"0; rm": {}}}`)); err == nil {
+		t.Error("accepted a keyslot that is not a number")
 	}
 }

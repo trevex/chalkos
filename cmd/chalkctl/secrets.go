@@ -39,7 +39,7 @@ func (s *secretFlags) register(fs *flag.FlagSet) {
 
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
 // the file is encrypted.
-func (a *app) loadSecrets(s secretFlags, flake string) (pki.Secrets, error) {
+func (a *app) loadSecrets(ctx context.Context, s secretFlags, flake string) (pki.Secrets, error) {
 	path := s.path
 	if path == "" {
 		path = filepath.Join(flake, "secrets.age")
@@ -57,42 +57,61 @@ func (a *app) loadSecrets(s secretFlags, flake string) (pki.Secrets, error) {
 	if err != nil {
 		return pki.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
 	}
-	secrets, err := pki.ReadSecrets(data, func() ([]age.Identity, error) { return a.ageIdentities(s.identities) })
+	secrets, err := pki.ReadSecrets(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
 	if err != nil {
 		return pki.Secrets{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return secrets, nil
 }
 
-// ageIdentities parses the given identity files, or the default ones that exist.
-func (a *app) ageIdentities(files []string) ([]age.Identity, error) {
-	if len(files) == 0 {
-		for _, f := range []string{
-			filepath.Join(a.home, ".config", "chalkos", "age.key"),
-			filepath.Join(a.home, ".ssh", "id_ed25519"),
-			filepath.Join(a.home, ".ssh", "id_rsa"),
-		} {
-			if _, err := os.Stat(f); err == nil {
-				files = append(files, f)
-			}
-		}
-		if len(files) == 0 {
-			return nil, errors.New("the secrets file is encrypted and no age identity was found; pass --identity")
-		}
-	}
+// ageIdentities parses the given identity files, which must all load, or the default ones that
+// exist, skipping those that do not load.
+func (a *app) ageIdentities(ctx context.Context, files []string) ([]age.Identity, error) {
 	var ids []age.Identity
-	for _, f := range files {
-		data, err := os.ReadFile(f)
-		if err != nil {
-			return nil, err
+	if len(files) > 0 {
+		for _, f := range files {
+			parsed, err := a.parseIdentity(ctx, f)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, parsed...)
 		}
-		parsed, err := pki.ParseIdentities(data, a.pluginUI(), a.passphrase(f), func() ([]byte, error) {
-			return os.ReadFile(f + ".pub")
-		})
+		return ids, nil
+	}
+	for _, f := range []string{
+		filepath.Join(a.home, ".config", "chalkos", "age.key"),
+		filepath.Join(a.home, ".ssh", "id_ed25519"),
+		filepath.Join(a.home, ".ssh", "id_rsa"),
+	} {
+		if _, err := os.Stat(f); err != nil {
+			continue
+		}
+		parsed, err := a.parseIdentity(ctx, f)
 		if err != nil {
-			return nil, fmt.Errorf("identity %s: %w", f, err)
+			// A default key may be one age cannot use, such as an encrypted SSH key in the old
+			// format without its .pub; another one may still decrypt the file.
+			fmt.Fprintf(a.stderr, "chalkctl: warning: skipping %v\n", err)
+			continue
 		}
 		ids = append(ids, parsed...)
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("the secrets file is encrypted and no usable age identity was found; pass --identity")
+	}
+	return ids, nil
+}
+
+// parseIdentity parses an identity file. Its errors name the file, never its contents.
+func (a *app) parseIdentity(ctx context.Context, file string) ([]age.Identity, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pki.ParseIdentities(data, a.pluginUI(), a.passphrase(ctx, file), func() ([]byte, error) {
+		return os.ReadFile(file + ".pub")
+	})
+	if err != nil {
+		return nil, fmt.Errorf("identity %s: %w", file, err)
 	}
 	return ids, nil
 }
@@ -106,17 +125,58 @@ func (a *app) pluginUI() *plugin.ClientUI {
 }
 
 // passphrase asks for an SSH key's passphrase on the terminal.
-func (a *app) passphrase(file string) pki.SSHPassphrase {
+func (a *app) passphrase(ctx context.Context, file string) pki.SSHPassphrase {
 	return func() ([]byte, error) {
-		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-		if err != nil {
+		pass, err := a.readSecret(ctx, fmt.Sprintf("Passphrase for %s: ", file))
+		if errors.Is(err, errNoTerminal) {
 			return nil, fmt.Errorf("%s is encrypted and there is no terminal to ask for its passphrase", file)
 		}
-		defer tty.Close()
-		fmt.Fprintf(tty, "Passphrase for %s: ", file)
-		pass, err := term.ReadPassword(int(tty.Fd()))
-		fmt.Fprintln(tty)
 		return pass, err
+	}
+}
+
+var (
+	errNoTerminal  = errors.New("there is no terminal")
+	errInterrupted = errors.New("interrupted")
+)
+
+// ttySecret asks for a secret on the terminal without echoing it.
+func ttySecret(ctx context.Context, prompt string) ([]byte, error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil, errNoTerminal
+	}
+	defer tty.Close()
+	fd := int(tty.Fd())
+	state, err := term.GetState(fd)
+	if err != nil {
+		return nil, errNoTerminal
+	}
+	fmt.Fprint(tty, prompt)
+	secret, err := readInterruptible(ctx, func() ([]byte, error) { return term.ReadPassword(fd) }, func() { term.Restore(fd, state) })
+	fmt.Fprintln(tty)
+	return secret, err
+}
+
+// readInterruptible returns what read returns, or errInterrupted once ctx ends. chalkctl handles
+// SIGINT, so Ctrl-C does not end term.ReadPassword, which cannot be cancelled either: the read is
+// abandoned and restore turns echo back on.
+func readInterruptible(ctx context.Context, read func() ([]byte, error), restore func()) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		data, err := read()
+		done <- result{data, err}
+	}()
+	select {
+	case r := <-done:
+		return r.data, r.err
+	case <-ctx.Done():
+		restore()
+		return nil, errInterrupted
 	}
 }
 
@@ -140,7 +200,7 @@ func (a *app) recoveryKey(ctx context.Context, args []string) error {
 	if _, err := c.node(pos[0]); err != nil {
 		return err
 	}
-	secrets, err := a.loadSecrets(sf, cf.flake)
+	secrets, err := a.loadSecrets(ctx, sf, cf.flake)
 	if err != nil {
 		return err
 	}
@@ -217,13 +277,30 @@ func (a *app) genSecrets(args []string) error {
 
 // writeNew writes a file that must not exist yet.
 func writeNew(path string, data []byte, perm fs.FileMode) error {
+	return createNew(path, perm, func(w io.Writer) error {
+		_, err := w.Write(data)
+		return err
+	})
+}
+
+// createNew creates a file that must not exist yet with what write writes. It removes the file
+// again when it cannot be written completely: a partial secrets file would read as corrupt, and
+// would stop the next run from generating the file.
+func createNew(path string, perm fs.FileMode, write func(w io.Writer) error) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
+	err = write(f)
+	if err == nil {
+		err = f.Sync()
 	}
-	return f.Close()
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(path)
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
 }

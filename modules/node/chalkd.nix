@@ -42,6 +42,7 @@ in
     # Tools Install, ApplyIdentity and ResetVolume run; repart formats with the mkfs tools.
     path = [
       config.systemd.package
+      pkgs.cryptsetup
       pkgs.util-linux
       pkgs.e2fsprogs
       pkgs.xfsprogs

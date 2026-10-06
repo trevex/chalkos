@@ -29,6 +29,10 @@ func (f *fakeRunner) RunWithEnv(ctx context.Context, _ []string, name string, ar
 	return f.Run(ctx, name, args...)
 }
 
+func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, args ...string) ([]byte, error) {
+	return f.Run(ctx, name, args...)
+}
+
 func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
 	line := strings.Join(append([]string{name}, args...), " ")
 	f.calls = append(f.calls, line)

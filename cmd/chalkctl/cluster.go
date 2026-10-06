@@ -82,7 +82,11 @@ func (a *app) loadCluster(ctx context.Context, f clusterFlags) (*cluster, error)
 			return nil, fmt.Errorf("the flake %s defines the clusters %s; choose one with --cluster", f.flake, strings.Join(names, ", "))
 		}
 	}
-	attr := "chalkos." + name
+	quoted, err := attrName(name)
+	if err != nil {
+		return nil, err
+	}
+	attr := "chalkos." + quoted
 	out, err := a.nix(ctx, "eval", "--json", f.flake+"#"+attr+".manifest")
 	if err != nil {
 		return nil, err
@@ -116,11 +120,48 @@ func (a *app) buildImage(ctx context.Context, c *cluster, role string) (string, 
 	if c.attr == "" {
 		return "", errors.New("the manifest was read from a file, so the role image cannot be built; pass --image")
 	}
-	out, err := a.nix(ctx, "build", "--no-link", "--print-out-paths", c.flags.flake+"#"+c.attr+"."+r.Image)
+	image := r.Image
+	// The manifest names the image by the role's name unquoted, which splits a name with dots.
+	if image == "roles."+role+".image" {
+		quoted, err := attrName(role)
+		if err != nil {
+			return "", err
+		}
+		image = "roles." + quoted + ".image"
+	}
+	out, err := a.nix(ctx, "build", "--no-link", "--print-out-paths", c.flags.flake+"#"+c.attr+"."+image+"^out")
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+	paths := strings.Fields(string(out))
+	if len(paths) != 1 {
+		return "", fmt.Errorf("nix build printed %d paths for the image of role %s, want one", len(paths), role)
+	}
+	if _, err := os.Stat(paths[0]); err != nil {
+		return "", fmt.Errorf("the image of role %s: %w", role, err)
+	}
+	return paths[0], nil
+}
+
+// attrName quotes a name as one component of a flake attribute path, so dots do not split it.
+// Nix percent-decodes the fragment of a flake reference, so every byte but the URL-unreserved
+// ones is percent-encoded. A Nix attribute path has no escape for a double quote.
+func attrName(name string) (string, error) {
+	if strings.Contains(name, `"`) {
+		return "", fmt.Errorf("the name %q contains a double quote, which a Nix attribute path cannot express", name)
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("-._~", c) >= 0 {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	b.WriteByte('"')
+	return b.String(), nil
 }
 
 // staticAddresses returns the addresses of the node's networkd networks, in network name order,

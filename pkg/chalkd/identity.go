@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -77,6 +78,9 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 		return nil, failed(connect.CodeFailedPrecondition, "the identity changes storage destructively: %s", strings.Join(destructive, "; "))
 	}
 	if len(changes) > 0 {
+		if err := s.verifyFallback(ctx, recorded, d.section, pins, req.Msg.FallbackSecret); err != nil {
+			return nil, err
+		}
 		if err := s.applyStorage(ctx, recorded, d.section, req.Msg.FallbackSecret, changes); err != nil {
 			return nil, err
 		}
@@ -182,15 +186,135 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 // checkFallback refuses before anything changes when a volume the section adds to recorded is
 // encrypted and the fallback secret it would be enrolled with is missing.
 func checkFallback(recorded, section storage.Section, secret string) error {
-	if section.Fallback == storage.FallbackNone || secret != "" {
+	if secret != "" {
 		return nil
+	}
+	if name := enrolled(recorded, section); name != "" {
+		return failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but no fallback secret was sent", name, section.Fallback)
+	}
+	return nil
+}
+
+// enrolled returns the first volume the section adds to recorded that gets the fallback
+// keyslot, or "" when there is none.
+func enrolled(recorded, section storage.Section) string {
+	if section.Fallback == storage.FallbackNone {
+		return ""
 	}
 	for _, name := range sortedNames(section.Volumes) {
 		if _, ok := recorded.Volumes[name]; !ok && section.Volumes[name].Encryption == storage.EncryptionTPM2 {
-			return failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but no fallback secret was sent", name, section.Fallback)
+			return name
 		}
 	}
+	return ""
+}
+
+// verifyFallback refuses before anything changes when the fallback secret about to be enrolled
+// on the volumes the section adds to kept differs from the node's existing one, so a mistyped
+// password cannot leave a volume whose fallback differs from the others'. The secret is checked
+// against the password keyslot of STATE, else VAR, else another encrypted volume of kept; a
+// node with no such keyslot has nothing to check against.
+func (s *Server) verifyFallback(ctx context.Context, kept, section storage.Section, pins storage.Pins, secret string) error {
+	if err := checkFallback(kept, section, secret); err != nil {
+		return err
+	}
+	if enrolled(kept, section) == "" || kept.Fallback == storage.FallbackNone {
+		return nil
+	}
+	for _, dev := range s.encryptedDevices(kept, pins) {
+		dump, err := s.Run.Run(ctx, "cryptsetup", "luksDump", "--dump-json-metadata", dev)
+		if err != nil {
+			return failed(connect.CodeFailedPrecondition, "read the keyslots of %s to check the fallback secret: %v", dev, err)
+		}
+		slots, err := passwordSlots(dump)
+		if err != nil {
+			return failed(connect.CodeFailedPrecondition, "read the keyslots of %s to check the fallback secret: %v", dev, err)
+		}
+		if len(slots) == 0 {
+			continue
+		}
+		for _, slot := range slots {
+			// The secret goes on standard input: arguments are visible to every process, and
+			// cryptsetup takes a key file from stdin as it is, without trimming a newline.
+			_, err := s.Run.RunWithInput(ctx, []byte(secret), "cryptsetup", "open", "--test-passphrase", "--key-slot="+slot, "--key-file=-", dev)
+			var te *node.ToolError
+			switch {
+			case err == nil:
+				return nil
+			case errors.As(err, &te) && te.Code == 2:
+				// cryptsetup's status for a passphrase no keyslot accepts.
+				continue
+			default:
+				return failed(connect.CodeFailedPrecondition, "check the fallback secret against %s: %v", dev, err)
+			}
+		}
+		return failed(connect.CodeInvalidArgument, "the fallback secret does not match the node's existing fallback keyslot")
+	}
 	return nil
+}
+
+// encryptedDevices lists the LUKS devices of kept that carry the fallback keyslot, in the order
+// the fallback secret is checked against them.
+func (s *Server) encryptedDevices(kept storage.Section, pins storage.Pins) []string {
+	var devices []string
+	if kept.Encryption == storage.EncryptionTPM2 {
+		devices = append(devices, filepath.Join(s.Paths.BootPartitions, "state"))
+	}
+	names := []string{storage.VarVolume}
+	for _, name := range sortedNames(kept.Volumes) {
+		if name != storage.VarVolume {
+			names = append(names, name)
+		}
+	}
+	for _, name := range names {
+		v, ok := kept.Volumes[name]
+		if !ok || v.Encryption != storage.EncryptionTPM2 {
+			continue
+		}
+		if v.Disk == storage.SystemDisk {
+			devices = append(devices, filepath.Join(s.Paths.BootPartitions, v.Label))
+		} else if uuid := pins.Disks[v.Disk].Partitions[name]; uuid != "" {
+			devices = append(devices, "/dev/disk/by-partuuid/"+uuid)
+		}
+	}
+	return devices
+}
+
+// passwordSlots returns the keyslots of a LUKS2 header that no token refers to, in numeric
+// order. systemd-cryptenroll counts them as password slots: the fallback keyslot is one, the
+// TPM2 keyslot has its token.
+func passwordSlots(dump []byte) ([]string, error) {
+	var header struct {
+		Keyslots map[string]json.RawMessage `json:"keyslots"`
+		Tokens   map[string]struct {
+			Keyslots []string `json:"keyslots"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal(dump, &header); err != nil {
+		return nil, fmt.Errorf("parse the LUKS2 header: %w", err)
+	}
+	tokened := map[string]bool{}
+	for _, t := range header.Tokens {
+		for _, slot := range t.Keyslots {
+			tokened[slot] = true
+		}
+	}
+	var slots []int
+	for slot := range header.Keyslots {
+		n, err := strconv.Atoi(slot)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("the LUKS2 header has the keyslot %q", slot)
+		}
+		if !tokened[slot] {
+			slots = append(slots, n)
+		}
+	}
+	sort.Ints(slots)
+	var out []string
+	for _, n := range slots {
+		out = append(out, strconv.Itoa(n))
+	}
+	return out, nil
 }
 
 func (s *Server) stopUnits(ctx context.Context, units []string) error {
@@ -280,7 +404,7 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 		}
 	}
 	// Every volume created after the deletion needs the secret, so check it before deleting.
-	if err := checkFallback(without, d.section, req.Msg.FallbackSecret); err != nil {
+	if err := s.verifyFallback(ctx, without, d.section, pins, req.Msg.FallbackSecret); err != nil {
 		return nil, err
 	}
 

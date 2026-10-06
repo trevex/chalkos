@@ -39,6 +39,18 @@ type fakeRunner struct {
 	rules []rule
 	calls []string
 	envs  map[string][]string
+	// inputs holds what commands received on standard input, by command line.
+	inputs map[string]string
+}
+
+func (f *fakeRunner) RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
+	f.mu.Lock()
+	if f.inputs == nil {
+		f.inputs = map[string]string{}
+	}
+	f.inputs[strings.Join(append([]string{name}, args...), " ")] = string(input)
+	f.mu.Unlock()
+	return f.RunWithEnv(ctx, nil, name, args...)
 }
 
 type rule struct {

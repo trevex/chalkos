@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http/httptest"
@@ -68,6 +69,9 @@ type testApp struct {
 	stdout   *bytes.Buffer
 	stderr   *bytes.Buffer
 	manifest *manifest.Manifest
+	// prompts records what chalkctl asked on the terminal; answers are given in order.
+	prompts []string
+	answers []string
 }
 
 func newTestApp(t *testing.T) *testApp {
@@ -91,6 +95,15 @@ func newTestApp(t *testing.T) *testApp {
 		stderr: ta.stderr,
 		nix:    func(context.Context, ...string) ([]byte, error) { return nil, errors.New("nix is not available") },
 		home:   dir,
+	}
+	ta.readSecret = func(_ context.Context, prompt string) ([]byte, error) {
+		ta.prompts = append(ta.prompts, prompt)
+		if len(ta.answers) == 0 {
+			return nil, errNoTerminal
+		}
+		answer := ta.answers[0]
+		ta.answers = ta.answers[1:]
+		return []byte(answer), nil
 	}
 	return ta
 }
@@ -348,10 +361,13 @@ func TestPasswordFileTrimsOneNewline(t *testing.T) {
 	node := ta.manifest.Nodes["n1"]
 	node.Identity.Storage.Fallback = "password"
 	tg := &target{cluster: &cluster{manifest: ta.manifest}, name: "n1", node: node, secrets: ta.secrets}
-	for content, want := range map[string]string{"pw\n": "pw", "pw \n\n": "pw \n", "pw": "pw"} {
+	for content, want := range map[string]string{
+		"pw\n": "pw", "pw \n\n": "pw \n", "pw": "pw",
+		"pw\r\n": "pw", "pw\r": "pw", "pw\r\r\n": "pw\r", "pw\n\r\n": "pw\n",
+	} {
 		path := filepath.Join(ta.dir, "password")
 		writeFile(t, path, content)
-		if got, err := ta.fallbackSecret(tg, path, true); err != nil || got != want {
+		if got, err := ta.fallbackSecret(context.Background(), tg, path, true); err != nil || got != want {
 			t.Errorf("password from %q = %q, %v, want %q", content, got, err, want)
 		}
 	}
@@ -397,6 +413,10 @@ func (f *fakeRunner) RunWithEnv(_ context.Context, _ []string, name string, args
 	return nil, nil
 }
 
+func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, args ...string) ([]byte, error) {
+	return f.RunWithEnv(ctx, nil, name, args...)
+}
+
 func TestApplyIdentityAndStatus(t *testing.T) {
 	ta := newTestApp(t)
 	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
@@ -415,7 +435,7 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.calls, []string{"networkctl reload"}) {
+	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "networkctl reload"}) {
 		t.Errorf("node ran %v", r.calls)
 	}
 	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); !bytes.Equal(got, current) {
@@ -450,51 +470,6 @@ func TestApplyIdentityNamesResetCommand(t *testing.T) {
 	}
 }
 
-func TestInstalledNodeRequiresOSCA(t *testing.T) {
-	ta := newTestApp(t)
-	s, _ := installedNode(t, ta, []byte(`{}`))
-	addr := ta.startNode(t, s)
-	// Secrets of another cluster: the node's certificate is not from their CA.
-	other := newTestApp(t)
-	err := other.run(context.Background(), other.args([]string{"status", "n1"}, addr))
-	if err == nil {
-		t.Fatal("trusted a node whose certificate another CA issued")
-	}
-}
-
-func TestLoadClusterEvaluatesFlake(t *testing.T) {
-	ta := newTestApp(t)
-	var calls []string
-	ta.nix = func(_ context.Context, args ...string) ([]byte, error) {
-		calls = append(calls, strings.Join(args, " "))
-		switch {
-		case strings.HasSuffix(args[2], "#chalkos"):
-			return []byte(`["lab"]`), nil
-		case strings.HasSuffix(args[2], "#chalkos.lab.manifest"):
-			return []byte(testManifest), nil
-		case args[0] == "build":
-			return []byte("/nix/store/x-chalkos\n"), nil
-		}
-		return nil, errors.New("unexpected")
-	}
-	c, err := ta.loadCluster(context.Background(), clusterFlags{flake: "/src/lab"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err := ta.buildImage(context.Background(), c, "test")
-	if err != nil || dir != "/nix/store/x-chalkos" {
-		t.Fatalf("image = %q, %v", dir, err)
-	}
-	want := []string{
-		"eval --json /src/lab#chalkos --apply builtins.attrNames",
-		"eval --json /src/lab#chalkos.lab.manifest",
-		"build --no-link --print-out-paths /src/lab#chalkos.lab.roles.test.image",
-	}
-	if !reflect.DeepEqual(calls, want) {
-		t.Errorf("nix calls = %v, want %v", calls, want)
-	}
-}
-
 func TestEndpointNeedsAnAddress(t *testing.T) {
 	if _, err := endpoint("", "n2", manifest.Identity{}); err == nil || !strings.Contains(err.Error(), "--endpoint") {
 		t.Errorf("err = %v", err)
@@ -504,5 +479,345 @@ func TestEndpointNeedsAnAddress(t *testing.T) {
 		"10-a": map[string]any{"address": []any{"10.0.0.11/24"}},
 	}}}); got != "10.0.0.11" {
 		t.Errorf("endpoint = %q, want the first network's address", got)
+	}
+}
+
+// editManifest changes the test cluster's manifest and writes it where --manifest reads it.
+func (ta *testApp) editManifest(t *testing.T, edit func(m *manifest.Manifest)) {
+	t.Helper()
+	edit(ta.manifest)
+	data, err := json.Marshal(ta.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(ta.dir, "manifest.json"), string(data))
+}
+
+func TestInstalledNodeRequiresOSCA(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatalf("the node does not accept this cluster's admin: %v", err)
+	}
+
+	// This cluster's admin certificate, which the node accepts, but another cluster's OS CA:
+	// chalkctl itself must refuse the node's certificate.
+	other := ta.secrets
+	other.OSCA = newTestApp(t).secrets.OSCA
+	data, _ := other.Encode()
+	otherSecrets := filepath.Join(ta.dir, "other", "secrets.json")
+	writeFile(t, otherSecrets, string(data))
+	err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--secrets", otherSecrets}, addr))
+	if err == nil || !strings.Contains(err.Error(), "x509") || !strings.Contains(err.Error(), "unknown authority") {
+		t.Fatalf("err = %v, want the node's certificate refused as signed by an unknown authority", err)
+	}
+
+	// The node's certificate names n1, so it cannot pass for n2.
+	ta.editManifest(t, func(m *manifest.Manifest) {
+		n2 := m.Nodes["n1"]
+		n2.Identity.Hostname = "n2"
+		m.Nodes["n2"] = n2
+	})
+	err = ta.run(context.Background(), ta.args([]string{"status", "n2"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "x509") || !strings.Contains(err.Error(), "not n2") {
+		t.Fatalf("err = %v, want the node's certificate refused for the name n2", err)
+	}
+}
+
+func TestLoadClusterEvaluatesFlake(t *testing.T) {
+	ta := newTestApp(t)
+	// Dots in cluster and role names are part of the names, not attribute separators.
+	ta.editManifest(t, func(m *manifest.Manifest) {
+		m.Roles = map[string]manifest.Role{"web.v2": {Image: "roles.web.v2.image"}}
+	})
+	manifestJSON, _ := json.Marshal(ta.manifest)
+	imageDir := t.TempDir()
+	var calls []string
+	ta.nix = func(_ context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, " "))
+		switch {
+		case strings.HasSuffix(args[2], "#chalkos"):
+			return []byte(`["home.lab"]`), nil
+		case strings.HasSuffix(args[2], `#chalkos."home.lab".manifest`):
+			return manifestJSON, nil
+		case args[0] == "build":
+			return []byte(imageDir + "\n"), nil
+		}
+		return nil, errors.New("unexpected")
+	}
+	c, err := ta.loadCluster(context.Background(), clusterFlags{flake: "/src/lab"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := ta.buildImage(context.Background(), c, "web.v2")
+	if err != nil || dir != imageDir {
+		t.Fatalf("image = %q, %v", dir, err)
+	}
+	want := []string{
+		"eval --json /src/lab#chalkos --apply builtins.attrNames",
+		`eval --json /src/lab#chalkos."home.lab".manifest`,
+		`build --no-link --print-out-paths /src/lab#chalkos."home.lab".roles."web.v2".image^out`,
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Errorf("nix calls = %v, want %v", calls, want)
+	}
+}
+
+func TestAttrName(t *testing.T) {
+	for name, want := range map[string]string{
+		"lab":      `"lab"`,
+		"home.lab": `"home.lab"`,
+		"a b#c?d":  `"a%20b%23c%3Fd"`,
+		`50%\x`:    `"50%25%5Cx"`,
+		"ä":        `"%C3%A4"`,
+	} {
+		if got, err := attrName(name); err != nil || got != want {
+			t.Errorf("attrName(%q) = %s, %v, want %s", name, got, err, want)
+		}
+	}
+	if _, err := attrName(`a"b`); err == nil {
+		t.Error(`accepted a name with ", which a Nix attribute path cannot quote`)
+	}
+}
+
+func TestBuildImageChecksOutputPath(t *testing.T) {
+	ta := newTestApp(t)
+	c := &cluster{flags: clusterFlags{flake: "/src/lab"}, attr: `chalkos."lab"`, manifest: ta.manifest}
+	for name, out := range map[string]string{
+		"several paths":  t.TempDir() + "\n" + t.TempDir() + "\n",
+		"no path":        "\n",
+		"a missing path": filepath.Join(ta.dir, "missing") + "\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			ta.nix = func(context.Context, ...string) ([]byte, error) { return []byte(out), nil }
+			if dir, err := ta.buildImage(context.Background(), c, "test"); err == nil {
+				t.Errorf("image = %q, want an error", dir)
+			}
+		})
+	}
+}
+
+func TestPasswordPromptConfirms(t *testing.T) {
+	ta := newTestApp(t)
+	node := ta.manifest.Nodes["n1"]
+	node.Identity.Storage.Fallback = "password"
+	tg := &target{cluster: &cluster{manifest: ta.manifest}, name: "n1", node: node, secrets: ta.secrets}
+
+	ta.answers = []string{"secret one", "secret one"}
+	if got, err := ta.fallbackSecret(context.Background(), tg, "", true); err != nil || got != "secret one" {
+		t.Errorf("password = %q, %v", got, err)
+	}
+	if len(ta.prompts) != 2 {
+		t.Errorf("prompts = %q, want the password asked twice", ta.prompts)
+	}
+
+	ta.prompts, ta.answers = nil, []string{"secret one", "secret on"}
+	if _, err := ta.fallbackSecret(context.Background(), tg, "", true); err == nil || !strings.Contains(err.Error(), "differ") {
+		t.Errorf("err = %v, want the typo noticed", err)
+	}
+
+	ta.prompts, ta.answers = nil, nil
+	if _, err := ta.fallbackSecret(context.Background(), tg, "", true); err == nil || !strings.Contains(err.Error(), "--password-file") {
+		t.Errorf("err = %v, want --password-file suggested without a terminal", err)
+	}
+}
+
+// withPassword gives n1 the password fallback and the volume data, encrypted as given.
+func withPassword(t *testing.T, ta *testApp, encryption string) {
+	ta.editManifest(t, func(m *manifest.Manifest) {
+		n := m.Nodes["n1"]
+		n.Identity.Storage.Fallback = "password"
+		n.Identity.Storage.Disks[storage.SystemDisk].Repart["60-data.conf"] = "[Partition]\nLabel=data\n"
+		n.Identity.Storage.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "data", Format: "ext4", MountPoint: "/srv/data", Encryption: encryption, Size: "1G"}
+		m.Nodes["n1"] = n
+	})
+}
+
+func TestApplyIdentityAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
+	ta := newTestApp(t)
+	ta.editManifest(t, func(m *manifest.Manifest) {
+		n := m.Nodes["n1"]
+		n.Identity.Storage.Fallback = "password"
+		m.Nodes["n1"] = n
+	})
+	s, r := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+
+	// Nothing to enroll: the password is not asked for.
+	if err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if len(ta.prompts) != 0 {
+		t.Errorf("asked %q for an identity that enrolls nothing", ta.prompts)
+	}
+
+	// The new encrypted volume gets the password: it is asked twice, and a typo stops the
+	// command before the identity is sent.
+	withPassword(t, ta, storage.EncryptionTPM2)
+	r.calls = nil
+	ta.answers = []string{"right", "wrong"}
+	err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "differ") {
+		t.Fatalf("err = %v, want the typo noticed", err)
+	}
+	if len(ta.prompts) != 2 || !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager"}) {
+		t.Errorf("prompts = %q, node ran %v", ta.prompts, r.calls)
+	}
+}
+
+func TestStorageResetAsksForPasswordOnlyForEncryptedVolume(t *testing.T) {
+	for _, c := range []struct {
+		encryption string
+		prompts    int
+	}{{storage.EncryptionNone, 0}, {storage.EncryptionTPM2, 2}} {
+		t.Run(c.encryption, func(t *testing.T) {
+			ta := newTestApp(t)
+			withPassword(t, ta, c.encryption)
+			s, _ := installedNode(t, ta, []byte(`{}`))
+			addr := ta.startNode(t, s)
+			ta.answers = []string{"right", "wrong"}
+			// The node fails to find the volume's partition; only the prompts matter here.
+			ta.run(context.Background(), ta.args([]string{"storage", "reset", "n1", "data"}, addr))
+			if len(ta.prompts) != c.prompts {
+				t.Errorf("prompts = %q, want %d", ta.prompts, c.prompts)
+			}
+		})
+	}
+}
+
+func TestFallbackNeeded(t *testing.T) {
+	section := storage.Section{Fallback: "password", Volumes: map[string]storage.Volume{
+		"var":   {Encryption: storage.EncryptionTPM2},
+		"data":  {Encryption: storage.EncryptionTPM2},
+		"cache": {Encryption: storage.EncryptionNone},
+	}}
+	for _, c := range []struct {
+		existing []string
+		reset    string
+		want     bool
+	}{
+		{[]string{"var", "data", "cache"}, "", false},
+		{[]string{"var", "cache"}, "", true},
+		{[]string{"var", "data"}, "", false},
+		{[]string{"var", "data", "cache"}, "data", true},
+		{[]string{"var", "data", "cache"}, "cache", false},
+	} {
+		if got := fallbackNeeded(section, c.existing, c.reset); got != c.want {
+			t.Errorf("fallbackNeeded(existing %v, reset %q) = %v, want %v", c.existing, c.reset, got, c.want)
+		}
+	}
+	section.Fallback = storage.FallbackNone
+	if fallbackNeeded(section, nil, "data") {
+		t.Error("needed a secret for a node without fallback")
+	}
+}
+
+func TestReadInterruptible(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	release := make(chan struct{})
+	defer close(release)
+	restored := false
+	done := make(chan error)
+	go func() {
+		_, err := readInterruptible(ctx, func() ([]byte, error) { <-release; return []byte("late"), nil }, func() { restored = true })
+		done <- err
+	}()
+	cancel()
+	if err := <-done; !errors.Is(err, errInterrupted) || !restored {
+		t.Errorf("err = %v, restored = %v, want an interruption that restores the terminal", err, restored)
+	}
+	if exitStatus(fmt.Errorf("read: %w", errInterrupted)) != 130 {
+		t.Error("an interrupted prompt does not exit with status 130")
+	}
+
+	got, err := readInterruptible(context.Background(), func() ([]byte, error) { return []byte("pw"), nil }, func() { t.Error("restored after a completed read") })
+	if err != nil || string(got) != "pw" {
+		t.Errorf("read = %q, %v", got, err)
+	}
+}
+
+func TestExitStatus(t *testing.T) {
+	for err, want := range map[error]int{nil: 0, errUsage: 2, errors.New("x"): 1, errInterrupted: 130} {
+		if got := exitStatus(err); got != want {
+			t.Errorf("exitStatus(%v) = %d, want %d", err, got, want)
+		}
+	}
+}
+
+func TestDefaultIdentitiesSkipUnreadable(t *testing.T) {
+	ta := newTestApp(t)
+	id, _ := age.GenerateX25519Identity()
+	writeFile(t, filepath.Join(ta.dir, ".config", "chalkos", "age.key"), id.String()+"\n")
+	// An encrypted old-format SSH key without its .pub cannot be used.
+	broken := filepath.Join(ta.dir, ".ssh", "id_rsa")
+	writeFile(t, broken, "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nsecret material\n-----END RSA PRIVATE KEY-----\n")
+	ids, err := ta.ageIdentities(context.Background(), nil)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("identities = %v, %v, want the age key", ids, err)
+	}
+	warning := ta.stderr.String()
+	if !strings.Contains(warning, broken) || strings.Contains(warning, "secret material") || strings.Count(warning, "\n") != 1 {
+		t.Errorf("warning = %q, want one line naming the file", warning)
+	}
+
+	// No default identity loads.
+	os.Remove(filepath.Join(ta.dir, ".config", "chalkos", "age.key"))
+	if _, err := ta.ageIdentities(context.Background(), nil); err == nil {
+		t.Error("no error without a usable identity")
+	}
+	// An identity named on the command line must load.
+	if _, err := ta.ageIdentities(context.Background(), []string{broken}); err == nil || !strings.Contains(err.Error(), broken) {
+		t.Errorf("err = %v, want the named identity's failure", err)
+	}
+}
+
+func TestSignedCopyCleansUp(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+	dir := t.TempDir()
+	raw := filepath.Join(dir, "chalkos.raw")
+	writeFile(t, raw, "image")
+	for name, src := range map[string]string{
+		"missing image":    filepath.Join(dir, "missing.raw"),
+		"unreadable image": dir,
+		// Signing fails: there is no repart-output.json next to the image.
+		"signing fails": raw,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := signedCopy(context.Background(), src, "key.pem", "cert.pem"); err == nil {
+				t.Fatal("no error")
+			}
+			left, _ := filepath.Glob(filepath.Join(cache, "chalkctl", "*"))
+			if len(left) != 0 {
+				t.Errorf("left %v behind", left)
+			}
+		})
+	}
+	if _, err := os.Stat(filepath.Join(cache, "chalkctl")); err != nil {
+		t.Errorf("the copy was not made in the cache directory: %v", err)
+	}
+}
+
+func TestCreateNewRemovesPartialFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets.json")
+	err := createNew(path, 0o600, func(w io.Writer) error {
+		w.Write([]byte("half a sec"))
+		return errors.New("disk full")
+	})
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the partial file is left: %v", err)
+	}
+	if err := writeNew(path, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeNew(path, []byte("other"), 0o600); err == nil {
+		t.Error("overwrote an existing file")
+	}
+	if got, _ := os.ReadFile(path); string(got) != "data" {
+		t.Errorf("file = %q, want the existing file kept", got)
 	}
 }
