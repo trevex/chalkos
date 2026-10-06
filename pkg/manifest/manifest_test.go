@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 func TestDecodeGoldenManifest(t *testing.T) {
@@ -39,6 +41,20 @@ func TestDecodeGoldenManifest(t *testing.T) {
 	}
 	if rack.Location != "rack-a/u14" {
 		t.Errorf("w1 rack extension location = %q", rack.Location)
+	}
+
+	if got := m.Nodes["cp1"].Identity.Storage.Disks["system"].Ref.Path; got != "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001" {
+		t.Errorf("cp1 system disk = %q", got)
+	}
+	st := w1.Identity.Storage
+	if got, want := st.Disks["longhorn"].Ref, (storage.Ref{Selector: storage.Selector{Model: "Samsung SSD 870*", Type: "ssd"}}); got != want {
+		t.Errorf("w1 longhorn disk = %+v, want %+v", got, want)
+	}
+	if got, want := st.Volumes["longhorn"], (storage.Volume{Disk: "longhorn", Label: "longhorn", Format: "xfs", MountPoint: "/var/lib/longhorn", Encryption: "tpm2"}); got != want {
+		t.Errorf("w1 longhorn volume = %+v, want %+v", got, want)
+	}
+	if st.Volumes["var"].Size != "200G" || st.Fallback != "recovery-key" {
+		t.Errorf("w1 storage = %+v", st)
 	}
 }
 

@@ -2,6 +2,7 @@
 { config, lib, ... }:
 let
   cfg = config.chalkos;
+  storage = import ../storage.nix { inherit lib; };
   coreNodeOptions = [
     "role"
     "hostname"
@@ -13,10 +14,27 @@ let
   ];
   strip = attrs: removeAttrs attrs [ "_module" ];
 
-  node = _: n: {
+  renderStorage =
+    name: n:
+    let
+      errors = storage.errors n.storage;
+    in
+    if errors != [ ] then
+      throw "chalkos.nodes.${name}.storage is invalid:\n${
+        lib.concatMapStringsSep "\n" (e: "- ${e}") errors
+      }"
+    else
+      storage.render {
+        cluster = cfg.cluster.name;
+        node = name;
+        inherit (n) storage;
+      };
+
+  node = name: n: {
     inherit (n) role;
     identity = {
       inherit (n) hostname network labels;
+      storage = renderStorage name n;
       taints = map strip n.taints;
       extensions = removeAttrs n coreNodeOptions;
     };

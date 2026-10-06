@@ -109,6 +109,12 @@ let
         };
       }
     ]).nodes.n1.storage;
+  storageOf = c: c.manifest.nodes.n1.identity.storage;
+  # Node n1's rendered storage section with the given definitions.
+  nodeStorage = storage: storageOf (storageCluster [ { chalkos.nodes.n1.storage = storage; } ]);
+  invalidStorage = storage: fails (nodeStorage storage);
+  # Partition types hash the label; see modules/cluster/storage.nix.
+  varType = "65f335d7-a1f7-f6df-b954-a97d9a5db9e6";
 in
 lib.runTests {
   testRoleReadsClusterEndpoint = {
@@ -204,7 +210,7 @@ lib.runTests {
     expected = "roles.worker.image";
   };
   testManifestIdentity = {
-    expr = twoNodes.manifest.nodes.n1.identity;
+    expr = removeAttrs twoNodes.manifest.nodes.n1.identity [ "storage" ];
     expected = {
       hostname = "n1";
       network = { };
@@ -418,5 +424,296 @@ lib.runTests {
   testStorageNoWarningWhenEncrypted = {
     expr = (storageCluster [ ]).warnings;
     expected = [ ];
+  };
+  testStorageDefaultLayout = {
+    expr = nodeStorage { };
+    expected = {
+      disks.system = {
+        ref = "/dev/vda";
+        seed = "2bbba487-cd05-5f11-064a-2a1f1faff0e3";
+        repart."50-var.conf" = ''
+          [Partition]
+          Encrypt=tpm2
+          Format=ext4
+          Label=var
+          TPM2PCRs=7
+          Type=${varType}
+        '';
+      };
+      volumes.var = {
+        disk = "system";
+        label = "var";
+        format = "ext4";
+        mountPoint = "/var";
+        encryption = "tpm2";
+        size = null;
+      };
+      fallback = "recovery-key";
+    };
+  };
+  testStorageVarSize = {
+    expr = (nodeStorage { var.size = "8G"; }).disks.system.repart."50-var.conf";
+    expected = ''
+      [Partition]
+      Encrypt=tpm2
+      Format=ext4
+      Label=var
+      SizeMaxBytes=8G
+      SizeMinBytes=8G
+      TPM2PCRs=7
+      Type=${varType}
+    '';
+  };
+  testStorageUnencryptedVolume = {
+    expr =
+      (nodeStorage {
+        var.size = "8G";
+        volumes.plain = {
+          mountPoint = "/srv/plain";
+          encryption.mode = "none";
+        };
+      }).disks.system.repart."60-plain.conf";
+    expected = ''
+      [Partition]
+      Format=ext4
+      Label=plain
+      Type=47422e04-fdc4-6cef-975b-d2f7794454ed
+    '';
+  };
+  testStorageRawVolume = {
+    expr =
+      let
+        s = nodeStorage {
+          volumes.raw = {
+            size = "1G";
+            format = null;
+          };
+        };
+      in
+      {
+        definition = s.disks.system.repart."60-raw.conf";
+        volume = s.volumes.raw;
+      };
+    expected = {
+      definition = ''
+        [Partition]
+        Encrypt=tpm2
+        Label=raw
+        SizeMaxBytes=1G
+        SizeMinBytes=1G
+        TPM2PCRs=7
+        Type=357ddd11-f8dd-4a47-8d2b-9573d2595f0d
+      '';
+      volume = {
+        disk = "system";
+        label = "raw";
+        format = null;
+        mountPoint = null;
+        encryption = "tpm2";
+        size = "1G";
+      };
+    };
+  };
+  testStoragePassthrough = {
+    expr =
+      (nodeStorage {
+        volumes.data = {
+          size = "1G";
+          repart = {
+            Weight = 2000;
+            CopyFiles = [
+              "/a"
+              "/b"
+            ];
+          };
+        };
+      }).disks.system.repart."60-data.conf";
+    expected = ''
+      [Partition]
+      CopyFiles=/a
+      CopyFiles=/b
+      Encrypt=tpm2
+      Format=ext4
+      Label=data
+      SizeMaxBytes=1G
+      SizeMinBytes=1G
+      TPM2PCRs=7
+      Type=63dd1eb4-1dd2-0d0b-0c1e-27c204214ec8
+      Weight=2000
+    '';
+  };
+  testStorageVolumeOnOwnDisk = {
+    expr =
+      let
+        s = nodeStorage {
+          volumes.data = {
+            disk = {
+              serial = "chalk-data";
+              size = ">= 1G";
+            };
+            format = "xfs";
+            mountPoint = "/var/lib/data";
+          };
+        };
+      in
+      {
+        inherit (s.disks.data) ref seed;
+        files = lib.attrNames s.disks.data.repart;
+        volume = s.volumes.data;
+      };
+    expected = {
+      ref = {
+        serial = "chalk-data";
+        size = ">= 1G";
+      };
+      seed = "308311fb-9c22-3be4-b458-3ff560058604";
+      files = [ "10-data.conf" ];
+      volume = {
+        disk = "data";
+        label = "data";
+        format = "xfs";
+        mountPoint = "/var/lib/data";
+        encryption = "tpm2";
+        size = null;
+      };
+    };
+  };
+  testStorageNodeModeNone = {
+    expr =
+      let
+        s = nodeStorage {
+          encryption.mode = "none";
+          var.size = "8G";
+          volumes.secret = {
+            mountPoint = "/srv/secret";
+            encryption.mode = "tpm2";
+          };
+        };
+      in
+      {
+        var = s.volumes.var.encryption;
+        secret = s.volumes.secret.encryption;
+        varEncrypted = lib.hasInfix "Encrypt=" s.disks.system.repart."50-var.conf";
+      };
+    expected = {
+      var = "none";
+      secret = "tpm2";
+      varEncrypted = false;
+    };
+  };
+  testStorageVarModeOverride = {
+    expr = (nodeStorage { var.encryption.mode = "none"; }).volumes.var.encryption;
+    expected = "none";
+  };
+  testStorageFallback = {
+    expr = (nodeStorage { encryption.fallback = "password"; }).fallback;
+    expected = "password";
+  };
+  testStorageAllowsMountBelowVar = {
+    expr =
+      (nodeStorage {
+        volumes.data = {
+          size = "1G";
+          mountPoint = "/var/lib/data";
+        };
+      }).volumes.data.mountPoint;
+    expected = "/var/lib/data";
+  };
+  testStorageRejectsVolumeName = {
+    expr = map invalidStorage [
+      { volumes.Data.size = "1G"; }
+      { volumes."-data".size = "1G"; }
+      { volumes.${lib.concatStrings (lib.replicate 33 "a")}.size = "1G"; }
+      { volumes.var.size = "1G"; }
+      { volumes.state.size = "1G"; }
+    ];
+    expected = lib.replicate 5 true;
+  };
+  testStorageRejectsMountPoint = {
+    expr =
+      map
+        (
+          p:
+          invalidStorage {
+            volumes.data = {
+              size = "1G";
+              mountPoint = p;
+            };
+          }
+        )
+        [
+          "srv/data"
+          "/"
+          "/nix"
+          "/nix/store/x"
+          "/state"
+          "/state/x"
+          "/var"
+          "/srv/../nix"
+          "/srv/"
+        ];
+    expected = lib.replicate 9 true;
+  };
+  testStorageRejectsMountedRawOrSwap = {
+    expr = map invalidStorage [
+      {
+        volumes.data = {
+          size = "1G";
+          format = null;
+          mountPoint = "/srv/data";
+        };
+      }
+      {
+        volumes.swap = {
+          size = "1G";
+          format = "swap";
+          mountPoint = "/srv/swap";
+        };
+      }
+    ];
+    expected = [
+      true
+      true
+    ];
+  };
+  testStorageRejectsReservedRepartKeys = {
+    expr =
+      map
+        (
+          key:
+          invalidStorage {
+            volumes.data = {
+              size = "1G";
+              repart.${key} = "x";
+            };
+          }
+        )
+        [
+          "Type"
+          "Label"
+          "Encrypt"
+          "Format"
+          "SizeMinBytes"
+          "SizeMaxBytes"
+          "MountPoint"
+        ];
+    expected = lib.replicate 7 true;
+  };
+  testStorageRejectsTwoFillingVolumes = {
+    expr = invalidStorage { volumes.data = { }; };
+    expected = true;
+  };
+  testStorageRejectsSharedDisk = {
+    expr = map invalidStorage [
+      {
+        volumes.a.disk = "/dev/sdb";
+        volumes.b.disk = "/dev/sdb";
+      }
+      { volumes.a.disk = "/dev/vda"; }
+    ];
+    expected = [
+      true
+      true
+    ];
   };
 }

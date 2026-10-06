@@ -13,7 +13,10 @@
 
     w1 = {
       role = "worker";
-      storage.system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002";
+      storage = {
+        system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002";
+        var.size = "200G";
+      };
       labels."node.kubernetes.io/storage" = "ssd";
       taints = [
         {

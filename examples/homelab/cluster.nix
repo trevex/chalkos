@@ -11,7 +11,17 @@
   };
 
   chalkos.roles.controlplane = { };
-  chalkos.roles.worker = { };
+  chalkos.roles.worker = {
+    # Every worker carries a SATA SSD for Longhorn replicas next to its NVMe system disk.
+    storage.volumes.longhorn = {
+      disk = {
+        model = "Samsung SSD 870*";
+        type = "ssd";
+      };
+      format = "xfs";
+      mountPoint = "/var/lib/longhorn";
+    };
+  };
 
   chalkos.rack.enable = true;
 }

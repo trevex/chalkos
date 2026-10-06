@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // SchemaVersion is the manifest version this package understands.
@@ -42,10 +44,12 @@ type Node struct {
 
 // Identity is the node's identity without secrets, as delivered to the node.
 type Identity struct {
-	Hostname   string                     `json:"hostname"`
-	Network    map[string]any             `json:"network"`
-	Labels     map[string]string          `json:"labels"`
-	Taints     []Taint                    `json:"taints"`
+	Hostname string            `json:"hostname"`
+	Network  map[string]any    `json:"network"`
+	Labels   map[string]string `json:"labels"`
+	Taints   []Taint           `json:"taints"`
+	// Storage is how the node partitions, encrypts and mounts its disks.
+	Storage    storage.Section            `json:"storage"`
 	Extensions map[string]json.RawMessage `json:"extensions"`
 }
 

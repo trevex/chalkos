@@ -24,6 +24,21 @@
         },
         "labels": {},
         "taints": [],
+        "storage": {
+          "disks": {
+            "system": {
+              "ref": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001",
+              "seed": "4ddbee6c-635c-dcb9-bb95-26d82d7c4cff",
+              "repart": {
+                "50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"
+              }
+            }
+          },
+          "volumes": {
+            "var": { "disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null }
+          },
+          "fallback": "recovery-key"
+        },
         "extensions": { "rack": { "location": "rack-a/u12" } }
       }
     },
@@ -34,6 +49,29 @@
         "network": {},
         "labels": { "node.kubernetes.io/storage": "ssd" },
         "taints": [{ "key": "dedicated", "value": "storage", "effect": "NoSchedule" }],
+        "storage": {
+          "disks": {
+            "system": {
+              "ref": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002",
+              "seed": "94e63e0a-dc65-7786-02fb-a2e8001f4cfb",
+              "repart": {
+                "50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nSizeMaxBytes=200G\nSizeMinBytes=200G\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"
+              }
+            },
+            "longhorn": {
+              "ref": { "model": "Samsung SSD 870*", "type": "ssd" },
+              "seed": "7dc5cf32-67a9-6501-acce-377a47f9df6c",
+              "repart": {
+                "10-longhorn.conf": "[Partition]\nEncrypt=tpm2\nFormat=xfs\nLabel=longhorn\nTPM2PCRs=7\nType=4e6bd13b-2e2a-03b6-3fc9-fc66eae45cba\n"
+              }
+            }
+          },
+          "volumes": {
+            "var": { "disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": "200G" },
+            "longhorn": { "disk": "longhorn", "label": "longhorn", "format": "xfs", "mountPoint": "/var/lib/longhorn", "encryption": "tpm2", "size": null }
+          },
+          "fallback": "recovery-key"
+        },
         "extensions": { "rack": { "location": "rack-a/u14" } }
       }
     }
