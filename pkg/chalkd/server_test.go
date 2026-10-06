@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -123,8 +124,15 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 			StorageStatus:  filepath.Join(root, "run", "storage-status.json"),
 			MountInfo:      filepath.Join(root, "mountinfo"),
 		},
-		Run:       r,
-		Host:      h,
+		Run:  r,
+		Host: h,
+		Identity: identity.Loader{
+			Identity:    filepath.Join(root, "state", "identity.json"),
+			RunDir:      filepath.Join(root, "run", "chalkos"),
+			NetworkDir:  filepath.Join(root, "run", "network"),
+			Consumers:   filepath.Join(root, "consumers.json"),
+			SetHostname: func(string) error { return nil },
+		},
 		InPlace:   func(context.Context, install.Request) error { return errors.New("no install expected") },
 		FromMedia: func(context.Context, install.MediaRequest) error { return errors.New("no install expected") },
 		Journal: func(context.Context, string, bool) (io.ReadCloser, error) {
@@ -244,9 +252,10 @@ func TestAuthorisation(t *testing.T) {
 		codes map[string]map[string]connect.Code
 	}{
 		{"normal", normal, true, map[string]map[string]connect.Code{
-			pki.RoleReader:   {"Info": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition},
-			pki.RoleOperator: {"Reboot": 0},
-			pki.RoleAdmin:    {"Reboot": 0},
+			pki.RoleReader:   {"Info": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition},
+			pki.RoleOperator: {"Reboot": 0, "ApplyIdentity": connect.CodePermissionDenied},
+			// The identity "{}" lacks a storage section; refusing it means the call got through.
+			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "Reboot": 0},
 			// A node certificate carries no ClientAuth extended key usage, so presenting it as a
 			// client certificate fails the TLS handshake itself, before authorisation runs.
 			pki.RoleNode: {"Info": connect.CodeUnavailable},
@@ -254,7 +263,7 @@ func TestAuthorisation(t *testing.T) {
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
 			pki.RoleReader: {"Info": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition},
 			// A header without a target is refused after authorisation.
-			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument},
+			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[string]map[string]connect.Code{
 			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0},

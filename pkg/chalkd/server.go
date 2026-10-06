@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -62,9 +63,6 @@ func DefaultPaths() Paths {
 
 // Server implements the node API.
 type Server struct {
-	// Calls the server does not implement answer Unimplemented.
-	nodev1connect.UnimplementedNodeServiceHandler
-
 	Mode nodev1.Mode
 	// Installer is set on the installer image, which installs nodes onto other disks.
 	Installer bool
@@ -76,6 +74,7 @@ type Server struct {
 	Paths       Paths
 	Run         node.Runner
 	Host        storage.Host
+	Identity    identity.Loader
 	// InPlace and FromMedia install the node; tests replace them.
 	InPlace   func(context.Context, install.Request) error
 	FromMedia func(context.Context, install.MediaRequest) error
