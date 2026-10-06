@@ -18,14 +18,14 @@ let
   '';
 
   e2e =
-    name: pattern:
+    name: pattern: images:
     pkgs.runCommand "chalkos-e2e-${name}"
       (
         {
           requiredSystemFeatures = [ "kvm" ];
           nativeBuildInputs = testEnv.tools ++ [ chalkPkgs.chalklab-e2e ];
-          CHALKLAB_IMAGE_DIR = "${chalkPkgs.test-image}";
         }
+        // images
         // testEnv.vars
       )
       ''
@@ -33,6 +33,7 @@ let
         ${runTests "chalklab-e2e -test.v -test.run '${pattern}' -test.timeout 60m"}
         touch $out
       '';
+  testImage.CHALKLAB_IMAGE_DIR = "${chalkPkgs.test-image}";
 in
 {
   go-unit = chalkPkgs.chalkctl.overrideAttrs (
@@ -52,10 +53,13 @@ in
     // testEnv.vars
   );
 
-  e2e-firmware = e2e "firmware" "^TestFirmwareBoots$";
-  e2e-image = e2e "image" "^TestImageBootsWithoutSecureBoot$";
-  e2e-secureboot = e2e "secureboot" "^TestSecureBoot";
-  e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$";
+  e2e-firmware = e2e "firmware" "^TestFirmwareBoots$" { };
+  e2e-image = e2e "image" "^TestImageBootsWithoutSecureBoot$" testImage;
+  e2e-secureboot = e2e "secureboot" "^TestSecureBoot" testImage;
+  e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$" testImage;
+  e2e-storage = e2e "storage" "^TestStorage" {
+    CHALKLAB_STORAGE_IMAGE_DIR = "${chalkPkgs.test-storage-image}";
+  };
 
   manifest-golden =
     let

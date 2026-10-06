@@ -13,6 +13,30 @@ let
       role = "test";
       storage.system.disk = "/dev/vda";
     };
+    # A fixed VAR, an unencrypted and a raw volume next to it, and a volume on a second disk.
+    chalkos.roles.storage.storage = {
+      var.size = "2G";
+      volumes = {
+        plain = {
+          size = "256M";
+          mountPoint = "/srv/plain";
+          encryption.mode = "none";
+        };
+        raw = {
+          size = "128M";
+          format = null;
+        };
+        data = {
+          disk.serial = "chalk-data";
+          format = "xfs";
+          mountPoint = "/var/lib/data";
+        };
+      };
+    };
+    chalkos.nodes.chalklab-storage = {
+      role = "storage";
+      storage.system.disk = "/dev/vda";
+    };
   };
   # Taken from a separate evaluation, so the role images do not depend on their own cluster's
   # manifest.
@@ -26,6 +50,9 @@ in
 self.lib.mkCluster {
   modules = [
     definition
-    { chalkos.roles.test.nixosModules = testImage "chalklab"; }
+    {
+      chalkos.roles.test.nixosModules = testImage "chalklab";
+      chalkos.roles.storage.nixosModules = testImage "chalklab-storage";
+    }
   ];
 }

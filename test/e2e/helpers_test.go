@@ -1,6 +1,7 @@
 // Package e2e boots chalkos images in chalklab VMs. The dev shell sets the firmware and key
-// variables; tests that boot the image skip unless CHALKLAB_IMAGE_DIR is exported too, e.g.
+// variables; tests that boot an image skip unless its directory is exported too, e.g.
 // export CHALKLAB_IMAGE_DIR=$(nix build .#test-image --no-link --print-out-paths)
+// export CHALKLAB_STORAGE_IMAGE_DIR=$(nix build .#test-storage-image --no-link --print-out-paths)
 package e2e
 
 import (
@@ -80,8 +81,10 @@ func startVM(t *testing.T, dir, vars string, disks ...lab.Disk) *lab.VM {
 }
 
 type diskOpts struct {
-	sign   bool
-	mutate func(t *testing.T, raw string, parts []image.Partition)
+	// imageEnv names the variable holding the image directory; empty means CHALKLAB_IMAGE_DIR.
+	imageEnv string
+	sign     bool
+	mutate   func(t *testing.T, raw string, parts []image.Partition)
 }
 
 // prepareDisk copies the test image into dir, optionally modifies and signs the copy, and
@@ -89,7 +92,10 @@ type diskOpts struct {
 func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
 	t.Helper()
 	ctx := context.Background()
-	imageDir := os.Getenv("CHALKLAB_IMAGE_DIR")
+	if o.imageEnv == "" {
+		o.imageEnv = "CHALKLAB_IMAGE_DIR"
+	}
+	imageDir := os.Getenv(o.imageEnv)
 	raws, err := filepath.Glob(filepath.Join(imageDir, "*.raw"))
 	if err != nil || len(raws) != 1 {
 		t.Fatalf("want exactly one .raw in %s, got %v (%v)", imageDir, raws, err)
@@ -122,6 +128,16 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
 		t.Fatal(err)
 	}
 	return lab.Disk{Path: disk}
+}
+
+// prepareDataDisk creates the empty second disk the storage image selects by its serial.
+func prepareDataDisk(t *testing.T, dir string) lab.Disk {
+	t.Helper()
+	path := filepath.Join(dir, "data.qcow2")
+	if err := lab.CreateDisk(context.Background(), path, "2G"); err != nil {
+		t.Fatal(err)
+	}
+	return lab.Disk{Path: path, Serial: "chalk-data"}
 }
 
 var factRE = regexp.MustCompile(`CHALKTEST ([a-z0-9_]+)=(\S*)`)

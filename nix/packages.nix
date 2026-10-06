@@ -4,6 +4,7 @@
 }:
 let
   inherit (pkgs) lib;
+  testCluster = import ./testing/cluster.nix { inherit self; };
 
   goSrc = lib.fileset.toSource {
     root = ../.;
@@ -38,7 +39,8 @@ in
 
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
 
-  test-image = (import ./testing/cluster.nix { inherit self; }).roles.test.image;
+  test-image = testCluster.roles.test.image;
+  test-storage-image = testCluster.roles.storage.image;
 
   chalklab-e2e = pkgs.buildGoModule {
     pname = "chalklab-e2e";
