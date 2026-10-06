@@ -11,7 +11,8 @@ let
       ../go.mod
       ../cmd
       ../pkg
-      ../test
+      ../test/e2e
+      ../test/fixtures
     ];
   };
 in

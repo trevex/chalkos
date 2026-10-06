@@ -191,6 +191,27 @@ lib.runTests {
         ]).nodes.n1.role;
     expected = true;
   };
+  testMkClusterPassesNixpkgsToModules = {
+    expr =
+      (mkCluster {
+        nixpkgs = {
+          inherit lib;
+          marker = "custom";
+        };
+        modules = [
+          (
+            { nixpkgs, ... }:
+            {
+              chalkos.cluster = {
+                name = nixpkgs.marker;
+                endpoint = "https://10.0.0.1:6443";
+              };
+            }
+          )
+        ];
+      }).cluster.name;
+    expected = "custom";
+  };
   testFlakeModuleNamesClusters = {
     expr =
       (lib.evalModules {
