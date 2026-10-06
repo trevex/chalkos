@@ -12,7 +12,7 @@ let
       ../go.mod
       ../cmd
       ../pkg
-      ../tests
+      ../test
     ];
   };
 in
@@ -53,7 +53,7 @@ in
     doCheck = false;
     buildPhase = ''
       runHook preBuild
-      go test -c -o chalklab-e2e ./tests/e2e
+      go test -c -o chalklab-e2e ./test/e2e
       runHook postBuild
     '';
     installPhase = ''
