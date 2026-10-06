@@ -11,7 +11,7 @@ let
     fileset = lib.fileset.unions [
       ../go.mod
       ../cmd
-      ../internal
+      ../pkg
       ../tests
     ];
   };

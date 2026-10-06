@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	"chalkos/internal/image"
-	"chalkos/internal/imagesign"
+	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/imagesign"
 )
 
 const usage = `usage: chalkctl <command> [flags]

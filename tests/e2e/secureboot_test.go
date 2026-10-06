@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"chalkos/internal/image"
+	"github.com/trevex/chalkos/pkg/image"
 )
 
 var secureBootEnv = []string{

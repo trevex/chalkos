@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"chalkos/internal/image"
-	"chalkos/internal/imagesign"
-	"chalkos/internal/lab"
+	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/imagesign"
+	"github.com/trevex/chalkos/pkg/lab"
 )
 
 func requireEnv(t *testing.T, names ...string) {

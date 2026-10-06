@@ -42,7 +42,7 @@ in
       nativeBuildInputs = old.nativeBuildInputs ++ testEnv.tools;
       buildPhase = ''
         runHook preBuild
-        ${runTests "go test -v ./internal/... ./cmd/..."}
+        ${runTests "go test -v ./pkg/... ./cmd/..."}
         runHook postBuild
       '';
       doCheck = false;
