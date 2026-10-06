@@ -49,6 +49,20 @@ func TestDecodeRejectsUnsupportedVersion(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsOlderVersion(t *testing.T) {
+	_, err := Decode(strings.NewReader(`{"schemaVersion": -1}`))
+	if err == nil || !strings.Contains(err.Error(), "update chalkos") {
+		t.Fatalf("err = %v, want older manifest format error", err)
+	}
+}
+
+func TestDecodeRequiresVersion(t *testing.T) {
+	_, err := Decode(strings.NewReader(`{"cluster": {"name": "homelab"}}`))
+	if err == nil || !strings.Contains(err.Error(), "manifest has no schemaVersion") {
+		t.Fatalf("err = %v, want missing schemaVersion error", err)
+	}
+}
+
 func TestDecodeRejectsUnknownFields(t *testing.T) {
 	_, err := Decode(strings.NewReader(`{"schemaVersion": 0, "surprise": true}`))
 	if err == nil {
