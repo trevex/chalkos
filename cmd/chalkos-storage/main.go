@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
 const usage = `usage: chalkos-storage <mode>
@@ -28,9 +30,9 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "state":
-		err = newBoot().openState(ctx)
+		err = node.Default().OpenState(ctx)
 	case "initrd":
-		err = newBoot().setUp(ctx)
+		err = node.Default().SetUp(ctx)
 	case "generate":
 		err = runGenerate(os.Args[2:])
 	default:

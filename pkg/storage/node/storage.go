@@ -1,4 +1,7 @@
-package main
+// Package node applies a node's storage section on the node: it unlocks and mounts STATE,
+// pins disks, creates volumes with systemd-repart, mounts VAR, and generates units for the
+// other volumes. The initrd, the generator and chalkd share it.
+package node
 
 import (
 	"context"
@@ -14,49 +17,52 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// boot holds the paths the initrd modes work on; tests point them at temporary directories.
-type boot struct {
-	run  runner
-	host storage.Host
-	// stateDir is where STATE is mounted.
-	stateDir string
-	// varDir is where VAR is mounted.
-	varDir string
-	// bootDisk is udev's link to the disk systemd-boot was loaded from.
-	bootDisk string
-	// bootPartitions holds udev's links to the boot disk's partitions, by partition label.
-	bootPartitions string
-	statusFile     string
+// Storage holds what the storage setup works on; tests point the paths at temporary directories.
+type Storage struct {
+	Run  Runner
+	Host storage.Host
+	// StateDir is where STATE is mounted.
+	StateDir string
+	// VarDir is where VAR is mounted.
+	VarDir string
+	// BootDisk is the disk holding the system region: udev's link to the disk systemd-boot was
+	// loaded from.
+	BootDisk string
+	// BootPartitions holds udev's links to the boot disk's partitions, by partition label.
+	BootPartitions string
+	StatusFile     string
 }
 
-func newBoot() *boot {
-	return &boot{
-		run:            execRunner{},
-		host:           storage.DefaultHost(),
-		stateDir:       "/sysroot/state",
-		varDir:         "/sysroot/var",
-		bootDisk:       "/dev/disk/chalk-boot-disk",
-		bootPartitions: "/dev/disk/chalk-boot",
-		statusFile:     "/run/chalkos/storage-status.json",
+// Default is the storage setup of the initrd.
+func Default() *Storage {
+	return &Storage{
+		Run:            ExecRunner{},
+		Host:           storage.DefaultHost(),
+		StateDir:       "/sysroot/state",
+		VarDir:         "/sysroot/var",
+		BootDisk:       "/dev/disk/chalk-boot-disk",
+		BootPartitions: "/dev/disk/chalk-boot",
+		StatusFile:     "/run/chalkos/storage-status.json",
 	}
 }
 
-func (b *boot) storageDir() string { return filepath.Join(b.stateDir, "storage") }
+// StorageDir is where STATE records the storage section, definitions and pins.
+func (s *Storage) StorageDir() string { return filepath.Join(s.StateDir, "storage") }
 
-// openState unlocks STATE when it is encrypted and mounts it. The fallback is always offered:
+// OpenState unlocks STATE when it is encrypted and mounts it. The fallback is always offered:
 // it is recorded on STATE itself, so it cannot be known yet.
-func (b *boot) openState(ctx context.Context) error {
-	return b.open(ctx, "state", filepath.Join(b.bootPartitions, "state"), b.stateDir, true, false)
+func (s *Storage) OpenState(ctx context.Context) error {
+	return s.Open(ctx, "state", filepath.Join(s.BootPartitions, "state"), s.StateDir, true, false)
 }
 
-// open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target.
+// Open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target.
 // Without prompt, systemd-cryptsetup only tries the TPM. With encrypted, a device without LUKS
 // is refused, so data meant to be encrypted never lands on a plain file system.
-func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encrypted bool) error {
-	if _, err := b.run.run(ctx, "udevadm", "wait", "--timeout=60", dev); err != nil {
+func (s *Storage) Open(ctx context.Context, name, dev, target string, prompt, encrypted bool) error {
+	if _, err := s.Run.Run(ctx, "udevadm", "wait", "--timeout=60", dev); err != nil {
 		return fmt.Errorf("wait for %s: %w", dev, err)
 	}
-	out, err := b.run.run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
+	out, err := s.Run.Run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
 	if err != nil {
 		return fmt.Errorf("probe %s: %w", dev, err)
 	}
@@ -70,7 +76,7 @@ func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encry
 		if !prompt {
 			options += ",headless=true"
 		}
-		if _, err := b.run.run(ctx, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
+		if _, err := s.Run.Run(ctx, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
 			if !prompt && unsealFailed(err) {
 				return fmt.Errorf("the TPM did not unseal %s and the node has no fallback key; the volume must be reset with chalkctl storage reset <node> %s: %w", name, name, err)
 			}
@@ -78,13 +84,13 @@ func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encry
 		}
 		source = "/dev/mapper/" + name
 	}
-	if err := b.checkFileSystem(ctx, name, source); err != nil {
+	if err := s.checkFileSystem(ctx, name, source); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return err
 	}
-	if _, err := b.run.run(ctx, "mount", "-t", "ext4", source, target); err != nil {
+	if _, err := s.Run.Run(ctx, "mount", "-t", "ext4", source, target); err != nil {
 		return fmt.Errorf("mount %s: %w", name, err)
 	}
 	return nil
@@ -93,32 +99,32 @@ func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encry
 // checkFileSystem repairs what a crash or power loss left behind before the ext4 file system on
 // dev is mounted; nothing else checks it, as it is mounted outside fstab. e2fsck exits with 1
 // when it corrected errors.
-func (b *boot) checkFileSystem(ctx context.Context, name, dev string) error {
-	_, err := b.run.run(ctx, "e2fsck", "-p", dev)
-	var te *toolError
+func (s *Storage) checkFileSystem(ctx context.Context, name, dev string) error {
+	_, err := s.Run.Run(ctx, "e2fsck", "-p", dev)
+	var te *ToolError
 	switch {
-	case err == nil, errors.As(err, &te) && te.code == 1:
+	case err == nil, errors.As(err, &te) && te.Code == 1:
 		return nil
-	case te != nil && te.code&4 != 0:
+	case te != nil && te.Code&4 != 0:
 		return fmt.Errorf("the file system of %s has errors e2fsck -p cannot repair; check %s by hand: %w", name, dev, err)
 	default:
 		return fmt.Errorf("check the file system of %s: %w", name, err)
 	}
 }
 
-// setUp applies the recorded storage section: it pins disks, runs repart on each, and mounts
+// SetUp applies the recorded storage section: it pins disks, runs repart on each, and mounts
 // VAR. Only problems with VAR stop the boot; other disks are reported in the status file.
-func (b *boot) setUp(ctx context.Context) error {
+func (s *Storage) SetUp(ctx context.Context) error {
 	status := storage.Status{Disks: map[string]storage.DiskStatus{}}
-	err := b.setUpVolumes(ctx, &status)
-	if werr := storage.WriteStatus(b.statusFile, status); werr != nil {
-		log.Printf("write %s: %v", b.statusFile, werr)
+	err := s.setUpVolumes(ctx, &status)
+	if werr := storage.WriteStatus(s.StatusFile, status); werr != nil {
+		log.Printf("write %s: %v", s.StatusFile, werr)
 	}
 	return err
 }
 
-func (b *boot) setUpVolumes(ctx context.Context, status *storage.Status) error {
-	section, err := storage.ReadSection(filepath.Join(b.storageDir(), "storage.json"))
+func (s *Storage) setUpVolumes(ctx context.Context, status *storage.Status) error {
+	section, err := storage.ReadSection(filepath.Join(s.StorageDir(), "storage.json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		log.Print("STATE holds no storage section; /var stays on tmpfs until the node is installed")
 		return nil
@@ -127,16 +133,16 @@ func (b *boot) setUpVolumes(ctx context.Context, status *storage.Status) error {
 		return err
 	}
 	status.Installed = true
-	if err := storage.WriteDefinitions(filepath.Join(b.storageDir(), "disks"), section); err != nil {
+	if err := storage.WriteDefinitions(filepath.Join(s.StorageDir(), "disks"), section); err != nil {
 		return err
 	}
-	pinsFile := filepath.Join(b.storageDir(), "disks.json")
+	pinsFile := filepath.Join(s.StorageDir(), "disks.json")
 	pins, err := storage.ReadPins(pinsFile)
 	if err != nil {
 		return err
 	}
 
-	devices, err := b.locateDisks(ctx, section, &pins, status)
+	devices, err := s.locateDisks(ctx, section, &pins, status)
 	if err != nil {
 		status.Disks[storage.SystemDisk] = storage.DiskStatus{Error: err.Error()}
 		return err
@@ -150,7 +156,7 @@ func (b *boot) setUpVolumes(ctx context.Context, status *storage.Status) error {
 		if !ok {
 			continue
 		}
-		parts, err := b.repart(ctx, name, dev, section.Disks[name])
+		parts, err := s.repart(ctx, name, dev, section.Disks[name])
 		if err != nil {
 			log.Printf("disk %s: %v", name, err)
 			status.Disks[name] = storage.DiskStatus{Device: dev, Error: err.Error()}
@@ -176,12 +182,12 @@ func (b *boot) setUpVolumes(ctx context.Context, status *storage.Status) error {
 	}
 	prompt := section.Fallback != storage.FallbackNone
 	encrypted := section.Volumes[storage.VarVolume].Encryption == storage.EncryptionTPM2
-	if err := b.open(ctx, storage.VarVolume, filepath.Join(b.bootPartitions, storage.VarVolume), b.varDir, prompt, encrypted); err != nil {
+	if err := s.Open(ctx, storage.VarVolume, filepath.Join(s.BootPartitions, storage.VarVolume), s.VarDir, prompt, encrypted); err != nil {
 		status.Disks[storage.SystemDisk] = storage.DiskStatus{Device: devices[storage.SystemDisk], Error: err.Error()}
 		return err
 	}
 	// repart grows the partition when its size grows; the file system follows here.
-	if _, err := b.run.run(ctx, "systemd-growfs", b.varDir); err != nil {
+	if _, err := s.Run.Run(ctx, "systemd-growfs", s.VarDir); err != nil {
 		log.Printf("grow /var: %v", err)
 	}
 	return nil
@@ -190,8 +196,8 @@ func (b *boot) setUpVolumes(ctx context.Context, status *storage.Status) error {
 // locateDisks finds the device of every disk: the boot disk for the system disk, the pinned
 // disk for disks resolved before, and the reference's disk otherwise, which it then pins.
 // It fails only when the boot disk cannot be found or is not the disk VAR was pinned to.
-func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *storage.Pins, status *storage.Status) (map[string]string, error) {
-	bootDisk, err := b.host.ResolvePath(b.bootDisk)
+func (s *Storage) locateDisks(ctx context.Context, section storage.Section, pins *storage.Pins, status *storage.Status) (map[string]string, error) {
+	bootDisk, err := s.Host.ResolvePath(s.BootDisk)
 	if err != nil {
 		return nil, fmt.Errorf("find the boot disk: %w", err)
 	}
@@ -218,7 +224,7 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 			system.Identity = bootDisk.Identity
 		}
 		pins.Disks[storage.SystemDisk] = system
-		devices[storage.SystemDisk] = b.bootDisk
+		devices[storage.SystemDisk] = s.BootDisk
 	}
 
 	// Every pinned disk is claimed before any reference is resolved, so a new reference can
@@ -233,7 +239,7 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 			unpinned = append(unpinned, name)
 			continue
 		}
-		disk, found, err := b.host.Find(pin.Identity)
+		disk, found, err := s.Host.Find(pin.Identity)
 		if err == nil && !found {
 			err = fmt.Errorf("pinned disk %s is missing", pin.Identity)
 		}
@@ -248,7 +254,7 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 		}
 		// A pin that matched by port alone may have found another disk in that port, and repart
 		// runs with --empty=allow; so a pinned disk is checked like a new one before it is changed.
-		if err := b.checkUnused(ctx, disk, section.Disks[name]); err != nil {
+		if err := s.checkUnused(ctx, disk, section.Disks[name]); err != nil {
 			fail(name, fmt.Errorf("pinned disk %s at %s now holds data chalkos did not create; refusing to touch it: %w", name, disk.Device, err))
 			continue
 		}
@@ -265,7 +271,7 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 	}
 	// Identities come from the udev database, which udev fills in as it processes each disk; a
 	// disk pinned before that would be pinned by a weaker identity than it has.
-	if _, err := b.run.run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
+	if _, err := s.Run.Run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
 		for _, name := range unpinned {
 			fail(name, fmt.Errorf("udev has not processed every disk, so the reference is resolved on a later boot: %w", err))
 		}
@@ -273,7 +279,7 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 	}
 	for _, name := range unpinned {
 		d := section.Disks[name]
-		disk, err := b.resolveNew(ctx, d, claimed)
+		disk, err := s.resolveNew(ctx, d, claimed)
 		if err != nil {
 			fail(name, err)
 			continue
@@ -310,8 +316,8 @@ func unrecognisable(disk storage.BlockDisk) error {
 
 // resolveNew resolves the reference of a disk that is not pinned yet and checks that the disk
 // may be pinned and partitioned.
-func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) (storage.BlockDisk, error) {
-	disk, err := b.host.Resolve(d.Ref)
+func (s *Storage) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) (storage.BlockDisk, error) {
+	disk, err := s.Host.Resolve(d.Ref)
 	if err != nil {
 		return storage.BlockDisk{}, err
 	}
@@ -321,7 +327,7 @@ func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) 
 	if !disk.Identity.Recognisable() {
 		return storage.BlockDisk{}, unrecognisable(disk)
 	}
-	if err := b.checkUnused(ctx, disk, d); err != nil {
+	if err := s.checkUnused(ctx, disk, d); err != nil {
 		return storage.BlockDisk{}, err
 	}
 	return disk, nil
@@ -330,11 +336,11 @@ func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) 
 // checkUnused refuses an extra disk unless it is provably unused: blkid finds nothing
 // on it, or it carries a GPT whose partitions all have types of this disk's definitions, which
 // repart takes over. repart would otherwise write a new partition table over foreign data.
-func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk, d storage.Disk) error {
-	out, err := b.run.run(ctx, "blkid", "-p", "-o", "export", disk.Device)
-	var te *toolError
+func (s *Storage) checkUnused(ctx context.Context, disk storage.BlockDisk, d storage.Disk) error {
+	out, err := s.Run.Run(ctx, "blkid", "-p", "-o", "export", disk.Device)
+	var te *ToolError
 	// blkid also exits with 2 when it cannot read the disk, but then it complains.
-	if errors.As(err, &te) && te.code == 2 && strings.TrimSpace(te.stderr) == "" {
+	if errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == "" {
 		return nil
 	}
 	if err != nil {
@@ -350,7 +356,7 @@ func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk, d storag
 		return fmt.Errorf("%s carries data (%s); wipe it or reference another disk", disk, strings.TrimSpace(props["PTTYPE"]+" "+props["TYPE"]))
 	}
 
-	out, err = b.run.run(ctx, "sfdisk", "--json", disk.Device)
+	out, err = s.Run.Run(ctx, "sfdisk", "--json", disk.Device)
 	if err != nil {
 		return fmt.Errorf("read the partition table of %s: %w", disk.Device, err)
 	}
@@ -379,7 +385,7 @@ func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk, d storag
 }
 
 // repart creates and grows the disk's partitions and returns the PARTUUID of each volume.
-func (b *boot) repart(ctx context.Context, name, dev string, d storage.Disk) (map[string]string, error) {
+func (s *Storage) repart(ctx context.Context, name, dev string, d storage.Disk) (map[string]string, error) {
 	// An empty --seed= makes repart fall back to a seed of its own, so the partition UUIDs
 	// would not be the ones the section determines.
 	if d.Seed == "" {
@@ -388,14 +394,14 @@ func (b *boot) repart(ctx context.Context, name, dev string, d storage.Disk) (ma
 	args := []string{
 		"--dry-run=no",
 		"--json=short",
-		"--definitions=" + filepath.Join(b.storageDir(), "disks", name),
+		"--definitions=" + filepath.Join(s.StorageDir(), "disks", name),
 		"--seed=" + d.Seed,
 	}
 	if name != storage.SystemDisk {
 		// The disk was checked to be unused before it was pinned.
 		args = append(args, "--empty=allow")
 	}
-	out, err := b.run.run(ctx, "systemd-repart", append(args, dev)...)
+	out, err := s.Run.Run(ctx, "systemd-repart", append(args, dev)...)
 	if err != nil {
 		return nil, err
 	}
@@ -406,10 +412,10 @@ func (b *boot) repart(ctx context.Context, name, dev string, d storage.Disk) (ma
 // did not unseal one and headless mode forbade asking for another. Other failures, such as an
 // unreadable device, are no reason to reset the volume.
 func unsealFailed(err error) bool {
-	var te *toolError
+	var te *ToolError
 	if !errors.As(err, &te) {
 		return false
 	}
-	stderr := strings.ToLower(te.stderr)
+	stderr := strings.ToLower(te.Stderr)
 	return strings.Contains(stderr, "tpm2") || strings.Contains(stderr, "headless")
 }
