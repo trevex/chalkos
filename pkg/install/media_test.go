@@ -562,3 +562,18 @@ func TestFromMediaRefusesInvalidSection(t *testing.T) {
 		t.Errorf("ran %v before refusing", r.calls)
 	}
 }
+
+func TestFromMediaWithoutBootLoader(t *testing.T) {
+	r := &fakeRunner{}
+	i := newMediaInstaller(t, r)
+	i.Loader = ""
+	req := mediaRequest(t, testImage(t))
+	req.WipeDisk = true
+	err := i.FromMedia(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "boot loader") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
+	}
+}

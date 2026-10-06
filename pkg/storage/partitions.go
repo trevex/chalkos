@@ -23,6 +23,11 @@ type Partition struct {
 	Content string
 }
 
+// PartUUIDPath is udev's link to the partition with a GPT partition UUID.
+func PartUUIDPath(uuid string) string {
+	return "/dev/disk/by-partuuid/" + uuid
+}
+
 // Partitions lists a disk's partitions in partition number order.
 func (h Host) Partitions(disk BlockDisk) ([]Partition, error) {
 	dir := filepath.Join(h.SysRoot, "block", disk.Name)

@@ -3,8 +3,6 @@ package chalkd
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -26,7 +25,7 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "read the identity: %v", err)
 	}
-	resp.IdentityVersion = IdentityVersion(data)
+	resp.IdentityVersion = identity.IdentityVersion(data)
 
 	var status storage.Status
 	if raw, err := os.ReadFile(s.Paths.StorageStatus); err == nil {
@@ -70,13 +69,6 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 		}
 	}
 	return connect.NewResponse(resp), nil
-}
-
-// IdentityVersion names an identity document by its SHA-256, so a client can tell whether a node
-// runs the identity it would deliver.
-func IdentityVersion(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
 }
 
 func mountPoints(mountInfo string) (map[string]bool, error) {

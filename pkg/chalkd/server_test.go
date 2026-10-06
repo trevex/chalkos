@@ -443,7 +443,7 @@ func TestStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := resp.Msg
-	if got.IdentityVersion != IdentityVersion([]byte(identityJSON)) {
+	if got.IdentityVersion != identity.IdentityVersion([]byte(identityJSON)) {
 		t.Errorf("identity version = %s", got.IdentityVersion)
 	}
 	if !reflect.DeepEqual(got.FailedUnits, []string{"systemd-cryptsetup@extra.service", "srv-extra.mount"}) {

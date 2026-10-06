@@ -150,7 +150,7 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 			if v.Disk == storage.SystemDisk {
 				devices[name] = filepath.Join(s.Paths.BootPartitions, v.Label)
 			} else {
-				devices[name] = "/dev/disk/by-partuuid/" + pins.Disks[v.Disk].Partitions[name]
+				devices[name] = storage.PartUUIDPath(pins.Disks[v.Disk].Partitions[name])
 			}
 		}
 		if err := install.Enroll(ctx, s.Run, devices, secret); err != nil {
@@ -274,7 +274,7 @@ func (s *Server) encryptedDevices(kept storage.Section, pins storage.Pins) []str
 		if v.Disk == storage.SystemDisk {
 			devices = append(devices, filepath.Join(s.Paths.BootPartitions, v.Label))
 		} else if uuid := pins.Disks[v.Disk].Partitions[name]; uuid != "" {
-			devices = append(devices, "/dev/disk/by-partuuid/"+uuid)
+			devices = append(devices, storage.PartUUIDPath(uuid))
 		}
 	}
 	return devices
@@ -443,7 +443,7 @@ func (s *Server) deleteVolume(ctx context.Context, name string, v storage.Volume
 		}
 		want = boot.Name
 	} else {
-		link = "/dev/disk/by-partuuid/" + uuid
+		link = storage.PartUUIDPath(uuid)
 		disk, found, err := s.Host.Find(pin.Identity)
 		if err != nil || !found {
 			return failed(connect.CodeFailedPrecondition, "the pinned disk of volume %s is missing", name)

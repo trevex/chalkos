@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -668,5 +669,20 @@ func TestInstallWithoutFallbackEnrollsNothing(t *testing.T) {
 	}
 	if hasPrefix(r.calls, "systemd-cryptenroll") {
 		t.Errorf("enrolled a fallback for a node without one: %v", r.calls)
+	}
+}
+
+func TestBootLoader(t *testing.T) {
+	for goarch, want := range map[string]string{
+		"amd64":   `\EFI\BOOT\BOOTX64.EFI`,
+		"arm64":   `\EFI\BOOT\BOOTAA64.EFI`,
+		"riscv64": "",
+	} {
+		if got := bootLoader(goarch); got != want {
+			t.Errorf("bootLoader(%s) = %q, want %q", goarch, got, want)
+		}
+	}
+	if Default(false).Loader != bootLoader(runtime.GOARCH) {
+		t.Errorf("Default uses the boot loader %q on %s", Default(false).Loader, runtime.GOARCH)
 	}
 }

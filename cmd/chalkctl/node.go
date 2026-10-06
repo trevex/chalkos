@@ -22,8 +22,8 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -569,7 +569,7 @@ func (a *app) applyIdentity(ctx context.Context, args []string) error {
 	for _, u := range resp.Msg.RestartedUnits {
 		fmt.Fprintf(a.stdout, "restarted %s\n", u)
 	}
-	fmt.Fprintf(a.stdout, "%s runs identity %s\n", t.name, chalkd.IdentityVersion([]byte(id)))
+	fmt.Fprintf(a.stdout, "%s runs identity %s\n", t.name, identity.IdentityVersion([]byte(id)))
 	return nil
 }
 
@@ -637,7 +637,7 @@ func (a *app) status(ctx context.Context, args []string) error {
 		return err
 	}
 	state := "the cluster definition's"
-	if chalkd.IdentityVersion([]byte(id)) != s.IdentityVersion {
+	if identity.IdentityVersion([]byte(id)) != s.IdentityVersion {
 		state = "not the cluster definition's; chalkctl apply-identity " + t.name + " delivers it"
 	}
 	fmt.Fprintf(a.stdout, "identity %s (%s)\n", s.IdentityVersion, state)

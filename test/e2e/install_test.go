@@ -61,7 +61,9 @@ func TestInstallInPlace(t *testing.T) {
 	if err := info(reader); err != nil {
 		t.Errorf("a reader could not call Info: %v", err)
 	}
-	_, err = reader.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: "{}"}))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	_, err = reader.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: "{}"}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("ApplyIdentity as a reader: %v, want permission denied", err)
 	}

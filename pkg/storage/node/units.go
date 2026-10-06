@@ -52,7 +52,7 @@ func Generate(storageDir, cryptsetup string) (Units, error) {
 			log.Printf("volume %s has no partition yet; no units written", name)
 			continue
 		}
-		dev := "/dev/disk/by-partuuid/" + uuid
+		dev := storage.PartUUIDPath(uuid)
 		// Another disk carrying a copy of the system disk has the same PARTUUIDs; only the
 		// boot disk's partitions get these links.
 		if v.Disk == storage.SystemDisk {

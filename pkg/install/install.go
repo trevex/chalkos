@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,7 +32,6 @@ const (
 	stateLabel      = "state"
 	installedMarker = "installed"
 	stateMapperName = "state"
-	byPartUUID      = "/dev/disk/by-partuuid/"
 	contentLUKS     = "crypto_LUKS"
 	contentExt4     = "ext4"
 )
@@ -128,9 +128,21 @@ func Default(inPlace bool) *Installer {
 		WorkDir:     "/run/chalkd/install",
 		MountInfo:   "/proc/self/mountinfo",
 		OpenDisk:    openExclusive,
-		Loader:      `\EFI\BOOT\BOOTX64.EFI`,
+		Loader:      bootLoader(runtime.GOARCH),
 		Now:         time.Now,
 	}
+}
+
+// bootLoader is where the image's systemd-boot sits on the ESP: the removable-media path of
+// the architecture, or empty for an architecture chalkos does not build for.
+func bootLoader(goarch string) string {
+	switch goarch {
+	case "amd64":
+		return `\EFI\BOOT\BOOTX64.EFI`
+	case "arm64":
+		return `\EFI\BOOT\BOOTAA64.EFI`
+	}
+	return ""
 }
 
 // InPlace installs the node on the disk it booted from, where the role image already runs.
@@ -350,7 +362,7 @@ func encryptedDevices(section storage.Section, table partitionTable, pins storag
 		if uuid == "" {
 			return nil, fmt.Errorf("volume %s was not created", name)
 		}
-		devices[name] = byPartUUID + uuid
+		devices[name] = storage.PartUUIDPath(uuid)
 	}
 	return devices, nil
 }

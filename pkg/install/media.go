@@ -110,6 +110,9 @@ func (i *Installer) FromMedia(ctx context.Context, req MediaRequest) error {
 	if err := req.validate(); err != nil {
 		return err
 	}
+	if i.Loader == "" {
+		return errors.New("no UEFI boot loader path is known for this architecture")
+	}
 	if req.ImageSize <= 0 || len(req.ImageSHA256) != sha256.Size {
 		return errors.New("the image's size and SHA-256 are required")
 	}
