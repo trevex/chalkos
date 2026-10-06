@@ -37,7 +37,8 @@
           "volumes": {
             "var": { "disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null }
           },
-          "fallback": "recovery-key"
+          "fallback": "recovery-key",
+          "encryption": "tpm2"
         },
         "extensions": { "rack": { "location": "rack-a/u12" } }
       }
@@ -70,7 +71,8 @@
             "var": { "disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": "200G" },
             "longhorn": { "disk": "longhorn", "label": "longhorn", "format": "xfs", "mountPoint": "/var/lib/longhorn", "encryption": "tpm2", "size": null }
           },
-          "fallback": "recovery-key"
+          "fallback": "recovery-key",
+          "encryption": "tpm2"
         },
         "extensions": { "rack": { "location": "rack-a/u14" } }
       }

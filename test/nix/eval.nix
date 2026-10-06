@@ -452,6 +452,7 @@ lib.runTests {
         size = null;
       };
       fallback = "recovery-key";
+      encryption = "tpm2";
     };
   };
   testStorageVarSize = {
@@ -594,11 +595,13 @@ lib.runTests {
         };
       in
       {
+        state = s.encryption;
         var = s.volumes.var.encryption;
         secret = s.volumes.secret.encryption;
         varEncrypted = lib.hasInfix "Encrypt=" s.disks.system.repart."50-var.conf";
       };
     expected = {
+      state = "none";
       var = "none";
       secret = "tpm2";
       varEncrypted = false;

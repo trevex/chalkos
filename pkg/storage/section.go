@@ -32,6 +32,8 @@ type Section struct {
 	Volumes map[string]Volume `json:"volumes"`
 	// Fallback is the keyslot asked for when TPM2 unsealing fails: recovery-key, password or none.
 	Fallback string `json:"fallback"`
+	// Encryption is the node's encryption policy, which STATE follows: tpm2 or none.
+	Encryption string `json:"encryption"`
 }
 
 // Disk is a disk the node's volumes live on, with the repart definitions to apply to it.

@@ -213,5 +213,7 @@ in
         encryption = modeOf storage v.encryption.mode;
       }) enabledVolumes;
       fallback = storage.encryption.fallback;
+      # STATE follows the node's policy; Install creates it accordingly.
+      encryption = storage.encryption.mode;
     };
 }

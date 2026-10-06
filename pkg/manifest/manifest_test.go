@@ -53,7 +53,7 @@ func TestDecodeGoldenManifest(t *testing.T) {
 	if got, want := st.Volumes["longhorn"], (storage.Volume{Disk: "longhorn", Label: "longhorn", Format: "xfs", MountPoint: "/var/lib/longhorn", Encryption: "tpm2"}); got != want {
 		t.Errorf("w1 longhorn volume = %+v, want %+v", got, want)
 	}
-	if st.Volumes["var"].Size != "200G" || st.Fallback != "recovery-key" {
+	if st.Volumes["var"].Size != "200G" || st.Fallback != "recovery-key" || st.Encryption != "tpm2" {
 		t.Errorf("w1 storage = %+v", st)
 	}
 }
