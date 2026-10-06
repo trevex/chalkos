@@ -116,7 +116,9 @@ in
   errors =
     storage:
     let
-      ownDisks = lib.filterAttrs (_: v: v.disk != null) storage.volumes;
+      # A disabled volume is dropped before any check runs, as if the node never declared it.
+      enabledVolumes = lib.filterAttrs (_: v: v.enable) storage.volumes;
+      ownDisks = lib.filterAttrs (_: v: v.disk != null) enabledVolumes;
       sharedWith = name: v: lib.attrNames (lib.filterAttrs (o: w: o > name && w.disk == v.disk) ownDisks);
       sharedError =
         name: other:
@@ -124,10 +126,10 @@ in
       # VAR counts as a volume of the system disk.
       filling =
         lib.optional (storage.var.size == null) "var"
-        ++ lib.attrNames (lib.filterAttrs (_: v: v.disk == null && v.size == null) storage.volumes);
+        ++ lib.attrNames (lib.filterAttrs (_: v: v.disk == null && v.size == null) enabledVolumes);
       fillingError = "at most one volume per disk may have size = null; on the system disk these do: ${lib.concatStringsSep ", " filling}";
     in
-    lib.concatLists (lib.mapAttrsToList (volumeErrors storage) storage.volumes)
+    lib.concatLists (lib.mapAttrsToList (volumeErrors storage) enabledVolumes)
     ++ lib.concatLists (
       lib.mapAttrsToList (name: v: map (sharedError name) (sharedWith name v)) ownDisks
     )
@@ -142,8 +144,10 @@ in
       storage,
     }:
     let
-      onSystem = lib.filterAttrs (_: v: v.disk == null) storage.volumes;
-      ownDisks = lib.filterAttrs (_: v: v.disk != null) storage.volumes;
+      # A disabled volume is dropped before rendering, so it has no disk, definition or entry.
+      enabledVolumes = lib.filterAttrs (_: v: v.enable) storage.volumes;
+      onSystem = lib.filterAttrs (_: v: v.disk == null) enabledVolumes;
+      ownDisks = lib.filterAttrs (_: v: v.disk != null) enabledVolumes;
       varMode = modeOf storage storage.var.encryption.mode;
       definitionOf =
         name: v:
@@ -187,7 +191,7 @@ in
         label = name;
         inherit (v) format mountPoint size;
         encryption = modeOf storage v.encryption.mode;
-      }) storage.volumes;
+      }) enabledVolumes;
       fallback = storage.encryption.fallback;
     };
 }

@@ -315,6 +315,7 @@ lib.runTests {
         encryption.mode = null;
       };
       volumes.data = {
+        enable = true;
         disk = null;
         size = null;
         format = "ext4";
@@ -336,6 +337,7 @@ lib.runTests {
         encryption.mode = null;
       };
       volumes.data = roleStorage.volumes.data // {
+        enable = true;
         encryption.mode = null;
         repart = { };
       };
@@ -715,5 +717,39 @@ lib.runTests {
       true
       true
     ];
+  };
+  testStorageNodeDropsRoleVolume = {
+    expr =
+      let
+        c = cluster [
+          {
+            chalkos.roles.worker.storage.volumes.scratch = {
+              size = "1G";
+              mountPoint = "/srv/scratch";
+            };
+            chalkos.nodes.n1 = {
+              role = "worker";
+              storage.system.disk = "/dev/vda";
+              storage.volumes.scratch.enable = false;
+            };
+            chalkos.nodes.n2 = {
+              role = "worker";
+              storage.system.disk = "/dev/vdb";
+            };
+          }
+        ];
+        s1 = c.manifest.nodes.n1.identity.storage;
+        s2 = c.manifest.nodes.n2.identity.storage;
+      in
+      {
+        n1Volumes = lib.attrNames s1.volumes;
+        n1Files = lib.attrNames s1.disks.system.repart;
+        n2HasScratch = lib.hasAttr "scratch" s2.volumes;
+      };
+    expected = {
+      n1Volumes = [ "var" ];
+      n1Files = [ "50-var.conf" ];
+      n2HasScratch = true;
+    };
   };
 }

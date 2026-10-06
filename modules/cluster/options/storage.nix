@@ -39,6 +39,11 @@ let
 
   volume = {
     options = {
+      enable = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Whether the node has this volume; set to false on a node to drop a volume its role defines.";
+      };
       disk = mkOption {
         type = types.nullOr diskRef;
         default = null;
