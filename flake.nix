@@ -13,7 +13,7 @@
     {
       lib = { inherit (chalkosLib) mkCluster; };
       flakeModules.default = chalkosLib.flakeModule;
-      packages.${system} = import ./nix/packages.nix { inherit pkgs nixpkgs self; };
+      packages.${system} = import ./nix/packages.nix { inherit pkgs self; };
       checks.${system} = import ./nix/checks.nix { inherit pkgs self; };
       devShells.${system}.default = import ./nix/shell.nix { inherit pkgs self; };
       formatter.${system} = pkgs.nixfmt-tree;

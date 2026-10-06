@@ -1,6 +1,5 @@
 {
   pkgs,
-  nixpkgs,
   self,
 }:
 let
@@ -36,14 +35,7 @@ in
     '';
   };
 
-  test-image =
-    (nixpkgs.lib.nixosSystem {
-      system = pkgs.stdenv.hostPlatform.system;
-      modules = [
-        ../modules/node
-        ../modules/testing/test-image.nix
-      ];
-    }).config.system.build.image;
+  test-image = (import ./testing/cluster.nix { inherit self; }).roles.test.image;
 
   chalklab-e2e = pkgs.buildGoModule {
     pname = "chalklab-e2e";
