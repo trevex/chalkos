@@ -133,22 +133,49 @@ func (s *Storage) setUpVolumes(ctx context.Context, status *storage.Status) erro
 		return err
 	}
 	status.Installed = true
-	if err := storage.WriteDefinitions(filepath.Join(s.StorageDir(), "disks"), section); err != nil {
+	pins, err := s.Apply(ctx, section, status)
+	if err != nil {
 		return err
+	}
+
+	if _, ok := pins.Disks[storage.SystemDisk].Partitions[storage.VarVolume]; !ok {
+		log.Print("VAR does not exist; /var stays on tmpfs")
+		return nil
+	}
+	prompt := section.Fallback != storage.FallbackNone
+	encrypted := section.Volumes[storage.VarVolume].Encryption == storage.EncryptionTPM2
+	if err := s.Open(ctx, storage.VarVolume, filepath.Join(s.BootPartitions, storage.VarVolume), s.VarDir, prompt, encrypted); err != nil {
+		status.Disks[storage.SystemDisk] = storage.DiskStatus{Device: status.Disks[storage.SystemDisk].Device, Error: err.Error()}
+		return err
+	}
+	// repart grows the partition when its size grows; the file system follows here.
+	if _, err := s.Run.Run(ctx, "systemd-growfs", s.VarDir); err != nil {
+		log.Printf("grow /var: %v", err)
+	}
+	return nil
+}
+
+// Apply writes the section's repart definitions, pins its disks, and creates and grows the
+// volumes on each disk with systemd-repart, recording their PARTUUIDs in the pins it returns.
+// It fails only when the system disk cannot be used; problems with other disks are recorded in
+// status, so their volumes are missing while the rest of the node works.
+func (s *Storage) Apply(ctx context.Context, section storage.Section, status *storage.Status) (storage.Pins, error) {
+	if err := storage.WriteDefinitions(filepath.Join(s.StorageDir(), "disks"), section); err != nil {
+		return storage.Pins{}, err
 	}
 	pinsFile := filepath.Join(s.StorageDir(), "disks.json")
 	pins, err := storage.ReadPins(pinsFile)
 	if err != nil {
-		return err
+		return storage.Pins{}, err
 	}
 
 	devices, err := s.locateDisks(ctx, section, &pins, status)
 	if err != nil {
 		status.Disks[storage.SystemDisk] = storage.DiskStatus{Error: err.Error()}
-		return err
+		return storage.Pins{}, err
 	}
 	if err := storage.WritePins(pinsFile, pins); err != nil {
-		return err
+		return storage.Pins{}, err
 	}
 
 	for _, name := range section.DiskNames() {
@@ -172,25 +199,7 @@ func (s *Storage) setUpVolumes(ctx context.Context, status *storage.Status) erro
 		pins.Disks[name] = pin
 		status.Disks[name] = storage.DiskStatus{Device: dev}
 	}
-	if err := storage.WritePins(pinsFile, pins); err != nil {
-		return err
-	}
-
-	if _, ok := pins.Disks[storage.SystemDisk].Partitions[storage.VarVolume]; !ok {
-		log.Print("VAR does not exist; /var stays on tmpfs")
-		return nil
-	}
-	prompt := section.Fallback != storage.FallbackNone
-	encrypted := section.Volumes[storage.VarVolume].Encryption == storage.EncryptionTPM2
-	if err := s.Open(ctx, storage.VarVolume, filepath.Join(s.BootPartitions, storage.VarVolume), s.VarDir, prompt, encrypted); err != nil {
-		status.Disks[storage.SystemDisk] = storage.DiskStatus{Device: devices[storage.SystemDisk], Error: err.Error()}
-		return err
-	}
-	// repart grows the partition when its size grows; the file system follows here.
-	if _, err := s.Run.Run(ctx, "systemd-growfs", s.VarDir); err != nil {
-		log.Printf("grow /var: %v", err)
-	}
-	return nil
+	return pins, storage.WritePins(pinsFile, pins)
 }
 
 // locateDisks finds the device of every disk: the boot disk for the system disk, the pinned
