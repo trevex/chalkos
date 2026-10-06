@@ -25,13 +25,20 @@ func ParseRecipient(s string, ui *plugin.ClientUI) (age.Recipient, error) {
 		return age.ParseHybridRecipient(s)
 	// Plugin recipients are age1<plugin name>1<data>.
 	case strings.HasPrefix(s, "age1") && strings.Count(s, "1") > 1:
+		if ui == nil {
+			return nil, errors.New("a plugin recipient requires a UI")
+		}
 		return plugin.NewRecipient(s, ui)
 	case strings.HasPrefix(s, "age1"):
 		return age.ParseX25519Recipient(s)
 	case strings.HasPrefix(s, "ssh-"):
 		return agessh.ParseRecipient(s)
+	case strings.HasPrefix(strings.ToUpper(s), "AGE-SECRET-KEY-"):
+		// Do not echo s: it is a secret key, not the recipient the caller meant to give.
+		return nil, errors.New("a secret key was given where a recipient is expected")
 	}
-	return nil, fmt.Errorf("unknown recipient type %q: want an age public key, an SSH public key, or an age plugin recipient", s)
+	// Do not echo s: an unrecognised recipient-shaped string may itself be a secret.
+	return nil, errors.New("the recipient type is not recognised: want an age public key, an SSH public key, or an age plugin recipient")
 }
 
 // SSHPassphrase supplies the passphrase of an encrypted SSH private key when it is first needed.
@@ -55,6 +62,10 @@ func ParseIdentities(data []byte, ui *plugin.ClientUI, passphrase SSHPassphrase,
 		var err error
 		switch {
 		case strings.HasPrefix(line, "AGE-PLUGIN-"):
+			if ui == nil {
+				err = errors.New("a plugin identity requires a UI")
+				break
+			}
 			id, err = plugin.NewIdentity(line, ui)
 		case strings.HasPrefix(line, "AGE-SECRET-KEY-PQ-1"):
 			id, err = age.ParseHybridIdentity(line)
@@ -82,8 +93,14 @@ func parseSSHIdentity(pemBytes []byte, passphrase SSHPassphrase, publicKey func(
 	id, err := agessh.ParseIdentity(pemBytes)
 	var missing *ssh.PassphraseMissingError
 	if errors.As(err, &missing) {
+		if passphrase == nil {
+			return nil, errors.New("the SSH key is encrypted and a passphrase callback is required")
+		}
 		pub := missing.PublicKey
 		if pub == nil {
+			if publicKey == nil {
+				return nil, errors.New("the SSH key has no embedded public key and no public key callback was given")
+			}
 			data, err := publicKey()
 			if err != nil {
 				return nil, fmt.Errorf("the SSH key is encrypted and its public key is needed: %w", err)

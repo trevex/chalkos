@@ -87,6 +87,9 @@ func TestIssueNode(t *testing.T) {
 	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: now, DNSName: "w1"}); err != nil {
 		t.Errorf("node certificate does not verify as a server: %v", err)
 	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err == nil {
+		t.Error("node certificate verifies as a client; node certificates are server certificates only")
+	}
 	if _, ok := Role(cert); ok {
 		t.Error("a node certificate grants a client role")
 	}
@@ -135,6 +138,9 @@ func TestAllows(t *testing.T) {
 		{RoleReader, RoleOperator, false},
 		{RoleNode, RoleReader, false},
 		{"", RoleReader, false},
+		{RoleReader, RoleNode, false},
+		{RoleReader, "", false},
+		{RoleAdmin, "admn", false},
 	} {
 		if got := Allows(c.role, c.need); got != c.want {
 			t.Errorf("Allows(%q, %q) = %v, want %v", c.role, c.need, got, c.want)
@@ -163,5 +169,8 @@ func TestRecoveryKey(t *testing.T) {
 	}
 	if _, err := RecoveryKey(secret[:16], "homelab", "w1"); err == nil {
 		t.Error("accepted a short secret")
+	}
+	if _, err := RecoveryKey(secret, "a\x00b", "c"); err == nil {
+		t.Error("accepted a cluster name containing a NUL byte")
 	}
 }

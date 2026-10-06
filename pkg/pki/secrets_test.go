@@ -4,13 +4,19 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"filippo.io/age"
 	"filippo.io/age/armor"
+	"filippo.io/age/plugin"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -169,5 +175,137 @@ func TestParseIdentitiesDoesNotEchoLines(t *testing.T) {
 	_, err := ParseIdentities([]byte("my-secret-password\n"), nil, nil, nil)
 	if err == nil || strings.Contains(err.Error(), "my-secret-password") {
 		t.Errorf("err = %v, want an error that does not repeat the line", err)
+	}
+}
+
+func TestParseRecipientRejectsSecretKey(t *testing.T) {
+	input := "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"
+	_, err := ParseRecipient(input, nil)
+	if err == nil {
+		t.Fatal("accepted a secret key as a recipient")
+	}
+	if strings.Contains(err.Error(), input) {
+		t.Errorf("err = %v, want an error that does not repeat the input", err)
+	}
+	// Case-insensitive, as age itself prints the prefix upper-case only.
+	if _, err := ParseRecipient(strings.ToLower(input), nil); err == nil {
+		t.Error("accepted a lower-case secret key as a recipient")
+	}
+}
+
+func TestParseRecipientPluginRequiresUI(t *testing.T) {
+	recipient := plugin.EncodeRecipient("yubikey", []byte{1, 2, 3, 4})
+	if _, err := ParseRecipient(recipient, nil); err == nil {
+		t.Error("accepted a plugin recipient without a UI")
+	}
+}
+
+func TestParseIdentitiesPluginRequiresUI(t *testing.T) {
+	identity := plugin.EncodeIdentity("yubikey", []byte{1, 2, 3, 4})
+	if _, err := ParseIdentities([]byte(identity+"\n"), nil, nil, nil); err == nil {
+		t.Error("accepted a plugin identity without a UI")
+	}
+}
+
+func TestParseIdentitiesSSHNilPassphrase(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protected, err := ssh.MarshalPrivateKeyWithPassphrase(priv, "", []byte("hunter2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseIdentities(pem.EncodeToMemory(protected), nil, nil, nil); err == nil {
+		t.Error("accepted an encrypted SSH key without a passphrase callback")
+	}
+}
+
+func TestParseIdentitiesSSHNilPublicKeyCallback(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), []byte("hunter2"), x509.PEMCipherAES128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passphrase := func() ([]byte, error) { return []byte("hunter2"), nil }
+	if _, err := ParseIdentities(pem.EncodeToMemory(block), nil, passphrase, nil); err == nil {
+		t.Error("accepted an SSH key with no embedded public key and no public key callback")
+	}
+}
+
+func TestReadSecretsArmoredLeadingWhitespace(t *testing.T) {
+	s := generate(t)
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipient, err := ParseRecipient(id.Recipient().String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := s.Encrypt(recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var armored bytes.Buffer
+	w := armor.NewWriter(&armored)
+	w.Write(encrypted)
+	w.Close()
+	padded := append([]byte("\n  "), armored.Bytes()...)
+
+	ids, err := ParseIdentities([]byte(id.String()+"\n"), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadSecrets(padded, func() ([]age.Identity, error) { return ids, nil }); err != nil {
+		t.Errorf("armored file with leading whitespace did not decrypt: %v", err)
+	}
+}
+
+func TestSecretsValidateRejectsNonCAOSCA(t *testing.T) {
+	s := generate(t)
+	leaf, err := SelfSigned("not-a-ca", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.OSCA = leaf
+	if err := s.Validate(); err == nil {
+		t.Error("accepted an osCA that is not a CA certificate")
+	}
+}
+
+func TestSecretsValidateRejectsForeignAdmin(t *testing.T) {
+	s := generate(t)
+	other, err := NewCA("other CA", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := IssueClient(other, "admin", RoleAdmin, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Admin = admin
+	if err := s.Validate(); err == nil {
+		t.Error("accepted an admin certificate issued by a different CA")
+	}
+}
+
+func TestSecretsStringRedacted(t *testing.T) {
+	s := generate(t)
+	out := fmt.Sprintf("%v %+v %#v", s, s, s)
+	if strings.Contains(out, "PRIVATE KEY") {
+		t.Errorf("formatted secrets contain a private key: %s", out)
+	}
+	if bytes.Contains([]byte(out), s.RecoverySecret) {
+		t.Error("formatted secrets contain the raw recovery secret")
+	}
+	if strings.Contains(out, hex.EncodeToString(s.RecoverySecret)) {
+		t.Error("formatted secrets contain the recovery secret in hex")
+	}
+	if strings.Contains(out, base64.StdEncoding.EncodeToString(s.RecoverySecret)) {
+		t.Error("formatted secrets contain the recovery secret in base64")
 	}
 }

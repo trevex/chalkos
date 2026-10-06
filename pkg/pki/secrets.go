@@ -3,6 +3,7 @@ package pki
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,21 +53,55 @@ func GenerateSecrets(now time.Time) (Secrets, error) {
 	return Secrets{Version: SecretsVersion, OSCA: ca, Admin: admin, RecoverySecret: secret}, nil
 }
 
+// String returns a redacted summary, so logging or an error wrapping a Secrets never leaks the
+// recovery secret or a private key.
+func (s Secrets) String() string {
+	subject := "invalid"
+	if ca, _, err := s.OSCA.Parse(); err == nil {
+		subject = ca.Subject.CommonName
+	}
+	return fmt.Sprintf("pki.Secrets{version: %d, osCA: %s, redacted}", s.Version, subject)
+}
+
+// GoString redacts a Secrets the same way String does, so %#v in a log or test failure never
+// prints a private key or the recovery secret either.
+func (s Secrets) GoString() string {
+	return s.String()
+}
+
 // Public returns the parts of the secrets that may be published.
 func (s Secrets) Public() Public {
 	return Public{Version: s.Version, OSCA: CertKey{Certificate: s.OSCA.Certificate}}
 }
 
-// Validate checks that every secret is present and that the certificates belong to their keys.
+// Validate checks that every secret is present, that the certificates belong to their keys, that
+// osCA is a CA certificate, and that admin verifies against it and grants the admin role.
 func (s Secrets) Validate() error {
 	if s.Version != SecretsVersion {
 		return fmt.Errorf("secrets file version %d is not supported (want %d)", s.Version, SecretsVersion)
 	}
-	if _, _, err := s.OSCA.Parse(); err != nil {
+	ca, _, err := s.OSCA.Parse()
+	if err != nil {
 		return fmt.Errorf("osCA: %w", err)
 	}
-	if _, _, err := s.Admin.Parse(); err != nil {
+	if !ca.IsCA || !ca.BasicConstraintsValid {
+		return errors.New("osCA: not a CA certificate")
+	}
+	admin, _, err := s.Admin.Parse()
+	if err != nil {
 		return fmt.Errorf("admin: %w", err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := admin.Verify(x509.VerifyOptions{
+		Roots:       roots,
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		CurrentTime: admin.NotBefore,
+	}); err != nil {
+		return fmt.Errorf("admin: does not verify against osCA: %w", err)
+	}
+	if role, ok := Role(admin); !ok || role != RoleAdmin {
+		return errors.New("admin: certificate does not grant the admin role")
 	}
 	if len(s.RecoverySecret) != RecoverySecretSize {
 		return fmt.Errorf("recoverySecret must be %d bytes", RecoverySecretSize)
@@ -144,7 +179,9 @@ func ReadSecrets(data []byte, identities func() ([]age.Identity, error)) (Secret
 		}
 		var r io.Reader = bytes.NewReader(data)
 		if format == FormatArmoredAge {
-			r = armor.NewReader(r)
+			// DetectFormat trims whitespace to find the armor header, so the reader must see the
+			// same trimmed input or it rejects a leading blank line that DetectFormat ignored.
+			r = armor.NewReader(bytes.NewReader(bytes.TrimSpace(data)))
 		}
 		dec, err := age.Decrypt(r, ids...)
 		if err != nil {

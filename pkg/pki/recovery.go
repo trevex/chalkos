@@ -22,7 +22,11 @@ func RecoveryKey(secret []byte, cluster, node string) (string, error) {
 	if len(secret) != RecoverySecretSize {
 		return "", errors.New("the recovery secret must be 32 bytes")
 	}
-	// NUL cannot occur in cluster or node names, so the info never collides for two nodes.
+	// The NUL separator keeps the info unambiguous between cluster and node names, so reject one
+	// that contains a NUL byte rather than let two different names collide.
+	if strings.Contains(cluster, "\x00") || strings.Contains(node, "\x00") {
+		return "", errors.New("cluster and node names must not contain a NUL byte")
+	}
 	key, err := hkdf.Key(sha256.New, secret, nil, "chalkos recovery key\x00"+cluster+"\x00"+node, 32)
 	if err != nil {
 		return "", err

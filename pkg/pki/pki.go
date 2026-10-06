@@ -116,7 +116,7 @@ func IssueNode(ca CertKey, name string, dnsNames []string, ips []net.IP, now tim
 		return CertKey{}, err
 	}
 	template.KeyUsage = x509.KeyUsageDigitalSignature
-	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
+	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	template.DNSNames = dnsNames
 	template.IPAddresses = ips
 	return issue(ca, template)
@@ -163,10 +163,12 @@ func Role(cert *x509.Certificate) (role string, ok bool) {
 	return "", false
 }
 
-// Allows reports whether a client with role may call something that requires the role need.
+// Allows reports whether a client with role may call something that requires the role need. An
+// unrecognised need fails closed: Allows reports false rather than letting every role through.
 func Allows(role, need string) bool {
 	rank := map[string]int{RoleReader: 1, RoleOperator: 2, RoleAdmin: 3}
-	return rank[role] > 0 && rank[role] >= rank[need]
+	r, ok := rank[need]
+	return ok && rank[role] >= r
 }
 
 func newTemplate(commonName string, organization []string, now time.Time, validity time.Duration) (*x509.Certificate, error) {
