@@ -541,6 +541,41 @@ func TestSetUpRepartFailureKeepsBooting(t *testing.T) {
 	}
 }
 
+func TestSetUpRefusesUnencryptedVarMeantToBeEncrypted(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = append([]rule{{prefix: "blkid -p -o value -s TYPE /dev/disk/chalk-boot/var", out: "ext4\n"}}, firstBootRules(b)...)
+	writeStorage(t, b, "recovery-key")
+
+	err := b.setUp(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "var") || !strings.Contains(err.Error(), "LUKS") {
+		t.Fatalf("err = %v, want a refusal naming var and LUKS", err)
+	}
+	for _, call := range r.calls {
+		if strings.HasPrefix(call, "mount") {
+			t.Errorf("mounted a plain VAR that is meant to be encrypted: %s", call)
+		}
+	}
+}
+
+func TestSetUpMountsUnencryptedVar(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk)
+	r.rules = append([]rule{{prefix: "blkid -p -o value -s TYPE /dev/disk/chalk-boot/var", out: "ext4\n"}}, firstBootRules(b)...)
+	writeSection(t, b, `{
+	  "disks": {"system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}}},
+	  "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "none", "size": null}},
+	  "fallback": "recovery-key"
+	}`)
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(r.calls, "mount -t ext4 /dev/disk/chalk-boot/var "+b.varDir) {
+		t.Errorf("unencrypted VAR not mounted: %v", r.calls)
+	}
+}
+
 func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
 	r := &fakeRunner{}
 	b := newTestBoot(t, r, bootDisk, dataDisk)

@@ -46,12 +46,13 @@ func (b *boot) storageDir() string { return filepath.Join(b.stateDir, "storage")
 // openState unlocks STATE when it is encrypted and mounts it. The fallback is always offered:
 // it is recorded on STATE itself, so it cannot be known yet.
 func (b *boot) openState(ctx context.Context) error {
-	return b.open(ctx, "state", filepath.Join(b.bootPartitions, "state"), b.stateDir, true)
+	return b.open(ctx, "state", filepath.Join(b.bootPartitions, "state"), b.stateDir, true, false)
 }
 
 // open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target.
-// Without prompt, systemd-cryptsetup only tries the TPM.
-func (b *boot) open(ctx context.Context, name, dev, target string, prompt bool) error {
+// Without prompt, systemd-cryptsetup only tries the TPM. With encrypted, a device without LUKS
+// is refused, so data meant to be encrypted never lands on a plain file system.
+func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encrypted bool) error {
 	if _, err := b.run.run(ctx, "udevadm", "wait", "--timeout=60", dev); err != nil {
 		return fmt.Errorf("wait for %s: %w", dev, err)
 	}
@@ -60,7 +61,11 @@ func (b *boot) open(ctx context.Context, name, dev, target string, prompt bool) 
 		return fmt.Errorf("probe %s: %w", dev, err)
 	}
 	source := dev
-	if strings.TrimSpace(string(out)) == "crypto_LUKS" {
+	fsType := strings.TrimSpace(string(out))
+	if encrypted && fsType != "crypto_LUKS" {
+		return fmt.Errorf("volume %s is meant to be encrypted, but %s holds %q instead of LUKS; refusing to mount it", name, dev, fsType)
+	}
+	if fsType == "crypto_LUKS" {
 		options := "tpm2-device=auto"
 		if !prompt {
 			options += ",headless=true"
@@ -151,7 +156,8 @@ func (b *boot) setUpVolumes(ctx context.Context, status *storage.Status) error {
 		return nil
 	}
 	prompt := section.Fallback != storage.FallbackNone
-	if err := b.open(ctx, storage.VarVolume, filepath.Join(b.bootPartitions, storage.VarVolume), b.varDir, prompt); err != nil {
+	encrypted := section.Volumes[storage.VarVolume].Encryption == storage.EncryptionTPM2
+	if err := b.open(ctx, storage.VarVolume, filepath.Join(b.bootPartitions, storage.VarVolume), b.varDir, prompt, encrypted); err != nil {
 		status.Disks[storage.SystemDisk] = storage.DiskStatus{Device: devices[storage.SystemDisk], Error: err.Error()}
 		return err
 	}
