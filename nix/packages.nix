@@ -5,26 +5,21 @@
 let
   inherit (pkgs) lib;
   testCluster = import ./testing/cluster.nix { inherit self; };
+  goModule = pkgs.callPackage ./go-module.nix { };
 
-  goSrc = lib.fileset.toSource {
-    root = ../.;
-    fileset = lib.fileset.unions [
-      ../go.mod
-      ../cmd
-      ../pkg
-      ../test/e2e
-      ../test/fixtures
-    ];
-  };
+  goPaths = [
+    ../cmd
+    ../pkg
+    ../test/e2e
+    ../test/fixtures
+  ];
 in
 {
   test-secureboot = import ./testing/secureboot.nix { inherit pkgs; };
 
-  chalkctl = pkgs.buildGoModule {
+  chalkctl = goModule {
     pname = "chalkctl";
-    version = "0.1.0";
-    src = goSrc;
-    vendorHash = null;
+    paths = goPaths;
     subPackages = [ "cmd/chalkctl" ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postFixup = ''
@@ -42,11 +37,9 @@ in
   test-image = testCluster.roles.test.image;
   test-storage-image = testCluster.roles.storage.image;
 
-  chalklab-e2e = pkgs.buildGoModule {
+  chalklab-e2e = goModule {
     pname = "chalklab-e2e";
-    version = "0.1.0";
-    src = goSrc;
-    vendorHash = null;
+    paths = goPaths;
     doCheck = false;
     buildPhase = ''
       runHook preBuild

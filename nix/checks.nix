@@ -61,6 +61,37 @@ in
     CHALKLAB_STORAGE_IMAGE_DIR = "${chalkPkgs.test-storage-image}";
   };
 
+  # The generated API code is committed; it must match what buf generates from the proto files.
+  api-generated =
+    pkgs.runCommand "chalkos-api-generated"
+      {
+        nativeBuildInputs = [
+          pkgs.buf
+          pkgs.protoc-gen-go
+          pkgs.protoc-gen-connect-go
+        ];
+        src = pkgs.lib.fileset.toSource {
+          root = ../.;
+          fileset = pkgs.lib.fileset.unions [
+            ../buf.yaml
+            ../buf.gen.yaml
+            ../api
+            ../pkg/api
+          ];
+        };
+      }
+      ''
+        export HOME=$TMPDIR
+        cp -r $src work
+        chmod -R u+w work
+        cd work
+        buf lint
+        rm -r pkg/api
+        buf generate
+        diff -ru $src/pkg/api pkg/api
+        touch $out
+      '';
+
   manifest-golden =
     let
       homelab = self.lib.mkCluster { modules = [ ../examples/homelab/cluster.nix ]; };

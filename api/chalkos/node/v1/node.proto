@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+// The API of chalkd, the agent on every chalkos node and on the installer. chalkd serves it on
+// TCP port 50000 over TLS; chalkctl is its client.
+package chalkos.node.v1;
+
+option go_package = "github.com/trevex/chalkos/pkg/api/node/v1;nodev1";
+
+service NodeService {
+  // Info describes the node and the agent. Available in both modes to readers.
+  rpc Info(InfoRequest) returns (InfoResponse);
+  // Disks lists the node's disks and their partitions. Available in both modes to readers.
+  rpc Disks(DisksRequest) returns (DisksResponse);
+  // Install turns a node in maintenance mode into an installed node and reboots it. The first
+  // message carries the header; image chunks follow when the node is the installer.
+  rpc Install(stream InstallRequest) returns (InstallResponse);
+  // ApplyIdentity replaces the identity of an installed node. Destructive storage changes are
+  // refused; additive ones are applied live.
+  rpc ApplyIdentity(ApplyIdentityRequest) returns (ApplyIdentityResponse);
+  // ResetVolume wipes one volume and creates it again as the delivered identity defines it.
+  rpc ResetVolume(ResetVolumeRequest) returns (ResetVolumeResponse);
+  // Status reports the identity version, the storage, and failed units of an installed node.
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Logs streams the journal of the current boot, or of one unit in it.
+  rpc Logs(LogsRequest) returns (stream LogsResponse);
+  // Reboot reboots the node once the response is sent.
+  rpc Reboot(RebootRequest) returns (RebootResponse);
+}
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  // The node is not installed: chalkd serves a self-signed certificate.
+  MODE_MAINTENANCE = 1;
+  // The node is installed: chalkd serves its node certificate and requires client certificates.
+  MODE_NORMAL = 2;
+}
+
+enum SecureBoot {
+  SECURE_BOOT_UNSPECIFIED = 0;
+  SECURE_BOOT_DISABLED = 1;
+  SECURE_BOOT_ENABLED = 2;
+  // The firmware accepts new Secure Boot keys without authentication.
+  SECURE_BOOT_SETUP_MODE = 3;
+}
+
+message InfoRequest {}
+
+message InfoResponse {
+  Mode mode = 1;
+  // chalkos version of the running image.
+  string version = 2;
+  // Image ID of the running image, such as "chalkos".
+  string image_id = 3;
+  // Whether the node runs the installer, which writes a role image to another disk.
+  bool installer = 4;
+  // Device of the disk the node booted from; empty on the installer booted from a CD.
+  string boot_disk = 5;
+  bool tpm = 6;
+  SecureBoot secure_boot = 7;
+  // SHA-256 of the certificate chalkd serves, in lower-case hex.
+  string fingerprint = 8;
+  string hostname = 9;
+}
+
+message DisksRequest {}
+
+message DisksResponse {
+  repeated Disk disks = 1;
+}
+
+message Disk {
+  // Kernel name, such as nvme0n1.
+  string name = 1;
+  string device = 2;
+  string model = 3;
+  uint64 size = 4;
+  string serial = 5;
+  string wwn = 6;
+  // nvme, ssd or hdd.
+  string type = 7;
+  // udev's ID_PATH.
+  string path = 8;
+  repeated Partition partitions = 9;
+  // How chalkos uses the disk: "boot" for the boot disk, "disk <name>" for a pinned disk of the
+  // node's storage, empty when chalkos does not use it.
+  string usage = 10;
+}
+
+message Partition {
+  string device = 1;
+  uint32 number = 2;
+  uint64 size = 3;
+  // GPT partition type UUID.
+  string type = 4;
+  string label = 5;
+  string uuid = 6;
+  // File system or other content blkid found, such as ext4 or crypto_LUKS.
+  string content = 7;
+}
+
+message InstallRequest {
+  oneof message {
+    InstallHeader header = 1;
+    ImageChunk chunk = 2;
+  }
+}
+
+message InstallHeader {
+  // The node's identity as the manifest renders it (JSON), including its storage section.
+  string identity = 1;
+  // PEM certificate and key chalkd serves once the node is installed.
+  bytes node_certificate = 2;
+  bytes node_key = 3;
+  // PEM certificate of the OS CA, which issues client certificates.
+  bytes ca_certificate = 4;
+  // Recovery key or password enrolled as the second keyslot of every encrypted volume; empty
+  // when the node's fallback is none.
+  string fallback_secret = 5;
+  oneof target {
+    // The role image already runs from the boot disk.
+    InPlace in_place = 6;
+    // The installer writes the streamed image to this disk.
+    DiskReference disk = 7;
+  }
+  // Size and SHA-256 of the streamed image; installer only.
+  uint64 image_size = 8;
+  bytes image_sha256 = 9;
+  // Let the installer overwrite a target disk that carries data other than chalkos partitions.
+  bool wipe_disk = 10;
+  // The role image's repart definitions of the system region (slot B, STATE) by file name;
+  // installer only. Each role chooses its partition sizes, so the installer's own may not fit.
+  map<string, string> system_definitions = 11;
+}
+
+message InPlace {}
+
+// A disk by /dev path, or by a selector whose set fields must all match.
+message DiskReference {
+  string path = 1;
+  string model = 2;
+  string serial = 3;
+  string wwn = 4;
+  string size = 5;
+  string type = 6;
+}
+
+message ImageChunk {
+  bytes data = 1;
+}
+
+message InstallResponse {}
+
+message ApplyIdentityRequest {
+  // The node's identity as the manifest renders it (JSON).
+  string identity = 1;
+  // Enrolled on encrypted volumes the identity adds; required when it adds one and the node's
+  // fallback is not none.
+  string fallback_secret = 2;
+}
+
+message ApplyIdentityResponse {
+  // Storage changes that were applied.
+  repeated StorageChange changes = 1;
+  // Units restarted because identity keys they read changed.
+  repeated string restarted_units = 2;
+}
+
+message StorageChange {
+  string volume = 1;
+  string reason = 2;
+  bool destructive = 3;
+}
+
+message ResetVolumeRequest {
+  string volume = 1;
+  // The node's identity as the manifest renders it (JSON); the volume is created as it defines.
+  string identity = 2;
+  string fallback_secret = 3;
+}
+
+message ResetVolumeResponse {}
+
+message StatusRequest {}
+
+message StatusResponse {
+  // SHA-256 of the identity document the node runs, in lower-case hex.
+  string identity_version = 1;
+  repeated DiskStatus disks = 2;
+  repeated VolumeStatus volumes = 3;
+  repeated string failed_units = 4;
+}
+
+message DiskStatus {
+  string name = 1;
+  string device = 2;
+  // Why the disk's volumes could not be created or opened at boot; empty when they were.
+  string error = 3;
+}
+
+message VolumeStatus {
+  string name = 1;
+  string disk = 2;
+  string mount_point = 3;
+  // Whether the volume's partition exists.
+  bool present = 4;
+  // Whether the volume is mounted at its mount point.
+  bool mounted = 5;
+}
+
+message LogsRequest {
+  // Unit whose journal to stream; empty streams the whole boot.
+  string unit = 1;
+  // Keep streaming new entries until the client cancels.
+  bool follow = 2;
+}
+
+message LogsResponse {
+  string line = 1;
+}
+
+message RebootRequest {}
+
+message RebootResponse {}

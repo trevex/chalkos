@@ -1,19 +1,12 @@
 # chalkos-storage, statically linked because it runs in the initrd.
-{ lib, buildGoModule }:
-buildGoModule {
+{ callPackage }:
+callPackage ./go-module.nix { } {
   pname = "chalkos-storage";
-  version = "0.1.0";
-  src = lib.fileset.toSource {
-    root = ../.;
-    fileset = lib.fileset.unions [
-      ../go.mod
-      ../cmd/chalkos-storage
-      ../pkg/storage
-    ];
-  };
-  vendorHash = null;
+  paths = [
+    ../cmd/chalkos-storage
+    ../pkg/storage
+  ];
   subPackages = [ "cmd/chalkos-storage" ];
-  env.CGO_ENABLED = "0";
   ldflags = [
     "-s"
     "-w"

@@ -9,6 +9,9 @@ pkgs.mkShell (
       ++ (with pkgs; [
         go
         gopls
+        buf
+        protoc-gen-go
+        protoc-gen-connect-go
         openssl
         python3Packages.virt-firmware
         jq
