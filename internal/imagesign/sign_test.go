@@ -84,7 +84,7 @@ func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_0.1.0.efi")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/tools/shell.efi")
 
-	if err := SignImage(context.Background(), image, Partition{Type: "esp", Offset: offset}, key, cert); err != nil {
+	if err := SignImage(context.Background(), image, offset, key, cert); err != nil {
 		t.Fatal(err)
 	}
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"chalkos/internal/image"
 	"chalkos/internal/imagesign"
 	"chalkos/internal/lab"
 )
@@ -80,7 +81,7 @@ func startVM(t *testing.T, dir, vars string, disks ...string) *lab.VM {
 
 type diskOpts struct {
 	sign   bool
-	mutate func(t *testing.T, raw string, parts []imagesign.Partition)
+	mutate func(t *testing.T, raw string, parts []image.Partition)
 }
 
 // prepareDisk copies the test image into dir, optionally modifies and signs the copy, and
@@ -93,7 +94,7 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) string {
 	if err != nil || len(raws) != 1 {
 		t.Fatalf("want exactly one .raw in %s, got %v (%v)", imageDir, raws, err)
 	}
-	parts, err := imagesign.ReadPartitions(filepath.Join(imageDir, "repart-output.json"))
+	parts, err := image.ReadPartitions(filepath.Join(imageDir, "repart-output.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,12 +107,12 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) string {
 		o.mutate(t, raw, parts)
 	}
 	if o.sign {
-		esp, err := imagesign.FindPartition(parts, "esp")
+		esp, err := image.FindPartition(parts, "esp")
 		if err != nil {
 			t.Fatal(err)
 		}
 		keys := os.Getenv("CHALKLAB_SB_KEYS")
-		if err := imagesign.SignImage(ctx, raw, esp, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt")); err != nil {
+		if err := imagesign.SignImage(ctx, raw, esp.Offset, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt")); err != nil {
 			t.Fatal(err)
 		}
 	}

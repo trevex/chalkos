@@ -1,3 +1,4 @@
+// Package imagesign signs the boot loader and UKIs of chalkos disk images for Secure Boot.
 package imagesign
 
 import (
@@ -15,8 +16,8 @@ import (
 // else lands on the ESP does not gain the cluster's db signature.
 // The image's verity-protected store is untouched; the UKI's signature covers the store
 // because the UKI command line carries the store's verity root hash.
-func SignImage(ctx context.Context, image string, esp Partition, key, cert string) error {
-	fat := fmt.Sprintf("%s@@%d", image, esp.Offset)
+func SignImage(ctx context.Context, image string, espOffset int64, key, cert string) error {
+	fat := fmt.Sprintf("%s@@%d", image, espOffset)
 	files, err := listSignedBinaries(ctx, fat)
 	if err != nil {
 		return err

@@ -1,5 +1,5 @@
-// Package imagesign signs the boot loader and UKIs of chalkos disk images for Secure Boot.
-package imagesign
+// Package image reads the layout of chalkos disk images.
+package image
 
 import (
 	"encoding/json"

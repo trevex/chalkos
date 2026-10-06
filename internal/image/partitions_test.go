@@ -1,4 +1,4 @@
-package imagesign
+package image
 
 import (
 	"os"

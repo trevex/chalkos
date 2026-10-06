@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"chalkos/internal/image"
 	"chalkos/internal/imagesign"
 )
 
@@ -37,7 +38,7 @@ func main() {
 
 func runSign(args []string) error {
 	fs := flag.NewFlagSet("sign", flag.ContinueOnError)
-	image := fs.String("image", "", "raw disk image to sign in place")
+	imagePath := fs.String("image", "", "raw disk image to sign in place")
 	repartJSON := fs.String("repart-json", "", "repart-output.json describing the image's partitions")
 	key := fs.String("key", "", "PEM private key of the Secure Boot db signer")
 	cert := fs.String("cert", "", "PEM certificate of the Secure Boot db signer")
@@ -45,20 +46,20 @@ func runSign(args []string) error {
 		return err
 	}
 	for _, f := range []struct{ name, value string }{
-		{"--image", *image}, {"--repart-json", *repartJSON}, {"--key", *key}, {"--cert", *cert},
+		{"--image", *imagePath}, {"--repart-json", *repartJSON}, {"--key", *key}, {"--cert", *cert},
 	} {
 		if f.value == "" {
 			return errors.New("sign: " + f.name + " is required")
 		}
 	}
 
-	parts, err := imagesign.ReadPartitions(*repartJSON)
+	parts, err := image.ReadPartitions(*repartJSON)
 	if err != nil {
 		return err
 	}
-	esp, err := imagesign.FindPartition(parts, "esp")
+	esp, err := image.FindPartition(parts, "esp")
 	if err != nil {
 		return err
 	}
-	return imagesign.SignImage(context.Background(), *image, esp, *key, *cert)
+	return imagesign.SignImage(context.Background(), *imagePath, esp.Offset, *key, *cert)
 }

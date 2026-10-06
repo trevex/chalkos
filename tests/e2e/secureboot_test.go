@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"chalkos/internal/imagesign"
+	"chalkos/internal/image"
 )
 
 var secureBootEnv = []string{
@@ -67,8 +67,8 @@ func TestVerityRejectsTamperedStore(t *testing.T) {
 	dir := vmDir(t)
 	disk := prepareDisk(t, dir, diskOpts{
 		sign: true,
-		mutate: func(t *testing.T, raw string, parts []imagesign.Partition) {
-			store, err := imagesign.FindPartition(parts, "usr-x86-64")
+		mutate: func(t *testing.T, raw string, parts []image.Partition) {
+			store, err := image.FindPartition(parts, "usr-x86-64")
 			if err != nil {
 				t.Fatal(err)
 			}
