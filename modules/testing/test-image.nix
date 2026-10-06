@@ -7,7 +7,6 @@
     storeSize = "2G";
     storeVeritySize = "64M";
     stateSize = "64M";
-    varMinSize = "1G";
   };
 
   # chalklab attaches disks as virtio-blk-pci; the initrd needs them to find the store.

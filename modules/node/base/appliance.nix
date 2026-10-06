@@ -10,7 +10,7 @@
   system.image.version = lib.mkDefault "0.1.0";
   system.stateVersion = "26.05";
 
-  # The running system lives in tmpfs; persistent data goes to /state and /var (see disk.nix).
+  # The running system lives in tmpfs; persistent data goes to /state and /var (see storage.nix).
   fileSystems."/" = {
     fsType = "tmpfs";
     options = [ "mode=0755" ];

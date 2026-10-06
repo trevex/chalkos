@@ -36,6 +36,8 @@ in
     '';
   };
 
+  chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
+
   test-image = (import ./testing/cluster.nix { inherit self; }).roles.test.image;
 
   chalklab-e2e = pkgs.buildGoModule {

@@ -1,4 +1,5 @@
-# Disk layout: ESP, store slots A and B (verity hash + erofs data), STATE, VAR.
+# System region: ESP, store slots A and B (verity hash + erofs data), and STATE. VAR and further
+# volumes come from the node's storage section (see storage.nix).
 {
   config,
   lib,
@@ -20,10 +21,12 @@ let
       arm64 = "arm64";
     }
     .${pkgs.stdenv.hostPlatform.linuxArch};
-  luksTPM = name: {
-    device = "/dev/disk/by-partlabel/${name}";
-    crypttabExtraOpts = [ "tpm2-device=auto" ];
-  };
+  # Links to the disk systemd-boot was loaded from and to its partitions by label. A second disk
+  # carrying the same image or the same labels never gets these links.
+  bootDiskRules = ''
+    SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", SYMLINK+="disk/chalk-boot-disk"
+    SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", ENV{ID_PART_ENTRY_NAME}=="?*", SYMLINK+="disk/chalk-boot/$env{ID_PART_ENTRY_NAME}"
+  '';
 in
 {
   imports = [ "${modulesPath}/image/repart.nix" ];
@@ -50,11 +53,6 @@ in
           type = lib.types.str;
           default = "128M";
           description = "Size of the STATE partition holding node identity and secrets.";
-        };
-        varMinSize = lib.mkOption {
-          type = lib.types.str;
-          default = "4G";
-          description = "Minimum size of the VAR partition; it grows to fill the disk.";
         };
       };
     };
@@ -90,7 +88,7 @@ in
       };
     };
 
-    # First boot: add slot B, STATE, and VAR behind the partitions the image ships with.
+    # First boot: add slot B and STATE behind the partitions the image ships with.
     # Definitions match existing partitions by type, in file-name order.
     systemd.repart.partitions = {
       "00-esp" = {
@@ -122,46 +120,17 @@ in
         Encrypt = "tpm2";
       }
       // fixed cfg.stateSize;
-      "60-var" = {
-        Type = "linux-generic";
-        Label = "var";
-        Format = "ext4";
-        Encrypt = "tpm2";
-        SizeMinBytes = cfg.varMinSize;
-      };
     };
 
     boot.initrd = {
       # The root is tmpfs, so name the disk systemd-boot was loaded from for repart.
-      services.udev.rules = ''
-        SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", SYMLINK+="disk/chalk-boot"
-      '';
+      services.udev.rules = bootDiskRules;
       systemd.repart = {
         enable = true;
-        device = "/dev/disk/chalk-boot";
+        device = "/dev/disk/chalk-boot-disk";
         extraArgs = [ "--tpm2-pcrs=7" ];
       };
-      # Volumes must exist before cryptsetup tries to open them on first boot.
-      systemd.services.systemd-repart.before = [
-        "systemd-cryptsetup@state.service"
-        "systemd-cryptsetup@var.service"
-      ];
-      availableKernelModules = [ "dm_crypt" ];
-      luks.devices = {
-        state = luksTPM "state";
-        var = luksTPM "var";
-      };
     };
-
-    fileSystems."/state" = {
-      device = "/dev/mapper/state";
-      fsType = "ext4";
-      neededForBoot = true;
-    };
-    fileSystems."/var" = {
-      device = "/dev/mapper/var";
-      fsType = "ext4";
-      neededForBoot = true;
-    };
+    services.udev.extraRules = bootDiskRules;
   };
 }

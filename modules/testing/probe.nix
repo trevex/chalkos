@@ -10,6 +10,7 @@ let
       cryptsetup
       gnugrep
       gawk
+      jq
     ];
     text = ''
       fact() { echo "CHALKTEST $1=$2"; }
@@ -23,6 +24,28 @@ let
         echo "$n"
       }
 
+      # Volumes other than VAR are only wanted by the boot, so they may still be opening.
+      wait_for() {
+        for _ in $(seq 120); do
+          if "$@"; then return 0; fi
+          sleep 0.5
+        done
+        return 1
+      }
+
+      storage=/state/storage
+      # The partition of a volume: VAR on the boot disk, the others by the PARTUUID repart reported.
+      partition() {
+        local vol=$1 disk uuid
+        if [[ $vol == var ]]; then
+          echo /dev/disk/chalk-boot/var
+          return
+        fi
+        disk=$(jq -r --arg v "$vol" '.volumes[$v].disk' "$storage/storage.json")
+        uuid=$(jq -r --arg d "$disk" --arg v "$vol" '.disks[$d].partitions[$v] // empty' "$storage/disks.json")
+        if [[ -n $uuid ]]; then echo "/dev/disk/by-partuuid/$uuid"; fi
+      }
+
       fact root_fstype "$(findmnt -n -o FSTYPE /)"
       # A whole-item match, so options such as errors=remount-ro do not count as read-only.
       fact etc_ro "$(findmnt -n -o OPTIONS /etc | tr ',' '\n' | grep -cx ro || true)"
@@ -30,12 +53,37 @@ let
       sb=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
       fact secureboot "$(od -An -t u1 -j4 -N1 "$sb" 2>/dev/null | tr -d ' ' || true)"
       fact slot_b_empty "$(lsblk -rno PARTLABEL | grep -c '^_empty$' || true)"
-      for vol in state var; do
-        fact "''${vol}_fstype" "$(findmnt -n -o FSTYPE "/$vol" || true)"
-        fact "''${vol}_tpm2" "$(cryptsetup luksDump "/dev/disk/by-partlabel/$vol" 2>/dev/null | grep -c systemd-tpm2 || true)"
-      done
+
+      fact state_fstype "$(findmnt -n -o FSTYPE /state || true)"
+      fact state_tpm2 "$(cryptsetup luksDump /dev/disk/chalk-boot/state 2>/dev/null | grep -c systemd-tpm2 || true)"
       if mountpoint -q /state; then fact state_boots "$(count_boots /state/chalktest/boots)"; fi
-      if mountpoint -q /var; then fact var_boots "$(count_boots /var/lib/chalktest/boots)"; fi
+
+      if [[ -f $storage/storage.json ]]; then
+        for vol in $(jq -r '.volumes | keys[]' "$storage/storage.json"); do
+          key=''${vol//-/_}
+          part=$(partition "$vol")
+          if [[ -z $part ]]; then
+            fact "''${key}_missing" 1
+            continue
+          fi
+          wait_for test -b "$part" || true
+          fact "''${key}_tpm2" "$(cryptsetup luksDump "$part" 2>/dev/null | grep -c systemd-tpm2 || true)"
+          fact "''${key}_size" "$(lsblk -bdno SIZE "$part" 2>/dev/null || true)"
+          fact "''${key}_disk" "$(lsblk -no PKNAME "$part" 2>/dev/null || true)"
+          dev=$part
+          if cryptsetup isLuks "$part" 2>/dev/null; then dev=/dev/mapper/$vol; fi
+          mountpoint=$(jq -r --arg v "$vol" '.volumes[$v].mountPoint // empty' "$storage/storage.json")
+          if [[ -n $mountpoint ]]; then
+            wait_for mountpoint -q "$mountpoint" || true
+            fact "''${key}_fstype" "$(findmnt -n -o FSTYPE "$mountpoint" || true)"
+            if mountpoint -q "$mountpoint"; then fact "''${key}_boots" "$(count_boots "$mountpoint/.chalktest-boots")"; fi
+          else
+            wait_for test -b "$dev" || true
+            fact "''${key}_block" "$(if [[ -b $dev ]]; then echo 1; else echo 0; fi)"
+            fact "''${key}_mounted" "$(findmnt -n -S "$dev" | wc -l)"
+          fi
+        done
+      fi
       # Tests may hard-reset the VM right after "done", which would drop unflushed counters.
       sync
       fact "done" 1
