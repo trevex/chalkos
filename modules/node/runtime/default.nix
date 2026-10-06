@@ -40,6 +40,21 @@ in
   };
 
   config = {
+    # The credential settings below would otherwise create an empty unit for a misspelled name.
+    assertions = lib.mapAttrsToList (
+      name: _:
+      let
+        service = config.systemd.services.${name};
+      in
+      {
+        assertion = service.serviceConfig ? ExecStart || service.script != "";
+        message = ''
+          chalkos.node.consumers.${name} names no service: systemd.services.${name} defines
+          neither serviceConfig.ExecStart nor script.
+        '';
+      }
+    ) cfg.consumers;
+
     systemd.services = lib.mapAttrs (_: c: {
       serviceConfig.LoadCredential = map (key: "${key}:${credentialPath key}") c.keys;
     }) cfg.consumers;
