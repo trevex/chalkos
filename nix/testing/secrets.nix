@@ -11,17 +11,19 @@ pkgs.runCommand "chalkos-test-secrets"
   }
   ''
     mkdir -p $out
+    # The derivation is built once and reused, so its certificates must not expire under it.
+    days=36500
     key() { openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$1"; }
 
     key ca.key
-    openssl req -x509 -new -key ca.key -sha256 -days 3650 -subj "/CN=chalkos OS CA" \
+    openssl req -x509 -new -key ca.key -sha256 -days "$days" -subj "/CN=chalkos OS CA" \
       -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
       -addext "keyUsage=critical,keyCertSign,cRLSign" -out ca.crt
 
     key admin.key
     openssl req -new -key admin.key -subj "/O=admin/CN=admin" -out admin.csr
     printf 'keyUsage=critical,digitalSignature\nextendedKeyUsage=clientAuth\n' > admin.ext
-    openssl x509 -req -in admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days 365 \
+    openssl x509 -req -in admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days "$days" \
       -extfile admin.ext -out admin.crt
 
     jq -n \
