@@ -36,10 +36,19 @@ const (
 	contentExt4     = "ext4"
 )
 
-// Installed reports whether STATE, mounted at stateDir, holds the installed marker.
-func Installed(stateDir string) bool {
+// Installed reports whether STATE, mounted at stateDir, holds the installed marker. Only a
+// marker that does not exist means not installed; any other error is returned, so callers
+// never take an unreadable STATE for an empty one.
+func Installed(stateDir string) (bool, error) {
 	_, err := os.Stat(filepath.Join(stateDir, installedMarker))
-	return err == nil
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, fmt.Errorf("check whether the node is installed: %w", err)
+	}
 }
 
 // Request is what both flows install.
@@ -94,8 +103,8 @@ type Installer struct {
 	WorkDir string
 	// MountInfo is the mount table of chalkd's mount namespace.
 	MountInfo string
-	// OpenDisk opens a disk for writing the image.
-	OpenDisk func(path string) (Disk, error)
+	// OpenDisk opens a disk for writing the image, waiting for its lock until ctx is done.
+	OpenDisk func(ctx context.Context, path string) (Disk, error)
 	// Loader is the boot loader's path on the ESP, for the UEFI boot entry.
 	Loader string
 	Now    func() time.Time
@@ -126,7 +135,9 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	if err := req.validate(); err != nil {
 		return err
 	}
-	if Installed(i.StateDir) {
+	if installed, err := Installed(i.StateDir); err != nil {
+		return err
+	} else if installed {
 		return errors.New("the node is installed already")
 	}
 	boot, err := i.Host.ResolvePath(i.BootDisk)
@@ -151,14 +162,18 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	return i.installOn(ctx, boot, defs, req)
 }
 
-// closeState unmounts and closes the STATE the node booted with, so it can be recreated.
+// closeState unmounts STATE from StateDir and closes its LUKS device: the STATE the node booted
+// with, so it can be recreated, or the target's, so the target disk is free again. A STATE that
+// is not mounted or not open is fine.
 func (i *Installer) closeState(ctx context.Context) error {
 	mounted, err := isMounted(i.MountInfo, i.StateDir)
 	if err != nil {
 		return err
 	}
 	if mounted {
-		if _, err := i.Run.Run(ctx, "umount", i.StateDir); err != nil {
+		_, err := i.Run.Run(ctx, "umount", i.StateDir)
+		var te *node.ToolError
+		if err != nil && !(errors.As(err, &te) && strings.Contains(te.Stderr, "not mounted")) {
 			return fmt.Errorf("unmount STATE: %w", err)
 		}
 	}
@@ -226,6 +241,14 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		}
 	}
 
+	// chalkd/ holds the node's private key.
+	chalkdDir := filepath.Join(i.StateDir, "chalkd")
+	if err := os.MkdirAll(chalkdDir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(chalkdDir, 0o700); err != nil {
+		return err
+	}
 	files := []struct {
 		path string
 		data []byte

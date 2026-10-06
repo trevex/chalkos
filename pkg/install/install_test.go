@@ -3,7 +3,9 @@ package install
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,10 +22,19 @@ import (
 
 // fakeRunner records commands and answers them from the first matching rule. A rule with
 // times > 0 answers that many times.
+//
+// Commands that succeed also change the host as the real tools would: mount and umount edit
+// the mount table, systemd-cryptsetup creates and removes /dev/mapper entries, sfdisk
+// --part-uuid changes what sfdisk --json reports later, and efibootmgr edits efi when set.
 type fakeRunner struct {
 	rules []*rule
 	calls []string
 	envs  map[string][]string
+
+	mountInfo, devRoot string
+	// partUUIDs holds the partition UUIDs sfdisk --part-uuid set, by "<device> <number>".
+	partUUIDs map[string]string
+	efi       *fakeEFI
 }
 
 type rule struct {
@@ -46,6 +57,14 @@ func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, ar
 		}
 		f.envs[line] = env
 	}
+	out, err := f.answer(line)
+	if err != nil {
+		return out, err
+	}
+	return f.apply(name, args, out)
+}
+
+func (f *fakeRunner) answer(line string) ([]byte, error) {
 	for _, r := range f.rules {
 		if !strings.HasPrefix(line, r.prefix) {
 			continue
@@ -64,7 +83,150 @@ func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, ar
 	return nil, nil
 }
 
+// apply makes the host reflect a command that succeeded.
+func (f *fakeRunner) apply(name string, args []string, out []byte) ([]byte, error) {
+	switch {
+	case f.mountInfo != "" && name == "mount" && len(args) == 4:
+		data, err := os.ReadFile(f.mountInfo)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, fmt.Sprintf("50 30 253:9 / %s rw,relatime - ext4 %s rw\n", args[3], args[2])...)
+		return out, os.WriteFile(f.mountInfo, data, 0o644)
+	case f.mountInfo != "" && name == "umount" && len(args) == 1:
+		data, err := os.ReadFile(f.mountInfo)
+		if err != nil {
+			return nil, err
+		}
+		var kept []string
+		for _, l := range strings.SplitAfter(string(data), "\n") {
+			if fields := strings.Fields(l); len(fields) > 4 && fields[4] == args[0] {
+				continue
+			}
+			kept = append(kept, l)
+		}
+		if len(kept) == len(strings.SplitAfter(string(data), "\n")) {
+			return nil, &node.ToolError{Command: "umount", Code: 32, Stderr: "umount: " + args[0] + ": not mounted."}
+		}
+		return out, os.WriteFile(f.mountInfo, []byte(strings.Join(kept, "")), 0o644)
+	case f.devRoot != "" && name == "systemd-cryptsetup" && len(args) >= 3 && args[0] == "attach":
+		return out, os.WriteFile(filepath.Join(f.devRoot, "mapper", args[1]), []byte(args[2]), 0o644)
+	case f.devRoot != "" && name == "systemd-cryptsetup" && len(args) == 2 && args[0] == "detach":
+		// systemd-cryptsetup reports an inactive volume and succeeds.
+		if err := os.Remove(filepath.Join(f.devRoot, "mapper", args[1])); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		return out, nil
+	case name == "sfdisk" && len(args) == 4 && args[0] == "--part-uuid":
+		if f.partUUIDs == nil {
+			f.partUUIDs = map[string]string{}
+		}
+		f.partUUIDs[args[1]+" "+args[2]] = args[3]
+		return out, nil
+	case name == "sfdisk" && len(args) == 2 && args[0] == "--json" && len(f.partUUIDs) > 0 && len(out) > 0:
+		return f.withPartUUIDs(args[1], out)
+	case f.efi != nil && name == "efibootmgr":
+		return f.efi.run(f, args)
+	}
+	return out, nil
+}
+
+// withPartUUIDs changes the partition UUIDs in sfdisk --json output for dev to those set.
+func (f *fakeRunner) withPartUUIDs(dev string, out []byte) ([]byte, error) {
+	var dump map[string]map[string]any
+	if err := json.Unmarshal(out, &dump); err != nil {
+		return nil, err
+	}
+	parts, _ := dump["partitiontable"]["partitions"].([]any)
+	for _, p := range parts {
+		p := p.(map[string]any)
+		n := strings.TrimPrefix(strings.TrimPrefix(p["node"].(string), dev), "p")
+		if uuid, ok := f.partUUIDs[dev+" "+n]; ok {
+			p["uuid"] = strings.ToUpper(uuid)
+		}
+	}
+	return json.Marshal(dump)
+}
+
+// holds reports whether a partition of dev is mounted or opened by the device mapper.
+func (f *fakeRunner) holds(dev string) bool {
+	data, _ := os.ReadFile(f.mountInfo)
+	for _, l := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(l); len(fields) > 8 && strings.HasPrefix(fields[8], dev) {
+			return true
+		}
+	}
+	mappers, _ := os.ReadDir(filepath.Join(f.devRoot, "mapper"))
+	for _, m := range mappers {
+		if backing, _ := os.ReadFile(filepath.Join(f.devRoot, "mapper", m.Name())); strings.HasPrefix(string(backing), dev) {
+			return true
+		}
+	}
+	return false
+}
+
+// fakeEFI holds UEFI boot entries the way efibootmgr shows and changes them.
+type fakeEFI struct {
+	entries  []efiEntry
+	next     int
+	bootNext string
+	deleted  []string
+}
+
+type efiEntry struct{ num, label, partUUID string }
+
+func (e *fakeEFI) run(f *fakeRunner, args []string) ([]byte, error) {
+	flag := func(name string) string {
+		for n, a := range args {
+			if a == name && n+1 < len(args) {
+				return args[n+1]
+			}
+		}
+		return ""
+	}
+	switch {
+	case len(args) > 0 && args[0] == "--create":
+		num := fmt.Sprintf("%04X", e.next)
+		e.next++
+		e.entries = append(e.entries, efiEntry{num, flag("--label"), strings.ToLower(f.partUUIDs[flag("--disk")+" "+flag("--part")])})
+	case len(args) == 1 && args[0] == "--verbose":
+		var out strings.Builder
+		out.WriteString("BootCurrent: 0001\n")
+		for _, en := range e.entries {
+			path := "PciRoot(0x0)/Pci(0x4,0x0){auto_created_boot_option}"
+			if en.partUUID != "" {
+				path = "HD(1,GPT," + en.partUUID + ",0x800,0x80000)/\\EFI\\BOOT\\BOOTX64.EFI"
+			}
+			fmt.Fprintf(&out, "Boot%s* %s\t%s\n", en.num, en.label, path)
+		}
+		return []byte(out.String()), nil
+	case len(args) > 0 && args[0] == "--bootnext":
+		e.bootNext = args[1]
+	case len(args) > 0 && args[0] == "--delete-bootnum":
+		num := flag("--bootnum")
+		e.deleted = append(e.deleted, num)
+		for n, en := range e.entries {
+			if en.num == num {
+				e.entries = append(e.entries[:n], e.entries[n+1:]...)
+				return nil, nil
+			}
+		}
+		return nil, &node.ToolError{Command: "efibootmgr", Code: 2, Stderr: "Could not delete Boot" + num}
+	}
+	return nil, nil
+}
+
 func (f *fakeRunner) add(rules ...*rule) { f.rules = append(f.rules, rules...) }
+
+// installed reports whether STATE holds the installed marker, failing the test on errors.
+func installed(t *testing.T, stateDir string) bool {
+	t.Helper()
+	ok, err := Installed(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ok
+}
 
 // blkidNothing is how blkid reports a device without any signature.
 var blkidNothing = &node.ToolError{Command: "blkid", Code: 2}
@@ -135,6 +297,8 @@ func newTestInstaller(t *testing.T, r *fakeRunner, disks ...testDisk) *Installer
 	for name, text := range systemDefinitions {
 		write(t, filepath.Join(root, "repart.d", name), text)
 	}
+	r.mountInfo = filepath.Join(root, "mountinfo")
+	r.devRoot = h.DevRoot
 	return &Installer{
 		Run:         r,
 		Host:        h,
@@ -143,7 +307,7 @@ func newTestInstaller(t *testing.T, r *fakeRunner, disks ...testDisk) *Installer
 		Definitions: filepath.Join(root, "repart.d"),
 		WorkDir:     filepath.Join(root, "work"),
 		MountInfo:   filepath.Join(root, "mountinfo"),
-		OpenDisk:    func(string) (Disk, error) { return nil, fmt.Errorf("unexpected open") },
+		OpenDisk:    func(context.Context, string) (Disk, error) { return nil, fmt.Errorf("unexpected open") },
 		Loader:      `\EFI\BOOT\BOOTX64.EFI`,
 		Now:         func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) },
 	}
@@ -322,6 +486,9 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 	if info, err := os.Stat(filepath.Join(i.StateDir, "chalkd/node.key")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("node.key mode = %v, %v; want 0600", info.Mode(), err)
 	}
+	if info, err := os.Stat(filepath.Join(i.StateDir, "chalkd")); err != nil || info.Mode().Perm() != 0o700 {
+		t.Errorf("chalkd/ mode = %v, %v; want 0700", info.Mode(), err)
+	}
 	section, err := storage.ReadSection(filepath.Join(i.StateDir, "storage", "storage.json"))
 	if err != nil || !reflect.DeepEqual(section, req.Section) {
 		t.Errorf("recorded section = %+v, %v", section, err)
@@ -330,7 +497,7 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 	if err != nil || pins.Disks["system"].Partitions["var"] != varUUID {
 		t.Errorf("pins = %+v, %v", pins, err)
 	}
-	if !Installed(i.StateDir) {
+	if !installed(t, i.StateDir) {
 		t.Error("the installed marker is missing")
 	}
 }
@@ -390,6 +557,15 @@ func TestInPlaceRefusals(t *testing.T) {
 		{"installed", func(t *testing.T, i *Installer, req *Request) {
 			write(t, filepath.Join(i.StateDir, "installed"), "")
 		}, "installed already"},
+		{"installed marker unreadable", func(t *testing.T, i *Installer, req *Request) {
+			// A link to itself makes stat fail with ELOOP, not with "does not exist".
+			if err := os.MkdirAll(i.StateDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("installed", filepath.Join(i.StateDir, "installed")); err != nil {
+				t.Fatal(err)
+			}
+		}, "too many levels of symbolic links"},
 		{"other system disk", func(t *testing.T, i *Installer, req *Request) {
 			req.Section = testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vdb")
 		}, "install it with the installer"},
@@ -434,7 +610,7 @@ func TestInPlaceStopsOnDiskError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "disk data") || !strings.Contains(err.Error(), "carries data") {
 		t.Fatalf("err = %v, want the data disk's problem", err)
 	}
-	if hasPrefix(r.calls, "systemd-cryptenroll") || Installed(i.StateDir) {
+	if hasPrefix(r.calls, "systemd-cryptenroll") || installed(t, i.StateDir) {
 		t.Error("went on installing after a disk could not be set up")
 	}
 }
@@ -450,15 +626,15 @@ func TestInPlaceCanRunAgain(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "enroll the fallback key on state") {
 		t.Fatalf("err = %v, want the enrollment failure", err)
 	}
-	if Installed(i.StateDir) {
+	if installed(t, i.StateDir) {
 		t.Fatal("an interrupted install wrote the installed marker")
 	}
 	r.calls = nil
 	if err := i.InPlace(context.Background(), req); err != nil {
 		t.Fatalf("the install did not run again: %v", err)
 	}
-	if !Installed(i.StateDir) || hasPrefix(r.calls, "sfdisk --delete") {
-		t.Errorf("second install: installed = %v, commands %v", Installed(i.StateDir), r.calls)
+	if !installed(t, i.StateDir) || hasPrefix(r.calls, "sfdisk --delete") {
+		t.Errorf("second install: installed = %v, commands %v", installed(t, i.StateDir), r.calls)
 	}
 }
 
@@ -471,7 +647,7 @@ func TestInstallRefusesUnencryptedVolumeMeantToBeEncrypted(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "volume var is meant to be encrypted") {
 		t.Fatalf("err = %v", err)
 	}
-	if Installed(i.StateDir) {
+	if installed(t, i.StateDir) {
 		t.Error("installed a node whose VAR is not encrypted")
 	}
 }
