@@ -38,7 +38,12 @@ in
     after = [
       "network.target"
       "chalkos-identity.service"
+      # Install enrolls TPM2 keyslots. Pulling tpm2.target in would wait for a TPM on nodes
+      # that have none.
+      "tpm2.target"
     ];
+    # chalkd is the only way to reach the node, so it never stops restarting.
+    startLimitIntervalSec = 0;
     # Tools Install, ApplyIdentity and ResetVolume run; repart formats with the mkfs tools.
     path = [
       config.systemd.package
@@ -52,7 +57,7 @@ in
     serviceConfig = {
       ExecStart = "${lib.getExe chalkd} serve";
       Restart = "always";
-      RestartSec = 2;
+      RestartSec = 5;
       # The fingerprint and addresses must reach the console in maintenance mode.
       StandardOutput = "journal+console";
       StandardError = "journal+console";

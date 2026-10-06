@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,4 +106,67 @@ func TestHTTPServerLimits(t *testing.T) {
 	if s.ReadTimeout != 0 || s.WriteTimeout != 0 {
 		t.Errorf("read timeout %v, write timeout %v; want none", s.ReadTimeout, s.WriteTimeout)
 	}
+}
+
+func TestMaintenanceCertificateAcrossRestarts(t *testing.T) {
+	now := time.Now()
+	load := func(t *testing.T, run string, now time.Time) []byte {
+		t.Helper()
+		root := filepath.Dir(run)
+		c, err := loadCredentials(filepath.Join(root, "state"), filepath.Join(root, "os-ca.crt"), run, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.cert.Certificate[0]
+	}
+
+	t.Run("reused", func(t *testing.T) {
+		run := filepath.Join(t.TempDir(), "run")
+		first := load(t, run, now)
+		if second := load(t, run, now.Add(time.Hour)); !bytes.Equal(first, second) {
+			t.Error("a restart changed the maintenance certificate")
+		}
+		for path, want := range map[string]os.FileMode{run: 0o700, filepath.Join(run, "maintenance.key"): 0o600} {
+			fi, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fi.Mode().Perm() != want {
+				t.Errorf("%s has mode %v, want %v", path, fi.Mode().Perm(), want)
+			}
+		}
+	})
+	for name, damage := range map[string]func(run string) error{
+		"key missing":         func(run string) error { return os.Remove(filepath.Join(run, "maintenance.key")) },
+		"certificate missing": func(run string) error { return os.Remove(filepath.Join(run, "maintenance.crt")) },
+		"key corrupt": func(run string) error {
+			return os.WriteFile(filepath.Join(run, "maintenance.key"), []byte("-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n"), 0o600)
+		},
+		"certificate corrupt": func(run string) error {
+			return os.WriteFile(filepath.Join(run, "maintenance.crt"), []byte("garbage"), 0o644)
+		},
+	} {
+		t.Run("regenerated when "+name, func(t *testing.T) {
+			run := filepath.Join(t.TempDir(), "run")
+			first := load(t, run, now)
+			if err := damage(run); err != nil {
+				t.Fatal(err)
+			}
+			second := load(t, run, now)
+			if bytes.Equal(first, second) {
+				t.Fatal("kept a maintenance certificate whose files are damaged")
+			}
+			// The new pair is on disk and is reused in turn.
+			if third := load(t, run, now); !bytes.Equal(second, third) {
+				t.Error("the regenerated certificate was not kept")
+			}
+		})
+	}
+	t.Run("regenerated when expired", func(t *testing.T) {
+		run := filepath.Join(t.TempDir(), "run")
+		first := load(t, run, now)
+		if second := load(t, run, now.Add(pki.LeafValidity+time.Hour)); bytes.Equal(first, second) {
+			t.Error("kept an expired maintenance certificate")
+		}
+	})
 }

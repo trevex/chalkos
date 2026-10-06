@@ -86,18 +86,7 @@ func loadCredentials(stateDir, imageCA, runDir string, now time.Time) (credentia
 		return credentials{mode: nodev1.Mode_MODE_NORMAL, cert: cert, clientCAs: pool}, nil
 	}
 
-	hostname, _ := os.Hostname()
-	self, err := pki.SelfSigned(hostname, now)
-	if err != nil {
-		return credentials{}, err
-	}
-	if err := os.MkdirAll(runDir, 0o700); err != nil {
-		return credentials{}, err
-	}
-	if err := os.WriteFile(filepath.Join(runDir, "maintenance.crt"), []byte(self.Certificate), 0o644); err != nil {
-		return credentials{}, err
-	}
-	cert, err := tls.X509KeyPair([]byte(self.Certificate), []byte(self.Key))
+	cert, err := maintenanceCertificate(runDir, now)
 	if err != nil {
 		return credentials{}, err
 	}
@@ -110,6 +99,43 @@ func loadCredentials(stateDir, imageCA, runDir string, now time.Time) (credentia
 		return credentials{}, err
 	}
 	return c, nil
+}
+
+// maintenanceCertificate returns the self-signed certificate of maintenance mode. A restarted
+// chalkd keeps the one it had, so the fingerprint an operator pinned stays valid; runDir is on
+// tmpfs, so a reboot makes a new one. A pair that is missing, damaged or expired is replaced.
+func maintenanceCertificate(runDir string, now time.Time) (tls.Certificate, error) {
+	certPath := filepath.Join(runDir, "maintenance.crt")
+	keyPath := filepath.Join(runDir, "maintenance.key")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		return tls.Certificate{}, err
+	}
+	if err := os.Chmod(runDir, 0o700); err != nil {
+		return tls.Certificate{}, err
+	}
+	if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil && cert.Leaf != nil &&
+		now.After(cert.Leaf.NotBefore) && now.Before(cert.Leaf.NotAfter) {
+		return cert, nil
+	}
+
+	hostname, _ := os.Hostname()
+	self, err := pki.SelfSigned(hostname, now)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	cert, err := tls.X509KeyPair([]byte(self.Certificate), []byte(self.Key))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	// A crash between the two writes leaves a pair that does not match, which the next start
+	// replaces.
+	if err := install.WriteFile(keyPath, []byte(self.Key), 0o600); err != nil {
+		return tls.Certificate{}, err
+	}
+	if err := install.WriteFile(certPath, []byte(self.Certificate), 0o644); err != nil {
+		return tls.Certificate{}, err
+	}
+	return cert, nil
 }
 
 func loadPool(path string) (*x509.CertPool, error) {
