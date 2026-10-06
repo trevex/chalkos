@@ -146,6 +146,20 @@ func WriteDefinitions(dir string, s Section) error {
 	return nil
 }
 
+// PartitionTypes returns the lower-case GPT type UUIDs the disk's definitions set with Type=.
+func (d Disk) PartitionTypes() map[string]bool {
+	types := map[string]bool{}
+	for _, text := range d.Repart {
+		for _, line := range strings.Split(text, "\n") {
+			key, value, ok := strings.Cut(line, "=")
+			if ok && strings.TrimSpace(key) == "Type" {
+				types[strings.ToLower(strings.TrimSpace(value))] = true
+			}
+		}
+	}
+	return types
+}
+
 // VolumeOfDefinition returns the volume a definition file belongs to: "60-data.conf" is "data".
 func VolumeOfDefinition(file string) string {
 	_, name, _ := strings.Cut(strings.TrimSuffix(file, ".conf"), "-")

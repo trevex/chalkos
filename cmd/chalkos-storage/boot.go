@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -280,18 +281,21 @@ func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) 
 	if !disk.Identity.Recognisable() {
 		return storage.BlockDisk{}, unrecognisable(disk)
 	}
-	if err := b.checkUnused(ctx, disk); err != nil {
+	if err := b.checkUnused(ctx, disk, d); err != nil {
 		return storage.BlockDisk{}, err
 	}
 	return disk, nil
 }
 
-// checkUnused refuses a newly resolved disk that carries anything but a GPT partition table,
-// because repart would write a new partition table over it.
-func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk) error {
+// checkUnused refuses a newly resolved disk unless it is provably unused: blkid finds nothing
+// on it, or it carries a GPT whose partitions all have types of this disk's definitions, which
+// repart takes over. repart would otherwise write a new partition table over foreign data.
+func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk, d storage.Disk) error {
 	out, err := b.run.run(ctx, "blkid", "-p", "-o", "export", disk.Device)
-	if exitCode(err) == 2 {
-		return nil // blkid found no signature: the disk is empty
+	var te *toolError
+	// blkid also exits with 2 when it cannot read the disk, but then it complains.
+	if errors.As(err, &te) && te.code == 2 && strings.TrimSpace(te.stderr) == "" {
+		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("probe %s: %w", disk.Device, err)
@@ -302,10 +306,36 @@ func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk) error {
 			props[k] = v
 		}
 	}
-	if props["PTTYPE"] == "gpt" {
-		return nil
+	if props["PTTYPE"] != "gpt" {
+		return fmt.Errorf("%s carries data (%s); wipe it or reference another disk", disk, strings.TrimSpace(props["PTTYPE"]+" "+props["TYPE"]))
 	}
-	return fmt.Errorf("%s carries data (%s); wipe it or reference another disk", disk, strings.TrimSpace(props["PTTYPE"]+" "+props["TYPE"]))
+
+	out, err = b.run.run(ctx, "sfdisk", "--json", disk.Device)
+	if err != nil {
+		return fmt.Errorf("read the partition table of %s: %w", disk.Device, err)
+	}
+	var dump struct {
+		PartitionTable struct {
+			Label      string `json:"label"`
+			Partitions []struct {
+				Node string `json:"node"`
+				Type string `json:"type"`
+			} `json:"partitions"`
+		} `json:"partitiontable"`
+	}
+	if err := json.Unmarshal(out, &dump); err != nil {
+		return fmt.Errorf("read the partition table of %s: %w", disk.Device, err)
+	}
+	if dump.PartitionTable.Label != "gpt" {
+		return fmt.Errorf("%s carries a %q partition table where blkid found a GPT; wipe it or reference another disk", disk, dump.PartitionTable.Label)
+	}
+	types := d.PartitionTypes()
+	for _, p := range dump.PartitionTable.Partitions {
+		if !types[strings.ToLower(p.Type)] {
+			return fmt.Errorf("%s carries data: %s has the partition type %s, which none of the disk's definitions sets; wipe it or reference another disk", disk, p.Node, p.Type)
+		}
+	}
+	return nil
 }
 
 // repart creates and grows the disk's partitions and returns the PARTUUID of each volume.
@@ -317,7 +347,7 @@ func (b *boot) repart(ctx context.Context, name, dev string, d storage.Disk) (ma
 		"--seed=" + d.Seed,
 	}
 	if name != storage.SystemDisk {
-		// The disk was checked to be empty or GPT-partitioned before it was pinned.
+		// The disk was checked to be unused before it was pinned.
 		args = append(args, "--empty=allow")
 	}
 	out, err := b.run.run(ctx, "systemd-repart", append(args, dev)...)

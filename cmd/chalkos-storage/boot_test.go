@@ -447,6 +447,78 @@ func TestSetUpRefusesDiskWithData(t *testing.T) {
 	}
 }
 
+const dataType = "4ddbee6c-635c-dcb9-bb95-26d82d7c4cff"
+
+// sfdiskTable is `sfdisk --json` output for a GPT on /dev/vdb with partitions of the types.
+func sfdiskTable(types ...string) string {
+	parts := make([]string, len(types))
+	for i, typ := range types {
+		parts[i] = `{"node": "/dev/vdb` + strconv.Itoa(i+1) + `", "start": 2048, "size": 2048, "type": "` + typ + `", "uuid": "` + dataUUID + `"}`
+	}
+	table := `{"partitiontable": {"label": "gpt", "id": "C5A8B6E2-4E09-4D47-9A4C-1E1C2C6F1B2A", "device": "/dev/vdb", "unit": "sectors", "firstlba": 2048, "lastlba": 4194270, "sectorsize": 512`
+	if len(parts) > 0 {
+		table += `, "partitions": [` + strings.Join(parts, ", ") + `]`
+	}
+	return table + "}}"
+}
+
+func TestSetUpChecksNewDiskIsUnused(t *testing.T) {
+	gpt := rule{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nPTUUID=c5a8b6e2-4e09-4d47-9a4c-1e1c2c6f1b2a\nPTTYPE=gpt\n"}
+	for _, c := range []struct {
+		name  string
+		rules []rule
+		// refusal is the status error, or empty when the disk may be partitioned.
+		refusal string
+	}{
+		{"blkid finds nothing", nil, ""},
+		{"blkid fails without finding anything", []rule{{prefix: "blkid -p -o export /dev/vdb", err: &toolError{command: "blkid", code: 2, stderr: "error: /dev/vdb: Input/output error"}}}, "Input/output error"},
+		{"blkid fails otherwise", []rule{{prefix: "blkid -p -o export /dev/vdb", err: &toolError{command: "blkid", code: 4}}}, "probe /dev/vdb"},
+		{"file system", []rule{{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, "carries data (ext4)"},
+		{"empty GPT", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable()}}, ""},
+		{"GPT with chalkos partitions", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable(strings.ToUpper(dataType))}}, ""},
+		{"GPT with a foreign partition", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable(dataType, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")}}, "/dev/vdb2 has the partition type 0FC63DAF-8483-4772-8E79-3D69D8477DE4"},
+		{"partition table unreadable", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", err: &toolError{command: "sfdisk", code: 1}}}, "read the partition table"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := &fakeRunner{}
+			b := newTestBoot(t, r, bootDisk, dataDisk)
+			r.rules = append(c.rules, firstBootRules(b)...)
+			writeSection(t, b, `{
+			  "disks": {
+			    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
+			    "data": {"ref": {"serial": "chalk-data"}, "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nType=`+dataType+`\nLabel=data\n"}}
+			  },
+			  "volumes": {
+			    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
+			    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
+			  },
+			  "fallback": "recovery-key"
+			}`)
+
+			if err := b.setUp(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			repartRan := false
+			for _, call := range r.calls {
+				repartRan = repartRan || strings.HasPrefix(call, "systemd-repart") && strings.HasSuffix(call, " /dev/vdb")
+			}
+			status := readStatus(t, b).Disks["data"]
+			if c.refusal == "" {
+				if !repartRan || status.Error != "" {
+					t.Errorf("refused an unused disk: %+v", status)
+				}
+				return
+			}
+			if repartRan {
+				t.Error("ran repart on a disk that is not provably unused")
+			}
+			if !strings.Contains(status.Error, c.refusal) {
+				t.Errorf("data status = %+v, want %q", status, c.refusal)
+			}
+		})
+	}
+}
+
 func TestSetUpRepartFailureKeepsBooting(t *testing.T) {
 	r := &fakeRunner{}
 	b := newTestBoot(t, r, bootDisk, dataDisk)

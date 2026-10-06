@@ -27,15 +27,6 @@ func (e *toolError) Error() string {
 	return fmt.Sprintf("%s exited with status %d: %s", e.command, e.code, strings.TrimSpace(e.stderr))
 }
 
-// exitCode returns the exit status of a failed tool, or -1 when err is not a tool's failure.
-func exitCode(err error) int {
-	var te *toolError
-	if errors.As(err, &te) {
-		return te.code
-	}
-	return -1
-}
-
 // execRunner runs tools from PATH. Their standard error also reaches the console, which shows
 // the unit's output during boot.
 type execRunner struct{}

@@ -147,3 +147,19 @@ func TestRefString(t *testing.T) {
 		t.Errorf("String() = %s", got)
 	}
 }
+
+func TestPartitionTypes(t *testing.T) {
+	d := Disk{Repart: map[string]string{
+		"50-var.conf":  "[Partition]\nType=7AD19BDF-77FF-4273-8A5C-D403D2A5F95B\nLabel=var\n",
+		"60-data.conf": "[Partition]\nLabel=data\nType = d506b831-fde9-4335-b2be-9710f18219a6\nEncrypt=tpm2\n",
+		"70-note.conf": "# Type=0fc63daf-8483-4772-8e79-3d69d8477de4\n[Partition]\nLabel=note\n",
+	}}
+	got := d.PartitionTypes()
+	want := map[string]bool{
+		"7ad19bdf-77ff-4273-8a5c-d403d2a5f95b": true,
+		"d506b831-fde9-4335-b2be-9710f18219a6": true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("PartitionTypes() = %v, want %v", got, want)
+	}
+}
