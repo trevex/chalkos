@@ -72,6 +72,7 @@ in
       failures = import ../test/nix/eval.nix {
         inherit (pkgs) lib;
         inherit (self.lib) mkCluster;
+        flakeModule = self.flakeModules.default;
       };
     in
     if failures == [ ] then

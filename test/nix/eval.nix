@@ -1,5 +1,9 @@
 # Evaluation tests for the cluster definition; returns lib.runTests failures (empty on success).
-{ lib, mkCluster }:
+{
+  lib,
+  mkCluster,
+  flakeModule,
+}:
 let
   cluster =
     modules:
@@ -145,5 +149,21 @@ lib.runTests {
           }
         ]).manifest;
     expected = true;
+  };
+  testFlakeModuleNamesClusters = {
+    expr =
+      (lib.evalModules {
+        modules = [
+          flakeModule
+          # Stand-in for flake-parts' `flake` option.
+          { options.flake = lib.mkOption { type = lib.types.lazyAttrsOf lib.types.raw; }; }
+          {
+            chalkos.clusters.demo = {
+              chalkos.cluster.endpoint = "https://10.0.0.1:6443";
+            };
+          }
+        ];
+      }).config.flake.chalkos.demo.manifest.cluster.name;
+    expected = "demo";
   };
 }
