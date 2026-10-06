@@ -61,6 +61,24 @@ in
       # The fingerprint and addresses must reach the console in maintenance mode.
       StandardOutput = "journal+console";
       StandardError = "journal+console";
+
+      # chalkd mounts volumes the host must see, writes efivars and sets the hostname, so it gets
+      # no file system or UTS namespace: no ProtectSystem, PrivateTmp, PrivateDevices,
+      # ProtectHostname and the like. ProtectKernelLogs stays off too, as systemd gives it a
+      # mount namespace that stops chalkd's mounts reaching the host.
+      NoNewPrivileges = true;
+      # cryptsetup and systemd-cryptenroll use the kernel crypto API through AF_ALG.
+      RestrictAddressFamilies = [
+        "AF_UNIX"
+        "AF_INET"
+        "AF_INET6"
+        "AF_NETLINK"
+        "AF_ALG"
+      ];
+      LockPersonality = true;
+      RestrictRealtime = true;
+      SystemCallArchitectures = "native";
+      ProtectClock = true;
     };
   };
 
