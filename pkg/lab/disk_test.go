@@ -65,3 +65,27 @@ func TestCopySparseProducesWritableCopy(t *testing.T) {
 	}
 	f.Close()
 }
+
+func TestCreateDisk(t *testing.T) {
+	requireTools(t, "qemu-img")
+	path := filepath.Join(t.TempDir(), "data.qcow2")
+
+	if err := CreateDisk(context.Background(), path, "2M"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := exec.Command("qemu-img", "info", "--output=json", path).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		VirtualSize int64  `json:"virtual-size"`
+		Format      string `json:"format"`
+	}
+	if err := json.Unmarshal(out, &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.VirtualSize != 2<<20 || info.Format != "qcow2" {
+		t.Fatalf("info = %+v, want a 2 MiB qcow2 disk", info)
+	}
+}

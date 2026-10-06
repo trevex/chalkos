@@ -16,7 +16,7 @@ func TestQemuArgs(t *testing.T) {
 		Name:         "cp1",
 		Dir:          "/vm",
 		FirmwareCode: "/fw/CODE.fd",
-		Disks:        []string{"/vm/disk.qcow2"},
+		Disks:        []Disk{{Path: "/vm/disk.qcow2"}, {Path: "/vm/data.qcow2", Serial: "chalk-data"}},
 		MemoryMB:     2048,
 		CPUs:         2,
 	}
@@ -31,6 +31,8 @@ func TestQemuArgs(t *testing.T) {
 		{"-qmp", "unix:/vm/qmp.sock,server=on,wait=off"},
 		{"-drive", "if=none,id=disk0,format=qcow2,file=/vm/disk.qcow2"},
 		{"-device", "virtio-blk-pci,drive=disk0,bootindex=1"},
+		{"-drive", "if=none,id=disk1,format=qcow2,file=/vm/data.qcow2"},
+		{"-device", "virtio-blk-pci,drive=disk1,bootindex=2,serial=chalk-data"},
 		{"-chardev", "socket,id=chrtpm,path=/vm/tpm/swtpm.sock"},
 		{"-device", "tpm-tis,tpmdev=tpm0"},
 		{"-m", "2048"},

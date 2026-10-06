@@ -58,7 +58,7 @@ func logConsoleTail(t *testing.T, path string, n int) {
 	t.Logf("last %d lines of %s:\n%s", len(lines), path, strings.Join(lines, "\n"))
 }
 
-func startVM(t *testing.T, dir, vars string, disks ...string) *lab.VM {
+func startVM(t *testing.T, dir, vars string, disks ...lab.Disk) *lab.VM {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -86,7 +86,7 @@ type diskOpts struct {
 
 // prepareDisk copies the test image into dir, optionally modifies and signs the copy, and
 // returns a 16 GiB qcow2 overlay so first-boot repart has room for slot B, STATE, and VAR.
-func prepareDisk(t *testing.T, dir string, o diskOpts) string {
+func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
 	t.Helper()
 	ctx := context.Background()
 	imageDir := os.Getenv("CHALKLAB_IMAGE_DIR")
@@ -121,7 +121,7 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) string {
 	if err := lab.CreateOverlay(ctx, raw, disk, "16G"); err != nil {
 		t.Fatal(err)
 	}
-	return disk
+	return lab.Disk{Path: disk}
 }
 
 var factRE = regexp.MustCompile(`CHALKTEST ([a-z0-9_]+)=(\S*)`)

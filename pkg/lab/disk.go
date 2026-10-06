@@ -21,6 +21,11 @@ func CopySparse(ctx context.Context, src, dst string) error {
 	return os.Chmod(dst, 0o644)
 }
 
+// CreateDisk creates an empty qcow2 disk of the given virtual size.
+func CreateDisk(ctx context.Context, path, size string) error {
+	return run(ctx, "qemu-img", "create", "-q", "-f", "qcow2", path, size)
+}
+
 func copyFile(src, dst string, perm os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {

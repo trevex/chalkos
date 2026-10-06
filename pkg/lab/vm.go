@@ -16,13 +16,20 @@ import (
 // VMConfig describes one QEMU virtual machine with UEFI firmware and an optional software TPM.
 type VMConfig struct {
 	Name         string
-	Dir          string   // holds firmware variables, TPM state, sockets, and the console log
-	FirmwareCode string   // read-only OVMF code image; Secure Boot builds require SMM
-	FirmwareVars string   // OVMF variable store template, copied into Dir on first start
-	Disks        []string // qcow2 images attached as virtio-blk devices in boot order
+	Dir          string // holds firmware variables, TPM state, sockets, and the console log
+	FirmwareCode string // read-only OVMF code image; Secure Boot builds require SMM
+	FirmwareVars string // OVMF variable store template, copied into Dir on first start
+	Disks        []Disk // attached as virtio-blk devices in boot order
 	MemoryMB     int
 	CPUs         int
 	TPM          bool
+}
+
+// Disk is a qcow2 image attached to a VM.
+type Disk struct {
+	Path string
+	// Serial is reported by the virtio-blk device; empty reports none.
+	Serial string
 }
 
 func (c VMConfig) varsPath() string { return filepath.Join(c.Dir, "OVMF_VARS.fd") }
@@ -46,9 +53,13 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 	}
 	for i, disk := range c.Disks {
 		id := fmt.Sprintf("disk%d", i)
+		device := fmt.Sprintf("virtio-blk-pci,drive=%s,bootindex=%d", id, i+1)
+		if disk.Serial != "" {
+			device += ",serial=" + disk.Serial
+		}
 		args = append(args,
-			"-drive", fmt.Sprintf("if=none,id=%s,format=qcow2,file=%s", id, disk),
-			"-device", fmt.Sprintf("virtio-blk-pci,drive=%s,bootindex=%d", id, i+1))
+			"-drive", fmt.Sprintf("if=none,id=%s,format=qcow2,file=%s", id, disk.Path),
+			"-device", device)
 	}
 	if tpmSocket != "" {
 		args = append(args,
