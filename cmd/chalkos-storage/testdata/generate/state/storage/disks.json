@@ -1,0 +1,19 @@
+{
+  "disks": {
+    "system": {
+      "ref": "/dev/vda",
+      "identity": { "path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd" },
+      "partitions": {
+        "var": "7ad19bdf-77ff-4273-8a5c-d403d2a5f95b",
+        "plain": "1b9a3f0e-2c4d-4e5f-8a6b-7c8d9e0f1a2b",
+        "raw": "2c0b4e1f-3d5e-4f60-9b7c-8d9eaf102b3c",
+        "swap": "3d1c5f20-4e6f-4071-ac8d-9eafb0213c4d"
+      }
+    },
+    "data": {
+      "ref": "/dev/vdb",
+      "identity": { "serial": "chalk-data", "size": 2147483648, "type": "hdd" },
+      "partitions": { "data": "d506b831-fde9-4335-b2be-9710f18219a6" }
+    }
+  }
+}

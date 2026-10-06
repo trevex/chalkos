@@ -1,0 +1,13 @@
+# Written by chalkos-storage from /state/storage.
+[Unit]
+Description=chalkos volume data
+After=local-fs-pre.target
+Requires=systemd-cryptsetup@data.service
+After=systemd-cryptsetup@data.service
+Wants=systemd-growfs@var-lib-data.service
+
+[Mount]
+What=/dev/mapper/data
+Where=/var/lib/data
+Type=xfs
+Options=nofail

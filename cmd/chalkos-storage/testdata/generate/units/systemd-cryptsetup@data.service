@@ -1,0 +1,18 @@
+# Written by chalkos-storage from /state/storage.
+[Unit]
+Description=Unlock chalkos volume data
+DefaultDependencies=no
+IgnoreOnIsolate=true
+BindsTo=dev-disk-by\x2dpartuuid-d506b831\x2dfde9\x2d4335\x2db2be\x2d9710f18219a6.device
+After=dev-disk-by\x2dpartuuid-d506b831\x2dfde9\x2d4335\x2db2be\x2d9710f18219a6.device cryptsetup-pre.target systemd-udevd-kernel.socket
+Before=umount.target
+Conflicts=umount.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutSec=infinity
+KeyringMode=shared
+OOMScoreAdjust=500
+ExecStart=/run/current-system/sw/bin/systemd-cryptsetup attach 'data' '/dev/disk/by-partuuid/d506b831-fde9-4335-b2be-9710f18219a6' '-' 'tpm2-device=auto'
+ExecStop=/run/current-system/sw/bin/systemd-cryptsetup detach 'data'

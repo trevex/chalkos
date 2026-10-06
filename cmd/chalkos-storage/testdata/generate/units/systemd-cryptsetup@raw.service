@@ -1,0 +1,18 @@
+# Written by chalkos-storage from /state/storage.
+[Unit]
+Description=Unlock chalkos volume raw
+DefaultDependencies=no
+IgnoreOnIsolate=true
+BindsTo=dev-disk-by\x2dpartuuid-2c0b4e1f\x2d3d5e\x2d4f60\x2d9b7c\x2d8d9eaf102b3c.device
+After=dev-disk-by\x2dpartuuid-2c0b4e1f\x2d3d5e\x2d4f60\x2d9b7c\x2d8d9eaf102b3c.device cryptsetup-pre.target systemd-udevd-kernel.socket
+Before=umount.target
+Conflicts=umount.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutSec=infinity
+KeyringMode=shared
+OOMScoreAdjust=500
+ExecStart=/run/current-system/sw/bin/systemd-cryptsetup attach 'raw' '/dev/disk/by-partuuid/2c0b4e1f-3d5e-4f60-9b7c-8d9eaf102b3c' '-' 'tpm2-device=auto'
+ExecStop=/run/current-system/sw/bin/systemd-cryptsetup detach 'raw'

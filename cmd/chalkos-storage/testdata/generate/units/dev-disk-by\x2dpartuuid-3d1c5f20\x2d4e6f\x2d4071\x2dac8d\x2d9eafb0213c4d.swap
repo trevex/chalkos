@@ -1,0 +1,7 @@
+# Written by chalkos-storage from /state/storage.
+[Unit]
+Description=chalkos swap volume swap
+
+[Swap]
+What=/dev/disk/by-partuuid/3d1c5f20-4e6f-4071-ac8d-9eafb0213c4d
+Options=nofail

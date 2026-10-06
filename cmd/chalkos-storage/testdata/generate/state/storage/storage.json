@@ -1,0 +1,16 @@
+{
+  "disks": {
+    "system": { "ref": "/dev/vda", "seed": "2869f04c-5655-50f4-28b9-6b2eb9700a02", "repart": {} },
+    "data": { "ref": "/dev/vdb", "seed": "088717f0-ffd4-dba5-a524-7d3d44310d1e", "repart": {} },
+    "spare": { "ref": { "serial": "never-seen" }, "seed": "4ddbee6c-635c-dcb9-bb95-26d82d7c4cff", "repart": {} }
+  },
+  "volumes": {
+    "var": { "disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": "2G" },
+    "data": { "disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null },
+    "plain": { "disk": "system", "label": "plain", "format": "ext4", "mountPoint": "/srv/plain-data", "encryption": "none", "size": "256M" },
+    "raw": { "disk": "system", "label": "raw", "format": null, "mountPoint": null, "encryption": "tpm2", "size": "128M" },
+    "swap": { "disk": "system", "label": "swap", "format": "swap", "mountPoint": null, "encryption": "none", "size": "64M" },
+    "spare": { "disk": "spare", "label": "spare", "format": "ext4", "mountPoint": "/srv/spare", "encryption": "tpm2", "size": null }
+  },
+  "fallback": "recovery-key"
+}

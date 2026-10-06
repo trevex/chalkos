@@ -1,6 +1,6 @@
 // Command chalkos-storage creates, unlocks and mounts the volumes of a chalkos node. In the
 // initrd it opens STATE, then creates the volumes the node's storage section defines and opens
-// VAR.
+// VAR; as a systemd generator it writes units for the remaining volumes.
 package main
 
 import (
@@ -13,8 +13,9 @@ import (
 const usage = `usage: chalkos-storage <mode>
 
 modes:
-  state   unlock STATE and mount it at /sysroot/state (initrd)
-  initrd  create volumes, pin disks, and mount VAR at /sysroot/var (initrd)`
+  state                                 unlock STATE and mount it at /sysroot/state (initrd)
+  initrd                                create volumes, pin disks, and mount VAR at /sysroot/var (initrd)
+  generate [flags] NORMAL [EARLY LATE]  write units for the remaining volumes (systemd generator)`
 
 func main() {
 	log.SetFlags(0)
@@ -30,6 +31,8 @@ func main() {
 		err = newBoot().openState(ctx)
 	case "initrd":
 		err = newBoot().setUp(ctx)
+	case "generate":
+		err = runGenerate(os.Args[2:])
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)

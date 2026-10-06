@@ -1,0 +1,5 @@
+cryptsetup.target.wants/systemd-cryptsetup@data.service -> ../systemd-cryptsetup@data.service
+cryptsetup.target.wants/systemd-cryptsetup@raw.service -> ../systemd-cryptsetup@raw.service
+local-fs.target.wants/srv-plain\x2ddata.mount -> ../srv-plain\x2ddata.mount
+local-fs.target.wants/var-lib-data.mount -> ../var-lib-data.mount
+swap.target.wants/dev-disk-by\x2dpartuuid-3d1c5f20\x2d4e6f\x2d4071\x2dac8d\x2d9eafb0213c4d.swap -> ../dev-disk-by\x2dpartuuid-3d1c5f20\x2d4e6f\x2d4071\x2dac8d\x2d9eafb0213c4d.swap
