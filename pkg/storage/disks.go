@@ -40,16 +40,16 @@ type Identity struct {
 // identifier both of them have. A disk whose udev entry gained a WWN after it was pinned is still
 // the pinned disk. The path only decides when one side has no WWN or serial at all: two disks
 // that each have a WWN or serial the other lacks share nothing that tells them apart.
-func (a Identity) Same(b Identity) bool {
+func (i Identity) Same(other Identity) bool {
 	switch {
-	case a.WWN != "" && b.WWN != "":
-		return a.WWN == b.WWN
-	case a.Serial != "" && b.Serial != "":
-		return a.Serial == b.Serial && a.Model == b.Model
-	case a.unique() && b.unique():
+	case i.WWN != "" && other.WWN != "":
+		return i.WWN == other.WWN
+	case i.Serial != "" && other.Serial != "":
+		return i.Serial == other.Serial && i.Model == other.Model
+	case i.unique() && other.unique():
 		return false
 	default:
-		return a.Path != "" && a.Path == b.Path
+		return i.Path != "" && i.Path == other.Path
 	}
 }
 

@@ -81,6 +81,7 @@ func (r Ref) UnknownKeys() []string {
 	return strings.Split(r.Selector.unknown, ", ")
 }
 
+// UnmarshalJSON reads a reference written as a /dev path string or as a selector object.
 func (r *Ref) UnmarshalJSON(data []byte) error {
 	if bytes.HasPrefix(bytes.TrimSpace(data), []byte(`"`)) {
 		return json.Unmarshal(data, &r.Path)
@@ -108,6 +109,8 @@ func (r *Ref) UnmarshalJSON(data []byte) error {
 // selectorKeys are the JSON keys of Selector; encoding/json matches them ignoring case.
 var selectorKeys = []string{"model", "serial", "wwn", "size", "type"}
 
+// MarshalJSON writes the reference as UnmarshalJSON reads it: the path as a string, or else the
+// selector as an object. Unknown selector keys are not written back.
 func (r Ref) MarshalJSON() ([]byte, error) {
 	if r.Path != "" {
 		return json.Marshal(r.Path)
@@ -188,8 +191,8 @@ func (d Disk) PartitionTypes() map[string]bool {
 	return types
 }
 
-// VolumeOfDefinition returns the volume a definition file belongs to: "60-data.conf" is "data".
-func VolumeOfDefinition(file string) string {
+// volumeOfDefinition returns the volume a definition file belongs to: "60-data.conf" is "data".
+func volumeOfDefinition(file string) string {
 	_, name, _ := strings.Cut(strings.TrimSuffix(file, ".conf"), "-")
 	return name
 }

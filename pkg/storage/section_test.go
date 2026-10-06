@@ -147,8 +147,8 @@ func TestVolumeOfDefinition(t *testing.T) {
 		"60-my-data.conf":  "my-data",
 		"10-longhorn.conf": "longhorn",
 	} {
-		if got := VolumeOfDefinition(file); got != want {
-			t.Errorf("VolumeOfDefinition(%q) = %q, want %q", file, got, want)
+		if got := volumeOfDefinition(file); got != want {
+			t.Errorf("volumeOfDefinition(%q) = %q, want %q", file, got, want)
 		}
 	}
 }

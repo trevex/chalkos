@@ -19,7 +19,7 @@ func ParsePartitions(out []byte) (map[string]string, error) {
 	parts := map[string]string{}
 	for _, r := range rows {
 		if r.File != "" && r.UUID != "" {
-			parts[VolumeOfDefinition(filepath.Base(r.File))] = r.UUID
+			parts[volumeOfDefinition(filepath.Base(r.File))] = r.UUID
 		}
 	}
 	return parts, nil
