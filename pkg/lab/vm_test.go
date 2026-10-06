@@ -43,7 +43,31 @@ func TestQemuArgs(t *testing.T) {
 		}
 	}
 
+	if !hasPair(args, "-nic", "none") {
+		t.Error("a VM without forwards has a NIC")
+	}
+
+	c.Forwards = []Forward{{Host: 15000, Guest: 50000}, {Host: 16443, Guest: 6443}}
+	c.CDROM = "/vm/installer.iso"
+	withNIC := c.qemuArgs("")
+	for _, w := range [][2]string{
+		{"-nic", "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:15000-:50000,hostfwd=tcp:127.0.0.1:16443-:6443"},
+		{"-drive", "if=none,id=cdrom,media=cdrom,readonly=on,file=/vm/installer.iso"},
+		{"-device", "ide-cd,drive=cdrom,bootindex=0"},
+	} {
+		if !hasPair(withNIC, w[0], w[1]) {
+			t.Errorf("missing %s %s in %v", w[0], w[1], withNIC)
+		}
+	}
+
 	if noTPM := c.qemuArgs(""); hasPair(noTPM, "-device", "tpm-tis,tpmdev=tpm0") {
 		t.Error("TPM device present without a TPM socket")
+	}
+}
+
+func TestFreePort(t *testing.T) {
+	port, err := FreePort()
+	if err != nil || port <= 0 {
+		t.Fatalf("FreePort() = %d, %v", port, err)
 	}
 }

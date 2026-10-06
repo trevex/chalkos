@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,10 +20,20 @@ type VMConfig struct {
 	Dir          string // holds firmware variables, TPM state, sockets, and the console log
 	FirmwareCode string // read-only OVMF code image; Secure Boot builds require SMM
 	FirmwareVars string // OVMF variable store template, copied into Dir on first start
-	Disks        []Disk // attached as virtio-blk devices in boot order
-	MemoryMB     int
-	CPUs         int
-	TPM          bool
+	// CDROM is an ISO image attached as a CD-ROM drive that boots before the disks.
+	CDROM    string
+	Disks    []Disk // attached as virtio-blk devices in boot order
+	MemoryMB int
+	CPUs     int
+	TPM      bool
+	// Forwards adds a user-mode NIC whose host ports on 127.0.0.1 reach guest ports; the guest
+	// gets its address from QEMU's DHCP server. Without forwards the VM has no NIC.
+	Forwards []Forward
+}
+
+// Forward makes a guest TCP port reachable on a host port.
+type Forward struct {
+	Host, Guest int
 }
 
 // Disk is a qcow2 image attached to a VM.
@@ -49,7 +60,20 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 		"-monitor", "none",
 		"-serial", "stdio",
 		"-qmp", "unix:" + c.qmpPath() + ",server=on,wait=off",
-		"-nic", "none",
+	}
+	if len(c.Forwards) == 0 {
+		args = append(args, "-nic", "none")
+	} else {
+		nic := "user,model=virtio-net-pci"
+		for _, f := range c.Forwards {
+			nic += fmt.Sprintf(",hostfwd=tcp:127.0.0.1:%d-:%d", f.Host, f.Guest)
+		}
+		args = append(args, "-nic", nic)
+	}
+	if c.CDROM != "" {
+		args = append(args,
+			"-drive", "if=none,id=cdrom,media=cdrom,readonly=on,file="+c.CDROM,
+			"-device", "ide-cd,drive=cdrom,bootindex=0")
 	}
 	for i, disk := range c.Disks {
 		id := fmt.Sprintf("disk%d", i)
@@ -179,4 +203,14 @@ func (vm *VM) cleanup() {
 	if vm.log != nil {
 		vm.log.Close()
 	}
+}
+
+// FreePort returns a TCP port on 127.0.0.1 that is free now, for a forward.
+func FreePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
 }
