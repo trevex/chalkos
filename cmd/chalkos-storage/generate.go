@@ -133,6 +133,9 @@ const header = "# Written by chalkos-storage from /state/storage.\n"
 
 func deviceUnit(path string) string { return escapePath(path) + ".device" }
 
+// cryptsetupUnit unlocks a volume with its TPM2 key. It waits for tpm2.target, which systemd
+// starts once a TPM the firmware reported is usable, but does not pull it in: on a node without
+// a TPM that would wait for a device that never appears.
 func cryptsetupUnit(name, dev, cryptsetup string, prompt bool) string {
 	options := "tpm2-device=auto"
 	if !prompt {
@@ -143,7 +146,7 @@ Description=Unlock chalkos volume %[1]s
 DefaultDependencies=no
 IgnoreOnIsolate=true
 BindsTo=%[2]s
-After=%[2]s cryptsetup-pre.target systemd-udevd-kernel.socket
+After=%[2]s cryptsetup-pre.target systemd-udevd-kernel.socket tpm2.target
 Before=umount.target
 Conflicts=umount.target
 

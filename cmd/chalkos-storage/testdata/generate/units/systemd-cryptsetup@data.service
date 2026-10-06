@@ -4,7 +4,7 @@ Description=Unlock chalkos volume data
 DefaultDependencies=no
 IgnoreOnIsolate=true
 BindsTo=dev-disk-by\x2dpartuuid-d506b831\x2dfde9\x2d4335\x2db2be\x2d9710f18219a6.device
-After=dev-disk-by\x2dpartuuid-d506b831\x2dfde9\x2d4335\x2db2be\x2d9710f18219a6.device cryptsetup-pre.target systemd-udevd-kernel.socket
+After=dev-disk-by\x2dpartuuid-d506b831\x2dfde9\x2d4335\x2db2be\x2d9710f18219a6.device cryptsetup-pre.target systemd-udevd-kernel.socket tpm2.target
 Before=umount.target
 Conflicts=umount.target
 

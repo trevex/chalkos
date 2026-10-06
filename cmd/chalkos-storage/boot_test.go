@@ -176,6 +176,7 @@ func TestOpenStateEncrypted(t *testing.T) {
 		"udevadm wait --timeout=60 /dev/disk/chalk-boot/state",
 		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/state",
 		"systemd-cryptsetup attach state /dev/disk/chalk-boot/state - tpm2-device=auto",
+		"e2fsck -p /dev/mapper/state",
 		"mount -t ext4 /dev/mapper/state " + b.stateDir,
 	})
 }
@@ -190,6 +191,7 @@ func TestOpenStateUnencrypted(t *testing.T) {
 	assertCalls(t, r.calls, []string{
 		"udevadm wait --timeout=60 /dev/disk/chalk-boot/state",
 		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/state",
+		"e2fsck -p /dev/disk/chalk-boot/state",
 		"mount -t ext4 /dev/disk/chalk-boot/state " + b.stateDir,
 	})
 }
@@ -227,6 +229,7 @@ func TestSetUpFirstBoot(t *testing.T) {
 		"udevadm wait --timeout=60 /dev/disk/chalk-boot/var",
 		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/var",
 		"systemd-cryptsetup attach var /dev/disk/chalk-boot/var - tpm2-device=auto",
+		"e2fsck -p /dev/mapper/var",
 		"mount -t ext4 /dev/mapper/var " + b.varDir,
 		"systemd-growfs " + b.varDir,
 	})
@@ -730,5 +733,42 @@ func TestSetUpRefreshesPinThatGainedIdentifiers(t *testing.T) {
 	}
 	if got := pins.Disks["data"].Partitions["data"]; got != dataUUID {
 		t.Errorf("data partition = %q, want %q", got, dataUUID)
+	}
+}
+
+func TestOpenStateChecksFileSystem(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		// refusal is part of the error, or empty when STATE is mounted.
+		refusal string
+	}{
+		{"clean", nil, ""},
+		{"errors corrected", &toolError{command: "e2fsck", code: 1}, ""},
+		{"errors left", &toolError{command: "e2fsck", code: 4, stderr: "UNEXPECTED INCONSISTENCY; RUN fsck MANUALLY."}, "cannot repair"},
+		{"operational error", &toolError{command: "e2fsck", code: 8, stderr: "Bad magic number in super-block"}, "Bad magic number"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := &fakeRunner{rules: []rule{
+				{prefix: "e2fsck", err: c.err},
+				{prefix: "blkid", out: "crypto_LUKS\n"},
+			}}
+			b := newTestBoot(t, r, bootDisk)
+
+			err := b.openState(context.Background())
+			mounted := contains(r.calls, "mount -t ext4 /dev/mapper/state "+b.stateDir)
+			if c.refusal == "" {
+				if err != nil || !mounted {
+					t.Errorf("err = %v, mounted = %v; want STATE mounted", err, mounted)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.refusal) || !strings.Contains(err.Error(), "state") {
+				t.Errorf("err = %v, want %q and the volume named", err, c.refusal)
+			}
+			if mounted {
+				t.Error("mounted a file system e2fsck did not pass")
+			}
+		})
 	}
 }

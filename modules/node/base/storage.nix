@@ -15,6 +15,7 @@ let
   # Tools chalkos-storage and repart run in the initrd, besides mount, udevadm, systemd-repart
   # and systemd-cryptsetup, which other modules provide.
   initrdTools = {
+    e2fsck = "${pkgs.e2fsprogs}/bin/e2fsck";
     blkid = "${initrdSystemd.util-linux}/bin/blkid";
     mkswap = "${initrdSystemd.util-linux}/bin/mkswap";
     sfdisk = "${initrdSystemd.util-linux}/bin/sfdisk";
@@ -56,6 +57,9 @@ in
             stateDevice
             "systemd-repart.service"
             "initrd-root-fs.target"
+            # systemd starts tpm2.target once a TPM the firmware reported is usable. Pulling it
+            # in would wait for a TPM on nodes that have none.
+            "tpm2.target"
           ];
           before = [ "initrd-fs.target" ];
           requiredBy = [ "initrd-fs.target" ];
@@ -68,7 +72,10 @@ in
         {
           description = "Create volumes and mount VAR";
           requires = [ "chalkos-state.service" ];
-          after = [ "chalkos-state.service" ];
+          after = [
+            "chalkos-state.service"
+            "tpm2.target"
+          ];
           before = [ "initrd-fs.target" ];
           requiredBy = [ "initrd-fs.target" ];
           # repart keeps large temporary files in /var/tmp by default, which is not there yet.

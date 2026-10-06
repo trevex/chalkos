@@ -78,6 +78,9 @@ func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encry
 		}
 		source = "/dev/mapper/" + name
 	}
+	if err := b.checkFileSystem(ctx, name, source); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return err
 	}
@@ -85,6 +88,22 @@ func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encry
 		return fmt.Errorf("mount %s: %w", name, err)
 	}
 	return nil
+}
+
+// checkFileSystem repairs what a crash or power loss left behind before the ext4 file system on
+// dev is mounted; nothing else checks it, as it is mounted outside fstab. e2fsck exits with 1
+// when it corrected errors.
+func (b *boot) checkFileSystem(ctx context.Context, name, dev string) error {
+	_, err := b.run.run(ctx, "e2fsck", "-p", dev)
+	var te *toolError
+	switch {
+	case err == nil, errors.As(err, &te) && te.code == 1:
+		return nil
+	case te != nil && te.code&4 != 0:
+		return fmt.Errorf("the file system of %s has errors e2fsck -p cannot repair; check %s by hand: %w", name, dev, err)
+	default:
+		return fmt.Errorf("check the file system of %s: %w", name, err)
+	}
 }
 
 // setUp applies the recorded storage section: it pins disks, runs repart on each, and mounts

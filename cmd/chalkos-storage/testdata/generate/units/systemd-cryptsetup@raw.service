@@ -4,7 +4,7 @@ Description=Unlock chalkos volume raw
 DefaultDependencies=no
 IgnoreOnIsolate=true
 BindsTo=dev-disk-chalk\x2dboot-raw.device
-After=dev-disk-chalk\x2dboot-raw.device cryptsetup-pre.target systemd-udevd-kernel.socket
+After=dev-disk-chalk\x2dboot-raw.device cryptsetup-pre.target systemd-udevd-kernel.socket tpm2.target
 Before=umount.target
 Conflicts=umount.target
 
