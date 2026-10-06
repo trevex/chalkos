@@ -24,6 +24,12 @@ let
       options.chalkos.demo.enable = lib.mkEnableOption "demo";
       config.chalkos.demo.enable = true;
     };
+
+  consumerModule = {
+    systemd.services.demo.serviceConfig.ExecStart = "/bin/true";
+    chalkos.node.consumers.demo.keys = [ "demo.key" ];
+  };
+  withConsumer = role (cluster [ { chalkos.roles.worker.nixosModules = [ consumerModule ]; } ]);
 in
 lib.runTests {
   testRoleReadsClusterEndpoint = {
@@ -57,5 +63,22 @@ lib.runTests {
           }
         ]).nodes;
     expected = true;
+  };
+  testConsumerLoadsCredential = {
+    expr = withConsumer.systemd.services.demo.serviceConfig.LoadCredential;
+    expected = [ "demo.key:/run/chalkos/credentials/demo.key" ];
+  };
+  testConsumersRecordedForChalkd = {
+    expr = builtins.fromJSON withConsumer.environment.etc."chalkos/consumers.json".text;
+    expected = {
+      demo = {
+        keys = [ "demo.key" ];
+        restartOnChange = true;
+      };
+    };
+  };
+  testNodeFilePath = {
+    expr = withConsumer.chalkos.node.file;
+    expected = "/run/chalkos/node.json";
   };
 }
