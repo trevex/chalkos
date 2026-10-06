@@ -227,4 +227,25 @@ lib.runTests {
       }).config.flake.chalkos.demo.manifest.cluster.name;
     expected = "demo";
   };
+  testFlakeModulePassesNixpkgs = {
+    expr =
+      (lib.evalModules {
+        modules = [
+          flakeModule
+          { options.flake = lib.mkOption { type = lib.types.lazyAttrsOf lib.types.raw; }; }
+          {
+            chalkos.nixpkgs = {
+              inherit lib;
+              marker = "https://10.0.0.2:6443";
+            };
+            chalkos.clusters.demo =
+              { nixpkgs, ... }:
+              {
+                chalkos.cluster.endpoint = nixpkgs.marker;
+              };
+          }
+        ];
+      }).config.flake.chalkos.demo.cluster.endpoint;
+    expected = "https://10.0.0.2:6443";
+  };
 }
