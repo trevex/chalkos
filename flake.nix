@@ -8,8 +8,10 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
+      chalkosLib = import ./lib { inherit nixpkgs; };
     in
     {
+      lib = chalkosLib;
       packages.${system} = import ./nix/packages.nix { inherit pkgs nixpkgs self; };
       checks.${system} = import ./nix/checks.nix { inherit pkgs self; };
       devShells.${system}.default = import ./nix/shell.nix { inherit pkgs self; };

@@ -56,4 +56,16 @@ in
   e2e-image = e2e "image" "^TestImageBootsWithoutSecureBoot$";
   e2e-secureboot = e2e "secureboot" "^TestSecureBoot";
   e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$";
+
+  eval =
+    let
+      failures = import ../test/nix/eval.nix {
+        inherit (pkgs) lib;
+        inherit (self.lib) mkCluster;
+      };
+    in
+    if failures == [ ] then
+      pkgs.runCommand "chalkos-eval-tests" { } "touch $out"
+    else
+      throw "evaluation tests failed:\n${pkgs.lib.generators.toPretty { } failures}";
 }
