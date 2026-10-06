@@ -37,16 +37,44 @@ type Identity struct {
 }
 
 // Same reports whether two identities describe the same physical disk, by the strongest
-// identifier either of them has.
+// identifier both of them have. A disk whose udev entry gained a WWN after it was pinned is still
+// the pinned disk. The path only decides when one side has no WWN or serial at all: two disks
+// that each have a WWN or serial the other lacks share nothing that tells them apart.
 func (a Identity) Same(b Identity) bool {
 	switch {
-	case a.WWN != "" || b.WWN != "":
+	case a.WWN != "" && b.WWN != "":
 		return a.WWN == b.WWN
-	case a.Serial != "" || b.Serial != "":
+	case a.Serial != "" && b.Serial != "":
 		return a.Serial == b.Serial && a.Model == b.Model
+	case a.unique() && b.unique():
+		return false
 	default:
 		return a.Path != "" && a.Path == b.Path
 	}
+}
+
+// unique reports whether the identity has an identifier that belongs to one disk only.
+func (i Identity) unique() bool { return i.WWN != "" || i.Serial != "" }
+
+// Update returns the pinned identity with what the disk found by it reports now, when the disk
+// reports an identifier the pin lacks, so later boots match it by its strongest identifier.
+// Otherwise the pin stays as it is; changed tells which.
+func (i Identity) Update(found Identity) (updated Identity, changed bool) {
+	if (i.WWN != "" || found.WWN == "") && (i.Serial != "" || found.Serial == "") && (i.Path != "" || found.Path == "") {
+		return i, false
+	}
+	updated = found
+	// Identifiers the disk no longer reports still identify it.
+	if updated.WWN == "" {
+		updated.WWN = i.WWN
+	}
+	if updated.Serial == "" {
+		updated.Serial, updated.Model = i.Serial, i.Model
+	}
+	if updated.Path == "" {
+		updated.Path = i.Path
+	}
+	return updated, true
 }
 
 // Recognisable reports whether the disk can be found again by this identity. Model, size and

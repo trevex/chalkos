@@ -699,3 +699,36 @@ func TestSetUpRefusesEmptySeed(t *testing.T) {
 		t.Errorf("data status = %+v", s.Disks["data"])
 	}
 }
+
+func TestSetUpRefreshesPinThatGainedIdentifiers(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = firstBootRules(b)
+	writeStorage(t, b, "recovery-key")
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// udev now reports a WWN for the data disk, which it did not when the disk was pinned.
+	r.calls = nil
+	gained := dataDisk
+	gained.props = map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-data", "ID_WWN": "0x5000c500a1b2c3d4"}
+	b.host = newTestHost(t, bootDisk, gained)
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(r.calls, "systemd-repart --dry-run=no --json=short --definitions="+b.storageDir()+"/disks/data --seed="+dataSeed+" --empty=allow /dev/vdb") {
+		t.Errorf("the data disk was not found again: %v", r.calls)
+	}
+	pins, err := storage.ReadPins(filepath.Join(b.storageDir(), "disks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := storage.Identity{WWN: "0x5000c500a1b2c3d4", Serial: "chalk-data", Path: "pci-0000:00:05.0", Size: 2 << 30, Type: "hdd"}
+	if got := pins.Disks["data"].Identity; got != want {
+		t.Errorf("data identity = %+v, want %+v", got, want)
+	}
+	if got := pins.Disks["data"].Partitions["data"]; got != dataUUID {
+		t.Errorf("data partition = %q, want %q", got, dataUUID)
+	}
+}

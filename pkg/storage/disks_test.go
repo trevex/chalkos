@@ -225,6 +225,12 @@ func TestIdentitySame(t *testing.T) {
 		{Identity{Serial: "s1", Model: "m"}, Identity{Serial: "s1", Model: "n"}, false},
 		{Identity{Path: "p"}, Identity{Path: "p"}, true},
 		{Identity{}, Identity{}, false},
+		// A pin made before udev reported the WWN still matches by serial.
+		{Identity{Serial: "s1", Model: "m"}, Identity{WWN: "w1", Serial: "s1", Model: "m"}, true},
+		{Identity{Path: "p"}, Identity{WWN: "w1", Serial: "s1", Path: "p"}, true},
+		{Identity{WWN: "w1", Serial: "s1", Model: "m"}, Identity{WWN: "w2", Serial: "s1", Model: "m"}, false},
+		// Neither identity has what identifies the other; a shared port proves nothing.
+		{Identity{WWN: "w1", Path: "p"}, Identity{Serial: "s1", Path: "p"}, false},
 	} {
 		if got := c.a.Same(c.b); got != c.want {
 			t.Errorf("%+v.Same(%+v) = %v, want %v", c.a, c.b, got, c.want)
@@ -267,5 +273,59 @@ func TestResolveWWNIgnoresHexPrefix(t *testing.T) {
 		if err != nil || d.Device != "/dev/sda" {
 			t.Errorf("wwn %s resolved to %v, %v", wwn, d, err)
 		}
+	}
+}
+
+func TestFindPinnedDiskThatGainedWWN(t *testing.T) {
+	disk := sataSSD
+	disk.props = map[string]string{
+		"ID_MODEL":        "Samsung_SSD_870_QVO_4TB",
+		"ID_SERIAL_SHORT": "S6PFNX0T100001",
+		"ID_WWN":          "0x5002538e40a1b2c3",
+		"ID_PATH":         "pci-0000:00:17.0-ata-1",
+	}
+	h := newHost(t, nvmeSystem, disk)
+	d, ok, err := h.Find(Identity{Serial: "S6PFNX0T100001", Model: "Samsung SSD 870 QVO 4TB"})
+	if err != nil || !ok || d.Device != "/dev/sda" {
+		t.Errorf("Find = %v, %v, %v", d, ok, err)
+	}
+}
+
+func TestFindRefusesTwinsByWeakerIdentifier(t *testing.T) {
+	// Two disks share serial and model but have different WWNs; a pin without the WWN cannot
+	// tell them apart.
+	a, b := sataSSD, sataSSD
+	b.name, b.devnum = "sdc", "8:32"
+	a.props = map[string]string{"ID_MODEL": "Samsung_SSD_870_QVO_4TB", "ID_SERIAL_SHORT": "S6PFNX0T100001", "ID_WWN": "0x1"}
+	b.props = map[string]string{"ID_MODEL": "Samsung_SSD_870_QVO_4TB", "ID_SERIAL_SHORT": "S6PFNX0T100001", "ID_WWN": "0x2"}
+	h := newHost(t, nvmeSystem, a, b)
+	if _, _, err := h.Find(Identity{Serial: "S6PFNX0T100001", Model: "Samsung SSD 870 QVO 4TB"}); err == nil {
+		t.Error("Find chose one of two disks the pin cannot tell apart")
+	}
+	d, ok, err := h.Find(Identity{WWN: "0x2", Serial: "S6PFNX0T100001", Model: "Samsung SSD 870 QVO 4TB"})
+	if err != nil || !ok || d.Device != "/dev/sdc" {
+		t.Errorf("Find(wwn) = %v, %v, %v", d, ok, err)
+	}
+}
+
+func TestIdentityUpdate(t *testing.T) {
+	pin := Identity{Serial: "s1", Model: "m", Path: "p1", Size: 1 << 30, Type: "ssd"}
+	got, changed := pin.Update(Identity{WWN: "w1", Serial: "s1", Model: "m", Path: "p2", Size: 1 << 30, Type: "ssd"})
+	if want := (Identity{WWN: "w1", Serial: "s1", Model: "m", Path: "p2", Size: 1 << 30, Type: "ssd"}); !changed || got != want {
+		t.Errorf("gained WWN: Update = %+v, %v, want %+v", got, changed, want)
+	}
+	// Nothing gained: the pin stays as it is, even when the disk moved or lost an identifier.
+	for _, cur := range []Identity{
+		{Serial: "s1", Model: "m", Path: "p2", Size: 1 << 30, Type: "ssd"},
+		{Serial: "s1", Model: "m", Size: 1 << 30, Type: "ssd"},
+	} {
+		if got, changed := pin.Update(cur); changed || got != pin {
+			t.Errorf("Update(%+v) = %+v, %v, want the pin unchanged", cur, got, changed)
+		}
+	}
+	// A pin made by the path alone gains the serial.
+	got, changed = Identity{Path: "p1", Size: 1 << 30}.Update(Identity{Serial: "s1", Model: "m", Path: "p1", Size: 1 << 30})
+	if want := (Identity{Serial: "s1", Model: "m", Path: "p1", Size: 1 << 30}); !changed || got != want {
+		t.Errorf("Update = %+v, %v, want %+v", got, changed, want)
 	}
 }

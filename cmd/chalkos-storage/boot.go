@@ -193,7 +193,11 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 		fail(storage.SystemDisk, unrecognisable(bootDisk))
 	} else {
 		system.Ref = section.Disks[storage.SystemDisk].Ref
-		system.Identity = bootDisk.Identity
+		if pinned {
+			system.Identity, _ = system.Identity.Update(bootDisk.Identity)
+		} else {
+			system.Identity = bootDisk.Identity
+		}
 		pins.Disks[storage.SystemDisk] = system
 		devices[storage.SystemDisk] = b.bootDisk
 	}
@@ -222,6 +226,11 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 		if err != nil {
 			fail(name, err)
 			continue
+		}
+		// A pin made before udev reported every identifier gains the missing ones.
+		if id, changed := pin.Identity.Update(disk.Identity); changed {
+			pin.Identity = id
+			pins.Disks[name] = pin
 		}
 		devices[name] = disk.Device
 	}
