@@ -36,12 +36,6 @@ let
           default = name;
           description = "Hostname set at boot from the node identity.";
         };
-        install.disk = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          example = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001";
-          description = "Disk the node is installed onto; prefer a stable /dev/disk/by-id path.";
-        };
         network = lib.mkOption {
           type = lib.types.lazyAttrsOf lib.types.anything;
           default = { };

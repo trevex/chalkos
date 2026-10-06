@@ -5,7 +5,7 @@ let
   coreNodeOptions = [
     "role"
     "hostname"
-    "install"
+    "storage"
     "network"
     "labels"
     "taints"
@@ -15,7 +15,6 @@ let
 
   node = _: n: {
     inherit (n) role;
-    install.disk = n.install.disk;
     identity = {
       inherit (n) hostname network labels;
       taints = map strip n.taints;
@@ -30,7 +29,7 @@ in
     description = "Generated cluster description read by chalkctl (JSON-serialisable, schemaVersion 0).";
   };
 
-  config.chalkos.manifest = {
+  config.chalkos.manifest = lib.showWarnings cfg.warnings {
     schemaVersion = 0;
     cluster = { inherit (cfg.cluster) name endpoint; };
     # Relative to the cluster's attribute, which only the evaluating CLI knows; the flake may

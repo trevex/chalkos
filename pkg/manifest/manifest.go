@@ -37,14 +37,7 @@ type Role struct {
 // Node is one machine of the cluster, by the role it runs and the values unique to it.
 type Node struct {
 	Role     string   `json:"role"`
-	Install  Install  `json:"install"`
 	Identity Identity `json:"identity"`
-}
-
-// Install holds the values used only while installing a node.
-type Install struct {
-	// Disk is the device the node is installed onto; empty when the definition names none.
-	Disk string `json:"disk"`
 }
 
 // Identity is the node's identity without secrets, as delivered to the node.

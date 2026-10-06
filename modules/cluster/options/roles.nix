@@ -10,6 +10,7 @@ let
     "nodes"
     "roles"
     "manifest"
+    "warnings"
   ];
   roleDefaults = name: ../../roles + "/${name}.nix";
 

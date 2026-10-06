@@ -11,7 +11,6 @@
   "nodes": {
     "cp1": {
       "role": "controlplane",
-      "install": { "disk": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001" },
       "identity": {
         "hostname": "cp1",
         "network": {
@@ -30,7 +29,6 @@
     },
     "w1": {
       "role": "worker",
-      "install": { "disk": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002" },
       "identity": {
         "hostname": "w1",
         "network": {},
