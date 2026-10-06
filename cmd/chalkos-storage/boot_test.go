@@ -579,7 +579,7 @@ func TestSetUpMountsUnencryptedVar(t *testing.T) {
 func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
 	r := &fakeRunner{}
 	b := newTestBoot(t, r, bootDisk, dataDisk)
-	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &toolError{command: "systemd-cryptsetup", code: 1}}}, firstBootRules(b)...)
+	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &toolError{command: "systemd-cryptsetup", code: 1, stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}}}, firstBootRules(b)...)
 	writeStorage(t, b, "none")
 
 	err := b.setUp(context.Background())
@@ -654,4 +654,48 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestSetUpWithoutFallbackReportsOtherAttachFailures(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &toolError{command: "systemd-cryptsetup", code: 1, stderr: "Failed to load LUKS superblock on device /dev/disk/chalk-boot/var: Input/output error\n"}}}, firstBootRules(b)...)
+	writeStorage(t, b, "none")
+
+	err := b.setUp(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Input/output error") {
+		t.Fatalf("err = %v, want the attach error", err)
+	}
+	if strings.Contains(err.Error(), "reset") {
+		t.Errorf("err = %v suggests a reset for a failure that is not the TPM's", err)
+	}
+}
+
+func TestSetUpRefusesEmptySeed(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = firstBootRules(b)
+	writeSection(t, b, `{
+	  "disks": {
+	    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
+	    "data": {"ref": {"serial": "chalk-data"}, "seed": "", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
+	  },
+	  "volumes": {
+	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
+	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
+	  },
+	  "fallback": "recovery-key"
+	}`)
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range r.calls {
+		if strings.Contains(call, "--seed=") && strings.Contains(call, "disks/data") {
+			t.Errorf("ran repart without a seed: %s", call)
+		}
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, "seed") {
+		t.Errorf("data status = %+v", s.Disks["data"])
+	}
 }

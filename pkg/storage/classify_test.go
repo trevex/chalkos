@@ -128,3 +128,9 @@ func TestClassifyDisks(t *testing.T) {
 		t.Errorf("unresolvable reference: %v", changes)
 	}
 }
+
+func TestClassifyEqualSizeWrittenDifferently(t *testing.T) {
+	if changes := Classify(baseSection(), with("data", func(v *Volume) { v.Size = "1024M" })); len(changes) != 0 {
+		t.Errorf("changes = %v, want none", changes)
+	}
+}

@@ -70,7 +70,7 @@ func compareVolume(name string, old, cur Volume) (Change, bool) {
 	if old.Encryption != cur.Encryption {
 		destructive = append(destructive, fmt.Sprintf("encryption %s instead of %s", cur.Encryption, old.Encryption))
 	}
-	if old.Size != cur.Size {
+	if old.Size != cur.Size && !sameSize(old.Size, cur.Size) {
 		reason, grows := compareSize(old.Size, cur.Size)
 		if grows {
 			additive = append(additive, reason)
@@ -108,6 +108,13 @@ func compareSize(old, cur string) (reason string, grows bool) {
 		return fmt.Sprintf("larger: %s instead of %s", cur, old), true
 	}
 	return fmt.Sprintf("smaller: %s instead of %s", cur, old), false
+}
+
+// sameSize reports whether two sizes are the same number of bytes, such as 1G and 1024M.
+func sameSize(a, b string) bool {
+	x, errA := ParseSize(a)
+	y, errB := ParseSize(b)
+	return errA == nil && errB == nil && x == y
 }
 
 // ClassifyDisks reports volumes whose changed disk reference resolves to another physical disk

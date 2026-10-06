@@ -247,3 +247,25 @@ func TestIdentityRecognisable(t *testing.T) {
 		}
 	}
 }
+
+func TestFindRefusesAmbiguousIdentity(t *testing.T) {
+	twin := sataSSD
+	twin.name, twin.devnum = "sdc", "8:32"
+	h := newHost(t, nvmeSystem, sataSSD, twin)
+	_, _, err := h.Find(Identity{Serial: "S6PFNX0T100001", Model: "Samsung SSD 870 QVO 4TB"})
+	if err == nil || !strings.Contains(err.Error(), "/dev/sda") || !strings.Contains(err.Error(), "/dev/sdc") {
+		t.Errorf("err = %v, want both disks named", err)
+	}
+}
+
+func TestResolveWWNIgnoresHexPrefix(t *testing.T) {
+	disk := sataSSD
+	disk.props = map[string]string{"ID_WWN": "0x5002538e40a1b2c3", "ID_PATH": "pci-0000:00:17.0-ata-1"}
+	h := newHost(t, nvmeSystem, disk)
+	for _, wwn := range []string{"0x5002538e40a1b2c3", "0X5002538E40A1B2C3", "5002538E40A1B2C3"} {
+		d, err := h.Resolve(Ref{Selector: Selector{WWN: wwn}})
+		if err != nil || d.Device != "/dev/sda" {
+			t.Errorf("wwn %s resolved to %v, %v", wwn, d, err)
+		}
+	}
+}

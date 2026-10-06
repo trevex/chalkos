@@ -71,7 +71,7 @@ func (b *boot) open(ctx context.Context, name, dev, target string, prompt, encry
 			options += ",headless=true"
 		}
 		if _, err := b.run.run(ctx, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
-			if !prompt {
+			if !prompt && unsealFailed(err) {
 				return fmt.Errorf("the TPM did not unseal %s and the node has no fallback key; the volume must be reset with chalkctl storage reset <node> %s: %w", name, name, err)
 			}
 			return fmt.Errorf("unlock %s: %w", name, err)
@@ -346,6 +346,11 @@ func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk, d storag
 
 // repart creates and grows the disk's partitions and returns the PARTUUID of each volume.
 func (b *boot) repart(ctx context.Context, name, dev string, d storage.Disk) (map[string]string, error) {
+	// An empty --seed= makes repart fall back to a seed of its own, so the partition UUIDs
+	// would not be the ones the section determines.
+	if d.Seed == "" {
+		return nil, fmt.Errorf("the storage section has no seed for disk %s", name)
+	}
 	args := []string{
 		"--dry-run=no",
 		"--json=short",
@@ -361,4 +366,16 @@ func (b *boot) repart(ctx context.Context, name, dev string, d storage.Disk) (ma
 		return nil, err
 	}
 	return storage.ParsePartitions(out)
+}
+
+// unsealFailed reports whether systemd-cryptsetup failed because no key was available: the TPM
+// did not unseal one and headless mode forbade asking for another. Other failures, such as an
+// unreadable device, are no reason to reset the volume.
+func unsealFailed(err error) bool {
+	var te *toolError
+	if !errors.As(err, &te) {
+		return false
+	}
+	stderr := strings.ToLower(te.stderr)
+	return strings.Contains(stderr, "tpm2") || strings.Contains(stderr, "headless")
 }

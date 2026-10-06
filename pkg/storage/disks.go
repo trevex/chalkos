@@ -210,18 +210,27 @@ func (h Host) ResolvePath(p string) (BlockDisk, error) {
 	return BlockDisk{}, fmt.Errorf("%s is %s, which is not a whole disk", p, "/dev/"+filepath.Base(target))
 }
 
-// Find returns the disk with a pinned identity; ok is false when no disk has it.
+// Find returns the disk with a pinned identity; ok is false when no disk has it. Several disks
+// with the identity are an error: picking one could open another disk's partitions.
 func (h Host) Find(id Identity) (disk BlockDisk, ok bool, err error) {
 	disks, err := h.Disks()
 	if err != nil {
 		return BlockDisk{}, false, err
 	}
+	var matches []BlockDisk
 	for _, d := range disks {
 		if d.Identity.Same(id) {
-			return d, true, nil
+			matches = append(matches, d)
 		}
 	}
-	return BlockDisk{}, false, nil
+	switch len(matches) {
+	case 0:
+		return BlockDisk{}, false, nil
+	case 1:
+		return matches[0], true, nil
+	default:
+		return BlockDisk{}, false, fmt.Errorf("%d disks have the pinned identity %s, refusing to choose: %s", len(matches), id, listDisks(matches))
+	}
 }
 
 // Matches reports whether a disk has every property the selector names.
@@ -238,7 +247,7 @@ func (s Selector) Matches(id Identity) (bool, error) {
 	if s.Serial != "" && s.Serial != id.Serial {
 		return false, nil
 	}
-	if s.WWN != "" && !strings.EqualFold(strings.TrimPrefix(s.WWN, "0x"), strings.TrimPrefix(id.WWN, "0x")) {
+	if s.WWN != "" && normalizeWWN(s.WWN) != normalizeWWN(id.WWN) {
 		return false, nil
 	}
 	if s.Type != "" && s.Type != id.Type {
@@ -306,4 +315,10 @@ func hasAnyPrefix(s string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+// normalizeWWN drops the 0x prefix and the case, so a WWN copied from another tool matches udev's.
+func normalizeWWN(wwn string) string {
+	wwn = strings.ToLower(wwn)
+	return strings.TrimPrefix(wwn, "0x")
 }
