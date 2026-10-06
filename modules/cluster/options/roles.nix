@@ -13,6 +13,23 @@ let
   ];
   roleDefaults = name: ../../roles + "/${name}.nix";
 
+  # Declaring each setting as a read-only option keeps role modules from overriding cluster
+  # settings and lets the module system reject unknown names under `chalkos`.
+  settingsModule = {
+    options.chalkos = lib.mkOption {
+      type = lib.types.submodule {
+        options = lib.mapAttrs (
+          _: _:
+          lib.mkOption {
+            type = lib.types.anything;
+            readOnly = true;
+          }
+        ) settings;
+      };
+    };
+    config.chalkos = settings;
+  };
+
   roleModule =
     { name, config, ... }:
     {
@@ -30,17 +47,18 @@ let
         image = lib.mkOption {
           type = lib.types.package;
           readOnly = true;
-          description = "Unsigned disk image of this role.";
+          description = ''
+            Unsigned disk image of this role. Cluster settings flow into every role image, so they
+            must not be derived from `chalkos.roles`.
+          '';
         };
       };
       config = {
         nixos = nixpkgs.lib.nixosSystem {
           modules = [
             ../../node
-            {
-              nixpkgs.hostPlatform = settings.cluster.system;
-              chalkos = settings;
-            }
+            settingsModule
+            { nixpkgs.hostPlatform = settings.cluster.system; }
           ]
           ++ lib.optional (builtins.pathExists (roleDefaults name)) (roleDefaults name)
           ++ config.nixosModules;

@@ -73,6 +73,33 @@ lib.runTests {
     expr = fails (role (cluster [ ])).chalkos.nodes;
     expected = true;
   };
+  testRoleRejectsUnknownSetting = {
+    expr =
+      fails
+        (role (cluster [
+          { chalkos.roles.worker.nixosModules = [ { chalkos.disks.espSize = "1G"; } ]; }
+        ])).chalkos.cluster.endpoint;
+    expected = true;
+  };
+  testRoleCannotOverrideClusterSetting = {
+    expr =
+      fails
+        (role (cluster [
+          {
+            chalkos.roles.worker.nixosModules = [
+              { chalkos.cluster.endpoint = lib.mkForce "https://10.0.0.2:6443"; }
+            ];
+          }
+        ])).chalkos.cluster.endpoint;
+    expected = true;
+  };
+  testRoleSetsDiskOptions = {
+    expr =
+      (role (cluster [
+        { chalkos.roles.worker.nixosModules = [ { chalkos.disk.espSize = "256M"; } ]; }
+      ])).chalkos.disk.espSize;
+    expected = "256M";
+  };
   testRoleModulesApply = {
     expr =
       (role (cluster [

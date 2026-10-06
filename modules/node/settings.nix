@@ -1,10 +1,11 @@
-# The chalkos namespace inside a role image: cluster-wide settings from the cluster definition
-# arrive as freeform values under their layer 1 names; node-specific values do not exist here.
+# The chalkos namespace inside a role image. Cluster-wide settings from the cluster definition
+# arrive as read-only options under their layer 1 names (declared by the role builder); node
+# options are declared by the node modules; node-specific values do not exist here.
+# Cluster settings flow into every role image, so they must not be derived from `chalkos.roles`.
 { lib, ... }:
 {
   options.chalkos = lib.mkOption {
     type = lib.types.submodule {
-      freeformType = lib.types.lazyAttrsOf lib.types.anything;
       options.nodes = lib.mkOption {
         readOnly = true;
         visible = false;
@@ -20,8 +21,9 @@
     default = { };
     description = ''
       chalkos settings. Cluster-wide values (`chalkos.cluster`, `chalkos.secureBoot`, feature
-      namespaces) are set from the cluster definition; node options (`chalkos.node`,
-      `chalkos.disk`) are declared by the node modules.
+      namespaces) are set read-only from the cluster definition; node options (`chalkos.node`,
+      `chalkos.disk`) are declared by the node modules. `node`, `disk` and `nodes` are therefore
+      reserved and cannot be used as feature namespaces.
     '';
   };
 }
