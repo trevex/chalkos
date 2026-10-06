@@ -270,15 +270,15 @@ func TestSetUpUsesPinnedDisks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The second boot finds the data disk by its pinned identity and does not probe it again.
+	// The second boot finds the data disk by its pinned identity without resolving the reference.
 	r.calls = nil
 	if err := b.setUp(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if !contains(r.calls, "systemd-repart --dry-run=no --json=short --definitions="+b.storageDir()+"/disks/data --seed="+dataSeed+" --empty=allow /dev/vdb") {
+		t.Errorf("the pinned data disk was not set up: %v", r.calls)
+	}
 	for _, call := range r.calls {
-		if strings.HasPrefix(call, "blkid -p -o export") {
-			t.Errorf("probed a pinned disk again: %s", call)
-		}
 		if strings.HasPrefix(call, "udevadm settle") {
 			t.Errorf("waited for udev without a reference to resolve: %s", call)
 		}
@@ -768,6 +768,88 @@ func TestOpenStateChecksFileSystem(t *testing.T) {
 			}
 			if mounted {
 				t.Error("mounted a file system e2fsck did not pass")
+			}
+		})
+	}
+}
+
+func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
+	gpt := rule{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nPTUUID=c5a8b6e2-4e09-4d47-9a4c-1e1c2c6f1b2a\nPTTYPE=gpt\n"}
+	for _, c := range []struct {
+		name  string
+		rules []rule
+		// refused is whether the disk must be left alone.
+		refused bool
+	}{
+		{"empty", nil, false},
+		{"chalkos partitions", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable(dataType)}}, false},
+		{"MBR", []rule{{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nPTUUID=5d1f2c3a\nPTTYPE=dos\n"}}, true},
+		{"foreign GPT partition", []rule{gpt, {prefix: "sfdisk --json /dev/vdb", out: sfdiskTable(dataType, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")}}, true},
+		{"file system", []rule{{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// A disk without serial or WWN is pinned by its port alone.
+			portOnly := dataDisk
+			portOnly.props = map[string]string{"ID_PATH": "pci-0000:00:05.0"}
+			r := &fakeRunner{}
+			b := newTestBoot(t, r, bootDisk, portOnly)
+			r.rules = firstBootRules(b)
+			writeSection(t, b, `{
+			  "disks": {
+			    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
+			    "data": {"ref": "/dev/vdb", "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nType=`+dataType+`\nLabel=data\n"}}
+			  },
+			  "volumes": {
+			    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
+			    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
+			  },
+			  "fallback": "recovery-key"
+			}`)
+			if err := b.setUp(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			pinsFile := filepath.Join(b.storageDir(), "disks.json")
+			before, err := storage.ReadPins(pinsFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Another disk, with a serial, now sits in the same port.
+			other := portOnly
+			other.props = map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "someone-else"}
+			b.host = newTestHost(t, bootDisk, other)
+			r.calls = nil
+			r.rules = append(c.rules, firstBootRules(b)...)
+			if err := b.setUp(context.Background()); err != nil {
+				t.Fatalf("a pinned extra disk stopped the boot: %v", err)
+			}
+
+			repartRan := false
+			for _, call := range r.calls {
+				repartRan = repartRan || strings.HasPrefix(call, "systemd-repart") && strings.HasSuffix(call, " /dev/vdb")
+			}
+			status := readStatus(t, b).Disks["data"]
+			if !c.refused {
+				if !repartRan || status.Error != "" {
+					t.Errorf("refused a pinned disk holding nothing foreign: %+v", status)
+				}
+				return
+			}
+			if repartRan {
+				t.Error("ran repart on a pinned disk that holds foreign data")
+			}
+			if want := "pinned disk data at /dev/vdb now holds data chalkos did not create; refusing to touch it"; !strings.Contains(status.Error, want) {
+				t.Errorf("data status = %+v, want %q", status, want)
+			}
+			if !contains(r.calls, "mount -t ext4 /dev/mapper/var "+b.varDir) {
+				t.Errorf("VAR not mounted: %v", r.calls)
+			}
+			after, err := storage.ReadPins(pinsFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(after.Disks["data"], before.Disks["data"]) {
+				t.Errorf("pin changed from %+v to %+v", before.Disks["data"], after.Disks["data"])
 			}
 		})
 	}

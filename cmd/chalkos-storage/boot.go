@@ -246,6 +246,12 @@ func (b *boot) locateDisks(ctx context.Context, section storage.Section, pins *s
 			fail(name, err)
 			continue
 		}
+		// A pin that matched by port alone may have found another disk in that port, and repart
+		// runs with --empty=allow; so a pinned disk is checked like a new one before it is changed.
+		if err := b.checkUnused(ctx, disk, section.Disks[name]); err != nil {
+			fail(name, fmt.Errorf("pinned disk %s at %s now holds data chalkos did not create; refusing to touch it: %w", name, disk.Device, err))
+			continue
+		}
 		// A pin made before udev reported every identifier gains the missing ones.
 		if id, changed := pin.Identity.Update(disk.Identity); changed {
 			pin.Identity = id
@@ -321,7 +327,7 @@ func (b *boot) resolveNew(ctx context.Context, d storage.Disk, claimed []claim) 
 	return disk, nil
 }
 
-// checkUnused refuses a newly resolved disk unless it is provably unused: blkid finds nothing
+// checkUnused refuses an extra disk unless it is provably unused: blkid finds nothing
 // on it, or it carries a GPT whose partitions all have types of this disk's definitions, which
 // repart takes over. repart would otherwise write a new partition table over foreign data.
 func (b *boot) checkUnused(ctx context.Context, disk storage.BlockDisk, d storage.Disk) error {
