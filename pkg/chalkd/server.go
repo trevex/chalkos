@@ -122,7 +122,13 @@ type roleKey struct{}
 
 // Handler serves the API. Roles come from the verified client certificate's Organization.
 func (s *Server) Handler() http.Handler {
-	_, h := nodev1connect.NewNodeServiceHandler(s, connect.WithInterceptors(authorizer{s}), connect.WithReadMaxBytes(maxMessageBytes))
+	_, h := nodev1connect.NewNodeServiceHandler(s,
+		connect.WithInterceptors(authorizer{s}),
+		connect.WithReadMaxBytes(maxMessageBytes),
+		// An oversized compressed request would otherwise be decompressed in full before being
+		// discarded; refusing compression up front keeps that cost off chalkd.
+		connect.WithCompression("gzip", nil, nil),
+	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role := ""
 		switch {

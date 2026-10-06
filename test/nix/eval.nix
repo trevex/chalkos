@@ -746,8 +746,9 @@ lib.runTests {
       { volumes.esp.size = "1G"; }
       { volumes.store.size = "1G"; }
       { volumes.store-verity.size = "1G"; }
+      { volumes.system.size = "1G"; }
     ];
-    expected = lib.replicate 8 true;
+    expected = lib.replicate 9 true;
   };
   testStorageRejectsMountPoint = {
     expr =

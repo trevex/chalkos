@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -531,6 +532,40 @@ func TestImageChunkFitsRequestLimit(t *testing.T) {
 	const chunkSize = 1 << 20
 	if maxMessageBytes < 2*chunkSize {
 		t.Errorf("maxMessageBytes = %d leaves no room for a %d-byte image chunk", maxMessageBytes, chunkSize)
+	}
+}
+
+// rawClient is a NodeServiceClient with its own connect options, so a test can send compressed
+// requests, which client.Conn does not support.
+func rawClient(t *testing.T, addr string, opts ...connect.ClientOption) nodev1connect.NodeServiceClient {
+	t.Helper()
+	transport := &http.Transport{
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
+		ForceAttemptHTTP2: true,
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	return nodev1connect.NewNodeServiceClient(&http.Client{Transport: transport}, "https://"+addr, opts...)
+}
+
+// TestCompressionRefused checks that a gzip-compressed request is refused before chalkd spends
+// CPU decompressing it, and that the server does not advertise gzip support in return.
+func TestCompressionRefused(t *testing.T) {
+	c := newCreds(t)
+	s, _ := newTestServer(t, maintenance, vda)
+	addr := serve(t, s, c, nil)
+
+	gzip := rawClient(t, addr, connect.WithSendGzip())
+	if _, err := gzip.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
+		t.Fatalf("gzip request: err = %v, want CodeUnimplemented", err)
+	}
+
+	plain := rawClient(t, addr)
+	resp, err := plain.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+	if err != nil {
+		t.Fatalf("uncompressed request: %v", err)
+	}
+	if ae := resp.Header().Get("Accept-Encoding"); strings.Contains(ae, "gzip") {
+		t.Errorf("server advertised compression: %q", ae)
 	}
 }
 

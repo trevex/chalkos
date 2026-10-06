@@ -229,9 +229,11 @@ var (
 	validMountPoint = regexp.MustCompile(`^(/[A-Za-z0-9._-]+)+$`)
 )
 
-// reservedNames are the labels of the system region and VAR. A volume with one of them would
-// share its link below /dev/disk/chalk-boot with a partition of the image.
-var reservedNames = []string{"esp", "store", "store-verity", "state", VarVolume}
+// reservedNames are the labels of the system region and VAR, and the system disk's name. A
+// volume with one of the labels would share its link below /dev/disk/chalk-boot with a
+// partition of the image; a volume named like the system disk would replace its entry when the
+// section is rendered.
+var reservedNames = []string{"esp", "store", "store-verity", "state", VarVolume, SystemDisk}
 
 // forbiddenMountPoints hold the root, the store, STATE and VAR; nothing else is mounted on them
 // or below /nix and /state.

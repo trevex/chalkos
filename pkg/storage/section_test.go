@@ -206,6 +206,7 @@ func TestValidate(t *testing.T) {
 		{"reserved name esp", func(s *Section) { s.Volumes["esp"] = Volume{Disk: "system", Label: "esp"} }, "reserved"},
 		{"reserved name store", func(s *Section) { s.Volumes["store"] = Volume{Disk: "system", Label: "store"} }, "reserved"},
 		{"reserved name store-verity", func(s *Section) { s.Volumes["store-verity"] = Volume{Disk: "system", Label: "store-verity"} }, "reserved"},
+		{"reserved name system", func(s *Section) { s.Volumes["system"] = Volume{Disk: "system", Label: "system"} }, "reserved"},
 		{"VAR on another disk", func(s *Section) { v := s.Volumes["var"]; v.Disk = "longhorn"; s.Volumes["var"] = v }, "VAR"},
 		{"VAR mounted elsewhere", func(s *Section) { v := s.Volumes["var"]; v.MountPoint = "/srv"; s.Volumes["var"] = v }, "VAR"},
 		{"volume on an unknown disk", func(s *Section) { s.Volumes["data"] = Volume{Disk: "nope", Label: "data"} }, "unknown disk"},
