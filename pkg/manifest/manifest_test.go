@@ -21,7 +21,7 @@ func TestDecodeGoldenManifest(t *testing.T) {
 	if m.Cluster.Name != "homelab" || m.Cluster.Endpoint != "https://10.0.0.10:6443" {
 		t.Errorf("cluster = %+v", m.Cluster)
 	}
-	if got := m.Roles["worker"].Image; got != "chalkos.homelab.roles.worker.image" {
+	if got := m.Roles["worker"].Image; got != "roles.worker.image" {
 		t.Errorf("worker image = %q", got)
 	}
 	w1 := m.Nodes["w1"]

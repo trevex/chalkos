@@ -38,8 +38,10 @@ in
   config.chalkos.manifest = {
     schemaVersion = 0;
     cluster = { inherit (cfg.cluster) name endpoint; };
+    # Relative to the cluster's attribute, which only the evaluating CLI knows; the flake may
+    # expose the cluster under any name.
     roles = lib.mapAttrs (role: _: {
-      image = "chalkos.${cfg.cluster.name}.roles.${role}.image";
+      image = "roles.${role}.image";
     }) cfg.roles;
     nodes = lib.mapAttrs node cfg.nodes;
   };

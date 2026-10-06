@@ -25,7 +25,8 @@ type Cluster struct {
 }
 
 type Role struct {
-	// Image is the flake attribute path that builds the role's unsigned disk image.
+	// Image is the attribute path, relative to the cluster's attribute, that builds the role's
+	// unsigned disk image; the CLI prepends the attribute path it evaluated the manifest from.
 	Image string `json:"image"`
 }
 

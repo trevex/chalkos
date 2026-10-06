@@ -143,7 +143,7 @@ lib.runTests {
   };
   testManifestRoleImagePath = {
     expr = twoNodes.manifest.roles.worker.image;
-    expected = "chalkos.t.roles.worker.image";
+    expected = "roles.worker.image";
   };
   testManifestIdentity = {
     expr = twoNodes.manifest.nodes.n1.identity;
