@@ -9,20 +9,25 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/lab"
 )
 
 var secureBootEnv = []string{
 	"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_IMAGE_DIR",
 }
 
-// TestSecureBootBootsSignedImage boots the signed image with test keys enrolled, then resets
-// the VM and checks the TPM unseals STATE and VAR again with their data intact.
+// TestSecureBootBootsSignedImage boots the signed image with test keys enrolled and installs
+// it in place, then resets the VM and checks the TPM unseals STATE and VAR again with their data
+// intact.
 func TestSecureBootBootsSignedImage(t *testing.T) {
-	requireEnv(t, secureBootEnv...)
+	requireEnv(t, append(secureBootEnv, chalkdEnv...)...)
 	dir := vmDir(t)
 	disk := prepareDisk(t, dir, diskOpts{sign: true})
-	vm := startVM(t, dir, os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), disk)
+	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), Disks: []lab.Disk{disk}})
+	vm := n.vm
 
+	assertFacts(t, readFacts(t, vm, 5*time.Minute), map[string]string{"secureboot": "1", "state_tpm2": "1"})
+	installInPlace(t, n, "chalklab")
 	first := readFacts(t, vm, 5*time.Minute)
 	assertFacts(t, first, map[string]string{
 		"secureboot":   "1",
@@ -31,7 +36,7 @@ func TestSecureBootBootsSignedImage(t *testing.T) {
 		"slot_b_empty": "2",
 		"state_tpm2":   "1",
 		"var_tpm2":     "1",
-		"state_boots":  "1",
+		"state_boots":  "2",
 		"var_boots":    "1",
 	})
 
@@ -41,7 +46,7 @@ func TestSecureBootBootsSignedImage(t *testing.T) {
 	second := readFacts(t, vm, 5*time.Minute)
 	assertFacts(t, second, map[string]string{
 		"secureboot":  "1",
-		"state_boots": "2",
+		"state_boots": "3",
 		"var_boots":   "2",
 	})
 }

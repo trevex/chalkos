@@ -33,6 +33,11 @@ let
         return 1
       }
 
+      # The number of LUKS keyslots: the TPM2 slot plus the fallback once Install enrolled it.
+      keyslots() {
+        cryptsetup luksDump "$1" 2>/dev/null | grep -cE '^  [0-9]+: luks2' || true
+      }
+
       storage=/state/storage
       # The partition of a volume: VAR on the boot disk, the others by the PARTUUID repart reported.
       partition() {
@@ -56,6 +61,7 @@ let
 
       fact state_fstype "$(findmnt -n -o FSTYPE /state || true)"
       fact state_tpm2 "$(cryptsetup luksDump /dev/disk/chalk-boot/state 2>/dev/null | grep -c systemd-tpm2 || true)"
+      fact state_keyslots "$(keyslots /dev/disk/chalk-boot/state)"
       if mountpoint -q /state; then fact state_boots "$(count_boots /state/chalktest/boots)"; fi
 
       if [[ -f $storage/storage.json ]]; then
@@ -68,6 +74,7 @@ let
           fi
           wait_for test -b "$part" || true
           fact "''${key}_tpm2" "$(cryptsetup luksDump "$part" 2>/dev/null | grep -c systemd-tpm2 || true)"
+          fact "''${key}_keyslots" "$(keyslots "$part")"
           fact "''${key}_size" "$(lsblk -bdno SIZE "$part" 2>/dev/null || true)"
           fact "''${key}_disk" "$(lsblk -no PKNAME "$part" 2>/dev/null || true)"
           dev=$part

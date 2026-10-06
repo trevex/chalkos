@@ -1,5 +1,6 @@
 { pkgs, self }:
 let
+  inherit (pkgs) lib;
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   testEnv = import ./testing/env.nix { inherit pkgs self; };
 
@@ -24,6 +25,10 @@ let
         {
           requiredSystemFeatures = [ "kvm" ];
           nativeBuildInputs = testEnv.tools ++ [ chalkPkgs.chalklab-e2e ];
+          # Tests install nodes with the real chalkctl, from the test cluster's manifests.
+          CHALKLAB_CHALKCTL = lib.getExe chalkPkgs.chalkctl;
+          CHALKLAB_SECRETS = "${chalkPkgs.test-secrets}/secrets.json";
+          CHALKLAB_MANIFESTS = "${chalkPkgs.test-manifests}";
         }
         // images
         // testEnv.vars
@@ -57,6 +62,7 @@ in
   e2e-image = e2e "image" "^TestImageBootsWithoutSecureBoot$" testImage;
   e2e-secureboot = e2e "secureboot" "^TestSecureBoot" testImage;
   e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$" testImage;
+  e2e-install = e2e "install" "^TestInstallInPlace$" testImage;
   e2e-storage = e2e "storage" "^TestStorage" {
     CHALKLAB_STORAGE_IMAGE_DIR = "${chalkPkgs.test-storage-image}";
   };

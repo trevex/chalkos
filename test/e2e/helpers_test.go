@@ -1,7 +1,11 @@
 // Package e2e boots chalkos images in chalklab VMs. The dev shell sets the firmware and key
-// variables; tests that boot an image skip unless its directory is exported too, e.g.
-// export CHALKLAB_IMAGE_DIR=$(nix build .#test-image --no-link --print-out-paths)
-// export CHALKLAB_STORAGE_IMAGE_DIR=$(nix build .#test-storage-image --no-link --print-out-paths)
+// variables; tests that boot an image or install a node skip unless these are exported too:
+//
+//	export CHALKLAB_IMAGE_DIR=$(nix build .#test-image --no-link --print-out-paths)
+//	export CHALKLAB_STORAGE_IMAGE_DIR=$(nix build .#test-storage-image --no-link --print-out-paths)
+//	export CHALKLAB_CHALKCTL=$(nix build .#chalkctl --no-link --print-out-paths)/bin/chalkctl
+//	export CHALKLAB_SECRETS=$(nix build .#test-secrets --no-link --print-out-paths)/secrets.json
+//	export CHALKLAB_MANIFESTS=$(nix build .#test-manifests --no-link --print-out-paths)
 package e2e
 
 import (
@@ -61,18 +65,20 @@ func logConsoleTail(t *testing.T, path string, n int) {
 
 func startVM(t *testing.T, dir, vars string, disks ...lab.Disk) *lab.VM {
 	t.Helper()
+	return bootVM(t, lab.VMConfig{Dir: dir, FirmwareVars: vars, Disks: disks})
+}
+
+// bootVM starts a VM with the test firmware, a TPM, and the resources an image needs.
+func bootVM(t *testing.T, c lab.VMConfig) *lab.VM {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	vm, err := lab.StartVM(ctx, lab.VMConfig{
-		Name:         "node",
-		Dir:          dir,
-		FirmwareCode: os.Getenv("CHALKLAB_OVMF_CODE"),
-		FirmwareVars: vars,
-		Disks:        disks,
-		MemoryMB:     2048,
-		CPUs:         2,
-		TPM:          true,
-	})
+	c.Name = "node"
+	c.FirmwareCode = os.Getenv("CHALKLAB_OVMF_CODE")
+	c.MemoryMB = 2048
+	c.CPUs = 2
+	c.TPM = true
+	vm, err := lab.StartVM(ctx, c)
 	if err != nil {
 		t.Fatal(err)
 	}

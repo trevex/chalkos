@@ -4,7 +4,7 @@
 }:
 let
   inherit (pkgs) lib;
-  testCluster = import ./testing/cluster.nix { inherit self; };
+  testing = import ./testing/cluster.nix { inherit self pkgs; };
   goModule = pkgs.callPackage ./go-module.nix { };
 
   goPaths = [
@@ -16,11 +16,14 @@ let
 in
 {
   test-secureboot = import ./testing/secureboot.nix { inherit pkgs; };
+  test-secrets = testing.secrets;
+  test-manifests = testing.manifests;
 
   chalkctl = goModule {
     pname = "chalkctl";
     paths = goPaths;
     subPackages = [ "cmd/chalkctl" ];
+    meta.mainProgram = "chalkctl";
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postFixup = ''
       wrapProgram $out/bin/chalkctl --prefix PATH : ${
@@ -35,8 +38,8 @@ in
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
   chalkd = pkgs.callPackage ./chalkd.nix { };
 
-  test-image = testCluster.roles.test.image;
-  test-storage-image = testCluster.roles.storage.image;
+  test-image = testing.cluster.roles.test.image;
+  test-storage-image = testing.cluster.roles.storage.image;
 
   chalklab-e2e = goModule {
     pname = "chalklab-e2e";

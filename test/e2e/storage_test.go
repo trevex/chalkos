@@ -4,17 +4,23 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/lab"
 )
 
-// TestStorageVolumes boots the storage image with a second disk and checks each volume of its
-// layout, then resets the VM and checks every volume unlocks and mounts again with its data.
+// TestStorageVolumes boots the storage image with a second disk, installs it in place and checks
+// each volume of its layout, then resets the VM and checks every volume unlocks and mounts again
+// with its data.
 func TestStorageVolumes(t *testing.T) {
-	requireEnv(t, "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_STORAGE_IMAGE_DIR")
+	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_STORAGE_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
 	system := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_STORAGE_IMAGE_DIR"})
 	data := prepareDataDisk(t, dir)
-	vm := startVM(t, dir, os.Getenv("CHALKLAB_OVMF_VARS"), system, data)
+	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.Disk{system, data}})
+	vm := n.vm
 
+	readFacts(t, vm, 5*time.Minute)
+	installInPlace(t, n, "chalklab-storage")
 	first := readFacts(t, vm, 5*time.Minute)
 	assertFacts(t, first, map[string]string{
 		// var.size limits VAR, which stays encrypted with TPM2.
@@ -45,7 +51,7 @@ func TestStorageVolumes(t *testing.T) {
 	}
 	second := readFacts(t, vm, 5*time.Minute)
 	assertFacts(t, second, map[string]string{
-		"state_boots": "2",
+		"state_boots": "3",
 		"var_boots":   "2",
 		"data_boots":  "2",
 		"plain_boots": "2",
