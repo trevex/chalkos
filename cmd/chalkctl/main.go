@@ -21,6 +21,13 @@ const usage = `usage: chalkctl <command> [flags]
 commands:
   gen secrets (--recipient R... | --plaintext)  generate the cluster's secrets file
   recovery-key <node>                           print a node's recovery key
+  install <node>                                install a node in maintenance mode
+  disks (<node> | --endpoint ADDR)              list a node's disks
+  apply-identity <node>                         deliver a node's identity from the cluster definition
+  storage reset <node> <volume>                 wipe and recreate one volume
+  status <node>                                 show an installed node's status
+  logs <node> [-f] [--unit U]                   show a node's journal
+  reboot <node>                                 reboot a node
   sign                                          sign the boot loader and UKIs of a disk image
 
 Run chalkctl <command> -h for the flags of a command.`
@@ -63,6 +70,20 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.genSecrets(rest[1:])
 	case cmd == "recovery-key":
 		return a.recoveryKey(ctx, rest)
+	case cmd == "install":
+		return a.install(ctx, rest)
+	case cmd == "disks":
+		return a.disks(ctx, rest)
+	case cmd == "apply-identity":
+		return a.applyIdentity(ctx, rest)
+	case cmd == "storage" && len(rest) > 0 && rest[0] == "reset":
+		return a.resetVolume(ctx, rest[1:])
+	case cmd == "status":
+		return a.status(ctx, rest)
+	case cmd == "logs":
+		return a.logs(ctx, rest)
+	case cmd == "reboot":
+		return a.reboot(ctx, rest)
 	case cmd == "sign":
 		return runSign(rest)
 	}

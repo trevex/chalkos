@@ -1,0 +1,730 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"connectrpc.com/connect"
+	"golang.org/x/term"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage"
+)
+
+// chunkSize is how much of the image one install message carries.
+const chunkSize = 1 << 20
+
+// nodeCommand holds what commands addressing one node share.
+type nodeCommand struct {
+	cluster  clusterFlags
+	secrets  secretFlags
+	endpoint string
+}
+
+func (n *nodeCommand) register(fs *flag.FlagSet) {
+	n.cluster.register(fs)
+	n.secrets.register(fs)
+	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the node's first static address)")
+}
+
+// target is a node of the cluster with the cluster's secrets.
+type target struct {
+	cluster *cluster
+	name    string
+	node    manifest.Node
+	secrets pki.Secrets
+	addr    string
+}
+
+func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, error) {
+	c, err := a.loadCluster(ctx, n.cluster)
+	if err != nil {
+		return nil, err
+	}
+	node, err := c.node(name)
+	if err != nil {
+		return nil, err
+	}
+	addr, err := endpoint(n.endpoint, name, node.Identity)
+	if err != nil {
+		return nil, err
+	}
+	secrets, err := a.loadSecrets(n.secrets, n.cluster.flake)
+	if err != nil {
+		return nil, err
+	}
+	return &target{cluster: c, name: name, node: node, secrets: secrets, addr: addr}, nil
+}
+
+func adminCertificate(s pki.Secrets) (*tls.Certificate, error) {
+	cert, err := tls.X509KeyPair([]byte(s.Admin.Certificate), []byte(s.Admin.Key))
+	if err != nil {
+		return nil, fmt.Errorf("the admin certificate: %w", err)
+	}
+	return &cert, nil
+}
+
+// dialInstalled connects to an installed node, verifying it by the OS CA and its name.
+func dialInstalled(t *target) (*client.Conn, error) {
+	cert, err := adminCertificate(t.secrets)
+	if err != nil {
+		return nil, err
+	}
+	ca, err := pki.ParseCertificate([]byte(t.secrets.OSCA.Certificate))
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	return client.Dial(t.addr, client.Options{CA: pool, ServerName: t.name, Certificate: cert})
+}
+
+// pinning verifies a node in maintenance mode, which serves a self-signed certificate.
+type pinning struct {
+	fingerprint string
+	insecure    bool
+}
+
+func (p *pinning) register(fs *flag.FlagSet) {
+	fs.StringVar(&p.fingerprint, "fingerprint", "", "SHA-256 fingerprint the node prints on its console in maintenance mode")
+	fs.BoolVar(&p.insecure, "insecure", false, "accept any certificate and print the node's fingerprint")
+}
+
+func (p pinning) set() bool { return p.fingerprint != "" || p.insecure }
+
+func (p pinning) dial(addr string, cert *tls.Certificate) (*client.Conn, error) {
+	if p.fingerprint != "" && p.insecure {
+		return nil, errors.New("pass either --fingerprint or --insecure")
+	}
+	if !p.set() {
+		return nil, errors.New("a node in maintenance mode is verified by its certificate's fingerprint; pass --fingerprint FP, or --insecure to accept any certificate")
+	}
+	return client.Dial(addr, client.Options{Fingerprint: p.fingerprint, Insecure: p.insecure, Certificate: cert})
+}
+
+// fallbackSecret returns the secret enrolled as the second keyslot of the node's encrypted
+// volumes: its derived recovery key, or the operator's password.
+func (a *app) fallbackSecret(t *target, passwordFile string, confirm bool) (string, error) {
+	switch t.node.Identity.Storage.Fallback {
+	case storage.FallbackNone:
+		return "", nil
+	case "recovery-key":
+		return pki.RecoveryKey(t.secrets.RecoverySecret, t.cluster.manifest.Cluster.Name, t.name)
+	case "password":
+		if passwordFile != "" {
+			data, err := os.ReadFile(passwordFile)
+			if err != nil {
+				return "", err
+			}
+			// Only the newline that ends the file's line; the rest belongs to the password.
+			password := strings.TrimSuffix(string(data), "\n")
+			if password == "" {
+				return "", fmt.Errorf("%s is empty", passwordFile)
+			}
+			return password, nil
+		}
+		return a.askPassword(t.name, confirm)
+	}
+	return "", fmt.Errorf("node %s has the unknown fallback %q", t.name, t.node.Identity.Storage.Fallback)
+}
+
+func (a *app) askPassword(node string, confirm bool) (string, error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return "", fmt.Errorf("node %s unlocks with a password when its TPM fails; pass --password-file", node)
+	}
+	defer tty.Close()
+	read := func(prompt string) (string, error) {
+		fmt.Fprint(tty, prompt)
+		p, err := term.ReadPassword(int(tty.Fd()))
+		fmt.Fprintln(tty)
+		return string(p), err
+	}
+	password, err := read(fmt.Sprintf("Password that unlocks %s when its TPM fails: ", node))
+	if err != nil {
+		return "", err
+	}
+	if password == "" {
+		return "", errors.New("the password is empty")
+	}
+	if confirm {
+		again, err := read("Repeat the password: ")
+		if err != nil {
+			return "", err
+		}
+		if again != password {
+			return "", errors.New("the passwords differ")
+		}
+	}
+	return password, nil
+}
+
+// identityJSON is the identity as the node records it; Status compares its version.
+func identityJSON(n manifest.Node) (string, error) {
+	data, err := json.Marshal(n.Identity)
+	return string(data), err
+}
+
+// nodeError puts the node's name where the node's own messages say <node>.
+func nodeError(err error, name string) error {
+	if err == nil {
+		return nil
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), "<node>", name))
+}
+
+func (a *app) install(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	var n nodeCommand
+	var p pinning
+	n.register(fs)
+	p.register(fs)
+	imagePath := fs.String("image", "", "role image to write when the node runs the installer: a raw image with repart.d next to it, or the directory nix build produces (default: build the node's role image)")
+	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the built image")
+	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")
+	wipe := fs.Bool("wipe-disk", false, "let the installer overwrite a target disk that carries data")
+	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errors.New("usage: chalkctl install <node> [flags]")
+	}
+	t, err := a.target(ctx, n, pos[0])
+	if err != nil {
+		return err
+	}
+	cert, err := adminCertificate(t.secrets)
+	if err != nil {
+		return err
+	}
+	conn, err := p.dial(t.addr, cert)
+	if err != nil {
+		return err
+	}
+	if p.insecure {
+		// An insecure connection's fingerprint vouches only for that connection. The secrets go
+		// over a new one pinned to the fingerprint printed here.
+		if _, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{})); err != nil {
+			return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
+		}
+		fp := conn.Fingerprint()
+		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", fp)
+		if conn, err = client.Dial(t.addr, client.Options{Fingerprint: fp, Certificate: cert}); err != nil {
+			return err
+		}
+	}
+	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	if err != nil {
+		return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
+	}
+	if info.Msg.Mode != nodev1.Mode_MODE_MAINTENANCE {
+		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
+	}
+
+	id, err := identityJSON(t.node)
+	if err != nil {
+		return err
+	}
+	hostnames := []string{t.name}
+	if h := t.node.Identity.Hostname; h != "" && h != t.name {
+		hostnames = append(hostnames, h)
+	}
+	nodeCert, err := pki.IssueNode(t.secrets.OSCA, t.name, hostnames, ipAddresses(staticAddresses(t.node.Identity)), time.Now())
+	if err != nil {
+		return err
+	}
+	fallback, err := a.fallbackSecret(t, *passwordFile, true)
+	if err != nil {
+		return err
+	}
+	header := &nodev1.InstallHeader{
+		Identity:        id,
+		NodeCertificate: []byte(nodeCert.Certificate),
+		NodeKey:         []byte(nodeCert.Key),
+		CaCertificate:   []byte(t.secrets.OSCA.Certificate),
+		FallbackSecret:  fallback,
+		WipeDisk:        *wipe,
+	}
+
+	var image *os.File
+	if !info.Msg.Installer {
+		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
+		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
+	} else {
+		ref := t.node.Identity.Storage.Disks[storage.SystemDisk].Ref
+		header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
+			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
+			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
+		}}
+		path := *imagePath
+		if path == "" {
+			if path, err = a.buildImage(ctx, t.cluster, t.node.Role); err != nil {
+				return err
+			}
+		}
+		raw, definitions, err := imageFiles(path)
+		if err != nil {
+			return err
+		}
+		if header.SystemDefinitions, err = readDefinitions(definitions); err != nil {
+			return err
+		}
+		if *signKey != "" || *signCert != "" {
+			if raw, err = signedCopy(ctx, raw, *signKey, *signCert); err != nil {
+				return err
+			}
+			defer os.RemoveAll(filepath.Dir(raw))
+		}
+		if image, err = os.Open(raw); err != nil {
+			return err
+		}
+		defer image.Close()
+		h := sha256.New()
+		size, err := io.Copy(h, image)
+		if err != nil {
+			return err
+		}
+		if _, err := image.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		header.ImageSize = uint64(size)
+		header.ImageSha256 = h.Sum(nil)
+		fmt.Fprintf(a.stdout, "installing %s onto %s from %s\n", t.name, ref, raw)
+	}
+
+	stream := conn.Install(ctx)
+	if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	if image != nil {
+		buf := make([]byte, chunkSize)
+		for {
+			n, rerr := image.Read(buf)
+			if n > 0 {
+				msg := &nodev1.InstallRequest{Message: &nodev1.InstallRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: buf[:n]}}}
+				// The node may have refused already; CloseAndReceive returns why.
+				if err := stream.Send(msg); errors.Is(err, io.EOF) {
+					break
+				} else if err != nil {
+					return err
+				}
+			}
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				return rerr
+			}
+		}
+	}
+	if _, err := stream.CloseAndReceive(); err != nil {
+		if info.Msg.Installer && !*wipe {
+			return fmt.Errorf("install %s: %w; if the installer created STATE on the target disk before failing, the retry needs --wipe-disk", t.name, err)
+		}
+		return fmt.Errorf("install %s: %w", t.name, err)
+	}
+	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
+	if t.node.Identity.Storage.Fallback == "recovery-key" {
+		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
+	}
+	return nil
+}
+
+// readDefinitions reads a role image's repart.d files.
+func readDefinitions(dir string) (map[string]string, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "*.conf"))
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no repart definitions in %s; the image must come with its repart.d", dir)
+	}
+	defs := map[string]string{}
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		defs[filepath.Base(p)] = string(data)
+	}
+	return defs, nil
+}
+
+// signedCopy signs a copy of a raw image; images in the Nix store are read-only.
+func signedCopy(ctx context.Context, raw, key, cert string) (string, error) {
+	if key == "" || cert == "" {
+		return "", errors.New("signing needs both --sign-key and --sign-cert")
+	}
+	dir, err := os.MkdirTemp("", "chalkctl")
+	if err != nil {
+		return "", err
+	}
+	out := filepath.Join(dir, filepath.Base(raw))
+	src, err := os.Open(raw)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+	dst, err := os.Create(out)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		return "", err
+	}
+	if err := dst.Close(); err != nil {
+		return "", err
+	}
+	if err := signImage(ctx, out, filepath.Join(filepath.Dir(raw), "repart-output.json"), key, cert); err != nil {
+		os.RemoveAll(dir)
+		return "", err
+	}
+	return out, nil
+}
+
+func (a *app) disks(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("disks", flag.ContinueOnError)
+	var n nodeCommand
+	var p pinning
+	n.register(fs)
+	p.register(fs)
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	var conn *client.Conn
+	switch {
+	case len(pos) == 1:
+		t, err := a.target(ctx, n, pos[0])
+		if err != nil {
+			return err
+		}
+		if p.set() {
+			cert, err := adminCertificate(t.secrets)
+			if err != nil {
+				return err
+			}
+			conn, err = p.dial(t.addr, cert)
+		} else {
+			conn, err = dialInstalled(t)
+		}
+		if err != nil {
+			return err
+		}
+	case len(pos) == 0 && n.endpoint != "":
+		// A node not in the cluster definition yet: only maintenance mode, with the admin
+		// certificate when there is a secrets file for an image with an OS CA.
+		var cert *tls.Certificate
+		if n.secrets.path != "" {
+			secrets, err := a.loadSecrets(n.secrets, n.cluster.flake)
+			if err != nil {
+				return err
+			}
+			if cert, err = adminCertificate(secrets); err != nil {
+				return err
+			}
+		}
+		if conn, err = p.dial(n.endpoint, cert); err != nil {
+			return err
+		}
+	default:
+		return errors.New("usage: chalkctl disks (<node> | --endpoint ADDR) [--fingerprint FP | --insecure]")
+	}
+	resp, err := conn.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
+	if err != nil {
+		return err
+	}
+	if p.insecure {
+		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", conn.Fingerprint())
+	}
+	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "DEVICE\tSIZE\tTYPE\tMODEL\tSERIAL\tWWN\tUSE")
+	for _, d := range resp.Msg.Disks {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.Device, size(d.Size), d.Type, d.Model, d.Serial, d.Wwn, d.Usage)
+		for _, part := range d.Partitions {
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t\t\t\n", part.Device, size(part.Size), part.Label, part.Content)
+		}
+	}
+	return w.Flush()
+}
+
+func size(bytes uint64) string {
+	units := []string{"B", "K", "M", "G", "T", "P"}
+	v := float64(bytes)
+	i := 0
+	for v >= 1024 && i < len(units)-1 {
+		v /= 1024
+		i++
+	}
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0") + units[i]
+}
+
+func (a *app) applyIdentity(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("apply-identity", flag.ContinueOnError)
+	var n nodeCommand
+	n.register(fs)
+	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errors.New("usage: chalkctl apply-identity <node>")
+	}
+	t, err := a.target(ctx, n, pos[0])
+	if err != nil {
+		return err
+	}
+	conn, err := dialInstalled(t)
+	if err != nil {
+		return err
+	}
+	id, err := identityJSON(t.node)
+	if err != nil {
+		return err
+	}
+	fallback, err := a.fallbackSecret(t, *passwordFile, false)
+	if err != nil {
+		return err
+	}
+	resp, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: id, FallbackSecret: fallback}))
+	if err != nil {
+		return nodeError(err, t.name)
+	}
+	for _, c := range resp.Msg.Changes {
+		fmt.Fprintf(a.stdout, "volume %s: %s\n", c.Volume, c.Reason)
+	}
+	for _, u := range resp.Msg.RestartedUnits {
+		fmt.Fprintf(a.stdout, "restarted %s\n", u)
+	}
+	fmt.Fprintf(a.stdout, "%s runs identity %s\n", t.name, chalkd.IdentityVersion([]byte(id)))
+	return nil
+}
+
+func (a *app) resetVolume(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("storage reset", flag.ContinueOnError)
+	var n nodeCommand
+	n.register(fs)
+	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 2 {
+		return errors.New("usage: chalkctl storage reset <node> <volume>")
+	}
+	t, err := a.target(ctx, n, pos[0])
+	if err != nil {
+		return err
+	}
+	conn, err := dialInstalled(t)
+	if err != nil {
+		return err
+	}
+	id, err := identityJSON(t.node)
+	if err != nil {
+		return err
+	}
+	fallback, err := a.fallbackSecret(t, *passwordFile, false)
+	if err != nil {
+		return err
+	}
+	if _, err := conn.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: pos[1], Identity: id, FallbackSecret: fallback})); err != nil {
+		return nodeError(err, t.name)
+	}
+	fmt.Fprintf(a.stdout, "volume %s of %s was wiped and created again\n", pos[1], t.name)
+	return nil
+}
+
+func (a *app) status(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	var n nodeCommand
+	n.register(fs)
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errors.New("usage: chalkctl status <node>")
+	}
+	t, err := a.target(ctx, n, pos[0])
+	if err != nil {
+		return err
+	}
+	conn, err := dialInstalled(t)
+	if err != nil {
+		return err
+	}
+	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		return err
+	}
+	s := resp.Msg
+	id, err := identityJSON(t.node)
+	if err != nil {
+		return err
+	}
+	state := "the cluster definition's"
+	if chalkd.IdentityVersion([]byte(id)) != s.IdentityVersion {
+		state = "not the cluster definition's; chalkctl apply-identity " + t.name + " delivers it"
+	}
+	fmt.Fprintf(a.stdout, "identity %s (%s)\n", s.IdentityVersion, state)
+	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "VOLUME\tDISK\tMOUNT POINT\tSTATE")
+	for _, v := range s.Volumes {
+		st := "present"
+		switch {
+		case !v.Present:
+			st = "missing"
+		case v.Mounted:
+			st = "mounted"
+		case v.MountPoint != "":
+			st = "not mounted"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", v.Name, v.Disk, v.MountPoint, st)
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	for _, d := range s.Disks {
+		if d.Error != "" {
+			fmt.Fprintf(a.stdout, "disk %s: %s\n", d.Name, d.Error)
+		}
+	}
+	for _, u := range s.FailedUnits {
+		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
+	}
+	return nil
+}
+
+func (a *app) logs(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
+	var n nodeCommand
+	var p pinning
+	n.register(fs)
+	p.register(fs)
+	follow := fs.Bool("f", false, "keep printing new entries")
+	unit := fs.String("unit", "", "show only this unit's entries")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errors.New("usage: chalkctl logs <node> [-f] [--unit U]")
+	}
+	t, err := a.target(ctx, n, pos[0])
+	if err != nil {
+		return err
+	}
+	conn, err := a.dialEither(t, p)
+	if err != nil {
+		return err
+	}
+	stream, err := conn.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Unit: *unit, Follow: *follow}))
+	if err != nil {
+		return err
+	}
+	out := bufio.NewWriter(a.stdout)
+	defer out.Flush()
+	for stream.Receive() {
+		fmt.Fprintln(out, stream.Msg().Line)
+		if *follow {
+			out.Flush()
+		}
+	}
+	if err := stream.Err(); err != nil && ctx.Err() == nil {
+		return err
+	}
+	return nil
+}
+
+func (a *app) reboot(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("reboot", flag.ContinueOnError)
+	var n nodeCommand
+	var p pinning
+	n.register(fs)
+	p.register(fs)
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errors.New("usage: chalkctl reboot <node>")
+	}
+	t, err := a.target(ctx, n, pos[0])
+	if err != nil {
+		return err
+	}
+	conn, err := a.dialEither(t, p)
+	if err != nil {
+		return err
+	}
+	if _, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{})); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.stdout, "%s reboots\n", t.name)
+	return nil
+}
+
+// dialEither connects to a node in maintenance mode when a fingerprint or --insecure is given,
+// and to an installed node otherwise.
+func (a *app) dialEither(t *target, p pinning) (*client.Conn, error) {
+	if p.set() {
+		cert, err := adminCertificate(t.secrets)
+		if err != nil {
+			return nil, err
+		}
+		return p.dial(t.addr, cert)
+	}
+	return dialInstalled(t)
+}
+
+// imageFiles finds the raw image in an image directory or takes the given file; the role's
+// system-region definitions are in repart.d next to it.
+func imageFiles(path string) (raw, definitions string, err error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", "", err
+	}
+	raw = path
+	if info.IsDir() {
+		raws, err := filepath.Glob(filepath.Join(path, "*.raw"))
+		if err != nil || len(raws) != 1 {
+			return "", "", fmt.Errorf("want exactly one .raw image in %s, found %v", path, raws)
+		}
+		raw = raws[0]
+	}
+	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
+}
+
+// ipAddresses parses the addresses that are IPs, for the node certificate.
+func ipAddresses(addrs []string) []net.IP {
+	var ips []net.IP
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
+}
