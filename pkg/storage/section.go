@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -68,16 +69,44 @@ type Selector struct {
 	Size string `json:"size,omitempty"`
 	// Type is nvme, ssd or hdd.
 	Type string `json:"type,omitempty"`
+	// unknown lists the keys a newer chalkos wrote that this one does not know, separated by ", ".
+	unknown string
+}
+
+// UnknownKeys returns the selector keys this version of chalkos does not know, in sorted order.
+func (r Ref) UnknownKeys() []string {
+	if r.Selector.unknown == "" {
+		return nil
+	}
+	return strings.Split(r.Selector.unknown, ", ")
 }
 
 func (r *Ref) UnmarshalJSON(data []byte) error {
 	if bytes.HasPrefix(bytes.TrimSpace(data), []byte(`"`)) {
 		return json.Unmarshal(data, &r.Path)
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	return dec.Decode(&r.Selector)
+	// Unknown keys are recorded rather than refused, so an older image still reads state a
+	// newer one wrote; a selector with unknown keys never matches a disk.
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, &r.Selector); err != nil {
+		return err
+	}
+	var unknown []string
+	for key := range keys {
+		if !slices.Contains(selectorKeys, strings.ToLower(key)) {
+			unknown = append(unknown, key)
+		}
+	}
+	sort.Strings(unknown)
+	r.Selector.unknown = strings.Join(unknown, ", ")
+	return nil
 }
+
+// selectorKeys are the JSON keys of Selector; encoding/json matches them ignoring case.
+var selectorKeys = []string{"model", "serial", "wwn", "size", "type"}
 
 func (r Ref) MarshalJSON() ([]byte, error) {
 	if r.Path != "" {
@@ -103,16 +132,15 @@ func (r Ref) String() string {
 }
 
 // ReadSection reads a recorded storage section. A missing file is returned as an error that
-// matches fs.ErrNotExist.
+// matches fs.ErrNotExist. Unknown fields are ignored: after a rollback, an older image boots
+// with the section a newer one recorded.
 func ReadSection(path string) (Section, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Section{}, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
 	var s Section
-	if err := dec.Decode(&s); err != nil {
+	if err := json.Unmarshal(data, &s); err != nil {
 		return Section{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return s, nil

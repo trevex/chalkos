@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -35,5 +36,26 @@ func TestReadPinsMissingFile(t *testing.T) {
 	}
 	if got.Disks == nil || len(got.Disks) != 0 {
 		t.Errorf("pins = %+v, want empty", got)
+	}
+}
+
+func TestReadPinsIgnoresUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disks.json")
+	content := `{"disks": {"data": {
+	  "ref": {"serial": "S1", "vendor": "x"},
+	  "identity": {"serial": "S1", "size": 1024, "type": "ssd", "firmware": "1.0"},
+	  "partitions": {"data": "d506b831-fde9-4335-b2be-9710f18219a6"},
+	  "health": "ok"
+	}}, "version": 2}`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadPins(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := got.Disks["data"]
+	if pin.Ref.Selector.Serial != "S1" || pin.Identity != (Identity{Serial: "S1", Size: 1024, Type: "ssd"}) || pin.Partitions["data"] != "d506b831-fde9-4335-b2be-9710f18219a6" {
+		t.Errorf("pin = %+v", pin)
 	}
 }

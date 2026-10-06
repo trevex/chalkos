@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -88,6 +89,14 @@ func Decode(r io.Reader) (*Manifest, error) {
 	var m Manifest
 	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("parse manifest: %w", err)
+	}
+	// Disk references decode themselves and keep unknown selector keys instead of refusing them.
+	for name, n := range m.Nodes {
+		for disk, d := range n.Identity.Storage.Disks {
+			if keys := d.Ref.UnknownKeys(); len(keys) > 0 {
+				return nil, fmt.Errorf("parse manifest: node %s, disk %s: unknown selector keys %s", name, disk, strings.Join(keys, ", "))
+			}
+		}
 	}
 	return &m, nil
 }

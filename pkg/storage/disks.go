@@ -263,6 +263,9 @@ func (h Host) Find(id Identity) (disk BlockDisk, ok bool, err error) {
 
 // Matches reports whether a disk has every property the selector names.
 func (s Selector) Matches(id Identity) (bool, error) {
+	if s.unknown != "" {
+		return false, fmt.Errorf("the selector uses %s, which this version of chalkos does not know", s.unknown)
+	}
 	if s.Model != "" {
 		ok, err := path.Match(s.Model, id.Model)
 		if err != nil {

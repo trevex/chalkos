@@ -85,3 +85,15 @@ func TestDecodeRejectsUnknownFields(t *testing.T) {
 		t.Fatal("unknown field accepted")
 	}
 }
+
+func TestDecodeRejectsUnknownStorageFields(t *testing.T) {
+	for _, storage := range []string{
+		`{"disks": {"d": {"ref": {"model": "x", "vendor": "y"}, "seed": "s", "repart": {}}}, "volumes": {}, "fallback": "none"}`,
+		`{"disks": {}, "volumes": {}, "fallback": "none", "surprise": 1}`,
+	} {
+		_, err := Decode(strings.NewReader(`{"schemaVersion": 0, "nodes": {"n1": {"role": "r", "identity": {"storage": ` + storage + `}}}}`))
+		if err == nil {
+			t.Errorf("accepted storage %s", storage)
+		}
+	}
+}

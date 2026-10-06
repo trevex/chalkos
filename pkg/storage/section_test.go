@@ -72,14 +72,26 @@ func TestReadSectionMissing(t *testing.T) {
 	}
 }
 
-func TestReadSectionRejectsUnknownFields(t *testing.T) {
-	for _, content := range []string{
-		`{"disks": {}, "volumes": {}, "fallback": "none", "surprise": 1}`,
-		`{"disks": {"d": {"ref": {"vendor": "x"}, "seed": "", "repart": {}}}, "volumes": {}, "fallback": "none"}`,
-	} {
-		if _, err := ReadSection(writeSection(t, content)); err == nil {
-			t.Errorf("accepted %s", content)
-		}
+func TestReadSectionIgnoresUnknownFields(t *testing.T) {
+	// A section written by a newer chalkos, which an older image reads after a rollback.
+	s, err := ReadSection(writeSection(t, `{
+	  "disks": {"d": {"ref": {"model": "Samsung*", "vendor": "x"}, "seed": "s", "repart": {}, "layout": 2}},
+	  "volumes": {"d": {"disk": "d", "label": "d", "format": "ext4", "mountPoint": null, "encryption": "none", "size": null, "options": ["ro"]}},
+	  "fallback": "none",
+	  "surprise": 1
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Disks["d"]; got.Ref.Selector.Model != "Samsung*" || got.Seed != "s" {
+		t.Errorf("disk = %+v", got)
+	}
+	if got, want := s.Volumes["d"], (Volume{Disk: "d", Label: "d", Format: "ext4", Encryption: "none"}); got != want {
+		t.Errorf("volume = %+v, want %+v", got, want)
+	}
+	// Resolving by the known keys alone could pick another disk.
+	if _, err := s.Disks["d"].Ref.Selector.Matches(Identity{Model: "Samsung SSD"}); err == nil || !strings.Contains(err.Error(), "vendor") {
+		t.Errorf("Matches err = %v, want the unknown key named", err)
 	}
 }
 

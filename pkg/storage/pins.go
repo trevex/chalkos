@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +24,8 @@ type Pin struct {
 	Partitions map[string]string `json:"partitions"`
 }
 
-// ReadPins reads disks.json; a missing file yields empty pins.
+// ReadPins reads disks.json; a missing file yields empty pins. Unknown fields are ignored, so an
+// older image boots with pins a newer one wrote.
 func ReadPins(path string) (Pins, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -34,10 +34,8 @@ func ReadPins(path string) (Pins, error) {
 	if err != nil {
 		return Pins{}, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
 	var p Pins
-	if err := dec.Decode(&p); err != nil {
+	if err := json.Unmarshal(data, &p); err != nil {
 		return Pins{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if p.Disks == nil {
