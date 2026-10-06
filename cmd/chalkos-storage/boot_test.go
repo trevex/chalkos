@@ -1,0 +1,402 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/trevex/chalkos/pkg/storage"
+)
+
+// fakeRunner records commands and answers them from the first rule whose prefix matches.
+type fakeRunner struct {
+	rules []rule
+	calls []string
+}
+
+type rule struct {
+	prefix string
+	out    string
+	err    error
+}
+
+func (f *fakeRunner) run(_ context.Context, name string, args ...string) ([]byte, error) {
+	line := strings.Join(append([]string{name}, args...), " ")
+	f.calls = append(f.calls, line)
+	for _, r := range f.rules {
+		if strings.HasPrefix(line, r.prefix) {
+			return []byte(r.out), r.err
+		}
+	}
+	return nil, nil
+}
+
+type testDisk struct {
+	name, devnum string
+	sectors      uint64
+	props        map[string]string
+}
+
+var (
+	bootDisk = testDisk{"vda", "253:0", 16 << 30 / 512, map[string]string{"ID_PATH": "pci-0000:00:04.0"}}
+	dataDisk = testDisk{"vdb", "253:16", 2 << 30 / 512, map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-data"}}
+)
+
+// newTestHost builds sysfs, udev and /dev trees with the disks; vda is the boot disk.
+func newTestHost(t *testing.T, disks ...testDisk) storage.Host {
+	t.Helper()
+	root := t.TempDir()
+	h := storage.Host{
+		SysRoot:  filepath.Join(root, "sys"),
+		UdevRoot: filepath.Join(root, "udev"),
+		DevRoot:  filepath.Join(root, "dev"),
+	}
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range disks {
+		dir := filepath.Join(h.SysRoot, "block", d.name)
+		write(filepath.Join(dir, "dev"), d.devnum+"\n")
+		write(filepath.Join(dir, "size"), strconv.FormatUint(d.sectors, 10)+"\n")
+		write(filepath.Join(dir, "queue", "rotational"), "1\n")
+		var props string
+		for k, v := range d.props {
+			props += "E:" + k + "=" + v + "\n"
+		}
+		write(filepath.Join(h.UdevRoot, "b"+d.devnum), props)
+		write(filepath.Join(h.DevRoot, d.name), "")
+	}
+	if err := os.MkdirAll(filepath.Join(h.DevRoot, "disk"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../vda", filepath.Join(h.DevRoot, "disk", "chalk-boot-disk")); err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func newTestBoot(t *testing.T, r *fakeRunner, disks ...testDisk) *boot {
+	t.Helper()
+	root := t.TempDir()
+	return &boot{
+		run:            r,
+		host:           newTestHost(t, disks...),
+		stateDir:       filepath.Join(root, "state"),
+		varDir:         filepath.Join(root, "var"),
+		bootDisk:       "/dev/disk/chalk-boot-disk",
+		bootPartitions: "/dev/disk/chalk-boot",
+		statusFile:     filepath.Join(root, "run", "storage-status.json"),
+	}
+}
+
+const (
+	systemSeed = "2869f04c-5655-50f4-28b9-6b2eb9700a02"
+	dataSeed   = "088717f0-ffd4-dba5-a524-7d3d44310d1e"
+	varUUID    = "7ad19bdf-77ff-4273-8a5c-d403d2a5f95b"
+	dataUUID   = "d506b831-fde9-4335-b2be-9710f18219a6"
+)
+
+// writeStorage records a section with VAR on the system disk and a volume on a disk selected
+// by its serial.
+func writeStorage(t *testing.T, b *boot, fallback string) {
+	t.Helper()
+	section := `{
+	  "disks": {
+	    "system": {"ref": "/dev/vda", "seed": "` + systemSeed + `", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
+	    "data": {"ref": {"serial": "chalk-data"}, "seed": "` + dataSeed + `", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
+	  },
+	  "volumes": {
+	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
+	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
+	  },
+	  "fallback": "` + fallback + `"
+	}`
+	path := filepath.Join(b.stateDir, "storage", "storage.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(section), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func repartRow(file, uuid string) string {
+	return `[{"file":"` + file + `","uuid":"` + uuid + `","activity":"create"}]`
+}
+
+// firstBootRules answer like a node whose second disk is empty and whose TPM unseals VAR.
+func firstBootRules(b *boot) []rule {
+	return []rule{
+		{prefix: "blkid -p -o export /dev/vdb", err: &toolError{command: "blkid", code: 2}},
+		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + b.storageDir() + "/disks/system ", out: repartRow(b.storageDir()+"/disks/system/50-var.conf", varUUID)},
+		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + b.storageDir() + "/disks/data ", out: repartRow(b.storageDir()+"/disks/data/10-data.conf", dataUUID)},
+		{prefix: "blkid -p -o value -s TYPE /dev/disk/chalk-boot/var", out: "crypto_LUKS\n"},
+	}
+}
+
+func readStatus(t *testing.T, b *boot) storage.Status {
+	t.Helper()
+	data, err := os.ReadFile(b.statusFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s storage.Status
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func assertCalls(t *testing.T, got, want []string) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("commands:\n got: %s\nwant: %s", strings.Join(got, "\n      "), strings.Join(want, "\n      "))
+	}
+}
+
+func TestOpenStateEncrypted(t *testing.T) {
+	r := &fakeRunner{rules: []rule{{prefix: "blkid", out: "crypto_LUKS\n"}}}
+	b := newTestBoot(t, r, bootDisk)
+
+	if err := b.openState(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertCalls(t, r.calls, []string{
+		"udevadm wait --timeout=60 /dev/disk/chalk-boot/state",
+		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/state",
+		"systemd-cryptsetup attach state /dev/disk/chalk-boot/state - tpm2-device=auto",
+		"mount -t ext4 /dev/mapper/state " + b.stateDir,
+	})
+}
+
+func TestOpenStateUnencrypted(t *testing.T) {
+	r := &fakeRunner{rules: []rule{{prefix: "blkid", out: "ext4\n"}}}
+	b := newTestBoot(t, r, bootDisk)
+
+	if err := b.openState(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertCalls(t, r.calls, []string{
+		"udevadm wait --timeout=60 /dev/disk/chalk-boot/state",
+		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/state",
+		"mount -t ext4 /dev/disk/chalk-boot/state " + b.stateDir,
+	})
+}
+
+func TestSetUpWithoutSection(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk)
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v without a storage section", r.calls)
+	}
+	if s := readStatus(t, b); s.Installed {
+		t.Errorf("status = %+v, want not installed", s)
+	}
+}
+
+func TestSetUpFirstBoot(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = firstBootRules(b)
+	writeStorage(t, b, "recovery-key")
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCalls(t, r.calls, []string{
+		"blkid -p -o export /dev/vdb",
+		"systemd-repart --dry-run=no --json=short --definitions=" + b.storageDir() + "/disks/system --seed=" + systemSeed + " /dev/disk/chalk-boot-disk",
+		"systemd-repart --dry-run=no --json=short --definitions=" + b.storageDir() + "/disks/data --seed=" + dataSeed + " --empty=allow /dev/vdb",
+		"udevadm wait --timeout=60 /dev/disk/chalk-boot/var",
+		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/var",
+		"systemd-cryptsetup attach var /dev/disk/chalk-boot/var - tpm2-device=auto",
+		"mount -t ext4 /dev/mapper/var " + b.varDir,
+		"systemd-growfs " + b.varDir,
+	})
+	pins, err := storage.ReadPins(filepath.Join(b.storageDir(), "disks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]storage.Pin{
+		"system": {
+			Ref:        storage.Ref{Path: "/dev/vda"},
+			Identity:   storage.Identity{Path: "pci-0000:00:04.0", Size: 16 << 30, Type: "hdd"},
+			Partitions: map[string]string{"var": varUUID},
+		},
+		"data": {
+			Ref:        storage.Ref{Selector: storage.Selector{Serial: "chalk-data"}},
+			Identity:   storage.Identity{Serial: "chalk-data", Path: "pci-0000:00:05.0", Size: 2 << 30, Type: "hdd"},
+			Partitions: map[string]string{"data": dataUUID},
+		},
+	}
+	if !reflect.DeepEqual(pins.Disks, want) {
+		t.Errorf("pins = %+v, want %+v", pins.Disks, want)
+	}
+	if def, err := os.ReadFile(filepath.Join(b.storageDir(), "disks", "data", "10-data.conf")); err != nil || string(def) != "[Partition]\nLabel=data\n" {
+		t.Errorf("data definition = %q, %v", def, err)
+	}
+	s := readStatus(t, b)
+	if !s.Installed || s.Disks["data"] != (storage.DiskStatus{Device: "/dev/vdb"}) || s.Disks["system"].Error != "" {
+		t.Errorf("status = %+v", s)
+	}
+}
+
+func TestSetUpUsesPinnedDisks(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = firstBootRules(b)
+	writeStorage(t, b, "recovery-key")
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The second boot finds the data disk by its pinned identity and does not probe it again.
+	r.calls = nil
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range r.calls {
+		if strings.HasPrefix(call, "blkid -p -o export") {
+			t.Errorf("probed a pinned disk again: %s", call)
+		}
+	}
+}
+
+func TestSetUpPinnedDiskMissing(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = firstBootRules(b)
+	writeStorage(t, b, "recovery-key")
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Boot again without the data disk.
+	r.calls = nil
+	b.host = newTestHost(t, bootDisk)
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatalf("a missing extra disk stopped the boot: %v", err)
+	}
+	for _, call := range r.calls {
+		if strings.Contains(call, "disks/data") {
+			t.Errorf("ran repart for the missing disk: %s", call)
+		}
+	}
+	if !contains(r.calls, "mount -t ext4 /dev/mapper/var "+b.varDir) {
+		t.Errorf("VAR not mounted: %v", r.calls)
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, `pinned disk model "", size 2G, serial "chalk-data" is missing`) {
+		t.Errorf("data status = %+v", s.Disks["data"])
+	}
+}
+
+func TestSetUpRefusesOtherBootDisk(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = firstBootRules(b)
+	writeStorage(t, b, "recovery-key")
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same image boots from a disk on another port: VAR's disk is not there.
+	r.calls = nil
+	moved := bootDisk
+	moved.props = map[string]string{"ID_PATH": "pci-0000:00:09.0"}
+	b.host = newTestHost(t, moved, dataDisk)
+	err := b.setUp(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "VAR lives on the disk") || !strings.Contains(err.Error(), "pci-0000:00:04.0") {
+		t.Fatalf("err = %v, want VAR's disk named", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v on a foreign boot disk", r.calls)
+	}
+}
+
+func TestSetUpRefusesDiskWithData(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = append([]rule{{prefix: "blkid -p -o export /dev/vdb", out: "DEVNAME=/dev/vdb\nTYPE=ext4\n"}}, firstBootRules(b)...)
+	writeStorage(t, b, "recovery-key")
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range r.calls {
+		if strings.Contains(call, "/dev/vdb") && !strings.HasPrefix(call, "blkid") {
+			t.Errorf("touched a disk with a file system: %s", call)
+		}
+	}
+	pins, err := storage.ReadPins(filepath.Join(b.storageDir(), "disks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pins.Disks["data"]; ok {
+		t.Error("pinned a disk that carries a file system")
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, "carries data (ext4)") {
+		t.Errorf("data status = %+v", s.Disks["data"])
+	}
+}
+
+func TestSetUpRepartFailureKeepsBooting(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = append([]rule{{
+		prefix: "systemd-repart --dry-run=no --json=short --definitions=" + b.storageDir() + "/disks/system ",
+		err:    &toolError{command: "systemd-repart", code: 1, stderr: "Can't fit requested partitions into available free space"},
+	}}, firstBootRules(b)...)
+	writeStorage(t, b, "recovery-key")
+
+	if err := b.setUp(context.Background()); err != nil {
+		t.Fatalf("a repart failure stopped the boot: %v", err)
+	}
+	for _, call := range r.calls {
+		if strings.HasPrefix(call, "mount") {
+			t.Errorf("mounted VAR that repart never created: %s", call)
+		}
+	}
+	if s := readStatus(t, b); !strings.Contains(s.Disks["system"].Error, "Can't fit") {
+		t.Errorf("system status = %+v", s.Disks["system"])
+	}
+}
+
+func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
+	r := &fakeRunner{}
+	b := newTestBoot(t, r, bootDisk, dataDisk)
+	r.rules = append([]rule{{prefix: "systemd-cryptsetup attach var", err: &toolError{command: "systemd-cryptsetup", code: 1}}}, firstBootRules(b)...)
+	writeStorage(t, b, "none")
+
+	err := b.setUp(context.Background())
+	if !contains(r.calls, "systemd-cryptsetup attach var /dev/disk/chalk-boot/var - tpm2-device=auto,headless=true") {
+		t.Errorf("commands = %v, want a headless attach", r.calls)
+	}
+	if err == nil || !strings.Contains(err.Error(), "chalkctl storage reset <node> var") {
+		t.Errorf("err = %v, want the reset hint", err)
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, item := range list {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
