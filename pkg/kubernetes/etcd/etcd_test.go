@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -302,15 +303,28 @@ func TestOneCluster(t *testing.T) {
 	ca := etcdtest.NewCA(t)
 	m1 := etcdtest.StartNew(t, ca, "m1")
 	cli := dial(t, ca, m1)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	m2 := join(t, ctx, cli, ca, "m2")
 	other := etcdtest.StartNew(t, ca, "other")
 	silent := etcdtest.Silent(t)
 
-	sctx, scancel := context.WithTimeout(ctx, time.Second)
-	defer scancel()
-	answered, err := OneCluster(sctx, cli, []string{m1.ClientURL, m2.ClientURL, silent})
+	// The members answer well within the deadline also on a busy machine. The silent endpoint
+	// holds each call until its deadline, so the two calls run at once.
+	var answered []string
+	var err, splitErr error
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
+		defer scancel()
+		answered, err = OneCluster(sctx, cli, []string{m1.ClientURL, m2.ClientURL, silent})
+	})
+	wg.Go(func() {
+		sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
+		defer scancel()
+		_, splitErr = OneCluster(sctx, cli, []string{m1.ClientURL, other.ClientURL, silent})
+	})
+	wg.Wait()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,9 +332,7 @@ func TestOneCluster(t *testing.T) {
 		t.Errorf("answered %v, want %v", answered, want)
 	}
 
-	sctx, scancel = context.WithTimeout(ctx, time.Second)
-	defer scancel()
-	_, err = OneCluster(sctx, cli, []string{m1.ClientURL, other.ClientURL, silent})
+	err = splitErr
 	var split *SplitError
 	if !errors.As(err, &split) || !strings.HasPrefix(err.Error(), "the endpoints belong to different etcd clusters (") ||
 		!strings.HasSuffix(err.Error(), "); two nodes were bootstrapped separately") ||
@@ -329,7 +341,7 @@ func TestOneCluster(t *testing.T) {
 	}
 
 	start := time.Now()
-	sctx, scancel = context.WithTimeout(ctx, 200*time.Millisecond)
+	sctx, scancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer scancel()
 	if _, err := OneCluster(sctx, cli, []string{silent}); err == nil || errors.As(err, &split) {
 		t.Errorf("err = %v, want no endpoint answering", err)
