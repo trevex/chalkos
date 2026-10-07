@@ -102,6 +102,9 @@ func start(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, initialCl
 	cfg.ZapLoggerBuilder = embed.NewZapLoggerBuilder(zap.NewNop())
 	// Short ticks keep elections and the leader hand-over on stop quick.
 	cfg.TickMs, cfg.ElectionMs = 10, 100
+	// The data is thrown away after the test; syncing it would stall the members, and with them
+	// elections and member changes, whenever the disk is busy.
+	cfg.UnsafeNoFsync = true
 	e, err := embed.StartEtcd(cfg)
 	if err != nil {
 		t.Fatalf("start etcd member %s: %v", name, err)

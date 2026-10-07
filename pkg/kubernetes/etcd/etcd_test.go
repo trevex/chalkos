@@ -237,7 +237,8 @@ func TestRemove(t *testing.T) {
 	ca := etcdtest.NewCA(t)
 	m1 := etcdtest.StartNew(t, ca, "m1")
 	cli := dial(t, ca, m1)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	// Three joins and four removals, each of which may wait for etcd to count on its members again.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	join(t, ctx, cli, ca, "m2")
 	m3 := join(t, ctx, cli, ca, "m3")
@@ -265,7 +266,11 @@ func TestRemove(t *testing.T) {
 	// A member that just joined goes too, once etcd counts on the others.
 	m4 := join(t, ctx, cli, ca, "m4")
 	list = members(t, cli)
-	if fresh, err := Find(list, m4.Name); err != nil || Remove(ctx, cli, fresh.ID, false) != nil {
+	fresh, err := Find(list, m4.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(ctx, cli, fresh.ID, false); err != nil {
 		t.Errorf("remove the member that just joined: %v", err)
 	}
 
