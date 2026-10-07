@@ -130,9 +130,14 @@ in
       { [ "$status" = 0 ] && flushed && [ "$(added)" = "$(accepts iptables 10.0.0.11)" ]; } || fail "IPv4 address"
       holding 'fd00::11'
       { [ "$status" = 0 ] && flushed && [ "$(added)" = "$(accepts ip6tables fd00::11)" ]; } || fail "IPv6 address"
+      # A dual-stack node has an address of each family.
+      holding 'fd00::11\n10.0.0.11\n'
+      { [ "$status" = 0 ] && flushed && [ "$(added | sort)" = "$(printf '%s\n%s' "$(accepts ip6tables fd00::11)" "$(accepts iptables 10.0.0.11)" | sort)" ]; } ||
+        fail "an address of each family"
 
-      # Anything but a bare address adds no rule, empties the chain and fails.
-      for content in "" '\n' '10.0.0.0/8\n' '10.0.0.11\n10.0.0.12\n' '10.0.0.11 -j DROP\n' '-s 0.0.0.0/0\n' 'eth0\n'; do
+      # Anything but bare addresses, one per family, adds no rule, empties the chain and fails.
+      for content in "" '\n' '10.0.0.0/8\n' '10.0.0.11\n10.0.0.12\n' 'fd00::11\nfd00::12\n' '10.0.0.11\nfd00::11 -j DROP\n' \
+        '10.0.0.11 -j DROP\n' '-s 0.0.0.0/0\n' 'eth0\n' '10.0.0.11\n\n'; do
         holding "$content"
         { [ "$status" != 0 ] && flushed && [ -z "$(added)" ]; } || fail "accepted node-ip holding '$content'"
       done

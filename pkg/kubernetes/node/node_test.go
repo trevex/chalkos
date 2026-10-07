@@ -51,7 +51,7 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 	  "allowSchedulingOnControlPlanes": false, "extraArgs": {},
 	  "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`)
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
-	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIP": "192.168.100.11"}}`)
+	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"]}}`)
 	if k != nil {
 		share, err := kpki.ShareFor(k, kind, name, now)
 		if err != nil {
@@ -157,7 +157,7 @@ func TestPrepareWorker(t *testing.T) {
 // 192.168.100.0/24.
 func pickingIdentity(name string) string {
 	return `{"hostname": "` + name + `", "labels": {}, "taints": [],
-	  "kubernetes": {"nodeName": "` + name + `", "nodeIP": null, "validSubnets": ["192.168.100.0/24"]}}`
+	  "kubernetes": {"nodeName": "` + name + `", "nodeIPs": [], "validSubnets": ["192.168.100.0/24"]}}`
 }
 
 func TestPreparePicksNodeIP(t *testing.T) {
@@ -285,7 +285,7 @@ func TestPrepareDualStack(t *testing.T) {
 	}
 	write(t, p.Cluster, strings.Replace(string(cluster), `"kind":`, `"ipFamilies": ["ipv6", "ipv4"], "kind":`, 1))
 	write(t, p.NodeFile, `{"hostname": "cp1", "labels": {}, "taints": [],
-	  "kubernetes": {"nodeName": "cp1", "nodeIP": "192.168.100.11", "validSubnets": ["fd00::/64"]}}`)
+	  "kubernetes": {"nodeName": "cp1", "nodeIPs": ["192.168.100.11"], "validSubnets": ["fd00::/64"]}}`)
 	if err := Prepare(p, now, onNode("10.0.2.15", "192.168.100.11", "2001:db8::11", "fd00::11"), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -653,7 +653,7 @@ func TestPreparationError(t *testing.T) {
 	}
 
 	// A share for another kind of node than the image's.
-	write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "nodeIP": "192.168.100.11"}}`)
+	write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "nodeIPs": ["192.168.100.11"]}}`)
 	cluster, err := os.ReadFile(p.Cluster)
 	if err != nil {
 		t.Fatal(err)

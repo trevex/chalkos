@@ -151,9 +151,9 @@ let
         else
           {
             nodeName = name;
-            # A node without a fixed address picks one at boot; the cluster's subnets are in
-            # the image, a node's own ones here.
-            inherit (n.kubernetes) nodeIP validSubnets;
+            # A node picks the addresses of the families without a fixed one at boot; the
+            # cluster's subnets are in the image, a node's own ones here.
+            inherit (n.kubernetes) nodeIPs validSubnets;
           };
       extensions = removeAttrs n coreNodeOptions;
     };

@@ -56,7 +56,7 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
 	  "podCIDR": "10.244.0.0/16", "serviceCIDR": "10.96.0.0/12", "dnsIP": "10.96.0.10", "domain": "cluster.local",
 	  "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`)
-	write(t, p.NodeFile, `{"hostname": "n1", "kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.11"}}`)
+	write(t, p.NodeFile, `{"hostname": "n1", "kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}}`)
 	if share {
 		write(t, p.Share(), string(testShare(t, kind)))
 		if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11"), nil); err != nil {
@@ -268,7 +268,7 @@ func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 
 // kubernetesIdentity is identityWith for the Kubernetes node nodeName.
 func kubernetesIdentity(nodeName string) string {
-	return `{"hostname": "n1", "networkUnits": {}, "extensions": {"rack": {"location": "rack-a"}}, "kubernetes": {"nodeName": "` + nodeName + `", "nodeIP": "192.168.100.11"}, "storage": ` + section("", "") + `}`
+	return `{"hostname": "n1", "networkUnits": {}, "extensions": {"rack": {"location": "rack-a"}}, "kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}, "storage": ` + section("", "") + `}`
 }
 
 func TestApplyIdentityDeliversShare(t *testing.T) {
@@ -595,11 +595,11 @@ func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
 		{"taints", edit(func(id map[string]any) {
 			id["taints"] = []any{map[string]any{"key": "dedicated", "value": nil, "effect": "NoSchedule"}}
 		}), []string{restart}},
-		{"nodeIP", edit(func(id map[string]any) {
-			id["kubernetes"] = map[string]any{"nodeName": "n1", "nodeIP": "192.168.100.21"}
+		{"nodeIPs", edit(func(id map[string]any) {
+			id["kubernetes"] = map[string]any{"nodeName": "n1", "nodeIPs": []any{"192.168.100.21"}}
 		}), []string{restart}},
 		{"validSubnets", edit(func(id map[string]any) {
-			id["kubernetes"] = map[string]any{"nodeName": "n1", "nodeIP": nil, "validSubnets": []any{"192.168.100.0/24"}}
+			id["kubernetes"] = map[string]any{"nodeName": "n1", "nodeIPs": []any{}, "validSubnets": []any{"192.168.100.0/24"}}
 		}), []string{restart}},
 	} {
 		r.mu.Lock()
@@ -698,10 +698,10 @@ func TestApplyIdentityReportsFailedRestart(t *testing.T) {
 func TestApplyIdentityRefusesInvalidAddressSettings(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	for name, kubernetes := range map[string]string{
-		"nodeIP":       `{"nodeName": "n1", "nodeIP": "192.168.100"}`,
-		"validSubnets": `{"nodeName": "n1", "nodeIP": null, "validSubnets": ["192.168.100.0"]}`,
+		"nodeIPs":      `{"nodeName": "n1", "nodeIPs": ["192.168.100"]}`,
+		"validSubnets": `{"nodeName": "n1", "nodeIPs": [], "validSubnets": ["192.168.100.0"]}`,
 	} {
-		identity := strings.Replace(kubernetesIdentity("n1"), `{"nodeName": "n1", "nodeIP": "192.168.100.11"}`, kubernetes, 1)
+		identity := strings.Replace(kubernetesIdentity("n1"), `{"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}`, kubernetes, 1)
 		if _, err := apply(s, identity, ""); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid argument", name, err)
 		}

@@ -183,7 +183,7 @@ func TestReadNode(t *testing.T) {
 	  "network": {"networks": {"10-lan": {"address": ["10.0.0.11/24", "10.0.1.11/24"]}}},
 	  "labels": {"zone": "a"},
 	  "taints": [{"key": "dedicated", "value": "db", "effect": "NoSchedule"}],
-	  "kubernetes": {"nodeName": "cp1", "nodeIP": "10.0.0.11"}
+	  "kubernetes": {"nodeName": "cp1", "nodeIPs": ["10.0.0.11"]}
 	}`))
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestReadNode(t *testing.T) {
 	if _, err := ReadNode(writeFile(t, `{"hostname": "n1", "kubernetes": null}`)); err == nil {
 		t.Error("read a node without a Kubernetes identity")
 	}
-	if _, err := ReadNode(writeFile(t, `{"kubernetes": {"nodeName": "n1", "nodeIP": "nope"}}`)); err == nil {
+	if _, err := ReadNode(writeFile(t, `{"kubernetes": {"nodeName": "n1", "nodeIPs": ["nope"]}}`)); err == nil {
 		t.Error("read a node with an invalid address")
 	}
 	if _, err := ReadNode(writeFile(t, `{"kubernetes": {"nodeName": "n1", "validSubnets": ["eth0"]}}`)); err == nil {
@@ -240,7 +240,7 @@ func TestNodeIPSelector(t *testing.T) {
 	// A dual-stack node picks one address of each family.
 	dual := c
 	dual.IPFamilies = []string{"ipv4", "ipv6"}
-	sel, err := dual.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.12", "validSubnets": ["fd00::/64"]}}`))
+	sel, err := dual.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.12"], "validSubnets": ["fd00::/64"]}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestNodeIPSelector(t *testing.T) {
 		t.Errorf("dual stack: Select() = %v, %v", got, err)
 	}
 	// A fixed address of a family the cluster does not have is refused.
-	if _, err := c.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "fd00::12"}}`)); err == nil {
+	if _, err := c.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIPs": ["fd00::12"]}}`)); err == nil {
 		t.Error("accepted an ipv6 nodeIP in an ipv4 cluster")
 	}
 
@@ -263,7 +263,7 @@ func TestNodeIPSelector(t *testing.T) {
 		"cluster's subnets": {node(`{"kubernetes": {"nodeName": "n1"}}`), "ipv4 by validSubnets 10.0.0.0/8, !10.0.0.10/32", "10.0.0.11"},
 		"node's subnets":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["192.168.100.0/24"]}}`), "ipv4 by validSubnets 192.168.100.0/24", "192.168.100.12"},
 		"default filter":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": []}}`), "ipv4 by the default filter", "10.0.0.11"},
-		"fixed":             {node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.12"}}`), "ipv4 by nodeIP 192.168.100.12", "192.168.100.12"},
+		"fixed":             {node(`{"kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.12"]}}`), "ipv4 by nodeIP 192.168.100.12", "192.168.100.12"},
 		// The pod range never holds the node's address.
 		"pod range": {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["10.244.0.0/16"]}}`), "ipv4 by validSubnets 10.244.0.0/16", ""},
 	} {

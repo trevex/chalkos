@@ -43,7 +43,7 @@
           "fallback": "recovery-key",
           "encryption": "tpm2"
         },
-        "kubernetes": { "nodeName": "cp1", "nodeIP": "10.0.0.11", "validSubnets": null },
+        "kubernetes": { "nodeName": "cp1", "nodeIPs": ["10.0.0.11"], "validSubnets": null },
         "extensions": { "rack": { "location": "rack-a/u12" } }
       }
     },
@@ -79,7 +79,7 @@
           "fallback": "recovery-key",
           "encryption": "tpm2"
         },
-        "kubernetes": { "nodeName": "w1", "nodeIP": null, "validSubnets": null },
+        "kubernetes": { "nodeName": "w1", "nodeIPs": [], "validSubnets": null },
         "extensions": { "rack": { "location": "rack-a/u14" } }
       }
     }

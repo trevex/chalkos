@@ -280,7 +280,7 @@ lib.runTests {
       ];
       kubernetes = {
         nodeName = "n1";
-        nodeIP = null;
+        nodeIPs = [ ];
         validSubnets = null;
       };
       extensions = {
@@ -998,7 +998,7 @@ lib.runTests {
       }).manifest.nodes.n1.identity.kubernetes;
     expected = {
       nodeName = "n1";
-      nodeIP = "10.0.0.5";
+      nodeIPs = [ "10.0.0.5" ];
       validSubnets = null;
     };
   };
@@ -1056,22 +1056,22 @@ lib.runTests {
     expected = {
       nodeSubnets = {
         nodeName = "n1";
-        nodeIP = null;
+        nodeIPs = [ ];
         validSubnets = [ "192.168.100.0/24" ];
       };
       clusterSubnets = {
         nodeName = "n1";
-        nodeIP = null;
+        nodeIPs = [ ];
         validSubnets = null;
       };
       nodeOverridesCluster = {
         nodeName = "n1";
-        nodeIP = "10.0.0.5";
+        nodeIPs = [ "10.0.0.5" ];
         validSubnets = [ ];
       };
       fixedWins = {
         nodeName = "n1";
-        nodeIP = "10.0.0.5";
+        nodeIPs = [ "10.0.0.5" ];
         validSubnets = null;
       };
       clusterFile = {
@@ -1083,6 +1083,200 @@ lib.runTests {
       };
       notASubnet = true;
       notAClusterSubnet = true;
+    };
+  };
+  # Every node has one address per family: fixed ones default to the first static address of each
+  # family, and a family without one must be in the subnets the node picks from.
+  testIPFamilies = {
+    expr =
+      let
+        node =
+          modules:
+          (cluster (
+            [
+              {
+                chalkos.nodes.n1 = {
+                  role = "worker";
+                  storage.system.disk = "/dev/vda";
+                  network.networks."10-a".address = [
+                    "fd00::5/64"
+                    "10.0.0.5/24"
+                  ];
+                };
+              }
+            ]
+            ++ modules
+          )).manifest.nodes.n1.identity.kubernetes.nodeIPs;
+        families = f: { chalkos.cluster.kubernetes.ipFamilies = f; };
+        dual = families [
+          "ipv4"
+          "ipv6"
+        ];
+        set = k: { chalkos.nodes.n1.kubernetes = k; };
+        clusterFile =
+          modules:
+          (builtins.fromJSON (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text)
+          .ipFamilies;
+      in
+      {
+        ipv4 = node [ ];
+        dual = node [ dual ];
+        ipv6Primary = node [
+          (families [
+            "ipv6"
+            "ipv4"
+          ])
+        ];
+        shorthand = node [ (set { nodeIP = "10.0.0.7"; }) ];
+        # The other family is picked from the default filter.
+        oneFixed = node [
+          dual
+          (set {
+            nodeIPs = [ "10.0.0.7" ];
+          })
+        ];
+        clusterFile = clusterFile [ dual ];
+        twoOfOneFamily = fails (node [
+          (set {
+            nodeIPs = [
+              "10.0.0.5"
+              "10.0.0.6"
+            ];
+          })
+        ]);
+        notAnAddress = fails (node [ (set { nodeIPs = [ "10.0.0.5/24" ]; }) ]);
+        both = fails (node [
+          (set {
+            nodeIP = "10.0.0.7";
+            nodeIPs = [ "10.0.0.5" ];
+          })
+        ]);
+        otherFamily = fails (node [ (set { nodeIPs = [ "fd00::5" ]; }) ]);
+        unpickable = fails (node [
+          dual
+          (set {
+            nodeIPs = [ "10.0.0.5" ];
+            validSubnets = [ "10.0.0.0/8" ];
+          })
+        ]);
+        noFamily = fails (clusterFile [ (families [ ]) ]);
+        familyTwice = fails (clusterFile [
+          (families [
+            "ipv4"
+            "ipv4"
+          ])
+        ]);
+        unknownFamily = fails (clusterFile [ (families [ "ipx" ]) ]);
+      };
+    expected = {
+      ipv4 = [ "10.0.0.5" ];
+      dual = [
+        "10.0.0.5"
+        "fd00::5"
+      ];
+      ipv6Primary = [
+        "fd00::5"
+        "10.0.0.5"
+      ];
+      shorthand = [ "10.0.0.7" ];
+      oneFixed = [ "10.0.0.7" ];
+      clusterFile = [
+        "ipv4"
+        "ipv6"
+      ];
+      twoOfOneFamily = true;
+      notAnAddress = true;
+      both = true;
+      otherFamily = true;
+      unpickable = true;
+      noFamily = true;
+      familyTwice = true;
+      unknownFamily = true;
+    };
+  };
+  # The VIPs reach the nodes in the cluster file; the endpoint is one of them.
+  testVIP = {
+    expr =
+      let
+        vipCluster =
+          endpoint: vip:
+          cluster [
+            {
+              chalkos.cluster.endpoint = lib.mkForce endpoint;
+              chalkos.cluster.kubernetes.vip = vip;
+              chalkos.roles.worker.kubernetes.kind = "controlplane";
+              chalkos.nodes.cp1 = {
+                role = "worker";
+                storage.system.disk = "/dev/vda";
+                kubernetes.nodeIP = "10.0.0.11";
+              };
+            }
+          ];
+        clusterFile =
+          c: (builtins.fromJSON (role c).environment.etc."chalkos/kubernetes/cluster.json".text).vip;
+        warns = c: lib.any (lib.hasInfix "must reach a control-plane node") c.warnings;
+      in
+      {
+        clusterFile = clusterFile (vipCluster "https://10.0.0.10:6443" { addresses = [ "10.0.0.10" ]; });
+        withInterface = clusterFile (
+          vipCluster "https://10.0.0.10:6443" {
+            addresses = [ "10.0.0.10" ];
+            interface = "bond0";
+          }
+        );
+        # The VIP is the endpoint, which no node's address is.
+        warns = warns (vipCluster "https://10.0.0.10:6443" { addresses = [ "10.0.0.10" ]; });
+        hostname = clusterFile (vipCluster "https://k8s.example.com:6443" { addresses = [ "10.0.0.10" ]; });
+        endpointNotAVIP = fails (
+          clusterFile (vipCluster "https://10.0.0.20:6443" { addresses = [ "10.0.0.10" ]; })
+        );
+        twoOfOneFamily = fails (
+          clusterFile (
+            vipCluster "https://10.0.0.10:6443" {
+              addresses = [
+                "10.0.0.10"
+                "10.0.0.11"
+              ];
+            }
+          )
+        );
+        otherFamily = fails (
+          clusterFile (vipCluster "https://[fd00::10]:6443" { addresses = [ "fd00::10" ]; })
+        );
+        notAnAddress = fails (
+          clusterFile (vipCluster "https://10.0.0.10:6443" { addresses = [ "10.0.0.10/32" ]; })
+        );
+        unknownMode = fails (
+          clusterFile (
+            vipCluster "https://10.0.0.10:6443" {
+              addresses = [ "10.0.0.10" ];
+              mode = "bgp";
+            }
+          )
+        );
+      };
+    expected = {
+      clusterFile = {
+        addresses = [ "10.0.0.10" ];
+        mode = "l2";
+        interface = null;
+      };
+      withInterface = {
+        addresses = [ "10.0.0.10" ];
+        mode = "l2";
+        interface = "bond0";
+      };
+      warns = false;
+      hostname = {
+        addresses = [ "10.0.0.10" ];
+        mode = "l2";
+        interface = null;
+      };
+      endpointNotAVIP = true;
+      twoOfOneFamily = true;
+      otherFamily = true;
+      notAnAddress = true;
+      unknownMode = true;
     };
   };
   # A subnet every node would refuse at boot is refused before any image is built.
@@ -1128,6 +1322,8 @@ lib.runTests {
           c = cluster [
             {
               chalkos.cluster.kubernetes.nodeIP.validSubnets = [ subnet ];
+              # The node picks the address of the subnet's family.
+              chalkos.cluster.kubernetes.ipFamilies = [ (if lib.hasInfix ":" subnet then "ipv6" else "ipv4") ];
               chalkos.nodes.n1 = {
                 role = "worker";
                 storage.system.disk = "/dev/vda";
@@ -1164,21 +1360,34 @@ lib.runTests {
             (cluster [
               {
                 chalkos.cluster.endpoint = lib.mkForce endpoint;
+                chalkos.cluster.kubernetes.ipFamilies = [
+                  "ipv4"
+                  "ipv6"
+                ];
                 chalkos.roles.cp.kubernetes.kind = "controlplane";
                 chalkos.nodes.cp1 = {
                   role = "cp";
                   storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIP = "10.0.0.11";
+                  kubernetes.nodeIPs = [
+                    "10.0.0.11"
+                    "fd00::12"
+                  ];
                 };
                 chalkos.nodes.ip6 = {
                   role = "cp";
                   storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIP = "fd00::11";
+                  kubernetes.nodeIPs = [
+                    "fd00::11"
+                    "10.0.0.12"
+                  ];
                 };
                 chalkos.nodes.w1 = {
                   role = "worker";
                   storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIP = "10.0.0.20";
+                  kubernetes.nodeIPs = [
+                    "10.0.0.20"
+                    "fd00::20"
+                  ];
                 };
               }
             ]).warnings;
@@ -1202,19 +1411,23 @@ lib.runTests {
               }
             ]).warnings;
         # Control-plane nodes that pick their address at boot hold the endpoint's only when it lies
-        # in the subnets that apply to them.
+        # in the subnets that apply to them. The nodes have the endpoint's family alone.
         picks =
           endpoint: clusterSubnets: nodeSubnets:
+          let
+            ipv6 = lib.hasInfix "[" endpoint;
+          in
           lib.any (lib.hasInfix "must reach a control-plane node")
             (cluster [
               {
                 chalkos.cluster.endpoint = lib.mkForce endpoint;
                 chalkos.cluster.kubernetes.nodeIP.validSubnets = clusterSubnets;
+                chalkos.cluster.kubernetes.ipFamilies = [ (if ipv6 then "ipv6" else "ipv4") ];
                 chalkos.roles.cp.kubernetes.kind = "controlplane";
                 chalkos.nodes.cp1 = {
                   role = "cp";
                   storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIP = "10.0.0.11";
+                  kubernetes.nodeIPs = [ (if ipv6 then "fd00:1::11" else "10.0.0.11") ];
                 };
                 chalkos.nodes.cp2 = {
                   role = "cp";
@@ -1239,7 +1452,8 @@ lib.runTests {
         picksClusterSubnets = picks "https://10.0.0.10:6443" [ "10.0.0.0/8" ] null;
         picksOutsideClusterSubnets = picks "https://10.0.0.10:6443" [ "192.168.0.0/16" ] null;
         picksIPv6 = picks "https://[fd00::10]:6443" [ ] [ "fd00::/64" ];
-        picksOtherFamily = picks "https://[fd00::10]:6443" [ ] [ "10.0.0.0/8" ];
+        # A node of the endpoint's family alone whose subnets hold none of that family is refused.
+        picksOtherFamily = fails (picks "https://[fd00::10]:6443" [ ] [ "10.0.0.0/8" ]);
         picksIPv6Outside = picks "https://[fd00:0:0:1::10]:6443" [ ] [ "fd00::/64" ];
         vip = warns "https://10.0.0.10:6443";
         worker = warns "https://10.0.0.20:6443";
@@ -1382,7 +1596,7 @@ lib.runTests {
       ]).manifest.nodes.n1.identity.kubernetes;
     expected = {
       nodeName = "n1";
-      nodeIP = null;
+      nodeIPs = [ ];
       validSubnets = null;
     };
   };
@@ -1398,9 +1612,15 @@ lib.runTests {
       dnsIP = "10.96.0.10";
       domain = "cluster.local";
       allowSchedulingOnControlPlanes = false;
+      ipFamilies = [ "ipv4" ];
       nodeIP = {
         validSubnets = [ ];
         timeout = 300;
+      };
+      vip = {
+        addresses = [ ];
+        mode = "l2";
+        interface = null;
       };
       images = {
         etcd = "registry.k8s.io/etcd:3.7.0-0";

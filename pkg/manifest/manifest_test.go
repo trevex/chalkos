@@ -121,10 +121,10 @@ func TestDecodeKubernetes(t *testing.T) {
 	if m.Roles["controlplane"].Kind != KindControlPlane || m.Roles["worker"].Kind != KindWorker {
 		t.Errorf("roles = %+v", m.Roles)
 	}
-	if k := m.Nodes["cp1"].Identity.Kubernetes; k == nil || k.NodeName != "cp1" || k.NodeIP != "10.0.0.11" || k.ValidSubnets != nil {
+	if k := m.Nodes["cp1"].Identity.Kubernetes; k == nil || k.NodeName != "cp1" || !slices.Equal(k.NodeIPs, []string{"10.0.0.11"}) || k.ValidSubnets != nil {
 		t.Errorf("cp1 kubernetes = %+v", k)
 	}
-	if k := m.Nodes["w1"].Identity.Kubernetes; k == nil || k.NodeName != "w1" || k.NodeIP != "" || k.ValidSubnets != nil {
+	if k := m.Nodes["w1"].Identity.Kubernetes; k == nil || k.NodeName != "w1" || len(k.NodeIPs) != 0 || k.ValidSubnets != nil {
 		t.Errorf("w1 kubernetes = %+v", k)
 	}
 }
@@ -144,12 +144,12 @@ func TestStaticAddresses(t *testing.T) {
 
 func TestDecodeValidSubnets(t *testing.T) {
 	m, err := Decode(strings.NewReader(`{"schemaVersion": 0, "nodes": {"n1": {"role": "r", "identity": {
-	  "kubernetes": {"nodeName": "n1", "nodeIP": null, "validSubnets": ["192.168.100.0/24", "!192.168.100.1/32"]}}}}}`))
+	  "kubernetes": {"nodeName": "n1", "nodeIPs": [], "validSubnets": ["192.168.100.0/24", "!192.168.100.1/32"]}}}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	k := m.Nodes["n1"].Identity.Kubernetes
-	if k == nil || k.NodeIP != "" || !slices.Equal(k.ValidSubnets, []string{"192.168.100.0/24", "!192.168.100.1/32"}) {
+	if k == nil || len(k.NodeIPs) != 0 || !slices.Equal(k.ValidSubnets, []string{"192.168.100.0/24", "!192.168.100.1/32"}) {
 		t.Errorf("kubernetes = %+v", k)
 	}
 }
@@ -158,9 +158,14 @@ func TestDecodeValidSubnets(t *testing.T) {
 func TestDecodeRejectsInvalidSubnets(t *testing.T) {
 	for _, bad := range []string{"999.1.1.1/40", "a/1", "::::/999", "10.0.0.0/33", "fd00::/129", "!::ffff:10.0.0.10/128"} {
 		_, err := Decode(strings.NewReader(`{"schemaVersion": 0, "nodes": {"n1": {"role": "r", "identity": {
-		  "kubernetes": {"nodeName": "n1", "nodeIP": null, "validSubnets": ["10.0.0.0/8", "` + bad + `"]}}}}}`))
+		  "kubernetes": {"nodeName": "n1", "nodeIPs": [], "validSubnets": ["10.0.0.0/8", "` + bad + `"]}}}}}`))
 		if err == nil || !strings.Contains(err.Error(), "node n1") || !strings.Contains(err.Error(), bad) {
 			t.Errorf("validSubnets %q: err = %v", bad, err)
 		}
+	}
+	_, err := Decode(strings.NewReader(`{"schemaVersion": 0, "nodes": {"n1": {"role": "r", "identity": {
+	  "kubernetes": {"nodeName": "n1", "nodeIPs": ["10.0.0.11/24"], "validSubnets": null}}}}}`))
+	if err == nil || !strings.Contains(err.Error(), "node n1") || !strings.Contains(err.Error(), "10.0.0.11/24") {
+		t.Errorf("nodeIPs: err = %v", err)
 	}
 }

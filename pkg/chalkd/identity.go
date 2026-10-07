@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -51,8 +50,8 @@ func parseIdentity(data string) (delivered, error) {
 	}
 	// A node that cannot read how to pick its address would run no kubelet.
 	if k := id.Kubernetes; k != nil {
-		if k.NodeIP != "" && net.ParseIP(k.NodeIP) == nil {
-			return delivered{}, failed(connect.CodeInvalidArgument, "the identity's nodeIP %q is not an address", k.NodeIP)
+		if err := k.CheckNodeIPs(); err != nil {
+			return delivered{}, failed(connect.CodeInvalidArgument, "the identity's %v", err)
 		}
 		if _, err := nodeip.ParseFilter(k.ValidSubnets); err != nil {
 			return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)

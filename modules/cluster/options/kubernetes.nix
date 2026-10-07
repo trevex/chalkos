@@ -17,14 +17,15 @@ let
       description = "Extra flags of ${component}, without the leading dashes; they override chalkos's own.";
     };
 
-  # The first address of the node's networks in network name order, without its prefix length.
-  firstStaticAddress =
+  # The node's static addresses in network name order, without their prefix lengths.
+  staticAddresses =
     network:
     let
       networks = network.networks or { };
-      addresses = lib.concatMap (name: networks.${name}.address or [ ]) (lib.attrNames networks);
     in
-    if addresses == [ ] then null else builtins.head (lib.splitString "/" (builtins.head addresses));
+    map (a: builtins.head (lib.splitString "/" a)) (
+      lib.concatMap (name: networks.${name}.address or [ ]) (lib.attrNames networks)
+    );
 
   # The endpoint's host when it is an IP literal, without brackets; null for a hostname.
   endpointIP =
@@ -194,20 +195,78 @@ let
     (included == [ ] || lib.any (s: holds s address) included)
     && !lib.any (s: holds s address) excluded;
 
-  # Whether a control-plane node may hold the endpoint's address: as its fixed nodeIP, or as one
-  # it picks at boot from the subnets that apply to it.
+  familyOf = parsed: if parsed.ipv4 then "ipv4" else "ipv6";
+  inherit (config.chalkos.cluster.kubernetes) ipFamilies;
+
+  # Whether a control-plane node may hold the endpoint's address: as its fixed address of that
+  # family, or as one it picks at boot from the subnets that apply to it.
   holdsEndpoint =
     node:
     let
       endpoint = parseAddress endpointIP;
       subnets =
         if node.kubernetes.validSubnets != null then node.kubernetes.validSubnets else clusterSubnets;
+      fixed = lib.filter (a: a != null && familyOf a == familyOf endpoint) (
+        map parseAddress node.kubernetes.nodeIPs
+      );
     in
-    if node.kubernetes.nodeIP != null then
-      node.kubernetes.nodeIP == endpointIP
-      || (endpoint != null && parseAddress node.kubernetes.nodeIP == endpoint)
+    endpoint != null
+    && (if fixed != [ ] then lib.elem endpoint fixed else subnetsMatch subnets endpoint);
+
+  # What is wrong with the addresses of the named node, as messages.
+  addressErrors =
+    name: node: nodeIPs:
+    let
+      inherit (node.kubernetes) nodeIP;
+      valid = lib.filter (a: a != null) (map parseAddress nodeIPs);
+      families = map familyOf valid;
+      subnets =
+        if node.kubernetes.validSubnets != null then node.kubernetes.validSubnets else clusterSubnets;
+      included = lib.filter (s: !s.exclude) (map parseSubnet subnets);
+      # A family is picked from the subnets when they include one of it or include none at all.
+      picks = family: included == [ ] || lib.any (s: familyOf s == family) included;
+      option = "chalkos.nodes.${name}.kubernetes";
+    in
+    lib.optional (nodeIP != null && nodeIPs != [ nodeIP ]) "${option}: set nodeIP or nodeIPs, not both"
+    ++ map (a: "${option}.nodeIPs: \"${a}\" is not an address") (
+      lib.filter (a: parseAddress a == null) nodeIPs
+    )
+    ++ map (f: "${option}.nodeIPs: more than one ${f} address; give at most one per family") (
+      lib.filter (f: lib.count (x: x == f) families > 1) (lib.unique families)
+    )
+    ++ map (
+      f:
+      "${option}.nodeIPs: an ${f} address, but chalkos.cluster.kubernetes.ipFamilies is [ ${toString ipFamilies} ]"
+    ) (lib.filter (f: !lib.elem f ipFamilies) (lib.unique families))
+    ++ map (
+      f:
+      "${option}: no ${f} address in nodeIPs, and no ${f} subnet in the validSubnets that apply, so the node cannot pick its ${f} address"
+    ) (lib.filter (f: !lib.elem f families && !picks f) ipFamilies);
+
+  # The virtual addresses, checked: one per family of the cluster, and the endpoint one of them
+  # unless it is a host name.
+  vipAddresses =
+    addresses:
+    let
+      parsed = map parseAddress addresses;
+      families = map familyOf (lib.filter (a: a != null) parsed);
+      endpoint = parseAddress endpointIP;
+      errors =
+        map (a: "\"${a}\" is not an address") (lib.filter (a: parseAddress a == null) addresses)
+        ++ map (f: "more than one ${f} address; give at most one per family") (
+          lib.filter (f: lib.count (x: x == f) families > 1) (lib.unique families)
+        )
+        ++ map (
+          f: "an ${f} address, but chalkos.cluster.kubernetes.ipFamilies is [ ${toString ipFamilies} ]"
+        ) (lib.filter (f: !lib.elem f ipFamilies) (lib.unique families))
+        ++
+          lib.optional (addresses != [ ] && endpointIP != null && !lib.elem endpoint parsed)
+            "the endpoint ${config.chalkos.cluster.endpoint} is none of them; with a VIP the endpoint is a VIP or a host name";
+    in
+    if errors == [ ] then
+      addresses
     else
-      endpoint != null && subnetsMatch subnets endpoint;
+      throw "chalkos.cluster.kubernetes.vip.addresses: ${lib.concatStringsSep "; " errors}";
 in
 {
   options.chalkos.cluster.kubernetes = {
@@ -244,6 +303,59 @@ in
       type = types.bool;
       default = false;
       description = "Let workloads run on control-plane nodes, which are otherwise tainted.";
+    };
+    ipFamilies = mkOption {
+      type = types.listOf (
+        types.enum [
+          "ipv4"
+          "ipv6"
+        ]
+      );
+      default = [ "ipv4" ];
+      example = [
+        "ipv4"
+        "ipv6"
+      ];
+      apply =
+        families:
+        if families != [ ] && lib.allUnique families then
+          families
+        else
+          throw "chalkos.cluster.kubernetes.ipFamilies must list ipv4, ipv6 or both, each once";
+      description = ''
+        Address families of the nodes, the primary one first. Every node has one address of each:
+        the kubelet registers them, the control plane's certificates name them, and etcd and the
+        API server advertise the primary one.
+      '';
+    };
+    vip = {
+      addresses = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "10.0.0.10" ];
+        apply = vipAddresses;
+        description = ''
+          Virtual addresses of the API server, at most one per family of ipFamilies. One healthy
+          control-plane node at a time holds them, chosen by an election in etcd, so the endpoint
+          is one of them or a host name that resolves to them. Empty means no virtual IP.
+        '';
+      };
+      mode = mkOption {
+        type = types.enum [ "l2" ];
+        default = "l2";
+        description = ''
+          How the holder announces the addresses: l2 adds them to an interface and announces
+          them with gratuitous ARP and unsolicited neighbour advertisements.
+        '';
+      };
+      interface = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Interface the addresses are added to; null means the interface holding the node's
+          address of the address's family.
+        '';
+      };
     };
     nodeIP = {
       validSubnets = mkOption {
@@ -386,12 +498,18 @@ in
     );
   };
 
-  # Hostnames are not checked: they may name a load balancer or a DNS record of the nodes.
+  # Hostnames are not checked: they may name a load balancer or a DNS record of the nodes. A VIP
+  # endpoint is checked with the VIPs.
   config.chalkos.warnings =
     lib.optional
-      (controlPlaneNodes != [ ] && endpointIP != null && !lib.any holdsEndpoint controlPlaneNodes)
+      (
+        controlPlaneNodes != [ ]
+        && endpointIP != null
+        && config.chalkos.cluster.kubernetes.vip.addresses == [ ]
+        && !lib.any holdsEndpoint controlPlaneNodes
+      )
       ''
-        chalkos.cluster.endpoint ${config.chalkos.cluster.endpoint} is neither the nodeIP of a
+        chalkos.cluster.endpoint ${config.chalkos.cluster.endpoint} is neither a nodeIPs entry of a
         control-plane node nor in the validSubnets one picks its address from.
         The endpoint must reach a control-plane node, for example through a node's IP, a load
         balancer or a VIP.
@@ -400,7 +518,7 @@ in
   options.chalkos.nodes = mkOption {
     type = types.attrsOf (
       types.submodule (
-        { config, ... }:
+        { config, name, ... }:
         let
           subnets =
             if config.kubernetes.validSubnets != null then config.kubernetes.validSubnets else clusterSubnets;
@@ -408,12 +526,40 @@ in
         {
           options.kubernetes.nodeIP = mkOption {
             type = types.nullOr types.str;
-            default = if subnets == [ ] then firstStaticAddress config.network else null;
-            defaultText = lib.literalMD "the node's first static address, unless validSubnets apply to the node";
+            default = null;
+            description = "Shorthand for nodeIPs with one address.";
+          };
+          options.kubernetes.nodeIPs = mkOption {
+            type = types.listOf types.str;
+            default =
+              let
+                # The first static address of each of the cluster's families.
+                static = lib.filter (a: parseAddress a != null) (staticAddresses config.network);
+                first = f: lib.take 1 (lib.filter (a: familyOf (parseAddress a) == f) static);
+              in
+              if config.kubernetes.nodeIP != null then
+                [ config.kubernetes.nodeIP ]
+              else if subnets == [ ] then
+                lib.concatMap first ipFamilies
+              else
+                [ ];
+            defaultText = lib.literalMD "nodeIP, or else the node's first static address of each family, unless validSubnets apply to the node";
+            apply =
+              ips:
+              let
+                errors = addressErrors name config ips;
+              in
+              if errors == [ ] then
+                ips
+              else
+                throw "chalkos.nodes.${name} is invalid:\n${lib.concatMapStringsSep "\n" (e: "- ${e}") errors}";
             description = ''
-              Fixed address of the node: the kubelet registers it and, on control-plane nodes,
-              etcd and the API server advertise it. The node waits at boot until an interface
-              holds it. null picks the address on the node, from the validSubnets that apply.
+              Fixed addresses of the node, at most one per family of
+              chalkos.cluster.kubernetes.ipFamilies: the kubelet registers them and, on
+              control-plane nodes, the certificates name them and etcd and the API server
+              advertise the primary family's. The node waits at boot until its interfaces hold
+              them. The node picks the address of a family without one from the validSubnets that
+              apply.
             '';
           };
           options.kubernetes.validSubnets = mkOption {

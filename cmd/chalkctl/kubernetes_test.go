@@ -26,7 +26,7 @@ func withKind(t *testing.T, ta *testApp, kind string) {
 		r.Kind = kind
 		m.Roles["test"] = r
 		n := m.Nodes["n1"]
-		n.Identity.Kubernetes = &manifest.KubernetesIdentity{NodeName: "n1", NodeIP: "10.0.0.11"}
+		n.Identity.Kubernetes = &manifest.KubernetesIdentity{NodeName: "n1", NodeIPs: []string{"10.0.0.11"}}
 		m.Nodes["n1"] = n
 	})
 }

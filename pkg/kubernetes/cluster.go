@@ -272,10 +272,10 @@ func ParseNode(identity []byte) (Node, error) {
 		return Node{}, errors.New("the identity names no Kubernetes node")
 	}
 	n := Node{Name: id.Kubernetes.NodeName, Hostname: id.Hostname, ValidSubnets: id.Kubernetes.ValidSubnets, Labels: id.Labels, Taints: id.Taints}
-	if id.Kubernetes.NodeIP != "" {
-		ip := net.ParseIP(id.Kubernetes.NodeIP)
+	for _, s := range id.Kubernetes.NodeIPs {
+		ip := net.ParseIP(s)
 		if ip == nil {
-			return Node{}, fmt.Errorf("nodeIP %q is not an address", id.Kubernetes.NodeIP)
+			return Node{}, fmt.Errorf("nodeIPs: %q is not an address", s)
 		}
 		n.FixedIPs = append(n.FixedIPs, ip)
 	}

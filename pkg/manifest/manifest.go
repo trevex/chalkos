@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"sort"
 	"strings"
 
@@ -73,11 +74,22 @@ type KubernetesIdentity struct {
 	// NodeName is the node's name in the cluster, which its Node object and kubelet
 	// certificates carry.
 	NodeName string `json:"nodeName"`
-	// NodeIP is the node's fixed address; empty picks one on the node at boot.
-	NodeIP string `json:"nodeIP"`
-	// ValidSubnets are the subnets the node picks its address from instead of its cluster's;
+	// NodeIPs are the node's fixed addresses, at most one per address family; the node picks
+	// the addresses of the other families at boot.
+	NodeIPs []string `json:"nodeIPs"`
+	// ValidSubnets are the subnets the node picks its addresses from instead of its cluster's;
 	// nil uses the cluster's.
 	ValidSubnets []string `json:"validSubnets"`
+}
+
+// CheckNodeIPs checks that the fixed addresses are addresses.
+func (k KubernetesIdentity) CheckNodeIPs() error {
+	for _, ip := range k.NodeIPs {
+		if _, err := netip.ParseAddr(ip); err != nil {
+			return fmt.Errorf("nodeIPs: %q is not an address", ip)
+		}
+	}
+	return nil
 }
 
 // StaticAddresses returns the addresses of the node's networkd networks, in network name order,
@@ -149,6 +161,9 @@ func Decode(r io.Reader) (*Manifest, error) {
 		// The node would refuse them at every boot and run no kubelet.
 		if k := n.Identity.Kubernetes; k != nil {
 			if _, err := nodeip.ParseFilter(k.ValidSubnets); err != nil {
+				return nil, fmt.Errorf("parse manifest: node %s: kubernetes.%w", name, err)
+			}
+			if err := k.CheckNodeIPs(); err != nil {
 				return nil, fmt.Errorf("parse manifest: node %s: kubernetes.%w", name, err)
 			}
 		}
