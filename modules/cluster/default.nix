@@ -10,5 +10,8 @@
     ./options/warnings.nix
     ./options/installer.nix
     ./options/manifest.nix
+    ./kubernetes
+    ./features/cni
+    ./features/dns
   ];
 }

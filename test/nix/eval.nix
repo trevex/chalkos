@@ -1052,4 +1052,80 @@ lib.runTests {
     expr = fails (cluster [ { chalkos.cluster.kubernetes.extraArgs.kube-dns.v = "2"; } ]).cluster;
     expected = true;
   };
+  testBuiltinManifests = {
+    expr =
+      let
+        k =
+          (cluster [
+            {
+              chalkos.cluster.kubernetes = {
+                podCIDR = "10.250.0.0/16";
+                dnsIP = "10.100.0.10";
+                domain = "lab.local";
+              };
+            }
+          ]).cluster.kubernetes;
+        named = kind: name: lib.findFirst (m: m.kind == kind && m.metadata.name == name) null k.addons;
+      in
+      {
+        # RBAC first, then kube-proxy, flannel and CoreDNS.
+        order = map (m: "${m.kind}/${m.metadata.name}") k.addons;
+        kubeProxyImage =
+          (builtins.head (named "DaemonSet" "kube-proxy").spec.template.spec.containers).image;
+        flannelNetwork =
+          (builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."net-conf.json").Network;
+        dnsIP = (named "Service" "kube-dns").spec.clusterIP;
+        corefileDomain = lib.hasInfix "kubernetes lab.local in-addr.arpa" (named "ConfigMap" "coredns")
+        .data.Corefile;
+      };
+    expected = {
+      order = [
+        "ClusterRoleBinding/chalkos:cluster-admins"
+        "ClusterRoleBinding/chalkos:selfnodeclient"
+        "ClusterRoleBinding/chalkos:apiserver-kubelet"
+        "ServiceAccount/kube-proxy"
+        "ClusterRoleBinding/chalkos:node-proxier"
+        "ConfigMap/kube-proxy"
+        "DaemonSet/kube-proxy"
+        "Namespace/kube-flannel"
+        "ClusterRole/flannel"
+        "ClusterRoleBinding/flannel"
+        "ServiceAccount/flannel"
+        "ConfigMap/kube-flannel-cfg"
+        "DaemonSet/kube-flannel-ds"
+        "ServiceAccount/coredns"
+        "ClusterRole/system:coredns"
+        "ClusterRoleBinding/system:coredns"
+        "ConfigMap/coredns"
+        "Deployment/coredns"
+        "Service/kube-dns"
+      ];
+      kubeProxyImage = "registry.k8s.io/kube-proxy:v1.37.1";
+      flannelNetwork = "10.250.0.0/16";
+      dnsIP = "10.100.0.10";
+      corefileDomain = true;
+    };
+  };
+  testCNIProviderNone = {
+    expr =
+      lib.any (m: m.metadata.namespace or "" == "kube-flannel")
+        (cluster [
+          { chalkos.cni.provider = "none"; }
+        ]).cluster.kubernetes.addons;
+    expected = false;
+  };
+  testRBACBindsChalkosIdentities = {
+    expr = lib.listToAttrs (
+      map (m: lib.nameValuePair m.metadata.name (builtins.head m.subjects).name) (
+        lib.filter (m: lib.hasPrefix "chalkos:" m.metadata.name && m.kind == "ClusterRoleBinding")
+          (cluster [ ]).cluster.kubernetes.addons
+      )
+    );
+    expected = {
+      "chalkos:cluster-admins" = "chalkos:cluster-admins";
+      "chalkos:selfnodeclient" = "system:nodes";
+      "chalkos:apiserver-kubelet" = "chalkos:kube-apiserver-kubelet-client";
+      "chalkos:node-proxier" = "kube-proxy";
+    };
+  };
 }
