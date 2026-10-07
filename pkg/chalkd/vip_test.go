@@ -88,6 +88,12 @@ func startElection(t *testing.T, ca pki.CertKey, m *etcdtest.Member, n int) ([]*
 // ttl seconds.
 func startNode(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *holders) *electionNode {
 	t.Helper()
+	return startNodeWith(t, ca, url, name, ttl, h, nil)
+}
+
+// startNodeWith is startNode with the election changed by configure before it runs.
+func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *holders, configure func(*vipElection)) *electionNode {
+	t.Helper()
 	cli, err := etcd.Dial([]string{url}, etcdtest.ClientTLS(t, ca))
 	if err != nil {
 		t.Fatal(err)
@@ -105,6 +111,9 @@ func startNode(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *holde
 		margin:   2 * time.Second,
 		failures: 3,
 		holder:   &atomic.Bool{},
+	}
+	if configure != nil {
+		configure(node.election)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	node.stop = cancel
@@ -217,7 +226,7 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
-	proxy := etcdtest.NewProxy(t, m.ClientURL, 600*time.Millisecond)
+	proxy := etcdtest.NewProxy(t, m.ClientURL, 400*time.Millisecond)
 	first := startNode(t, ca, proxy.URL, "cp1", 3, h)
 	holder(t, []*electionNode{first})
 	second := startNode(t, ca, m.ClientURL, "cp2", 3, h)
@@ -275,6 +284,81 @@ func TestVIPKeptWhileRenewed(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	if first.addrs.released.Load() != released || !first.addrs.held.Load() {
 		t.Error("the holder dropped the VIPs while its lease was renewed")
+	}
+}
+
+// A healthy holder keeps the VIPs when one renewal of its lease stalls: the next one is tried
+// once the stalled one timed out, in time before the holder would have to release them.
+func TestVIPKeptWhenOneRenewalStalls(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m := etcdtest.StartNew(t, ca, "cp0")
+	h := &holders{}
+	var calls atomic.Int32
+	first := startNodeWith(t, ca, m.ClientURL, "cp1", 2, h, func(v *vipElection) {
+		v.keepAlive = func(ctx context.Context, id clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error) {
+			if calls.Add(1) == 1 {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return v.client.KeepAliveOnce(ctx, id)
+		}
+	})
+	holder(t, []*electionNode{first})
+	released := first.addrs.released.Load()
+	time.Sleep(5 * time.Second)
+	if calls.Load() < 3 {
+		t.Fatalf("%d renewals, want the stalled one and later ones", calls.Load())
+	}
+	if first.addrs.released.Load() != released || !first.addrs.held.Load() {
+		t.Error("the holder dropped the VIPs after one stalled renewal")
+	}
+}
+
+// A holder whose renewals keep failing releases the VIPs before etcd could let the lease expire
+// after the last renewal that succeeded.
+func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m := etcdtest.StartNew(t, ca, "cp0")
+	h := &holders{}
+	var failing atomic.Bool
+	var failed atomic.Int32
+	var mu sync.Mutex
+	var lastSent time.Time
+	first := startNodeWith(t, ca, m.ClientURL, "cp1", 2, h, func(v *vipElection) {
+		v.keepAlive = func(ctx context.Context, id clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error) {
+			if failing.Load() {
+				failed.Add(1)
+				return nil, context.DeadlineExceeded
+			}
+			sent := time.Now()
+			resp, err := v.client.KeepAliveOnce(ctx, id)
+			if err == nil {
+				mu.Lock()
+				lastSent = sent
+				mu.Unlock()
+			}
+			return resp, err
+		}
+	})
+	holder(t, []*electionNode{first})
+	time.Sleep(time.Second)
+	failing.Store(true)
+	eventually(t, "the release", func() bool { return !first.addrs.held.Load() })
+	first.addrs.mu.Lock()
+	releasedAt := first.addrs.releasedAt
+	first.addrs.mu.Unlock()
+	mu.Lock()
+	last := lastSent
+	mu.Unlock()
+	expiry := last.Add(2 * time.Second)
+	if last.IsZero() {
+		t.Fatal("no renewal succeeded before they failed")
+	}
+	if !releasedAt.Before(expiry) {
+		t.Errorf("the holder released the VIPs %v after etcd could let its lease expire", releasedAt.Sub(expiry))
+	}
+	if failed.Load() < 2 {
+		t.Errorf("%d failed renewals before the release, want retries", failed.Load())
 	}
 }
 

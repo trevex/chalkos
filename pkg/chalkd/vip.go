@@ -61,6 +61,8 @@ type vipElection struct {
 	// failures is how many health checks in a row fail before the node resigns.
 	failures int
 	holder   *atomic.Bool
+	// keepAlive renews the lease once; nil means the client's KeepAliveOnce.
+	keepAlive func(context.Context, clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error)
 }
 
 // run takes part in the election until ctx ends, and leaves the VIPs released.
@@ -205,20 +207,26 @@ func (r *renewals) deadline(ttl, margin time.Duration) time.Time {
 	return r.last.Add(ttl - margin)
 }
 
-// renew renews the lease every third of its lifetime until ctx ends.
+// renew renews the lease a third of its lifetime after the last renewal was sent until ctx
+// ends. Each attempt gets a sixth of the lifetime; a failed one is retried shortly after, so a
+// single stalled renewal does not let the deadline pass.
 func (v *vipElection) renew(ctx context.Context, id clientv3.LeaseID, ttl time.Duration, r *renewals) {
+	next := r.deadline(ttl/3, 0)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(ttl / 3):
+		case <-time.After(time.Until(next)):
 		}
 		sent := time.Now()
-		kctx, cancel := context.WithTimeout(ctx, ttl/3)
-		resp, err := v.client.KeepAliveOnce(kctx, id)
+		kctx, cancel := context.WithTimeout(ctx, ttl/6)
+		resp, err := v.keepAliveOnce(kctx, id)
 		cancel()
 		if err == nil && resp.TTL > 0 {
 			r.renewed(sent)
+			next = sent.Add(ttl / 3)
+		} else {
+			next = time.Now().Add(ttl / 20)
 		}
 	}
 }
@@ -410,4 +418,11 @@ func apiServerReady(ctx context.Context, share kpki.Share) bool {
 	}
 	resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
+}
+
+func (v *vipElection) keepAliveOnce(ctx context.Context, id clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error) {
+	if v.keepAlive != nil {
+		return v.keepAlive(ctx, id)
+	}
+	return v.client.KeepAliveOnce(ctx, id)
 }
