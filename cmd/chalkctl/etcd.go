@@ -164,12 +164,13 @@ func (a *app) etcdLeave(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("etcd leave", flag.ContinueOnError)
 	var n nodeCommand
 	n.register(fs)
+	force := fs.Bool("force", false, "leave through the other members also when the node's own etcd member does not answer, as when it lost its pinned address")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: chalkctl etcd leave <node>")
+		return errors.New("usage: chalkctl etcd leave <node> [--force]")
 	}
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
@@ -179,7 +180,7 @@ func (a *app) etcdLeave(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := conn.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{})); err != nil {
+	if _, err := conn.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: *force})); err != nil {
 		return fmt.Errorf("%s: %w", t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "%s left etcd; reinstall it to join the cluster again\n", t.name)

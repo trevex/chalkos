@@ -146,10 +146,16 @@ func MarkJoining(p Paths, endpoint string) error {
 // plane that renders its static pods at boot. The bootstrapped marker comes first, so the node is
 // marked as one or the other at any time.
 func MarkJoined(p Paths, now time.Time) error {
-	if err := install.WriteFile(p.Bootstrapped(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+	if err := MarkBootstrapped(p, now); err != nil {
 		return fmt.Errorf("record the join: %w", err)
 	}
 	return removeIfExists(p.Joining())
+}
+
+// MarkBootstrapped records that the node is a bootstrapped control plane, which renders its
+// static pods at boot.
+func MarkBootstrapped(p Paths, now time.Time) error {
+	return install.WriteFile(p.Bootstrapped(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
 }
 
 // ClearMembership removes what makes the node an etcd member at boot: the bootstrapped,

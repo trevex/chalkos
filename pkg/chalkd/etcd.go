@@ -63,14 +63,19 @@ func (k *Kubernetes) member() (string, kpki.Share, error) {
 // mayBeMember reports whether the node is, or may be, an etcd member: it was bootstrapped, or it
 // started joining, or it holds what either left behind.
 func mayBeMember(p knode.Paths) (bool, error) {
-	for _, f := range []string{p.Bootstrapped(), p.Joining(), p.EtcdInitialCluster(), p.Pin()} {
-		if _, err := os.Stat(f); err == nil {
-			return true, nil
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return false, err
+	pinned := func(p knode.Paths) (bool, error) {
+		_, err := os.Stat(p.Pin())
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	for _, marked := range []func(knode.Paths) (bool, error){knode.Bootstrapped, knode.Joining, knode.HasInitialCluster, pinned, knode.EtcdHasData} {
+		if ok, err := marked(p); err != nil || ok {
+			return ok, err
 		}
 	}
-	return knode.EtcdHasData(p)
+	return false, nil
 }
 
 // dialEtcd connects to the endpoints, the node's own member by default, with chalkd's etcd
@@ -146,7 +151,9 @@ func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[node
 	if err != nil {
 		return nil, failed(connect.CodeNotFound, "%v", err)
 	}
-	if m.Name == name {
+	if self, ok, err := k.ownMember(members, name); err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	} else if ok && self.ID == m.ID {
 		return nil, failed(connect.CodeFailedPrecondition, "%s is this node's own member; chalkctl etcd leave %s takes the node out of etcd", name, name)
 	}
 	rctx, cancel = k.etcdRequest(ctx)
@@ -163,14 +170,22 @@ func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[node
 }
 
 // ownMember finds the node's member among the members: the one of its name or, as a learner that
-// never started has none, one without a name at its peer URL.
-func ownMember(members []etcd.Member, name, peerURL string) (etcd.Member, bool) {
+// never started has none, one without a name at its pinned peer URL.
+func (k *Kubernetes) ownMember(members []etcd.Member, name string) (etcd.Member, bool, error) {
+	pin, err := knode.ReadPin(k.Paths)
+	if err != nil {
+		return etcd.Member{}, false, err
+	}
+	peerURL := ""
+	if pin != nil {
+		peerURL = etcd.PeerURL(net.IP(pin[0].AsSlice()))
+	}
 	for _, m := range members {
 		if m.Name == name || (m.Name == "" && peerURL != "" && slices.Contains(m.PeerURLs, peerURL)) {
-			return m, true
+			return m, true, nil
 		}
 	}
-	return etcd.Member{}, false
+	return etcd.Member{}, false, nil
 }
 
 // leaveEndpoints are the node's own etcd member and the other control planes' that the API
@@ -189,7 +204,7 @@ func (k *Kubernetes) leaveEndpoints(ctx context.Context, c k8s.Cluster, share kp
 	return append(endpoints, others...)
 }
 
-func (s *Server) EtcdLeave(ctx context.Context, _ *connect.Request[nodev1.EtcdLeaveRequest]) (*connect.Response[nodev1.EtcdLeaveResponse], error) {
+func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.EtcdLeaveRequest]) (*connect.Response[nodev1.EtcdLeaveResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := s.Kubernetes
@@ -252,15 +267,16 @@ func (s *Server) EtcdLeave(ctx context.Context, _ *connect.Request[nodev1.EtcdLe
 	if err != nil {
 		return nil, failed(connect.CodeUnavailable, "%v", err)
 	}
-	// A learner the join added has no name until it started, but sits at the pinned address.
-	peerURL := ""
-	if pin, err := knode.ReadPin(p); err != nil {
+	self, ok, err := k.ownMember(members, name)
+	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
-	} else if pin != nil {
-		peerURL = etcd.PeerURL(net.IP(pin[0].AsSlice()))
 	}
-
-	if self, ok := ownMember(members, name, peerURL); ok {
+	if ok {
+		// A bootstrapped node leaves through the other members alone only when forced: its own
+		// member may be healthy but cut off, or unable to run, as without its pinned address.
+		if bootstrapped && !req.Msg.Force && !slices.Contains(answered, k.localEtcd()) {
+			return nil, failed(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd())
+		}
 		rctx, cancel := k.etcdRequest(ctx)
 		err := etcd.CheckQuorum(members, etcd.Health(rctx, cli, members), self.ID)
 		cancel()

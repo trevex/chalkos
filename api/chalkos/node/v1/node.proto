@@ -37,7 +37,8 @@ service NodeService {
   rpc EtcdRemoveMember(EtcdRemoveMemberRequest) returns (EtcdRemoveMemberResponse);
   // EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
   // still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
-  // unpins its addresses. The node joins the cluster again only once it is reinstalled.
+  // unpins its addresses. The node joins the cluster again only once it is reinstalled. A
+  // bootstrapped node whose own member does not answer leaves only when forced.
   rpc EtcdLeave(EtcdLeaveRequest) returns (EtcdLeaveResponse);
 }
 
@@ -298,6 +299,10 @@ message EtcdRemoveMemberResponse {
   EtcdMember removed = 1;
 }
 
-message EtcdLeaveRequest {}
+message EtcdLeaveRequest {
+  // Leave through the other members also when the node's own etcd member does not answer, as on
+  // a node that lost its pinned address.
+  bool force = 1;
+}
 
 message EtcdLeaveResponse {}

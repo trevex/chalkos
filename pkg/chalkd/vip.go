@@ -19,7 +19,6 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -315,15 +314,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
-	if err != nil {
-		return err
-	}
-	tlsConfig, err := cred.tlsConfig()
-	if err != nil {
-		return err
-	}
-	cli, err := etcd.Dial([]string{k.localEtcd()}, tlsConfig)
+	cli, err := k.dialEtcd(share)
 	if err != nil {
 		return err
 	}

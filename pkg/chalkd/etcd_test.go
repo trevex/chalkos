@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -100,8 +102,8 @@ func removeMember(s *Server, member string, force bool) error {
 	return err
 }
 
-func leave(s *Server) error {
-	_, err := s.EtcdLeave(context.Background(), connect.NewRequest(&nodev1.EtcdLeaveRequest{}))
+func leave(s *Server, force bool) error {
+	_, err := s.EtcdLeave(context.Background(), connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: force}))
 	return err
 }
 
@@ -138,7 +140,7 @@ func checkLeft(t *testing.T, s *Server) {
 	if _, err := bootstrap(s, context.Background()); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
 		t.Errorf("bootstrap after leaving: %v", err)
 	}
-	if err := leave(s); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
+	if err := leave(s, false); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
 		t.Errorf("leaving again: %v", err)
 	}
 }
@@ -189,7 +191,7 @@ func TestEtcdLeave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := leave(s); err != nil {
+	if err := leave(s, false); err != nil {
 		t.Fatal(err)
 	}
 	cp2, err := etcd.Dial([]string{members["cp2"].ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
@@ -221,12 +223,12 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the join to stop", func() bool {
-		return strings.Contains(kubernetesState(t, s), "run chalkctl etcd leave and retry")
+		return strings.Contains(kubernetesState(t, s), "run chalkctl etcd leave and reinstall the node")
 	})
 	// The learner's etcd wrote its data.
 	write(t, filepath.Join(k.Paths.EtcdData, "member", "snap", "db"), "")
 
-	if err := leave(s); err != nil {
+	if err := leave(s, false); err != nil {
 		t.Fatal(err)
 	}
 	if list := members(t, cli); len(list) != 1 || list[0].Name != "cp0" {
@@ -235,11 +237,85 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	checkLeft(t, s)
 }
 
+// otherMembersOnly makes the node's own etcd member stop answering, while the API server lists
+// the other members.
+func otherMembersOnly(t *testing.T, s *Server, others ...*etcdtest.Member) {
+	t.Helper()
+	k := s.Kubernetes
+	k.LocalEtcd = etcdtest.Silent(t)
+	k.EtcdTimeout = 2 * time.Second
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+		var urls []string
+		for _, m := range others {
+			urls = append(urls, m.ClientURL)
+		}
+		return urls, nil
+	}
+}
+
+// A bootstrapped node whose own etcd member does not answer leaves through the other members only
+// when forced, as when it lost its pinned address and its etcd cannot run.
+func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
+	s, cli, others := memberServer(t, "cp2", "cp3")
+	otherMembersOnly(t, s, others["cp2"], others["cp3"])
+	err := leave(s, false)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not answer") || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("leaving while the node's member does not answer: %v", err)
+	}
+	p := s.Kubernetes.Paths
+	if !exists(p.Pin()) || !exists(p.Bootstrapped()) || exists(p.Left()) || len(members(t, cli)) != 3 {
+		t.Error("a refused leave changed the node")
+	}
+	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 4 {
+		t.Errorf("static pods %v after a refused leave", pods)
+	}
+	if err := leave(s, true); err != nil {
+		t.Fatalf("forced leave: %v", err)
+	}
+	// n1's member stopped once removed.
+	cli.SetEndpoints(others["cp2"].ClientURL)
+	if list := members(t, cli); len(list) != 2 || slices.ContainsFunc(list, func(m etcd.Member) bool { return m.Name == "n1" }) {
+		t.Errorf("members %+v after n1 left", list)
+	}
+	checkLeft(t, s)
+}
+
+// A bootstrapped node whose member an operator removed leaves without --force, although its etcd
+// stopped answering.
+func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
+	s, _, members := memberServer(t, "cp2", "cp3")
+	share, err := knode.ReadShare(s.Kubernetes.Paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp2, err := etcd.Dial([]string{members["cp2"].ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cp2.Close()
+	list, err := etcd.Members(context.Background(), cp2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n1, err := etcd.Find(list, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := etcd.Remove(context.Background(), cp2, n1.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	otherMembersOnly(t, s, members["cp2"], members["cp3"])
+	if err := leave(s, false); err != nil {
+		t.Fatal(err)
+	}
+	checkLeft(t, s)
+}
+
 // A node leaves only while the voters left keep a healthy quorum, and changes nothing otherwise.
 func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
 	s, _, members := memberServer(t, "cp2", "cp3")
 	members["cp3"].Stop()
-	err := leave(s)
+	err := leave(s, false)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "quorum") {
 		t.Errorf("leaving while cp3 is down: %v", err)
 	}
@@ -261,7 +337,7 @@ func TestEtcdNeedsMember(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("members on %s: %v", name, err)
 		}
-		if err := leave(s); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		if err := leave(s, false); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("leaving on %s: %v", name, err)
 		}
 	}

@@ -28,10 +28,10 @@ var errBootstrapped = errors.New("the node is bootstrapped")
 
 // errMemberRemoved stops the join: an operator removed the member the node started etcd with,
 // and joining again would start etcd with that member's data.
-var errMemberRemoved = errors.New("the node's etcd member was removed while joining; run chalkctl etcd leave and retry")
+var errMemberRemoved = errors.New("the node's etcd member was removed while joining; run chalkctl etcd leave and reinstall the node")
 
 // errEarlierData refuses a fresh join: etcd would start with the data of another membership.
-var errEarlierData = errors.New("etcd data from an earlier membership is present on VAR; remove it with chalkctl etcd leave or reset VAR")
+var errEarlierData = errors.New("etcd data from an earlier membership is present on VAR; run chalkctl etcd leave and reinstall the node")
 
 // waitingError means the cluster to join is not there yet.
 type waitingError struct{ err error }
@@ -108,6 +108,14 @@ func (k *Kubernetes) superviseJoin(ctx context.Context, done chan struct{}) {
 		k.mu.Unlock()
 		close(done)
 	}()
+	// A join that keeps failing the same way logs it once.
+	var logged string
+	logChange := func(msg string) {
+		if msg != logged {
+			logged = msg
+			log.Print(msg)
+		}
+	}
 	for {
 		err := k.joinOnce(ctx)
 		var waiting waitingError
@@ -129,13 +137,13 @@ func (k *Kubernetes) superviseJoin(ctx context.Context, done chan struct{}) {
 			return
 		case errors.As(err, &waiting), errors.Is(err, errNotPrepared):
 		case errors.As(err, &stale), errors.As(err, &split), errors.Is(err, errEarlierData):
-			log.Printf("kubernetes: %v", err)
+			logChange(fmt.Sprintf("kubernetes: %v", err))
 		case errors.Is(err, errMemberRemoved):
 			log.Printf("kubernetes: %v", err)
 			k.setJoinStep(err.Error())
 			return
 		default:
-			log.Printf("kubernetes: joining the cluster: %v; trying again in %v", err, retry)
+			logChange(fmt.Sprintf("kubernetes: joining the cluster: %v; trying again every %v", err, retry))
 			k.setJoinStep(fmt.Sprintf("%v; trying again", err))
 		}
 		select {
@@ -183,15 +191,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		return waitingError{err}
 	}
 	k.setJoinStep("checking etcd's members")
-	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
-	if err != nil {
-		return err
-	}
-	tlsConfig, err := cred.tlsConfig()
-	if err != nil {
-		return err
-	}
-	cli, err := etcd.Dial(endpoints, tlsConfig)
+	cli, err := k.dialEtcd(share, endpoints...)
 	if err != nil {
 		return err
 	}
@@ -406,15 +406,7 @@ func (k *Kubernetes) checkSplit(ctx context.Context, share kpki.Share) (*etcd.Sp
 	if err != nil {
 		return nil, err
 	}
-	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
-	if err != nil {
-		return nil, err
-	}
-	tlsConfig, err := cred.tlsConfig()
-	if err != nil {
-		return nil, err
-	}
-	cli, err := etcd.Dial([]string{k.localEtcd()}, tlsConfig)
+	cli, err := k.dialEtcd(share)
 	if err != nil {
 		return nil, err
 	}

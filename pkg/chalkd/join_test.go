@@ -457,7 +457,7 @@ func TestJoinRefusesEarlierEtcdData(t *testing.T) {
 	db := filepath.Join(k.Paths.EtcdData, "member", "snap", "db")
 	write(t, db, "")
 	k.Start()
-	want := "joining the cluster at https://192.168.100.11:6443: etcd data from an earlier membership is present on VAR; remove it with chalkctl etcd leave or reset VAR"
+	want := "joining the cluster at https://192.168.100.11:6443: etcd data from an earlier membership is present on VAR; run chalkctl etcd leave and reinstall the node"
 	eventually(t, "the refusal's state", func() bool { return kubernetesState(t, s) == want })
 	stopJoin(t, k)
 	if list := members(t, cli); len(list) != 1 {
@@ -484,7 +484,7 @@ func TestJoinStopsWhenLearnerRemoved(t *testing.T) {
 	if err := etcd.Remove(context.Background(), cli, members(t, cli)[learner].ID, false); err != nil {
 		t.Fatal(err)
 	}
-	want := "joining the cluster at https://192.168.100.11:6443: the node's etcd member was removed while joining; run chalkctl etcd leave and retry"
+	want := "joining the cluster at https://192.168.100.11:6443: the node's etcd member was removed while joining; run chalkctl etcd leave and reinstall the node"
 	eventually(t, "the join to stop", func() bool {
 		k.mu.Lock()
 		defer k.mu.Unlock()

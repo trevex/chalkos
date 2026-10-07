@@ -2148,7 +2148,10 @@ func (x *EtcdRemoveMemberResponse) GetRemoved() *EtcdMember {
 }
 
 type EtcdLeaveRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Leave through the other members also when the node's own etcd member does not answer, as on
+	// a node that lost its pinned address.
+	Force         bool `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2181,6 +2184,13 @@ func (x *EtcdLeaveRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use EtcdLeaveRequest.ProtoReflect.Descriptor instead.
 func (*EtcdLeaveRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *EtcdLeaveRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
 }
 
 type EtcdLeaveResponse struct {
@@ -2363,8 +2373,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06member\x18\x01 \x01(\tR\x06member\x12\x14\n" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"Q\n" +
 	"\x18EtcdRemoveMemberResponse\x125\n" +
-	"\aremoved\x18\x01 \x01(\v2\x1b.chalkos.node.v1.EtcdMemberR\aremoved\"\x12\n" +
-	"\x10EtcdLeaveRequest\"\x13\n" +
+	"\aremoved\x18\x01 \x01(\v2\x1b.chalkos.node.v1.EtcdMemberR\aremoved\"(\n" +
+	"\x10EtcdLeaveRequest\x12\x14\n" +
+	"\x05force\x18\x01 \x01(\bR\x05force\"\x13\n" +
 	"\x11EtcdLeaveResponse*C\n" +
 	"\x04Mode\x12\x14\n" +
 	"\x10MODE_UNSPECIFIED\x10\x00\x12\x14\n" +

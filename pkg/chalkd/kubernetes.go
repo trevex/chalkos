@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"net"
 	"os"
@@ -22,7 +21,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
@@ -335,15 +333,7 @@ func (k *Kubernetes) pinFromEtcd(ctx context.Context, share kpki.Share) error {
 	if err != nil {
 		return err
 	}
-	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
-	if err != nil {
-		return err
-	}
-	tlsConfig, err := cred.tlsConfig()
-	if err != nil {
-		return err
-	}
-	cli, err := etcd.Dial([]string{k.localEtcd()}, tlsConfig)
+	cli, err := k.dialEtcd(share)
 	if err != nil {
 		return err
 	}
@@ -542,10 +532,10 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	case joining:
 		return nil, failed(connect.CodeFailedPrecondition, "the node started joining the cluster at %s; finish the join or remove its member and reinstall", c.Endpoint)
 	}
-	if _, err := os.Stat(k.Paths.EtcdInitialCluster()); err == nil {
-		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	if started, err := knode.HasInitialCluster(k.Paths); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
+	} else if started {
+		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
 	}
 	// A second bootstrap would start a second cluster.
 	if k.ClusterAnswers(ctx, c, share) {
@@ -555,7 +545,7 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	if err := knode.WritePin(k.Paths, ips); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	if err := install.WriteFile(k.Paths.Bootstrapped(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+	if err := knode.MarkBootstrapped(k.Paths, time.Now()); err != nil {
 		return nil, failed(connect.CodeInternal, "record the bootstrap: %v", err)
 	}
 	if err := knode.RenderStaticPods(k.Paths); err != nil {

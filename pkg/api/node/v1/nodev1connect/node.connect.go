@@ -95,7 +95,8 @@ type NodeServiceClient interface {
 	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
 	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
 	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
-	// unpins its addresses. The node joins the cluster again only once it is reinstalled.
+	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
+	// bootstrapped node whose own member does not answer leaves only when forced.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 }
 
@@ -293,7 +294,8 @@ type NodeServiceHandler interface {
 	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
 	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
 	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
-	// unpins its addresses. The node joins the cluster again only once it is reinstalled.
+	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
+	// bootstrapped node whose own member does not answer leaves only when forced.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 }
 
