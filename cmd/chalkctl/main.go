@@ -29,6 +29,8 @@ commands:
   status <node>                                 show an installed node's status
   logs <node> [-f] [--unit U]                   show a node's journal
   reboot <node>                                 reboot a node
+  bootstrap <node>                              initialise the cluster on a control-plane node
+  kubeconfig [--ttl 8760h] [--out FILE]         write an admin kubeconfig
   sign                                          sign the boot loader and UKIs of a disk image
 
 Run chalkctl <command> -h for the flags of a command.`
@@ -93,6 +95,10 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.genSecrets(rest[1:])
 	case cmd == "secrets" && len(rest) > 0 && rest[0] == "upgrade":
 		return a.secretsUpgrade(ctx, rest[1:])
+	case cmd == "bootstrap":
+		return a.bootstrap(ctx, rest)
+	case cmd == "kubeconfig":
+		return a.kubeconfig(ctx, rest)
 	case cmd == "recovery-key":
 		return a.recoveryKey(ctx, rest)
 	case cmd == "install":

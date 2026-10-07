@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -186,5 +187,101 @@ func TestApplyIdentityDeliversShare(t *testing.T) {
 	}
 	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
 		t.Error("apply-identity without --kubernetes-share restarted the kubelet")
+	}
+}
+func TestKubeconfig(t *testing.T) {
+	ta := newTestApp(t)
+	out := filepath.Join(ta.dir, "kubeconfig")
+	args := []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir, "--out", out, "--server", "https://127.0.0.1:16443", "--ttl", "1h"}
+	if err := ta.run(context.Background(), args); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(out); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("kubeconfig: %v, %v", info, err)
+	}
+	data, _ := os.ReadFile(out)
+	var kc struct {
+		Clusters []struct {
+			Name    string `json:"name"`
+			Cluster struct {
+				Server     string `json:"server"`
+				ServerName string `json:"tls-server-name"`
+			} `json:"cluster"`
+		} `json:"clusters"`
+		Users []struct {
+			User struct {
+				Cert []byte `json:"client-certificate-data"`
+			} `json:"user"`
+		} `json:"users"`
+	}
+	if err := json.Unmarshal(data, &kc); err != nil {
+		t.Fatal(err)
+	}
+	c := kc.Clusters[0]
+	if c.Name != "lab" || c.Cluster.Server != "https://127.0.0.1:16443" || c.Cluster.ServerName != "10.0.0.10" {
+		t.Errorf("cluster = %+v", c)
+	}
+	cert, err := pki.ParseCertificate(kc.Users[0].User.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, _ := pki.ParseCertificate([]byte(ta.secrets.Kubernetes.CA.Certificate))
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		t.Errorf("admin certificate: %v", err)
+	}
+	if !slices.Equal(cert.Subject.Organization, []string{"chalkos:cluster-admins"}) || cert.NotAfter.Sub(cert.NotBefore).Hours() > 2 {
+		t.Errorf("admin certificate %v until %v", cert.Subject, cert.NotAfter)
+	}
+	if err := ta.run(context.Background(), args); err == nil {
+		t.Error("replaced an existing kubeconfig without --force")
+	}
+	if err := ta.run(context.Background(), append(args, "--force")); err != nil {
+		t.Errorf("--force: %v", err)
+	}
+	versionOne(t, ta)
+	if err := ta.run(context.Background(), append(args, "--force")); err == nil || !strings.Contains(err.Error(), "chalkctl secrets upgrade") {
+		t.Errorf("err = %v, want a refusal naming chalkctl secrets upgrade", err)
+	}
+}
+
+func TestStatusShowsKubernetes(t *testing.T) {
+	ta := newTestApp(t)
+	withKind(t, ta, manifest.KindWorker)
+	s, _ := kubernetesNode(t, ta)
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ta.stdout.String(), "kubernetes worker: no share") {
+		t.Errorf("status without share = %q", ta.stdout)
+	}
+	if err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1", "--kubernetes-share"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ta.stdout.String(), "kubernetes worker: joined, node ready: True") {
+		t.Errorf("status = %q", ta.stdout)
+	}
+}
+
+func TestBootstrapNeedsControlPlane(t *testing.T) {
+	ta := newTestApp(t)
+	withKind(t, ta, manifest.KindWorker)
+	s, _ := kubernetesNode(t, ta)
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "not a control-plane node") {
+		t.Errorf("err = %v, want a refusal for a worker", err)
+	}
+	// A control-plane role whose node runs no Kubernetes: the node refuses.
+	withKind(t, ta, manifest.KindControlPlane)
+	plain, _ := installedNode(t, ta, []byte(`{}`))
+	addr = ta.startNode(t, plain)
+	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "has no Kubernetes") {
+		t.Errorf("err = %v, want the node's refusal", err)
 	}
 }

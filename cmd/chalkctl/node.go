@@ -678,6 +678,13 @@ func (a *app) status(ctx context.Context, args []string) error {
 			fmt.Fprintf(a.stdout, "disk %s: %s\n", d.Name, d.Error)
 		}
 	}
+	if k := s.Kubernetes; k != nil {
+		line := fmt.Sprintf("kubernetes %s: %s", k.Kind, k.State)
+		if k.NodeReady != "" {
+			line += ", node ready: " + k.NodeReady
+		}
+		fmt.Fprintln(a.stdout, line)
+	}
 	for _, u := range s.FailedUnits {
 		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
 	}
