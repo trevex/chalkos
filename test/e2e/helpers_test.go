@@ -68,14 +68,17 @@ func startVM(t *testing.T, dir, vars string, disks ...lab.Disk) *lab.VM {
 	return bootVM(t, lab.VMConfig{Dir: dir, FirmwareVars: vars, Disks: disks})
 }
 
-// bootVM starts a VM with the test firmware, a TPM, and the resources an image needs.
+// bootVM starts a VM with the test firmware, a TPM, and the resources an image needs: 2 GiB of
+// memory unless the configuration asks for another amount.
 func bootVM(t *testing.T, c lab.VMConfig) *lab.VM {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	c.Name = "node"
 	c.FirmwareCode = os.Getenv("CHALKLAB_OVMF_CODE")
-	c.MemoryMB = 2048
+	if c.MemoryMB == 0 {
+		c.MemoryMB = 2048
+	}
 	c.CPUs = 2
 	c.TPM = true
 	vm, err := lab.StartVM(ctx, c)

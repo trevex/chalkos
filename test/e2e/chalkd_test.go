@@ -30,14 +30,15 @@ type node struct {
 	addr string
 }
 
-// startNode boots a VM with a user-mode NIC that forwards a host port to chalkd.
+// startNode boots a VM with a user-mode NIC that forwards a host port to chalkd, besides the
+// forwards the configuration has.
 func startNode(t *testing.T, c lab.VMConfig) *node {
 	t.Helper()
 	port, err := lab.FreePort()
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Forwards = []lab.Forward{{Host: port, Guest: 50000}}
+	c.Forwards = append([]lab.Forward{{Host: port, Guest: 50000}}, c.Forwards...)
 	return &node{vm: bootVM(t, c), addr: fmt.Sprintf("127.0.0.1:%d", port)}
 }
 
@@ -95,14 +96,16 @@ func waitForChalkd(t *testing.T, n *node, timeout time.Duration) *nodev1.InfoRes
 	}
 }
 
-// chalkctl runs the chalkctl binary for the node against the test cluster, with the named
-// manifest of CHALKLAB_MANIFESTS.
+// chalkctl runs the chalkctl binary for the node, or for the cluster when n is nil, against the
+// test cluster, with the named manifest of CHALKLAB_MANIFESTS.
 func chalkctl(t *testing.T, n *node, manifest string, args ...string) (string, error) {
 	t.Helper()
 	args = append(args,
 		"--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), manifest+".json"),
-		"--secrets", os.Getenv("CHALKLAB_SECRETS"),
-		"--endpoint", n.addr)
+		"--secrets", os.Getenv("CHALKLAB_SECRETS"))
+	if n != nil {
+		args = append(args, "--endpoint", n.addr)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()

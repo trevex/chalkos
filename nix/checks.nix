@@ -72,6 +72,11 @@ in
   e2e-storage = e2e "storage" "^TestStorage" {
     CHALKLAB_STORAGE_IMAGE_DIR = "${chalkPkgs.test-storage-image}";
   };
+  e2e-kubernetes = e2e "kubernetes" "^TestKubernetesCluster$" {
+    CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR = "${chalkPkgs.test-kubernetes-controlplane-image}";
+    CHALKLAB_K8S_WORKER_IMAGE_DIR = "${chalkPkgs.test-kubernetes-worker-image}";
+    CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";
+  };
 
   # The generated API code is committed; it must match what buf generates from the proto files.
   api-generated =
