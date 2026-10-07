@@ -70,9 +70,16 @@ type electionNode struct {
 	election *vipElection
 	addrs    *fakeAddresses
 	healthy  atomic.Bool
+	// renewals counts the renewals of its leases that succeeded.
+	renewals atomic.Int32
 	stop     context.CancelFunc
 	done     chan struct{}
 }
+
+// electionTTL is the lifetime in seconds of the leases in the election tests. Each renewal gets a
+// sixth of it, and the holder releases the VIPs a quarter of it before etcd may let the lease
+// expire: a lifetime of seconds keeps a busy machine's delays well within both.
+const electionTTL = 6
 
 // startElection runs the election of n nodes on the etcd cluster of m.
 func startElection(t *testing.T, ca pki.CertKey, m *etcdtest.Member, n int) ([]*electionNode, *holders) {
@@ -80,7 +87,7 @@ func startElection(t *testing.T, ca pki.CertKey, m *etcdtest.Member, n int) ([]*
 	h := &holders{}
 	var nodes []*electionNode
 	for i := range n {
-		nodes = append(nodes, startNode(t, ca, m.ClientURL, "cp"+string(rune('1'+i)), 1, h))
+		nodes = append(nodes, startNode(t, ca, m.ClientURL, "cp"+string(rune('1'+i)), electionTTL, h))
 	}
 	return nodes, h
 }
@@ -116,6 +123,17 @@ func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *h
 	if configure != nil {
 		configure(node.election)
 	}
+	keepAlive := node.election.keepAlive
+	if keepAlive == nil {
+		keepAlive = cli.KeepAliveOnce
+	}
+	node.election.keepAlive = func(ctx context.Context, id clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error) {
+		resp, err := keepAlive(ctx, id)
+		if err == nil && resp.TTL > 0 {
+			node.renewals.Add(1)
+		}
+		return resp, err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	node.stop = cancel
 	go func() {
@@ -149,7 +167,9 @@ func TestVIPOneHolder(t *testing.T) {
 	m := etcdtest.StartNew(t, ca, "cp0")
 	nodes, h := startElection(t, ca, m, 3)
 	first := holder(t, nodes)
-	time.Sleep(time.Second)
+	// Three renewals span the lease's lifetime.
+	renewed := first.renewals.Load()
+	eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+3 })
 	if now, most := h.count(); now != 1 || most != 1 {
 		t.Errorf("%d nodes hold the VIPs, at most %d; want one", now, most)
 	}
@@ -253,9 +273,9 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
 	proxy := etcdtest.NewProxy(t, m.ClientURL, 400*time.Millisecond)
-	first := startNode(t, ca, proxy.URL, "cp1", 3, h)
+	first := startNode(t, ca, proxy.URL, "cp1", electionTTL, h)
 	holder(t, []*electionNode{first})
-	second := startNode(t, ca, m.ClientURL, "cp2", 3, h)
+	second := startNode(t, ca, m.ClientURL, "cp2", electionTTL, h)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cli := second.election.client
@@ -265,7 +285,8 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	}
 	lease := clientv3.LeaseID(resp.Kvs[0].Lease)
 	// Renewals go back and forth a few times.
-	time.Sleep(2 * time.Second)
+	renewed := first.renewals.Load()
+	eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+2 })
 	revoked := make(chan time.Time, 1)
 	go func() {
 		for ctx.Err() == nil {
@@ -304,10 +325,12 @@ func TestVIPKeptWhileRenewed(t *testing.T) {
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
 	proxy := etcdtest.NewProxy(t, m.ClientURL, 200*time.Millisecond)
-	first := startNode(t, ca, proxy.URL, "cp1", 2, h)
+	first := startNode(t, ca, proxy.URL, "cp1", electionTTL, h)
 	holder(t, []*electionNode{first})
 	released := first.addrs.released.Load()
-	time.Sleep(5 * time.Second)
+	// Three renewals span the lease's lifetime.
+	renewed := first.renewals.Load()
+	eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+3 })
 	if first.addrs.released.Load() != released || !first.addrs.held.Load() {
 		t.Error("the holder dropped the VIPs while its lease was renewed")
 	}
@@ -320,7 +343,7 @@ func TestVIPKeptWhenOneRenewalStalls(t *testing.T) {
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
 	var calls atomic.Int32
-	first := startNodeWith(t, ca, m.ClientURL, "cp1", 2, h, func(v *vipElection) {
+	first := startNodeWith(t, ca, m.ClientURL, "cp1", electionTTL, h, func(v *vipElection) {
 		v.keepAlive = func(ctx context.Context, id clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error) {
 			if calls.Add(1) == 1 {
 				<-ctx.Done()
@@ -331,10 +354,8 @@ func TestVIPKeptWhenOneRenewalStalls(t *testing.T) {
 	})
 	holder(t, []*electionNode{first})
 	released := first.addrs.released.Load()
-	time.Sleep(5 * time.Second)
-	if calls.Load() < 3 {
-		t.Fatalf("%d renewals, want the stalled one and later ones", calls.Load())
-	}
+	// The third renewal starts after the holder would have released the VIPs without the second.
+	eventually(t, "the stalled renewal and later ones", func() bool { return calls.Load() >= 3 })
 	if first.addrs.released.Load() != released || !first.addrs.held.Load() {
 		t.Error("the holder dropped the VIPs after one stalled renewal")
 	}
@@ -350,7 +371,7 @@ func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
 	var failed atomic.Int32
 	var mu sync.Mutex
 	var lastSent time.Time
-	first := startNodeWith(t, ca, m.ClientURL, "cp1", 2, h, func(v *vipElection) {
+	first := startNodeWith(t, ca, m.ClientURL, "cp1", electionTTL, h, func(v *vipElection) {
 		v.keepAlive = func(ctx context.Context, id clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error) {
 			if failing.Load() {
 				failed.Add(1)
@@ -367,7 +388,7 @@ func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
 		}
 	})
 	holder(t, []*electionNode{first})
-	time.Sleep(time.Second)
+	eventually(t, "a renewal", func() bool { return first.renewals.Load() > 0 })
 	failing.Store(true)
 	eventually(t, "the release", func() bool { return !first.addrs.held.Load() })
 	first.addrs.mu.Lock()
@@ -376,7 +397,7 @@ func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
 	mu.Lock()
 	last := lastSent
 	mu.Unlock()
-	expiry := last.Add(2 * time.Second)
+	expiry := last.Add(electionTTL * time.Second)
 	if last.IsZero() {
 		t.Fatal("no renewal succeeded before they failed")
 	}
@@ -457,7 +478,7 @@ func TestVIPAnnouncesAddedAddressesOnly(t *testing.T) {
 	if err := a.Acquire(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(400 * time.Millisecond)
+	eventually(t, "the announcements", func() bool { return count(missing) >= 3 })
 	if count(present) != 0 || count(missing) != 3 {
 		t.Errorf("announced the present address %d times and the added one %d times, want 0 and 3", count(present), count(missing))
 	}
