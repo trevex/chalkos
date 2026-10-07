@@ -1,6 +1,7 @@
 # Evaluation tests for the cluster definition; returns lib.runTests failures (empty on success).
 {
   lib,
+  pkgs,
   mkCluster,
   flakeModule,
 }:
@@ -1126,6 +1127,190 @@ lib.runTests {
       "chalkos:selfnodeclient" = "system:nodes";
       "chalkos:apiserver-kubelet" = "chalkos:kube-apiserver-kubelet-client";
       "chalkos:node-proxier" = "kube-proxy";
+    };
+  };
+  testKubernetesOnlyInKubernetesRoles = {
+    expr =
+      let
+        image = kind: role (cluster [ { chalkos.roles.worker.kubernetes.kind = kind; } ]);
+        services = config: {
+          kubelet = config.systemd.services ? kubelet;
+          containerd = config.virtualisation.containerd.enable;
+          prepare = config.systemd.services ? chalkos-kubernetes;
+        };
+      in
+      {
+        none = services (image null);
+        worker = services (image "worker");
+        prepare = lib.hasSuffix "/bin/chalkd prepare-kubernetes" (image "worker")
+        .systemd.services.chalkos-kubernetes.serviceConfig.ExecStart;
+      };
+    expected = {
+      none = {
+        kubelet = false;
+        containerd = false;
+        prepare = false;
+      };
+      worker = {
+        kubelet = true;
+        containerd = true;
+        prepare = true;
+      };
+      prepare = true;
+    };
+  };
+  testControlPlaneImage = {
+    expr =
+      let
+        c = cluster [
+          {
+            chalkos.roles.worker.kubernetes.kind = "controlplane";
+            chalkos.cluster.manifests = [
+              {
+                apiVersion = "v1";
+                kind = "Namespace";
+                metadata.name = "apps";
+              }
+            ];
+          }
+        ];
+        config = role c;
+        clusterFile = builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text;
+      in
+      {
+        inherit (clusterFile) kind version endpoint;
+        apiServer = clusterFile.images.kubeAPIServer;
+        firewall = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
+        # The built-in objects, then the cluster's own.
+        manifests =
+          builtins.fromJSON config.environment.etc."chalkos/kubernetes/manifests.json".text
+          == c.cluster.kubernetes.addons ++ c.cluster.manifests;
+        etcdDir = lib.elem "d /var/lib/etcd 0700 root root -" config.systemd.tmpfiles.rules;
+      };
+    expected = {
+      kind = "controlplane";
+      version = "1.37.1";
+      endpoint = "https://10.0.0.1:6443";
+      apiServer = "registry.k8s.io/kube-apiserver:v1.37.1";
+      firewall = true;
+      manifests = true;
+      etcdDir = true;
+    };
+  };
+  testWorkerImageHasNoManifests = {
+    expr =
+      let
+        config = role (cluster [ ]);
+      in
+      {
+        manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
+        apiServerPort = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
+      };
+    expected = {
+      manifests = false;
+      apiServerPort = false;
+    };
+  };
+  testCNIPluginsFollowProvider = {
+    expr =
+      let
+        dirs =
+          provider:
+          (role (cluster [ { chalkos.cni.provider = provider; } ]))
+          .virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime".cni.bin_dirs;
+      in
+      {
+        flannel = dirs "flannel";
+        none = dirs "none";
+      };
+    expected = {
+      flannel = [
+        "${pkgs.cni-plugins}/bin"
+        "${pkgs.cni-plugin-flannel}/bin"
+      ];
+      none = [ "${pkgs.cni-plugins}/bin" ];
+    };
+  };
+  testRegistryMirrors = {
+    expr =
+      let
+        etc =
+          (role (cluster [
+            {
+              chalkos.cluster.registries.mirrors = {
+                "docker.io" = [
+                  "http://10.0.2.100:5000"
+                  "https://mirror.example.com"
+                ];
+                "ghcr.io" = [ "http://10.0.2.100:5000" ];
+              };
+            }
+          ])).environment.etc;
+      in
+      {
+        docker = etc."containerd/certs.d/docker.io/hosts.toml".text;
+        ghcr = etc."containerd/certs.d/ghcr.io/hosts.toml".text;
+      };
+    expected = {
+      docker = ''
+        server = "https://registry-1.docker.io"
+
+        [host."http://10.0.2.100:5000"]
+          capabilities = ["pull", "resolve"]
+
+        [host."https://mirror.example.com"]
+          capabilities = ["pull", "resolve"]
+      '';
+      ghcr = ''
+        server = "https://ghcr.io"
+
+        [host."http://10.0.2.100:5000"]
+          capabilities = ["pull", "resolve"]
+      '';
+    };
+  };
+  testKubeletConfiguration = {
+    expr =
+      let
+        config = role (cluster [
+          {
+            chalkos.cluster.kubernetes = {
+              dnsIP = "10.100.0.10";
+              domain = "lab.local";
+              extraArgs.kubelet.v = "2";
+            };
+          }
+        ]);
+        kubelet = builtins.fromJSON config.environment.etc."chalkos/kubernetes/kubelet.json".text;
+      in
+      {
+        inherit (kubelet)
+          clusterDNS
+          clusterDomain
+          cgroupDriver
+          rotateCertificates
+          serverTLSBootstrap
+          staticPodPath
+          resolvConf
+          ;
+        anonymous = kubelet.authentication.anonymous.enabled;
+        authorization = kubelet.authorization.mode;
+        extraArg = lib.hasSuffix "$KUBELET_ARGS --v=2" config.systemd.services.kubelet.serviceConfig.ExecStart;
+        noFullPackage =
+          !lib.hasInfix "-kubernetes-1.37.1/" config.systemd.services.kubelet.serviceConfig.ExecStart;
+      };
+    expected = {
+      clusterDNS = [ "10.100.0.10" ];
+      clusterDomain = "lab.local";
+      cgroupDriver = "systemd";
+      rotateCertificates = true;
+      serverTLSBootstrap = true;
+      staticPodPath = "/run/chalkos/kubernetes/manifests";
+      resolvConf = "/run/systemd/resolve/resolv.conf";
+      anonymous = false;
+      authorization = "Webhook";
+      extraArg = true;
+      noFullPackage = true;
     };
   };
 }

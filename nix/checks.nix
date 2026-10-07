@@ -117,6 +117,7 @@ in
   eval =
     let
       failures = import ../test/nix/eval.nix {
+        inherit pkgs;
         inherit (pkgs) lib;
         inherit (self.lib) mkCluster;
         flakeModule = self.flakeModules.default;
