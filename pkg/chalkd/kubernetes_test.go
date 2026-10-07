@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -68,12 +71,14 @@ func nodeIP(ip string) knode.Resolver {
 }
 
 // withoutAddress leaves s as a preparation that found no address leaves a node, for the reason
-// given; "" stands for a preparation still waiting.
+// given; "" stands for a preparation still waiting. Neither marks the node prepared.
 func withoutAddress(t *testing.T, s *Server, reason string) {
 	t.Helper()
 	p := s.Kubernetes.Paths
-	if err := os.Remove(p.NodeIP()); err != nil {
-		t.Fatal(err)
+	for _, f := range []string{p.Prepared(), p.NodeIP()} {
+		if err := os.Remove(f); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if reason != "" {
 		write(t, p.NodeIPError(), reason+"\n")
@@ -140,7 +145,12 @@ func TestBootstrapRefusals(t *testing.T) {
 	etcdData, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	write(t, filepath.Join(etcdData.Kubernetes.Paths.EtcdData, "member", "snap", "db"), "")
 	noAddress, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	withoutAddress(t, noAddress, "")
+	withoutAddress(t, noAddress, "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)")
+	// A preparation that picked the address and still writes the certificates.
+	preparing, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	if err := os.Remove(preparing.Kubernetes.Paths.Prepared()); err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range map[string]struct {
 		s    *Server
 		want string
@@ -149,18 +159,58 @@ func TestBootstrapRefusals(t *testing.T) {
 		"worker":         {worker, "is a worker"},
 		"no share":       {noShare, "no Kubernetes share"},
 		"etcd with data": {etcdData, "holds etcd data"},
-		"no address":     {noAddress, "waiting for the node's address"},
+		"no address":     {noAddress, "no node address matches validSubnets 192.168.100.0/24"},
+		"preparing":      {preparing, "the node's Kubernetes files are not prepared yet; see chalkctl logs <node> --unit chalkos-kubernetes"},
 	} {
+		var before map[string]string
+		if k := tc.s.Kubernetes; k != nil {
+			before = files(t, k.Paths.State, k.Paths.Run, k.Paths.EtcdData)
+		}
 		_, err := bootstrap(tc.s, context.Background())
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
 		if k := tc.s.Kubernetes; k != nil {
-			if bootstrapped, _ := knode.Bootstrapped(k.Paths); bootstrapped {
-				t.Errorf("%s: the refused node is marked bootstrapped", name)
+			after := files(t, k.Paths.State, k.Paths.Run, k.Paths.EtcdData)
+			var changed []string
+			for path := range maps.Keys(before) {
+				if after[path] != before[path] {
+					changed = append(changed, path)
+				}
+			}
+			for path := range maps.Keys(after) {
+				if _, ok := before[path]; !ok {
+					changed = append(changed, path)
+				}
+			}
+			if len(changed) > 0 {
+				t.Errorf("%s: the refused bootstrap changed %v", name, changed)
 			}
 		}
 	}
+}
+
+// files describes the files under dirs by their size, mode and modification time.
+func files(t *testing.T, dirs ...string) map[string]string {
+	t.Helper()
+	found := map[string]string{}
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			found[path] = fmt.Sprintf("%d %v %v", info.Size(), info.Mode(), info.ModTime())
+			return nil
+		})
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+	}
+	return found
 }
 
 func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
@@ -250,21 +300,27 @@ func TestStatusKubernetes(t *testing.T) {
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
 	noAddress, _ := kubernetesServer(t, k8s.KindWorker, true)
 	withoutAddress(t, noAddress, "no node address matches the default filter (the node has no addresses)")
-	waitingForAddress, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	withoutAddress(t, waitingForAddress, "")
+	preparing, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	withoutAddress(t, preparing, "")
+	// The preparation picked the address and still writes the certificates.
+	writing, _ := kubernetesServer(t, k8s.KindWorker, true)
+	if err := os.Remove(writing.Kubernetes.Paths.Prepared()); err != nil {
+		t.Fatal(err)
+	}
 	worker.Kubernetes.NodeReady = func(context.Context) (string, error) { return "", errors.New("connection refused") }
 	plain, _ := installedServer(t, section("", ""), false)
 	for name, tc := range map[string]struct {
 		s    *Server
 		want *nodev1.KubernetesStatus
 	}{
-		"waiting":                 {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap"}},
-		"bootstrapped":            {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
-		"no share":                {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
-		"no address":              {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "no node address matches the default filter (the node has no addresses)"}},
-		"waiting for the address": {waitingForAddress, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for the node's address"}},
-		"worker":                  {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
-		"no Kubernetes":           {plain, nil},
+		"waiting":       {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap"}},
+		"bootstrapped":  {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
+		"no share":      {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
+		"no address":    {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "no node address matches the default filter (the node has no addresses)"}},
+		"preparing":     {preparing, &nodev1.KubernetesStatus{Kind: "controlplane", State: "preparing"}},
+		"writing":       {writing, &nodev1.KubernetesStatus{Kind: "worker", State: "preparing"}},
+		"worker":        {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
+		"no Kubernetes": {plain, nil},
 	} {
 		resp, err := tc.s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
 		if err != nil {
@@ -388,6 +444,41 @@ func TestControlPlaneLoopRestarts(t *testing.T) {
 	}
 	if second.CA.Certificate != want.CA.Certificate {
 		t.Error("the restarted loop did not read the share again")
+	}
+}
+
+// chalkd starts before the preparation at boot; the control plane's loop waits for it.
+func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	p := k.Paths
+	write(t, p.Bootstrapped(), "")
+	if err := os.Remove(p.Prepared()); err != nil {
+		t.Fatal(err)
+	}
+	k.RestartBackoff, k.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
+	runs := make(chan struct{}, 1)
+	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+		select {
+		case runs <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	k.Start()
+	select {
+	case <-runs:
+		t.Fatal("the control plane's loop ran before the node's files were prepared")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runs:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the control plane's loop did not start once the node's files were prepared")
 	}
 }
 

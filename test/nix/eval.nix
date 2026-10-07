@@ -1707,14 +1707,15 @@ lib.runTests {
       };
     };
   };
-  testChalkdAfterKubernetesPreparation = {
+  # chalkd is the only way to the node, so it answers while the preparation waits for the node's
+  # address and after it failed; it waits for the preparation's marker instead.
+  testChalkdStartsWithoutKubernetesPreparation = {
     expr =
       let
         chalkd = (role (cluster [ ])).systemd.services.chalkd;
       in
       {
         after = lib.elem "chalkos-kubernetes.service" chalkd.after;
-        # chalkd must start even when the preparation fails.
         depends = lib.any (lib.elem "chalkos-kubernetes.service") [
           chalkd.requires
           chalkd.wants
@@ -1723,7 +1724,7 @@ lib.runTests {
         ];
       };
     expected = {
-      after = true;
+      after = false;
       depends = false;
     };
   };

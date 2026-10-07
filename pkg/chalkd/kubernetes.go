@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"sync"
@@ -176,7 +177,16 @@ func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n i
 	}
 }
 
+// errNotPrepared stops the control plane's loop until the preparation finished; its backoff
+// tries again.
+var errNotPrepared = errors.New("the node's Kubernetes files are not prepared yet")
+
 func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int)) error {
+	if prepared, err := knode.Prepared(k.Paths); err != nil {
+		return err
+	} else if !prepared {
+		return errNotPrepared
+	}
 	share, err := knode.ReadShare(k.Paths)
 	if err != nil {
 		return err
@@ -320,8 +330,14 @@ func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
 	if _, err := knode.ReadShare(k.Paths); err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
-	// The static pods advertise the node's address.
-	if problem := knode.NodeIPProblem(k.Paths); problem != "" {
+	// The static pods advertise the node's address and read the certificates the preparation
+	// writes, which runs at boot while chalkd answers already.
+	switch problem, err := preparation(k.Paths); {
+	case err != nil:
+		return nil, failed(connect.CodeInternal, "%v", err)
+	case problem == preparing:
+		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs <node> --unit chalkos-kubernetes", errNotPrepared)
+	case problem != "":
 		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
 	}
 	if err := install.WriteFile(k.Paths.Bootstrapped(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
@@ -332,6 +348,24 @@ func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
 	}
 	log.Print("bootstrapped: the control plane starts")
 	return k.start(), nil
+}
+
+// preparing is the state of a node whose Kubernetes files are being prepared, or whose
+// preparation failed for another reason than its address.
+const preparing = "preparing"
+
+// preparation says why the node's Kubernetes files cannot be used: why the node has no address,
+// preparing until the preparation finished, or "" once it did.
+func preparation(p knode.Paths) (string, error) {
+	prepared, err := knode.Prepared(p)
+	if err != nil {
+		return "", err
+	}
+	// A preparation that found no address says why.
+	if _, err := os.Stat(p.NodeIPError()); !prepared && errors.Is(err, fs.ErrNotExist) {
+		return preparing, nil
+	}
+	return knode.NodeIPProblem(p), nil
 }
 
 // status describes the node's Kubernetes state.
@@ -345,7 +379,9 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		st.State = "no share"
 		return st, nil
 	}
-	if problem := knode.NodeIPProblem(k.Paths); problem != "" {
+	if problem, err := preparation(k.Paths); err != nil {
+		return nil, err
+	} else if problem != "" {
 		st.State = problem
 		return st, nil
 	}

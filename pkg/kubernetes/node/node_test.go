@@ -120,6 +120,10 @@ func TestPrepareWithoutShare(t *testing.T) {
 	if exists(p.Kubeconfig()) {
 		t.Error("a node without a share has a kubelet kubeconfig")
 	}
+	// There is nothing more to prepare until a share arrives.
+	if !exists(p.Prepared()) {
+		t.Error("a node without a share is not marked prepared")
+	}
 }
 
 func TestPrepareWorker(t *testing.T) {
@@ -546,5 +550,45 @@ func TestNodeIPProblem(t *testing.T) {
 	}
 	if got := NodeIPProblem(p); got != "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)" {
 		t.Errorf("without an address: %q", got)
+	}
+}
+
+// chalkd uses the node's Kubernetes files once Prepare marked them complete: the marker goes
+// first and comes back last, after the static pods, and only when Prepare succeeded.
+func TestPrepareMarksPrepared(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, p.Bootstrapped(), "")
+	if err := Prepare(p, now, picked); err != nil {
+		t.Fatal(err)
+	}
+	if prepared, err := Prepared(p); err != nil || !prepared {
+		t.Fatalf("after a preparation: prepared = %v, %v", prepared, err)
+	}
+
+	marked := true
+	noAddress := func(kubernetes.Cluster, kubernetes.Node) (net.IP, error) {
+		marked = exists(p.Prepared())
+		return nil, errors.New("no node address matches the default filter")
+	}
+	if err := Prepare(p, now, noAddress); err == nil {
+		t.Fatal("prepared without an address")
+	}
+	if marked {
+		t.Error("the marker outlived the start of the preparation")
+	}
+	if exists(p.Prepared()) {
+		t.Error("a preparation without an address is marked prepared")
+	}
+
+	// Refusing the static pods, the last step, leaves no marker either.
+	if err := Prepare(p, now, picked); err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.EtcdInitialised(), "")
+	if err := Prepare(p, now, picked); !errors.Is(err, ErrEtcdDataMissing) {
+		t.Fatalf("err = %v, want missing etcd data", err)
+	}
+	if exists(p.Prepared()) {
+		t.Error("a preparation that refused the static pods is marked prepared")
 	}
 }

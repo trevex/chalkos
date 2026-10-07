@@ -69,6 +69,10 @@ func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
 // NodeIPError holds why the node has no address.
 func (p Paths) NodeIPError() string { return filepath.Join(p.Run, "node-ip.error") }
 
+// Prepared marks that Prepare finished: chalkd starts before it at boot and must not read the
+// files it is still writing.
+func (p Paths) Prepared() string { return filepath.Join(p.Run, "prepared") }
+
 // EtcdInitialised marks that etcd answered ready after the bootstrap, so its data exists.
 func (p Paths) EtcdInitialised() string { return filepath.Join(p.State, "etcd-initialised") }
 
@@ -108,6 +112,11 @@ func Bootstrapped(p Paths) (bool, error) {
 // EtcdInitialised reports whether etcd on this node answered ready after the bootstrap.
 func EtcdInitialised(p Paths) (bool, error) {
 	return marked(p.EtcdInitialised())
+}
+
+// Prepared reports whether Prepare finished and succeeded since it last started.
+func Prepared(p Paths) (bool, error) {
+	return marked(p.Prepared())
 }
 
 // MarkEtcdInitialised records that etcd answered ready; it keeps an existing marker.
@@ -223,8 +232,19 @@ func NodeIPProblem(p Paths) string {
 
 // Prepare picks the node's address and writes the kubelet's files and, on a control-plane node,
 // the control plane's certificates, and its static pods once the node is bootstrapped. A node
-// without a share or an address gets none of them, so its kubelet does not start.
+// without a share or an address gets none of them, so its kubelet does not start. The node is
+// marked prepared only once all of them are written.
 func Prepare(p Paths, now time.Time, resolve Resolver) error {
+	if err := os.Remove(p.Prepared()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := prepare(p, now, resolve); err != nil {
+		return err
+	}
+	return install.WriteFile(p.Prepared(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+func prepare(p Paths, now time.Time, resolve Resolver) error {
 	// An address picked before must not outlive an attempt that fails.
 	for _, f := range []string{p.NodeIP(), p.NodeIPError()} {
 		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {

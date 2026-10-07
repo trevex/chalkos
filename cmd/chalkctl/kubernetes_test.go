@@ -262,8 +262,16 @@ func TestStatusShowsKubernetes(t *testing.T) {
 		t.Fatal(err)
 	}
 	ta.stdout.Reset()
-	// The address the node's preparation picks once it has a share.
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ta.stdout.String(), "kubernetes worker: preparing") {
+		t.Errorf("status before the preparation = %q", ta.stdout)
+	}
+	ta.stdout.Reset()
+	// The address the node's preparation picks once it has a share, and its marker.
 	writeFile(t, s.Kubernetes.Paths.NodeIP(), "10.0.0.11\n")
+	writeFile(t, s.Kubernetes.Paths.Prepared(), "")
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}

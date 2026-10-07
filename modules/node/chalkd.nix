@@ -41,9 +41,8 @@ in
       # Install enrolls TPM2 keyslots. Pulling tpm2.target in would wait for a TPM on nodes
       # that have none.
       "tpm2.target"
-      # chalkd starts the control plane's loop once the node's Kubernetes files are prepared.
-      # Ordering alone: chalkd starts even when that fails, as it is the only way to the node.
-      "chalkos-kubernetes.service"
+      # Not chalkos-kubernetes.service: chalkd must answer while the preparation waits for the
+      # node's address. Bootstrap and the control plane's loop wait for its marker instead.
     ];
     # chalkd is the only way to reach the node, so it never stops restarting.
     startLimitIntervalSec = 0;

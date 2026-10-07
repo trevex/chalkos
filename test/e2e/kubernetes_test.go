@@ -111,10 +111,17 @@ func TestKubernetesCluster(t *testing.T) {
 		t.FailNow()
 	}
 
-	out, err := chalkctl(t, nodes["cp1"], "base", "status", "cp1")
-	if err != nil || !strings.Contains(out, "kubernetes controlplane: waiting for bootstrap") {
-		t.Errorf("status before bootstrap: %v\n%s", err, out)
-	}
+	// chalkd answers while the node's Kubernetes files are still being prepared.
+	waitFor(t, 5*time.Minute, "cp1 to wait for bootstrap", func() error {
+		out, err := chalkctl(t, nodes["cp1"], "base", "status", "cp1")
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(out, "kubernetes controlplane: waiting for bootstrap") {
+			return fmt.Errorf("status before bootstrap:\n%s", out)
+		}
+		return nil
+	})
 	if _, err := chalkctl(t, nodes["cp1"], "base", "bootstrap", "cp1"); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
