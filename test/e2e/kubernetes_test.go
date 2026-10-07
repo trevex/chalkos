@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -38,10 +39,11 @@ var kubernetesNodes = []struct {
 // probeDoneRE is the probe's last fact on the console, written once a boot is up.
 var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 
-// TestKubernetesCluster installs a control plane and a worker, bootstraps the cluster and
-// checks that pods on both nodes reach each other and resolve the API server's service, also
-// after the control plane rebooted with newly issued certificates, and that a worker whose link
-// is cut turns NotReady. The images come from a registry the test serves; with
+// TestKubernetesCluster installs a control plane and a worker that picks its address from a
+// subnet, bootstraps the cluster and checks that the worker registers and accepts VXLAN on that
+// address only, that pods on both nodes reach each other and resolve the API server's service,
+// also after the control plane rebooted with newly issued certificates, and that a worker whose
+// link is cut turns NotReady. The images come from a registry the test serves; with
 // CHALKLAB_K8S_ONLINE=1 the nodes pull them from upstream.
 func TestKubernetesCluster(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR", "CHALKLAB_K8S_WORKER_IMAGE_DIR"}, chalkdEnv...)...)
@@ -145,6 +147,15 @@ func TestKubernetesCluster(t *testing.T) {
 	}
 	if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
 		t.Errorf("status of w1: %v\n%s", err, out)
+	}
+	// cp1 has a fixed address; w1 picks the one in its validSubnets.
+	for name, want := range map[string]string{"cp1": "192.168.100.11", "w1": "192.168.100.12"} {
+		if got := internalIPs(t, ctx, cs, name); !slices.Equal(got, []string{want}) {
+			t.Errorf("InternalIP of %s = %v, want %s", name, got, want)
+		}
+	}
+	if rules := vxlanRules(t, nodes["w1"], "w1"); !slices.Equal(rules, []string{"-d 192.168.100.12/32 -p udp -m udp --dport 8472 -m addrtype --dst-type LOCAL --limit-iface-in -j ACCEPT"}) {
+		t.Errorf("VXLAN rules of w1 = %q, want one to 192.168.100.12 only", rules)
 	}
 	anonymousOnlyHealth(t, ctx, cfg)
 
@@ -361,4 +372,37 @@ func servingCertificate(t *testing.T, port int) *x509.Certificate {
 	}
 	defer conn.Close()
 	return conn.ConnectionState().PeerCertificates[0]
+}
+
+// internalIPs returns the InternalIP addresses the node registered.
+func internalIPs(t *testing.T, ctx context.Context, cs kubernetes.Interface, name string) []string {
+	t.Helper()
+	n, err := cs.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ips []string
+	for _, a := range n.Status.Addresses {
+		if a.Type == corev1.NodeInternalIP {
+			ips = append(ips, a.Address)
+		}
+	}
+	return ips
+}
+
+// vxlanRules returns the rules of the node's VXLAN chain, as the node's preparation logged them
+// in this boot.
+func vxlanRules(t *testing.T, n *node, name string) []string {
+	t.Helper()
+	out, err := chalkctl(t, n, "base", "logs", name, "--unit", "chalkos-kubernetes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rules []string
+	for _, line := range strings.Split(out, "\n") {
+		if _, rule, ok := strings.Cut(line, "-A chalkos-vxlan "); ok {
+			rules = append(rules, strings.TrimSpace(rule))
+		}
+	}
+	return rules
 }

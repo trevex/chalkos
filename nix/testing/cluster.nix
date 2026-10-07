@@ -81,10 +81,12 @@ let
       storage.system.disk = "/dev/vda";
       network = clusterNetwork "52:54:00:00:01:11" "192.168.100.11";
     };
+    # w1 picks its address at boot: the cluster network's, not its user-mode NIC's 10.0.2.15.
     chalkos.nodes.w1 = {
       role = "k8s-worker";
       storage.system.disk = "/dev/vda";
       network = clusterNetwork "52:54:00:00:01:12" "192.168.100.12";
+      kubernetes.validSubnets = [ "192.168.100.0/24" ];
     };
   };
   # The Kubernetes nodes pull every image through the test's registry.
