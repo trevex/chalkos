@@ -1,0 +1,104 @@
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "kube-controller-manager",
+    "namespace": "kube-system",
+    "labels": {
+      "component": "kube-controller-manager",
+      "tier": "control-plane"
+    },
+    "annotations": {
+      "chalkos.dev/certificates": "a7de414b9423758376f4309db40997d4cf4df4a4fe20398e5293d2151ab968b0"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "k8s-certs",
+        "hostPath": {
+          "path": "/run/chalkos/kubernetes/pki",
+          "type": "Directory"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "kube-controller-manager",
+        "image": "registry.k8s.io/kube-controller-manager:v1.37.1",
+        "command": [
+          "kube-controller-manager",
+          "--allocate-node-cidrs=true",
+          "--authentication-kubeconfig=/etc/kubernetes/pki/controller-manager.kubeconfig",
+          "--authorization-kubeconfig=/etc/kubernetes/pki/controller-manager.kubeconfig",
+          "--bind-address=127.0.0.1",
+          "--client-ca-file=/etc/kubernetes/pki/ca.crt",
+          "--cluster-cidr=10.244.0.0/16",
+          "--cluster-name=kubernetes",
+          "--cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt",
+          "--cluster-signing-key-file=/etc/kubernetes/pki/ca.key",
+          "--controllers=*,-bootstrapsigner,-tokencleaner",
+          "--kubeconfig=/etc/kubernetes/pki/controller-manager.kubeconfig",
+          "--leader-elect=true",
+          "--requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt",
+          "--root-ca-file=/etc/kubernetes/pki/ca.crt",
+          "--service-account-private-key-file=/etc/kubernetes/pki/sa.key",
+          "--service-cluster-ip-range=10.96.0.0/12",
+          "--use-service-account-credentials=true"
+        ],
+        "ports": [
+          {
+            "name": "probe-port",
+            "containerPort": 10257,
+            "protocol": "TCP"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "200m"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "k8s-certs",
+            "readOnly": true,
+            "mountPath": "/etc/kubernetes/pki"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/healthz",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTPS"
+          },
+          "initialDelaySeconds": 10,
+          "timeoutSeconds": 15,
+          "periodSeconds": 10,
+          "failureThreshold": 8
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/healthz",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTPS"
+          },
+          "initialDelaySeconds": 10,
+          "timeoutSeconds": 15,
+          "periodSeconds": 10,
+          "failureThreshold": 24
+        },
+        "imagePullPolicy": "IfNotPresent"
+      }
+    ],
+    "hostNetwork": true,
+    "securityContext": {
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "priorityClassName": "system-node-critical"
+  },
+  "status": {}
+}

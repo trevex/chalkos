@@ -1,0 +1,103 @@
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "kube-scheduler",
+    "namespace": "kube-system",
+    "labels": {
+      "component": "kube-scheduler",
+      "tier": "control-plane"
+    },
+    "annotations": {
+      "chalkos.dev/certificates": "42504eef8662701e9b62e3e42f5c1e62eb49442af3dfd04d106cb2ff62dd42b3"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "kubeconfig",
+        "hostPath": {
+          "path": "/run/chalkos/kubernetes/pki/scheduler.kubeconfig",
+          "type": "File"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "kube-scheduler",
+        "image": "registry.k8s.io/kube-scheduler:v1.37.1",
+        "command": [
+          "kube-scheduler",
+          "--authentication-kubeconfig=/etc/kubernetes/scheduler.kubeconfig",
+          "--authorization-kubeconfig=/etc/kubernetes/scheduler.kubeconfig",
+          "--bind-address=127.0.0.1",
+          "--kubeconfig=/etc/kubernetes/scheduler.kubeconfig",
+          "--leader-elect=true"
+        ],
+        "ports": [
+          {
+            "name": "probe-port",
+            "containerPort": 10259,
+            "protocol": "TCP"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "100m"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "kubeconfig",
+            "readOnly": true,
+            "mountPath": "/etc/kubernetes/scheduler.kubeconfig"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/livez",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTPS"
+          },
+          "initialDelaySeconds": 10,
+          "timeoutSeconds": 15,
+          "periodSeconds": 10,
+          "failureThreshold": 8
+        },
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/readyz",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTPS"
+          },
+          "timeoutSeconds": 15,
+          "periodSeconds": 1,
+          "failureThreshold": 3
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/livez",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTPS"
+          },
+          "initialDelaySeconds": 10,
+          "timeoutSeconds": 15,
+          "periodSeconds": 10,
+          "failureThreshold": 24
+        },
+        "imagePullPolicy": "IfNotPresent"
+      }
+    ],
+    "hostNetwork": true,
+    "securityContext": {
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "priorityClassName": "system-node-critical"
+  },
+  "status": {}
+}
