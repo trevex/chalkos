@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/trevex/chalkos/pkg/chalkd"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
@@ -112,5 +114,25 @@ func TestEtcdLeaveForce(t *testing.T) {
 	err = ta.run(context.Background(), ta.args([]string{"etcd", "leave", "n1", "--force"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "etcd's last voter") {
 		t.Errorf("err = %v, want a refusal for the last voter", err)
+	}
+}
+
+// chalkctl moves on to the next control plane when one is unavailable or is no etcd member, and
+// stops at any other answer.
+func TestTryNextControlPlane(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		next bool
+	}{
+		{connect.NewError(connect.CodeUnavailable, errors.New("connection refused")), true},
+		{connect.NewError(connect.CodeDeadlineExceeded, errors.New("timeout")), true},
+		{connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is not an etcd member; ask another control-plane node")), true},
+		{connect.NewError(connect.CodeFailedPrecondition, errors.New("removing cp2 would leave etcd without a healthy quorum; pass --force to remove it anyway")), false},
+		{connect.NewError(connect.CodeNotFound, errors.New("etcd has no member cp9")), false},
+		{errors.New("certificate mismatch"), false},
+	} {
+		if got := tryNextControlPlane(tc.err); got != tc.next {
+			t.Errorf("tryNextControlPlane(%v) = %v, want %v", tc.err, got, tc.next)
+		}
 	}
 }

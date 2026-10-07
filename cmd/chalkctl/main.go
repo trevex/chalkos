@@ -32,7 +32,8 @@ commands:
   bootstrap <node>                              initialise the cluster on a control-plane node
   kubeconfig [--ttl 8760h] [--out FILE]         write an admin kubeconfig
   etcd members [--via NODE]                     list etcd's members and their health
-  etcd remove-member <node|id> [--force]        remove a node's etcd member, such as a stale one
+  etcd remove-member <node|id> [--via NODE] [--force]
+                                                remove a node's etcd member, such as a stale one
   etcd leave <node> [--force]                   take a control-plane node out of etcd
   sign                                          sign the boot loader and UKIs of a disk image
 

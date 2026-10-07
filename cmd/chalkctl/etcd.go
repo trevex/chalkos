@@ -32,7 +32,7 @@ func (a *app) etcd(ctx context.Context, args []string) error {
 }
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
-// control-plane nodes but skip in name order until one answers.
+// control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
 func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip string, call func(conn *client.Conn) error) error {
 	c, err := a.loadCluster(ctx, n.cluster)
 	if err != nil {
@@ -70,13 +70,25 @@ func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip 
 		if err == nil {
 			return nil
 		}
-		// A node that is down cannot answer; another one may.
-		if code := connect.CodeOf(err); via != "" || code != connect.CodeUnavailable && code != connect.CodeDeadlineExceeded {
+		if via != "" || !tryNextControlPlane(err) {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		last = fmt.Errorf("%s: %w", name, err)
 	}
 	return fmt.Errorf("no control-plane node answered: %w", last)
+}
+
+// tryNextControlPlane reports whether another control plane may answer where one failed with
+// err: one that is down, or one that is no etcd member, as before it joined.
+func tryNextControlPlane(err error) bool {
+	switch connect.CodeOf(err) {
+	case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
+		return true
+	case connect.CodeFailedPrecondition:
+		var ce *connect.Error
+		return errors.As(err, &ce) && strings.Contains(ce.Message(), "is not an etcd member")
+	}
+	return false
 }
 
 // controlPlaneNodes returns the cluster's control-plane nodes but skip, in name order.

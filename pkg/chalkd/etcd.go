@@ -55,6 +55,7 @@ func (k *Kubernetes) member() (string, kpki.Share, error) {
 	case err != nil:
 		return "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
 	case !bootstrapped:
+		// chalkctl asks the next control plane on this answer.
 		return "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node is not an etcd member; ask another control-plane node")
 	}
 	return name, share, nil
