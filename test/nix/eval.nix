@@ -277,6 +277,10 @@ lib.runTests {
           effect = "NoSchedule";
         }
       ];
+      kubernetes = {
+        nodeName = "n1";
+        nodeIP = null;
+      };
       extensions = {
         rack.location = "a1";
       };
@@ -949,5 +953,103 @@ lib.runTests {
       n1Files = [ "50-var.conf" ];
       n2HasScratch = true;
     };
+  };
+  testRoleKindDefaultsToWorker = {
+    expr = {
+      manifest = twoNodes.manifest.roles.worker.kind;
+      image = (role (cluster [ ])).chalkos.role.kubernetes.kind;
+    };
+    expected = {
+      manifest = "worker";
+      image = "worker";
+    };
+  };
+  testRoleWithoutKubernetes = {
+    expr =
+      let
+        c = cluster [
+          {
+            chalkos.roles.worker.kubernetes.kind = null;
+            chalkos.nodes.n1 = {
+              role = "worker";
+              storage.system.disk = "/dev/vda";
+            };
+          }
+        ];
+      in
+      {
+        manifest = c.manifest.roles.worker.kind;
+        identity = c.manifest.nodes.n1.identity.kubernetes;
+        image = (role c).chalkos.role.kubernetes.kind;
+      };
+    expected = {
+      manifest = null;
+      identity = null;
+      image = null;
+    };
+  };
+  testNodeIPDefaultsToFirstStaticAddress = {
+    expr =
+      (networkCluster {
+        networks."20-b".address = [ "10.0.1.5/24" ];
+        networks."10-a".address = [ "10.0.0.5/24" ];
+      }).manifest.nodes.n1.identity.kubernetes;
+    expected = {
+      nodeName = "n1";
+      nodeIP = "10.0.0.5";
+    };
+  };
+  testControlPlaneNeedsNodeIP = {
+    expr = {
+      withoutAddress =
+        fails
+          (cluster [
+            {
+              chalkos.roles.worker.kubernetes.kind = "controlplane";
+              chalkos.nodes.n1 = {
+                role = "worker";
+                storage.system.disk = "/dev/vda";
+              };
+            }
+          ]).manifest;
+      withAddress =
+        (cluster [
+          {
+            chalkos.roles.worker.kubernetes.kind = "controlplane";
+            chalkos.nodes.n1 = {
+              role = "worker";
+              storage.system.disk = "/dev/vda";
+              kubernetes.nodeIP = "10.0.0.5";
+            };
+          }
+        ]).manifest.nodes.n1.identity.kubernetes.nodeIP;
+    };
+    expected = {
+      withoutAddress = true;
+      withAddress = "10.0.0.5";
+    };
+  };
+  testKubernetesOptionDefaults = {
+    expr = removeAttrs (cluster [ ]).cluster.kubernetes [
+      "package"
+      "extraArgs"
+      "addons"
+    ];
+    expected = {
+      podCIDR = "10.244.0.0/16";
+      serviceCIDR = "10.96.0.0/12";
+      dnsIP = "10.96.0.10";
+      domain = "cluster.local";
+      allowSchedulingOnControlPlanes = false;
+      images = {
+        etcd = "registry.k8s.io/etcd:3.7.0-0";
+        pause = "registry.k8s.io/pause:3.10.2";
+        coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
+      };
+    };
+  };
+  testRejectsUnknownComponentFlags = {
+    expr = fails (cluster [ { chalkos.cluster.kubernetes.extraArgs.kube-dns.v = "2"; } ]).cluster;
+    expected = true;
   };
 }

@@ -17,13 +17,26 @@
         defaultText = lib.literalMD "unavailable in role images";
         description = "Node definitions; available only in the cluster definition.";
       };
+      options.role.kubernetes.kind = lib.mkOption {
+        type = lib.types.nullOr (
+          lib.types.enum [
+            "controlplane"
+            "worker"
+          ]
+        );
+        default = null;
+        description = ''
+          The role's `kubernetes.kind` from the cluster definition, set by the role builder;
+          null builds an image without Kubernetes, as the installer is.
+        '';
+      };
     };
     default = { };
     description = ''
       chalkos settings. Cluster-wide values (`chalkos.cluster`, `chalkos.secureBoot`, feature
-      namespaces) are set read-only from the cluster definition; node options (`chalkos.node`,
-      `chalkos.disk`) are declared by the node modules. `node`, `disk` and `nodes` are therefore
-      reserved and cannot be used as feature namespaces.
+      namespaces) are set read-only from the cluster definition; image options (`chalkos.node`,
+      `chalkos.disk`, `chalkos.role`) are declared by the node modules. `node`, `disk`, `role`
+      and `nodes` are therefore reserved and cannot be used as feature namespaces.
     '';
   };
 }

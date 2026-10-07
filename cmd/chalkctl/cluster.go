@@ -164,35 +164,12 @@ func attrName(name string) (string, error) {
 	return b.String(), nil
 }
 
-// staticAddresses returns the addresses of the node's networkd networks, in network name order,
-// without prefix lengths.
-func staticAddresses(id manifest.Identity) []string {
-	networks, _ := id.Network["networks"].(map[string]any)
-	names := make([]string, 0, len(networks))
-	for name := range networks {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	var addrs []string
-	for _, name := range names {
-		network, _ := networks[name].(map[string]any)
-		list, _ := network["address"].([]any)
-		for _, a := range list {
-			if s, ok := a.(string); ok {
-				addr, _, _ := strings.Cut(s, "/")
-				addrs = append(addrs, addr)
-			}
-		}
-	}
-	return addrs
-}
-
 // endpoint returns where the node's chalkd is reached: --endpoint, or its first static address.
 func endpoint(flagValue, node string, id manifest.Identity) (string, error) {
 	if flagValue != "" {
 		return flagValue, nil
 	}
-	addrs := staticAddresses(id)
+	addrs := id.StaticAddresses()
 	if len(addrs) == 0 {
 		return "", fmt.Errorf("node %s has no static address; pass --endpoint", node)
 	}

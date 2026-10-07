@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
@@ -15,6 +16,12 @@ import (
 
 // SchemaVersion is the manifest version this package understands.
 const SchemaVersion = 0
+
+// Kinds of Kubernetes nodes a role's nodes are.
+const (
+	KindControlPlane = "controlplane"
+	KindWorker       = "worker"
+)
 
 // Manifest describes a cluster: its API endpoint, the role images, and every node.
 type Manifest struct {
@@ -35,6 +42,8 @@ type Role struct {
 	// Image is the attribute path, relative to the cluster's attribute, that builds the role's
 	// unsigned disk image; the CLI prepends the attribute path it evaluated the manifest from.
 	Image string `json:"image"`
+	// Kind is what the role's nodes are in Kubernetes: KindControlPlane, KindWorker, or empty.
+	Kind string `json:"kind"`
 }
 
 // Node is one machine of the cluster, by the role it runs and the values unique to it.
@@ -53,7 +62,41 @@ type Identity struct {
 	Taints       []Taint           `json:"taints"`
 	// Storage is how the node partitions, encrypts and mounts its disks.
 	Storage    storage.Section            `json:"storage"`
+	Kubernetes *KubernetesIdentity        `json:"kubernetes"`
 	Extensions map[string]json.RawMessage `json:"extensions"`
+}
+
+// KubernetesIdentity is what the node is in Kubernetes; nil on nodes of a role without
+// Kubernetes.
+type KubernetesIdentity struct {
+	// NodeName is the node's name in the cluster, which its Node object and kubelet
+	// certificates carry.
+	NodeName string `json:"nodeName"`
+	// NodeIP is the address the kubelet registers; empty lets the kubelet choose.
+	NodeIP string `json:"nodeIP"`
+}
+
+// StaticAddresses returns the addresses of the node's networkd networks, in network name order,
+// without prefix lengths.
+func (id Identity) StaticAddresses() []string {
+	networks, _ := id.Network["networks"].(map[string]any)
+	names := make([]string, 0, len(networks))
+	for name := range networks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var addrs []string
+	for _, name := range names {
+		network, _ := networks[name].(map[string]any)
+		list, _ := network["address"].([]any)
+		for _, a := range list {
+			if s, ok := a.(string); ok {
+				addr, _, _ := strings.Cut(s, "/")
+				addrs = append(addrs, addr)
+			}
+		}
+	}
+	return addrs
 }
 
 // Taint is a Kubernetes taint applied to the node.

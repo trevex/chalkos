@@ -5,8 +5,8 @@
     "endpoint": "https://10.0.0.10:6443"
   },
   "roles": {
-    "controlplane": { "image": "roles.controlplane.image" },
-    "worker": { "image": "roles.worker.image" }
+    "controlplane": { "image": "roles.controlplane.image", "kind": "controlplane" },
+    "worker": { "image": "roles.worker.image", "kind": "worker" }
   },
   "nodes": {
     "cp1": {
@@ -43,6 +43,7 @@
           "fallback": "recovery-key",
           "encryption": "tpm2"
         },
+        "kubernetes": { "nodeName": "cp1", "nodeIP": "10.0.0.11" },
         "extensions": { "rack": { "location": "rack-a/u12" } }
       }
     },
@@ -78,6 +79,7 @@
           "fallback": "recovery-key",
           "encryption": "tpm2"
         },
+        "kubernetes": { "nodeName": "w1", "nodeIP": null },
         "extensions": { "rack": { "location": "rack-a/u14" } }
       }
     }

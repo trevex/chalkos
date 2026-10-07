@@ -6,6 +6,7 @@
     ./options/roles.nix
     ./options/nodes.nix
     ./options/storage.nix
+    ./options/kubernetes.nix
     ./options/warnings.nix
     ./options/installer.nix
     ./options/manifest.nix

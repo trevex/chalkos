@@ -283,7 +283,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 	if h := t.node.Identity.Hostname; h != "" && h != t.name {
 		hostnames = append(hostnames, h)
 	}
-	nodeCert, err := pki.IssueNode(t.secrets.OSCA, t.name, hostnames, ipAddresses(staticAddresses(t.node.Identity)), time.Now())
+	nodeCert, err := pki.IssueNode(t.secrets.OSCA, t.name, hostnames, ipAddresses(t.node.Identity.StaticAddresses()), time.Now())
 	if err != nil {
 		return err
 	}

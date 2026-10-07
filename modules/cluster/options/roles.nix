@@ -44,7 +44,10 @@ let
           modules = [
             ../../node
             module
-            { nixpkgs.hostPlatform = settings.cluster.system; }
+            {
+              nixpkgs.hostPlatform = settings.cluster.system;
+              chalkos.role.kubernetes.kind = config.kubernetes.kind;
+            }
           ]
           ++ lib.optional (builtins.pathExists (roleDefaults name)) (roleDefaults name)
           ++ config.nixosModules;

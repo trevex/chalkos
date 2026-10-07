@@ -10,7 +10,10 @@ let
       osCA = "${secrets}/secrets.pub.json";
     };
     # The default layout: VAR fills the system disk.
-    chalkos.roles.test.nixosModules = [ ../../modules/testing/test-image.nix ];
+    chalkos.roles.test = {
+      kubernetes.kind = null;
+      nixosModules = [ ../../modules/testing/test-image.nix ];
+    };
     chalkos.nodes.chalklab = {
       role = "test";
       storage.system.disk = "/dev/vda";
@@ -22,6 +25,7 @@ let
     };
     # A fixed VAR, an unencrypted and a raw volume next to it, and a volume on a second disk.
     chalkos.roles.storage = {
+      kubernetes.kind = null;
       nixosModules = [ ../../modules/testing/test-image.nix ];
       storage = {
         var.size = "2G";

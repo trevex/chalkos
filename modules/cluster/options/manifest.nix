@@ -10,6 +10,7 @@ let
     "network"
     "labels"
     "taints"
+    "kubernetes"
     "_module"
   ];
   strip = attrs: removeAttrs attrs [ "_module" ];
@@ -90,6 +91,22 @@ let
       networkUnits = renderNetwork name n;
       storage = renderStorage name n;
       taints = map strip n.taints;
+      # A node's name in Kubernetes is its name in the cluster, which its kubelet certificates
+      # carry; null on nodes of a role without Kubernetes.
+      kubernetes =
+        let
+          inherit (cfg.roles.${n.role}.kubernetes) kind;
+        in
+        if kind == null then
+          null
+        # etcd and the API server advertise the address to their peers and clients.
+        else if kind == "controlplane" && n.kubernetes.nodeIP == null then
+          throw "chalkos.nodes.${name}.kubernetes.nodeIP must be set: control-plane nodes need a static address"
+        else
+          {
+            nodeName = name;
+            inherit (n.kubernetes) nodeIP;
+          };
       extensions = removeAttrs n coreNodeOptions;
     };
   };
@@ -106,8 +123,9 @@ in
     cluster = { inherit (cfg.cluster) name endpoint; };
     # Relative to the cluster's attribute, which only the evaluating CLI knows; the flake may
     # expose the cluster under any name.
-    roles = lib.mapAttrs (role: _: {
+    roles = lib.mapAttrs (role: r: {
       image = "roles.${role}.image";
+      inherit (r.kubernetes) kind;
     }) cfg.roles;
     nodes = lib.mapAttrs node cfg.nodes;
   };

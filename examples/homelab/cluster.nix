@@ -10,7 +10,7 @@
     endpoint = "https://10.0.0.10:6443";
   };
 
-  chalkos.roles.controlplane = { };
+  chalkos.roles.controlplane.kubernetes.kind = "controlplane";
   chalkos.roles.worker = {
     # Every worker carries a SATA SSD for Longhorn replicas next to its NVMe system disk.
     storage.volumes.longhorn = {

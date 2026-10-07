@@ -106,3 +106,37 @@ func TestDecodeRejectsUnknownStorageFields(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeKubernetes(t *testing.T) {
+	f, err := os.Open("../../test/fixtures/homelab-manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	m, err := Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Roles["controlplane"].Kind != KindControlPlane || m.Roles["worker"].Kind != KindWorker {
+		t.Errorf("roles = %+v", m.Roles)
+	}
+	if k := m.Nodes["cp1"].Identity.Kubernetes; k == nil || *k != (KubernetesIdentity{NodeName: "cp1", NodeIP: "10.0.0.11"}) {
+		t.Errorf("cp1 kubernetes = %+v", k)
+	}
+	if k := m.Nodes["w1"].Identity.Kubernetes; k == nil || *k != (KubernetesIdentity{NodeName: "w1"}) {
+		t.Errorf("w1 kubernetes = %+v", k)
+	}
+}
+
+func TestStaticAddresses(t *testing.T) {
+	id := Identity{Network: map[string]any{"networks": map[string]any{
+		"20-b": map[string]any{"address": []any{"10.0.1.1/24"}},
+		"10-a": map[string]any{"address": []any{"10.0.0.1/24", "fd00::1/64"}},
+		"30-c": map[string]any{"DHCP": "yes"},
+	}}}
+	got := id.StaticAddresses()
+	want := []string{"10.0.0.1", "fd00::1", "10.0.1.1"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("StaticAddresses() = %v, want %v", got, want)
+	}
+}
