@@ -20,6 +20,36 @@ let
   controlPlane = kind == "controlplane";
   flannel = config.chalkos.cni.provider == "flannel";
 
+  # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
+  # node's address on the interface that holds it: the address flanneld binds to and other nodes
+  # send to. chalkd picks the address after the firewall started, so the rule lives in a chain of
+  # its own that this script fills from the file holding the address, and empties without one.
+  # The rule accepts directly: a jump to nixos-fw-accept would keep a restarting firewall from
+  # deleting that chain.
+  vxlanFirewall = flannel && config.networking.firewall.enable;
+  vxlanRule = pkgs.writeShellApplication {
+    name = "chalkos-vxlan-rule";
+    runtimeInputs = [ config.networking.firewall.package ];
+    text = ''
+      families=(iptables ${lib.optionalString config.networking.enableIPv6 "ip6tables"})
+      for family in "''${families[@]}"; do
+        "$family" -w -F chalkos-vxlan
+      done
+      if [ "$#" -eq 1 ] && [ -s "$1" ]; then
+        address=$(cat "$1")
+        family=iptables
+        case "$address" in
+          *:*) family=ip6tables ;;
+        esac
+        "$family" -w -A chalkos-vxlan -p udp --dport 8472 -d "$address" \
+          -m addrtype --dst-type LOCAL --limit-iface-in -j ACCEPT
+      fi
+      for family in "''${families[@]}"; do
+        "$family" -w -S chalkos-vxlan
+      done
+    '';
+  };
+
   cniPlugins = [
     pkgs.cni-plugins
   ]
@@ -151,12 +181,18 @@ in
       after = [
         "chalkos-identity.service"
         "local-fs.target"
-      ];
+      ]
+      ++ lib.optional vxlanFirewall "firewall.service";
       before = [ "kubelet.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} prepare-kubernetes";
+      }
+      // lib.optionalAttrs vxlanFirewall {
+        # No VXLAN is accepted while the address is picked, nor when none is found.
+        ExecStartPre = lib.getExe vxlanRule;
+        ExecStartPost = "${lib.getExe vxlanRule} ${run}/node-ip";
       };
     };
 
@@ -205,37 +241,14 @@ in
           to = 32767;
         }
       ];
-      # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to
-      # the node's nodeIP on the interface that holds it: the address flanneld binds to and other
-      # nodes send to. The identity loader writes the address before the firewall starts; a
-      # node without an identity accepts no VXLAN.
-      #
-      # A node without a nodeIP registers the address the kubelet picks, which is unknown when the
-      # firewall starts, so it accepts VXLAN on every interface: anyone who can send to such a
-      # node can inject packets into its pod network. Setting chalkos.nodes.<name>.kubernetes.nodeIP
-      # closes this.
+      # A restarted firewall fills the VXLAN chain again from the address picked at boot. The
+      # script runs with -e, and a failure leaves the node without a firewall; a failure to fill
+      # the chain leaves it empty.
       extraCommands = lib.mkIf flannel ''
-        # The script runs with -e and a failure leaves the node without a firewall, so nothing
-        # here may fail; an unreadable identity or address adds no rule.
-        if [ -e ${config.chalkos.node.file} ] \
-          && nodeIP=$(jq -er '.kubernetes.nodeIP // ""' ${config.chalkos.node.file}); then
-          case "$nodeIP" in
-            "")
-              ip46tables -A nixos-fw -p udp --dport 8472 -j nixos-fw-accept || true
-              ;;
-            *:*)
-              ip6tables -A nixos-fw -p udp --dport 8472 -d "$nodeIP" \
-                -m addrtype --dst-type LOCAL --limit-iface-in -j nixos-fw-accept || true
-              ;;
-            *)
-              iptables -A nixos-fw -p udp --dport 8472 -d "$nodeIP" \
-                -m addrtype --dst-type LOCAL --limit-iface-in -j nixos-fw-accept || true
-              ;;
-          esac
-        fi
+        ip46tables -N chalkos-vxlan 2>/dev/null || true
+        ip46tables -A nixos-fw -j chalkos-vxlan
+        ${lib.getExe vxlanRule} ${run}/node-ip || true
       '';
-      extraPackages = lib.mkIf flannel [ pkgs.jq ];
     };
-    systemd.services.firewall.after = lib.mkIf flannel [ "chalkos-identity.service" ];
   };
 }

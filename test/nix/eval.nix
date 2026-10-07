@@ -1645,39 +1645,65 @@ lib.runTests {
       other = false;
     };
   };
+  # VXLAN is accepted only to the address chalkd picks: its preparation fills the firewall's
+  # chain, which a restarted firewall fills again from the same file.
   testFlannelVXLANOnlyToNodeIP = {
     expr =
       let
         vxlan =
-          provider:
+          modules:
           let
-            config = role (cluster [ { chalkos.cni.provider = provider; } ]);
+            config = role (cluster modules);
             inherit (config.networking) firewall;
+            prepare = config.systemd.services.chalkos-kubernetes;
+            fills = command: lib.hasInfix "chalkos-vxlan-rule /run/chalkos/kubernetes/node-ip" command;
           in
           {
             open = lib.elem 8472 firewall.allowedUDPPorts;
-            rule = lib.hasInfix "--dport 8472" firewall.extraCommands;
-            onInterface = lib.hasInfix "--limit-iface-in" firewall.extraCommands;
-            # The rule reads the node's address from its identity.
-            afterIdentity = lib.elem "chalkos-identity.service" config.systemd.services.firewall.after;
+            chain = lib.hasInfix "-A nixos-fw -j chalkos-vxlan" firewall.extraCommands;
+            firewallFills = fills firewall.extraCommands;
+            # Emptied before the address is picked, filled after.
+            emptied = lib.hasSuffix "/bin/chalkos-vxlan-rule" (prepare.serviceConfig.ExecStartPre or "");
+            prepareFills = fills (prepare.serviceConfig.ExecStartPost or "");
+            afterFirewall = lib.elem "firewall.service" prepare.after;
+            # The firewall no longer reads the identity.
+            firewallAfterIdentity = lib.elem "chalkos-identity.service" config.systemd.services.firewall.after;
           };
       in
       {
-        flannel = vxlan "flannel";
-        none = vxlan "none";
+        flannel = vxlan [ { chalkos.cni.provider = "flannel"; } ];
+        none = vxlan [ { chalkos.cni.provider = "none"; } ];
+        # Without a firewall there is no chain to fill.
+        withoutFirewall = removeAttrs (vxlan [
+          { chalkos.roles.worker.nixosModules = [ { networking.firewall.enable = false; } ]; }
+        ]) [ "firewallAfterIdentity" ];
       };
     expected = {
       flannel = {
         open = false;
-        rule = true;
-        onInterface = true;
-        afterIdentity = true;
+        chain = true;
+        firewallFills = true;
+        emptied = true;
+        prepareFills = true;
+        afterFirewall = true;
+        firewallAfterIdentity = false;
       };
       none = {
         open = false;
-        rule = false;
-        onInterface = false;
-        afterIdentity = false;
+        chain = false;
+        firewallFills = false;
+        emptied = false;
+        prepareFills = false;
+        afterFirewall = false;
+        firewallAfterIdentity = false;
+      };
+      withoutFirewall = {
+        open = false;
+        chain = true;
+        firewallFills = true;
+        emptied = false;
+        prepareFills = false;
+        afterFirewall = false;
       };
     };
   };
