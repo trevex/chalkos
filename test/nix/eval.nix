@@ -185,8 +185,15 @@ lib.runTests {
       {
         chalkd = services.chalkd.wantedBy;
         identity = services.chalkos-identity.before;
+        # The VIP holder announces its addresses with gratuitous ARP and neighbour advertisements,
+        # which need raw sockets, and no capability is taken away.
+        packets = lib.elem "AF_PACKET" services.chalkd.serviceConfig.RestrictAddressFamilies;
+        capabilities =
+          services.chalkd.serviceConfig ? CapabilityBoundingSet || services.chalkd.serviceConfig ? User;
       };
     expected = {
+      packets = true;
+      capabilities = false;
       chalkd = [ "multi-user.target" ];
       identity = [
         "sysinit.target"

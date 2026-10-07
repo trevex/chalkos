@@ -69,13 +69,17 @@ in
       # ProtectHostname and the like. ProtectKernelLogs stays off too, as systemd gives it a
       # mount namespace that stops chalkd's mounts reaching the host.
       NoNewPrivileges = true;
-      # cryptsetup and systemd-cryptenroll use the kernel crypto API through AF_ALG.
+      # cryptsetup and systemd-cryptenroll use the kernel crypto API through AF_ALG. A control-plane
+      # node holding the cluster's VIPs announces them with gratuitous ARP through AF_PACKET; it
+      # adds them through AF_NETLINK and sends neighbour advertisements on a raw AF_INET6 socket.
+      # chalkd runs as root with its capabilities, which these need: CAP_NET_ADMIN and CAP_NET_RAW.
       RestrictAddressFamilies = [
         "AF_UNIX"
         "AF_INET"
         "AF_INET6"
         "AF_NETLINK"
         "AF_ALG"
+        "AF_PACKET"
       ];
       LockPersonality = true;
       RestrictRealtime = true;
