@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +34,9 @@ var kubernetesNodes = []struct {
 	{"cp1", "52:54:00:00:01:11", "CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR", 2048},
 	{"w1", "52:54:00:00:01:12", "CHALKLAB_K8S_WORKER_IMAGE_DIR", 1024},
 }
+
+// probeDoneRE is the probe's last fact on the console, written once a boot is up.
+var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 
 // TestKubernetesCluster installs a control plane and a worker, bootstraps the cluster and
 // checks that pods on both nodes reach each other and resolve the API server's service, also
@@ -82,23 +86,34 @@ func TestKubernetesCluster(t *testing.T) {
 		}
 		nodes[kn.name] = startNode(t, c)
 	}
+	// t.Fatal must not be called from other goroutines than the test's.
 	var wg sync.WaitGroup
+	errs := make(chan error, len(nodes))
 	for name, n := range nodes {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			installInPlace(t, n, name)
-			waitForNode(t, n, name)
+			if err := install(t, n, name); err != nil {
+				errs <- err
+				return
+			}
+			if err := installedNodeAnswers(n, name); err != nil {
+				errs <- err
+			}
 		}()
 	}
 	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
 	if t.Failed() {
 		t.FailNow()
 	}
 
 	out, err := chalkctl(t, nodes["cp1"], "base", "status", "cp1")
 	if err != nil || !strings.Contains(out, "kubernetes controlplane: waiting for bootstrap") {
-		t.Errorf("status before bootstrap: %v", err)
+		t.Errorf("status before bootstrap: %v\n%s", err, out)
 	}
 	if _, err := chalkctl(t, nodes["cp1"], "base", "bootstrap", "cp1"); err != nil {
 		t.Fatalf("bootstrap: %v", err)
@@ -122,7 +137,7 @@ func TestKubernetesCluster(t *testing.T) {
 		t.Errorf("a second bootstrap was not refused: %v", err)
 	}
 	if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
-		t.Errorf("status of w1: %v", err)
+		t.Errorf("status of w1: %v\n%s", err, out)
 	}
 	anonymousOnlyHealth(t, ctx, cfg)
 
@@ -133,11 +148,19 @@ func TestKubernetesCluster(t *testing.T) {
 	logMemory(t, ctx, cs)
 
 	before := servingCertificate(t, apiPort)
-	if _, err := chalkctl(t, nodes["cp1"], "base", "reboot", "cp1"); err != nil {
+	// The probe's last fact on the console after the reboot marks the new boot; until then the
+	// old chalkd may still answer.
+	cp1 := nodes["cp1"]
+	cp1.vm.Console.Skip()
+	if _, err := chalkctl(t, cp1, "base", "reboot", "cp1"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(10 * time.Second)
-	waitForNode(t, nodes["cp1"], "cp1")
+	rebootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if _, err := cp1.vm.Console.WaitFor(rebootCtx, probeDoneRE); err != nil {
+		t.Fatalf("cp1 did not boot again: %v", err)
+	}
+	waitForNode(t, cp1, "cp1")
 	waitFor(t, 10*time.Minute, "the API server after the reboot", func() error {
 		_, err := cs.Discovery().RESTClient().Get().AbsPath("/readyz").DoRaw(ctx)
 		return err

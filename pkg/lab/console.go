@@ -76,3 +76,11 @@ func (c *Console) WaitFor(ctx context.Context, re *regexp.Regexp) ([]string, err
 		c.cond.Wait()
 	}
 }
+
+// Skip discards the lines read so far, so the next WaitFor sees only later output, such as the
+// output of the next boot.
+func (c *Console) Skip() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cursor = len(c.lines)
+}

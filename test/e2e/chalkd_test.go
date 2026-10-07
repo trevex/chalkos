@@ -44,42 +44,68 @@ func startNode(t *testing.T, c lab.VMConfig) *node {
 
 func secrets(t *testing.T) pki.Secrets {
 	t.Helper()
-	data, err := os.ReadFile(os.Getenv("CHALKLAB_SECRETS"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := pki.ReadSecrets(data, nil)
+	s, err := readSecrets()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 
+func readSecrets() (pki.Secrets, error) {
+	data, err := os.ReadFile(os.Getenv("CHALKLAB_SECRETS"))
+	if err != nil {
+		return pki.Secrets{}, err
+	}
+	return pki.ReadSecrets(data, nil)
+}
+
 // clientCertificate issues a client certificate of the role from the test OS CA.
 func clientCertificate(t *testing.T, role string) *tls.Certificate {
 	t.Helper()
-	s := secrets(t)
+	cert, err := issueClientCertificate(role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+func issueClientCertificate(role string) (*tls.Certificate, error) {
+	s, err := readSecrets()
+	if err != nil {
+		return nil, err
+	}
 	ck := s.Admin
 	if role != pki.RoleAdmin {
-		var err error
 		if ck, err = pki.IssueClient(s.OSCA, role, role, time.Now()); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 	}
 	pair, err := tls.X509KeyPair([]byte(ck.Certificate), []byte(ck.Key))
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
-	return &pair
+	return &pair, nil
 }
 
 // waitForChalkd polls chalkd until it answers Info, as a node in maintenance mode does once it
 // booted, and returns the answer.
 func waitForChalkd(t *testing.T, n *node, timeout time.Duration) *nodev1.InfoResponse {
 	t.Helper()
-	c, err := client.Dial(n.addr, client.Options{Insecure: true, Certificate: clientCertificate(t, pki.RoleAdmin)})
+	info, err := chalkdInfo(n, timeout)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return info
+}
+
+func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
+	cert, err := issueClientCertificate(pki.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	c, err := client.Dial(n.addr, client.Options{Insecure: true, Certificate: cert})
+	if err != nil {
+		return nil, err
 	}
 	deadline := time.Now().Add(timeout)
 	for {
@@ -87,10 +113,10 @@ func waitForChalkd(t *testing.T, n *node, timeout time.Duration) *nodev1.InfoRes
 		resp, err := c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 		cancel()
 		if err == nil {
-			return resp.Msg
+			return resp.Msg, nil
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("chalkd at %s did not answer: %v", n.addr, err)
+			return nil, fmt.Errorf("chalkd at %s did not answer: %w", n.addr, err)
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -116,12 +142,24 @@ func chalkctl(t *testing.T, n *node, manifest string, args ...string) (string, e
 // installInPlace waits for the node's maintenance boot and installs it in place.
 func installInPlace(t *testing.T, n *node, name string) {
 	t.Helper()
-	if info := waitForChalkd(t, n, 5*time.Minute); info.Mode != nodev1.Mode_MODE_MAINTENANCE {
-		t.Fatalf("node is in mode %v, want maintenance", info.Mode)
+	if err := install(t, n, name); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// install is installInPlace for other goroutines than the test's: it only logs to t.
+func install(t *testing.T, n *node, name string) error {
+	info, err := chalkdInfo(n, 5*time.Minute)
+	if err != nil {
+		return err
+	}
+	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
+		return fmt.Errorf("node %s is in mode %v, want maintenance", name, info.Mode)
 	}
 	if _, err := chalkctl(t, n, "base", "install", name, "--insecure"); err != nil {
-		t.Fatalf("install %s: %v", name, err)
+		return fmt.Errorf("install %s: %w", name, err)
 	}
+	return nil
 }
 
 var fingerprintRE = regexp.MustCompile(`certificate fingerprint ([0-9a-f]{64})`)
@@ -130,17 +168,25 @@ var fingerprintRE = regexp.MustCompile(`certificate fingerprint ([0-9a-f]{64})`)
 // by the test OS CA and its name.
 func dialNode(t *testing.T, n *node, name string, cert *tls.Certificate) *client.Conn {
 	t.Helper()
-	ca, err := pki.ParseCertificate([]byte(secrets(t).OSCA.Certificate))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
-	c, err := client.Dial(n.addr, client.Options{CA: pool, ServerName: name, Certificate: cert})
+	c, err := dialInstalled(n, name, cert)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return c
+}
+
+func dialInstalled(n *node, name string, cert *tls.Certificate) (*client.Conn, error) {
+	s, err := readSecrets()
+	if err != nil {
+		return nil, err
+	}
+	ca, err := pki.ParseCertificate([]byte(s.OSCA.Certificate))
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	return client.Dial(n.addr, client.Options{CA: pool, ServerName: name, Certificate: cert})
 }
 
 func info(c *client.Conn) error {
@@ -153,15 +199,28 @@ func info(c *client.Conn) error {
 // waitForNode waits until the installed node serves its node certificate.
 func waitForNode(t *testing.T, n *node, name string) {
 	t.Helper()
-	c := dialNode(t, n, name, clientCertificate(t, pki.RoleAdmin))
+	if err := installedNodeAnswers(n, name); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func installedNodeAnswers(n *node, name string) error {
+	cert, err := issueClientCertificate(pki.RoleAdmin)
+	if err != nil {
+		return err
+	}
+	c, err := dialInstalled(n, name, cert)
+	if err != nil {
+		return err
+	}
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
 		err := info(c)
 		if err == nil {
-			return
+			return nil
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the installed node did not answer: %v", err)
+			return fmt.Errorf("the installed node %s did not answer: %w", name, err)
 		}
 		time.Sleep(2 * time.Second)
 	}

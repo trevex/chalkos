@@ -15,6 +15,7 @@
       flakeModules.default = chalkosLib.flakeModule;
       packages.${system} = import ./nix/packages.nix { inherit pkgs self; };
       checks.${system} = import ./nix/checks.nix { inherit pkgs self; };
+      apps.${system} = import ./nix/apps.nix { inherit pkgs self; };
       devShells.${system}.default = import ./nix/shell.nix { inherit pkgs self; };
       formatter.${system} = pkgs.nixfmt-tree;
     };

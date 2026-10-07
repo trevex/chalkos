@@ -63,3 +63,39 @@ func TestConsoleWritesLogWithoutCarriageReturns(t *testing.T) {
 		t.Fatalf("log = %q, want %q", got, "a\nb\n")
 	}
 }
+
+func TestConsoleSkipDiscardsEarlierLines(t *testing.T) {
+	r, w := io.Pipe()
+	c := NewConsole(r, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	fmt.Fprint(w, "CHALKTEST boot=1\nCHALKTEST boot=2\n")
+	waitForLines(t, c, 2)
+	c.Skip()
+	go func() {
+		fmt.Fprint(w, "CHALKTEST boot=3\n")
+		w.Close()
+	}()
+	m, err := c.WaitFor(ctx, factRE)
+	if err != nil || m[2] != "3" {
+		t.Fatalf("after Skip = %v, %v; want boot=3", m, err)
+	}
+}
+
+// waitForLines waits until the console holds n lines.
+func waitForLines(t *testing.T, c *Console, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.mu.Lock()
+		got := len(c.lines)
+		c.mu.Unlock()
+		if got >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the console holds %d lines, want %d", got, n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
