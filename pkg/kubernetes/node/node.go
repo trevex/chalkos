@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -66,8 +67,9 @@ func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
 // NodeIP holds the address the node picked; the firewall's VXLAN rule reads it too.
 func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
 
-// NodeIPError holds why the node has no address.
-func (p Paths) NodeIPError() string { return filepath.Join(p.Run, "node-ip.error") }
+// PrepareError holds why the last preparation failed, such as that no address of the node
+// matched.
+func (p Paths) PrepareError() string { return filepath.Join(p.Run, "prepare.error") }
 
 // Prepared marks that Prepare finished: chalkd starts before it at boot and must not read the
 // files it is still writing.
@@ -215,48 +217,79 @@ func ReadNodeIP(p Paths) (net.IP, error) {
 	return ip, nil
 }
 
-// NodeIPProblem says why the node has no address, or returns "" once Prepare picked one.
-func NodeIPProblem(p Paths) string {
-	_, err := ReadNodeIP(p)
-	switch {
-	case err == nil:
-		return ""
-	case !errors.Is(err, fs.ErrNotExist):
-		return err.Error()
+// PreparationError reads why the last preparation failed; "" when none failed since the last one
+// started.
+func PreparationError(p Paths) (string, error) {
+	data, err := os.ReadFile(p.PrepareError())
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
 	}
-	if data, err := os.ReadFile(p.NodeIPError()); err == nil {
-		return strings.TrimSpace(string(data))
+	if err != nil {
+		return "", err
 	}
-	return "waiting for the node's address"
+	return strings.TrimSpace(string(data)), nil
+}
+
+// Firewall accepts VXLAN to the address in p.NodeIP(), or to none when the file does not exist.
+type Firewall func(p Paths) error
+
+// VXLANRule is the Firewall that runs script with the file holding the node's address. The
+// script prints the rules to the journal, which the error points to.
+func VXLANRule(script string) Firewall {
+	return func(p Paths) error {
+		cmd := exec.Command(script, p.NodeIP())
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("accept VXLAN to the node's address: %w; see chalkctl logs <node> --unit chalkos-kubernetes", err)
+		}
+		return nil
+	}
 }
 
 // Prepare picks the node's address and writes the kubelet's files and, on a control-plane node,
-// the control plane's certificates, and its static pods once the node is bootstrapped. A node
-// without a share or an address, and one whose preparation fails, keeps none of them, so its
-// kubelet does not start. The node is marked prepared only once all of them are written.
-func Prepare(p Paths, now time.Time, resolve Resolver) error {
-	if err := os.Remove(p.Prepared()); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	if err := prepare(p, now, resolve); err != nil {
-		// The kubelet must not start with what an earlier attempt wrote, nor the control plane with
-		// certificates naming the address picked then.
-		for _, dir := range []string{p.KubeletDir(), p.Manifests(), p.PKI} {
-			if rerr := os.RemoveAll(dir); rerr != nil {
-				log.Print(rerr)
-			}
+// the control plane's certificates, and its static pods once the node is bootstrapped; then it
+// lets the firewall, if any, accept VXLAN to the address. A node without a share or an address,
+// and one whose preparation fails, keeps none of them, so its kubelet does not start, and
+// accepts no VXLAN. The node is marked prepared only once all of this is done; otherwise
+// PrepareError says why.
+func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error {
+	for _, f := range []string{p.Prepared(), p.PrepareError()} {
+		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
-		return err
 	}
-	return install.WriteFile(p.Prepared(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
+	err := prepare(p, now, resolve)
+	if err == nil && firewall != nil {
+		err = firewall(p)
+	}
+	if err == nil {
+		if err = install.WriteFile(p.Prepared(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644); err == nil {
+			return nil
+		}
+	}
+	// The kubelet must not start with what an earlier attempt wrote, nor the control plane with
+	// certificates naming the address picked then, nor VXLAN reach that address.
+	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.NodeIP()} {
+		if rerr := os.RemoveAll(path); rerr != nil {
+			log.Print(rerr)
+		}
+	}
+	if firewall != nil {
+		if ferr := firewall(p); ferr != nil {
+			log.Print(ferr)
+		}
+	}
+	// chalkd reports the reason in the node's status. Errors never hold key material.
+	if werr := install.WriteFile(p.PrepareError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
+		log.Print(werr)
+	}
+	return err
 }
 
 func prepare(p Paths, now time.Time, resolve Resolver) error {
 	// An address picked before must not outlive an attempt that fails.
-	for _, f := range []string{p.NodeIP(), p.NodeIPError()} {
-		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
+	if err := os.Remove(p.NodeIP()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
 	}
 	share, c, n, err := Load(p)
 	if errors.Is(err, ErrNoShare) {
@@ -267,10 +300,6 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 		return err
 	}
 	if n.IP, err = resolve(c, n); err != nil {
-		// chalkd reports the reason in the node's status.
-		if werr := install.WriteFile(p.NodeIPError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
-			log.Print(werr)
-		}
 		return err
 	}
 	kubeletCert := share.Kubelet

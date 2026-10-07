@@ -31,14 +31,16 @@ import (
 const usage = `usage: chalkd <command>
 
 commands:
-  serve               serve the node API
-  load-identity       apply the identity recorded on STATE
-  prepare-kubernetes  pick the node's address and write its Kubernetes certificates and configuration`
+  serve                            serve the node API
+  load-identity                    apply the identity recorded on STATE
+  prepare-kubernetes [vxlan-rule]  pick the node's address and write its Kubernetes certificates
+                                   and configuration, then run vxlan-rule with the file holding
+                                   the address`
 
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("chalkd: ")
-	if len(os.Args) != 2 {
+	if len(os.Args) < 2 || len(os.Args) > 3 || len(os.Args) == 3 && os.Args[1] != "prepare-kubernetes" {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
@@ -49,7 +51,11 @@ func main() {
 	case "load-identity":
 		err = identity.Default().Load()
 	case "prepare-kubernetes":
-		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.ResolveNodeIP)
+		var firewall knode.Firewall
+		if len(os.Args) == 3 {
+			firewall = knode.VXLANRule(os.Args[2])
+		}
+		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.ResolveNodeIP, firewall)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)

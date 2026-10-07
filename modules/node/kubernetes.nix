@@ -178,7 +178,9 @@ in
           "${pkgs.coreutils}/bin/rm -f ${run}/node-ip"
           (lib.getExe vxlanRule)
         ];
-        ExecStartPost = "${lib.getExe vxlanRule} ${run}/node-ip";
+        # The preparation fills the chain last, so the node is marked prepared only with the rule in
+        # place, and a failure to fill it is the preparation's, which chalkd reports.
+        ExecStart = "${lib.getExe chalkd} prepare-kubernetes ${lib.getExe vxlanRule}";
       };
     };
 

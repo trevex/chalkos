@@ -1456,7 +1456,7 @@ lib.runTests {
       {
         none = services (image null);
         worker = services (image "worker");
-        prepare = lib.hasSuffix "/bin/chalkd prepare-kubernetes" (image "worker")
+        prepare = lib.hasInfix "/bin/chalkd prepare-kubernetes" (image "worker")
         .systemd.services.chalkos-kubernetes.serviceConfig.ExecStart;
       };
     expected = {
@@ -1743,7 +1743,10 @@ lib.runTests {
               builtins.length pre == 2
               && lib.hasSuffix "/bin/rm -f /run/chalkos/kubernetes/node-ip" (builtins.elemAt pre 0)
               && lib.hasSuffix "/bin/chalkos-vxlan-rule" (builtins.elemAt pre 1);
-            prepareFills = fills (prepare.serviceConfig.ExecStartPost or "");
+            # The preparation fills the chain as its last step, and nothing fills it after a failure.
+            prepareFills =
+              lib.hasSuffix "/bin/chalkos-vxlan-rule" prepare.serviceConfig.ExecStart
+              && !(prepare.serviceConfig ? ExecStartPost);
             afterFirewall = lib.elem "firewall.service" prepare.after;
             # The firewall no longer reads the identity.
             firewallAfterIdentity = lib.elem "chalkos-identity.service" config.systemd.services.firewall.after;

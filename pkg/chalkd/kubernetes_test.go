@@ -58,7 +58,7 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 	write(t, p.NodeFile, `{"hostname": "n1", "kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.11"}}`)
 	if share {
 		write(t, p.Share(), string(testShare(t, kind)))
-		if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11")); err != nil {
+		if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -81,7 +81,36 @@ func withoutAddress(t *testing.T, s *Server, reason string) {
 		}
 	}
 	if reason != "" {
-		write(t, p.NodeIPError(), reason+"\n")
+		write(t, p.PrepareError(), reason+"\n")
+	}
+}
+
+// otherKindsShare gives s a share for another kind of node than its image's and runs the
+// preparation, which refuses it.
+func otherKindsShare(t *testing.T, s *Server) {
+	t.Helper()
+	p := s.Kubernetes.Paths
+	c, err := k8s.ReadCluster(p.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := k8s.KindWorker
+	if c.Kind == k8s.KindWorker {
+		other = k8s.KindControlPlane
+	}
+	write(t, p.Share(), string(testShare(t, other)))
+	if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11"), nil); err == nil {
+		t.Fatal("prepared a share of another kind")
+	}
+}
+
+// withoutFirewall runs the preparation of s, which has a share, with a firewall that cannot
+// accept VXLAN.
+func withoutFirewall(t *testing.T, s *Server) {
+	t.Helper()
+	fail := func(knode.Paths) error { return errors.New("accept VXLAN to the node's address: exit status 1") }
+	if err := knode.Prepare(s.Kubernetes.Paths, time.Now(), nodeIP("192.168.100.11"), fail); err == nil {
+		t.Fatal("prepared without the firewall's VXLAN rule")
 	}
 }
 
@@ -151,16 +180,22 @@ func TestBootstrapRefusals(t *testing.T) {
 	if err := os.Remove(preparing.Kubernetes.Paths.Prepared()); err != nil {
 		t.Fatal(err)
 	}
+	otherKind, _ := kubernetesServer(t, k8s.KindControlPlane, false)
+	otherKindsShare(t, otherKind)
+	noFirewall, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	withoutFirewall(t, noFirewall)
 	for name, tc := range map[string]struct {
 		s    *Server
 		want string
 	}{
-		"no Kubernetes":  {plain, "has no Kubernetes"},
-		"worker":         {worker, "is a worker"},
-		"no share":       {noShare, "no Kubernetes share"},
-		"etcd with data": {etcdData, "holds etcd data"},
-		"no address":     {noAddress, "no node address matches validSubnets 192.168.100.0/24"},
-		"preparing":      {preparing, "the node's Kubernetes files are not prepared yet; see chalkctl logs <node> --unit chalkos-kubernetes"},
+		"no Kubernetes":         {plain, "has no Kubernetes"},
+		"worker":                {worker, "is a worker"},
+		"no share":              {noShare, "no Kubernetes share"},
+		"etcd with data":        {etcdData, "holds etcd data"},
+		"no address":            {noAddress, "no node address matches validSubnets 192.168.100.0/24"},
+		"preparing":             {preparing, "the node's Kubernetes files are not prepared yet; see chalkctl logs <node> --unit chalkos-kubernetes"},
+		"share of another kind": {otherKind, "preparation failed: the node's share is for a worker node, but its image is for controlplane nodes"},
+		"firewall":              {noFirewall, "preparation failed: accept VXLAN to the node's address: exit status 1"},
 	} {
 		var before map[string]string
 		if k := tc.s.Kubernetes; k != nil {
@@ -302,6 +337,10 @@ func TestStatusKubernetes(t *testing.T) {
 	withoutAddress(t, noAddress, "no node address matches the default filter (the node has no addresses)")
 	preparing, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	withoutAddress(t, preparing, "")
+	otherKind, _ := kubernetesServer(t, k8s.KindWorker, false)
+	otherKindsShare(t, otherKind)
+	noFirewall, _ := kubernetesServer(t, k8s.KindWorker, true)
+	withoutFirewall(t, noFirewall)
 	// The preparation picked the address and still writes the certificates.
 	writing, _ := kubernetesServer(t, k8s.KindWorker, true)
 	if err := os.Remove(writing.Kubernetes.Paths.Prepared()); err != nil {
@@ -313,14 +352,16 @@ func TestStatusKubernetes(t *testing.T) {
 		s    *Server
 		want *nodev1.KubernetesStatus
 	}{
-		"waiting":       {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap"}},
-		"bootstrapped":  {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
-		"no share":      {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
-		"no address":    {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "no node address matches the default filter (the node has no addresses)"}},
-		"preparing":     {preparing, &nodev1.KubernetesStatus{Kind: "controlplane", State: "preparing"}},
-		"writing":       {writing, &nodev1.KubernetesStatus{Kind: "worker", State: "preparing"}},
-		"worker":        {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
-		"no Kubernetes": {plain, nil},
+		"waiting":               {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap"}},
+		"bootstrapped":          {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
+		"no share":              {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
+		"no address":            {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},
+		"share of another kind": {otherKind, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: the node's share is for a controlplane node, but its image is for worker nodes"}},
+		"firewall":              {noFirewall, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: accept VXLAN to the node's address: exit status 1"}},
+		"preparing":             {preparing, &nodev1.KubernetesStatus{Kind: "controlplane", State: "preparing"}},
+		"writing":               {writing, &nodev1.KubernetesStatus{Kind: "worker", State: "preparing"}},
+		"worker":                {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
+		"no Kubernetes":         {plain, nil},
 	} {
 		resp, err := tc.s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
 		if err != nil {
@@ -472,7 +513,7 @@ func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 		t.Fatal("the control plane's loop ran before the node's files were prepared")
 	case <-time.After(200 * time.Millisecond):
 	}
-	if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11")); err != nil {
+	if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -627,6 +668,27 @@ func TestApplyIdentityReportsMissingAddress(t *testing.T) {
 	_, err := apply(s, kubernetesIdentity("n1"), "")
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), reason) {
 		t.Errorf("err = %v, want the missing address", err)
+	}
+}
+
+// A restart that fails says why: the preparation's reason, or else the restart's own error.
+func TestApplyIdentityReportsFailedRestart(t *testing.T) {
+	s, r := kubernetesServer(t, k8s.KindWorker, false)
+	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service", err: errors.New("exit status 1")}}, r.rules...)
+	otherKindsShare(t, s)
+	_, err := apply(s, kubernetesIdentity("n1"), "")
+	want := "the node runs no kubelet: preparation failed: the node's share is for a controlplane node, but its image is for worker nodes"
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("share of another kind: err = %v, want %s", err, want)
+	}
+
+	// The preparation succeeded; the restart failed for another reason.
+	other, r := kubernetesServer(t, k8s.KindWorker, true)
+	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service", err: errors.New("exit status 1")}}, r.rules...)
+	_, err = apply(other, kubernetesIdentity("n1"), "")
+	want = "restart chalkos-kubernetes.service kubelet.service: exit status 1"
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "address") {
+		t.Errorf("failed restart: err = %v, want %s", err, want)
 	}
 }
 

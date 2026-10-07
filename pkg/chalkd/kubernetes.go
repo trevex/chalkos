@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"sync"
@@ -350,22 +349,25 @@ func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
 	return k.start(), nil
 }
 
-// preparing is the state of a node whose Kubernetes files are being prepared, or whose
-// preparation failed for another reason than its address.
+// preparing is the state of a node whose Kubernetes files are being prepared.
 const preparing = "preparing"
 
-// preparation says why the node's Kubernetes files cannot be used: why the node has no address,
-// preparing until the preparation finished, or "" once it did.
+// preparation says why the node's Kubernetes files cannot be used: why the last preparation
+// failed, preparing while one runs, or "" once one succeeded.
 func preparation(p knode.Paths) (string, error) {
-	prepared, err := knode.Prepared(p)
-	if err != nil {
+	switch reason, err := knode.PreparationError(p); {
+	case err != nil:
 		return "", err
+	case reason != "":
+		return "preparation failed: " + reason, nil
 	}
-	// A preparation that found no address says why.
-	if _, err := os.Stat(p.NodeIPError()); !prepared && errors.Is(err, fs.ErrNotExist) {
+	switch prepared, err := knode.Prepared(p); {
+	case err != nil:
+		return "", err
+	case !prepared:
 		return preparing, nil
 	}
-	return knode.NodeIPProblem(p), nil
+	return "", nil
 }
 
 // status describes the node's Kubernetes state.

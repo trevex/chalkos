@@ -21,7 +21,6 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
@@ -441,10 +440,10 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte) (
 	// control plane's certificates come from the share and the identity.
 	units := []string{"chalkos-kubernetes.service", "kubelet.service"}
 	if _, err := s.Run.Run(ctx, "systemctl", append([]string{"restart"}, units...)...); err != nil {
-		if problem := knode.NodeIPProblem(s.Kubernetes.Paths); problem != "" {
+		if problem, perr := preparation(s.Kubernetes.Paths); perr == nil && problem != "" && problem != preparing {
 			return nil, failed(connect.CodeFailedPrecondition, "the node runs no kubelet: %s", problem)
 		}
-		return nil, failed(connect.CodeInternal, "restart the kubelet: %v", err)
+		return nil, failed(connect.CodeInternal, "restart %s: %v", strings.Join(units, " "), err)
 	}
 	if share != nil {
 		s.Kubernetes.Reload()
