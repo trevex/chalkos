@@ -1732,8 +1732,17 @@ lib.runTests {
             open = lib.elem 8472 firewall.allowedUDPPorts;
             chain = lib.hasInfix "-A nixos-fw -j chalkos-vxlan" firewall.extraCommands;
             firewallFills = fills firewall.extraCommands;
-            # Emptied before the address is picked, filled after.
-            emptied = lib.hasSuffix "/bin/chalkos-vxlan-rule" (prepare.serviceConfig.ExecStartPre or "");
+            # A failure to fill the chain must not fail the firewall.
+            firewallNeverFails = lib.hasInfix "chalkos-vxlan-rule /run/chalkos/kubernetes/node-ip || true" firewall.extraCommands;
+            # Emptied before the address is picked, filled after. The old address goes first, so a
+            # restarting firewall cannot fill the emptied chain from it again.
+            emptied =
+              let
+                pre = prepare.serviceConfig.ExecStartPre or [ ];
+              in
+              builtins.length pre == 2
+              && lib.hasSuffix "/bin/rm -f /run/chalkos/kubernetes/node-ip" (builtins.elemAt pre 0)
+              && lib.hasSuffix "/bin/chalkos-vxlan-rule" (builtins.elemAt pre 1);
             prepareFills = fills (prepare.serviceConfig.ExecStartPost or "");
             afterFirewall = lib.elem "firewall.service" prepare.after;
             # The firewall no longer reads the identity.
@@ -1753,6 +1762,7 @@ lib.runTests {
         open = false;
         chain = true;
         firewallFills = true;
+        firewallNeverFails = true;
         emptied = true;
         prepareFills = true;
         afterFirewall = true;
@@ -1762,6 +1772,7 @@ lib.runTests {
         open = false;
         chain = false;
         firewallFills = false;
+        firewallNeverFails = false;
         emptied = false;
         prepareFills = false;
         afterFirewall = false;
@@ -1771,6 +1782,7 @@ lib.runTests {
         open = false;
         chain = true;
         firewallFills = true;
+        firewallNeverFails = true;
         emptied = false;
         prepareFills = false;
         afterFirewall = false;

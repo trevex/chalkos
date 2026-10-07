@@ -27,27 +27,9 @@ let
   # The rule accepts directly: a jump to nixos-fw-accept would keep a restarting firewall from
   # deleting that chain.
   vxlanFirewall = flannel && config.networking.firewall.enable;
-  vxlanRule = pkgs.writeShellApplication {
-    name = "chalkos-vxlan-rule";
-    runtimeInputs = [ config.networking.firewall.package ];
-    text = ''
-      families=(iptables ${lib.optionalString config.networking.enableIPv6 "ip6tables"})
-      for family in "''${families[@]}"; do
-        "$family" -w -F chalkos-vxlan
-      done
-      if [ "$#" -eq 1 ] && [ -s "$1" ]; then
-        address=$(cat "$1")
-        family=iptables
-        case "$address" in
-          *:*) family=ip6tables ;;
-        esac
-        "$family" -w -A chalkos-vxlan -p udp --dport 8472 -d "$address" \
-          -m addrtype --dst-type LOCAL --limit-iface-in -j ACCEPT
-      fi
-      for family in "''${families[@]}"; do
-        "$family" -w -S chalkos-vxlan
-      done
-    '';
+  vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
+    iptables = config.networking.firewall.package;
+    ipv6 = config.networking.enableIPv6;
   };
 
   cniPlugins = [
@@ -190,8 +172,12 @@ in
         ExecStart = "${lib.getExe chalkd} prepare-kubernetes";
       }
       // lib.optionalAttrs vxlanFirewall {
-        # No VXLAN is accepted while the address is picked, nor when none is found.
-        ExecStartPre = lib.getExe vxlanRule;
+        # No VXLAN is accepted while the address is picked, nor when none is found. The old address
+        # goes first, so a restarting firewall cannot fill the emptied chain from it again.
+        ExecStartPre = [
+          "${pkgs.coreutils}/bin/rm -f ${run}/node-ip"
+          (lib.getExe vxlanRule)
+        ];
         ExecStartPost = "${lib.getExe vxlanRule} ${run}/node-ip";
       };
     };

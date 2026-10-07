@@ -204,8 +204,8 @@ func TestPrepareWithoutNodeIP(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
 	}
-	if exists(p.Kubeconfig()) || exists(p.Manifests()) || exists(p.NodeIP()) {
-		t.Error("a node without an address keeps its kubeconfig, static pods or address")
+	if exists(p.Kubeconfig()) || exists(p.Manifests()) || exists(p.PKI) || exists(p.NodeIP()) {
+		t.Error("a node without an address keeps its kubeconfig, static pods, certificates or address")
 	}
 	if data, err := os.ReadFile(p.NodeIPError()); err != nil || string(data) != want+"\n" {
 		t.Errorf("node-ip.error = %q, %v", data, err)
@@ -220,6 +220,32 @@ func TestPrepareWithoutNodeIP(t *testing.T) {
 	}
 	if exists(p.NodeIPError()) || !exists(p.NodeIP()) {
 		t.Error("the error outlived the address")
+	}
+}
+
+// Nothing an earlier preparation wrote outlives one that fails for any reason: the kubelet would
+// start with it, and the certificates name the address picked then.
+func TestPrepareFailureRemovesFiles(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, p.Bootstrapped(), "")
+	if err := Prepare(p, now, picked); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(p.Kubeconfig()) || !exists(p.PKI) || len(staticPods(t, p)) != 4 {
+		t.Fatal("the first preparation did not prepare the node")
+	}
+	cluster, err := os.ReadFile(p.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Cluster, strings.Replace(string(cluster), `"kind": "controlplane"`, `"kind": "worker"`, 1))
+	if err := Prepare(p, now, picked); err == nil {
+		t.Fatal("prepared a control-plane share on a worker image")
+	}
+	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.NodeIP()} {
+		if exists(path) {
+			t.Errorf("%s outlived a failed preparation", path)
+		}
 	}
 }
 

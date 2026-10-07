@@ -232,13 +232,20 @@ func NodeIPProblem(p Paths) string {
 
 // Prepare picks the node's address and writes the kubelet's files and, on a control-plane node,
 // the control plane's certificates, and its static pods once the node is bootstrapped. A node
-// without a share or an address gets none of them, so its kubelet does not start. The node is
-// marked prepared only once all of them are written.
+// without a share or an address, and one whose preparation fails, keeps none of them, so its
+// kubelet does not start. The node is marked prepared only once all of them are written.
 func Prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err := os.Remove(p.Prepared()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if err := prepare(p, now, resolve); err != nil {
+		// The kubelet must not start with what an earlier attempt wrote, nor the control plane with
+		// certificates naming the address picked then.
+		for _, dir := range []string{p.KubeletDir(), p.Manifests(), p.PKI} {
+			if rerr := os.RemoveAll(dir); rerr != nil {
+				log.Print(rerr)
+			}
+		}
 		return err
 	}
 	return install.WriteFile(p.Prepared(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
@@ -260,11 +267,6 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 		return err
 	}
 	if n.IP, err = resolve(c, n); err != nil {
-		for _, dir := range []string{p.KubeletDir(), p.Manifests()} {
-			if rerr := os.RemoveAll(dir); rerr != nil {
-				log.Print(rerr)
-			}
-		}
 		// chalkd reports the reason in the node's status.
 		if werr := install.WriteFile(p.NodeIPError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
 			log.Print(werr)
