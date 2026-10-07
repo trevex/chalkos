@@ -89,10 +89,14 @@ let
   };
   # The Kubernetes nodes pull every image through the test's registry.
   mirrored = {
-    chalkos.cluster.registries.mirrors = {
-      "registry.k8s.io" = [ registry ];
-      "ghcr.io" = [ registry ];
-      "docker.io" = [ registry ];
+    chalkos.cluster.registries = {
+      # The test's registry serves plain HTTP inside the sandbox.
+      allowPlainHTTP = true;
+      mirrors = {
+        "registry.k8s.io" = [ registry ];
+        "ghcr.io" = [ registry ];
+        "docker.io" = [ registry ];
+      };
     };
   };
   manifestOf =

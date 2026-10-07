@@ -1237,6 +1237,7 @@ lib.runTests {
         etc =
           (role (cluster [
             {
+              chalkos.cluster.registries.allowPlainHTTP = true;
               chalkos.cluster.registries.mirrors = {
                 "docker.io" = [
                   "http://10.0.2.100:5000"
@@ -1267,6 +1268,35 @@ lib.runTests {
         [host."http://10.0.2.100:5000"]
           capabilities = ["pull", "resolve"]
       '';
+    };
+  };
+  testRegistryMirrorsRequireHTTPS = {
+    expr =
+      let
+        hostsToml =
+          registries:
+          (role (cluster [ { chalkos.cluster = { inherit registries; }; } ]))
+          .environment.etc."containerd/certs.d/docker.io/hosts.toml".text;
+      in
+      {
+        plain = fails (hostsToml {
+          mirrors."docker.io" = [
+            "https://mirror.example.com"
+            "http://10.0.2.100:5000"
+          ];
+        });
+        allowed = fails (hostsToml {
+          allowPlainHTTP = true;
+          mirrors."docker.io" = [ "http://10.0.2.100:5000" ];
+        });
+        https = fails (hostsToml {
+          mirrors."docker.io" = [ "https://mirror.example.com" ];
+        });
+      };
+    expected = {
+      plain = true;
+      allowed = false;
+      https = false;
     };
   };
   testKubeletConfiguration = {

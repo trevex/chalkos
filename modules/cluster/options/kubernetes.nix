@@ -100,16 +100,43 @@ in
     '';
   };
 
-  options.chalkos.cluster.registries.mirrors = mkOption {
-    type = types.attrsOf (types.listOf types.str);
-    default = { };
-    example = {
-      "docker.io" = [ "https://mirror.example.com" ];
+  options.chalkos.cluster.registries = {
+    mirrors = mkOption {
+      type = types.attrsOf (types.listOf types.str);
+      default = { };
+      example = {
+        "docker.io" = [ "https://mirror.example.com" ];
+      };
+      # Nothing authenticates a plain HTTP mirror: anyone on the path can replace its images.
+      apply =
+        mirrors:
+        let
+          plain = lib.concatLists (
+            lib.mapAttrsToList (
+              registry: endpoints:
+              map (endpoint: "${registry}: ${endpoint}") (
+                lib.filter (endpoint: !lib.hasPrefix "https://" endpoint) endpoints
+              )
+            ) mirrors
+          );
+        in
+        if plain == [ ] || config.chalkos.cluster.registries.allowPlainHTTP then
+          mirrors
+        else
+          throw "chalkos.cluster.registries.mirrors must be https:// URLs unless chalkos.cluster.registries.allowPlainHTTP is set: ${lib.concatStringsSep ", " plain}";
+      description = ''
+        Mirrors of container registries, by registry host, as https:// URLs. containerd tries
+        them in order and falls back to the registry itself.
+      '';
     };
-    description = ''
-      Mirrors of container registries, by registry host. containerd tries them in order and
-      falls back to the registry itself.
-    '';
+    allowPlainHTTP = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Allow mirrors that are not https:// URLs. It exists for test registries: nothing
+        authenticates what a plain HTTP mirror serves.
+      '';
+    };
   };
 
   options.chalkos.roles = mkOption {
