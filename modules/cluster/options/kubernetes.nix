@@ -41,9 +41,7 @@ let
       builtins.head ipv4
     else
       null;
-  # The fixed addresses of the control-plane nodes; null for a node that picks its address at
-  # boot.
-  controlPlaneIPs = lib.mapAttrsToList (_: node: node.kubernetes.nodeIP) (
+  controlPlaneNodes = lib.attrValues (
     lib.filterAttrs (
       _: node: config.chalkos.roles.${node.role}.kubernetes.kind == "controlplane"
     ) config.chalkos.nodes
@@ -147,6 +145,69 @@ let
         value;
   };
   clusterSubnets = config.chalkos.cluster.kubernetes.nodeIP.validSubnets;
+
+  # An address as { ipv4, groups }, like parseSubnet's, or null.
+  parseAddress =
+    s:
+    let
+      v4 = parseIPv4 s;
+      v6 = parseIPv6 s;
+    in
+    if v4 != null then
+      {
+        ipv4 = true;
+        groups = v4;
+      }
+    else if v6 != null then
+      {
+        ipv4 = false;
+        groups = v6;
+      }
+    else
+      null;
+
+  # Whether the parsed subnet holds the parsed address: each group agrees in the bits the prefix
+  # covers of it.
+  holds =
+    subnet: address:
+    let
+      width = if subnet.ipv4 then 8 else 16;
+      pow2 = n: builtins.foldl' (x: _: x * 2) 1 (lib.range 1 n);
+      agrees =
+        i: group:
+        let
+          unit = pow2 (width - lib.max 0 (lib.min width (subnet.prefix - i * width)));
+        in
+        group / unit == builtins.elemAt address.groups i / unit;
+    in
+    subnet.ipv4 == address.ipv4 && lib.all lib.id (lib.imap0 agrees subnet.groups);
+
+  # Whether a node may pick the parsed address from these subnets, as chalkd's nodeip.Filter
+  # decides it.
+  subnetsMatch =
+    subnets: address:
+    let
+      parsed = map parseSubnet subnets;
+      included = lib.filter (s: !s.exclude) parsed;
+      excluded = lib.filter (s: s.exclude) parsed;
+    in
+    (included == [ ] || lib.any (s: holds s address) included)
+    && !lib.any (s: holds s address) excluded;
+
+  # Whether a control-plane node may hold the endpoint's address: as its fixed nodeIP, or as one
+  # it picks at boot from the subnets that apply to it.
+  holdsEndpoint =
+    node:
+    let
+      endpoint = parseAddress endpointIP;
+      subnets =
+        if node.kubernetes.validSubnets != null then node.kubernetes.validSubnets else clusterSubnets;
+    in
+    if node.kubernetes.nodeIP != null then
+      node.kubernetes.nodeIP == endpointIP
+      || (endpoint != null && parseAddress node.kubernetes.nodeIP == endpoint)
+    else
+      endpoint != null && subnetsMatch subnets endpoint;
 in
 {
   options.chalkos.cluster.kubernetes = {
@@ -325,20 +386,15 @@ in
     );
   };
 
-  # Hostnames are not checked: they may name a load balancer or a DNS record of the nodes. Nor
-  # is the endpoint when a control-plane node picks its address at boot, which may be it.
+  # Hostnames are not checked: they may name a load balancer or a DNS record of the nodes.
   config.chalkos.warnings =
     lib.optional
-      (
-        controlPlaneIPs != [ ]
-        && !lib.elem null controlPlaneIPs
-        && endpointIP != null
-        && !lib.elem endpointIP controlPlaneIPs
-      )
+      (controlPlaneNodes != [ ] && endpointIP != null && !lib.any holdsEndpoint controlPlaneNodes)
       ''
-        chalkos.cluster.endpoint ${config.chalkos.cluster.endpoint} is not the nodeIP of a
-        control-plane node. The endpoint must reach a control-plane node, for example through a
-        node's IP, a load balancer or a VIP.
+        chalkos.cluster.endpoint ${config.chalkos.cluster.endpoint} is neither the nodeIP of a
+        control-plane node nor in the validSubnets one picks its address from.
+        The endpoint must reach a control-plane node, for example through a node's IP, a load
+        balancer or a VIP.
       '';
 
   options.chalkos.nodes = mkOption {

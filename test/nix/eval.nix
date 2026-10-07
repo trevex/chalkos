@@ -1201,9 +1201,46 @@ lib.runTests {
                 };
               }
             ]).warnings;
+        # Control-plane nodes that pick their address at boot hold the endpoint's only when it lies
+        # in the subnets that apply to them.
+        picks =
+          endpoint: clusterSubnets: nodeSubnets:
+          lib.any (lib.hasInfix "must reach a control-plane node")
+            (cluster [
+              {
+                chalkos.cluster.endpoint = lib.mkForce endpoint;
+                chalkos.cluster.kubernetes.nodeIP.validSubnets = clusterSubnets;
+                chalkos.roles.cp.kubernetes.kind = "controlplane";
+                chalkos.nodes.cp1 = {
+                  role = "cp";
+                  storage.system.disk = "/dev/vda";
+                  kubernetes.nodeIP = "10.0.0.11";
+                };
+                chalkos.nodes.cp2 = {
+                  role = "cp";
+                  storage.system.disk = "/dev/vda";
+                  kubernetes.validSubnets = nodeSubnets;
+                };
+              }
+            ]).warnings;
       in
       {
         inherit picked;
+        picksOutside = picks "https://10.0.0.10:6443" [ ] [ "192.168.0.0/24" ];
+        picksExcluded =
+          picks "https://10.0.0.10:6443"
+            [ ]
+            [
+              "10.0.0.0/24"
+              "!10.0.0.8/29"
+            ];
+        picksOnlyExclusions = picks "https://10.0.0.10:6443" [ ] [ "!192.168.0.0/16" ];
+        picksAny = picks "https://10.0.0.10:6443" [ ] [ ];
+        picksClusterSubnets = picks "https://10.0.0.10:6443" [ "10.0.0.0/8" ] null;
+        picksOutsideClusterSubnets = picks "https://10.0.0.10:6443" [ "192.168.0.0/16" ] null;
+        picksIPv6 = picks "https://[fd00::10]:6443" [ ] [ "fd00::/64" ];
+        picksOtherFamily = picks "https://[fd00::10]:6443" [ ] [ "10.0.0.0/8" ];
+        picksIPv6Outside = picks "https://[fd00:0:0:1::10]:6443" [ ] [ "fd00::/64" ];
         vip = warns "https://10.0.0.10:6443";
         worker = warns "https://10.0.0.20:6443";
         controlPlane = warns "https://10.0.0.11:6443";
@@ -1214,6 +1251,15 @@ lib.runTests {
       };
     expected = {
       picked = false;
+      picksOutside = true;
+      picksExcluded = true;
+      picksOnlyExclusions = false;
+      picksAny = false;
+      picksClusterSubnets = false;
+      picksOutsideClusterSubnets = true;
+      picksIPv6 = false;
+      picksOtherFamily = true;
+      picksIPv6Outside = true;
       vip = true;
       worker = true;
       controlPlane = false;
