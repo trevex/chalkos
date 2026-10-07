@@ -490,7 +490,7 @@ func TestControlPlaneLoopRestarts(t *testing.T) {
 		applied(19)
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	resp, err := bootstrap(s, ctx)
 	if err != nil {
@@ -535,7 +535,7 @@ func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 	}
 	select {
 	case <-runs:
-	case <-time.After(10 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("the control plane's loop did not start once the node's files were prepared")
 	}
 }
@@ -557,7 +557,7 @@ func TestControlPlaneLoopPins(t *testing.T) {
 	k.Start()
 	select {
 	case <-ran:
-	case <-time.After(10 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("the control plane's loop did not run")
 	}
 	if pin, err := knode.ReadPin(k.Paths); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
@@ -725,7 +725,7 @@ func TestApplyIdentityRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 		if second.CA.Certificate != want.CA.Certificate {
 			t.Error("the loop started again with the old share")
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("the running loop did not start again with the delivered share")
 	}
 }

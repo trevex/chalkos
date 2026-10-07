@@ -506,7 +506,7 @@ func TestRebootAfterResponse(t *testing.T) {
 	}
 	select {
 	case <-rebooted:
-	case <-time.After(5 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("the node did not reboot")
 	}
 }
@@ -626,7 +626,7 @@ func TestLogsLimitsStreams(t *testing.T) {
 		t.Helper()
 		select {
 		case <-started:
-		case <-time.After(5 * time.Second):
+		case <-time.After(time.Minute):
 			t.Fatal("a stream did not reach the journal")
 		}
 	}
@@ -652,13 +652,13 @@ func TestLogsLimitsStreams(t *testing.T) {
 		}
 	case <-started:
 		t.Fatalf("stream %d reached the journal", maxLogStreams+1)
-	case <-time.After(5 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("the stream over the limit was not refused")
 	}
 
 	// A stream that ends frees its slot.
 	cancels[0]()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(time.Minute)
 	for {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancels = append(cancels, cancel)

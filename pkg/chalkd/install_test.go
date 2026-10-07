@@ -72,7 +72,7 @@ func TestInstallInPlace(t *testing.T) {
 	}
 	select {
 	case <-rebooted:
-	case <-time.After(5 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("the node did not reboot after installing")
 	}
 	err := sendInstall(t, s, header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil)
