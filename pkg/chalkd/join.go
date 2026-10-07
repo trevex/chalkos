@@ -17,7 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -50,20 +49,38 @@ func (k *Kubernetes) startJoin() {
 	go k.superviseJoin(k.loops())
 }
 
-// setJoinState records what the join waits for or does, for the node's status.
-func (k *Kubernetes) setJoinState(state string) {
+// setJoinStep records what the join does or why its last attempt failed, for the node's status.
+func (k *Kubernetes) setJoinStep(step string) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.joinState = state
+	k.joinStep, k.joinWaiting = step, false
 }
 
-func (k *Kubernetes) joinStatus(c k8s.Cluster) string {
+// setJoinWaiting records that the join finds no cluster at the endpoint, and why.
+func (k *Kubernetes) setJoinWaiting(err error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.joinState == "" {
-		return waitingForCluster(c)
+	k.joinStep, k.joinWaiting = err.Error(), true
+}
+
+// joinStatus is the state of a control plane that is not bootstrapped. Once the join started, as
+// its marker on STATE says, it names the join and its step or last error, also while the
+// cluster cannot be reached and after chalkd started again.
+func (k *Kubernetes) joinStatus(c k8s.Cluster) (string, error) {
+	joining, err := knode.Joining(k.Paths)
+	if err != nil {
+		return "", err
 	}
-	return k.joinState
+	k.mu.Lock()
+	step, waiting := k.joinStep, k.joinWaiting
+	k.mu.Unlock()
+	switch {
+	case !joining && (waiting || step == ""):
+		return waitingForCluster(c), nil
+	case step == "":
+		step = "resuming the join"
+	}
+	return "joining the cluster at " + c.Endpoint + ": " + step, nil
 }
 
 // superviseJoin tries to join the cluster until the node is an etcd voter, then starts the
@@ -85,18 +102,18 @@ func (k *Kubernetes) superviseJoin(ctx context.Context) {
 		switch {
 		case err == nil:
 			log.Print("kubernetes: joined the cluster; the control plane starts")
-			k.setJoinState("")
+			k.setJoinStep("")
 			k.start()
 			return
 		case errors.Is(err, errBootstrapped):
-			k.setJoinState("")
+			k.setJoinStep("")
 			return
 		case errors.As(err, &waiting), errors.Is(err, errNotPrepared):
 		case errors.As(err, &stale):
 			log.Printf("kubernetes: %v", err)
 		default:
 			log.Printf("kubernetes: joining the cluster: %v; trying again in %v", err, retry)
-			k.setJoinState(fmt.Sprintf("joining the cluster failed: %v; trying again", err))
+			k.setJoinStep(fmt.Sprintf("%v; trying again", err))
 		}
 		select {
 		case <-ctx.Done():
@@ -139,10 +156,10 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	}
 	endpoints, err := k.EtcdEndpoints(ctx, c, share, ips)
 	if err != nil {
-		k.setJoinState(waitingForCluster(c))
+		k.setJoinWaiting(err)
 		return waitingError{err}
 	}
-	k.setJoinState("joining the cluster at " + c.Endpoint)
+	k.setJoinStep("checking etcd's members")
 	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
 	if err != nil {
 		return err
@@ -181,20 +198,24 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		if name == "" {
 			name = fmt.Sprintf("%x", stale.Member.ID)
 		}
-		k.setJoinState(fmt.Sprintf("%v; remove it with chalkctl etcd remove-member %s", err, name))
+		k.setJoinStep(fmt.Sprintf("%v; remove it with chalkctl etcd remove-member %s", err, name))
 		return err
 	}
 	if err != nil {
+		return err
+	}
+	// The marker comes first: from here on the node may be a member, even when the reply to its
+	// addition is lost, so it must never bootstrap a cluster of its own.
+	if err := knode.MarkJoining(k.Paths, c.Endpoint); err != nil {
 		return err
 	}
 	var initialCluster string
 	if ok {
 		initialCluster = etcd.InitialCluster(members, own.ID, n.Name)
 	} else {
-		// The pin comes first: from here on the node may be a member, which its peers know by
-		// these addresses.
+		// The peers know the member by the addresses it is added with.
 		if pin == nil {
-			if err := knode.WritePin(k.Paths); err != nil {
+			if err := knode.WritePin(k.Paths, ips); err != nil {
 				return err
 			}
 		}
@@ -208,7 +229,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	if err := knode.RenderEtcd(k.Paths); err != nil {
 		return fmt.Errorf("render etcd: %w", err)
 	}
-	k.setJoinState(fmt.Sprintf("joining the cluster at %s: etcd member %x catches up", c.Endpoint, own.ID))
+	k.setJoinStep(fmt.Sprintf("etcd member %x catches up", own.ID))
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	if err := etcd.Promote(pctx, cli, own.ID, 2*time.Second); err != nil {
@@ -221,10 +242,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		return fmt.Errorf("render the static pods: %w", err)
 	}
 	// Last: a node marked bootstrapped renders its static pods at boot and joins no more.
-	if err := install.WriteFile(k.Paths.Bootstrapped(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
-		return fmt.Errorf("record the join: %w", err)
-	}
-	return nil
+	return knode.MarkJoined(k.Paths, time.Now())
 }
 
 // etcdEndpoints lists the client URLs of the etcd members other than the node's own, from the

@@ -105,8 +105,13 @@ func TestJoin(t *testing.T) {
 	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 1 {
 		t.Errorf("static pods %v, want etcd alone while it is a learner", pods)
 	}
-	if pin, err := knode.ReadPin(p); err != nil || len(pin) != 1 || pin[0].String() != "127.0.0.2" {
-		t.Errorf("pin = %v, %v", pin, err)
+	pin, err := knode.ReadPin(p)
+	if err != nil || len(pin) != 1 || pin[0].String() != "127.0.0.2" {
+		t.Fatalf("pin = %v, %v", pin, err)
+	}
+	// The peers know the learner, which has not started and so sorts first, by the pinned address.
+	if list := members(t, cli); len(list) != 2 || !slices.Equal(list[0].PeerURLs, []string{etcd.PeerURL(net.IP(pin[0].AsSlice()))}) {
+		t.Errorf("members %+v, want the learner at the pinned address %s", list, pin[0])
 	}
 	initial, err := os.ReadFile(p.EtcdInitialCluster())
 	if err != nil {
@@ -154,7 +159,7 @@ func TestJoinStopsAtStaleMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	k.Start()
-	want := "etcd has a member " + fmt.Sprintf("%x", stale.ID) + " (not started, " + joinPeerURL + ") already; remove it with chalkctl etcd remove-member " + fmt.Sprintf("%x", stale.ID)
+	want := "joining the cluster at https://192.168.100.11:6443: etcd has a member " + fmt.Sprintf("%x", stale.ID) + " (not started, " + joinPeerURL + ") already; remove it with chalkctl etcd remove-member " + fmt.Sprintf("%x", stale.ID)
 	eventually(t, "the stale member's state", func() bool { return kubernetesState(t, s) == want })
 	if exists(k.Paths.Pin()) || exists(k.Paths.EtcdInitialCluster()) {
 		t.Error("a node that found a stale member pinned itself or prepared etcd")
@@ -173,7 +178,14 @@ func TestJoinStopsAtStaleMember(t *testing.T) {
 func TestJoinResumes(t *testing.T) {
 	s, _, cli := joiningServer(t)
 	k := s.Kubernetes
-	if err := knode.WritePin(k.Paths); err != nil {
+	ips, err := knode.ReadNodeIPs(k.Paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := knode.MarkJoining(k.Paths, "https://192.168.100.11:6443"); err != nil {
+		t.Fatal(err)
+	}
+	if err := knode.WritePin(k.Paths, ips); err != nil {
 		t.Fatal(err)
 	}
 	added, _, err := etcd.AddLearner(context.Background(), cli, "n1", joinPeerURL)
@@ -248,6 +260,91 @@ func TestBootstrapRefusedWhileJoining(t *testing.T) {
 	k.membership.Unlock()
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "joining the cluster") {
 		t.Errorf("bootstrap during a join: %v", err)
+	}
+}
+
+// stallJoin starts a join that cannot add its learner, as etcd takes one learner at a time and
+// the cluster has another, and waits until it tried.
+func stallJoin(t *testing.T, s *Server, cli *clientv3.Client) etcd.Member {
+	t.Helper()
+	k := s.Kubernetes
+	other, _, err := etcd.AddLearner(context.Background(), cli, "other", etcdtest.PeerURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.Start()
+	eventually(t, "the join to fail adding its learner", func() bool {
+		return strings.Contains(kubernetesState(t, s), "add this node to etcd as a learner")
+	})
+	return other
+}
+
+func stopJoin(t *testing.T, k *Kubernetes) {
+	t.Helper()
+	k.Stop()
+	eventually(t, "the join to stop", func() bool {
+		k.mu.Lock()
+		defer k.mu.Unlock()
+		return !k.joining
+	})
+}
+
+// A node whose learner may have been added, as when the reply to the addition was lost, never
+// bootstraps a cluster of its own.
+func TestBootstrapRefusedAfterJoinStarted(t *testing.T) {
+	s, _, cli := joiningServer(t)
+	k := s.Kubernetes
+	p := k.Paths
+	other := stallJoin(t, s, cli)
+	stopJoin(t, k)
+	// The member was added, but the node never learned of it.
+	if err := etcd.Remove(context.Background(), cli, other.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := etcd.AddLearner(context.Background(), cli, "", joinPeerURL); err != nil {
+		t.Fatal(err)
+	}
+	k.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return false }
+	_, err := bootstrap(s, context.Background())
+	want := "the node started joining the cluster at https://192.168.100.11:6443; finish the join or remove its member and reinstall"
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("bootstrap: %v, want %q", err, want)
+	}
+	if exists(p.Bootstrapped()) || exists(p.EtcdInitialCluster()) || exists(p.EtcdInitialised()) {
+		t.Error("a refused bootstrap marked the node")
+	}
+	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 0 {
+		t.Errorf("static pods %v after a refused bootstrap", pods)
+	}
+}
+
+// Once the join started, the status names it and why it stalls, never a wait for the cluster.
+func TestJoinStatusAfterStall(t *testing.T) {
+	s, _, cli := joiningServer(t)
+	k := s.Kubernetes
+	var unreachable atomic.Bool
+	endpoints := k.EtcdEndpoints
+	k.EtcdEndpoints = func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []net.IP) ([]string, error) {
+		if unreachable.Load() {
+			return nil, errors.New("connection refused")
+		}
+		return endpoints(ctx, c, share, self)
+	}
+	stallJoin(t, s, cli)
+	const prefix = "joining the cluster at https://192.168.100.11:6443: "
+	if got := kubernetesState(t, s); !strings.HasPrefix(got, prefix+"add this node to etcd as a learner") || !strings.HasSuffix(got, "; trying again") {
+		t.Errorf("state %q", got)
+	}
+	unreachable.Store(true)
+	eventually(t, "the unreachable cluster's state", func() bool { return kubernetesState(t, s) == prefix+"connection refused" })
+	// chalkd started again remembers the join.
+	fresh := &Kubernetes{Paths: k.Paths}
+	st, err := fresh.status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(st.State, prefix) {
+		t.Errorf("state %q after a restart", st.State)
 	}
 }
 

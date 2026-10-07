@@ -335,7 +335,11 @@ func TestPreparePinned(t *testing.T) {
 	if err := Prepare(p, now, onNode("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := WritePin(p); err != nil {
+	ips, err := ReadNodeIPs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WritePin(p, ips); err != nil {
 		t.Fatal(err)
 	}
 	if pin, err := ReadPin(p); err != nil || len(pin) != 1 || pin[0] != netip.MustParseAddr("192.168.100.11") {
@@ -350,7 +354,7 @@ func TestPreparePinned(t *testing.T) {
 		t.Errorf("node-ip = %q, %v", data, err)
 	}
 
-	err := Prepare(p, now, onNode("192.168.100.5"), nil)
+	err = Prepare(p, now, onNode("192.168.100.5"), nil)
 	want := "pinned address 192.168.100.11 is not present; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
@@ -362,15 +366,6 @@ func TestPreparePinned(t *testing.T) {
 		t.Errorf("PreparationError() = %q, %v", reason, err)
 	}
 
-	if err := ClearPin(p); err != nil {
-		t.Fatal(err)
-	}
-	if pin, err := ReadPin(p); err != nil || pin != nil {
-		t.Errorf("after ClearPin: %v, %v", pin, err)
-	}
-	if err := ClearPin(p); err != nil {
-		t.Errorf("clearing no pin: %v", err)
-	}
 }
 
 // Workers pick their addresses at every boot.
@@ -399,12 +394,61 @@ func TestReadPin(t *testing.T) {
 			t.Errorf("ReadPin(%q): %v", content, err)
 		}
 	}
-	// Pinning needs the addresses the preparation picked.
+	// A pin holds at least one address.
 	if err := os.Remove(p.Pin()); err != nil {
 		t.Fatal(err)
 	}
-	if err := WritePin(p); err == nil || exists(p.Pin()) {
-		t.Errorf("pinned without picked addresses: %v", err)
+	if err := WritePin(p, nil); err == nil || exists(p.Pin()) {
+		t.Errorf("pinned without addresses: %v", err)
+	}
+}
+
+// A node that started joining stays marked until the join completes.
+func TestMarkJoined(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	if joining, err := Joining(p); err != nil || joining {
+		t.Fatalf("before: %v, %v", joining, err)
+	}
+	if err := MarkJoining(p, "https://192.168.100.10:6443"); err != nil {
+		t.Fatal(err)
+	}
+	if joining, err := Joining(p); err != nil || !joining {
+		t.Fatalf("after MarkJoining: %v, %v", joining, err)
+	}
+	if err := MarkJoined(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if joining, err := Joining(p); err != nil || joining {
+		t.Errorf("after MarkJoined: joining %v, %v", joining, err)
+	}
+	if bootstrapped, err := Bootstrapped(p); err != nil || !bootstrapped {
+		t.Errorf("after MarkJoined: bootstrapped %v, %v", bootstrapped, err)
+	}
+}
+
+// ClearMembership removes every file that makes the node an etcd member at boot, and keeps
+// etcd's data.
+func TestClearMembership(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	markers := []string{p.Joining(), p.Bootstrapped(), p.EtcdInitialised(), p.EtcdInitialCluster(), p.Pin()}
+	for _, f := range markers {
+		write(t, f, "x\n")
+	}
+	db := filepath.Join(p.EtcdData, "member", "snap", "db")
+	write(t, db, "")
+	if err := ClearMembership(p); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range markers {
+		if exists(f) {
+			t.Errorf("%s outlived ClearMembership", f)
+		}
+	}
+	if !exists(db) {
+		t.Error("ClearMembership deleted etcd's data")
+	}
+	if err := ClearMembership(p); err != nil {
+		t.Errorf("clearing nothing: %v", err)
 	}
 }
 

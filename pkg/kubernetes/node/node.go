@@ -87,6 +87,10 @@ func (p Paths) EtcdInitialCluster() string { return filepath.Join(p.State, "etcd
 // EtcdInitialised marks that etcd answered ready after the bootstrap, so its data exists.
 func (p Paths) EtcdInitialised() string { return filepath.Join(p.State, "etcd-initialised") }
 
+// Joining marks that the node started joining the cluster at the endpoint it holds: it may be an
+// etcd member from then on, so it never bootstraps a cluster of its own.
+func (p Paths) Joining() string { return filepath.Join(p.State, "joining") }
+
 // Kubeconfig is the kubelet's kubeconfig, which chalkd also reads the Node with.
 func (p Paths) Kubeconfig() string { return filepath.Join(p.KubeletDir(), "kubeconfig") }
 
@@ -123,6 +127,46 @@ func Bootstrapped(p Paths) (bool, error) {
 // EtcdInitialised reports whether etcd on this node answered ready after the bootstrap.
 func EtcdInitialised(p Paths) (bool, error) {
 	return marked(p.EtcdInitialised())
+}
+
+// Joining reports whether the node started joining the cluster and has not finished.
+func Joining(p Paths) (bool, error) {
+	return marked(p.Joining())
+}
+
+// MarkJoining records that the node starts joining the cluster at the endpoint.
+func MarkJoining(p Paths, endpoint string) error {
+	return install.WriteFile(p.Joining(), []byte(endpoint+"\n"), 0o644)
+}
+
+// MarkJoined records that the node joined the cluster: from then on it is a bootstrapped control
+// plane that renders its static pods at boot. The bootstrapped marker comes first, so the node is
+// marked as one or the other at any time.
+func MarkJoined(p Paths, now time.Time) error {
+	if err := install.WriteFile(p.Bootstrapped(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("record the join: %w", err)
+	}
+	return removeIfExists(p.Joining())
+}
+
+// ClearMembership removes what makes the node an etcd member at boot: the bootstrapped,
+// etcd-initialised and joining markers, the initial cluster and, last, the pin. etcd's data stays.
+// The caller records first that the node left etcd: a node interrupted here must not look like one
+// that has yet to join.
+func ClearMembership(p Paths) error {
+	for _, f := range []string{p.Bootstrapped(), p.EtcdInitialised(), p.EtcdInitialCluster(), p.Joining(), p.Pin()} {
+		if err := removeIfExists(f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func removeIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // Prepared reports whether Prepare finished and succeeded since it last started.
@@ -227,11 +271,10 @@ func ReadNodeIPs(p Paths) ([]net.IP, error) {
 	return ips, nil
 }
 
-// WritePin pins the node to the addresses the preparation picked.
-func WritePin(p Paths) error {
-	ips, err := ReadNodeIPs(p)
-	if err != nil {
-		return fmt.Errorf("pin the node's addresses: %w", err)
+// WritePin pins the node to the addresses, the ones the preparation picked and etcd advertises.
+func WritePin(p Paths, ips []net.IP) error {
+	if len(ips) == 0 {
+		return errors.New("pin the node's addresses: there are none")
 	}
 	return install.WriteFile(p.Pin(), nodeIPFile(ips), 0o644)
 }
@@ -257,14 +300,6 @@ func ReadPin(p Paths) ([]netip.Addr, error) {
 		return nil, fmt.Errorf("%s holds no address", p.Pin())
 	}
 	return pin, nil
-}
-
-// ClearPin removes the pin.
-func ClearPin(p Paths) error {
-	if err := os.Remove(p.Pin()); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
 }
 
 // nodeSelector is how the node picks its addresses: a control-plane node that is pinned waits

@@ -71,10 +71,12 @@ type Kubernetes struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	vipDone chan struct{}
-	// joining is set while the join's loop runs; joinState is what it waits for or does.
-	joining   bool
-	joinState string
-	started   bool
+	// joining is set while the join's loop runs; joinStep is what it does or why it failed last,
+	// and joinWaiting is set while it finds no cluster.
+	joining     bool
+	joinStep    string
+	joinWaiting bool
+	started     bool
 	// reload asks the running loop to start again.
 	reload chan struct{}
 	// done is closed once the manifests were applied; count is how many.
@@ -267,7 +269,11 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 	if pin, err := knode.ReadPin(k.Paths); err != nil {
 		return err
 	} else if pin == nil {
-		if err := knode.WritePin(k.Paths); err != nil {
+		ips, err := knode.ReadNodeIPs(k.Paths)
+		if err != nil {
+			return err
+		}
+		if err := knode.WritePin(k.Paths, ips); err != nil {
 			return err
 		}
 	}
@@ -425,6 +431,10 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	case problem != "":
 		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
 	}
+	ips, err := knode.ReadNodeIPs(k.Paths)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
 	if !k.membership.TryLock() {
 		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
 	}
@@ -434,6 +444,13 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 		return nil, failed(connect.CodeInternal, "%v", err)
 	case bootstrapped:
 		return nil, failed(connect.CodeFailedPrecondition, "the node joined the cluster already")
+	}
+	// The node may be an etcd member of the cluster already, even when it never learned so.
+	switch joining, err := knode.Joining(k.Paths); {
+	case err != nil:
+		return nil, failed(connect.CodeInternal, "%v", err)
+	case joining:
+		return nil, failed(connect.CodeFailedPrecondition, "the node started joining the cluster at %s; finish the join or remove its member and reinstall", c.Endpoint)
 	}
 	if _, err := os.Stat(k.Paths.EtcdInitialCluster()); err == nil {
 		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
@@ -445,7 +462,7 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 		return nil, failed(connect.CodeFailedPrecondition, "the cluster's API server answers at %s; this node joins it on its own", c.Endpoint)
 	}
 	// etcd's peers and the certificates know the node by its addresses from now on.
-	if err := knode.WritePin(k.Paths); err != nil {
+	if err := knode.WritePin(k.Paths, ips); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	if err := install.WriteFile(k.Paths.Bootstrapped(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
@@ -517,7 +534,9 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 			}
 		}
 	default:
-		st.State = k.joinStatus(c)
+		if st.State, err = k.joinStatus(c); err != nil {
+			return nil, err
+		}
 		return st, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
