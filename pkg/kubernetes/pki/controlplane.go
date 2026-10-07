@@ -192,3 +192,15 @@ func IssueChalkd(s Share, validity time.Duration, now time.Time) (pki.CertKey, e
 	}
 	return pki.IssueLeaf(s.CA, pki.Leaf{CommonName: ChalkdUser, Organization: []string{MastersGroup}, Client: true, Validity: validity}, now)
 }
+
+// IssueEtcdClient issues chalkd's client certificate for etcd from the share's etcd CA, valid
+// for validity. etcd accepts any client certificate of its CA.
+func IssueEtcdClient(s Share, validity time.Duration, now time.Time) (pki.CertKey, error) {
+	if s.Kind != kubernetes.KindControlPlane || s.EtcdCA == nil {
+		return pki.CertKey{}, errors.New("only control-plane nodes hold the etcd CA key")
+	}
+	if validity <= 0 {
+		return pki.CertKey{}, errors.New("chalkd's certificate needs a validity")
+	}
+	return pki.IssueLeaf(*s.EtcdCA, pki.Leaf{CommonName: ChalkdUser, Client: true, Validity: validity}, now)
+}

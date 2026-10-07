@@ -232,6 +232,32 @@ func TestControlPlaneNeedsControlPlaneShare(t *testing.T) {
 	}
 }
 
+func TestIssueEtcdClient(t *testing.T) {
+	k := secrets(t)
+	w, err := WorkerShare(k, "w1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := IssueEtcdClient(w, time.Hour, now); err == nil {
+		t.Error("issued an etcd client certificate from a worker share")
+	}
+	if _, err := IssueEtcdClient(ControlPlaneShare(k), 0, now); err == nil {
+		t.Error("issued an etcd client certificate without a validity")
+	}
+	ck, err := IssueEtcdClient(ControlPlaneShare(k), time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _, err := ck.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientOf(t, "etcd client", cert, k.EtcdCA)
+	if cert.Subject.CommonName != ChalkdUser || !cert.NotAfter.Equal(now.Add(time.Hour)) {
+		t.Errorf("etcd client certificate %v, expires %v", cert.Subject, cert.NotAfter)
+	}
+}
+
 // Anonymous requests reach only the health endpoints, which the kubelet probes without
 // credentials.
 func TestAuthenticationConfig(t *testing.T) {
