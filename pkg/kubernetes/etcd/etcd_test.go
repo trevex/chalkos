@@ -333,3 +333,22 @@ func TestOneCluster(t *testing.T) {
 		t.Errorf("OneCluster took %v without an answer", d)
 	}
 }
+
+// Promoting a learner that was removed fails at once.
+func TestPromoteRemovedLearner(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m1 := etcdtest.StartNew(t, ca, "m1")
+	cli := dial(t, ca, m1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	added, _, err := AddLearner(ctx, cli, "m2", etcdtest.PeerURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(ctx, cli, added.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); !errors.Is(err, ErrMemberRemoved) {
+		t.Errorf("err = %v, want ErrMemberRemoved", err)
+	}
+}

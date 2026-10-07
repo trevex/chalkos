@@ -26,6 +26,13 @@ import (
 // errBootstrapped ends the join: the node was bootstrapped, or joined, meanwhile.
 var errBootstrapped = errors.New("the node is bootstrapped")
 
+// errMemberRemoved stops the join: an operator removed the member the node started etcd with,
+// and joining again would start etcd with that member's data.
+var errMemberRemoved = errors.New("the node's etcd member was removed while joining; run chalkctl etcd leave and retry")
+
+// errEarlierData refuses a fresh join: etcd would start with the data of another membership.
+var errEarlierData = errors.New("etcd data from an earlier membership is present on VAR; remove it with chalkctl etcd leave or reset VAR")
+
 // waitingError means the cluster to join is not there yet.
 type waitingError struct{ err error }
 
@@ -110,8 +117,12 @@ func (k *Kubernetes) superviseJoin(ctx context.Context) {
 			k.setJoinStep("")
 			return
 		case errors.As(err, &waiting), errors.Is(err, errNotPrepared):
-		case errors.As(err, &stale), errors.As(err, &split):
+		case errors.As(err, &stale), errors.As(err, &split), errors.Is(err, errEarlierData):
 			log.Printf("kubernetes: %v", err)
+		case errors.Is(err, errMemberRemoved):
+			log.Printf("kubernetes: %v", err)
+			k.setJoinStep(err.Error())
+			return
 		default:
 			log.Printf("kubernetes: joining the cluster: %v; trying again in %v", err, retry)
 			k.setJoinStep(fmt.Sprintf("%v; trying again", err))
@@ -219,6 +230,12 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ok {
+		if err := k.checkFreshJoin(); err != nil {
+			k.setJoinStep(err.Error())
+			return err
+		}
+	}
 	// The marker comes first: from here on the node may be a member, even when the reply to its
 	// addition is lost, so it must never bootstrap a cluster of its own.
 	if err := knode.MarkJoining(k.Paths, c.Endpoint); err != nil {
@@ -248,9 +265,18 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		return fmt.Errorf("render etcd: %w", err)
 	}
 	k.setJoinStep(fmt.Sprintf("etcd member %x catches up", own.ID))
-	pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	promoteTimeout := k.PromoteTimeout
+	if promoteTimeout <= 0 {
+		promoteTimeout = 10 * time.Minute
+	}
+	pctx, cancel := context.WithTimeout(ctx, promoteTimeout)
 	defer cancel()
-	if err := etcd.Promote(pctx, cli, own.ID, 2*time.Second, k.etcdTimeout()); err != nil {
+	switch err := etcd.Promote(pctx, cli, own.ID, 2*time.Second, k.etcdTimeout()); {
+	case errors.Is(err, etcd.ErrMemberRemoved):
+		return errMemberRemoved
+	case err != nil && ctx.Err() == nil && pctx.Err() != nil:
+		return fmt.Errorf("etcd member %x did not catch up with the leader within %v", own.ID, promoteTimeout)
+	case err != nil:
 		return err
 	}
 	if err := knode.MarkEtcdInitialised(k.Paths, time.Now()); err != nil {
@@ -395,4 +421,21 @@ func (k *Kubernetes) checkSplit(ctx context.Context, share kpki.Share) (*etcd.Sp
 		return nil, errors.New("the node's etcd member did not answer")
 	}
 	return nil, nil
+}
+
+// checkFreshJoin refuses adding the node to etcd when it finds no member of its own but etcd ran
+// on it already: the member it started etcd with was removed, or its data is from an earlier
+// membership. It deletes nothing.
+func (k *Kubernetes) checkFreshJoin() error {
+	if started, err := knode.HasInitialCluster(k.Paths); err != nil {
+		return err
+	} else if started {
+		return errMemberRemoved
+	}
+	if hasData, err := knode.EtcdHasData(k.Paths); err != nil {
+		return err
+	} else if hasData {
+		return errEarlierData
+	}
+	return nil
 }

@@ -592,6 +592,11 @@ func WriteInitialCluster(p Paths, initialCluster string) error {
 	return install.WriteFile(p.EtcdInitialCluster(), []byte(initialCluster+"\n"), 0o644)
 }
 
+// HasInitialCluster reports whether the node recorded the initial cluster its etcd joins with.
+func HasInitialCluster(p Paths) (bool, error) {
+	return marked(p.EtcdInitialCluster())
+}
+
 // readInitialCluster returns the initial cluster the node joined with, "" when it started its own.
 func readInitialCluster(p Paths) (string, error) {
 	data, err := os.ReadFile(p.EtcdInitialCluster())

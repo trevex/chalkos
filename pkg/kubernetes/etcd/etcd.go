@@ -171,6 +171,9 @@ func InitialCluster(members []Member, id uint64, name string) string {
 	return strings.Join(entries, ",")
 }
 
+// ErrMemberRemoved means the member is no longer one of etcd's.
+var ErrMemberRemoved = errors.New("the member was removed")
+
 // Promote makes the learner a voter once it caught up with the leader, trying again every
 // interval while etcd says it has not. Each request ends after timeout. A member that is a voter
 // already is left as it is.
@@ -182,6 +185,8 @@ func Promote(ctx context.Context, cli *clientv3.Client, id uint64, interval, tim
 		switch {
 		case err == nil, errors.Is(err, rpctypes.ErrMemberNotLearner):
 			return nil
+		case errors.Is(err, rpctypes.ErrMemberNotFound):
+			return fmt.Errorf("promote the learner %x: %w", id, ErrMemberRemoved)
 		case !errors.Is(err, rpctypes.ErrMemberLearnerNotReady):
 			return fmt.Errorf("promote the learner %x: %w", id, err)
 		}

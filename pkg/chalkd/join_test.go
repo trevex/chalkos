@@ -447,3 +447,81 @@ func TestControlPlaneReportsSplit(t *testing.T) {
 		cli.Close()
 	}
 }
+
+// A node that finds no member of its own and holds etcd data from an earlier membership refuses
+// to join, and deletes nothing.
+func TestJoinRefusesEarlierEtcdData(t *testing.T) {
+	s, _, cli := joiningServer(t)
+	k := s.Kubernetes
+	db := filepath.Join(k.Paths.EtcdData, "member", "snap", "db")
+	write(t, db, "")
+	k.Start()
+	want := "joining the cluster at https://192.168.100.11:6443: etcd data from an earlier membership is present on VAR; remove it with chalkctl etcd leave or reset VAR"
+	eventually(t, "the refusal's state", func() bool { return kubernetesState(t, s) == want })
+	stopJoin(t, k)
+	if list := members(t, cli); len(list) != 1 {
+		t.Errorf("members %+v, want cp0 alone", list)
+	}
+	if exists(k.Paths.Joining()) || exists(k.Paths.Pin()) {
+		t.Error("a refused join marked or pinned the node")
+	}
+	if !exists(db) {
+		t.Error("the join deleted etcd's data")
+	}
+}
+
+// A learner removed while the node joins stops the join, which keeps what it wrote.
+func TestJoinStopsWhenLearnerRemoved(t *testing.T) {
+	s, _, cli := joiningServer(t)
+	k := s.Kubernetes
+	k.Start()
+	eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
+	learner := slices.IndexFunc(members(t, cli), func(m etcd.Member) bool { return m.Learner })
+	if learner < 0 {
+		t.Fatal("no learner")
+	}
+	if err := etcd.Remove(context.Background(), cli, members(t, cli)[learner].ID, false); err != nil {
+		t.Fatal(err)
+	}
+	want := "joining the cluster at https://192.168.100.11:6443: the node's etcd member was removed while joining; run chalkctl etcd leave and retry"
+	eventually(t, "the join to stop", func() bool {
+		k.mu.Lock()
+		defer k.mu.Unlock()
+		return !k.joining
+	})
+	if got := kubernetesState(t, s); got != want {
+		t.Errorf("state %q, want %q", got, want)
+	}
+	if list := members(t, cli); len(list) != 1 {
+		t.Errorf("members %+v, want cp0 alone", list)
+	}
+	for _, f := range []string{k.Paths.Joining(), k.Paths.Pin(), k.Paths.EtcdInitialCluster()} {
+		if !exists(f) {
+			t.Errorf("the stopped join removed %s", f)
+		}
+	}
+
+	// A join resumed later stops again rather than adding another learner.
+	k.setJoinStep("")
+	k.Start()
+	eventually(t, "the resumed join to stop", func() bool {
+		k.mu.Lock()
+		joining := k.joining
+		k.mu.Unlock()
+		return !joining && kubernetesState(t, s) == want
+	})
+	if list := members(t, cli); len(list) != 1 {
+		t.Errorf("members %+v after resuming, want cp0 alone", list)
+	}
+}
+
+// The join reports that its learner did not catch up in time, and tries again.
+func TestJoinReportsPromoteTimeout(t *testing.T) {
+	s, _, _ := joiningServer(t)
+	k := s.Kubernetes
+	k.PromoteTimeout = 300 * time.Millisecond
+	k.Start()
+	eventually(t, "the timeout's state", func() bool {
+		return strings.Contains(kubernetesState(t, s), "did not catch up with the leader within 300ms; trying again")
+	})
+}

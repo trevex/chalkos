@@ -50,6 +50,9 @@ type Kubernetes struct {
 	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
 	// JoinRetry is the wait between two attempts to join the cluster; zero means 10 seconds.
 	JoinRetry time.Duration
+	// PromoteTimeout is how long the join waits for its learner to catch up with the leader before
+	// it starts over; zero means 10 minutes.
+	PromoteTimeout time.Duration
 	// VIPAddresses are the cluster's VIPs on this node's interfaces. Tests replace it.
 	VIPAddresses func(c k8s.Cluster, p knode.Paths) (AddressManager, error)
 	// APIServerReady reports whether the node's API server answers ready. Tests replace it.
