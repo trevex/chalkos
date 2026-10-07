@@ -420,6 +420,7 @@ func TestControlPlaneReportsSplit(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
 	write(t, k.Paths.Bootstrapped(), "")
+	write(t, k.Paths.Pin(), "192.168.100.11\n")
 	share, _ := knode.ReadShare(k.Paths)
 	local := etcdtest.StartNew(t, *share.EtcdCA, "n1")
 	other := etcdtest.StartNew(t, *share.EtcdCA, "cp0")

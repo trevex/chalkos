@@ -137,7 +137,8 @@ in
 
       # Anything but bare addresses, one per family, adds no rule, empties the chain and fails.
       for content in "" '\n' '10.0.0.0/8\n' '10.0.0.11\n10.0.0.12\n' 'fd00::11\nfd00::12\n' '10.0.0.11\nfd00::11 -j DROP\n' \
-        '10.0.0.11 -j DROP\n' '-s 0.0.0.0/0\n' 'eth0\n' '10.0.0.11\n\n'; do
+        '10.0.0.11 -j DROP\n' '-s 0.0.0.0/0\n' 'eth0\n' '10.0.0.11\n\n' \
+        'cafe.be\n' 'cafe\n' 'be\n' '10.0.0\n' '10.0.0.11.12\n' '10.0.0.256\n' '10.0.0.0x1\n' '10.0..11\n'; do
         holding "$content"
         { [ "$status" != 0 ] && flushed && [ -z "$(added)" ]; } || fail "accepted node-ip holding '$content'"
       done

@@ -65,17 +65,24 @@ type Member struct {
 func StartNew(t testing.TB, ca pki.CertKey, name string) *Member {
 	t.Helper()
 	peerURL := PeerURL(t)
-	return start(t, ca, name, peerURL, name+"="+peerURL, embed.ClusterStateFlagNew)
+	return start(t, ca, name, peerURL, peerURL, name+"="+peerURL, embed.ClusterStateFlagNew)
+}
+
+// StartAdvertising starts the only member of a new cluster that tells its peers to reach it at
+// peerURL, such as a node's address, while it listens on a free local port.
+func StartAdvertising(t testing.TB, ca pki.CertKey, name, peerURL string) *Member {
+	t.Helper()
+	return start(t, ca, name, PeerURL(t), peerURL, name+"="+peerURL, embed.ClusterStateFlagNew)
 }
 
 // StartExisting starts a member that was added to a cluster at peerURL, as etcd's
 // --initial-cluster-state=existing does with the initial cluster.
 func StartExisting(t testing.TB, ca pki.CertKey, name, peerURL, initialCluster string) *Member {
 	t.Helper()
-	return start(t, ca, name, peerURL, initialCluster, embed.ClusterStateFlagExisting)
+	return start(t, ca, name, peerURL, peerURL, initialCluster, embed.ClusterStateFlagExisting)
 }
 
-func start(t testing.TB, ca pki.CertKey, name, peerURL, initialCluster, state string) *Member {
+func start(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, initialCluster, state string) *Member {
 	t.Helper()
 	dir := t.TempDir()
 	peer := parse(t, peerURL)
@@ -86,8 +93,8 @@ func start(t testing.TB, ca pki.CertKey, name, peerURL, initialCluster, state st
 	cfg.Dir = filepath.Join(dir, "data")
 	cfg.ListenClientUrls = []url.URL{parse(t, clientURL)}
 	cfg.AdvertiseClientUrls = cfg.ListenClientUrls
-	cfg.ListenPeerUrls = []url.URL{peer}
-	cfg.AdvertisePeerUrls = cfg.ListenPeerUrls
+	cfg.ListenPeerUrls = []url.URL{parse(t, listenPeerURL)}
+	cfg.AdvertisePeerUrls = []url.URL{peer}
 	cfg.InitialCluster = initialCluster
 	cfg.ClusterState = state
 	cfg.ClientTLSInfo = tlsInfo

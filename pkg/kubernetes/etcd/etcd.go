@@ -331,3 +331,21 @@ func OneCluster(ctx context.Context, cli *clientv3.Client, endpoints []string) (
 	}
 	return answered, nil
 }
+
+// Local returns the member that answers at the endpoint, such as a node's own.
+func Local(ctx context.Context, cli *clientv3.Client, endpoint string) (Member, error) {
+	st, err := cli.Status(ctx, endpoint)
+	if err != nil {
+		return Member{}, fmt.Errorf("ask etcd at %s for its member: %w", endpoint, err)
+	}
+	members, err := Members(ctx, cli)
+	if err != nil {
+		return Member{}, err
+	}
+	for _, m := range members {
+		if m.ID == st.Header.MemberId {
+			return m, nil
+		}
+	}
+	return Member{}, fmt.Errorf("etcd at %s answers as the member %x, which is not one of its members", endpoint, st.Header.MemberId)
+}

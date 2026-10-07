@@ -31,11 +31,29 @@ writeShellApplication {
       # checked before any rule is added.
       declare -A addresses=()
       for line in "''${lines[@]}"; do
-        family=iptables
+        # An IPv4 address is four decimal octets, an IPv6 one has a colon: iptables would resolve
+        # anything else, such as cafe.be, as a host name.
         case "$line" in
-          *:*) family=ip6tables ;;
+          *:*)
+            family=ip6tables
+            valid=0
+            [[ "$line" =~ ^[0-9A-Fa-f.:]+$ ]] || valid=1
+            ;;
+          *)
+            family=iptables
+            valid=0
+            if [[ "$line" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+              for octet in "''${BASH_REMATCH[@]:1}"; do
+                if ((10#$octet > 255)); then
+                  valid=1
+                fi
+              done
+            else
+              valid=1
+            fi
+            ;;
         esac
-        if ! [[ "$line" =~ ^[0-9A-Fa-f.:]+$ ]] || [ -n "''${addresses[$family]:-}" ] ||
+        if [ "$valid" -ne 0 ] || [ -n "''${addresses[$family]:-}" ] ||
           ! [[ " ''${families[*]} " == *" $family "* ]]; then
           status=1
           break

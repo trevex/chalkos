@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
+	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -88,6 +91,8 @@ type Kubernetes struct {
 	started     bool
 	// split says why the node's etcd and the other control planes' belong to different clusters.
 	split string
+	// pinProblem says why the node cannot be pinned to its addresses.
+	pinProblem string
 	// reload asks the running loop to start again.
 	reload chan struct{}
 	// done is closed once the manifests were applied; count is how many.
@@ -275,25 +280,61 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 	} else if !prepared {
 		return errNotPrepared
 	}
-	// A bootstrapped node without a pin, such as one an older image bootstrapped, is pinned to
-	// the addresses its etcd member was started with.
-	if pin, err := knode.ReadPin(k.Paths); err != nil {
-		return err
-	} else if pin == nil {
-		ips, err := knode.ReadNodeIPs(k.Paths)
-		if err != nil {
-			return err
-		}
-		if err := knode.WritePin(k.Paths, ips); err != nil {
-			return err
-		}
-	}
 	share, err := knode.ReadShare(k.Paths)
 	if err != nil {
 		return err
 	}
+	if pin, err := knode.ReadPin(k.Paths); err != nil {
+		return err
+	} else if pin == nil {
+		if err := k.pinFromEtcd(ctx, share); err != nil {
+			return err
+		}
+	}
 	go k.watchSplit(ctx, share)
 	return k.ControlPlane(ctx, share, applied)
+}
+
+// pinFromEtcd pins a bootstrapped node without a pin, as an older image left it, to its
+// addresses once its etcd member's peer URL confirms them: etcd's peers know the member by that
+// URL. A node whose address differs is not pinned, and its status says so.
+func (k *Kubernetes) pinFromEtcd(ctx context.Context, share kpki.Share) error {
+	ips, err := knode.ReadNodeIPs(k.Paths)
+	if err != nil {
+		return err
+	}
+	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
+	if err != nil {
+		return err
+	}
+	tlsConfig, err := cred.tlsConfig()
+	if err != nil {
+		return err
+	}
+	cli, err := etcd.Dial([]string{k.localEtcd()}, tlsConfig)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+	rctx, cancel := k.etcdRequest(ctx)
+	defer cancel()
+	self, err := etcd.Local(rctx, cli, k.localEtcd())
+	if err != nil {
+		return fmt.Errorf("pin the node's addresses: %w", err)
+	}
+	if !slices.Equal(self.PeerURLs, []string{etcd.PeerURL(ips[0])}) {
+		problem := fmt.Sprintf("the node's address differs from its etcd peer URL %s; restore the address", strings.Join(self.PeerURLs, ", "))
+		k.setPinProblem(problem)
+		return errors.New(problem)
+	}
+	k.setPinProblem("")
+	return knode.WritePin(k.Paths, ips)
+}
+
+func (k *Kubernetes) setPinProblem(problem string) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.pinProblem = problem
 }
 
 // runControlPlane waits for the local API server, applies the manifests until that succeeds,
@@ -540,8 +581,10 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		}
 		st.State = "bootstrapped"
 		k.mu.Lock()
-		if k.split != "" {
-			st.State += ": " + k.split
+		for _, problem := range []string{k.pinProblem, k.split} {
+			if problem != "" {
+				st.State += ": " + problem
+			}
 		}
 		k.mu.Unlock()
 		if len(c.VIP.Addresses) > 0 {

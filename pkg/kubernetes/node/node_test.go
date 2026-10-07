@@ -368,6 +368,36 @@ func TestPreparePinned(t *testing.T) {
 
 }
 
+// A pinned control plane whose cluster now lists other address families keeps none of its files:
+// its set of addresses never changes silently.
+func TestPreparePinnedFamiliesChanged(t *testing.T) {
+	for name, tc := range map[string]struct{ pin, families, want string }{
+		"family added": {"192.168.100.11\n", `["ipv4", "ipv6"]`,
+			"the node is pinned to 192.168.100.11 (ipv4), but the cluster's ipFamilies are ipv4, ipv6; restore ipFamilies, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"},
+		"primary family changed": {"192.168.100.11\nfd00::11\n", `["ipv6", "ipv4"]`,
+			"the node is pinned to 192.168.100.11, fd00::11 (ipv4, ipv6), but the cluster's ipFamilies are ipv6, ipv4; restore ipFamilies, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+			write(t, p.Bootstrapped(), "")
+			write(t, p.NodeFile, pickingIdentity("cp1"))
+			data, err := os.ReadFile(p.Cluster)
+			if err != nil {
+				t.Fatal(err)
+			}
+			write(t, p.Cluster, strings.Replace(string(data), `"extraArgs"`, `"ipFamilies": `+tc.families+`, "extraArgs"`, 1))
+			write(t, p.Pin(), tc.pin)
+			err = Prepare(p, now, onNode("192.168.100.11", "fd00::11"), nil)
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("err = %v, want %s", err, tc.want)
+			}
+			if exists(p.Kubeconfig()) || exists(p.Manifests()) || exists(p.NodeIP()) {
+				t.Error("a node whose families changed keeps its kubeconfig, static pods or addresses")
+			}
+		})
+	}
+}
+
 // Workers pick their addresses at every boot.
 func TestPrepareWorkerIgnoresPin(t *testing.T) {
 	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))

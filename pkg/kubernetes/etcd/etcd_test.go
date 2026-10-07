@@ -352,3 +352,24 @@ func TestPromoteRemovedLearner(t *testing.T) {
 		t.Errorf("err = %v, want ErrMemberRemoved", err)
 	}
 }
+
+// Local finds the member that answers at an endpoint.
+func TestLocal(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m1 := etcdtest.StartAdvertising(t, ca, "m1", "https://192.0.2.1:2380")
+	cli := dial(t, ca, m1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	self, err := Local(ctx, cli, m1.ClientURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if self.Name != "m1" || !slices.Equal(self.PeerURLs, []string{"https://192.0.2.1:2380"}) {
+		t.Errorf("Local() = %+v", self)
+	}
+	sctx, scancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer scancel()
+	if _, err := Local(sctx, cli, etcdtest.Silent(t)); err == nil {
+		t.Error("found a member at an endpoint that does not answer")
+	}
+}

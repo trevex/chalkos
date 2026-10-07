@@ -225,7 +225,8 @@ in
 
     networking.firewall = {
       # etcd's clients and peers on the other control-plane nodes need 2379 and 2380; etcd accepts
-      # only certificates of its CA there.
+      # only certificates of its CA there. Known limitation: the ports are open to every source,
+      # not only to the cluster's node addresses.
       allowedTCPPorts = [
         10250
       ]
