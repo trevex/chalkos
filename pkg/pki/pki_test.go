@@ -232,6 +232,17 @@ func TestLeafDoesNotPredateCA(t *testing.T) {
 }
 
 func TestValidateCARequiresCertSign(t *testing.T) {
+	if err := ValidateCA(caWithoutCertSign(t)); err == nil {
+		t.Error("accepted a CA certificate without the certificate signing key usage")
+	}
+	if err := ValidateCA(newTestCA(t)); err != nil {
+		t.Errorf("rejected a CA: %v", err)
+	}
+}
+
+// caWithoutCertSign is a CA certificate that lacks the certificate signing key usage.
+func caWithoutCertSign(t *testing.T) CertKey {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -247,12 +258,7 @@ func TestValidateCARequiresCertSign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateCA(ca); err == nil {
-		t.Error("accepted a CA certificate without the certificate signing key usage")
-	}
-	if err := ValidateCA(newTestCA(t)); err != nil {
-		t.Errorf("rejected a CA: %v", err)
-	}
+	return ca
 }
 
 func TestIssueFromExpiredCA(t *testing.T) {

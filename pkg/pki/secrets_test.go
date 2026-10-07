@@ -277,6 +277,20 @@ func TestSecretsValidateRejectsNonCAOSCA(t *testing.T) {
 	}
 }
 
+func TestSecretsValidateRequiresCertSignOnOSCA(t *testing.T) {
+	s := generate(t)
+	s.OSCA = caWithoutCertSign(t)
+	admin, err := IssueClient(s.OSCA, "admin", RoleAdmin, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Admin = admin
+	// The admin certificate would not verify either; the error names the cause.
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "osCA: the CA certificate lacks the certificate signing key usage") {
+		t.Errorf("Validate() = %v, want the osCA's missing certificate signing key usage", err)
+	}
+}
+
 func TestSecretsValidateRejectsForeignAdmin(t *testing.T) {
 	s := generate(t)
 	other, err := NewCA("other CA", now)

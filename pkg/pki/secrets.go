@@ -100,12 +100,12 @@ func (s Secrets) Validate() error {
 	case s.Version == SecretsVersion && s.Kubernetes == nil:
 		return errors.New("kubernetes: missing")
 	}
+	if err := ValidateCA(s.OSCA); err != nil {
+		return fmt.Errorf("osCA: %w", err)
+	}
 	ca, _, err := s.OSCA.Parse()
 	if err != nil {
 		return fmt.Errorf("osCA: %w", err)
-	}
-	if !ca.IsCA || !ca.BasicConstraintsValid {
-		return errors.New("osCA: not a CA certificate")
 	}
 	admin, _, err := s.Admin.Parse()
 	if err != nil {
