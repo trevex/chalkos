@@ -15,6 +15,7 @@ import (
 
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	"go.etcd.io/etcd/server/v3/embed"
+	"go.etcd.io/etcd/server/v3/storage/wal"
 	"go.uber.org/zap"
 
 	"github.com/trevex/chalkos/pkg/pki"
@@ -84,7 +85,7 @@ func StartExisting(t testing.TB, ca pki.CertKey, name, peerURL, initialCluster s
 
 func start(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, initialCluster, state string) *Member {
 	t.Helper()
-	dir := t.TempDir()
+	dir := memDir(t)
 	peer := parse(t, peerURL)
 	tlsInfo := serverTLS(t, ca, name, net.ParseIP(peer.Hostname()), dir)
 	clientURL := "https://127.0.0.1:" + freePort(t)
@@ -119,6 +120,25 @@ func start(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, initialCl
 		t.Fatalf("etcd member %s did not become ready", name)
 	}
 	return m
+}
+
+func init() {
+	// A member preallocates two WAL segments, of 64 MB each by default, in memory with memDir; the
+	// tests write a fraction of a segment.
+	wal.SegmentSizeBytes = 1 << 20
+}
+
+// memDir returns a directory for a member's data in memory where the system has one, and a
+// temporary directory otherwise. Unsynced writes still go through the page cache, and stall the
+// member for seconds while a busy disk holds back writeback.
+func memDir(t testing.TB) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/dev/shm", "etcdtest")
+	if err != nil {
+		return t.TempDir()
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
 }
 
 // Stop stops the member; its data stays.
