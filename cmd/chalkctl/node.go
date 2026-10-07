@@ -291,6 +291,10 @@ func (a *app) install(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	share, err := kubernetesShare(t, time.Now())
+	if err != nil {
+		return err
+	}
 	header := &nodev1.InstallHeader{
 		Identity:        id,
 		NodeCertificate: []byte(nodeCert.Certificate),
@@ -298,6 +302,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		CaCertificate:   []byte(t.secrets.OSCA.Certificate),
 		FallbackSecret:  fallback,
 		WipeDisk:        *wipe,
+		KubernetesShare: share,
 	}
 
 	var image *os.File
@@ -536,12 +541,13 @@ func (a *app) applyIdentity(ctx context.Context, args []string) error {
 	var n nodeCommand
 	n.register(fs)
 	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
+	withShare := fs.Bool("kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: chalkctl apply-identity <node>")
+		return errors.New("usage: chalkctl apply-identity <node> [--kubernetes-share]")
 	}
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
@@ -559,7 +565,16 @@ func (a *app) applyIdentity(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: id, FallbackSecret: fallback}))
+	var share []byte
+	if *withShare {
+		if share, err = kubernetesShare(t, time.Now()); err != nil {
+			return err
+		}
+		if share == nil {
+			return fmt.Errorf("the role of %s has no Kubernetes", t.name)
+		}
+	}
+	resp, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: id, FallbackSecret: fallback, KubernetesShare: share}))
 	if err != nil {
 		return nodeError(err, t.name)
 	}

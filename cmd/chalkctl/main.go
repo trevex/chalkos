@@ -20,6 +20,7 @@ const usage = `usage: chalkctl <command> [flags]
 
 commands:
   gen secrets (--recipient R... | --plaintext)  generate the cluster's secrets file
+  secrets upgrade --out FILE                    add the Kubernetes secrets to a version 1 secrets file
   recovery-key <node>                           print a node's recovery key
   install <node>                                install a node in maintenance mode
   disks (<node> | --endpoint ADDR)              list a node's disks
@@ -90,6 +91,8 @@ func (a *app) run(ctx context.Context, args []string) error {
 	switch {
 	case cmd == "gen" && len(rest) > 0 && rest[0] == "secrets":
 		return a.genSecrets(rest[1:])
+	case cmd == "secrets" && len(rest) > 0 && rest[0] == "upgrade":
+		return a.secretsUpgrade(ctx, rest[1:])
 	case cmd == "recovery-key":
 		return a.recoveryKey(ctx, rest)
 	case cmd == "install":
