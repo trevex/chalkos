@@ -206,6 +206,32 @@ func TestControlPlaneWithAddressEndpoint(t *testing.T) {
 	}
 }
 
+// A client reaching the API server through any of the VIPs verifies its certificate.
+func TestControlPlaneWithDualStackVIPs(t *testing.T) {
+	c := testCluster()
+	c.Endpoint = "https://10.0.0.10:6443"
+	c.VIP = kubernetes.VIP{Addresses: []string{"10.0.0.10", "fd00::10"}, Mode: "l2"}
+	files, err := ControlPlane(ControlPlaneShare(secrets(t)), c, testNode, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := leaf(t, files, FileAPIServer)
+	for _, vip := range c.VIP.Addresses {
+		if err := api.VerifyHostname(vip); err != nil {
+			t.Errorf("API server certificate for %s: %v", vip, err)
+		}
+		n := 0
+		for _, ip := range ips(api) {
+			if ip == vip {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("API server addresses %v name %s %d times, want once", ips(api), vip, n)
+		}
+	}
+}
+
 func TestControlPlaneNeedsControlPlaneShare(t *testing.T) {
 	k := secrets(t)
 	w, err := WorkerShare(k, "w1", now)

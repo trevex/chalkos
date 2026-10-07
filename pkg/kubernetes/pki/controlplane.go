@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -80,6 +81,17 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 		apiServerIPs = append(apiServerIPs, ip)
 	} else {
 		apiServerNames = append(apiServerNames, host)
+	}
+	// Clients may reach the API server through any VIP, not only the endpoint's.
+	vips, err := c.VIPAddresses()
+	if err != nil {
+		return nil, err
+	}
+	for _, vip := range vips {
+		ip := net.IP(vip.AsSlice())
+		if !slices.ContainsFunc(apiServerIPs, ip.Equal) {
+			apiServerIPs = append(apiServerIPs, ip)
+		}
 	}
 	etcdIPs := append(append([]net.IP{}, loopback...), nodeIPs...)
 	etcdNames := []string{"localhost", n.Name}
