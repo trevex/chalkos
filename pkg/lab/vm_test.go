@@ -60,6 +60,20 @@ func TestQemuArgs(t *testing.T) {
 		}
 	}
 
+	c.GuestForwards = []GuestForward{{Guest: "10.0.2.100:5000", Host: "127.0.0.1:15001"}}
+	c.Switch = "/vm/switch"
+	c.MAC = "52:54:00:00:01:11"
+	switched := c.qemuArgs("")
+	for _, w := range [][2]string{
+		{"-nic", "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:15000-:50000,hostfwd=tcp:127.0.0.1:16443-:6443,guestfwd=tcp:10.0.2.100:5000-cmd:socat - TCP:127.0.0.1:15001"},
+		{"-netdev", "vde,id=switch,sock=/vm/switch"},
+		{"-device", "virtio-net-pci,netdev=switch,mac=52:54:00:00:01:11"},
+	} {
+		if !hasPair(switched, w[0], w[1]) {
+			t.Errorf("missing %s %s in %v", w[0], w[1], switched)
+		}
+	}
+
 	if noTPM := c.qemuArgs(""); hasPair(noTPM, "-device", "tpm-tis,tpmdev=tpm0") {
 		t.Error("TPM device present without a TPM socket")
 	}

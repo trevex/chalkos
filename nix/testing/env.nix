@@ -10,6 +10,9 @@ in
     pkgs.mtools
     pkgs.sbsigntool
     pkgs.dosfstools
+    # VM-to-VM networking, and the forwards that reach registries the tests serve.
+    pkgs.vde2
+    pkgs.socat
   ];
 
   vars = {

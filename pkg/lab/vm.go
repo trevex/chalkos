@@ -29,6 +29,18 @@ type VMConfig struct {
 	// Forwards adds a user-mode NIC whose host ports on 127.0.0.1 reach guest ports; the guest
 	// gets its address from QEMU's DHCP server. Without forwards the VM has no NIC.
 	Forwards []Forward
+	// GuestForwards connect addresses the guest reaches through the user-mode NIC to host
+	// addresses; socat carries each connection. They add the user-mode NIC too.
+	GuestForwards []GuestForward
+	// Switch attaches a second NIC with the address MAC to the vde switch whose sockets are in
+	// this directory, for traffic between VMs.
+	Switch string
+	MAC    string
+}
+
+// GuestForward makes a host address reachable at a guest address, such as 10.0.2.100:5000.
+type GuestForward struct {
+	Guest, Host string
 }
 
 // Forward makes a guest TCP port reachable on a host port.
@@ -61,14 +73,22 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 		"-serial", "stdio",
 		"-qmp", "unix:" + c.qmpPath() + ",server=on,wait=off",
 	}
-	if len(c.Forwards) == 0 {
+	if len(c.Forwards)+len(c.GuestForwards) == 0 {
 		args = append(args, "-nic", "none")
 	} else {
 		nic := "user,model=virtio-net-pci"
 		for _, f := range c.Forwards {
 			nic += fmt.Sprintf(",hostfwd=tcp:127.0.0.1:%d-:%d", f.Host, f.Guest)
 		}
+		for _, f := range c.GuestForwards {
+			nic += fmt.Sprintf(",guestfwd=tcp:%s-cmd:socat - TCP:%s", f.Guest, f.Host)
+		}
 		args = append(args, "-nic", nic)
+	}
+	if c.Switch != "" {
+		args = append(args,
+			"-netdev", "vde,id=switch,sock="+c.Switch,
+			"-device", "virtio-net-pci,netdev=switch,mac="+c.MAC)
 	}
 	if c.CDROM != "" {
 		args = append(args,
@@ -173,6 +193,12 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 // Reset is a hard reset, like pressing the machine's reset button. TPM state is kept.
 func (vm *VM) Reset() error {
 	_, err := vm.QMP.Execute("system_reset", nil)
+	return err
+}
+
+// SetLink connects or disconnects the VM's NIC on the switch, like pulling its cable.
+func (vm *VM) SetLink(up bool) error {
+	_, err := vm.QMP.Execute("set_link", map[string]any{"name": "switch", "up": up})
 	return err
 }
 
