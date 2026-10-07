@@ -144,9 +144,6 @@ let
         in
         if kind == null then
           null
-        # etcd and the API server advertise the address to their peers and clients.
-        else if kind == "controlplane" && n.kubernetes.nodeIP == null then
-          throw "chalkos.nodes.${name}.kubernetes.nodeIP must be set: control-plane nodes need a static address"
         else if kubeletErrors name n != [ ] then
           throw "chalkos.nodes.${name} is invalid:\n${
             lib.concatMapStringsSep "\n" (e: "- ${e}") (kubeletErrors name n)
@@ -154,7 +151,9 @@ let
         else
           {
             nodeName = name;
-            inherit (n.kubernetes) nodeIP;
+            # A node without a fixed address picks one at boot; the cluster's subnets are in
+            # the image, a node's own ones here.
+            inherit (n.kubernetes) nodeIP validSubnets;
           };
       extensions = removeAttrs n coreNodeOptions;
     };

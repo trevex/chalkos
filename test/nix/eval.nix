@@ -281,6 +281,7 @@ lib.runTests {
       kubernetes = {
         nodeName = "n1";
         nodeIP = null;
+        validSubnets = null;
       };
       extensions = {
         rack.location = "a1";
@@ -998,6 +999,90 @@ lib.runTests {
     expected = {
       nodeName = "n1";
       nodeIP = "10.0.0.5";
+      validSubnets = null;
+    };
+  };
+  # Subnets that apply to a node replace the default from its static address: the node picks its
+  # address at boot.
+  testValidSubnets = {
+    expr =
+      let
+        node = modules: (cluster modules).manifest.nodes.n1.identity.kubernetes;
+        static = {
+          chalkos.nodes.n1 = {
+            role = "worker";
+            storage.system.disk = "/dev/vda";
+            network.networks."10-a".address = [ "10.0.0.5/24" ];
+          };
+        };
+        clusterSubnets.chalkos.cluster.kubernetes.nodeIP.validSubnets = [
+          "10.0.0.0/8"
+          "!10.0.0.10/32"
+        ];
+      in
+      {
+        nodeSubnets = node [
+          static
+          { chalkos.nodes.n1.kubernetes.validSubnets = [ "192.168.100.0/24" ]; }
+        ];
+        clusterSubnets = node [
+          static
+          clusterSubnets
+        ];
+        # An empty list is the default filter, which the static address stands for.
+        nodeOverridesCluster = node [
+          static
+          clusterSubnets
+          { chalkos.nodes.n1.kubernetes.validSubnets = [ ]; }
+        ];
+        fixedWins = node [
+          static
+          clusterSubnets
+          { chalkos.nodes.n1.kubernetes.nodeIP = "10.0.0.5"; }
+        ];
+        clusterFile =
+          (builtins.fromJSON
+            (role (cluster [ clusterSubnets ])).environment.etc."chalkos/kubernetes/cluster.json".text
+          ).nodeIP;
+        notASubnet = fails (node [
+          static
+          { chalkos.nodes.n1.kubernetes.validSubnets = [ "192.168.100.0" ]; }
+        ]);
+        notAClusterSubnet =
+          fails
+            (role (cluster [ { chalkos.cluster.kubernetes.nodeIP.validSubnets = [ "eth0" ]; } ]))
+            .environment.etc."chalkos/kubernetes/cluster.json".text;
+      };
+    expected = {
+      nodeSubnets = {
+        nodeName = "n1";
+        nodeIP = null;
+        validSubnets = [ "192.168.100.0/24" ];
+      };
+      clusterSubnets = {
+        nodeName = "n1";
+        nodeIP = null;
+        validSubnets = null;
+      };
+      nodeOverridesCluster = {
+        nodeName = "n1";
+        nodeIP = "10.0.0.5";
+        validSubnets = [ ];
+      };
+      fixedWins = {
+        nodeName = "n1";
+        nodeIP = "10.0.0.5";
+        validSubnets = null;
+      };
+      clusterFile = {
+        validSubnets = [
+          "10.0.0.0/8"
+          "!10.0.0.10/32"
+        ];
+        timeout = 300;
+      };
+      notASubnet = true;
+      notAClusterSubnet = true;
     };
   };
   testEndpointWarnsWithoutControlPlaneAddress = {
@@ -1027,8 +1112,28 @@ lib.runTests {
                 };
               }
             ]).warnings;
+        # A control-plane node that picks its address at boot may hold the endpoint's.
+        picked =
+          lib.any (lib.hasInfix "must reach a control-plane node")
+            (cluster [
+              {
+                chalkos.cluster.endpoint = lib.mkForce "https://10.0.0.10:6443";
+                chalkos.roles.cp.kubernetes.kind = "controlplane";
+                chalkos.nodes.cp1 = {
+                  role = "cp";
+                  storage.system.disk = "/dev/vda";
+                  kubernetes.nodeIP = "10.0.0.11";
+                };
+                chalkos.nodes.cp2 = {
+                  role = "cp";
+                  storage.system.disk = "/dev/vda";
+                  kubernetes.validSubnets = [ "10.0.0.0/24" ];
+                };
+              }
+            ]).warnings;
       in
       {
+        inherit picked;
         vip = warns "https://10.0.0.10:6443";
         worker = warns "https://10.0.0.20:6443";
         controlPlane = warns "https://10.0.0.11:6443";
@@ -1038,6 +1143,7 @@ lib.runTests {
         hostname = warns "https://k8s.example.com:6443";
       };
     expected = {
+      picked = false;
       vip = true;
       worker = true;
       controlPlane = false;
@@ -1146,34 +1252,22 @@ lib.runTests {
       withoutKubernetes = false;
     };
   };
-  testControlPlaneNeedsNodeIP = {
-    expr = {
-      withoutAddress =
-        fails
-          (cluster [
-            {
-              chalkos.roles.worker.kubernetes.kind = "controlplane";
-              chalkos.nodes.n1 = {
-                role = "worker";
-                storage.system.disk = "/dev/vda";
-              };
-            }
-          ]).manifest;
-      withAddress =
-        (cluster [
-          {
-            chalkos.roles.worker.kubernetes.kind = "controlplane";
-            chalkos.nodes.n1 = {
-              role = "worker";
-              storage.system.disk = "/dev/vda";
-              kubernetes.nodeIP = "10.0.0.5";
-            };
-          }
-        ]).manifest.nodes.n1.identity.kubernetes.nodeIP;
-    };
+  # A control-plane node picks its address at boot like any other node.
+  testControlPlaneWithoutNodeIP = {
+    expr =
+      (cluster [
+        {
+          chalkos.roles.worker.kubernetes.kind = "controlplane";
+          chalkos.nodes.n1 = {
+            role = "worker";
+            storage.system.disk = "/dev/vda";
+          };
+        }
+      ]).manifest.nodes.n1.identity.kubernetes;
     expected = {
-      withoutAddress = true;
-      withAddress = "10.0.0.5";
+      nodeName = "n1";
+      nodeIP = null;
+      validSubnets = null;
     };
   };
   testKubernetesOptionDefaults = {
@@ -1188,6 +1282,10 @@ lib.runTests {
       dnsIP = "10.96.0.10";
       domain = "cluster.local";
       allowSchedulingOnControlPlanes = false;
+      nodeIP = {
+        validSubnets = [ ];
+        timeout = 300;
+      };
       images = {
         etcd = "registry.k8s.io/etcd:3.7.0-0";
         pause = "registry.k8s.io/pause:3.10.2";

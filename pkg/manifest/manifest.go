@@ -72,8 +72,11 @@ type KubernetesIdentity struct {
 	// NodeName is the node's name in the cluster, which its Node object and kubelet
 	// certificates carry.
 	NodeName string `json:"nodeName"`
-	// NodeIP is the address the kubelet registers; empty lets the kubelet choose.
+	// NodeIP is the node's fixed address; empty picks one on the node at boot.
 	NodeIP string `json:"nodeIP"`
+	// ValidSubnets are the subnets the node picks its address from instead of its cluster's;
+	// nil uses the cluster's.
+	ValidSubnets []string `json:"validSubnets"`
 }
 
 // StaticAddresses returns the addresses of the node's networkd networks, in network name order,

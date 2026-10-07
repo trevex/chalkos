@@ -64,6 +64,7 @@ let
       allowSchedulingOnControlPlanes
       ;
     version = k.package.version;
+    nodeIP = { inherit (k.nodeIP) validSubnets timeout; };
     extraArgs = removeAttrs k.extraArgs [ "kubelet" ];
     images = {
       inherit (k.images) etcd;

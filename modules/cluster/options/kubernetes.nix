@@ -41,11 +41,17 @@ let
       builtins.head ipv4
     else
       null;
+  # The fixed addresses of the control-plane nodes; null for a node that picks its address at
+  # boot.
   controlPlaneIPs = lib.mapAttrsToList (_: node: node.kubernetes.nodeIP) (
     lib.filterAttrs (
       _: node: config.chalkos.roles.${node.role}.kubernetes.kind == "controlplane"
     ) config.chalkos.nodes
   );
+
+  # A subnet in CIDR notation, excluded with a leading "!"; chalkd checks the addresses.
+  subnet = types.strMatching "!?[0-9A-Fa-f.:]+/[0-9]{1,3}";
+  clusterSubnets = config.chalkos.cluster.kubernetes.nodeIP.validSubnets;
 in
 {
   options.chalkos.cluster.kubernetes = {
@@ -82,6 +88,33 @@ in
       type = types.bool;
       default = false;
       description = "Let workloads run on control-plane nodes, which are otherwise tainted.";
+    };
+    nodeIP = {
+      validSubnets = mkOption {
+        type = types.listOf subnet;
+        default = [ ];
+        example = [
+          "10.0.0.0/8"
+          "!10.0.0.10/32"
+        ];
+        description = ''
+          Subnets in CIDR notation, IPv4 or IPv6, that nodes without a fixed nodeIP pick their
+          address from at every boot; a leading `!` excludes a subnet. A node takes the first
+          matching address: IPv4 before IPv6, then by interface name and address. Empty takes
+          any global unicast address. Addresses in the pod and service ranges and on the
+          interfaces of the pod network and kube-proxy (`flannel.*`, `cni*`, `veth*`, `kube-*`)
+          are never taken. chalkos.nodes.<name>.kubernetes.validSubnets overrides this per node.
+        '';
+      };
+      timeout = mkOption {
+        type = types.ints.positive;
+        default = 300;
+        description = ''
+          Seconds a node waits at boot for its address, so DHCP leases and addresses a routing
+          daemon adds late still count. A node without one runs neither the kubelet nor static
+          pods.
+        '';
+      };
     };
     extraArgs = {
       etcd = flagsOf "etcd";
@@ -196,9 +229,16 @@ in
     );
   };
 
-  # Hostnames are not checked: they may name a load balancer or a DNS record of the nodes.
+  # Hostnames are not checked: they may name a load balancer or a DNS record of the nodes. Nor
+  # is the endpoint when a control-plane node picks its address at boot, which may be it.
   config.chalkos.warnings =
-    lib.optional (controlPlaneIPs != [ ] && endpointIP != null && !lib.elem endpointIP controlPlaneIPs)
+    lib.optional
+      (
+        controlPlaneIPs != [ ]
+        && !lib.elem null controlPlaneIPs
+        && endpointIP != null
+        && !lib.elem endpointIP controlPlaneIPs
+      )
       ''
         chalkos.cluster.endpoint ${config.chalkos.cluster.endpoint} is not the nodeIP of a
         control-plane node. The endpoint must reach a control-plane node, for example through a
@@ -209,14 +249,28 @@ in
     type = types.attrsOf (
       types.submodule (
         { config, ... }:
+        let
+          subnets =
+            if config.kubernetes.validSubnets != null then config.kubernetes.validSubnets else clusterSubnets;
+        in
         {
           options.kubernetes.nodeIP = mkOption {
             type = types.nullOr types.str;
-            default = firstStaticAddress config.network;
-            defaultText = lib.literalMD "the node's first static address";
+            default = if subnets == [ ] then firstStaticAddress config.network else null;
+            defaultText = lib.literalMD "the node's first static address, unless validSubnets apply to the node";
             description = ''
-              Address the kubelet registers the node with. null lets the kubelet use the address
-              of the default route.
+              Fixed address of the node: the kubelet registers it and, on control-plane nodes,
+              etcd and the API server advertise it. The node waits at boot until an interface
+              holds it. null picks the address on the node, from the validSubnets that apply.
+            '';
+          };
+          options.kubernetes.validSubnets = mkOption {
+            type = types.nullOr (types.listOf subnet);
+            default = null;
+            example = [ "192.168.100.0/24" ];
+            description = ''
+              Subnets the node picks its address from instead of
+              chalkos.cluster.kubernetes.nodeIP.validSubnets; null uses those.
             '';
           };
         }

@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
@@ -33,10 +35,21 @@ type Cluster struct {
 	DNSIP                          string `json:"dnsIP"`
 	Domain                         string `json:"domain"`
 	AllowSchedulingOnControlPlanes bool   `json:"allowSchedulingOnControlPlanes"`
+	// NodeIP is how nodes without a fixed address pick theirs.
+	NodeIP NodeIP `json:"nodeIP"`
 	// ExtraArgs are flags of the control-plane components by component name, such as
 	// kube-apiserver, without leading dashes.
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
 	Images    Images                       `json:"images"`
+}
+
+// NodeIP is how a node picks its address.
+type NodeIP struct {
+	// ValidSubnets are subnets in CIDR notation to pick the address from; a leading "!" excludes
+	// one. Empty picks any address.
+	ValidSubnets []string `json:"validSubnets"`
+	// Timeout is how many seconds a node waits for its address.
+	Timeout int `json:"timeout"`
 }
 
 // Images are the control plane's images.
@@ -67,7 +80,8 @@ func ReadCluster(path string) (Cluster, error) {
 // extra flags must not override them.
 var ProtectedAPIServerFlags = []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"}
 
-// Validate checks the kind, the endpoint, the address ranges and the extra flags.
+// Validate checks the kind, the endpoint, the address ranges, how nodes pick their address and
+// the extra flags.
 func (c Cluster) Validate() error {
 	for _, flag := range ProtectedAPIServerFlags {
 		if _, ok := c.ExtraArgs["kube-apiserver"][flag]; ok {
@@ -91,6 +105,12 @@ func (c Cluster) Validate() error {
 	}
 	if c.Domain == "" {
 		return errors.New("no cluster domain")
+	}
+	if _, err := nodeip.ParseFilter(c.NodeIP.ValidSubnets); err != nil {
+		return fmt.Errorf("nodeIP: %w", err)
+	}
+	if c.NodeIP.Timeout < 0 {
+		return fmt.Errorf("nodeIP: the timeout %d is negative", c.NodeIP.Timeout)
 	}
 	return nil
 }
@@ -127,8 +147,12 @@ type Node struct {
 	Name string
 	// Hostname is the node's host name, which may differ from its name.
 	Hostname string
-	// IP is the address the kubelet registers; nil lets the kubelet choose.
+	// IP is the node's address. Read from the identity it is the fixed address, nil when the
+	// node picks one at boot.
 	IP net.IP
+	// ValidSubnets are the subnets the node picks its address from instead of its cluster's;
+	// nil uses the cluster's.
+	ValidSubnets []string
 	// Addresses are the node's static addresses.
 	Addresses []net.IP
 	Labels    map[string]string
@@ -157,11 +181,14 @@ func ParseNode(identity []byte) (Node, error) {
 	if id.Kubernetes == nil || id.Kubernetes.NodeName == "" {
 		return Node{}, errors.New("the identity names no Kubernetes node")
 	}
-	n := Node{Name: id.Kubernetes.NodeName, Hostname: id.Hostname, Labels: id.Labels, Taints: id.Taints}
+	n := Node{Name: id.Kubernetes.NodeName, Hostname: id.Hostname, ValidSubnets: id.Kubernetes.ValidSubnets, Labels: id.Labels, Taints: id.Taints}
 	if id.Kubernetes.NodeIP != "" {
 		if n.IP = net.ParseIP(id.Kubernetes.NodeIP); n.IP == nil {
 			return Node{}, fmt.Errorf("nodeIP %q is not an address", id.Kubernetes.NodeIP)
 		}
+	}
+	if _, err := nodeip.ParseFilter(n.ValidSubnets); err != nil {
+		return Node{}, err
 	}
 	for _, a := range id.StaticAddresses() {
 		if ip := net.ParseIP(a); ip != nil {
@@ -187,4 +214,34 @@ func (n Node) IPs() []net.IP {
 		}
 	}
 	return ips
+}
+
+// NodeIPSelector is how node n picks its address: its fixed address, or else the first address
+// in the subnets of its identity or, without those, of its cluster. Addresses in the pod and
+// service ranges are never picked.
+func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
+	subnets := c.NodeIP.ValidSubnets
+	if n.ValidSubnets != nil {
+		subnets = n.ValidSubnets
+	}
+	filter, err := nodeip.ParseFilter(subnets)
+	if err != nil {
+		return nodeip.Selector{}, err
+	}
+	s := nodeip.Selector{Filter: filter}
+	if n.IP != nil {
+		fixed, ok := netip.AddrFromSlice(n.IP)
+		if !ok {
+			return nodeip.Selector{}, fmt.Errorf("nodeIP %v is not an address", n.IP)
+		}
+		s.Fixed = fixed.Unmap()
+	}
+	for _, cidr := range []string{c.PodCIDR, c.ServiceCIDR} {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			return nodeip.Selector{}, fmt.Errorf("%q is not an address range: %w", cidr, err)
+		}
+		s.Reserved = append(s.Reserved, prefix.Masked())
+	}
+	return s, nil
 }

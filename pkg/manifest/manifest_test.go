@@ -3,6 +3,7 @@ package manifest
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -120,10 +121,10 @@ func TestDecodeKubernetes(t *testing.T) {
 	if m.Roles["controlplane"].Kind != KindControlPlane || m.Roles["worker"].Kind != KindWorker {
 		t.Errorf("roles = %+v", m.Roles)
 	}
-	if k := m.Nodes["cp1"].Identity.Kubernetes; k == nil || *k != (KubernetesIdentity{NodeName: "cp1", NodeIP: "10.0.0.11"}) {
+	if k := m.Nodes["cp1"].Identity.Kubernetes; k == nil || k.NodeName != "cp1" || k.NodeIP != "10.0.0.11" || k.ValidSubnets != nil {
 		t.Errorf("cp1 kubernetes = %+v", k)
 	}
-	if k := m.Nodes["w1"].Identity.Kubernetes; k == nil || *k != (KubernetesIdentity{NodeName: "w1"}) {
+	if k := m.Nodes["w1"].Identity.Kubernetes; k == nil || k.NodeName != "w1" || k.NodeIP != "" || k.ValidSubnets != nil {
 		t.Errorf("w1 kubernetes = %+v", k)
 	}
 }
@@ -138,5 +139,17 @@ func TestStaticAddresses(t *testing.T) {
 	want := []string{"10.0.0.1", "fd00::1", "10.0.1.1"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("StaticAddresses() = %v, want %v", got, want)
+	}
+}
+
+func TestDecodeValidSubnets(t *testing.T) {
+	m, err := Decode(strings.NewReader(`{"schemaVersion": 0, "nodes": {"n1": {"role": "r", "identity": {
+	  "kubernetes": {"nodeName": "n1", "nodeIP": null, "validSubnets": ["192.168.100.0/24", "!192.168.100.1/32"]}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	k := m.Nodes["n1"].Identity.Kubernetes
+	if k == nil || k.NodeIP != "" || !slices.Equal(k.ValidSubnets, []string{"192.168.100.0/24", "!192.168.100.1/32"}) {
+		t.Errorf("kubernetes = %+v", k)
 	}
 }
