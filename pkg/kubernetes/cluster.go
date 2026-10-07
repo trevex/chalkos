@@ -218,7 +218,7 @@ func (n Node) IPs() []net.IP {
 
 // NodeIPSelector is how node n picks its address: its fixed address, or else the first address
 // in the subnets of its identity or, without those, of its cluster. Addresses in the pod and
-// service ranges are never picked.
+// service ranges are never picked, and the endpoint's address only when no other matches.
 func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
 	subnets := c.NodeIP.ValidSubnets
 	if n.ValidSubnets != nil {
@@ -242,6 +242,14 @@ func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
 			return nodeip.Selector{}, fmt.Errorf("%q is not an address range: %w", cidr, err)
 		}
 		s.Reserved = append(s.Reserved, prefix.Masked())
+	}
+	host, err := c.EndpointHost()
+	if err != nil {
+		return nodeip.Selector{}, err
+	}
+	// A host name is not resolved: its address may change, and the node may not reach DNS yet.
+	if ip, err := netip.ParseAddr(host); err == nil {
+		s.Endpoint = ip.Unmap().WithZone("")
 	}
 	return s, nil
 }

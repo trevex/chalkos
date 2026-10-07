@@ -81,6 +81,10 @@ type Selector struct {
 	Filter Filter
 	// Reserved are ranges that never hold the node's address: the pod and service ranges.
 	Reserved []netip.Prefix
+	// Endpoint is the API server endpoint's address. Control-plane nodes may hold it as a
+	// virtual address that moves between them, so it is picked only when no other address
+	// matches.
+	Endpoint netip.Addr
 }
 
 func (s Selector) String() string {
@@ -93,13 +97,23 @@ func (s Selector) String() string {
 // Select returns the fixed address once an interface holds it. Otherwise it returns the first
 // global unicast address outside the reserved ranges and the interfaces of Kubernetes that the
 // filter matches: IPv4 addresses before IPv6 ones, then by interface name and by address, so the
-// choice does not depend on the order the kernel lists them in.
+// choice does not depend on the order the kernel lists them in, and the endpoint's address last.
 func (s Selector) Select(addrs []Address) (netip.Addr, error) {
 	sorted := make([]Address, 0, len(addrs))
 	for _, a := range addrs {
 		sorted = append(sorted, Address{Interface: a.Interface, IP: a.IP.Unmap().WithZone("")})
 	}
 	slices.SortFunc(sorted, compare)
+	endpoint := s.Endpoint.Unmap().WithZone("")
+	slices.SortStableFunc(sorted, func(a, b Address) int {
+		switch {
+		case a.IP == endpoint && b.IP != endpoint:
+			return 1
+		case a.IP != endpoint && b.IP == endpoint:
+			return -1
+		}
+		return 0
+	})
 	var seen []Address
 	for _, a := range sorted {
 		if s.Fixed.IsValid() && a.IP == s.Fixed.Unmap() {

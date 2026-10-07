@@ -135,6 +135,29 @@ func TestSelectOrderIsStable(t *testing.T) {
 	}
 }
 
+func TestSelectEndpointLast(t *testing.T) {
+	vip := netip.MustParseAddr("10.0.0.10")
+	// The API server's virtual address sorts before the node's own address.
+	for _, addrs := range [][]Address{
+		addresses(t, "eth0 10.0.0.10", "eth0 10.0.0.11"),
+		addresses(t, "eth0 10.0.0.10", "eth1 10.0.0.11"),
+		addresses(t, "eth0 10.0.0.10", "eth0 2001:db8::11"),
+	} {
+		got, err := Selector{Endpoint: vip, Reserved: reserved}.Select(addrs)
+		if err != nil || got == vip {
+			t.Errorf("Select(%v) = %v, %v, want the node's own address", addrs, got, err)
+		}
+	}
+	// A single control plane whose endpoint is its own address still picks it.
+	if got, err := (Selector{Endpoint: vip, Reserved: reserved}).Select(addresses(t, "lo 127.0.0.1", "eth0 10.0.0.10")); err != nil || got != vip {
+		t.Errorf("only the endpoint's address: Select() = %v, %v", got, err)
+	}
+	// A fixed address is picked even when it is the endpoint's.
+	if got, err := (Selector{Fixed: vip, Endpoint: vip}).Select(addresses(t, "eth0 10.0.0.10", "eth0 10.0.0.9")); err != nil || got != vip {
+		t.Errorf("fixed endpoint address: Select() = %v, %v", got, err)
+	}
+}
+
 func TestNoMatchError(t *testing.T) {
 	sel := Selector{Filter: filter(t, "192.168.100.0/24"), Reserved: reserved}
 	_, err := sel.Select(addresses(t, "lo 127.0.0.1", "eth0 fe80::1", "eth0 10.0.2.15", "cni0 10.244.0.1"))

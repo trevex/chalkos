@@ -87,6 +87,55 @@ func TestClusterValidate(t *testing.T) {
 	}
 }
 
+func TestNodeIPSelectorEndpointLast(t *testing.T) {
+	c, err := ReadCluster(writeFile(t, clusterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := ParseNode([]byte(`{"kubernetes": {"nodeName": "cp1", "validSubnets": []}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pick := func(c Cluster, list ...string) string {
+		t.Helper()
+		sel, err := c.NodeIPSelector(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var addrs []nodeip.Address
+		for _, ip := range list {
+			addrs = append(addrs, nodeip.Address{Interface: "eth0", IP: netip.MustParseAddr(ip)})
+		}
+		ip, err := sel.Select(addrs)
+		if err != nil {
+			return err.Error()
+		}
+		return ip.String()
+	}
+	// The endpoint 10.0.0.10 is a virtual address that sorts before the node's own one.
+	if got := pick(c, "10.0.0.10", "10.0.0.11"); got != "10.0.0.11" {
+		t.Errorf("node address and VIP: picked %s, want 10.0.0.11", got)
+	}
+	// A single control plane whose endpoint is its own address.
+	if got := pick(c, "10.0.0.10"); got != "10.0.0.10" {
+		t.Errorf("only the endpoint's address: picked %s, want 10.0.0.10", got)
+	}
+	v6 := c
+	v6.Endpoint = "https://[fd00::10]:6443"
+	if got := pick(v6, "fd00::10", "fd00::11"); got != "fd00::11" {
+		t.Errorf("IPv6 endpoint: picked %s, want fd00::11", got)
+	}
+	// An endpoint named by a host name changes nothing.
+	named := c
+	named.Endpoint = "https://api.example.com:6443"
+	if sel, err := named.NodeIPSelector(n); err != nil || sel.Endpoint.IsValid() {
+		t.Errorf("host name endpoint: selector %+v, %v", sel, err)
+	}
+	if got := pick(named, "10.0.0.10", "10.0.0.11"); got != "10.0.0.10" {
+		t.Errorf("host name endpoint: picked %s, want 10.0.0.10", got)
+	}
+}
+
 func TestReadNode(t *testing.T) {
 	n, err := ReadNode(writeFile(t, `{
 	  "hostname": "cp1-host",
@@ -146,7 +195,7 @@ func TestNodeIPSelector(t *testing.T) {
 	}{
 		"cluster's subnets": {node(`{"kubernetes": {"nodeName": "n1"}}`), "validSubnets 10.0.0.0/8, !10.0.0.10/32", "10.0.0.11"},
 		"node's subnets":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["192.168.100.0/24"]}}`), "validSubnets 192.168.100.0/24", "192.168.100.12"},
-		"default filter":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": []}}`), "the default filter", "10.0.0.10"},
+		"default filter":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": []}}`), "the default filter", "10.0.0.11"},
 		"fixed":             {node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.12"}}`), "nodeIP 192.168.100.12", "192.168.100.12"},
 		// The pod range never holds the node's address.
 		"pod range": {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["10.244.0.0/16"]}}`), "validSubnets 10.244.0.0/16", ""},

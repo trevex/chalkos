@@ -100,7 +100,8 @@ in
         description = ''
           Subnets in CIDR notation, IPv4 or IPv6, that nodes without a fixed nodeIP pick their
           address from at every boot; a leading `!` excludes a subnet. A node takes the first
-          matching address: IPv4 before IPv6, then by interface name and address. Empty takes
+          matching address: IPv4 before IPv6, then by interface name and address, and the
+          endpoint's address, which may be a virtual one, only when no other matches. Empty takes
           any global unicast address. Addresses in the pod and service ranges and on the
           interfaces of the pod network and kube-proxy (`flannel.*`, `cni*`, `veth*`, `kube-*`)
           are never taken. chalkos.nodes.<name>.kubernetes.validSubnets overrides this per node.
