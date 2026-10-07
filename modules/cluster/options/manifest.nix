@@ -84,6 +84,51 @@ let
     else
       lib.concatMapAttrs render kinds;
 
+  # The labels a kubelet may set on its own Node (k8s.io/kubelet's IsKubeletLabel in Kubernetes
+  # 1.37): it refuses other labels in the kubernetes.io and k8s.io namespaces and does not start.
+  kubeletLabels = [
+    "kubernetes.io/hostname"
+    "topology.kubernetes.io/zone"
+    "topology.kubernetes.io/region"
+    "failure-domain.beta.kubernetes.io/zone"
+    "failure-domain.beta.kubernetes.io/region"
+    "beta.kubernetes.io/instance-type"
+    "node.kubernetes.io/instance-type"
+    "kubernetes.io/os"
+    "kubernetes.io/arch"
+    "beta.kubernetes.io/os"
+    "beta.kubernetes.io/arch"
+  ];
+  kubeletLabelNamespaces = [
+    "kubelet.kubernetes.io"
+    "node.kubernetes.io"
+  ];
+  inNamespace = namespace: ns: namespace == ns || lib.hasSuffix ".${ns}" namespace;
+  refusedLabel =
+    key:
+    let
+      parts = lib.splitString "/" key;
+      namespace = if lib.length parts > 1 then builtins.head parts else "";
+    in
+    lib.any (inNamespace namespace) [
+      "kubernetes.io"
+      "k8s.io"
+    ]
+    && !lib.elem key kubeletLabels
+    && !lib.any (inNamespace namespace) kubeletLabelNamespaces;
+
+  # Settings the kubelet of a node refuses to start with.
+  kubeletErrors =
+    name: n:
+    map (
+      label:
+      "chalkos.nodes.${name}.labels.\"${label}\": the kubelet sets labels in the kubernetes.io and k8s.io namespaces on its own node only under kubelet.kubernetes.io/ and node.kubernetes.io/ or from the list ${lib.concatStringsSep ", " kubeletLabels}"
+    ) (lib.filter refusedLabel (lib.attrNames n.labels))
+    ++ lib.mapAttrsToList (
+      volume: _:
+      "chalkos.nodes.${name}.storage.volumes.${volume}: a swap volume on a Kubernetes node; the kubelet refuses to run with swap (failSwapOn)"
+    ) (lib.filterAttrs (_: v: v.enable && v.format == "swap") n.storage.volumes);
+
   node = name: n: {
     inherit (n) role;
     identity = {
@@ -102,6 +147,10 @@ let
         # etcd and the API server advertise the address to their peers and clients.
         else if kind == "controlplane" && n.kubernetes.nodeIP == null then
           throw "chalkos.nodes.${name}.kubernetes.nodeIP must be set: control-plane nodes need a static address"
+        else if kubeletErrors name n != [ ] then
+          throw "chalkos.nodes.${name} is invalid:\n${
+            lib.concatMapStringsSep "\n" (e: "- ${e}") (kubeletErrors name n)
+          }"
         else
           {
             nodeName = name;

@@ -1047,6 +1047,105 @@ lib.runTests {
       hostname = false;
     };
   };
+  testKubernetesNodeRejectsSwap = {
+    expr =
+      let
+        swapManifest =
+          kind:
+          (cluster [
+            {
+              chalkos.roles.worker.kubernetes.kind = kind;
+              chalkos.nodes.n1 = {
+                role = "worker";
+                storage.system.disk = "/dev/vda";
+                kubernetes.nodeIP = "10.0.0.5";
+                storage.volumes.swap = {
+                  size = "1G";
+                  format = "swap";
+                };
+              };
+            }
+          ]).manifest;
+      in
+      {
+        worker = fails (swapManifest "worker");
+        controlPlane = fails (swapManifest "controlplane");
+        withoutKubernetes = fails (swapManifest null);
+        disabled =
+          fails
+            (cluster [
+              {
+                chalkos.roles.worker.storage.volumes.swap = {
+                  size = "1G";
+                  format = "swap";
+                };
+                chalkos.nodes.n1 = {
+                  role = "worker";
+                  storage.system.disk = "/dev/vda";
+                  storage.volumes.swap.enable = false;
+                };
+              }
+            ]).manifest;
+      };
+    expected = {
+      worker = true;
+      controlPlane = true;
+      withoutKubernetes = false;
+      disabled = false;
+    };
+  };
+  testKubernetesNodeRejectsRestrictedLabels = {
+    expr =
+      let
+        rejects =
+          kind: label:
+          fails
+            (cluster [
+              {
+                chalkos.roles.worker.kubernetes.kind = kind;
+                chalkos.nodes.n1 = {
+                  role = "worker";
+                  storage.system.disk = "/dev/vda";
+                  labels.${label} = "x";
+                };
+              }
+            ]).manifest;
+      in
+      {
+        refused = map (rejects "worker") [
+          "kubernetes.io/role"
+          "node-role.kubernetes.io/control-plane"
+          "beta.kubernetes.io/fluentd"
+          "k8s.io/team"
+          "storage.k8s.io/class"
+        ];
+        allowed = map (rejects "worker") [
+          "kubernetes.io/hostname"
+          "kubernetes.io/arch"
+          "kubernetes.io/os"
+          "beta.kubernetes.io/arch"
+          "beta.kubernetes.io/os"
+          "beta.kubernetes.io/instance-type"
+          "failure-domain.beta.kubernetes.io/region"
+          "failure-domain.beta.kubernetes.io/zone"
+          "topology.kubernetes.io/region"
+          "topology.kubernetes.io/zone"
+          "node.kubernetes.io/instance-type"
+          "node.kubernetes.io/storage"
+          "kubelet.kubernetes.io/pool"
+          "a.node.kubernetes.io/b"
+          "a.kubelet.kubernetes.io/b"
+          "example.com/team"
+          "team"
+        ];
+        withoutKubernetes = rejects null "node-role.kubernetes.io/control-plane";
+      };
+    expected = {
+      refused = lib.replicate 5 true;
+      allowed = lib.replicate 17 false;
+      withoutKubernetes = false;
+    };
+  };
   testControlPlaneNeedsNodeIP = {
     expr = {
       withoutAddress =
