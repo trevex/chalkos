@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -54,6 +55,9 @@ type vipElection struct {
 	ttl int
 	// interval is the time between two health checks, and between two announcements.
 	interval time.Duration
+	// margin is how long before etcd may let the lease expire the node releases the VIPs, at most
+	// a quarter of the lease's lifetime.
+	margin time.Duration
 	// failures is how many health checks in a row fail before the node resigns.
 	failures int
 	holder   *atomic.Bool
@@ -92,11 +96,27 @@ func (v *vipElection) waitHealthy(ctx context.Context) bool {
 // errLeaseLost means etcd no longer kept the lease that made the node the VIPs' holder.
 var errLeaseLost = errors.New("lost the lease of the VIPs")
 
+// errLeaseUnrenewed means the node could not renew the lease in time: etcd may let it expire
+// and another node take the VIPs.
+var errLeaseUnrenewed = errors.New("could not renew the lease of the VIPs in time")
+
 // lead campaigns with a new lease and holds the VIPs while the node leads. It stops when the API
-// server turned unhealthy, the lease was lost or ctx ended, and releases the VIPs before it
-// resigns.
+// server turned unhealthy, the lease was lost or could not be renewed in time, or ctx ended, and
+// releases the VIPs before it resigns.
 func (v *vipElection) lead(ctx context.Context) error {
-	session, err := concurrency.NewSession(v.client, concurrency.WithTTL(v.ttl), concurrency.WithContext(ctx))
+	sent := time.Now()
+	gctx, cancel := context.WithTimeout(ctx, time.Duration(v.ttl)*time.Second)
+	grant, err := v.client.Grant(gctx, int64(v.ttl))
+	cancel()
+	if err != nil {
+		return err
+	}
+	ttl := time.Duration(grant.TTL) * time.Second
+	renewed := &renewals{last: sent, notify: make(chan struct{}, 1)}
+	rctx, stopRenewing := context.WithCancel(ctx)
+	defer stopRenewing()
+	go v.renew(rctx, grant.ID, ttl, renewed)
+	session, err := concurrency.NewSession(v.client, concurrency.WithLease(grant.ID), concurrency.WithTTL(int(grant.TTL)), concurrency.WithContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -115,6 +135,16 @@ func (v *vipElection) lead(ctx context.Context) error {
 			log.Printf("kubernetes: resign from the VIP election: %v", err)
 		}
 	}
+	// etcd keeps the lease at least ttl after it received the last renewal, so at least ttl after
+	// its request was sent: the node releases the VIPs before then unless a newer renewal
+	// succeeded, so no other node takes them while it still holds them.
+	margin := min(v.margin, ttl/4)
+	if !time.Now().Before(renewed.deadline(ttl, margin)) {
+		resign()
+		return errLeaseUnrenewed
+	}
+	fence := time.NewTimer(time.Until(renewed.deadline(ttl, margin)))
+	defer fence.Stop()
 	if err := v.addrs.Acquire(); err != nil {
 		v.release()
 		resign()
@@ -122,6 +152,8 @@ func (v *vipElection) lead(ctx context.Context) error {
 	}
 	v.holder.Store(true)
 	log.Print("kubernetes: this node holds the VIPs")
+	acquire := time.NewTicker(v.interval)
+	defer acquire.Stop()
 	for {
 		select {
 		case <-session.Done():
@@ -131,10 +163,62 @@ func (v *vipElection) lead(ctx context.Context) error {
 			v.release()
 			resign()
 			return nil
-		case <-time.After(v.interval):
+		case <-renewed.notify:
+			fence.Reset(time.Until(renewed.deadline(ttl, margin)))
+		case <-fence.C:
+			if d := time.Until(renewed.deadline(ttl, margin)); d > 0 {
+				fence.Reset(d)
+				continue
+			}
+			v.release()
+			return errLeaseUnrenewed
+		case <-acquire.C:
 			if err := v.addrs.Acquire(); err != nil {
 				log.Printf("kubernetes: %v", err)
 			}
+		}
+	}
+}
+
+// renewals holds when the request of the newest successful renewal of the lease was sent.
+type renewals struct {
+	mu   sync.Mutex
+	last time.Time
+	// notify receives a value after each successful renewal.
+	notify chan struct{}
+}
+
+func (r *renewals) renewed(sent time.Time) {
+	r.mu.Lock()
+	r.last = sent
+	r.mu.Unlock()
+	select {
+	case r.notify <- struct{}{}:
+	default:
+	}
+}
+
+// deadline is when the node must have released the VIPs without another renewal.
+func (r *renewals) deadline(ttl, margin time.Duration) time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.last.Add(ttl - margin)
+}
+
+// renew renews the lease every third of its lifetime until ctx ends.
+func (v *vipElection) renew(ctx context.Context, id clientv3.LeaseID, ttl time.Duration, r *renewals) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(ttl / 3):
+		}
+		sent := time.Now()
+		kctx, cancel := context.WithTimeout(ctx, ttl/3)
+		resp, err := v.client.KeepAliveOnce(kctx, id)
+		cancel()
+		if err == nil && resp.TTL > 0 {
+			r.renewed(sent)
 		}
 	}
 }
@@ -233,6 +317,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 		addrs:    addrs,
 		ttl:      ttl,
 		interval: interval,
+		margin:   2 * time.Second,
 		failures: 3,
 		holder:   &k.vipHolder,
 	}).run(ctx)

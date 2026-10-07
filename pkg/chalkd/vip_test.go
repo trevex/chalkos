@@ -23,6 +23,9 @@ type fakeAddresses struct {
 	held     atomic.Bool
 	released atomic.Int32
 	holders  *holders
+	// releasedAt is when the node last released addresses it held.
+	mu         sync.Mutex
+	releasedAt time.Time
 }
 
 type holders struct {
@@ -52,6 +55,9 @@ func (f *fakeAddresses) Acquire() error {
 
 func (f *fakeAddresses) Release() error {
 	if f.held.Swap(false) {
+		f.mu.Lock()
+		f.releasedAt = time.Now()
+		f.mu.Unlock()
 		f.holders.change(-1)
 	}
 	f.released.Add(1)
@@ -73,33 +79,41 @@ func startElection(t *testing.T, ca pki.CertKey, m *etcdtest.Member, n int) ([]*
 	h := &holders{}
 	var nodes []*electionNode
 	for i := range n {
-		cli, err := etcd.Dial([]string{m.ClientURL}, etcdtest.ClientTLS(t, ca))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { cli.Close() })
-		node := &electionNode{addrs: &fakeAddresses{holders: h}, done: make(chan struct{})}
-		node.healthy.Store(true)
-		node.election = &vipElection{
-			client:   cli,
-			name:     "cp" + string(rune('1'+i)),
-			healthy:  func(context.Context) bool { return node.healthy.Load() },
-			addrs:    node.addrs,
-			ttl:      1,
-			interval: 50 * time.Millisecond,
-			failures: 3,
-			holder:   &atomic.Bool{},
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		node.stop = cancel
-		go func() {
-			defer close(node.done)
-			node.election.run(ctx)
-		}()
-		t.Cleanup(func() { cancel(); <-node.done })
-		nodes = append(nodes, node)
+		nodes = append(nodes, startNode(t, ca, m.ClientURL, "cp"+string(rune('1'+i)), 1, h))
 	}
 	return nodes, h
+}
+
+// startNode runs the election on a node of the name that reaches etcd at url, with a lease of
+// ttl seconds.
+func startNode(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *holders) *electionNode {
+	t.Helper()
+	cli, err := etcd.Dial([]string{url}, etcdtest.ClientTLS(t, ca))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cli.Close() })
+	node := &electionNode{addrs: &fakeAddresses{holders: h}, done: make(chan struct{})}
+	node.healthy.Store(true)
+	node.election = &vipElection{
+		client:   cli,
+		name:     name,
+		healthy:  func(context.Context) bool { return node.healthy.Load() },
+		addrs:    node.addrs,
+		ttl:      ttl,
+		interval: 50 * time.Millisecond,
+		margin:   2 * time.Second,
+		failures: 3,
+		holder:   &atomic.Bool{},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	node.stop = cancel
+	go func() {
+		defer close(node.done)
+		node.election.run(ctx)
+	}()
+	t.Cleanup(func() { cancel(); <-node.done })
+	return node
 }
 
 // holder waits until exactly one node holds the VIPs and returns it.
@@ -194,6 +208,73 @@ func TestVIPReleasedOnStop(t *testing.T) {
 	<-first.done
 	if now, _ := h.count(); now != 0 || first.election.holder.Load() {
 		t.Error("a stopped node holds the VIPs")
+	}
+}
+
+// A holder cut off from etcd releases the VIPs before etcd lets its lease expire, and so before
+// another node takes them, also when etcd's replies reached it late.
+func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m := etcdtest.StartNew(t, ca, "cp0")
+	h := &holders{}
+	proxy := etcdtest.NewProxy(t, m.ClientURL, 600*time.Millisecond)
+	first := startNode(t, ca, proxy.URL, "cp1", 3, h)
+	holder(t, []*electionNode{first})
+	second := startNode(t, ca, m.ClientURL, "cp2", 3, h)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cli := second.election.client
+	resp, err := cli.Get(ctx, vipElectionPrefix, clientv3.WithFirstCreate()...)
+	if err != nil || len(resp.Kvs) != 1 {
+		t.Fatalf("the election's leader: %v, %v", resp, err)
+	}
+	lease := clientv3.LeaseID(resp.Kvs[0].Lease)
+	// Renewals go back and forth a few times.
+	time.Sleep(2 * time.Second)
+	revoked := make(chan time.Time, 1)
+	go func() {
+		for ctx.Err() == nil {
+			if ttl, err := cli.TimeToLive(ctx, lease); err == nil && ttl.TTL == -1 {
+				revoked <- time.Now()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	proxy.Pause()
+	var revokedAt time.Time
+	select {
+	case revokedAt = <-revoked:
+	case <-time.After(time.Minute):
+		t.Fatal("etcd did not revoke the lease of the cut-off holder")
+	}
+	eventually(t, "the second node to hold the VIPs", func() bool { return second.addrs.held.Load() })
+	if first.addrs.held.Load() {
+		t.Fatal("the cut-off holder holds the VIPs")
+	}
+	first.addrs.mu.Lock()
+	releasedAt := first.addrs.releasedAt
+	first.addrs.mu.Unlock()
+	if !releasedAt.Before(revokedAt) {
+		t.Errorf("the cut-off holder released the VIPs %v after etcd revoked its lease", releasedAt.Sub(revokedAt))
+	}
+	if _, most := h.count(); most != 1 {
+		t.Errorf("%d nodes held the VIPs at once", most)
+	}
+}
+
+// A healthy holder whose lease is renewed keeps the VIPs, also over a slow network.
+func TestVIPKeptWhileRenewed(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m := etcdtest.StartNew(t, ca, "cp0")
+	h := &holders{}
+	proxy := etcdtest.NewProxy(t, m.ClientURL, 200*time.Millisecond)
+	first := startNode(t, ca, proxy.URL, "cp1", 2, h)
+	holder(t, []*electionNode{first})
+	released := first.addrs.released.Load()
+	time.Sleep(5 * time.Second)
+	if first.addrs.released.Load() != released || !first.addrs.held.Load() {
+		t.Error("the holder dropped the VIPs while its lease was renewed")
 	}
 }
 

@@ -195,3 +195,106 @@ func Silent(t testing.TB) string {
 	})
 	return "https://" + l.Addr().String()
 }
+
+// Proxy forwards connections to a member's client URL, delaying what the member sends by Delay,
+// as a slow network does. Once paused it forwards nothing more but keeps the connections open, as
+// a network partition does.
+type Proxy struct {
+	// URL is the client URL to dial instead of the member's.
+	URL    string
+	delay  time.Duration
+	paused chan struct{}
+	pause  sync.Once
+	closed chan struct{}
+}
+
+// NewProxy forwards connections to target, delaying the replies by delay.
+func NewProxy(t testing.TB, target string, delay time.Duration) *Proxy {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := parse(t, target)
+	p := &Proxy{URL: "https://" + l.Addr().String(), delay: delay, paused: make(chan struct{}), closed: make(chan struct{})}
+	var mu sync.Mutex
+	var conns []net.Conn
+	track := func(c net.Conn) {
+		mu.Lock()
+		defer mu.Unlock()
+		conns = append(conns, c)
+	}
+	go func() {
+		for {
+			client, err := l.Accept()
+			if err != nil {
+				return
+			}
+			track(client)
+			member, err := net.Dial("tcp", u.Host)
+			if err != nil {
+				client.Close()
+				continue
+			}
+			track(member)
+			go p.forward(member, client, 0)
+			go p.forward(client, member, p.delay)
+		}
+	}()
+	t.Cleanup(func() {
+		close(p.closed)
+		l.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range conns {
+			c.Close()
+		}
+	})
+	return p
+}
+
+// Pause stops forwarding.
+func (p *Proxy) Pause() { p.pause.Do(func() { close(p.paused) }) }
+
+// forward copies from src to dst, each chunk delay after it arrived, until the proxy is paused.
+func (p *Proxy) forward(dst, src net.Conn, delay time.Duration) {
+	type chunk struct {
+		data []byte
+		at   time.Time
+	}
+	chunks := make(chan chunk, 1024)
+	go func() {
+		defer close(chunks)
+		for {
+			buf := make([]byte, 32*1024)
+			n, err := src.Read(buf)
+			if n > 0 {
+				select {
+				case chunks <- chunk{buf[:n], time.Now().Add(delay)}:
+				case <-p.closed:
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	for c := range chunks {
+		select {
+		case <-time.After(time.Until(c.at)):
+		case <-p.closed:
+			return
+		}
+		select {
+		case <-p.paused:
+			// Hold the connection open without delivering anything.
+			<-p.closed
+			return
+		default:
+		}
+		if _, err := dst.Write(c.data); err != nil {
+			return
+		}
+	}
+}
