@@ -172,10 +172,13 @@ func InitialCluster(members []Member, id uint64, name string) string {
 }
 
 // Promote makes the learner a voter once it caught up with the leader, trying again every
-// interval while etcd says it has not. A member that is a voter already is left as it is.
-func Promote(ctx context.Context, cli *clientv3.Client, id uint64, interval time.Duration) error {
+// interval while etcd says it has not. Each request ends after timeout. A member that is a voter
+// already is left as it is.
+func Promote(ctx context.Context, cli *clientv3.Client, id uint64, interval, timeout time.Duration) error {
 	for {
-		_, err := cli.MemberPromote(ctx, id)
+		pctx, cancel := context.WithTimeout(ctx, timeout)
+		_, err := cli.MemberPromote(pctx, id)
+		cancel()
 		switch {
 		case err == nil, errors.Is(err, rpctypes.ErrMemberNotLearner):
 			return nil
@@ -269,4 +272,57 @@ func Find(members []Member, nameOrID string) (Member, error) {
 		}
 	}
 	return Member{}, fmt.Errorf("etcd has no member %s", nameOrID)
+}
+
+// SplitError means endpoints belong to different etcd clusters: two nodes were bootstrapped
+// separately.
+type SplitError struct {
+	// IDs are the cluster IDs of the endpoints.
+	IDs map[string]uint64
+}
+
+func (e *SplitError) Error() string {
+	var ids []string
+	for endpoint, id := range e.IDs {
+		ids = append(ids, fmt.Sprintf("%x at %s", id, endpoint))
+	}
+	sort.Strings(ids)
+	return fmt.Sprintf("the endpoints belong to different etcd clusters (%s); two nodes were bootstrapped separately", strings.Join(ids, ", "))
+}
+
+// OneCluster asks each endpoint which cluster it belongs to and returns the ones that answered,
+// in the order given. It fails with a *SplitError when they belong to different clusters, and
+// when none answered before ctx ended.
+func OneCluster(ctx context.Context, cli *clientv3.Client, endpoints []string) ([]string, error) {
+	ids := make([]uint64, len(endpoints))
+	errs := make([]error, len(endpoints))
+	var wg sync.WaitGroup
+	for i, endpoint := range endpoints {
+		wg.Go(func() {
+			resp, err := cli.Status(ctx, endpoint)
+			if err != nil {
+				errs[i] = fmt.Errorf("%s: %w", endpoint, err)
+				return
+			}
+			ids[i] = resp.Header.ClusterId
+		})
+	}
+	wg.Wait()
+	var answered []string
+	byEndpoint := map[string]uint64{}
+	for i, endpoint := range endpoints {
+		if errs[i] == nil {
+			answered = append(answered, endpoint)
+			byEndpoint[endpoint] = ids[i]
+		}
+	}
+	if len(answered) == 0 {
+		return nil, fmt.Errorf("no etcd endpoint answered: %w", errors.Join(errs...))
+	}
+	for _, id := range byEndpoint {
+		if id != byEndpoint[answered[0]] {
+			return nil, &SplitError{IDs: byEndpoint}
+		}
+	}
+	return answered, nil
 }

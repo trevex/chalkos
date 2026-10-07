@@ -99,6 +99,7 @@ func (k *Kubernetes) superviseJoin(ctx context.Context) {
 		err := k.joinOnce(ctx)
 		var waiting waitingError
 		var stale *etcd.StaleMemberError
+		var split *etcd.SplitError
 		switch {
 		case err == nil:
 			log.Print("kubernetes: joined the cluster; the control plane starts")
@@ -109,7 +110,7 @@ func (k *Kubernetes) superviseJoin(ctx context.Context) {
 			k.setJoinStep("")
 			return
 		case errors.As(err, &waiting), errors.Is(err, errNotPrepared):
-		case errors.As(err, &stale):
+		case errors.As(err, &stale), errors.As(err, &split):
 			log.Printf("kubernetes: %v", err)
 		default:
 			log.Printf("kubernetes: joining the cluster: %v; trying again in %v", err, retry)
@@ -173,6 +174,18 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		return err
 	}
 	defer cli.Close()
+	// The node joins only members of one cluster, and talks only to those that said so.
+	rctx, cancel := k.etcdRequest(ctx)
+	answered, err := etcd.OneCluster(rctx, cli, endpoints)
+	cancel()
+	if split := (*etcd.SplitError)(nil); errors.As(err, &split) {
+		k.setJoinStep(err.Error())
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	cli.SetEndpoints(answered...)
 
 	// Bootstrap refuses while the node joins.
 	k.membership.Lock()
@@ -187,7 +200,9 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		return err
 	}
 	peerURL := etcd.PeerURL(ips[0])
-	members, err := etcd.Members(ctx, cli)
+	rctx, cancel = k.etcdRequest(ctx)
+	members, err := etcd.Members(rctx, cli)
+	cancel()
 	if err != nil {
 		return err
 	}
@@ -219,7 +234,10 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 				return err
 			}
 		}
-		if own, initialCluster, err = etcd.AddLearner(ctx, cli, n.Name, peerURL); err != nil {
+		rctx, cancel := k.etcdRequest(ctx)
+		own, initialCluster, err = etcd.AddLearner(rctx, cli, n.Name, peerURL)
+		cancel()
+		if err != nil {
 			return err
 		}
 	}
@@ -232,7 +250,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 	k.setJoinStep(fmt.Sprintf("etcd member %x catches up", own.ID))
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	if err := etcd.Promote(pctx, cli, own.ID, 2*time.Second); err != nil {
+	if err := etcd.Promote(pctx, cli, own.ID, 2*time.Second, k.etcdTimeout()); err != nil {
 		return err
 	}
 	if err := knode.MarkEtcdInitialised(k.Paths, time.Now()); err != nil {
@@ -302,4 +320,79 @@ func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
 	}
 	conn.Close()
 	return true
+}
+
+// splitInterval is the time between two comparisons of the node's etcd cluster with the other
+// control planes'.
+const splitInterval = time.Minute
+
+// watchSplit compares the cluster of the node's etcd member with the ones of the other control
+// planes' members until ctx ends, and reports in the node's status when they differ. It changes
+// nothing: which cluster's data to keep is the operator's decision.
+func (k *Kubernetes) watchSplit(ctx context.Context, share kpki.Share) {
+	for {
+		split, err := k.checkSplit(ctx, share)
+		// A check that could not tell keeps what the last one found.
+		if err == nil {
+			msg := ""
+			if split != nil {
+				msg = split.Error()
+			}
+			k.mu.Lock()
+			changed := k.split != msg
+			k.split = msg
+			k.mu.Unlock()
+			if changed && msg != "" {
+				log.Printf("kubernetes: %s", msg)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(splitInterval):
+		}
+	}
+}
+
+// checkSplit asks the node's etcd member and the other control planes' which cluster they belong
+// to; the split is nil when they agree.
+func (k *Kubernetes) checkSplit(ctx context.Context, share kpki.Share) (*etcd.SplitError, error) {
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := knode.ReadNodeIPs(k.Paths)
+	if err != nil {
+		return nil, err
+	}
+	others, err := k.EtcdEndpoints(ctx, c, share, ips)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig, err := cred.tlsConfig()
+	if err != nil {
+		return nil, err
+	}
+	cli, err := etcd.Dial([]string{k.localEtcd()}, tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer cli.Close()
+	rctx, cancel := k.etcdRequest(ctx)
+	defer cancel()
+	answered, err := etcd.OneCluster(rctx, cli, append([]string{k.localEtcd()}, others...))
+	if split := (*etcd.SplitError)(nil); errors.As(err, &split) {
+		return split, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if answered[0] != k.localEtcd() {
+		return nil, errors.New("the node's etcd member did not answer")
+	}
+	return nil, nil
 }

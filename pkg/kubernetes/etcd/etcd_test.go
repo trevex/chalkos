@@ -78,7 +78,7 @@ func TestJoinAndPromote(t *testing.T) {
 	}
 
 	m2 := etcdtest.StartExisting(t, ca, "m2", peerURL, initial)
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond); err != nil {
+	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	list := members(t, dial(t, ca, m2))
@@ -89,7 +89,7 @@ func TestJoinAndPromote(t *testing.T) {
 		t.Errorf("unhealthy = %v", unhealthy)
 	}
 	// Promoting a voter changes nothing.
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond); err != nil {
+	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Errorf("promote a voter: %v", err)
 	}
 }
@@ -126,7 +126,7 @@ func TestJoinResumesOrFindsStaleMember(t *testing.T) {
 	if again, _, err := joinAsLearner(ctx, cli, "m2", peerURL, true); err != nil || again.ID != added.ID {
 		t.Errorf("resume after the start: %+v, %v", again, err)
 	}
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond); err != nil {
+	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	// A reinstalled node, which remembers nothing, finds its old member.
@@ -227,7 +227,7 @@ func join(t *testing.T, ctx context.Context, cli *clientv3.Client, ca pki.CertKe
 		t.Fatal(err)
 	}
 	m := etcdtest.StartExisting(t, ca, name, peerURL, initial)
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond); err != nil {
+	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -288,5 +288,48 @@ func TestFind(t *testing.T) {
 	}
 	if _, err := Find(list, "cp9"); err == nil {
 		t.Error("found cp9")
+	}
+}
+
+// Endpoints of one cluster agree; endpoints of two clusters, as after two separate bootstraps,
+// are refused; endpoints that do not answer are left out.
+func TestOneCluster(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m1 := etcdtest.StartNew(t, ca, "m1")
+	cli := dial(t, ca, m1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	m2 := join(t, ctx, cli, ca, "m2")
+	other := etcdtest.StartNew(t, ca, "other")
+	silent := etcdtest.Silent(t)
+
+	sctx, scancel := context.WithTimeout(ctx, time.Second)
+	defer scancel()
+	answered, err := OneCluster(sctx, cli, []string{m1.ClientURL, m2.ClientURL, silent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{m1.ClientURL, m2.ClientURL}; !slices.Equal(answered, want) {
+		t.Errorf("answered %v, want %v", answered, want)
+	}
+
+	sctx, scancel = context.WithTimeout(ctx, time.Second)
+	defer scancel()
+	_, err = OneCluster(sctx, cli, []string{m1.ClientURL, other.ClientURL, silent})
+	var split *SplitError
+	if !errors.As(err, &split) || !strings.HasPrefix(err.Error(), "the endpoints belong to different etcd clusters (") ||
+		!strings.HasSuffix(err.Error(), "); two nodes were bootstrapped separately") ||
+		!strings.Contains(err.Error(), m1.ClientURL) || !strings.Contains(err.Error(), other.ClientURL) {
+		t.Errorf("err = %v, want the split", err)
+	}
+
+	start := time.Now()
+	sctx, scancel = context.WithTimeout(ctx, 200*time.Millisecond)
+	defer scancel()
+	if _, err := OneCluster(sctx, cli, []string{silent}); err == nil || errors.As(err, &split) {
+		t.Errorf("err = %v, want no endpoint answering", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("OneCluster took %v without an answer", d)
 	}
 }

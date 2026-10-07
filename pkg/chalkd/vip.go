@@ -214,7 +214,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cli, err := etcd.Dial([]string{localEtcd}, tlsConfig)
+	cli, err := etcd.Dial([]string{k.localEtcd()}, tlsConfig)
 	if err != nil {
 		return err
 	}

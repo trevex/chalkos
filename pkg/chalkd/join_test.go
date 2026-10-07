@@ -352,3 +352,98 @@ func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// Requests to etcd end after the timeout, so a cluster that does not answer never holds up the
+// join, which tries again.
+func TestJoinBoundsEtcdRequests(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	k.JoinRetry = 10 * time.Millisecond
+	k.EtcdTimeout = 100 * time.Millisecond
+	silent := etcdtest.Silent(t)
+	var asked atomic.Int32
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+		asked.Add(1)
+		return []string{silent}, nil
+	}
+	k.Start()
+	eventually(t, "the join to try again", func() bool { return asked.Load() > 2 })
+	eventually(t, "the unanswered request's state", func() bool {
+		return strings.Contains(kubernetesState(t, s), "no etcd endpoint answered")
+	})
+	if exists(k.Paths.Joining()) || exists(k.Paths.Pin()) {
+		t.Error("a join that reached no etcd member marked or pinned the node")
+	}
+	if !k.membership.TryLock() {
+		t.Fatal("the join holds the membership lock")
+	}
+	k.membership.Unlock()
+}
+
+// Endpoints of two etcd clusters, as after two separate bootstraps, are refused before the node
+// adds itself.
+func TestJoinRefusesSplitClusters(t *testing.T) {
+	s, cp0, cli := joiningServer(t)
+	k := s.Kubernetes
+	share, _ := knode.ReadShare(k.Paths)
+	other := etcdtest.StartNew(t, *share.EtcdCA, "other")
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+		return []string{cp0.ClientURL, other.ClientURL}, nil
+	}
+	k.Start()
+	eventually(t, "the split's state", func() bool {
+		return strings.Contains(kubernetesState(t, s), "the endpoints belong to different etcd clusters (")
+	})
+	if got := kubernetesState(t, s); !strings.Contains(got, "two nodes were bootstrapped separately") {
+		t.Errorf("state %q", got)
+	}
+	stopJoin(t, k)
+	if list := members(t, cli); len(list) != 1 {
+		t.Errorf("members %+v, want cp0 alone", list)
+	}
+	otherCli, err := etcd.Dial([]string{other.ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer otherCli.Close()
+	if list := members(t, otherCli); len(list) != 1 {
+		t.Errorf("members %+v of the other cluster, want it alone", list)
+	}
+	if exists(k.Paths.Joining()) || exists(k.Paths.Pin()) {
+		t.Error("a refused join marked or pinned the node")
+	}
+}
+
+// A bootstrapped control plane whose etcd belongs to another cluster than the other control
+// planes' reports the split and changes nothing.
+func TestControlPlaneReportsSplit(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	write(t, k.Paths.Bootstrapped(), "")
+	share, _ := knode.ReadShare(k.Paths)
+	local := etcdtest.StartNew(t, *share.EtcdCA, "n1")
+	other := etcdtest.StartNew(t, *share.EtcdCA, "cp0")
+	k.LocalEtcd = local.ClientURL
+	k.EtcdTimeout = time.Second
+	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+		return []string{other.ClientURL}, nil
+	}
+	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	k.Start()
+	eventually(t, "the split's state", func() bool {
+		return strings.HasPrefix(kubernetesState(t, s), "bootstrapped: the endpoints belong to different etcd clusters (")
+	})
+	for _, m := range []*etcdtest.Member{local, other} {
+		cli, err := etcd.Dial([]string{m.ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if list := members(t, cli); len(list) != 1 {
+			t.Errorf("members %+v, want %s alone", list, m.Name)
+		}
+		cli.Close()
+	}
+}

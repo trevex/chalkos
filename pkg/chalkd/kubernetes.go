@@ -58,6 +58,12 @@ type Kubernetes struct {
 	// time between two health checks of the API server; zero means 10 seconds and 2 seconds.
 	VIPTTL      int
 	VIPInterval time.Duration
+	// EtcdTimeout bounds each request to etcd, so an etcd member that does not answer never holds
+	// up a loop or the membership lock; zero means 30 seconds.
+	EtcdTimeout time.Duration
+	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means
+	// https://127.0.0.1:2379. Tests replace it.
+	LocalEtcd string
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -77,6 +83,8 @@ type Kubernetes struct {
 	joinStep    string
 	joinWaiting bool
 	started     bool
+	// split says why the node's etcd and the other control planes' belong to different clusters.
+	split string
 	// reload asks the running loop to start again.
 	reload chan struct{}
 	// done is closed once the manifests were applied; count is how many.
@@ -281,6 +289,7 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 	if err != nil {
 		return err
 	}
+	go k.watchSplit(ctx, share)
 	return k.ControlPlane(ctx, share, applied)
 }
 
@@ -527,6 +536,11 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 			return nil, err
 		}
 		st.State = "bootstrapped"
+		k.mu.Lock()
+		if k.split != "" {
+			st.State += ": " + k.split
+		}
+		k.mu.Unlock()
 		if len(c.VIP.Addresses) > 0 {
 			st.Vip = "standby"
 			if k.vipHolder.Load() {
@@ -547,4 +561,23 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	}
 	st.NodeReady = ready
 	return st, nil
+}
+
+// etcdRequest bounds one request to etcd.
+func (k *Kubernetes) etcdRequest(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, k.etcdTimeout())
+}
+
+func (k *Kubernetes) etcdTimeout() time.Duration {
+	if k.EtcdTimeout <= 0 {
+		return 30 * time.Second
+	}
+	return k.EtcdTimeout
+}
+
+func (k *Kubernetes) localEtcd() string {
+	if k.LocalEtcd != "" {
+		return k.LocalEtcd
+	}
+	return localEtcd
 }

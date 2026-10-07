@@ -156,3 +156,35 @@ func parse(t testing.TB, s string) url.URL {
 	}
 	return *u
 }
+
+// Silent returns a client URL whose listener accepts connections and never answers, as a
+// partitioned member's does.
+func Silent(t testing.TB) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var conns []net.Conn
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		l.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, conn := range conns {
+			conn.Close()
+		}
+	})
+	return "https://" + l.Addr().String()
+}
