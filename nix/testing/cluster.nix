@@ -89,6 +89,36 @@ let
       kubernetes.validSubnets = [ "192.168.100.0/24" ];
     };
   };
+  # Three control planes behind the VIP 192.168.100.10, connected through the switch of the HA
+  # test. The definition is a cluster of its own: the endpoint and the VIP are in the images.
+  haDefinition = {
+    chalkos.cluster = {
+      name = "chalklab-ha";
+      endpoint = "https://192.168.100.10:6443";
+      osCA = "${secrets}/secrets.pub.json";
+      kubernetes = {
+        allowSchedulingOnControlPlanes = true;
+        vip.addresses = [ "192.168.100.10" ];
+        # The test boots a pinned node without its address; it gives up after this.
+        nodeIP.timeout = 30;
+      };
+    };
+    chalkos.roles.k8s-ha = {
+      kubernetes.kind = "controlplane";
+      nixosModules = kubernetesImage;
+    };
+    chalkos.nodes = pkgs.lib.genAttrs [ "cp1" "cp2" "cp3" ] (
+      name:
+      let
+        n = pkgs.lib.removePrefix "cp" name;
+      in
+      {
+        role = "k8s-ha";
+        storage.system.disk = "/dev/vda";
+        network = clusterNetwork "52:54:00:00:02:1${n}" "192.168.100.1${n}";
+      }
+    );
+  };
   # The Kubernetes nodes pull every image through the test's registry.
   mirrored = {
     chalkos.cluster.registries = {
@@ -112,9 +142,15 @@ let
       mirrored
     ];
   };
+  haCluster = self.lib.mkCluster {
+    modules = [
+      haDefinition
+      mirrored
+    ];
+  };
 in
 {
-  inherit cluster;
+  inherit cluster haCluster;
   kubernetesImages = import ./kubernetes-images.nix {
     inherit pkgs;
     kubernetesVersion = cluster.cluster.kubernetes.package.version;
@@ -135,5 +171,6 @@ in
     "destructive.json" = manifestOf "destructive" [
       { chalkos.nodes.chalklab.storage.var.size = "1G"; }
     ];
+    "ha.json" = pkgs.writeText "ha.json" (builtins.toJSON haCluster.manifest);
   };
 }

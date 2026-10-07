@@ -149,6 +149,11 @@ func installInPlace(t *testing.T, n *node, name string) {
 
 // install is installInPlace for other goroutines than the test's: it only logs to t.
 func install(t *testing.T, n *node, name string) error {
+	return installFrom(t, n, name, "base")
+}
+
+// installFrom installs the node as the named manifest of CHALKLAB_MANIFESTS defines it.
+func installFrom(t *testing.T, n *node, name, manifest string) error {
 	info, err := chalkdInfo(n, 5*time.Minute)
 	if err != nil {
 		return err
@@ -156,7 +161,7 @@ func install(t *testing.T, n *node, name string) error {
 	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("node %s is in mode %v, want maintenance", name, info.Mode)
 	}
-	if _, err := chalkctl(t, n, "base", "install", name, "--insecure"); err != nil {
+	if _, err := chalkctl(t, n, manifest, "install", name, "--insecure"); err != nil {
 		return fmt.Errorf("install %s: %w", name, err)
 	}
 	return nil

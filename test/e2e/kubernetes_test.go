@@ -342,26 +342,32 @@ func peersReached(ctx context.Context, cs kubernetes.Interface, since *metav1.Ti
 func logMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
 	for _, kn := range kubernetesNodes {
-		data, err := cs.CoreV1().RESTClient().Get().AbsPath("/api/v1/nodes", kn.name, "proxy/stats/summary").DoRaw(ctx)
-		if err != nil {
-			t.Logf("memory of %s: %v", kn.name, err)
-			continue
-		}
-		var summary struct {
-			Node struct {
-				Memory struct {
-					WorkingSetBytes uint64 `json:"workingSetBytes"`
-					AvailableBytes  uint64 `json:"availableBytes"`
-				} `json:"memory"`
-			} `json:"node"`
-		}
-		if err := json.Unmarshal(data, &summary); err != nil {
-			t.Logf("memory of %s: %v", kn.name, err)
-			continue
-		}
-		m := summary.Node.Memory
-		t.Logf("memory of %s (%d MiB): %d MiB in use, %d MiB available", kn.name, kn.memoryMB, m.WorkingSetBytes>>20, m.AvailableBytes>>20)
+		logNodeMemory(t, ctx, cs, kn.name, kn.memoryMB)
 	}
+}
+
+// logNodeMemory reports the memory the node, a VM of memoryMB, uses.
+func logNodeMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface, name string, memoryMB int) {
+	t.Helper()
+	data, err := cs.CoreV1().RESTClient().Get().AbsPath("/api/v1/nodes", name, "proxy/stats/summary").DoRaw(ctx)
+	if err != nil {
+		t.Logf("memory of %s: %v", name, err)
+		return
+	}
+	var summary struct {
+		Node struct {
+			Memory struct {
+				WorkingSetBytes uint64 `json:"workingSetBytes"`
+				AvailableBytes  uint64 `json:"availableBytes"`
+			} `json:"memory"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Logf("memory of %s: %v", name, err)
+		return
+	}
+	m := summary.Node.Memory
+	t.Logf("memory of %s (%d MiB): %d MiB in use, %d MiB available", name, memoryMB, m.WorkingSetBytes>>20, m.AvailableBytes>>20)
 }
 
 // servingCertificate returns the certificate the API server presents.

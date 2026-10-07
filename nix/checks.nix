@@ -77,6 +77,10 @@ in
     CHALKLAB_K8S_WORKER_IMAGE_DIR = "${chalkPkgs.test-kubernetes-worker-image}";
     CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";
   };
+  e2e-kubernetes-ha = e2e "kubernetes-ha" "^TestKubernetesHA$" {
+    CHALKLAB_K8S_HA_IMAGE_DIR = "${chalkPkgs.test-kubernetes-ha-image}";
+    CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";
+  };
 
   # The VXLAN rule's script against an iptables that records what it is asked to do.
   vxlan-rule =

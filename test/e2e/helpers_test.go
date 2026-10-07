@@ -96,8 +96,9 @@ type diskOpts struct {
 	mutate   func(t *testing.T, raw string, parts []image.Partition)
 }
 
-// prepareDisk copies the test image into dir, optionally modifies and signs the copy, and
-// returns a 16 GiB qcow2 overlay so first-boot repart has room for slot B, STATE, and VAR.
+// prepareDisk returns a 16 GiB qcow2 overlay of the test image in dir, so first-boot repart has
+// room for slot B, STATE, and VAR. An image to modify or sign is copied into dir first; otherwise
+// the overlay is backed by the image itself, which QEMU only reads.
 func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
 	t.Helper()
 	ctx := context.Background()
@@ -114,9 +115,12 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
 		t.Fatal(err)
 	}
 
-	raw := filepath.Join(dir, "image.raw")
-	if err := lab.CopySparse(ctx, raws[0], raw); err != nil {
-		t.Fatal(err)
+	raw := raws[0]
+	if o.mutate != nil || o.sign {
+		raw = filepath.Join(dir, "image.raw")
+		if err := lab.CopySparse(ctx, raws[0], raw); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if o.mutate != nil {
 		o.mutate(t, raw, parts)
