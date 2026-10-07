@@ -69,6 +69,10 @@ func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
 // firewall's VXLAN rule reads it too.
 func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
 
+// Pin holds the addresses a control-plane node was pinned to when it became an etcd member: its
+// etcd peers and the certificates know it by them, so every later boot uses exactly these.
+func (p Paths) Pin() string { return filepath.Join(p.State, "node-ip") }
+
 // PrepareError holds why the last preparation failed, such as that no address of the node
 // matched.
 func (p Paths) PrepareError() string { return filepath.Join(p.Run, "prepare.error") }
@@ -220,6 +224,65 @@ func ReadNodeIPs(p Paths) ([]net.IP, error) {
 	return ips, nil
 }
 
+// WritePin pins the node to the addresses the preparation picked.
+func WritePin(p Paths) error {
+	ips, err := ReadNodeIPs(p)
+	if err != nil {
+		return fmt.Errorf("pin the node's addresses: %w", err)
+	}
+	return install.WriteFile(p.Pin(), nodeIPFile(ips), 0o644)
+}
+
+// ReadPin returns the addresses the node is pinned to, nil when it is not pinned.
+func ReadPin(p Paths) ([]netip.Addr, error) {
+	data, err := os.ReadFile(p.Pin())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var pin []netip.Addr
+	for _, line := range strings.Fields(string(data)) {
+		ip, err := netip.ParseAddr(line)
+		if err != nil {
+			return nil, fmt.Errorf("%s holds %q, which is not an address", p.Pin(), line)
+		}
+		pin = append(pin, ip)
+	}
+	if len(pin) == 0 {
+		return nil, fmt.Errorf("%s holds no address", p.Pin())
+	}
+	return pin, nil
+}
+
+// ClearPin removes the pin.
+func ClearPin(p Paths) error {
+	if err := os.Remove(p.Pin()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// nodeSelector is how the node picks its addresses: a control-plane node that is pinned waits
+// for exactly its pinned addresses, any other node selects them as its cluster and identity say.
+func nodeSelector(p Paths, c kubernetes.Cluster, n kubernetes.Node) (nodeip.Selector, error) {
+	if c.Kind == kubernetes.KindControlPlane {
+		pin, err := ReadPin(p)
+		if err != nil {
+			return nodeip.Selector{}, err
+		}
+		if pin != nil {
+			sel := nodeip.Selector{Fixed: pin, Pinned: true}
+			for _, ip := range pin {
+				sel.Families = append(sel.Families, nodeip.FamilyOf(ip))
+			}
+			return sel, nil
+		}
+	}
+	return c.NodeIPSelector(n)
+}
+
 // nodeIPFile is the content of the file holding the addresses: one per line.
 func nodeIPFile(ips []net.IP) []byte {
 	var b strings.Builder
@@ -311,11 +374,14 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err != nil {
 		return err
 	}
-	sel, err := c.NodeIPSelector(n)
+	sel, err := nodeSelector(p, c, n)
 	if err != nil {
 		return err
 	}
 	ips, err := resolve(sel, time.Duration(c.NodeIP.Timeout)*time.Second)
+	if pinned := (*nodeip.PinnedError)(nil); errors.As(err, &pinned) {
+		return fmt.Errorf("%w; restore it, or remove the node's etcd member with chalkctl etcd remove-member %s and reinstall the node", err, n.Name)
+	}
 	if err != nil {
 		return err
 	}

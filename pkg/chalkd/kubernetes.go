@@ -186,6 +186,15 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 	} else if !prepared {
 		return errNotPrepared
 	}
+	// A bootstrapped node without a pin, such as one an older image bootstrapped, is pinned to
+	// the addresses its etcd member was started with.
+	if pin, err := knode.ReadPin(k.Paths); err != nil {
+		return err
+	} else if pin == nil {
+		if err := knode.WritePin(k.Paths); err != nil {
+			return err
+		}
+	}
 	share, err := knode.ReadShare(k.Paths)
 	if err != nil {
 		return err
@@ -338,6 +347,10 @@ func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
 		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs <node> --unit chalkos-kubernetes", errNotPrepared)
 	case problem != "":
 		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
+	}
+	// etcd's peers and the certificates know the node by its addresses from now on.
+	if err := knode.WritePin(k.Paths); err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	if err := install.WriteFile(k.Paths.Bootstrapped(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
 		return nil, failed(connect.CodeInternal, "record the bootstrap: %v", err)

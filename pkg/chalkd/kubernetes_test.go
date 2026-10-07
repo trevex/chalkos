@@ -164,6 +164,9 @@ func TestBootstrap(t *testing.T) {
 	if len(entries) != 4 {
 		t.Errorf("static pods %v", entries)
 	}
+	if pin, err := knode.ReadPin(p); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
+		t.Errorf("pin = %v, %v, want the node's address", pin, err)
+	}
 	_, err = bootstrap(s, context.Background())
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
 		t.Errorf("second bootstrap: %v", err)
@@ -523,6 +526,28 @@ func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 	case <-runs:
 	case <-time.After(10 * time.Second):
 		t.Fatal("the control plane's loop did not start once the node's files were prepared")
+	}
+}
+
+// A bootstrapped control plane without a pin is pinned once its files are prepared.
+func TestControlPlaneLoopPins(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	write(t, k.Paths.Bootstrapped(), "")
+	ran := make(chan struct{})
+	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+		close(ran)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	k.Start()
+	select {
+	case <-ran:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the control plane's loop did not run")
+	}
+	if pin, err := knode.ReadPin(k.Paths); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
+		t.Errorf("pin = %v, %v, want the node's address", pin, err)
 	}
 }
 

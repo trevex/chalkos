@@ -326,6 +326,88 @@ func TestPrepareDualStack(t *testing.T) {
 	}
 }
 
+// A pinned control plane waits for exactly its pinned addresses, whatever its identity says now,
+// and runs nothing without them.
+func TestPreparePinned(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, p.Bootstrapped(), "")
+	write(t, p.NodeFile, pickingIdentity("cp1"))
+	if err := Prepare(p, now, onNode("192.168.100.11"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := WritePin(p); err != nil {
+		t.Fatal(err)
+	}
+	if pin, err := ReadPin(p); err != nil || len(pin) != 1 || pin[0] != netip.MustParseAddr("192.168.100.11") {
+		t.Fatalf("ReadPin() = %v, %v", pin, err)
+	}
+
+	// The subnets would pick 192.168.100.5 first; the pin keeps 192.168.100.11.
+	if err := Prepare(p, now, onNode("192.168.100.5", "192.168.100.11"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(p.NodeIP()); err != nil || string(data) != "192.168.100.11\n" {
+		t.Errorf("node-ip = %q, %v", data, err)
+	}
+
+	err := Prepare(p, now, onNode("192.168.100.5"), nil)
+	want := "pinned address 192.168.100.11 is not present; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %s", err, want)
+	}
+	if exists(p.Kubeconfig()) || exists(p.Manifests()) || exists(p.NodeIP()) {
+		t.Error("a node without its pinned address keeps its kubeconfig, static pods or addresses")
+	}
+	if reason, err := PreparationError(p); err != nil || reason != want {
+		t.Errorf("PreparationError() = %q, %v", reason, err)
+	}
+
+	if err := ClearPin(p); err != nil {
+		t.Fatal(err)
+	}
+	if pin, err := ReadPin(p); err != nil || pin != nil {
+		t.Errorf("after ClearPin: %v, %v", pin, err)
+	}
+	if err := ClearPin(p); err != nil {
+		t.Errorf("clearing no pin: %v", err)
+	}
+}
+
+// Workers pick their addresses at every boot.
+func TestPrepareWorkerIgnoresPin(t *testing.T) {
+	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	write(t, p.NodeFile, pickingIdentity("w1"))
+	write(t, p.Pin(), "192.168.100.11\n")
+	if err := Prepare(p, now, onNode("192.168.100.12"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(p.NodeIP()); string(data) != "192.168.100.12\n" {
+		t.Errorf("node-ip = %q", data)
+	}
+}
+
+func TestReadPin(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	for content, ok := range map[string]bool{
+		"10.0.0.1\n":          true,
+		"fd00::1\n10.0.0.1\n": true,
+		"":                    false,
+		"nope\n":              false,
+	} {
+		write(t, p.Pin(), content)
+		if _, err := ReadPin(p); (err == nil) != ok {
+			t.Errorf("ReadPin(%q): %v", content, err)
+		}
+	}
+	// Pinning needs the addresses the preparation picked.
+	if err := os.Remove(p.Pin()); err != nil {
+		t.Fatal(err)
+	}
+	if err := WritePin(p); err == nil || exists(p.Pin()) {
+		t.Errorf("pinned without picked addresses: %v", err)
+	}
+}
+
 func TestReadNodeIPs(t *testing.T) {
 	p := testNode(t, kubernetes.KindWorker, "w1", nil)
 	for content, ok := range map[string]bool{
