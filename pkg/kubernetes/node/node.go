@@ -26,7 +26,8 @@ import (
 
 // Paths are the files Prepare reads and writes; tests point them at temporary directories.
 type Paths struct {
-	// State is the Kubernetes directory on STATE, holding the share and the bootstrap marker.
+	// State is the Kubernetes directory on STATE, holding the share and the bootstrap and etcd
+	// markers.
 	State string
 	// Cluster is the image's cluster file.
 	Cluster string
@@ -60,6 +61,9 @@ func (p Paths) Bootstrapped() string { return filepath.Join(p.State, "bootstrapp
 func (p Paths) Manifests() string    { return filepath.Join(p.Run, "manifests") }
 func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
 
+// EtcdInitialised marks that etcd answered ready after the bootstrap, so its data exists.
+func (p Paths) EtcdInitialised() string { return filepath.Join(p.State, "etcd-initialised") }
+
 // Kubeconfig is the kubelet's kubeconfig, which chalkd also reads the Node with.
 func (p Paths) Kubeconfig() string { return filepath.Join(p.KubeletDir(), "kubeconfig") }
 
@@ -84,10 +88,50 @@ func ReadShare(p Paths) (kpki.Share, error) {
 	return kpki.ParseShare(data)
 }
 
-// Bootstrapped reports whether this control-plane node initialised etcd. Only a marker that
-// does not exist means not bootstrapped.
+// ErrEtcdDataMissing means etcd's data directory is empty on a node that initialised etcd, as
+// after VAR was reset: etcd would start a new, empty cluster.
+var ErrEtcdDataMissing = errors.New("etcd data is missing on a node whose cluster was initialised; restore etcd or reinstall the node")
+
+// Bootstrapped reports whether this control-plane node was told to initialise etcd.
 func Bootstrapped(p Paths) (bool, error) {
-	_, err := os.Stat(p.Bootstrapped())
+	return marked(p.Bootstrapped())
+}
+
+// EtcdInitialised reports whether etcd on this node answered ready after the bootstrap.
+func EtcdInitialised(p Paths) (bool, error) {
+	return marked(p.EtcdInitialised())
+}
+
+// MarkEtcdInitialised records that etcd answered ready; it keeps an existing marker.
+func MarkEtcdInitialised(p Paths, now time.Time) error {
+	initialised, err := EtcdInitialised(p)
+	if err != nil || initialised {
+		return err
+	}
+	return install.WriteFile(p.EtcdInitialised(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+// CheckEtcdData refuses an empty etcd data directory once etcd was initialised. Without the
+// marker an empty directory is a bootstrap that was interrupted before etcd became ready, which
+// may be retried.
+func CheckEtcdData(p Paths) error {
+	initialised, err := EtcdInitialised(p)
+	if err != nil || !initialised {
+		return err
+	}
+	hasData, err := EtcdHasData(p)
+	if err != nil {
+		return err
+	}
+	if !hasData {
+		return ErrEtcdDataMissing
+	}
+	return nil
+}
+
+// marked reports whether a marker file exists. Only a marker that does not exist is unset.
+func marked(path string) (bool, error) {
+	_, err := os.Stat(path)
 	switch {
 	case err == nil:
 		return true, nil
@@ -286,8 +330,12 @@ func checkRenewedClient(path string, ca pki.CertKey, want *x509.Certificate, nod
 	return nil
 }
 
-// RenderStaticPods writes the static pods from the certificates Prepare wrote.
+// RenderStaticPods writes the static pods from the certificates Prepare wrote, unless etcd's
+// data is missing.
 func RenderStaticPods(p Paths) error {
+	if err := CheckEtcdData(p); err != nil {
+		return err
+	}
 	c, err := kubernetes.ReadCluster(p.Cluster)
 	if err != nil {
 		return err

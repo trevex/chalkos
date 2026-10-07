@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -333,5 +334,76 @@ func TestEtcdHasData(t *testing.T) {
 	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
 	if has, err := EtcdHasData(p); err != nil || !has {
 		t.Errorf("directory with a member: %v, %v", has, err)
+	}
+}
+
+func staticPods(t *testing.T, p Paths) []string {
+	t.Helper()
+	entries, err := os.ReadDir(p.Manifests())
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+// Once etcd was initialised, an empty data directory means VAR was reset or lost: a new etcd
+// would start a second, empty cluster.
+func TestPrepareRefusesMissingEtcdData(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, p.Bootstrapped(), "")
+	write(t, p.EtcdInitialised(), "")
+	err := Prepare(p, now)
+	if !errors.Is(err, ErrEtcdDataMissing) || !strings.Contains(err.Error(), "etcd data is missing on a node whose cluster was initialised; restore etcd or reinstall the node") {
+		t.Errorf("err = %v, want missing etcd data", err)
+	}
+	if pods := staticPods(t, p); len(pods) != 0 {
+		t.Errorf("static pods %v", pods)
+	}
+	if err := RenderStaticPods(p); !errors.Is(err, ErrEtcdDataMissing) {
+		t.Errorf("RenderStaticPods() = %v, want missing etcd data", err)
+	}
+
+	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if pods := staticPods(t, p); len(pods) != 4 {
+		t.Errorf("restored etcd data: static pods %v", pods)
+	}
+}
+
+// A bootstrap interrupted before etcd became ready is retried.
+func TestPrepareRetriesInterruptedBootstrap(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, p.Bootstrapped(), "")
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if pods := staticPods(t, p); len(pods) != 4 {
+		t.Errorf("static pods %v", pods)
+	}
+}
+
+func TestMarkEtcdInitialised(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	if initialised, err := EtcdInitialised(p); err != nil || initialised {
+		t.Fatalf("before: %v, %v", initialised, err)
+	}
+	if err := MarkEtcdInitialised(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if initialised, err := EtcdInitialised(p); err != nil || !initialised {
+		t.Fatalf("after: %v, %v", initialised, err)
+	}
+	first, _ := os.ReadFile(p.EtcdInitialised())
+	if err := MarkEtcdInitialised(p, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(p.EtcdInitialised()); string(again) != string(first) {
+		t.Errorf("the marker changed from %q to %q", first, again)
 	}
 }

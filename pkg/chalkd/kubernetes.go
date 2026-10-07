@@ -63,9 +63,14 @@ func (k *Kubernetes) Start() {
 		log.Printf("kubernetes: %v", err)
 		return
 	}
-	if c.Kind == k8s.KindControlPlane && bootstrapped {
-		k.start()
+	if c.Kind != k8s.KindControlPlane || !bootstrapped {
+		return
 	}
+	if err := knode.CheckEtcdData(k.Paths); err != nil {
+		log.Printf("kubernetes: %v", err)
+		return
+	}
+	k.start()
 }
 
 // start runs the control plane's loop unless it runs already, and returns the channel closed
@@ -140,6 +145,10 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 func (k *Kubernetes) applyOnce(ctx context.Context, cfg *rest.Config) (int, error) {
 	if err := kapply.WaitReady(ctx, cfg); err != nil {
 		return 0, err
+	}
+	// etcd holds the cluster's data now; from here on an empty data directory is a loss.
+	if err := knode.MarkEtcdInitialised(k.Paths, time.Now()); err != nil {
+		return 0, fmt.Errorf("record that etcd is initialised: %w", err)
 	}
 	objects, err := kapply.ReadManifests(k.Manifests)
 	if err != nil {
@@ -259,6 +268,13 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	case c.Kind == k8s.KindWorker:
 		st.State = "joined"
 	case bootstrapped:
+		switch err := knode.CheckEtcdData(k.Paths); {
+		case errors.Is(err, knode.ErrEtcdDataMissing):
+			st.State = "etcd data missing: restore etcd or reinstall the node"
+			return st, nil
+		case err != nil:
+			return nil, err
+		}
 		st.State = "bootstrapped"
 	default:
 		st.State = "waiting for bootstrap"

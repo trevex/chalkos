@@ -4,15 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	"k8s.io/client-go/rest"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -240,5 +246,59 @@ func TestStatusKubernetes(t *testing.T) {
 		if (got == nil) != (tc.want == nil) || got != nil && (got.Kind != tc.want.Kind || got.State != tc.want.State || got.NodeReady != tc.want.NodeReady) {
 			t.Errorf("%s: kubernetes status %v, want %v", name, got, tc.want)
 		}
+	}
+}
+
+// readyServer is an API server whose /readyz answers ok once ready is set.
+func readyServer(t *testing.T, ready *atomic.Bool) *rest.Config {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/readyz" && ready.Load() {
+			io.WriteString(w, "ok")
+			return
+		}
+		http.Error(w, "not ready", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	return &rest.Config{Host: srv.URL, TLSClientConfig: rest.TLSClientConfig{CAData: ca}}
+}
+
+func TestEtcdInitialisedAfterReadiness(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	var ready atomic.Bool
+	cfg := readyServer(t, &ready)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	if _, err := k.applyOnce(ctx, cfg); err == nil {
+		t.Fatal("applied without a ready API server")
+	}
+	if initialised, err := knode.EtcdInitialised(k.Paths); err != nil || initialised {
+		t.Fatalf("before readiness: initialised = %v, %v", initialised, err)
+	}
+
+	ready.Store(true)
+	// The manifests do not exist, so applying fails after the API server answered ready.
+	if _, err := k.applyOnce(context.Background(), cfg); err == nil {
+		t.Fatal("applied manifests that do not exist")
+	}
+	if initialised, err := knode.EtcdInitialised(k.Paths); err != nil || !initialised {
+		t.Errorf("after readiness: initialised = %v, %v", initialised, err)
+	}
+}
+
+func TestStatusEtcdDataMissing(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	p := s.Kubernetes.Paths
+	write(t, p.Bootstrapped(), "")
+	write(t, p.EtcdInitialised(), "")
+	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Msg.Kubernetes.State; got != "etcd data missing: restore etcd or reinstall the node" {
+		t.Errorf("state %q", got)
 	}
 }

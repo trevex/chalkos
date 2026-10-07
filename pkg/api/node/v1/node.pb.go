@@ -1425,8 +1425,9 @@ type KubernetesStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// controlplane or worker.
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	// What the node waits for or is: "no share", "waiting for bootstrap" or "bootstrapped" on a
-	// control-plane node; "no share" or "joined" on a worker.
+	// What the node waits for or is: "no share", "waiting for bootstrap", "bootstrapped" or
+	// "etcd data missing: restore etcd or reinstall the node" on a control-plane node; "no share"
+	// or "joined" on a worker.
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	// The status of the Node's Ready condition (True, False or Unknown), or why it could not be
 	// read.
