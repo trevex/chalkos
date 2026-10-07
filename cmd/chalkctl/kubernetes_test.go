@@ -152,6 +152,7 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 			State:    filepath.Join(s.Paths.StateDir, "kubernetes"),
 			Cluster:  filepath.Join(root, "cluster.json"),
 			NodeFile: filepath.Join(root, "node.json"),
+			Run:      filepath.Join(root, "run"),
 		},
 		NodeReady: func(context.Context) (string, error) { return "True", nil },
 	}
@@ -261,6 +262,8 @@ func TestStatusShowsKubernetes(t *testing.T) {
 		t.Fatal(err)
 	}
 	ta.stdout.Reset()
+	// The address the node's preparation picks once it has a share.
+	writeFile(t, s.Kubernetes.Paths.NodeIP(), "10.0.0.11\n")
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}

@@ -67,6 +67,19 @@ func nodeIP(ip string) knode.Resolver {
 	return func(k8s.Cluster, k8s.Node) (net.IP, error) { return net.ParseIP(ip), nil }
 }
 
+// withoutAddress leaves s as a preparation that found no address leaves a node, for the reason
+// given; "" stands for a preparation still waiting.
+func withoutAddress(t *testing.T, s *Server, reason string) {
+	t.Helper()
+	p := s.Kubernetes.Paths
+	if err := os.Remove(p.NodeIP()); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "" {
+		write(t, p.NodeIPError(), reason+"\n")
+	}
+}
+
 func testShare(t *testing.T, kind string) []byte {
 	t.Helper()
 	return testShareFor(t, kind, "n1")
@@ -126,6 +139,8 @@ func TestBootstrapRefusals(t *testing.T) {
 	noShare, _ := kubernetesServer(t, k8s.KindControlPlane, false)
 	etcdData, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	write(t, filepath.Join(etcdData.Kubernetes.Paths.EtcdData, "member", "snap", "db"), "")
+	noAddress, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	withoutAddress(t, noAddress, "")
 	for name, tc := range map[string]struct {
 		s    *Server
 		want string
@@ -134,6 +149,7 @@ func TestBootstrapRefusals(t *testing.T) {
 		"worker":         {worker, "is a worker"},
 		"no share":       {noShare, "no Kubernetes share"},
 		"etcd with data": {etcdData, "holds etcd data"},
+		"no address":     {noAddress, "waiting for the node's address"},
 	} {
 		_, err := bootstrap(tc.s, context.Background())
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
@@ -232,17 +248,23 @@ func TestStatusKubernetes(t *testing.T) {
 	write(t, bootstrapped.Kubernetes.Paths.Bootstrapped(), "")
 	noShare, _ := kubernetesServer(t, k8s.KindWorker, false)
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true)
+	noAddress, _ := kubernetesServer(t, k8s.KindWorker, true)
+	withoutAddress(t, noAddress, "no node address matches the default filter (the node has no addresses)")
+	waitingForAddress, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	withoutAddress(t, waitingForAddress, "")
 	worker.Kubernetes.NodeReady = func(context.Context) (string, error) { return "", errors.New("connection refused") }
 	plain, _ := installedServer(t, section("", ""), false)
 	for name, tc := range map[string]struct {
 		s    *Server
 		want *nodev1.KubernetesStatus
 	}{
-		"waiting":       {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap"}},
-		"bootstrapped":  {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
-		"no share":      {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
-		"worker":        {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
-		"no Kubernetes": {plain, nil},
+		"waiting":                 {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap"}},
+		"bootstrapped":            {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
+		"no share":                {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
+		"no address":              {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "no node address matches the default filter (the node has no addresses)"}},
+		"waiting for the address": {waitingForAddress, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for the node's address"}},
+		"worker":                  {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
+		"no Kubernetes":           {plain, nil},
 	} {
 		resp, err := tc.s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
 		if err != nil {
@@ -404,14 +426,12 @@ func TestCredentialIsShortLived(t *testing.T) {
 	}
 }
 
-// A change of what the node's Kubernetes files are made from runs their preparation again and
-// restarts the kubelet; a new nodeIP also reloads the firewall, whose VXLAN rule names it.
+// A change of what the node's Kubernetes files are made from runs their preparation again,
+// which picks the node's address and fills the firewall's VXLAN chain, and restarts the kubelet.
+// The firewall itself is left alone, so a node whose firewall is disabled takes a new address.
 func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
-	const (
-		restart  = "systemctl restart chalkos-kubernetes.service kubelet.service"
-		firewall = "systemctl try-reload-or-restart firewall.service"
-	)
+	const restart = "systemctl restart chalkos-kubernetes.service kubelet.service"
 	base := kubernetesIdentity("n1")
 	edit := func(f func(id map[string]any)) string {
 		t.Helper()
@@ -431,7 +451,7 @@ func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
 		want           []string
 	}{
 		// The recorded identity has no Kubernetes section yet.
-		{"kubernetes added", base, []string{firewall, restart}},
+		{"kubernetes added", base, []string{restart}},
 		{"unchanged", base, nil},
 		{"extension", edit(func(id map[string]any) {
 			id["extensions"] = map[string]any{"rack": map[string]any{"location": "rack-b"}}
@@ -442,7 +462,10 @@ func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
 		}), []string{restart}},
 		{"nodeIP", edit(func(id map[string]any) {
 			id["kubernetes"] = map[string]any{"nodeName": "n1", "nodeIP": "192.168.100.21"}
-		}), []string{firewall, restart}},
+		}), []string{restart}},
+		{"validSubnets", edit(func(id map[string]any) {
+			id["kubernetes"] = map[string]any{"nodeName": "n1", "nodeIP": nil, "validSubnets": []any{"192.168.100.0/24"}}
+		}), []string{restart}},
 	} {
 		r.mu.Lock()
 		r.calls = nil
@@ -501,5 +524,33 @@ func TestApplyIdentityRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the running loop did not start again with the delivered share")
+	}
+}
+
+// A node that finds no address keeps the identity, runs no kubelet, and says why.
+func TestApplyIdentityReportsMissingAddress(t *testing.T) {
+	s, r := kubernetesServer(t, k8s.KindWorker, true)
+	const reason = "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)"
+	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service", err: errors.New("exit status 1")}}, r.rules...)
+	withoutAddress(t, s, reason)
+	_, err := apply(s, kubernetesIdentity("n1"), "")
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), reason) {
+		t.Errorf("err = %v, want the missing address", err)
+	}
+}
+
+func TestApplyIdentityRefusesInvalidAddressSettings(t *testing.T) {
+	s, r := kubernetesServer(t, k8s.KindWorker, true)
+	for name, kubernetes := range map[string]string{
+		"nodeIP":       `{"nodeName": "n1", "nodeIP": "192.168.100"}`,
+		"validSubnets": `{"nodeName": "n1", "nodeIP": null, "validSubnets": ["192.168.100.0"]}`,
+	} {
+		identity := strings.Replace(kubernetesIdentity("n1"), `{"nodeName": "n1", "nodeIP": "192.168.100.11"}`, kubernetes, 1)
+		if _, err := apply(s, identity, ""); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("%s: %v, want invalid argument", name, err)
+		}
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("a refused identity ran %v", r.calls)
 	}
 }

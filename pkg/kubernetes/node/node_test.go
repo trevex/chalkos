@@ -528,3 +528,23 @@ func TestMarkEtcdInitialised(t *testing.T) {
 		t.Errorf("the marker changed from %q to %q", first, again)
 	}
 }
+
+func TestNodeIPProblem(t *testing.T) {
+	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	if got := NodeIPProblem(p); got != "waiting for the node's address" {
+		t.Errorf("before Prepare: %q", got)
+	}
+	if err := Prepare(p, now, picked); err != nil {
+		t.Fatal(err)
+	}
+	if got := NodeIPProblem(p); got != "" {
+		t.Errorf("with an address: %q", got)
+	}
+	write(t, p.NodeFile, pickingIdentity("w1"))
+	if err := Prepare(p, now, onNode("10.0.2.15")); err == nil {
+		t.Fatal("prepared without an address")
+	}
+	if got := NodeIPProblem(p); got != "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)" {
+		t.Errorf("without an address: %q", got)
+	}
+}

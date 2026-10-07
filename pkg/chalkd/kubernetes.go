@@ -320,6 +320,10 @@ func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
 	if _, err := knode.ReadShare(k.Paths); err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
+	// The static pods advertise the node's address.
+	if problem := knode.NodeIPProblem(k.Paths); problem != "" {
+		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
+	}
 	if err := install.WriteFile(k.Paths.Bootstrapped(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
 		return nil, failed(connect.CodeInternal, "record the bootstrap: %v", err)
 	}
@@ -339,6 +343,10 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	st := &nodev1.KubernetesStatus{Kind: c.Kind}
 	if _, err := os.Stat(k.Paths.Share()); errors.Is(err, os.ErrNotExist) {
 		st.State = "no share"
+		return st, nil
+	}
+	if problem := knode.NodeIPProblem(k.Paths); problem != "" {
+		st.State = problem
 		return st, nil
 	}
 	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {

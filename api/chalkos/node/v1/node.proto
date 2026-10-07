@@ -206,9 +206,10 @@ message StatusResponse {
 message KubernetesStatus {
   // controlplane or worker.
   string kind = 1;
-  // What the node waits for or is: "no share", "waiting for bootstrap", "bootstrapped" or
-  // "etcd data missing: restore etcd or reinstall the node" on a control-plane node; "no share"
-  // or "joined" on a worker.
+  // What the node waits for or is: "no share", "waiting for the node's address" or why the node
+  // has none, such as "no node address matches validSubnets 10.0.0.0/8 (the node has ...)";
+  // then "waiting for bootstrap", "bootstrapped" or "etcd data missing: restore etcd or reinstall
+  // the node" on a control-plane node, "joined" on a worker.
   string state = 2;
   // The status of the Node's Ready condition (True, False or Unknown), or why it could not be
   // read.

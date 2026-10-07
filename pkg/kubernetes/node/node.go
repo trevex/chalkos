@@ -206,6 +206,21 @@ func ReadNodeIP(p Paths) (net.IP, error) {
 	return ip, nil
 }
 
+// NodeIPProblem says why the node has no address, or returns "" once Prepare picked one.
+func NodeIPProblem(p Paths) string {
+	_, err := ReadNodeIP(p)
+	switch {
+	case err == nil:
+		return ""
+	case !errors.Is(err, fs.ErrNotExist):
+		return err.Error()
+	}
+	if data, err := os.ReadFile(p.NodeIPError()); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+	return "waiting for the node's address"
+}
+
 // Prepare picks the node's address and writes the kubelet's files and, on a control-plane node,
 // the control plane's certificates, and its static pods once the node is bootstrapped. A node
 // without a share or an address gets none of them, so its kubelet does not start.

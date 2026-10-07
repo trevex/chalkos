@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,6 +21,8 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -46,6 +49,15 @@ func parseIdentity(data string) (delivered, error) {
 	}
 	if err := id.Storage.Validate(); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	// A node that cannot read how to pick its address would run no kubelet.
+	if k := id.Kubernetes; k != nil {
+		if k.NodeIP != "" && net.ParseIP(k.NodeIP) == nil {
+			return delivered{}, failed(connect.CodeInvalidArgument, "the identity's nodeIP %q is not an address", k.NodeIP)
+		}
+		if _, err := nodeip.ParseFilter(k.ValidSubnets); err != nil {
+			return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
+		}
 	}
 	return delivered{data: []byte(data), section: id.Storage, kubernetes: id.Kubernetes}, nil
 }
@@ -425,16 +437,13 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte) (
 			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
 		}
 	}
-	// The firewall's VXLAN rule names the nodeIP.
-	if changed && (errBefore != nil || errAfter != nil || !before.IP.Equal(after.IP)) {
-		if _, err := s.Run.Run(ctx, "systemctl", "try-reload-or-restart", "firewall.service"); err != nil {
-			return nil, failed(connect.CodeInternal, "reload the firewall for the new nodeIP: %v", err)
-		}
-	}
-	// The kubelet's credentials and flags and the control plane's certificates come from the
-	// share and the identity.
+	// The node's address, the firewall's VXLAN rule, the kubelet's credentials and flags and the
+	// control plane's certificates come from the share and the identity.
 	units := []string{"chalkos-kubernetes.service", "kubelet.service"}
 	if _, err := s.Run.Run(ctx, "systemctl", append([]string{"restart"}, units...)...); err != nil {
+		if problem := knode.NodeIPProblem(s.Kubernetes.Paths); problem != "" {
+			return nil, failed(connect.CodeFailedPrecondition, "the node runs no kubelet: %s", problem)
+		}
 		return nil, failed(connect.CodeInternal, "restart the kubelet: %v", err)
 	}
 	if share != nil {
