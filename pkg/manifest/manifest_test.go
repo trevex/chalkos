@@ -20,7 +20,7 @@ func TestDecodeGoldenManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Cluster.Name != "homelab" || m.Cluster.Endpoint != "https://10.0.0.10:6443" {
+	if m.Cluster.Name != "homelab" || m.Cluster.Endpoint != "https://10.0.0.11:6443" {
 		t.Errorf("cluster = %+v", m.Cluster)
 	}
 	if got := m.Roles["worker"].Image; got != "roles.worker.image" {

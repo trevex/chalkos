@@ -6,8 +6,8 @@
 
   chalkos.cluster = {
     name = "homelab";
-    # Address held by whichever control-plane node is healthy.
-    endpoint = "https://10.0.0.10:6443";
+    # cp1's address: the API server of the only control-plane node.
+    endpoint = "https://10.0.0.11:6443";
   };
 
   chalkos.roles.controlplane.kubernetes.kind = "controlplane";

@@ -1000,6 +1000,53 @@ lib.runTests {
       nodeIP = "10.0.0.5";
     };
   };
+  testEndpointWarnsWithoutControlPlaneAddress = {
+    expr =
+      let
+        warns =
+          endpoint:
+          lib.any (lib.hasInfix "must reach a control-plane node")
+            (cluster [
+              {
+                chalkos.cluster.endpoint = lib.mkForce endpoint;
+                chalkos.roles.cp.kubernetes.kind = "controlplane";
+                chalkos.nodes.cp1 = {
+                  role = "cp";
+                  storage.system.disk = "/dev/vda";
+                  kubernetes.nodeIP = "10.0.0.11";
+                };
+                chalkos.nodes.ip6 = {
+                  role = "cp";
+                  storage.system.disk = "/dev/vda";
+                  kubernetes.nodeIP = "fd00::11";
+                };
+                chalkos.nodes.w1 = {
+                  role = "worker";
+                  storage.system.disk = "/dev/vda";
+                  kubernetes.nodeIP = "10.0.0.20";
+                };
+              }
+            ]).warnings;
+      in
+      {
+        vip = warns "https://10.0.0.10:6443";
+        worker = warns "https://10.0.0.20:6443";
+        controlPlane = warns "https://10.0.0.11:6443";
+        controlPlaneWithoutPort = warns "https://10.0.0.11";
+        ipv6 = warns "https://[fd00::10]:6443";
+        ipv6ControlPlane = warns "https://[fd00::11]:6443";
+        hostname = warns "https://k8s.example.com:6443";
+      };
+    expected = {
+      vip = true;
+      worker = true;
+      controlPlane = false;
+      controlPlaneWithoutPort = false;
+      ipv6 = true;
+      ipv6ControlPlane = false;
+      hostname = false;
+    };
+  };
   testControlPlaneNeedsNodeIP = {
     expr = {
       withoutAddress =

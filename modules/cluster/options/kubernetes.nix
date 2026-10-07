@@ -25,6 +25,27 @@ let
       addresses = lib.concatMap (name: networks.${name}.address or [ ]) (lib.attrNames networks);
     in
     if addresses == [ ] then null else builtins.head (lib.splitString "/" (builtins.head addresses));
+
+  # The endpoint's host when it is an IP literal, without brackets; null for a hostname.
+  endpointIP =
+    let
+      authority = builtins.head (
+        lib.splitString "/" (lib.removePrefix "https://" config.chalkos.cluster.endpoint)
+      );
+      ipv6 = builtins.match "\\[([^]]+)].*" authority;
+      ipv4 = builtins.match "([0-9]{1,3}(\\.[0-9]{1,3}){3})(:.*)?" authority;
+    in
+    if ipv6 != null then
+      builtins.head ipv6
+    else if ipv4 != null then
+      builtins.head ipv4
+    else
+      null;
+  controlPlaneIPs = lib.mapAttrsToList (_: node: node.kubernetes.nodeIP) (
+    lib.filterAttrs (
+      _: node: config.chalkos.roles.${node.role}.kubernetes.kind == "controlplane"
+    ) config.chalkos.nodes
+  );
 in
 {
   options.chalkos.cluster.kubernetes = {
@@ -174,6 +195,15 @@ in
       }
     );
   };
+
+  # Hostnames are not checked: they may name a load balancer or a DNS record of the nodes.
+  config.chalkos.warnings =
+    lib.optional (controlPlaneIPs != [ ] && endpointIP != null && !lib.elem endpointIP controlPlaneIPs)
+      ''
+        chalkos.cluster.endpoint ${config.chalkos.cluster.endpoint} is not the nodeIP of a
+        control-plane node. The endpoint must reach a control-plane node, for example through a
+        node's IP, a load balancer or a VIP.
+      '';
 
   options.chalkos.nodes = mkOption {
     type = types.attrsOf (
