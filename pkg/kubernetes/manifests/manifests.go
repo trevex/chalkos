@@ -37,10 +37,11 @@ const (
 // StaticPods renders the static pods by file name. files are the control plane's certificates
 // as pki.ControlPlane issues them.
 func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte) (map[string][]byte, error) {
-	if n.IP == nil {
+	if len(n.IPs) == 0 {
 		return nil, errors.New("the node has no address")
 	}
-	ip := n.IP.String()
+	// etcd and the API server advertise the address of the primary family.
+	ip := n.IPs[0].String()
 	pki := func(file string) string { return path.Join(podPKIDir, file) }
 
 	etcd := pod("etcd", c.Images.Etcd, flags(c, "etcd", map[string]string{

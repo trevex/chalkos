@@ -1426,7 +1426,7 @@ type KubernetesStatus struct {
 	// controlplane or worker.
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// What the node waits for or is: "no share", "preparing" while its Kubernetes files are
-	// prepared, or why their preparation failed, such as "preparation failed: no node address
+	// prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address
 	// matches validSubnets 10.0.0.0/8 (the node has ...)"; then "waiting for bootstrap",
 	// "bootstrapped" or "etcd data missing: restore etcd or reinstall the node" on a control-plane
 	// node, "joined" on a worker.

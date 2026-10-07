@@ -22,7 +22,7 @@ func testCluster() kubernetes.Cluster {
 	}
 }
 
-var testNode = kubernetes.Node{Name: "cp1", IP: net.ParseIP("10.0.0.11"), Addresses: []net.IP{net.ParseIP("10.0.0.11"), net.ParseIP("10.0.1.11")}}
+var testNode = kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("10.0.0.11")}, Addresses: []net.IP{net.ParseIP("10.0.0.11"), net.ParseIP("10.0.1.11")}}
 
 func leaf(t *testing.T, files map[string][]byte, name string) *x509.Certificate {
 	t.Helper()

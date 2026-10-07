@@ -10,9 +10,9 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,6 +27,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -67,7 +68,9 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 
 // nodeIP is a resolver that finds the address at once.
 func nodeIP(ip string) knode.Resolver {
-	return func(k8s.Cluster, k8s.Node) (net.IP, error) { return net.ParseIP(ip), nil }
+	return func(nodeip.Selector, time.Duration) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr(ip)}, nil
+	}
 }
 
 // withoutAddress leaves s as a preparation that found no address leaves a node, for the reason

@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,7 +65,8 @@ func (p Paths) Bootstrapped() string { return filepath.Join(p.State, "bootstrapp
 func (p Paths) Manifests() string    { return filepath.Join(p.Run, "manifests") }
 func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
 
-// NodeIP holds the address the node picked; the firewall's VXLAN rule reads it too.
+// NodeIP holds the addresses the node picked, one per line, the primary family's first; the
+// firewall's VXLAN rule reads it too.
 func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
 
 // PrepareError holds why the last preparation failed, such as that no address of the node
@@ -184,37 +186,47 @@ func Load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
 	return share, c, n, nil
 }
 
-// Resolver picks the node's address.
-type Resolver func(c kubernetes.Cluster, n kubernetes.Node) (net.IP, error)
+// Resolver waits up to timeout for the addresses the selector picks.
+type Resolver func(sel nodeip.Selector, timeout time.Duration) ([]netip.Addr, error)
 
-// ResolveNodeIP waits up to the cluster's timeout for the address the node's identity and its
-// cluster select.
-func ResolveNodeIP(c kubernetes.Cluster, n kubernetes.Node) (net.IP, error) {
-	sel, err := c.NodeIPSelector(n)
+// WaitForAddresses waits for the addresses the selector picks among the node's own.
+func WaitForAddresses(sel nodeip.Selector, timeout time.Duration) ([]netip.Addr, error) {
+	log.Printf("picking the node's addresses, %s, waiting up to %v", sel, timeout)
+	ips, err := nodeip.NewWaiter().Wait(sel, timeout)
 	if err != nil {
 		return nil, err
 	}
-	timeout := time.Duration(c.NodeIP.Timeout) * time.Second
-	log.Printf("picking the node's address by %s, waiting up to %v", sel, timeout)
-	ip, err := nodeip.NewWaiter().Wait(sel, timeout)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("the node's address is %s", ip)
-	return net.IP(ip.AsSlice()), nil
+	log.Printf("the node's addresses are %v", ips)
+	return ips, nil
 }
 
-// ReadNodeIP reads the address Prepare picked.
-func ReadNodeIP(p Paths) (net.IP, error) {
+// ReadNodeIPs reads the addresses Prepare picked, the primary family's first.
+func ReadNodeIPs(p Paths) ([]net.IP, error) {
 	data, err := os.ReadFile(p.NodeIP())
 	if err != nil {
 		return nil, err
 	}
-	ip := net.ParseIP(strings.TrimSpace(string(data)))
-	if ip == nil {
+	var ips []net.IP
+	for _, line := range strings.Fields(string(data)) {
+		ip := net.ParseIP(line)
+		if ip == nil {
+			return nil, fmt.Errorf("%s holds %q, which is not an address", p.NodeIP(), line)
+		}
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
 		return nil, fmt.Errorf("%s holds no address", p.NodeIP())
 	}
-	return ip, nil
+	return ips, nil
+}
+
+// nodeIPFile is the content of the file holding the addresses: one per line.
+func nodeIPFile(ips []net.IP) []byte {
+	var b strings.Builder
+	for _, ip := range ips {
+		b.WriteString(ip.String() + "\n")
+	}
+	return []byte(b.String())
 }
 
 // PreparationError reads why the last preparation failed; "" when none failed since the last one
@@ -299,8 +311,16 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err != nil {
 		return err
 	}
-	if n.IP, err = resolve(c, n); err != nil {
+	sel, err := c.NodeIPSelector(n)
+	if err != nil {
 		return err
+	}
+	ips, err := resolve(sel, time.Duration(c.NodeIP.Timeout)*time.Second)
+	if err != nil {
+		return err
+	}
+	for _, ip := range ips {
+		n.IPs = append(n.IPs, net.IP(ip.AsSlice()))
 	}
 	kubeletCert := share.Kubelet
 	if c.Kind == kubernetes.KindControlPlane {
@@ -341,7 +361,7 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 		}
 	}
 	// Written once the certificates naming it are, which Bootstrap relies on.
-	if err := install.WriteFile(p.NodeIP(), []byte(n.IP.String()+"\n"), 0o644); err != nil {
+	if err := install.WriteFile(p.NodeIP(), nodeIPFile(n.IPs), 0o644); err != nil {
 		return err
 	}
 	// The kubelet starts once its kubeconfig exists, so it is written last.
@@ -361,12 +381,16 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	return RenderStaticPods(p)
 }
 
-// KubeletFlags are the kubelet's node-specific flags: its name, address, labels and taints.
+// KubeletFlags are the kubelet's node-specific flags: its name, addresses, labels and taints.
 // Control-plane nodes are tainted unless the cluster allows workloads on them.
 func KubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 	flags := []string{"--hostname-override=" + n.Name}
-	if n.IP != nil {
-		flags = append(flags, "--node-ip="+n.IP.String())
+	if len(n.IPs) > 0 {
+		ips := make([]string, len(n.IPs))
+		for i, ip := range n.IPs {
+			ips[i] = ip.String()
+		}
+		flags = append(flags, "--node-ip="+strings.Join(ips, ","))
 	}
 	var labels []string
 	for k, v := range n.Labels {
@@ -473,8 +497,8 @@ func RenderStaticPods(p Paths) error {
 	if err != nil {
 		return err
 	}
-	if n.IP, err = ReadNodeIP(p); err != nil {
-		return fmt.Errorf("the node's address: %w", err)
+	if n.IPs, err = ReadNodeIPs(p); err != nil {
+		return fmt.Errorf("the node's addresses: %w", err)
 	}
 	files, err := readDir(p.PKI)
 	if err != nil {

@@ -55,7 +55,7 @@ func main() {
 		if len(os.Args) == 3 {
 			firewall = knode.VXLANRule(os.Args[2])
 		}
-		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.ResolveNodeIP, firewall)
+		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)

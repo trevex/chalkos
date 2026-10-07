@@ -3,6 +3,7 @@ package nodeip
 import (
 	"errors"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +89,15 @@ func TestParseFilter(t *testing.T) {
 	}
 }
 
+// ips parses addresses.
+func ips(list ...string) []netip.Addr {
+	var out []netip.Addr
+	for _, s := range list {
+		out = append(out, netip.MustParseAddr(s))
+	}
+	return out
+}
+
 func TestSelect(t *testing.T) {
 	node := addresses(t,
 		"lo 127.0.0.1",
@@ -96,46 +106,56 @@ func TestSelect(t *testing.T) {
 		"eth1 192.168.100.12",
 		"eth0 10.0.2.15",
 		"eth0 2001:db8::15",
+		"eth1 2001:db8:1::12",
 		"flannel.1 10.244.1.0",
 		"cni0 10.244.1.1",
 		"veth1234 10.88.0.1",
 		"kube-ipvs0 10.96.0.1",
 		"eth2 169.254.0.5",
 	)
+	dual := []Family{IPv4, IPv6}
 	for name, tc := range map[string]struct {
 		sel  Selector
-		want string
+		want []string
 	}{
-		// IPv4 first, then by interface name: eth0 before eth1.
-		"default":                {Selector{Reserved: reserved}, "10.0.2.15"},
-		"validSubnets":           {Selector{Filter: filter(t, "192.168.100.0/24"), Reserved: reserved}, "192.168.100.12"},
-		"exclusion":              {Selector{Filter: filter(t, "!10.0.2.0/24"), Reserved: reserved}, "192.168.100.12"},
-		"IPv6":                   {Selector{Filter: filter(t, "2001:db8::/32"), Reserved: reserved}, "2001:db8::15"},
-		"fixed":                  {Selector{Fixed: netip.MustParseAddr("192.168.100.12"), Filter: filter(t, "10.0.0.0/8"), Reserved: reserved}, "192.168.100.12"},
-		"fixed IPv6":             {Selector{Fixed: netip.MustParseAddr("2001:db8::15"), Reserved: reserved}, "2001:db8::15"},
-		"pod range":              {Selector{Filter: filter(t, "10.244.0.0/16"), Reserved: reserved}, ""},
-		"service range":          {Selector{Filter: filter(t, "10.96.0.0/12"), Reserved: reserved}, ""},
-		"CNI interface":          {Selector{Filter: filter(t, "10.88.0.0/16"), Reserved: reserved}, ""},
-		"link-local":             {Selector{Filter: filter(t, "169.254.0.0/16", "fe80::/10"), Reserved: reserved}, ""},
-		"fixed but not present":  {Selector{Fixed: netip.MustParseAddr("192.168.100.13"), Reserved: reserved}, ""},
-		"nothing in the subnets": {Selector{Filter: filter(t, "172.16.0.0/12"), Reserved: reserved}, ""},
+		// By interface name: eth0 before eth1.
+		"default":                {Selector{Reserved: reserved}, []string{"10.0.2.15"}},
+		"IPv4":                   {Selector{Families: []Family{IPv4}, Reserved: reserved}, []string{"10.0.2.15"}},
+		"validSubnets":           {Selector{Filter: filter(t, "192.168.100.0/24"), Reserved: reserved}, []string{"192.168.100.12"}},
+		"exclusion":              {Selector{Filter: filter(t, "!10.0.2.0/24"), Reserved: reserved}, []string{"192.168.100.12"}},
+		"IPv6":                   {Selector{Families: []Family{IPv6}, Filter: filter(t, "2001:db8::/32"), Reserved: reserved}, []string{"2001:db8::15"}},
+		"dual stack":             {Selector{Families: dual, Reserved: reserved}, []string{"10.0.2.15", "2001:db8::15"}},
+		"IPv6 primary":           {Selector{Families: []Family{IPv6, IPv4}, Reserved: reserved}, []string{"2001:db8::15", "10.0.2.15"}},
+		"filters per family":     {Selector{Families: dual, Filter: filter(t, "192.168.100.0/24", "2001:db8:1::/48"), Reserved: reserved}, []string{"192.168.100.12", "2001:db8:1::12"}},
+		"fixed":                  {Selector{Fixed: ips("192.168.100.12"), Filter: filter(t, "10.0.0.0/8"), Reserved: reserved}, []string{"192.168.100.12"}},
+		"fixed IPv6":             {Selector{Families: []Family{IPv6}, Fixed: ips("2001:db8::15"), Reserved: reserved}, []string{"2001:db8::15"}},
+		"one family fixed":       {Selector{Families: dual, Fixed: ips("2001:db8:1::12"), Filter: filter(t, "192.168.100.0/24"), Reserved: reserved}, []string{"192.168.100.12", "2001:db8:1::12"}},
+		"both fixed":             {Selector{Families: dual, Fixed: ips("2001:db8::15", "192.168.100.12"), Reserved: reserved}, []string{"192.168.100.12", "2001:db8::15"}},
+		"pinned":                 {Selector{Families: dual, Fixed: ips("192.168.100.12", "2001:db8::15"), Pinned: true}, []string{"192.168.100.12", "2001:db8::15"}},
+		"pod range":              {Selector{Filter: filter(t, "10.244.0.0/16"), Reserved: reserved}, nil},
+		"service range":          {Selector{Filter: filter(t, "10.96.0.0/12"), Reserved: reserved}, nil},
+		"CNI interface":          {Selector{Filter: filter(t, "10.88.0.0/16"), Reserved: reserved}, nil},
+		"link-local":             {Selector{Filter: filter(t, "169.254.0.0/16", "fe80::/10"), Reserved: reserved}, nil},
+		"fixed but not present":  {Selector{Fixed: ips("192.168.100.13"), Reserved: reserved}, nil},
+		"nothing in the subnets": {Selector{Filter: filter(t, "172.16.0.0/12"), Reserved: reserved}, nil},
+		"one family missing":     {Selector{Families: dual, Filter: filter(t, "192.168.100.0/24", "2001:db8:5::/48"), Reserved: reserved}, nil},
 	} {
 		got, err := tc.sel.Select(node)
-		if tc.want == "" {
+		if tc.want == nil {
 			var nomatch *NoMatchError
 			if !errors.As(err, &nomatch) {
 				t.Errorf("%s: Select() = %v, %v, want no match", name, got, err)
 			}
 			continue
 		}
-		if err != nil || got != netip.MustParseAddr(tc.want) {
+		if err != nil || !slices.Equal(got, ips(tc.want...)) {
 			t.Errorf("%s: Select() = %v, %v, want %s", name, got, err, tc.want)
 		}
 	}
 
 	// An address on lo that is not a loopback address, as BGP speakers announce them.
 	got, err := Selector{Filter: filter(t, "198.51.100.0/24")}.Select(addresses(t, "lo 127.0.0.1", "lo 198.51.100.7"))
-	if err != nil || got != netip.MustParseAddr("198.51.100.7") {
+	if err != nil || !slices.Equal(got, ips("198.51.100.7")) {
 		t.Errorf("address on lo: %v, %v", got, err)
 	}
 }
@@ -145,49 +165,90 @@ func TestSelectOrderIsStable(t *testing.T) {
 	a := addresses(t, "eth1 192.168.1.5", "eth0 2001:db8::1", "eth1 192.168.1.4", "eth0 10.0.0.9")
 	b := []Address{a[3], a[2], a[1], a[0]}
 	for _, addrs := range [][]Address{a, b} {
-		if got, err := sel.Select(addrs); err != nil || got != netip.MustParseAddr("10.0.0.9") {
+		if got, err := sel.Select(addrs); err != nil || !slices.Equal(got, ips("10.0.0.9")) {
 			t.Errorf("Select(%v) = %v, %v", addrs, got, err)
 		}
 	}
 	// Within an interface the lower address comes first.
-	if got, _ := sel.Select(addresses(t, "eth1 192.168.1.5", "eth1 192.168.1.4")); got != netip.MustParseAddr("192.168.1.4") {
+	if got, _ := sel.Select(addresses(t, "eth1 192.168.1.5", "eth1 192.168.1.4")); !slices.Equal(got, ips("192.168.1.4")) {
 		t.Errorf("Select() = %v", got)
 	}
 }
 
-func TestSelectEndpointLast(t *testing.T) {
+func TestSelectLast(t *testing.T) {
 	vip := netip.MustParseAddr("10.0.0.10")
-	// The API server's virtual address sorts before the node's own address.
+	vip6 := netip.MustParseAddr("2001:db8::10")
+	// The API server's and the virtual addresses sort after the node's own addresses.
 	for _, addrs := range [][]Address{
 		addresses(t, "eth0 10.0.0.10", "eth0 10.0.0.11"),
 		addresses(t, "eth0 10.0.0.10", "eth1 10.0.0.11"),
-		addresses(t, "eth0 10.0.0.10", "eth0 2001:db8::11"),
 	} {
-		got, err := Selector{Endpoint: vip, Reserved: reserved}.Select(addrs)
-		if err != nil || got == vip {
+		got, err := Selector{Last: []netip.Addr{vip}, Reserved: reserved}.Select(addrs)
+		if err != nil || !slices.Equal(got, ips("10.0.0.11")) {
 			t.Errorf("Select(%v) = %v, %v, want the node's own address", addrs, got, err)
 		}
 	}
+	got, err := Selector{Families: []Family{IPv6, IPv4}, Last: []netip.Addr{vip, vip6}, Reserved: reserved}.Select(
+		addresses(t, "eth0 10.0.0.10", "eth0 2001:db8::10", "eth1 2001:db8::11", "eth1 10.0.0.11"))
+	if err != nil || !slices.Equal(got, ips("2001:db8::11", "10.0.0.11")) {
+		t.Errorf("dual stack: Select() = %v, %v", got, err)
+	}
 	// A single control plane whose endpoint is its own address still picks it.
-	if got, err := (Selector{Endpoint: vip, Reserved: reserved}).Select(addresses(t, "lo 127.0.0.1", "eth0 10.0.0.10")); err != nil || got != vip {
+	if got, err := (Selector{Last: []netip.Addr{vip}, Reserved: reserved}).Select(addresses(t, "lo 127.0.0.1", "eth0 10.0.0.10")); err != nil || !slices.Equal(got, []netip.Addr{vip}) {
 		t.Errorf("only the endpoint's address: Select() = %v, %v", got, err)
 	}
 	// A fixed address is picked even when it is the endpoint's.
-	if got, err := (Selector{Fixed: vip, Endpoint: vip}).Select(addresses(t, "eth0 10.0.0.10", "eth0 10.0.0.9")); err != nil || got != vip {
+	if got, err := (Selector{Fixed: []netip.Addr{vip}, Last: []netip.Addr{vip}}).Select(addresses(t, "eth0 10.0.0.10", "eth0 10.0.0.9")); err != nil || !slices.Equal(got, []netip.Addr{vip}) {
 		t.Errorf("fixed endpoint address: Select() = %v, %v", got, err)
 	}
 }
 
 func TestNoMatchError(t *testing.T) {
 	sel := Selector{Filter: filter(t, "192.168.100.0/24"), Reserved: reserved}
-	_, err := sel.Select(addresses(t, "lo 127.0.0.1", "eth0 fe80::1", "eth0 10.0.2.15", "cni0 10.244.0.1"))
-	want := "no node address matches validSubnets 192.168.100.0/24 (the node has 10.244.0.1 on cni0, 10.0.2.15 on eth0)"
+	_, err := sel.Select(addresses(t, "lo 127.0.0.1", "eth0 fe80::1", "eth0 10.0.2.15", "cni0 10.244.0.1", "eth0 2001:db8::15"))
+	want := "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.244.0.1 on cni0, 10.0.2.15 on eth0)"
 	if err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %s", err, want)
 	}
-	_, err = Selector{Fixed: netip.MustParseAddr("10.0.0.11")}.Select(nil)
-	if err == nil || err.Error() != "no node address matches nodeIP 10.0.0.11 (the node has no addresses)" {
+	_, err = Selector{Fixed: ips("10.0.0.11")}.Select(nil)
+	if err == nil || err.Error() != "no ipv4 node address matches nodeIP 10.0.0.11 (the node has no ipv4 addresses)" {
 		t.Errorf("err = %v", err)
+	}
+	// The missing family is named.
+	_, err = Selector{Families: []Family{IPv4, IPv6}}.Select(addresses(t, "eth0 10.0.2.15", "eth0 fe80::1"))
+	if err == nil || err.Error() != "no ipv6 node address matches the default filter (the node has no ipv6 addresses)" {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestPinnedError(t *testing.T) {
+	sel := Selector{Families: []Family{IPv4}, Fixed: ips("192.168.100.13"), Pinned: true}
+	_, err := sel.Select(addresses(t, "eth0 192.168.100.23"))
+	var pinned *PinnedError
+	if !errors.As(err, &pinned) || pinned.Address != netip.MustParseAddr("192.168.100.13") {
+		t.Fatalf("err = %v, want the pinned address missing", err)
+	}
+	if err.Error() != "pinned address 192.168.100.13 is not present" {
+		t.Errorf("err = %v", err)
+	}
+	if got := sel.String(); got != "ipv4 by the pinned address 192.168.100.13" {
+		t.Errorf("String() = %q", got)
+	}
+}
+
+func TestParseFamily(t *testing.T) {
+	for _, s := range []string{"ipv4", "ipv6"} {
+		if f, err := ParseFamily(s); err != nil || string(f) != s {
+			t.Errorf("ParseFamily(%q) = %q, %v", s, f, err)
+		}
+	}
+	for _, s := range []string{"", "IPv4", "inet", "ipv5"} {
+		if _, err := ParseFamily(s); err == nil {
+			t.Errorf("ParseFamily(%q) accepted", s)
+		}
+	}
+	if FamilyOf(netip.MustParseAddr("::ffff:10.0.0.1")) != IPv4 || FamilyOf(netip.MustParseAddr("fd00::1")) != IPv6 {
+		t.Error("FamilyOf")
 	}
 }
 
@@ -217,7 +278,7 @@ func TestWaitForLateAddress(t *testing.T) {
 		Interval: time.Second,
 	}
 	got, err := w.Wait(Selector{Filter: filter(t, "192.168.100.0/24")}, 5*time.Minute)
-	if err != nil || got != netip.MustParseAddr("192.168.100.12") {
+	if err != nil || !slices.Equal(got, ips("192.168.100.12")) {
 		t.Fatalf("Wait() = %v, %v", got, err)
 	}
 	if calls != 5 || clock.now.Sub(start) != 4*time.Second {

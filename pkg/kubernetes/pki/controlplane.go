@@ -72,7 +72,7 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 		return nil, err
 	}
 	loopback := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
-	nodeIPs := n.IPs()
+	nodeIPs := n.CertificateIPs()
 
 	apiServerIPs := append(append([]net.IP{serviceIP}, loopback...), nodeIPs...)
 	apiServerNames := []string{"localhost", "kubernetes", "kubernetes.default", "kubernetes.default.svc", "kubernetes.default.svc." + c.Domain, n.Name}

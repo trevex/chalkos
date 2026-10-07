@@ -1,6 +1,6 @@
-// Package nodeip picks the address a Kubernetes node registers with and its control plane
-// advertises: a fixed address once an interface holds it, or else the first of the node's
-// addresses that a filter of subnets selects.
+// Package nodeip picks the addresses a Kubernetes node registers with and its control plane
+// advertises, one of each address family: a fixed address once an interface holds it, or else
+// the first of the node's addresses of the family that a filter of subnets selects.
 package nodeip
 
 import (
@@ -76,62 +76,146 @@ func (f Filter) String() string {
 	return "validSubnets " + strings.Join(f.subnets, ", ")
 }
 
-// Selector picks the node's address among the addresses of its interfaces.
-type Selector struct {
-	// Fixed is the address set for the node. When valid, it is the only address picked, once an
-	// interface holds it.
-	Fixed netip.Addr
-	// Filter selects among the node's addresses when no address is fixed.
-	Filter Filter
-	// Reserved are ranges that never hold the node's address: the pod and service ranges.
-	Reserved []netip.Prefix
-	// Endpoint is the API server endpoint's address. Control-plane nodes may hold it as a
-	// virtual address that moves between them, so it is picked only when no other address
-	// matches.
-	Endpoint netip.Addr
+// Family is an IP address family.
+type Family string
+
+// The address families a node has addresses of.
+const (
+	IPv4 Family = "ipv4"
+	IPv6 Family = "ipv6"
+)
+
+// ParseFamily reads "ipv4" or "ipv6".
+func ParseFamily(s string) (Family, error) {
+	switch f := Family(s); f {
+	case IPv4, IPv6:
+		return f, nil
+	}
+	return "", fmt.Errorf("%q is not an address family; use ipv4 or ipv6", s)
 }
 
-func (s Selector) String() string {
-	if s.Fixed.IsValid() {
-		return "nodeIP " + s.Fixed.String()
+// FamilyOf returns the family of ip.
+func FamilyOf(ip netip.Addr) Family {
+	if ip.Unmap().Is4() {
+		return IPv4
+	}
+	return IPv6
+}
+
+// Selector picks the node's addresses, one of each family, among the addresses of its
+// interfaces.
+type Selector struct {
+	// Families are the families the node has an address of, the primary one first. Empty means
+	// IPv4 alone.
+	Families []Family
+	// Fixed are addresses set for the node, at most one per family. A family with a fixed
+	// address picks only that address, once an interface holds it.
+	Fixed []netip.Addr
+	// Pinned marks Fixed as the addresses the node was pinned to when it became an etcd member.
+	Pinned bool
+	// Filter selects among the node's addresses of the families without a fixed address.
+	Filter Filter
+	// Reserved are ranges that never hold the node's addresses: the pod and service ranges.
+	Reserved []netip.Prefix
+	// Last are addresses picked only when no other address of their family matches: the API
+	// server endpoint's and the virtual IPs, which move between control-plane nodes.
+	Last []netip.Addr
+}
+
+// families returns the families in order, IPv4 alone when none are listed.
+func (s Selector) families() []Family {
+	if len(s.Families) == 0 {
+		return []Family{IPv4}
+	}
+	return s.Families
+}
+
+// fixed returns the fixed address of the family, if any.
+func (s Selector) fixed(f Family) (netip.Addr, bool) {
+	for _, ip := range s.Fixed {
+		if FamilyOf(ip) == f {
+			return ip.Unmap(), true
+		}
+	}
+	return netip.Addr{}, false
+}
+
+// describe says how the selector picks the address of a family.
+func (s Selector) describe(f Family) string {
+	ip, ok := s.fixed(f)
+	switch {
+	case ok && s.Pinned:
+		return "the pinned address " + ip.String()
+	case ok:
+		return "nodeIP " + ip.String()
 	}
 	return s.Filter.String()
 }
 
-// Select returns the fixed address once an interface holds it. Otherwise it returns the first
-// global unicast address outside the reserved ranges and the interfaces of Kubernetes that the
-// filter matches: IPv4 addresses before IPv6 ones, then by interface name and by address, so the
-// choice does not depend on the order the kernel lists them in, and the endpoint's address last.
-func (s Selector) Select(addrs []Address) (netip.Addr, error) {
+func (s Selector) String() string {
+	var parts []string
+	for _, f := range s.families() {
+		parts = append(parts, string(f)+" by "+s.describe(f))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Select returns one address of each family, in the order of Families. A family's fixed address
+// is taken once an interface holds it. Otherwise it is the first global unicast address of the
+// family outside the reserved ranges and the interfaces of Kubernetes that the filter matches,
+// by interface name and by address, so the choice does not depend on the order the kernel lists
+// them in, and the Last addresses after all others.
+func (s Selector) Select(addrs []Address) ([]netip.Addr, error) {
 	sorted := make([]Address, 0, len(addrs))
 	for _, a := range addrs {
 		sorted = append(sorted, Address{Interface: a.Interface, IP: a.IP.Unmap().WithZone("")})
 	}
 	slices.SortFunc(sorted, compare)
-	endpoint := s.Endpoint.Unmap().WithZone("")
+	last := func(ip netip.Addr) bool {
+		return slices.ContainsFunc(s.Last, func(l netip.Addr) bool { return l.Unmap().WithZone("") == ip })
+	}
 	slices.SortStableFunc(sorted, func(a, b Address) int {
 		switch {
-		case a.IP == endpoint && b.IP != endpoint:
+		case last(a.IP) && !last(b.IP):
 			return 1
-		case a.IP != endpoint && b.IP == endpoint:
+		case !last(a.IP) && last(b.IP):
 			return -1
 		}
 		return 0
 	})
+	var picked []netip.Addr
+	for _, f := range s.families() {
+		ip, err := s.selectFamily(f, sorted)
+		if err != nil {
+			return nil, err
+		}
+		picked = append(picked, ip)
+	}
+	return picked, nil
+}
+
+func (s Selector) selectFamily(f Family, sorted []Address) (netip.Addr, error) {
+	fixed, isFixed := s.fixed(f)
 	var seen []Address
 	for _, a := range sorted {
-		if s.Fixed.IsValid() && a.IP == s.Fixed.Unmap() {
+		if FamilyOf(a.IP) != f {
+			continue
+		}
+		if isFixed && a.IP == fixed {
 			return a.IP, nil
 		}
 		if !a.IP.IsGlobalUnicast() {
 			continue
 		}
 		seen = append(seen, a)
-		if !s.Fixed.IsValid() && s.eligible(a) && s.Filter.Matches(a.IP) {
+		if !isFixed && s.eligible(a) && s.Filter.Matches(a.IP) {
 			return a.IP, nil
 		}
 	}
-	return netip.Addr{}, &NoMatchError{Selector: s.String(), Addresses: seen}
+	if isFixed && s.Pinned {
+		return netip.Addr{}, &PinnedError{Address: fixed}
+	}
+	return netip.Addr{}, &NoMatchError{Family: f, Selector: s.describe(f), Addresses: seen}
 }
 
 func (s Selector) eligible(a Address) bool {
@@ -161,15 +245,16 @@ func compare(a, b Address) int {
 	return a.IP.Compare(b.IP)
 }
 
-// NoMatchError means no address of the node matches the selector. Addresses are the node's
-// global unicast addresses, in the order Select considered them.
+// NoMatchError means no address of the node of a family matches the selector. Addresses are the
+// node's global unicast addresses of that family, in the order Select considered them.
 type NoMatchError struct {
+	Family    Family
 	Selector  string
 	Addresses []Address
 }
 
 func (e *NoMatchError) Error() string {
-	have := "the node has no addresses"
+	have := "the node has no " + string(e.Family) + " addresses"
 	if len(e.Addresses) > 0 {
 		list := make([]string, len(e.Addresses))
 		for i, a := range e.Addresses {
@@ -177,10 +262,19 @@ func (e *NoMatchError) Error() string {
 		}
 		have = "the node has " + strings.Join(list, ", ")
 	}
-	return fmt.Sprintf("no node address matches %s (%s)", e.Selector, have)
+	return fmt.Sprintf("no %s node address matches %s (%s)", e.Family, e.Selector, have)
 }
 
-// Waiter waits for the node's address: a DHCP lease or an address a routing daemon adds may
+// PinnedError means an address the node was pinned to is on none of its interfaces.
+type PinnedError struct {
+	Address netip.Addr
+}
+
+func (e *PinnedError) Error() string {
+	return fmt.Sprintf("pinned address %s is not present", e.Address)
+}
+
+// Waiter waits for the node's addresses: a DHCP lease or an address a routing daemon adds may
 // arrive after the node started.
 type Waiter struct {
 	// Addresses lists the node's addresses.
@@ -197,21 +291,21 @@ func NewWaiter() Waiter {
 	return Waiter{Addresses: SystemAddresses, Now: time.Now, Sleep: time.Sleep, Interval: time.Second}
 }
 
-// Wait returns the address s selects as soon as there is one. It looks at least once, and
-// returns the last error once timeout passed.
-func (w Waiter) Wait(s Selector, timeout time.Duration) (netip.Addr, error) {
+// Wait returns the addresses s selects as soon as there are all of them. It looks at least
+// once, and returns the last error once timeout passed.
+func (w Waiter) Wait(s Selector, timeout time.Duration) ([]netip.Addr, error) {
 	deadline := w.Now().Add(timeout)
 	for {
 		addrs, err := w.Addresses()
 		if err == nil {
-			var ip netip.Addr
-			if ip, err = s.Select(addrs); err == nil {
-				return ip, nil
+			var ips []netip.Addr
+			if ips, err = s.Select(addrs); err == nil {
+				return ips, nil
 			}
 		}
 		remaining := deadline.Sub(w.Now())
 		if remaining <= 0 {
-			return netip.Addr{}, err
+			return nil, err
 		}
 		w.Sleep(min(w.Interval, remaining))
 	}

@@ -39,7 +39,7 @@ func testCluster() kubernetes.Cluster {
 	}
 }
 
-var testNode = kubernetes.Node{Name: "cp1", IP: net.ParseIP("10.0.0.11")}
+var testNode = kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("10.0.0.11")}}
 
 // testFiles stands for the certificates: their content only feeds the hashes.
 func testFiles() map[string][]byte {

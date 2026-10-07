@@ -63,23 +63,15 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 	return p
 }
 
-// onNode picks the node's address among addrs on eth0, as Prepare does on a node whose
+// onNode picks the node's addresses among addrs on eth0, as Prepare does on a node whose
 // addresses are there already.
 func onNode(addrs ...string) Resolver {
-	return func(c kubernetes.Cluster, n kubernetes.Node) (net.IP, error) {
-		sel, err := c.NodeIPSelector(n)
-		if err != nil {
-			return nil, err
-		}
+	return func(sel nodeip.Selector, _ time.Duration) ([]netip.Addr, error) {
 		var list []nodeip.Address
 		for _, a := range addrs {
 			list = append(list, nodeip.Address{Interface: "eth0", IP: netip.MustParseAddr(a)})
 		}
-		ip, err := sel.Select(list)
-		if err != nil {
-			return nil, err
-		}
-		return net.IP(ip.AsSlice()), nil
+		return sel.Select(list)
 	}
 }
 
@@ -177,8 +169,8 @@ func TestPreparePicksNodeIP(t *testing.T) {
 	if data, err := os.ReadFile(p.NodeIP()); err != nil || string(data) != "192.168.100.12\n" {
 		t.Errorf("node-ip = %q, %v", data, err)
 	}
-	if ip, err := ReadNodeIP(p); err != nil || !ip.Equal(net.ParseIP("192.168.100.12")) {
-		t.Errorf("ReadNodeIP() = %v, %v", ip, err)
+	if ips, err := ReadNodeIPs(p); err != nil || len(ips) != 1 || !ips[0].Equal(net.ParseIP("192.168.100.12")) {
+		t.Errorf("ReadNodeIPs() = %v, %v", ips, err)
 	}
 	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
 	if string(flags) != "KUBELET_ARGS=--hostname-override=w1 --node-ip=192.168.100.12\n" {
@@ -200,7 +192,7 @@ func TestPrepareWithoutNodeIP(t *testing.T) {
 	}
 
 	err := Prepare(p, now, onNode("10.0.2.15"), nil)
-	want := "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)"
+	want := "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
 	}
@@ -278,6 +270,74 @@ func TestPrepareControlPlaneWithPickedAddress(t *testing.T) {
 		data, err := os.ReadFile(filepath.Join(p.Manifests(), file))
 		if err != nil || !strings.Contains(string(data), flag) {
 			t.Errorf("%s lacks %s: %v", file, flag, err)
+		}
+	}
+}
+
+// A dual-stack node picks one address of each family: the kubelet registers both, the
+// certificates name both, and etcd and the API server advertise the primary family's.
+func TestPrepareDualStack(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, p.Bootstrapped(), "")
+	cluster, err := os.ReadFile(p.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Cluster, strings.Replace(string(cluster), `"kind":`, `"ipFamilies": ["ipv6", "ipv4"], "kind":`, 1))
+	write(t, p.NodeFile, `{"hostname": "cp1", "labels": {}, "taints": [],
+	  "kubernetes": {"nodeName": "cp1", "nodeIP": "192.168.100.11", "validSubnets": ["fd00::/64"]}}`)
+	if err := Prepare(p, now, onNode("10.0.2.15", "192.168.100.11", "2001:db8::11", "fd00::11"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(p.NodeIP()); err != nil || string(data) != "fd00::11\n192.168.100.11\n" {
+		t.Errorf("node-ip = %q, %v", data, err)
+	}
+	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
+	if !strings.Contains(string(flags), "--node-ip=fd00::11,192.168.100.11 ") {
+		t.Errorf("flags = %q", flags)
+	}
+	data, err := os.ReadFile(filepath.Join(p.PKI, kpki.FileAPIServer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := pki.ParseCertificate(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"fd00::11", "192.168.100.11"} {
+		if !slices.ContainsFunc(cert.IPAddresses, func(ip net.IP) bool { return ip.Equal(net.ParseIP(want)) }) {
+			t.Errorf("the API server's certificate names %v, not %s", cert.IPAddresses, want)
+		}
+	}
+	for file, flag := range map[string]string{
+		"etcd.json":           "--advertise-client-urls=https://[fd00::11]:2379",
+		"kube-apiserver.json": "--advertise-address=fd00::11",
+	} {
+		data, err := os.ReadFile(filepath.Join(p.Manifests(), file))
+		if err != nil || !strings.Contains(string(data), flag) {
+			t.Errorf("%s lacks %s: %v", file, flag, err)
+		}
+	}
+
+	// Without an address of the second family the node has none.
+	err = Prepare(p, now, onNode("192.168.100.11"), nil)
+	if err == nil || !strings.Contains(err.Error(), "no ipv6 node address matches") || exists(p.NodeIP()) {
+		t.Errorf("err = %v, want the ipv6 address missing", err)
+	}
+}
+
+func TestReadNodeIPs(t *testing.T) {
+	p := testNode(t, kubernetes.KindWorker, "w1", nil)
+	for content, ok := range map[string]bool{
+		"10.0.0.1\n":          true,
+		"10.0.0.1\nfd00::1\n": true,
+		"":                    false,
+		"10.0.0.1\nnope\n":    false,
+		"10.0.0.0/8\n":        false,
+	} {
+		write(t, p.NodeIP(), content)
+		if _, err := ReadNodeIPs(p); (err == nil) != ok {
+			t.Errorf("ReadNodeIPs(%q): %v", content, err)
 		}
 	}
 }
@@ -475,6 +535,10 @@ func TestKubeletFlags(t *testing.T) {
 	if got != "--hostname-override=cp1 --register-with-taints=dedicated=db:NoSchedule,spot:PreferNoSchedule" {
 		t.Errorf("flags = %s", got)
 	}
+	n.IPs = []net.IP{net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")}
+	if got := KubeletFlags(c, n)[1]; got != "--node-ip=10.0.0.11,fd00::11" {
+		t.Errorf("flag = %s", got)
+	}
 }
 
 func TestEtcdHasData(t *testing.T) {
@@ -584,7 +648,7 @@ func TestPreparationError(t *testing.T) {
 	if err := Prepare(p, now, onNode("10.0.2.15"), nil); err == nil {
 		t.Fatal("prepared without an address")
 	}
-	if got := reason(); got != "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)" {
+	if got := reason(); got != "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)" {
 		t.Errorf("without an address: %q", got)
 	}
 
@@ -623,8 +687,8 @@ type recordingFirewall struct {
 
 func (f *recordingFirewall) allow(p Paths) error {
 	state := "no address"
-	if ip, err := ReadNodeIP(p); err == nil {
-		state = ip.String()
+	if ips, err := ReadNodeIPs(p); err == nil {
+		state = ips[0].String()
 		if exists(p.Kubeconfig()) && !exists(p.Prepared()) {
 			state += ", prepared but not marked"
 		}
@@ -716,7 +780,7 @@ func TestPrepareMarksPrepared(t *testing.T) {
 	}
 
 	marked := true
-	noAddress := func(kubernetes.Cluster, kubernetes.Node) (net.IP, error) {
+	noAddress := func(nodeip.Selector, time.Duration) ([]netip.Addr, error) {
 		marked = exists(p.Prepared())
 		return nil, errors.New("no node address matches the default filter")
 	}

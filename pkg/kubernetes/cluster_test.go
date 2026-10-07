@@ -87,6 +87,46 @@ func TestClusterValidate(t *testing.T) {
 	}
 }
 
+func TestClusterFamiliesAndVIP(t *testing.T) {
+	valid, err := ReadCluster(writeFile(t, clusterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if families, err := valid.Families(); err != nil || len(families) != 1 || families[0] != nodeip.IPv4 {
+		t.Errorf("Families() = %v, %v, want ipv4 alone", families, err)
+	}
+	dual := valid
+	dual.IPFamilies = []string{"ipv6", "ipv4"}
+	dual.VIP = VIP{Addresses: []string{"10.0.0.10", "fd00::10"}, Mode: "l2"}
+	if err := dual.Validate(); err != nil {
+		t.Fatalf("dual stack with a VIP per family: %v", err)
+	}
+	if families, _ := dual.Families(); len(families) != 2 || families[0] != nodeip.IPv6 {
+		t.Errorf("Families() = %v, want ipv6 first", families)
+	}
+	named := valid
+	named.Endpoint = "https://api.example.com:6443"
+	named.VIP = VIP{Addresses: []string{"10.0.0.10"}, Mode: "l2"}
+	if err := named.Validate(); err != nil {
+		t.Errorf("a host name endpoint with a VIP: %v", err)
+	}
+	for name, edit := range map[string]func(c *Cluster){
+		"unknown family":         func(c *Cluster) { c.IPFamilies = []string{"ipv5"} },
+		"family twice":           func(c *Cluster) { c.IPFamilies = []string{"ipv4", "ipv4"} },
+		"VIP not an address":     func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10/32"}, Mode: "l2"} },
+		"VIP of another family":  func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10", "fd00::10"}, Mode: "l2"} },
+		"two VIPs of one family": func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10", "10.0.0.20"}, Mode: "l2"} },
+		"endpoint not a VIP":     func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.20"}, Mode: "l2"} },
+		"unknown mode":           func(c *Cluster) { c.VIP = VIP{Addresses: []string{"10.0.0.10"}, Mode: "bgp"} },
+	} {
+		c := valid
+		edit(&c)
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
 func TestNodeIPSelectorEndpointLast(t *testing.T) {
 	c, err := ReadCluster(writeFile(t, clusterJSON))
 	if err != nil {
@@ -106,11 +146,11 @@ func TestNodeIPSelectorEndpointLast(t *testing.T) {
 		for _, ip := range list {
 			addrs = append(addrs, nodeip.Address{Interface: "eth0", IP: netip.MustParseAddr(ip)})
 		}
-		ip, err := sel.Select(addrs)
+		ips, err := sel.Select(addrs)
 		if err != nil {
 			return err.Error()
 		}
-		return ip.String()
+		return ips[0].String()
 	}
 	// The endpoint 10.0.0.10 is a virtual address that sorts before the node's own one.
 	if got := pick(c, "10.0.0.10", "10.0.0.11"); got != "10.0.0.11" {
@@ -121,6 +161,7 @@ func TestNodeIPSelectorEndpointLast(t *testing.T) {
 		t.Errorf("only the endpoint's address: picked %s, want 10.0.0.10", got)
 	}
 	v6 := c
+	v6.IPFamilies = []string{"ipv6"}
 	v6.Endpoint = "https://[fd00::10]:6443"
 	if got := pick(v6, "fd00::10", "fd00::11"); got != "fd00::11" {
 		t.Errorf("IPv6 endpoint: picked %s, want fd00::11", got)
@@ -128,7 +169,7 @@ func TestNodeIPSelectorEndpointLast(t *testing.T) {
 	// An endpoint named by a host name changes nothing.
 	named := c
 	named.Endpoint = "https://api.example.com:6443"
-	if sel, err := named.NodeIPSelector(n); err != nil || sel.Endpoint.IsValid() {
+	if sel, err := named.NodeIPSelector(n); err != nil || len(sel.Last) != 0 {
 		t.Errorf("host name endpoint: selector %+v, %v", sel, err)
 	}
 	if got := pick(named, "10.0.0.10", "10.0.0.11"); got != "10.0.0.10" {
@@ -147,15 +188,17 @@ func TestReadNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n.Name != "cp1" || n.Hostname != "cp1-host" || !n.IP.Equal(net.ParseIP("10.0.0.11")) || n.Labels["zone"] != "a" || len(n.Taints) != 1 {
+	if n.Name != "cp1" || n.Hostname != "cp1-host" || len(n.FixedIPs) != 1 || !n.FixedIPs[0].Equal(net.ParseIP("10.0.0.11")) || n.Labels["zone"] != "a" || len(n.Taints) != 1 {
 		t.Errorf("node = %+v", n)
 	}
+	// The certificates name the addresses the node picked and its static addresses.
+	n.IPs = []net.IP{net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")}
 	var ips []string
-	for _, ip := range n.IPs() {
+	for _, ip := range n.CertificateIPs() {
 		ips = append(ips, ip.String())
 	}
-	if strings.Join(ips, ",") != "10.0.0.11,10.0.1.11" {
-		t.Errorf("IPs() = %v", ips)
+	if strings.Join(ips, ",") != "10.0.0.11,fd00::11,10.0.1.11" {
+		t.Errorf("CertificateIPs() = %v", ips)
 	}
 
 	if _, err := ReadNode(writeFile(t, `{"hostname": "n1", "kubernetes": null}`)); err == nil {
@@ -188,17 +231,41 @@ func TestNodeIPSelector(t *testing.T) {
 		{Interface: "eth1", IP: netip.MustParseAddr("192.168.100.12")},
 		{Interface: "eth2", IP: netip.MustParseAddr("10.244.0.5")},
 	}
+	// The VIPs sort last like the endpoint's address.
+	withVIP := c
+	withVIP.VIP = VIP{Addresses: []string{"10.0.0.10"}, Mode: "l2"}
+	if sel, err := withVIP.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1"}}`)); err != nil || len(sel.Last) != 2 {
+		t.Errorf("Last = %v, %v, want the endpoint's address and the VIP", sel.Last, err)
+	}
+	// A dual-stack node picks one address of each family.
+	dual := c
+	dual.IPFamilies = []string{"ipv4", "ipv6"}
+	sel, err := dual.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.12", "validSubnets": ["fd00::/64"]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sel.String(); got != "ipv4 by nodeIP 192.168.100.12, ipv6 by validSubnets fd00::/64" {
+		t.Errorf("dual stack: selector %s", got)
+	}
+	if got, err := sel.Select(append(addrs, nodeip.Address{Interface: "eth1", IP: netip.MustParseAddr("fd00::12")})); err != nil || len(got) != 2 || got[1] != netip.MustParseAddr("fd00::12") {
+		t.Errorf("dual stack: Select() = %v, %v", got, err)
+	}
+	// A fixed address of a family the cluster does not have is refused.
+	if _, err := c.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "fd00::12"}}`)); err == nil {
+		t.Error("accepted an ipv6 nodeIP in an ipv4 cluster")
+	}
+
 	for name, tc := range map[string]struct {
 		node     Node
 		selector string
 		want     string
 	}{
-		"cluster's subnets": {node(`{"kubernetes": {"nodeName": "n1"}}`), "validSubnets 10.0.0.0/8, !10.0.0.10/32", "10.0.0.11"},
-		"node's subnets":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["192.168.100.0/24"]}}`), "validSubnets 192.168.100.0/24", "192.168.100.12"},
-		"default filter":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": []}}`), "the default filter", "10.0.0.11"},
-		"fixed":             {node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.12"}}`), "nodeIP 192.168.100.12", "192.168.100.12"},
+		"cluster's subnets": {node(`{"kubernetes": {"nodeName": "n1"}}`), "ipv4 by validSubnets 10.0.0.0/8, !10.0.0.10/32", "10.0.0.11"},
+		"node's subnets":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["192.168.100.0/24"]}}`), "ipv4 by validSubnets 192.168.100.0/24", "192.168.100.12"},
+		"default filter":    {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": []}}`), "ipv4 by the default filter", "10.0.0.11"},
+		"fixed":             {node(`{"kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.12"}}`), "ipv4 by nodeIP 192.168.100.12", "192.168.100.12"},
 		// The pod range never holds the node's address.
-		"pod range": {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["10.244.0.0/16"]}}`), "validSubnets 10.244.0.0/16", ""},
+		"pod range": {node(`{"kubernetes": {"nodeName": "n1", "validSubnets": ["10.244.0.0/16"]}}`), "ipv4 by validSubnets 10.244.0.0/16", ""},
 	} {
 		sel, err := c.NodeIPSelector(tc.node)
 		if err != nil {
@@ -214,7 +281,7 @@ func TestNodeIPSelector(t *testing.T) {
 			}
 			continue
 		}
-		if err != nil || got != netip.MustParseAddr(tc.want) {
+		if err != nil || len(got) != 1 || got[0] != netip.MustParseAddr(tc.want) {
 			t.Errorf("%s: Select() = %v, %v, want %s", name, got, err, tc.want)
 		}
 	}
