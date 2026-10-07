@@ -3,11 +3,27 @@
 { self, pkgs }:
 let
   secrets = import ./secrets.nix { inherit pkgs; };
+  # The registry the Kubernetes test serves on the host, as the VMs reach it through their
+  # user-mode NIC.
+  registry = "http://10.0.2.100:5000";
+  # The Kubernetes nodes' network between the VMs, on their second NIC.
+  clusterNetwork = mac: address: {
+    networks."10-cluster" = {
+      matchConfig.MACAddress = mac;
+      address = [ "${address}/24" ];
+    };
+  };
+  # containerd, the kubelet and the CNI plugins outgrow the test image's verity partition.
+  kubernetesImage = [
+    ../../modules/testing/test-image.nix
+    { chalkos.disk.storeVeritySize = pkgs.lib.mkForce "128M"; }
+  ];
   definition = {
     chalkos.cluster = {
       name = "chalklab";
-      endpoint = "https://10.0.0.10:6443";
+      endpoint = "https://192.168.100.11:6443";
       osCA = "${secrets}/secrets.pub.json";
+      kubernetes.allowSchedulingOnControlPlanes = true;
     };
     # The default layout: VAR fills the system disk.
     chalkos.roles.test = {
@@ -51,15 +67,54 @@ let
       role = "storage";
       storage.system.disk = "/dev/vda";
     };
+    # A control plane and a worker, connected through the switch of the Kubernetes test.
+    chalkos.roles.k8s-controlplane = {
+      kubernetes.kind = "controlplane";
+      nixosModules = kubernetesImage;
+    };
+    chalkos.roles.k8s-worker = {
+      kubernetes.kind = "worker";
+      nixosModules = kubernetesImage;
+    };
+    chalkos.nodes.cp1 = {
+      role = "k8s-controlplane";
+      storage.system.disk = "/dev/vda";
+      network = clusterNetwork "52:54:00:00:01:11" "192.168.100.11";
+    };
+    chalkos.nodes.w1 = {
+      role = "k8s-worker";
+      storage.system.disk = "/dev/vda";
+      network = clusterNetwork "52:54:00:00:01:12" "192.168.100.12";
+    };
+  };
+  # The Kubernetes nodes pull every image through the test's registry.
+  mirrored = {
+    chalkos.cluster.registries.mirrors = {
+      "registry.k8s.io" = [ registry ];
+      "ghcr.io" = [ registry ];
+      "docker.io" = [ registry ];
+    };
   };
   manifestOf =
     name: modules:
     pkgs.writeText "${name}.json" (
       builtins.toJSON (self.lib.mkCluster { modules = [ definition ] ++ modules; }).manifest
     );
+  cluster = self.lib.mkCluster {
+    modules = [
+      definition
+      mirrored
+    ];
+  };
 in
 {
-  cluster = self.lib.mkCluster { modules = [ definition ]; };
+  inherit cluster;
+  kubernetesImages = import ./kubernetes-images.nix {
+    inherit pkgs;
+    kubernetesVersion = cluster.cluster.kubernetes.package.version;
+  };
+  # The same cluster pulling from the upstream registries, for a test run with network access.
+  online = self.lib.mkCluster { modules = [ definition ]; };
   inherit secrets;
   manifests = pkgs.linkFarm "chalkos-test-manifests" {
     "base.json" = manifestOf "base" [ ];

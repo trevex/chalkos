@@ -41,6 +41,13 @@ in
   test-image = testing.cluster.roles.test.image;
   test-storage-image = testing.cluster.roles.storage.image;
   test-installer = testing.cluster.installer;
+  test-kubernetes-controlplane-image = testing.cluster.roles.k8s-controlplane.image;
+  test-kubernetes-worker-image = testing.cluster.roles.k8s-worker.image;
+  test-kubernetes-images = testing.kubernetesImages;
+  # For TestKubernetesCluster with CHALKLAB_K8S_ONLINE=1, run outside the sandbox: the nodes
+  # pull from the upstream registries.
+  test-kubernetes-online-controlplane-image = testing.online.roles.k8s-controlplane.image;
+  test-kubernetes-online-worker-image = testing.online.roles.k8s-worker.image;
 
   # The installer of a cluster without an OS CA: it accepts any client until it installs a node.
   installer =
