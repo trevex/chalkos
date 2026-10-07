@@ -64,7 +64,23 @@ in
     };
     extraArgs = {
       etcd = flagsOf "etcd";
-      kube-apiserver = flagsOf "kube-apiserver";
+      kube-apiserver = flagsOf "kube-apiserver" // {
+        # These flags decide who may do what; chalkos sets them and chalkd refuses overrides.
+        apply =
+          flags:
+          let
+            protected = lib.intersectLists (lib.attrNames flags) [
+              "anonymous-auth"
+              "authentication-config"
+              "authorization-mode"
+              "enable-bootstrap-token-auth"
+            ];
+          in
+          if protected == [ ] then
+            flags
+          else
+            throw "chalkos.cluster.kubernetes.extraArgs.kube-apiserver cannot override ${lib.concatStringsSep ", " protected}: chalkos sets them";
+      };
       kube-controller-manager = flagsOf "kube-controller-manager";
       kube-scheduler = flagsOf "kube-scheduler";
       kubelet = flagsOf "the kubelet";

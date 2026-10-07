@@ -9,7 +9,7 @@
       "tier": "control-plane"
     },
     "annotations": {
-      "chalkos.dev/certificates": "a7de414b9423758376f4309db40997d4cf4df4a4fe20398e5293d2151ab968b0"
+      "chalkos.dev/certificates": "738f93fba1b607b07c65461ff441b74946cef5472bf59d454de26aaded6956d6"
     }
   },
   "spec": {
@@ -40,6 +40,7 @@
           "--controllers=*,-bootstrapsigner,-tokencleaner",
           "--kubeconfig=/etc/kubernetes/pki/controller-manager.kubeconfig",
           "--leader-elect=true",
+          "--profiling=false",
           "--requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt",
           "--root-ca-file=/etc/kubernetes/pki/ca.crt",
           "--service-account-private-key-file=/etc/kubernetes/pki/sa.key",

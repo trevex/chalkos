@@ -28,7 +28,7 @@ func testCluster() kubernetes.Cluster {
 		DNSIP:       "10.96.0.10",
 		Domain:      "cluster.local",
 		ExtraArgs: map[string]map[string]string{
-			"kube-apiserver": {"audit-log-maxage": "30", "authorization-mode": "Node,RBAC,Webhook"},
+			"kube-apiserver": {"audit-log-maxage": "30", "kubelet-preferred-address-types": "InternalIP"},
 		},
 		Images: kubernetes.Images{
 			Etcd:                  "registry.k8s.io/etcd:3.7.0-0",
@@ -48,7 +48,7 @@ func testFiles() map[string][]byte {
 		kpki.FileCA, kpki.FileCAKey, kpki.FileFrontProxyCA, kpki.FileFrontProxyClient, kpki.FileFrontProxyClientKey,
 		kpki.FileAPIServer, kpki.FileAPIServerKey, kpki.FileAPIServerKubeletClient, kpki.FileAPIServerKubeletKey,
 		kpki.FileAPIServerEtcdClient, kpki.FileAPIServerEtcdClientKey, kpki.FileServiceAccountKey, kpki.FileServiceAccountPub,
-		kpki.FileEncryptionConfig, kpki.FileControllerManagerConfig, kpki.FileSchedulerConfig,
+		kpki.FileEncryptionConfig, kpki.FileAuthenticationConfig, kpki.FileControllerManagerConfig, kpki.FileSchedulerConfig,
 		kpki.FileEtcdCA, kpki.FileEtcdServer, kpki.FileEtcdServerKey, kpki.FileEtcdPeer, kpki.FileEtcdPeerKey,
 	} {
 		files[name] = []byte("content of " + name)
@@ -102,9 +102,57 @@ func TestExtraArgsOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := strings.Join(decode(t, pods["kube-apiserver.json"]).Spec.Containers[0].Command, " ")
-	if !strings.Contains(cmd, "--authorization-mode=Node,RBAC,Webhook") || strings.Contains(cmd, "--authorization-mode=Node,RBAC ") ||
+	if !strings.Contains(cmd, "--kubelet-preferred-address-types=InternalIP ") || strings.Contains(cmd, "--kubelet-preferred-address-types=InternalIP,") ||
 		!strings.Contains(cmd, "--audit-log-maxage=30") {
 		t.Errorf("command %s", cmd)
+	}
+}
+
+// commandFlags returns a pod's flags by name; a flag given twice fails the test.
+func commandFlags(t *testing.T, data []byte) map[string]string {
+	t.Helper()
+	flags := map[string]string{}
+	for _, arg := range decode(t, data).Spec.Containers[0].Command[1:] {
+		name, value, _ := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		if _, ok := flags[name]; ok {
+			t.Errorf("flag %s given twice", name)
+		}
+		flags[name] = value
+	}
+	return flags
+}
+
+func TestSecurityFlags(t *testing.T) {
+	pods, err := StaticPods(testCluster(), testNode, testFiles())
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiServer := commandFlags(t, pods["kube-apiserver.json"])
+	for name, want := range map[string]string{
+		"authorization-mode":            "Node,RBAC",
+		"enable-admission-plugins":      "NodeRestriction",
+		"profiling":                     "false",
+		"authentication-config":         "/etc/kubernetes/pki/" + kpki.FileAuthenticationConfig,
+		"tls-min-version":               "VersionTLS12",
+		"requestheader-allowed-names":   kpki.FrontProxyClientUser,
+		"kubelet-certificate-authority": "/etc/kubernetes/pki/" + kpki.FileCA,
+	} {
+		if got, ok := apiServer[name]; !ok || got != want {
+			t.Errorf("kube-apiserver --%s=%q, want %q", name, got, want)
+		}
+	}
+	if v, ok := apiServer["enable-bootstrap-token-auth"]; ok && v != "false" {
+		t.Errorf("kube-apiserver --enable-bootstrap-token-auth=%s", v)
+	}
+	// The authentication configuration limits anonymous requests; the flag would allow them
+	// everywhere, and the API server refuses both together.
+	if v, ok := apiServer["anonymous-auth"]; ok {
+		t.Errorf("kube-apiserver --anonymous-auth=%s", v)
+	}
+	for _, name := range []string{"kube-controller-manager.json", "kube-scheduler.json"} {
+		if got := commandFlags(t, pods[name])["profiling"]; got != "false" {
+			t.Errorf("%s --profiling=%q", name, got)
+		}
 	}
 }
 

@@ -59,6 +59,19 @@ func TestClusterValidate(t *testing.T) {
 		"pod CIDR":     func(c *Cluster) { c.PodCIDR = "" },
 		"DNS IP":       func(c *Cluster) { c.DNSIP = "dns" },
 		"domain":       func(c *Cluster) { c.Domain = "" },
+		// These flags decide who may do what; chalkos sets them.
+		"authorization-mode": func(c *Cluster) {
+			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"authorization-mode": "AlwaysAllow"}}
+		},
+		"anonymous-auth": func(c *Cluster) {
+			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"anonymous-auth": "true"}}
+		},
+		"authentication-config": func(c *Cluster) {
+			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"authentication-config": "/tmp/a.json"}}
+		},
+		"enable-bootstrap-token-auth": func(c *Cluster) {
+			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"enable-bootstrap-token-auth": "true"}}
+		},
 	} {
 		c := valid
 		edit(&c)

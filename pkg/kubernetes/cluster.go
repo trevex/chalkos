@@ -63,8 +63,17 @@ func ReadCluster(path string) (Cluster, error) {
 	return c, nil
 }
 
-// Validate checks the kind, the endpoint and the address ranges.
+// ProtectedAPIServerFlags decide who may do what on the API server; chalkos sets them and
+// extra flags must not override them.
+var ProtectedAPIServerFlags = []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"}
+
+// Validate checks the kind, the endpoint, the address ranges and the extra flags.
 func (c Cluster) Validate() error {
+	for _, flag := range ProtectedAPIServerFlags {
+		if _, ok := c.ExtraArgs["kube-apiserver"][flag]; ok {
+			return fmt.Errorf("extraArgs: kube-apiserver --%s is set by chalkos and cannot be overridden", flag)
+		}
+	}
 	if c.Kind != KindControlPlane && c.Kind != KindWorker {
 		return fmt.Errorf("unknown kind %q", c.Kind)
 	}

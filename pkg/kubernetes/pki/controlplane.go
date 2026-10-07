@@ -47,6 +47,7 @@ const (
 	FileServiceAccountKey       = "sa.key"
 	FileServiceAccountPub       = "sa.pub"
 	FileEncryptionConfig        = "encryption.json"
+	FileAuthenticationConfig    = "authentication.json"
 	FileControllerManagerConfig = "controller-manager.kubeconfig"
 	FileSchedulerConfig         = "scheduler.kubeconfig"
 	FileEtcdCA                  = "etcd/ca.crt"
@@ -141,7 +142,25 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 		return nil, err
 	}
 	files[FileEncryptionConfig] = encryption
+	files[FileAuthenticationConfig], err = authenticationConfig()
+	if err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+// authenticationConfig allows anonymous requests only to the health endpoints, which the
+// kubelet probes without credentials.
+func authenticationConfig() ([]byte, error) {
+	var conditions []any
+	for _, path := range []string{"/livez", "/readyz", "/healthz"} {
+		conditions = append(conditions, map[string]any{"path": path})
+	}
+	return json.MarshalIndent(map[string]any{
+		"apiVersion": "apiserver.config.k8s.io/v1",
+		"kind":       "AuthenticationConfiguration",
+		"anonymous":  map[string]any{"enabled": true, "conditions": conditions},
+	}, "", "  ")
 }
 
 // encryptionConfig encrypts secrets with secretbox; identity still reads secrets written

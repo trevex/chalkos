@@ -262,7 +262,7 @@ func TestPrepareControlPlane(t *testing.T) {
 	if info, err := os.Stat(p.PKI); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("certificate directory: %v, %v", info, err)
 	}
-	for _, f := range []string{kpki.FileCAKey, kpki.FileAPIServerKey, kpki.FileEtcdServerKey, kpki.FileEncryptionConfig} {
+	for _, f := range []string{kpki.FileCAKey, kpki.FileAPIServerKey, kpki.FileEtcdServerKey, kpki.FileEncryptionConfig, kpki.FileAuthenticationConfig} {
 		info, err := os.Stat(filepath.Join(p.PKI, f))
 		if err != nil || info.Mode().Perm() != 0o600 {
 			t.Errorf("%s: %v, %v", f, info, err)

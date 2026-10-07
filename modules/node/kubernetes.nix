@@ -33,6 +33,11 @@ let
       x509.clientCAFile = "${run}/kubelet/ca.crt";
     };
     authorization.mode = "Webhook";
+    readOnlyPort = 0;
+    tlsMinVersion = "VersionTLS12";
+    # The kubelet refuses to start unless the kernel tunables below hold its values, rather than
+    # changing them itself.
+    protectKernelDefaults = true;
     cgroupDriver = "systemd";
     clusterDNS = [ k.dnsIP ];
     clusterDomain = k.domain;
@@ -92,6 +97,13 @@ in
       "net.ipv6.conf.all.forwarding" = 1;
       "net.bridge.bridge-nf-call-iptables" = 1;
       "net.bridge.bridge-nf-call-ip6tables" = 1;
+      # What the kubelet's protectKernelDefaults checks.
+      "vm.overcommit_memory" = 1;
+      "vm.panic_on_oom" = 0;
+      "kernel.panic" = 10;
+      "kernel.panic_on_oops" = 1;
+      "kernel.keys.root_maxkeys" = 1000000;
+      "kernel.keys.root_maxbytes" = 25000000;
     };
 
     virtualisation.containerd = {
@@ -192,7 +204,7 @@ in
         }
       ];
       # flannel's VXLAN.
-      allowedUDPPorts = [ 8472 ];
+      allowedUDPPorts = lib.optional (config.chalkos.cni.provider == "flannel") 8472;
     };
   };
 }

@@ -16,8 +16,10 @@ import (
 
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/trevex/chalkos/pkg/lab"
@@ -122,6 +124,7 @@ func TestKubernetesCluster(t *testing.T) {
 	if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
 		t.Errorf("status of w1: %v", err)
 	}
+	anonymousOnlyHealth(t, ctx, cfg)
 
 	createPeers(t, ctx, cs)
 	start := time.Now()
@@ -160,6 +163,25 @@ func TestKubernetesCluster(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, 5*time.Minute, "w1 Ready with its link back", func() error { return nodesReady(ctx, cs, "w1") })
+}
+
+// anonymousOnlyHealth checks that a request without credentials reaches the health endpoints
+// and nothing else, not even what the default roles allow anonymous users.
+func anonymousOnlyHealth(t *testing.T, ctx context.Context, cfg *rest.Config) {
+	t.Helper()
+	anonymous, err := kubernetes.NewForConfig(rest.AnonymousClientConfig(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := anonymous.Discovery().RESTClient()
+	for _, path := range []string{"/livez", "/readyz", "/healthz"} {
+		if _, err := client.Get().AbsPath(path).DoRaw(ctx); err != nil {
+			t.Errorf("anonymous %s: %v", path, err)
+		}
+	}
+	if _, err := client.Get().AbsPath("/version").DoRaw(ctx); !apierrors.IsUnauthorized(err) {
+		t.Errorf("anonymous /version: %v, want unauthorized", err)
+	}
 }
 
 func waitFor(t *testing.T, timeout time.Duration, what string, check func() error) {

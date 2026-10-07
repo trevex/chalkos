@@ -69,6 +69,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 	apiServer := pod("kube-apiserver", c.Images.KubeAPIServer, flags(c, "kube-apiserver", map[string]string{
 		"advertise-address":                  ip,
 		"allow-privileged":                   "true",
+		"authentication-config":              pki(kpki.FileAuthenticationConfig),
 		"authorization-mode":                 "Node,RBAC",
 		"client-ca-file":                     pki(kpki.FileCA),
 		"enable-admission-plugins":           "NodeRestriction",
@@ -82,6 +83,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"kubelet-client-certificate":         pki(kpki.FileAPIServerKubeletClient),
 		"kubelet-client-key":                 pki(kpki.FileAPIServerKubeletKey),
 		"kubelet-preferred-address-types":    "InternalIP,ExternalIP,Hostname",
+		"profiling":                          "false",
 		"proxy-client-cert-file":             pki(kpki.FileFrontProxyClient),
 		"proxy-client-key-file":              pki(kpki.FileFrontProxyClientKey),
 		"requestheader-allowed-names":        kpki.FrontProxyClientUser,
@@ -95,6 +97,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"service-account-signing-key-file":   pki(kpki.FileServiceAccountKey),
 		"service-cluster-ip-range":           c.ServiceCIDR,
 		"tls-cert-file":                      pki(kpki.FileAPIServer),
+		"tls-min-version":                    "VersionTLS12",
 		"tls-private-key-file":               pki(kpki.FileAPIServerKey),
 	}), ip, 6443, corev1.URISchemeHTTPS, "/livez", "/readyz", "/livez", "250m", "")
 	mountDir(apiServer, "k8s-certs", PKIDir, podPKIDir, true, corev1.HostPathDirectory)
@@ -112,6 +115,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"controllers":                      "*,-bootstrapsigner,-tokencleaner",
 		"kubeconfig":                       pki(kpki.FileControllerManagerConfig),
 		"leader-elect":                     "true",
+		"profiling":                        "false",
 		"requestheader-client-ca-file":     pki(kpki.FileFrontProxyCA),
 		"root-ca-file":                     pki(kpki.FileCA),
 		"service-account-private-key-file": pki(kpki.FileServiceAccountKey),
@@ -127,6 +131,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"bind-address":              "127.0.0.1",
 		"kubeconfig":                schedulerConfig,
 		"leader-elect":              "true",
+		"profiling":                 "false",
 	}), "127.0.0.1", 10259, corev1.URISchemeHTTPS, "/livez", "/readyz", "/livez", "100m", "")
 	mountDir(scheduler, "kubeconfig", path.Join(PKIDir, kpki.FileSchedulerConfig), schedulerConfig, true, corev1.HostPathFile)
 

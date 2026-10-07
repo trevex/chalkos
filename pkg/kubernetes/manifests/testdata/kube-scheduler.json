@@ -32,7 +32,8 @@
           "--authorization-kubeconfig=/etc/kubernetes/scheduler.kubeconfig",
           "--bind-address=127.0.0.1",
           "--kubeconfig=/etc/kubernetes/scheduler.kubeconfig",
-          "--leader-elect=true"
+          "--leader-elect=true",
+          "--profiling=false"
         ],
         "ports": [
           {

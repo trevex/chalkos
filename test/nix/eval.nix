@@ -1325,6 +1325,16 @@ lib.runTests {
           ;
         anonymous = kubelet.authentication.anonymous.enabled;
         authorization = kubelet.authorization.mode;
+        inherit (kubelet) readOnlyPort tlsMinVersion protectKernelDefaults;
+        # protectKernelDefaults makes the kubelet fail unless the kernel has these values.
+        sysctl = lib.getAttrs [
+          "vm.overcommit_memory"
+          "vm.panic_on_oom"
+          "kernel.panic"
+          "kernel.panic_on_oops"
+          "kernel.keys.root_maxkeys"
+          "kernel.keys.root_maxbytes"
+        ] config.boot.kernel.sysctl;
         extraArg = lib.hasSuffix "$KUBELET_ARGS --v=2" config.systemd.services.kubelet.serviceConfig.ExecStart;
         noFullPackage =
           !lib.hasInfix "-kubernetes-1.37.1/" config.systemd.services.kubelet.serviceConfig.ExecStart;
@@ -1339,8 +1349,73 @@ lib.runTests {
       resolvConf = "/run/systemd/resolve/resolv.conf";
       anonymous = false;
       authorization = "Webhook";
+      readOnlyPort = 0;
+      tlsMinVersion = "VersionTLS12";
+      protectKernelDefaults = true;
+      sysctl = {
+        "vm.overcommit_memory" = 1;
+        "vm.panic_on_oom" = 0;
+        "kernel.panic" = 10;
+        "kernel.panic_on_oops" = 1;
+        "kernel.keys.root_maxkeys" = 1000000;
+        "kernel.keys.root_maxbytes" = 25000000;
+      };
       extraArg = true;
       noFullPackage = true;
+    };
+  };
+  testAPIServerExtraArgsCannotOverrideAuthentication = {
+    expr =
+      let
+        clusterFile =
+          flags:
+          (role (cluster [
+            {
+              chalkos.roles.worker.kubernetes.kind = "controlplane";
+              chalkos.cluster.kubernetes.extraArgs.kube-apiserver = flags;
+            }
+          ])).environment.etc."chalkos/kubernetes/cluster.json".text;
+      in
+      {
+        authorization = fails (clusterFile {
+          authorization-mode = "AlwaysAllow";
+        });
+        anonymous = fails (clusterFile {
+          anonymous-auth = "true";
+        });
+        authenticationConfig = fails (clusterFile {
+          authentication-config = "/tmp/a.json";
+        });
+        bootstrapTokens = fails (clusterFile {
+          enable-bootstrap-token-auth = "true";
+        });
+        other = fails (clusterFile {
+          audit-log-maxage = "30";
+        });
+      };
+    expected = {
+      authorization = true;
+      anonymous = true;
+      authenticationConfig = true;
+      bootstrapTokens = true;
+      other = false;
+    };
+  };
+  testFlannelPortFollowsProvider = {
+    expr =
+      let
+        vxlan =
+          provider:
+          lib.elem 8472
+            (role (cluster [ { chalkos.cni.provider = provider; } ])).networking.firewall.allowedUDPPorts;
+      in
+      {
+        flannel = vxlan "flannel";
+        none = vxlan "none";
+      };
+    expected = {
+      flannel = true;
+      none = false;
     };
   };
 }

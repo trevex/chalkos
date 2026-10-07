@@ -227,3 +227,33 @@ func TestControlPlaneNeedsControlPlaneShare(t *testing.T) {
 		t.Errorf("chalkd certificate subject %v", cert.Subject)
 	}
 }
+
+// Anonymous requests reach only the health endpoints, which the kubelet probes without
+// credentials.
+func TestAuthenticationConfig(t *testing.T) {
+	files, err := ControlPlane(ControlPlaneShare(secrets(t)), testCluster(), testNode, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+		Anonymous  struct {
+			Enabled    bool `json:"enabled"`
+			Conditions []struct {
+				Path string `json:"path"`
+			} `json:"conditions"`
+		} `json:"anonymous"`
+	}
+	if err := json.Unmarshal(files[FileAuthenticationConfig], &cfg); err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, c := range cfg.Anonymous.Conditions {
+		paths = append(paths, c.Path)
+	}
+	if cfg.APIVersion != "apiserver.config.k8s.io/v1" || cfg.Kind != "AuthenticationConfiguration" || !cfg.Anonymous.Enabled ||
+		!slices.Equal(paths, []string{"/livez", "/readyz", "/healthz"}) {
+		t.Errorf("authentication configuration %s", files[FileAuthenticationConfig])
+	}
+}
