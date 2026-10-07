@@ -183,7 +183,8 @@ func (c *haCluster) client(name string) kubernetes.Interface {
 // and holds the VIP; cp2 and cp3 join etcd on their own. The VIP moves when its holder's link is
 // cut and stays with one holder once the link is back. A pinned node without its address runs
 // nothing while the cluster stays healthy. A node that left etcd and was reinstalled joins again;
-// one reinstalled without leaving finds its stale member until an operator removes it.
+// one reinstalled without leaving refuses to bootstrap and finds its stale member until an
+// operator removes it.
 func TestKubernetesHA(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_HA_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
 	ctx := context.Background()
@@ -277,6 +278,10 @@ func TestKubernetesHA(t *testing.T) {
 	})
 	movedAfter := time.Since(cut)
 	t.Logf("the VIP moved to %s %v after cp1's link was cut", holder, movedAfter.Round(time.Second))
+	// The lease lives 10 seconds; the statuses are polled every 5.
+	if movedAfter > 30*time.Second {
+		t.Errorf("the VIP moved %v after cp1's link was cut, want within 30s", movedAfter.Round(time.Second))
+	}
 	moved := metav1.Now()
 	other := c.client(holder)
 	waitFor(t, 5*time.Minute, "the kubelets to renew their leases through the VIP", func() error {
@@ -348,6 +353,18 @@ func TestKubernetesHA(t *testing.T) {
 		got := c.kubernetes("cp3")
 		if !strings.HasSuffix(got, "etcd has a member cp3 already; remove it with chalkctl etcd remove-member cp3") {
 			return fmt.Errorf("status of cp3: %q", got)
+		}
+		return nil
+	})
+	// Not yet a member again, cp3 refuses to bootstrap a second cluster: the endpoint answers with
+	// this cluster's CA. A join attempt holding the membership refuses it too, so ask again then.
+	waitFor(t, time.Minute, "cp3 to refuse a bootstrap while the cluster answers", func() error {
+		out, err := c.chalkctl("cp3", "bootstrap", "cp3")
+		if err == nil {
+			t.Fatalf("cp3 bootstrapped a second cluster:\n%s", out)
+		}
+		if !strings.Contains(out, "the cluster's API server answers at https://192.168.100.10:6443") {
+			return fmt.Errorf("bootstrap: %v\n%s", err, out)
 		}
 		return nil
 	})
