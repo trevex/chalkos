@@ -11,6 +11,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -32,15 +33,14 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if h == nil {
 		return nil, failed(connect.CodeInvalidArgument, "the first install message must be the header")
 	}
-	var id struct {
-		Storage storage.Section `json:"storage"`
-	}
+	var id manifest.Identity
 	if err := json.Unmarshal([]byte(h.Identity), &id); err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
 	}
 	req := install.Request{
 		Identity:        []byte(h.Identity),
 		Section:         id.Storage,
+		Kubernetes:      id.Kubernetes,
 		NodeCertificate: h.NodeCertificate,
 		NodeKey:         h.NodeKey,
 		CA:              h.CaCertificate,

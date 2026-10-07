@@ -22,6 +22,7 @@ import (
 	"time"
 
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -58,6 +59,8 @@ type Request struct {
 	Identity []byte
 	// Section is the identity's storage section.
 	Section storage.Section
+	// Kubernetes is the identity's Kubernetes section; nil on a node of a role without Kubernetes.
+	Kubernetes *manifest.KubernetesIdentity
 	// NodeCertificate and NodeKey are what chalkd serves once the node is installed; CA issues
 	// the client certificates it accepts. All are PEM.
 	NodeCertificate, NodeKey, CA []byte
@@ -97,9 +100,9 @@ func (r Request) validate() error {
 		if err != nil {
 			return err
 		}
-		nodeName, err := KubernetesNodeName(r.Identity)
-		if err != nil {
-			return err
+		var nodeName string
+		if r.Kubernetes != nil {
+			nodeName = r.Kubernetes.NodeName
 		}
 		// A worker share names the node its kubelet certificate is for; a node must never run a
 		// kubelet certificate issued for another node.
@@ -108,24 +111,6 @@ func (r Request) validate() error {
 		}
 	}
 	return nil
-}
-
-// KubernetesNodeName returns the node's name in the cluster from its identity, as
-// chalkos.nodes.<name>.identity.kubernetes.nodeName renders it; empty for a node of a role
-// without Kubernetes.
-func KubernetesNodeName(identity []byte) (string, error) {
-	var id struct {
-		Kubernetes *struct {
-			NodeName string `json:"nodeName"`
-		} `json:"kubernetes"`
-	}
-	if err := json.Unmarshal(identity, &id); err != nil {
-		return "", fmt.Errorf("parse the identity: %w", err)
-	}
-	if id.Kubernetes == nil {
-		return "", nil
-	}
-	return id.Kubernetes.NodeName, nil
 }
 
 // Installer holds what installing works on; tests point it at temporary directories and a

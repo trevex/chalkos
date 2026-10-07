@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"path"
 	"sort"
 	"strings"
@@ -45,13 +46,13 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 	etcd := pod("etcd", c.Images.Etcd, flags(c, "etcd", map[string]string{
 		"name":                        n.Name,
 		"data-dir":                    EtcdDataDir,
-		"advertise-client-urls":       "https://" + hostPort(ip, "2379"),
-		"initial-advertise-peer-urls": "https://" + hostPort(ip, "2380"),
-		"initial-cluster":             n.Name + "=https://" + hostPort(ip, "2380"),
+		"advertise-client-urls":       "https://" + net.JoinHostPort(ip, "2379"),
+		"initial-advertise-peer-urls": "https://" + net.JoinHostPort(ip, "2380"),
+		"initial-cluster":             n.Name + "=https://" + net.JoinHostPort(ip, "2380"),
 		// A member with data ignores the initial cluster, so a restart never starts a new one.
 		"initial-cluster-state": "new",
-		"listen-client-urls":    "https://127.0.0.1:2379,https://" + hostPort(ip, "2379"),
-		"listen-peer-urls":      "https://" + hostPort(ip, "2380"),
+		"listen-client-urls":    "https://127.0.0.1:2379,https://" + net.JoinHostPort(ip, "2379"),
+		"listen-peer-urls":      "https://" + net.JoinHostPort(ip, "2380"),
 		"listen-metrics-urls":   "http://127.0.0.1:2381",
 		"cert-file":             pki(kpki.FileEtcdServer),
 		"key-file":              pki(kpki.FileEtcdServerKey),
@@ -149,13 +150,6 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		out[p.Name+".json"] = append(data, '\n')
 	}
 	return out, nil
-}
-
-func hostPort(ip, port string) string {
-	if strings.Contains(ip, ":") {
-		return "[" + ip + "]:" + port
-	}
-	return ip + ":" + port
 }
 
 // flags turns the component's flags, with the cluster's extra flags for it on top, into

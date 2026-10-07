@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -30,14 +31,13 @@ const cryptsetupPath = "systemd-cryptsetup"
 
 // delivered is an identity as it arrives, with what chalkd reads from it.
 type delivered struct {
-	data    []byte
-	section storage.Section
+	data       []byte
+	section    storage.Section
+	kubernetes *manifest.KubernetesIdentity
 }
 
 func parseIdentity(data string) (delivered, error) {
-	var id struct {
-		Storage storage.Section `json:"storage"`
-	}
+	var id manifest.Identity
 	if err := json.Unmarshal([]byte(data), &id); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
 	}
@@ -47,7 +47,7 @@ func parseIdentity(data string) (delivered, error) {
 	if err := id.Storage.Validate(); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
 	}
-	return delivered{data: []byte(data), section: id.Storage}, nil
+	return delivered{data: []byte(data), section: id.Storage, kubernetes: id.Kubernetes}, nil
 }
 
 // kubernetesShare validates a delivered share for the node the identity names and returns it as
@@ -70,9 +70,9 @@ func (s *Server) kubernetesShare(d delivered, data []byte) ([]byte, error) {
 	if share.Kind != c.Kind {
 		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's image is for %s nodes", share.Kind, c.Kind)
 	}
-	nodeName, err := install.KubernetesNodeName(d.data)
-	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+	var nodeName string
+	if d.kubernetes != nil {
+		nodeName = d.kubernetes.NodeName
 	}
 	// A node must never run its kubelet with a certificate issued for another node.
 	if err := share.ValidateFor(nodeName); err != nil {

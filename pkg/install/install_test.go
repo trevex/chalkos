@@ -18,6 +18,7 @@ import (
 	"time"
 
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -391,6 +392,7 @@ func testRequest(t *testing.T, section storage.Section) Request {
 	return Request{
 		Identity:        identity,
 		Section:         section,
+		Kubernetes:      &manifest.KubernetesIdentity{NodeName: "n1"},
 		NodeCertificate: []byte(n.Certificate),
 		NodeKey:         []byte(n.Key),
 		CA:              []byte(ca.Certificate),
