@@ -110,15 +110,18 @@ type permission struct {
 }
 
 var permissions = map[string]permission{
-	nodev1connect.NodeServiceInfoProcedure:          {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceDisksProcedure:         {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceInstallProcedure:       {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
-	nodev1connect.NodeServiceApplyIdentityProcedure: {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceResetVolumeProcedure:   {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceStatusProcedure:        {[]nodev1.Mode{normal}, pki.RoleReader},
-	nodev1connect.NodeServiceLogsProcedure:          {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceRebootProcedure:        {[]nodev1.Mode{maintenance, normal}, pki.RoleOperator},
-	nodev1connect.NodeServiceBootstrapProcedure:     {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceInfoProcedure:             {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
+	nodev1connect.NodeServiceDisksProcedure:            {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
+	nodev1connect.NodeServiceInstallProcedure:          {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
+	nodev1connect.NodeServiceApplyIdentityProcedure:    {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceResetVolumeProcedure:      {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceStatusProcedure:           {[]nodev1.Mode{normal}, pki.RoleReader},
+	nodev1connect.NodeServiceLogsProcedure:             {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
+	nodev1connect.NodeServiceRebootProcedure:           {[]nodev1.Mode{maintenance, normal}, pki.RoleOperator},
+	nodev1connect.NodeServiceBootstrapProcedure:        {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceEtcdMembersProcedure:      {[]nodev1.Mode{normal}, pki.RoleReader},
+	nodev1connect.NodeServiceEtcdRemoveMemberProcedure: {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceEtcdLeaveProcedure:        {[]nodev1.Mode{normal}, pki.RoleAdmin},
 }
 
 type roleKey struct{}

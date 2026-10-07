@@ -29,6 +29,16 @@ service NodeService {
   // the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
   // so no second cluster is ever initialised.
   rpc Bootstrap(BootstrapRequest) returns (BootstrapResponse);
+  // EtcdMembers lists etcd's members as the node's own member sees them, with their health.
+  // Available on control-plane nodes that are etcd members.
+  rpc EtcdMembers(EtcdMembersRequest) returns (EtcdMembersResponse);
+  // EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
+  // have fewer healthy members than their quorum, unless forced.
+  rpc EtcdRemoveMember(EtcdRemoveMemberRequest) returns (EtcdRemoveMemberResponse);
+  // EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
+  // still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
+  // unpins its addresses. The node joins the cluster again only once it is reinstalled.
+  rpc EtcdLeave(EtcdLeaveRequest) returns (EtcdLeaveResponse);
 }
 
 enum Mode {
@@ -260,3 +270,34 @@ message BootstrapResponse {
   // Objects applied from the cluster's manifests.
   uint32 applied = 1;
 }
+
+message EtcdMember {
+  uint64 id = 1;
+  // The node's name; empty while a member that was added has not started.
+  string name = 2;
+  repeated string peer_urls = 3;
+  bool learner = 4;
+  // Why the member did not answer; empty when it is healthy.
+  string unhealthy = 5;
+}
+
+message EtcdMembersRequest {}
+
+message EtcdMembersResponse {
+  repeated EtcdMember members = 1;
+}
+
+message EtcdRemoveMemberRequest {
+  // The member's name or its ID in hex.
+  string member = 1;
+  // Remove the member even when the voters left would have no healthy quorum.
+  bool force = 2;
+}
+
+message EtcdRemoveMemberResponse {
+  EtcdMember removed = 1;
+}
+
+message EtcdLeaveRequest {}
+
+message EtcdLeaveResponse {}

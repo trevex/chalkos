@@ -482,6 +482,49 @@ func TestClearMembership(t *testing.T) {
 	}
 }
 
+// RemoveEtcdData empties etcd's data directory and keeps the directory.
+func TestRemoveEtcdData(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
+	if err := RemoveEtcdData(p); err != nil {
+		t.Fatal(err)
+	}
+	if hasData, err := EtcdHasData(p); err != nil || hasData {
+		t.Errorf("etcd data after RemoveEtcdData: %v, %v", hasData, err)
+	}
+	if !exists(p.EtcdData) {
+		t.Error("etcd's data directory is gone")
+	}
+	if err := os.Remove(p.EtcdData); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveEtcdData(p); err != nil {
+		t.Errorf("without a data directory: %v", err)
+	}
+}
+
+// A node that left etcd renders no static pods, even when a leave that was interrupted kept its
+// bootstrapped marker.
+func TestPrepareAfterLeaving(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, p.Bootstrapped(), "")
+	if left, err := Left(p); err != nil || left {
+		t.Fatalf("Left() = %v, %v before leaving", left, err)
+	}
+	if err := MarkLeft(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if left, err := Left(p); err != nil || !left {
+		t.Errorf("Left() = %v, %v", left, err)
+	}
+	if err := Prepare(p, now, picked, nil); err != nil {
+		t.Fatal(err)
+	}
+	if pods := staticPods(t, p); len(pods) != 0 {
+		t.Errorf("static pods %v after leaving", pods)
+	}
+}
+
 // A node joining an existing cluster renders etcd alone first, then the whole control plane, both
 // with the cluster it joined.
 func TestRenderJoiningEtcd(t *testing.T) {

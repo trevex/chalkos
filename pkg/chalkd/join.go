@@ -53,7 +53,8 @@ func (k *Kubernetes) startJoin() {
 		return
 	}
 	k.joining = true
-	go k.superviseJoin(k.loops())
+	k.joinDone = make(chan struct{})
+	go k.superviseJoin(k.loops(), k.joinDone)
 }
 
 // setJoinStep records what the join does or why its last attempt failed, for the node's status.
@@ -91,16 +92,21 @@ func (k *Kubernetes) joinStatus(c k8s.Cluster) (string, error) {
 }
 
 // superviseJoin tries to join the cluster until the node is an etcd voter, then starts the
-// control plane's loop. It stops when the node was bootstrapped instead.
-func (k *Kubernetes) superviseJoin(ctx context.Context) {
+// control plane's loop. It stops when the node was bootstrapped instead, and closes done once it
+// ended.
+func (k *Kubernetes) superviseJoin(ctx context.Context, done chan struct{}) {
 	retry := k.JoinRetry
 	if retry <= 0 {
 		retry = 10 * time.Second
 	}
 	defer func() {
 		k.mu.Lock()
-		k.joining = false
+		// Stop forgot this loop already, and Start may have run another.
+		if k.joinDone == done {
+			k.joining, k.joinDone = false, nil
+		}
 		k.mu.Unlock()
+		close(done)
 	}()
 	for {
 		err := k.joinOnce(ctx)
@@ -111,7 +117,12 @@ func (k *Kubernetes) superviseJoin(ctx context.Context) {
 		case err == nil:
 			log.Print("kubernetes: joined the cluster; the control plane starts")
 			k.setJoinStep("")
-			k.start()
+			k.mu.Lock()
+			// Unless Stop ended the loops meanwhile.
+			if k.ctx == ctx {
+				k.startLocked()
+			}
+			k.mu.Unlock()
 			return
 		case errors.Is(err, errBootstrapped):
 			k.setJoinStep("")

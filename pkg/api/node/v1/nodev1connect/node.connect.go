@@ -54,6 +54,13 @@ const (
 	NodeServiceRebootProcedure = "/chalkos.node.v1.NodeService/Reboot"
 	// NodeServiceBootstrapProcedure is the fully-qualified name of the NodeService's Bootstrap RPC.
 	NodeServiceBootstrapProcedure = "/chalkos.node.v1.NodeService/Bootstrap"
+	// NodeServiceEtcdMembersProcedure is the fully-qualified name of the NodeService's EtcdMembers RPC.
+	NodeServiceEtcdMembersProcedure = "/chalkos.node.v1.NodeService/EtcdMembers"
+	// NodeServiceEtcdRemoveMemberProcedure is the fully-qualified name of the NodeService's
+	// EtcdRemoveMember RPC.
+	NodeServiceEtcdRemoveMemberProcedure = "/chalkos.node.v1.NodeService/EtcdRemoveMember"
+	// NodeServiceEtcdLeaveProcedure is the fully-qualified name of the NodeService's EtcdLeave RPC.
+	NodeServiceEtcdLeaveProcedure = "/chalkos.node.v1.NodeService/EtcdLeave"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -80,6 +87,16 @@ type NodeServiceClient interface {
 	// the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
 	// so no second cluster is ever initialised.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
+	// EtcdMembers lists etcd's members as the node's own member sees them, with their health.
+	// Available on control-plane nodes that are etcd members.
+	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
+	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
+	// have fewer healthy members than their quorum, unless forced.
+	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
+	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
+	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
+	// unpins its addresses. The node joins the cluster again only once it is reinstalled.
+	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -147,20 +164,41 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Bootstrap")),
 			connect.WithClientOptions(opts...),
 		),
+		etcdMembers: connect.NewClient[v1.EtcdMembersRequest, v1.EtcdMembersResponse](
+			httpClient,
+			baseURL+NodeServiceEtcdMembersProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("EtcdMembers")),
+			connect.WithClientOptions(opts...),
+		),
+		etcdRemoveMember: connect.NewClient[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse](
+			httpClient,
+			baseURL+NodeServiceEtcdRemoveMemberProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("EtcdRemoveMember")),
+			connect.WithClientOptions(opts...),
+		),
+		etcdLeave: connect.NewClient[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse](
+			httpClient,
+			baseURL+NodeServiceEtcdLeaveProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("EtcdLeave")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
-	info          *connect.Client[v1.InfoRequest, v1.InfoResponse]
-	disks         *connect.Client[v1.DisksRequest, v1.DisksResponse]
-	install       *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyIdentity *connect.Client[v1.ApplyIdentityRequest, v1.ApplyIdentityResponse]
-	resetVolume   *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
-	status        *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	logs          *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	reboot        *connect.Client[v1.RebootRequest, v1.RebootResponse]
-	bootstrap     *connect.Client[v1.BootstrapRequest, v1.BootstrapResponse]
+	info             *connect.Client[v1.InfoRequest, v1.InfoResponse]
+	disks            *connect.Client[v1.DisksRequest, v1.DisksResponse]
+	install          *connect.Client[v1.InstallRequest, v1.InstallResponse]
+	applyIdentity    *connect.Client[v1.ApplyIdentityRequest, v1.ApplyIdentityResponse]
+	resetVolume      *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
+	status           *connect.Client[v1.StatusRequest, v1.StatusResponse]
+	logs             *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	reboot           *connect.Client[v1.RebootRequest, v1.RebootResponse]
+	bootstrap        *connect.Client[v1.BootstrapRequest, v1.BootstrapResponse]
+	etcdMembers      *connect.Client[v1.EtcdMembersRequest, v1.EtcdMembersResponse]
+	etcdRemoveMember *connect.Client[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse]
+	etcdLeave        *connect.Client[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -208,6 +246,21 @@ func (c *nodeServiceClient) Bootstrap(ctx context.Context, req *connect.Request[
 	return c.bootstrap.CallUnary(ctx, req)
 }
 
+// EtcdMembers calls chalkos.node.v1.NodeService.EtcdMembers.
+func (c *nodeServiceClient) EtcdMembers(ctx context.Context, req *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error) {
+	return c.etcdMembers.CallUnary(ctx, req)
+}
+
+// EtcdRemoveMember calls chalkos.node.v1.NodeService.EtcdRemoveMember.
+func (c *nodeServiceClient) EtcdRemoveMember(ctx context.Context, req *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error) {
+	return c.etcdRemoveMember.CallUnary(ctx, req)
+}
+
+// EtcdLeave calls chalkos.node.v1.NodeService.EtcdLeave.
+func (c *nodeServiceClient) EtcdLeave(ctx context.Context, req *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error) {
+	return c.etcdLeave.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in both modes to readers.
@@ -232,6 +285,16 @@ type NodeServiceHandler interface {
 	// the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
 	// so no second cluster is ever initialised.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
+	// EtcdMembers lists etcd's members as the node's own member sees them, with their health.
+	// Available on control-plane nodes that are etcd members.
+	EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error)
+	// EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
+	// have fewer healthy members than their quorum, unless forced.
+	EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error)
+	// EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
+	// still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
+	// unpins its addresses. The node joins the cluster again only once it is reinstalled.
+	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -295,6 +358,24 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Bootstrap")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceEtcdMembersHandler := connect.NewUnaryHandler(
+		NodeServiceEtcdMembersProcedure,
+		svc.EtcdMembers,
+		connect.WithSchema(nodeServiceMethods.ByName("EtcdMembers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nodeServiceEtcdRemoveMemberHandler := connect.NewUnaryHandler(
+		NodeServiceEtcdRemoveMemberProcedure,
+		svc.EtcdRemoveMember,
+		connect.WithSchema(nodeServiceMethods.ByName("EtcdRemoveMember")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nodeServiceEtcdLeaveHandler := connect.NewUnaryHandler(
+		NodeServiceEtcdLeaveProcedure,
+		svc.EtcdLeave,
+		connect.WithSchema(nodeServiceMethods.ByName("EtcdLeave")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -315,6 +396,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRebootHandler.ServeHTTP(w, r)
 		case NodeServiceBootstrapProcedure:
 			nodeServiceBootstrapHandler.ServeHTTP(w, r)
+		case NodeServiceEtcdMembersProcedure:
+			nodeServiceEtcdMembersHandler.ServeHTTP(w, r)
+		case NodeServiceEtcdRemoveMemberProcedure:
+			nodeServiceEtcdRemoveMemberHandler.ServeHTTP(w, r)
+		case NodeServiceEtcdLeaveProcedure:
+			nodeServiceEtcdLeaveHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -358,4 +445,16 @@ func (UnimplementedNodeServiceHandler) Reboot(context.Context, *connect.Request[
 
 func (UnimplementedNodeServiceHandler) Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Bootstrap is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) EtcdMembers(context.Context, *connect.Request[v1.EtcdMembersRequest]) (*connect.Response[v1.EtcdMembersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EtcdMembers is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) EtcdRemoveMember(context.Context, *connect.Request[v1.EtcdRemoveMemberRequest]) (*connect.Response[v1.EtcdRemoveMemberResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EtcdRemoveMember is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EtcdLeave is not implemented"))
 }

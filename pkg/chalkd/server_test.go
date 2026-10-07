@@ -291,6 +291,12 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
 	case "Bootstrap":
 		_, err = c.Bootstrap(ctx, connect.NewRequest(&nodev1.BootstrapRequest{}))
+	case "EtcdMembers":
+		_, err = c.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+	case "EtcdRemoveMember":
+		_, err = c.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: "cp2"}))
+	case "EtcdLeave":
+		_, err = c.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{}))
 	case "Logs":
 		var s *connect.ServerStreamForClient[nodev1.LogsResponse]
 		if s, err = c.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{})); err == nil {
@@ -319,11 +325,15 @@ func TestAuthorisation(t *testing.T) {
 		codes map[string]map[string]connect.Code
 	}{
 		{"normal", normal, true, map[string]map[string]connect.Code{
-			pki.RoleReader:   {"Info": 0, "Disks": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition},
-			pki.RoleOperator: {"Reboot": 0, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodePermissionDenied},
+			// The node has no Kubernetes: refusing EtcdMembers means the call got through.
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
+				"EtcdMembers": connect.CodeFailedPrecondition, "EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied},
+			pki.RoleOperator: {"Reboot": 0, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodePermissionDenied,
+				"EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied},
 			// The identity "{}" lacks a storage section and the node has no Kubernetes; refusing them
 			// means the call got through.
-			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition},
+			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition,
+				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition},
 			// A certificate of the OS CA without a role's Organization grants nothing.
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,
@@ -332,7 +342,7 @@ func TestAuthorisation(t *testing.T) {
 			pki.RoleNode: {"Info": connect.CodeUnavailable},
 		}},
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition},
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},
 			// A header without a target is refused after authorisation.
 			pki.RoleAdmin:       {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},

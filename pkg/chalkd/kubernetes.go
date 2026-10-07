@@ -70,6 +70,9 @@ type Kubernetes struct {
 	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means
 	// https://127.0.0.1:2379. Tests replace it.
 	LocalEtcd string
+	// EtcdStopped waits until the node's etcd stopped once its static pod is gone. Tests replace
+	// it.
+	EtcdStopped func(ctx context.Context) error
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -79,10 +82,11 @@ type Kubernetes struct {
 
 	mu sync.Mutex
 	// ctx ends the loops; cancel ends it when chalkd stops. vipDone is closed once the VIP
-	// election ended and released the VIPs.
-	ctx     context.Context
-	cancel  context.CancelFunc
-	vipDone chan struct{}
+	// election ended and released the VIPs, and joinDone once the join's loop ended.
+	ctx      context.Context
+	cancel   context.CancelFunc
+	vipDone  chan struct{}
+	joinDone chan struct{}
 	// joining is set while the join's loop runs; joinStep is what it does or why it failed last,
 	// and joinWaiting is set while it finds no cluster.
 	joining     bool
@@ -109,6 +113,7 @@ func NewKubernetes() *Kubernetes {
 	k.ClusterAnswers = clusterAnswers
 	k.VIPAddresses = systemVIPAddresses
 	k.APIServerReady = apiServerReady
+	k.EtcdStopped = etcdStopped
 	return k
 }
 
@@ -121,20 +126,27 @@ func (k *Kubernetes) loops() context.Context {
 }
 
 // Stop ends the loops and waits until the node released the VIPs, so they never stay on a node
-// that no longer holds their lease.
+// that no longer holds their lease, and until the join stopped. Start starts them again.
 func (k *Kubernetes) Stop() {
 	k.mu.Lock()
-	k.loops()
-	k.cancel()
-	done := k.vipDone
+	cancel, vipDone, joinDone := k.cancel, k.vipDone, k.joinDone
+	k.ctx, k.cancel, k.vipDone, k.joinDone = nil, nil, nil, nil
+	// The next start runs the loops afresh and closes a channel of its own once they applied the
+	// manifests.
+	k.started, k.joining, k.done = false, false, nil
 	k.mu.Unlock()
-	if done == nil {
-		return
+	if cancel != nil {
+		cancel()
 	}
-	select {
-	case <-done:
-	case <-time.After(15 * time.Second):
-		log.Print("kubernetes: the VIP election did not end in time")
+	for what, done := range map[string]chan struct{}{"the VIP election": vipDone, "the join": joinDone} {
+		if done == nil {
+			continue
+		}
+		select {
+		case <-done:
+		case <-time.After(15 * time.Second):
+			log.Printf("kubernetes: %s did not end in time", what)
+		}
 	}
 }
 
@@ -154,6 +166,10 @@ func (k *Kubernetes) Start() {
 	if c.Kind != k8s.KindControlPlane {
 		return
 	}
+	// A node that left etcd joins again only once reinstalled.
+	if left, err := knode.Left(k.Paths); err != nil || left {
+		return
+	}
 	if !bootstrapped {
 		k.startJoin()
 		return
@@ -170,6 +186,11 @@ func (k *Kubernetes) Start() {
 func (k *Kubernetes) start() chan struct{} {
 	k.mu.Lock()
 	defer k.mu.Unlock()
+	return k.startLocked()
+}
+
+// startLocked is start with k.mu held.
+func (k *Kubernetes) startLocked() chan struct{} {
 	if k.done == nil {
 		k.done = make(chan struct{})
 	}
@@ -463,6 +484,11 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	if bootstrapped {
 		return nil, failed(connect.CodeFailedPrecondition, "the node is bootstrapped already")
 	}
+	if left, err := knode.Left(k.Paths); err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	} else if left {
+		return nil, failed(connect.CodeFailedPrecondition, "the node left etcd; reinstall it to join the cluster again")
+	}
 	hasData, err := knode.EtcdHasData(k.Paths)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
@@ -566,11 +592,18 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		st.State = problem
 		return st, nil
 	}
+	left, err := knode.Left(k.Paths)
+	if err != nil {
+		return nil, err
+	}
 	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {
 	case err != nil:
 		return nil, err
 	case c.Kind == k8s.KindWorker:
 		st.State = "joined"
+	case left:
+		st.State = "left etcd; reinstall the node to join the cluster again"
+		return st, nil
 	case bootstrapped:
 		switch err := knode.CheckEtcdData(k.Paths); {
 		case errors.Is(err, knode.ErrEtcdDataMissing):

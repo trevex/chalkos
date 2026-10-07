@@ -31,6 +31,9 @@ commands:
   reboot <node>                                 reboot a node
   bootstrap <node>                              initialise the cluster on a control-plane node
   kubeconfig [--ttl 8760h] [--out FILE]         write an admin kubeconfig
+  etcd members [--via NODE]                     list etcd's members and their health
+  etcd remove-member <node|id> [--force]        remove a node's etcd member, such as a stale one
+  etcd leave <node>                             take a control-plane node out of etcd
   sign                                          sign the boot loader and UKIs of a disk image
 
 Run chalkctl <command> -h for the flags of a command.`
@@ -99,6 +102,8 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.bootstrap(ctx, rest)
 	case cmd == "kubeconfig":
 		return a.kubeconfig(ctx, rest)
+	case cmd == "etcd":
+		return a.etcd(ctx, rest)
 	case cmd == "recovery-key":
 		return a.recoveryKey(ctx, rest)
 	case cmd == "install":

@@ -81,6 +81,9 @@ func (p Paths) PrepareError() string { return filepath.Join(p.Run, "prepare.erro
 // files it is still writing.
 func (p Paths) Prepared() string { return filepath.Join(p.Run, "prepared") }
 
+// Left marks that the node left etcd: it joins the cluster again only once reinstalled.
+func (p Paths) Left() string { return filepath.Join(p.State, "left") }
+
 // EtcdInitialCluster holds etcd's initial cluster when the node joined an existing cluster.
 func (p Paths) EtcdInitialCluster() string { return filepath.Join(p.State, "etcd-initial-cluster") }
 
@@ -156,6 +159,34 @@ func MarkJoined(p Paths, now time.Time) error {
 func ClearMembership(p Paths) error {
 	for _, f := range []string{p.Bootstrapped(), p.EtcdInitialised(), p.EtcdInitialCluster(), p.Joining(), p.Pin()} {
 		if err := removeIfExists(f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Left reports whether the node left etcd.
+func Left(p Paths) (bool, error) {
+	return marked(p.Left())
+}
+
+// MarkLeft records that the node left etcd. It comes before the node deletes its etcd data and
+// ClearMembership, so a node interrupted there never looks like one that has yet to join.
+func MarkLeft(p Paths, now time.Time) error {
+	return install.WriteFile(p.Left(), []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+// RemoveEtcdData deletes etcd's data and keeps its directory.
+func RemoveEtcdData(p Paths) error {
+	entries, err := os.ReadDir(p.EtcdData)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(p.EtcdData, e.Name())); err != nil {
 			return err
 		}
 	}
@@ -490,6 +521,10 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	}
 	bootstrapped, err := Bootstrapped(p)
 	if err != nil || !bootstrapped {
+		return err
+	}
+	// A leave that was interrupted keeps the marker, but the node's member is gone.
+	if left, err := Left(p); err != nil || left {
 		return err
 	}
 	return RenderStaticPods(p)
