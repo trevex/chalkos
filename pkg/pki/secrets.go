@@ -14,8 +14,10 @@ import (
 	"filippo.io/age/armor"
 )
 
-// SecretsVersion is the version of the secrets file this package writes and reads.
-const SecretsVersion = 1
+// SecretsVersion is the version of the secrets file this package writes. It reads version 1
+// too, which lacks the Kubernetes secrets, so chalkctl secrets upgrade can add them and commands
+// that do not need them keep working.
+const SecretsVersion = 2
 
 // Secrets is the cluster's secrets file. It is written once by chalkctl gen secrets and only read
 // afterwards, so it can live in any secret manager.
@@ -27,16 +29,20 @@ type Secrets struct {
 	Admin CertKey `json:"admin"`
 	// RecoverySecret is what each node's recovery key is derived from.
 	RecoverySecret []byte `json:"recoverySecret"`
+	// Kubernetes holds the secrets of the Kubernetes control plane; version 1 files lack them.
+	Kubernetes *KubernetesSecrets `json:"kubernetes,omitempty"`
 }
 
 // Public is the public half of the secrets file, secrets.pub.json, which the cluster definition
 // references to bake the OS CA into images.
 type Public struct {
-	Version int     `json:"version"`
-	OSCA    CertKey `json:"osCA"`
+	Version    int               `json:"version"`
+	OSCA       CertKey           `json:"osCA"`
+	Kubernetes *KubernetesPublic `json:"kubernetes,omitempty"`
 }
 
-// GenerateSecrets creates the OS CA, an admin client certificate and the recovery secret.
+// GenerateSecrets creates the OS CA, an admin client certificate, the recovery secret and the
+// Kubernetes secrets.
 func GenerateSecrets(now time.Time) (Secrets, error) {
 	ca, err := NewCA("chalkos OS CA", now)
 	if err != nil {
@@ -50,11 +56,15 @@ func GenerateSecrets(now time.Time) (Secrets, error) {
 	if _, err := rand.Read(secret); err != nil {
 		return Secrets{}, err
 	}
-	return Secrets{Version: SecretsVersion, OSCA: ca, Admin: admin, RecoverySecret: secret}, nil
+	k, err := NewKubernetesSecrets(now)
+	if err != nil {
+		return Secrets{}, err
+	}
+	return Secrets{Version: SecretsVersion, OSCA: ca, Admin: admin, RecoverySecret: secret, Kubernetes: k}, nil
 }
 
 // String returns a redacted summary, so logging or an error wrapping a Secrets never leaks the
-// recovery secret or a private key.
+// recovery secret, a private key or the encryption key.
 func (s Secrets) String() string {
 	subject := "invalid"
 	if ca, _, err := s.OSCA.Parse(); err == nil {
@@ -71,14 +81,24 @@ func (s Secrets) GoString() string {
 
 // Public returns the parts of the secrets that may be published.
 func (s Secrets) Public() Public {
-	return Public{Version: s.Version, OSCA: CertKey{Certificate: s.OSCA.Certificate}}
+	p := Public{Version: s.Version, OSCA: CertKey{Certificate: s.OSCA.Certificate}}
+	if s.Kubernetes != nil {
+		p.Kubernetes = s.Kubernetes.Public()
+	}
+	return p
 }
 
 // Validate checks that every secret is present, that the certificates belong to their keys, that
-// osCA is a CA certificate, and that admin verifies against it and grants the admin role.
+// osCA is a CA certificate, that admin verifies against it and grants the admin role, and that a
+// version 2 file has valid Kubernetes secrets.
 func (s Secrets) Validate() error {
-	if s.Version != SecretsVersion {
-		return fmt.Errorf("secrets file version %d is not supported (want %d)", s.Version, SecretsVersion)
+	switch {
+	case s.Version != 1 && s.Version != SecretsVersion:
+		return fmt.Errorf("secrets file version %d is not supported (want 1 or %d)", s.Version, SecretsVersion)
+	case s.Version == 1 && s.Kubernetes != nil:
+		return errors.New("a version 1 secrets file has no kubernetes section")
+	case s.Version == SecretsVersion && s.Kubernetes == nil:
+		return errors.New("kubernetes: missing")
 	}
 	ca, _, err := s.OSCA.Parse()
 	if err != nil {
@@ -105,6 +125,11 @@ func (s Secrets) Validate() error {
 	}
 	if len(s.RecoverySecret) != RecoverySecretSize {
 		return fmt.Errorf("recoverySecret must be %d bytes", RecoverySecretSize)
+	}
+	if s.Kubernetes != nil {
+		if err := s.Kubernetes.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

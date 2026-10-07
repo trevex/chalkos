@@ -174,3 +174,56 @@ func TestRecoveryKey(t *testing.T) {
 		t.Error("accepted a cluster name containing a NUL byte")
 	}
 }
+
+func TestIssueLeaf(t *testing.T) {
+	ca := newTestCA(t)
+	ck, err := IssueLeaf(ca, Leaf{
+		CommonName:   "system:node:w1",
+		Organization: []string{"system:nodes"},
+		DNSNames:     []string{"w1"},
+		IPs:          []net.IP{net.ParseIP("10.0.0.21")},
+		Server:       true,
+		Client:       true,
+		Validity:     time.Hour,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _, err := ck.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+		t.Errorf("does not verify against the CA: %v", err)
+	}
+	if cert.Subject.CommonName != "system:node:w1" || strings.Join(cert.Subject.Organization, ",") != "system:nodes" ||
+		strings.Join(cert.DNSNames, ",") != "w1" || len(cert.IPAddresses) != 1 || !cert.IPAddresses[0].Equal(net.ParseIP("10.0.0.21")) {
+		t.Errorf("subject %v, DNS %v, IPs %v", cert.Subject, cert.DNSNames, cert.IPAddresses)
+	}
+	if len(cert.ExtKeyUsage) != 2 || cert.ExtKeyUsage[0] != x509.ExtKeyUsageServerAuth || cert.ExtKeyUsage[1] != x509.ExtKeyUsageClientAuth {
+		t.Errorf("extended key usages %v", cert.ExtKeyUsage)
+	}
+	if !cert.NotAfter.Equal(now.Add(time.Hour).Truncate(time.Second)) {
+		t.Errorf("expires %v", cert.NotAfter)
+	}
+	if _, err := IssueLeaf(ca, Leaf{CommonName: "x"}, now); err == nil {
+		t.Error("issued a certificate without a usage")
+	}
+}
+
+func TestLeafDoesNotPredateCA(t *testing.T) {
+	ca := newTestCA(t)
+	// A CA made just now, as openssl makes one without backdating.
+	caCert, _, _ := ca.Parse()
+	leaf, err := IssueLeaf(ca, Leaf{CommonName: "early", Client: true}, caCert.NotBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _, _ := leaf.Parse()
+	if cert.NotBefore.Before(caCert.NotBefore) {
+		t.Errorf("leaf starts %v, before its CA at %v", cert.NotBefore, caCert.NotBefore)
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: cert.NotBefore, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		t.Errorf("does not verify at its start: %v", err)
+	}
+}

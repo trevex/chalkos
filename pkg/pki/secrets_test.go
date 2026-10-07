@@ -157,7 +157,7 @@ func TestReadSecretsRejects(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"garbage":       []byte("not secrets"),
 		"short secret":  short,
-		"other version": []byte(`{"version": 2}`),
+		"other version": []byte(`{"version": 3}`),
 	} {
 		if _, err := ReadSecrets(data, noIdentities); err == nil {
 			t.Errorf("%s: accepted", name)

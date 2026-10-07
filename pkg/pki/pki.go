@@ -122,6 +122,43 @@ func IssueNode(ca CertKey, name string, dnsNames []string, ips []net.IP, now tim
 	return issue(ca, template)
 }
 
+// Leaf describes a certificate IssueLeaf issues.
+type Leaf struct {
+	CommonName   string
+	Organization []string
+	DNSNames     []string
+	IPs          []net.IP
+	// Server and Client select the extended key usages.
+	Server, Client bool
+	// Validity defaults to LeafValidity; the CA's own expiry caps it.
+	Validity time.Duration
+}
+
+// IssueLeaf issues a certificate from ca with a new ECDSA P-256 key.
+func IssueLeaf(ca CertKey, l Leaf, now time.Time) (CertKey, error) {
+	if !l.Server && !l.Client {
+		return CertKey{}, errors.New("a leaf certificate must allow server or client authentication")
+	}
+	validity := l.Validity
+	if validity == 0 {
+		validity = LeafValidity
+	}
+	template, err := newTemplate(l.CommonName, l.Organization, now, validity)
+	if err != nil {
+		return CertKey{}, err
+	}
+	template.KeyUsage = x509.KeyUsageDigitalSignature
+	if l.Server {
+		template.ExtKeyUsage = append(template.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
+	}
+	if l.Client {
+		template.ExtKeyUsage = append(template.ExtKeyUsage, x509.ExtKeyUsageClientAuth)
+	}
+	template.DNSNames = l.DNSNames
+	template.IPAddresses = l.IPs
+	return issue(ca, template)
+}
+
 // SelfSigned creates the certificate chalkd serves in maintenance mode, before the node has one
 // from the OS CA. Clients pin it by its fingerprint.
 func SelfSigned(name string, now time.Time) (CertKey, error) {
@@ -191,6 +228,10 @@ func issue(ca CertKey, template *x509.Certificate) (CertKey, error) {
 	}
 	if template.NotAfter.After(caCert.NotAfter) {
 		template.NotAfter = caCert.NotAfter
+	}
+	// Backdating must not start a certificate before its CA, or it never verifies at its start.
+	if template.NotBefore.Before(caCert.NotBefore) {
+		template.NotBefore = caCert.NotBefore
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
