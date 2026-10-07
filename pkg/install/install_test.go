@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -378,7 +380,7 @@ func testRequest(t *testing.T, section storage.Section) Request {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := json.Marshal(map[string]any{"hostname": "n1", "storage": section})
+	identity, err := json.Marshal(map[string]any{"hostname": "n1", "storage": section, "kubernetes": map[string]any{"nodeName": "n1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -684,5 +686,150 @@ func TestBootLoader(t *testing.T) {
 	}
 	if Default(false).Loader != bootLoader(runtime.GOARCH) {
 		t.Errorf("Default uses the boot loader %q on %s", Default(false).Loader, runtime.GOARCH)
+	}
+}
+
+func TestInPlaceStoresKubernetesShare(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	r.add(inPlaceRules(i)...)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	k, err := pki.NewKubernetesSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := kpki.WorkerShare(k, "n1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.KubernetesShare, err = share.Encode(); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.InPlace(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(i.StateDir, "kubernetes", "share.json")
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(req.KubernetesShare) {
+		t.Errorf("share.json = %v", err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("share.json mode = %v, %v; want 0600", info, err)
+	}
+	if info, err := os.Stat(filepath.Dir(path)); err != nil || info.Mode().Perm() != 0o700 {
+		t.Errorf("kubernetes/ mode = %v, %v; want 0700", info, err)
+	}
+}
+
+func TestInstallRefusesInvalidShare(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	req.KubernetesShare = []byte(`{"kind": "worker", "ca": {"certificate": "not a certificate"}}`)
+	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
+		t.Fatalf("err = %v, want the share refused", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.calls)
+	}
+}
+
+// TestInstallRefusesShareForAnotherNode guards against a node running another node's kubelet
+// certificate: ParseShare alone cannot catch this, since the share is internally consistent and
+// only wrong for this node.
+func TestInstallRefusesShareForAnotherNode(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	k, err := pki.NewKubernetesSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := kpki.WorkerShare(k, "other", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.KubernetesShare, err = share.Encode(); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
+		t.Fatalf("err = %v, want the share refused", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.calls)
+	}
+}
+
+// TestInstallRefusesShareWithExtraFields checks that Install relies on ParseShare's strict
+// decoding, which rejects a share carrying a field Share does not declare.
+func TestInstallRefusesShareWithExtraFields(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	k, err := pki.NewKubernetesSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := kpki.WorkerShare(k, "n1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := share.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["extra"] = json.RawMessage(`"unexpected"`)
+	if req.KubernetesShare, err = json.Marshal(fields); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "Kubernetes share") {
+		t.Fatalf("err = %v, want the share refused", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.calls)
+	}
+}
+
+// TestInPlaceStoresCanonicalShare checks that STATE holds the share Encode produces, not
+// whatever bytes the request carried, even when both describe the same share.
+func TestInPlaceStoresCanonicalShare(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	r.add(inPlaceRules(i)...)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	k, err := pki.NewKubernetesSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := kpki.WorkerShare(k, "n1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := share.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indented, err := json.MarshalIndent(share, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(indented, canonical) {
+		t.Fatal("the indented and canonical encodings are identical; this test proves nothing")
+	}
+	req.KubernetesShare = indented
+
+	if err := i.InPlace(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(i.StateDir, "kubernetes", "share.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, canonical) {
+		t.Errorf("share.json = %s, want the canonical encoding %s", got, canonical)
 	}
 }

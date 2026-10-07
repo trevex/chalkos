@@ -679,8 +679,12 @@ type InstallHeader struct {
 	// The role image's repart definitions of the system region (slot B, STATE) by file name;
 	// installer only. Each role chooses its partition sizes, so the installer's own may not fit.
 	SystemDefinitions map[string]string `protobuf:"bytes,11,rep,name=system_definitions,json=systemDefinitions,proto3" json:"system_definitions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
+	// certificate and a kubelet client certificate for a worker. Empty for a role without
+	// Kubernetes.
+	KubernetesShare []byte `protobuf:"bytes,12,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *InstallHeader) Reset() {
@@ -797,6 +801,13 @@ func (x *InstallHeader) GetWipeDisk() bool {
 func (x *InstallHeader) GetSystemDefinitions() map[string]string {
 	if x != nil {
 		return x.SystemDefinitions
+	}
+	return nil
+}
+
+func (x *InstallHeader) GetKubernetesShare() []byte {
+	if x != nil {
+		return x.KubernetesShare
 	}
 	return nil
 }
@@ -1027,8 +1038,11 @@ type ApplyIdentityRequest struct {
 	// Enrolled on encrypted volumes the identity adds; required when it adds one and the node's
 	// fallback is not none.
 	FallbackSecret string `protobuf:"bytes,2,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
+	// keeps the node's share.
+	KubernetesShare []byte `protobuf:"bytes,3,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ApplyIdentityRequest) Reset() {
@@ -1073,6 +1087,13 @@ func (x *ApplyIdentityRequest) GetFallbackSecret() string {
 		return x.FallbackSecret
 	}
 	return ""
+}
+
+func (x *ApplyIdentityRequest) GetKubernetesShare() []byte {
+	if x != nil {
+		return x.KubernetesShare
+	}
+	return nil
 }
 
 type ApplyIdentityResponse struct {
@@ -1745,7 +1766,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0eInstallRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.InstallHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
-	"\amessage\"\xc3\x04\n" +
+	"\amessage\"\xee\x04\n" +
 	"\rInstallHeader\x12\x1a\n" +
 	"\bidentity\x18\x01 \x01(\tR\bidentity\x12)\n" +
 	"\x10node_certificate\x18\x02 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
@@ -1759,7 +1780,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fimage_sha256\x18\t \x01(\fR\vimageSha256\x12\x1b\n" +
 	"\twipe_disk\x18\n" +
 	" \x01(\bR\bwipeDisk\x12d\n" +
-	"\x12system_definitions\x18\v \x03(\v25.chalkos.node.v1.InstallHeader.SystemDefinitionsEntryR\x11systemDefinitions\x1aD\n" +
+	"\x12system_definitions\x18\v \x03(\v25.chalkos.node.v1.InstallHeader.SystemDefinitionsEntryR\x11systemDefinitions\x12)\n" +
+	"\x10kubernetes_share\x18\f \x01(\fR\x0fkubernetesShare\x1aD\n" +
 	"\x16SystemDefinitionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\b\n" +
@@ -1775,10 +1797,11 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ImageChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x11\n" +
-	"\x0fInstallResponse\"[\n" +
+	"\x0fInstallResponse\"\x86\x01\n" +
 	"\x14ApplyIdentityRequest\x12\x1a\n" +
 	"\bidentity\x18\x01 \x01(\tR\bidentity\x12'\n" +
-	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\"z\n" +
+	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\x12)\n" +
+	"\x10kubernetes_share\x18\x03 \x01(\fR\x0fkubernetesShare\"z\n" +
 	"\x15ApplyIdentityResponse\x128\n" +
 	"\achanges\x18\x01 \x03(\v2\x1e.chalkos.node.v1.StorageChangeR\achanges\x12'\n" +
 	"\x0frestarted_units\x18\x02 \x03(\tR\x0erestartedUnits\"a\n" +

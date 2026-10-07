@@ -45,6 +45,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		NodeKey:         h.NodeKey,
 		CA:              h.CaCertificate,
 		FallbackSecret:  h.FallbackSecret,
+		KubernetesShare: h.KubernetesShare,
 	}
 
 	var err error

@@ -26,6 +26,7 @@ func header(target any) *nodev1.InstallHeader {
 		NodeKey:         []byte("key"),
 		CaCertificate:   []byte("ca"),
 		FallbackSecret:  "recovery",
+		KubernetesShare: []byte("share"),
 	}
 	switch t := target.(type) {
 	case *nodev1.InstallHeader_InPlace:
@@ -65,7 +66,7 @@ func TestInstallInPlace(t *testing.T) {
 	if err := sendInstall(t, s, header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if string(got.Identity) != installIdentity || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" ||
+	if string(got.Identity) != installIdentity || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
 		got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request = %+v", got)
 	}

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -62,6 +63,9 @@ type Request struct {
 	NodeCertificate, NodeKey, CA []byte
 	// FallbackSecret is enrolled as the second keyslot of every encrypted volume.
 	FallbackSecret string
+	// KubernetesShare is the node's share of the Kubernetes secrets (JSON); empty on a node of a
+	// role without Kubernetes.
+	KubernetesShare []byte
 }
 
 func (r Request) validate() error {
@@ -88,7 +92,40 @@ func (r Request) validate() error {
 	if _, err := pki.ParseCertificate(r.CA); err != nil {
 		return fmt.Errorf("CA certificate: %w", err)
 	}
+	if len(r.KubernetesShare) > 0 {
+		share, err := kpki.ParseShare(r.KubernetesShare)
+		if err != nil {
+			return err
+		}
+		nodeName, err := kubernetesNodeName(r.Identity)
+		if err != nil {
+			return err
+		}
+		// A worker share names the node its kubelet certificate is for; a node must never run a
+		// kubelet certificate issued for another node.
+		if err := share.ValidateFor(nodeName); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// kubernetesNodeName returns the node's name in the cluster from its identity, as
+// chalkos.nodes.<name>.identity.kubernetes.nodeName renders it; empty for a node of a role
+// without Kubernetes.
+func kubernetesNodeName(identity []byte) (string, error) {
+	var id struct {
+		Kubernetes *struct {
+			NodeName string `json:"nodeName"`
+		} `json:"kubernetes"`
+	}
+	if err := json.Unmarshal(identity, &id); err != nil {
+		return "", fmt.Errorf("parse the identity: %w", err)
+	}
+	if id.Kubernetes == nil {
+		return "", nil
+	}
+	return id.Kubernetes.NodeName, nil
 }
 
 // Installer holds what installing works on; tests point it at temporary directories and a
@@ -276,6 +313,21 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	}
 	for _, f := range files {
 		if err := WriteFile(filepath.Join(i.StateDir, f.path), f.data, f.perm); err != nil {
+			return err
+		}
+	}
+	if len(req.KubernetesShare) > 0 {
+		// validate already parsed and checked the share; encode it again so STATE holds the
+		// canonical form, never whatever bytes the request happened to carry.
+		share, err := kpki.ParseShare(req.KubernetesShare)
+		if err != nil {
+			return err
+		}
+		canonical, err := share.Encode()
+		if err != nil {
+			return err
+		}
+		if err := WriteShare(i.StateDir, canonical); err != nil {
 			return err
 		}
 	}
@@ -525,6 +577,18 @@ func WriteFile(path string, data []byte, perm fs.FileMode) error {
 	}
 	defer d.Close()
 	return d.Sync()
+}
+
+// WriteShare records the node's Kubernetes share on STATE, in a directory only root can enter.
+func WriteShare(stateDir string, share []byte) error {
+	dir := filepath.Join(stateDir, "kubernetes")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	return WriteFile(filepath.Join(dir, "share.json"), share, 0o600)
 }
 
 func newUUID() string {

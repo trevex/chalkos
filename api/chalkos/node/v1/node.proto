@@ -130,6 +130,10 @@ message InstallHeader {
   // The role image's repart definitions of the system region (slot B, STATE) by file name;
   // installer only. Each role chooses its partition sizes, so the installer's own may not fit.
   map<string, string> system_definitions = 11;
+  // The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
+  // certificate and a kubelet client certificate for a worker. Empty for a role without
+  // Kubernetes.
+  bytes kubernetes_share = 12;
 }
 
 message InPlace {}
@@ -156,6 +160,9 @@ message ApplyIdentityRequest {
   // Enrolled on encrypted volumes the identity adds; required when it adds one and the node's
   // fallback is not none.
   string fallback_secret = 2;
+  // A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
+  // keeps the node's share.
+  bytes kubernetes_share = 3;
 }
 
 message ApplyIdentityResponse {
