@@ -119,10 +119,24 @@ func TestAddAnnounceRemove(t *testing.T) {
 		if err := Add(a); err != nil {
 			t.Fatal(err)
 		}
-		// Usable at once: an IPv6 address that waited for duplicate address detection would be
-		// tentative, which SystemAddresses leaves out.
-		if !holds(t, "v0", a.IP) {
-			t.Errorf("v0 does not hold %s", a.IP)
+		if a.IP.Is4() {
+			if !holds(t, "v0", a.IP) {
+				t.Errorf("v0 does not hold %s", a.IP)
+			}
+			continue
+		}
+		// Usable at once, without waiting for duplicate address detection, and deprecated, so the
+		// holder's own connections never pick it as their source address.
+		flags, cache, found := addrInfo(t, "v0", a.IP)
+		if !found {
+			t.Fatalf("v0 does not hold %s", a.IP)
+		}
+		if flags&unix.IFA_F_TENTATIVE != 0 || flags&unix.IFA_F_NODAD == 0 {
+			t.Errorf("%s has flags %#x, want it without duplicate address detection", a.IP, flags)
+		}
+		if flags&unix.IFA_F_DEPRECATED == 0 || cache.Prefered != 0 || cache.Valid != infiniteLifetime {
+			t.Errorf("%s has flags %#x, preferred lifetime %d and valid lifetime %d; want it deprecated and valid forever",
+				a.IP, flags, cache.Prefered, cache.Valid)
 		}
 	}
 	out, err := exec.Command("ip", "-o", "addr", "show", "dev", "v0").CombinedOutput()
@@ -162,7 +176,7 @@ func TestAddAnnounceRemove(t *testing.T) {
 		if err := Remove(a); err != nil {
 			t.Fatal(err)
 		}
-		if holds(t, "v0", a.IP) {
+		if _, _, found := addrInfo(t, "v0", a.IP); found {
 			t.Errorf("v0 still holds %s", a.IP)
 		}
 		// Removing it again, or from an interface that is gone, is no error.
@@ -176,4 +190,50 @@ func TestAddAnnounceRemove(t *testing.T) {
 	if err := Add(Address{IP: v4.IP, Interface: "gone0"}); err == nil {
 		t.Error("added an address to a missing interface")
 	}
+}
+
+// addrInfo reads the flags and lifetimes of the address on the interface; found is false when
+// the interface does not have it.
+func addrInfo(t *testing.T, iface string, addr netip.Addr) (flags uint32, cache unix.IfaCacheinfo, found bool) {
+	t.Helper()
+	ifi, err := net.InterfaceByName(iface)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rib, err := syscall.NetlinkRIB(syscall.RTM_GETADDR, syscall.AF_UNSPEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := syscall.ParseNetlinkMessage(rib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range msgs {
+		if m.Header.Type != syscall.RTM_NEWADDR || len(m.Data) < syscall.SizeofIfAddrmsg ||
+			binary.NativeEndian.Uint32(m.Data[4:8]) != uint32(ifi.Index) {
+			continue
+		}
+		attrs, err := syscall.ParseNetlinkRouteAttr(&m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		flags, cache, found = uint32(m.Data[2]), unix.IfaCacheinfo{}, false
+		for _, a := range attrs {
+			switch a.Attr.Type {
+			case unix.IFA_LOCAL, unix.IFA_ADDRESS:
+				if ip, ok := netip.AddrFromSlice(a.Value); ok && ip == addr {
+					found = true
+				}
+			case unix.IFA_FLAGS:
+				flags = binary.NativeEndian.Uint32(a.Value)
+			case unix.IFA_CACHEINFO:
+				cache.Prefered = binary.NativeEndian.Uint32(a.Value[0:])
+				cache.Valid = binary.NativeEndian.Uint32(a.Value[4:])
+			}
+		}
+		if found {
+			return flags, cache, true
+		}
+	}
+	return 0, unix.IfaCacheinfo{}, false
 }

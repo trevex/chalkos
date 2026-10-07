@@ -23,7 +23,8 @@ func (a Address) String() string { return a.IP.String() + " on " + a.Interface }
 
 // Add adds the address to its interface as a host address, /32 or /128. An IPv6 address skips
 // duplicate address detection, which would hold it back while the neighbours still reach the
-// node that held it before.
+// node that held it before, and is deprecated, so the node never uses it as the source address of
+// its own connections.
 func Add(a Address) error {
 	ifi, err := net.InterfaceByName(a.Interface)
 	if err != nil {
@@ -93,6 +94,14 @@ func addrRequest(typ uint16, flags uint16, ip netip.Addr, index int) error {
 	flagValue := make([]byte, 4)
 	binary.NativeEndian.PutUint32(flagValue, ifaFlags)
 	body = appendAttr(body, unix.IFA_FLAGS, flagValue)
+	if ip.Is6() && typ == unix.RTM_NEWADDR {
+		// Deprecated but valid: the address answers, yet source address selection skips it, so the
+		// holder's own connections never depend on an address that moves to another node.
+		cache := make([]byte, unix.SizeofIfaCacheinfo)
+		binary.NativeEndian.PutUint32(cache[0:], 0)
+		binary.NativeEndian.PutUint32(cache[4:], infiniteLifetime)
+		body = appendAttr(body, unix.IFA_CACHEINFO, cache)
+	}
 
 	msg := make([]byte, unix.NLMSG_HDRLEN, unix.NLMSG_HDRLEN+len(body))
 	binary.NativeEndian.PutUint32(msg[0:], uint32(unix.NLMSG_HDRLEN+len(body)))
@@ -200,3 +209,6 @@ func sendNA(ifi *net.Interface, ip netip.Addr) error {
 	allNodes := &unix.SockaddrInet6{Addr: netip.MustParseAddr("ff02::1").As16(), ZoneId: uint32(ifi.Index)}
 	return unix.Sendto(fd, neighbourAdvertisement(ifi.HardwareAddr, ip), 0, allNodes)
 }
+
+// infiniteLifetime is the lifetime of an address that never expires.
+const infiniteLifetime = 0xffffffff
