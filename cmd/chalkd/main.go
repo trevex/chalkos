@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -13,9 +14,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -208,7 +211,22 @@ func serve() error {
 	if err != nil {
 		return err
 	}
-	return httpServer(srv.Handler(), chalkd.TLSConfig(creds.cert, creds.clientCAs)).ServeTLS(ln, "", "")
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	served := make(chan error, 1)
+	go func() {
+		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.cert, creds.clientCAs)).ServeTLS(ln, "", "")
+	}()
+	select {
+	case err := <-served:
+		return err
+	case <-ctx.Done():
+	}
+	// The VIPs must not stay on a node whose chalkd no longer holds their lease.
+	if srv.Kubernetes != nil {
+		srv.Kubernetes.Stop()
+	}
+	return nil
 }
 
 // httpServer bounds what a client can hold without sending requests: the time to send headers,

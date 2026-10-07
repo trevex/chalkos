@@ -217,6 +217,9 @@ message KubernetesStatus {
   // The status of the Node's Ready condition (True, False or Unknown), or why it could not be
   // read.
   string node_ready = 3;
+  // On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds
+  // them, "standby" otherwise. Empty on other nodes.
+  string vip = 4;
 }
 
 message DiskStatus {

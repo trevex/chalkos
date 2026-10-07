@@ -47,7 +47,7 @@ func (k *Kubernetes) startJoin() {
 		return
 	}
 	k.joining = true
-	go k.superviseJoin(context.Background())
+	go k.superviseJoin(k.loops())
 }
 
 // setJoinState records what the join waits for or does, for the node's status.

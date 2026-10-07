@@ -1435,7 +1435,10 @@ type KubernetesStatus struct {
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	// The status of the Node's Ready condition (True, False or Unknown), or why it could not be
 	// read.
-	NodeReady     string `protobuf:"bytes,3,opt,name=node_ready,json=nodeReady,proto3" json:"node_ready,omitempty"`
+	NodeReady string `protobuf:"bytes,3,opt,name=node_ready,json=nodeReady,proto3" json:"node_ready,omitempty"`
+	// On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds
+	// them, "standby" otherwise. Empty on other nodes.
+	Vip           string `protobuf:"bytes,4,opt,name=vip,proto3" json:"vip,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1487,6 +1490,13 @@ func (x *KubernetesStatus) GetState() string {
 func (x *KubernetesStatus) GetNodeReady() string {
 	if x != nil {
 		return x.NodeReady
+	}
+	return ""
+}
+
+func (x *KubernetesStatus) GetVip() string {
+	if x != nil {
+		return x.Vip
 	}
 	return ""
 }
@@ -1982,12 +1992,13 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\ffailed_units\x18\x04 \x03(\tR\vfailedUnits\x12A\n" +
 	"\n" +
 	"kubernetes\x18\x05 \x01(\v2!.chalkos.node.v1.KubernetesStatusR\n" +
-	"kubernetes\"[\n" +
+	"kubernetes\"m\n" +
 	"\x10KubernetesStatus\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x1d\n" +
 	"\n" +
-	"node_ready\x18\x03 \x01(\tR\tnodeReady\"N\n" +
+	"node_ready\x18\x03 \x01(\tR\tnodeReady\x12\x10\n" +
+	"\x03vip\x18\x04 \x01(\tR\x03vip\"N\n" +
 	"\n" +
 	"DiskStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +

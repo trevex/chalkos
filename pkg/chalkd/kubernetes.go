@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -49,11 +50,27 @@ type Kubernetes struct {
 	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
 	// JoinRetry is the wait between two attempts to join the cluster; zero means 10 seconds.
 	JoinRetry time.Duration
+	// VIPAddresses are the cluster's VIPs on this node's interfaces. Tests replace it.
+	VIPAddresses func(c k8s.Cluster, p knode.Paths) (AddressManager, error)
+	// APIServerReady reports whether the node's API server answers ready. Tests replace it.
+	APIServerReady func(ctx context.Context, share kpki.Share) bool
+	// VIPTTL is the lifetime in seconds of the lease that holds the VIPs, and VIPInterval the
+	// time between two health checks of the API server; zero means 10 seconds and 2 seconds.
+	VIPTTL      int
+	VIPInterval time.Duration
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
 
+	// vipHolder is set while the node holds the VIPs.
+	vipHolder atomic.Bool
+
 	mu sync.Mutex
+	// ctx ends the loops; cancel ends it when chalkd stops. vipDone is closed once the VIP
+	// election ended and released the VIPs.
+	ctx     context.Context
+	cancel  context.CancelFunc
+	vipDone chan struct{}
 	// joining is set while the join's loop runs; joinState is what it waits for or does.
 	joining   bool
 	joinState string
@@ -72,7 +89,35 @@ func NewKubernetes() *Kubernetes {
 	k.NodeReady = k.nodeReady
 	k.EtcdEndpoints = k.etcdEndpoints
 	k.ClusterAnswers = clusterAnswers
+	k.VIPAddresses = systemVIPAddresses
+	k.APIServerReady = apiServerReady
 	return k
+}
+
+// loops returns the context the loops run in; k.mu is held.
+func (k *Kubernetes) loops() context.Context {
+	if k.ctx == nil {
+		k.ctx, k.cancel = context.WithCancel(context.Background())
+	}
+	return k.ctx
+}
+
+// Stop ends the loops and waits until the node released the VIPs, so they never stay on a node
+// that no longer holds their lease.
+func (k *Kubernetes) Stop() {
+	k.mu.Lock()
+	k.loops()
+	k.cancel()
+	done := k.vipDone
+	k.mu.Unlock()
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		log.Print("kubernetes: the VIP election did not end in time")
+	}
 }
 
 // Start runs the control plane's loop once, when the node is a bootstrapped control plane, and
@@ -102,8 +147,8 @@ func (k *Kubernetes) Start() {
 	k.start()
 }
 
-// start runs the control plane's loop unless it runs already, and returns the channel closed
-// once the manifests were applied.
+// start runs the control plane's loop and, when the cluster has VIPs, the VIP election unless
+// they run already, and returns the channel closed once the manifests were applied.
 func (k *Kubernetes) start() chan struct{} {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -116,8 +161,15 @@ func (k *Kubernetes) start() chan struct{} {
 	k.started = true
 	k.reload = make(chan struct{}, 1)
 	done := k.done
+	ctx := k.loops()
+	if c, err := k8s.ReadCluster(k.Paths.Cluster); err != nil {
+		log.Printf("kubernetes: %v", err)
+	} else if len(c.VIP.Addresses) > 0 {
+		k.vipDone = make(chan struct{})
+		go k.superviseVIP(ctx, k.vipDone)
+	}
 	var once sync.Once
-	go k.superviseControlPlane(context.Background(), func(n int) {
+	go k.superviseControlPlane(ctx, func(n int) {
 		once.Do(func() {
 			k.mu.Lock()
 			k.count = n
@@ -458,6 +510,12 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 			return nil, err
 		}
 		st.State = "bootstrapped"
+		if len(c.VIP.Addresses) > 0 {
+			st.Vip = "standby"
+			if k.vipHolder.Load() {
+				st.Vip = "holder"
+			}
+		}
 	default:
 		st.State = k.joinStatus(c)
 		return st, nil

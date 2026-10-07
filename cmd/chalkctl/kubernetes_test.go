@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/install"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -277,6 +278,18 @@ func TestStatusShowsKubernetes(t *testing.T) {
 	}
 	if !strings.Contains(ta.stdout.String(), "kubernetes worker: joined, node ready: True") {
 		t.Errorf("status = %q", ta.stdout)
+	}
+}
+
+func TestKubernetesLine(t *testing.T) {
+	for want, k := range map[string]*nodev1.KubernetesStatus{
+		"kubernetes worker: joined, node ready: True":                         {Kind: "worker", State: "joined", NodeReady: "True"},
+		"kubernetes controlplane: bootstrapped, node ready: True, vip holder": {Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder"},
+		"kubernetes controlplane: preparing":                                  {Kind: "controlplane", State: "preparing"},
+	} {
+		if got := kubernetesLine(k); got != want {
+			t.Errorf("kubernetesLine(%v) = %q, want %q", k, got, want)
+		}
 	}
 }
 

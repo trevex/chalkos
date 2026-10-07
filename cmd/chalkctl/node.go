@@ -679,16 +679,24 @@ func (a *app) status(ctx context.Context, args []string) error {
 		}
 	}
 	if k := s.Kubernetes; k != nil {
-		line := fmt.Sprintf("kubernetes %s: %s", k.Kind, k.State)
-		if k.NodeReady != "" {
-			line += ", node ready: " + k.NodeReady
-		}
-		fmt.Fprintln(a.stdout, line)
+		fmt.Fprintln(a.stdout, kubernetesLine(k))
 	}
 	for _, u := range s.FailedUnits {
 		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
 	}
 	return nil
+}
+
+// kubernetesLine is the status line of the node's Kubernetes side.
+func kubernetesLine(k *nodev1.KubernetesStatus) string {
+	line := fmt.Sprintf("kubernetes %s: %s", k.Kind, k.State)
+	if k.NodeReady != "" {
+		line += ", node ready: " + k.NodeReady
+	}
+	if k.Vip != "" {
+		line += ", vip " + k.Vip
+	}
+	return line
 }
 
 func (a *app) logs(ctx context.Context, args []string) error {
