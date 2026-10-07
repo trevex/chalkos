@@ -41,6 +41,8 @@ type Kubernetes struct {
 
 	mu      sync.Mutex
 	started bool
+	// reload asks the running loop to start again.
+	reload chan struct{}
 	// done is closed once the manifests were applied; count is how many.
 	done  chan struct{}
 	count int
@@ -88,6 +90,7 @@ func (k *Kubernetes) start() chan struct{} {
 		return k.done
 	}
 	k.started = true
+	k.reload = make(chan struct{}, 1)
 	done := k.done
 	var once sync.Once
 	go k.superviseControlPlane(context.Background(), func(n int) {
@@ -97,13 +100,31 @@ func (k *Kubernetes) start() chan struct{} {
 			k.mu.Unlock()
 			close(done)
 		})
-	})
+	}, k.reload)
 	return done
 }
 
+// Reload makes a running control-plane loop start again with the share STATE holds now, or
+// starts the loop when the node is a bootstrapped control plane.
+func (k *Kubernetes) Reload() {
+	k.mu.Lock()
+	started, reload := k.started, k.reload
+	k.mu.Unlock()
+	if !started {
+		k.Start()
+		return
+	}
+	select {
+	case reload <- struct{}{}:
+	default:
+		// A reload is pending already and reads the share when it happens.
+	}
+}
+
 // superviseControlPlane runs the control plane's loop and starts it again with backoff when it
-// fails. Each start reads the share from STATE, so a share delivered since takes effect.
-func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n int)) {
+// fails, and at once when Reload asks for it. Each start reads the share from STATE, so a share
+// delivered since takes effect.
+func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n int), reload <-chan struct{}) {
 	first, limit := k.RestartBackoff, k.MaxRestartBackoff
 	if first <= 0 {
 		first = 5 * time.Second
@@ -114,8 +135,28 @@ func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n i
 	backoff := first
 	for {
 		started := time.Now()
-		err := k.runControlPlaneOnce(ctx, applied)
-		if err == nil || ctx.Err() != nil {
+		runCtx, cancel := context.WithCancel(ctx)
+		result := make(chan error, 1)
+		go func() { result <- k.runControlPlaneOnce(runCtx, applied) }()
+		var err error
+		reloaded := false
+		select {
+		case err = <-result:
+		case <-reload:
+			reloaded = true
+			cancel()
+			<-result
+		}
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		if reloaded {
+			log.Print("kubernetes: the node's share changed; starting the control plane's loop again")
+			backoff = first
+			continue
+		}
+		if err == nil {
 			return
 		}
 		// A loop that ran for a while failed afresh rather than again.
@@ -126,6 +167,9 @@ func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n i
 		select {
 		case <-ctx.Done():
 			return
+		case <-reload:
+			backoff = first
+			continue
 		case <-time.After(backoff):
 		}
 		backoff = min(2*backoff, limit)

@@ -397,3 +397,103 @@ func TestCredentialIsShortLived(t *testing.T) {
 		t.Error("the replaced certificate's connections are not closed exactly once")
 	}
 }
+
+// A change of what the node's Kubernetes files are made from runs their preparation again and
+// restarts the kubelet; a new nodeIP also reloads the firewall, whose VXLAN rule names it.
+func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
+	s, r := kubernetesServer(t, k8s.KindWorker, true)
+	const (
+		restart  = "systemctl restart chalkos-kubernetes.service kubelet.service"
+		firewall = "systemctl try-reload-or-restart firewall.service"
+	)
+	base := kubernetesIdentity("n1")
+	edit := func(f func(id map[string]any)) string {
+		t.Helper()
+		var id map[string]any
+		if err := json.Unmarshal([]byte(base), &id); err != nil {
+			t.Fatal(err)
+		}
+		f(id)
+		data, err := json.Marshal(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	for _, step := range []struct {
+		name, identity string
+		want           []string
+	}{
+		// The recorded identity has no Kubernetes section yet.
+		{"kubernetes added", base, []string{firewall, restart}},
+		{"unchanged", base, nil},
+		{"extension", edit(func(id map[string]any) {
+			id["extensions"] = map[string]any{"rack": map[string]any{"location": "rack-b"}}
+		}), nil},
+		{"labels", edit(func(id map[string]any) { id["labels"] = map[string]any{"node.kubernetes.io/storage": "ssd"} }), []string{restart}},
+		{"taints", edit(func(id map[string]any) {
+			id["taints"] = []any{map[string]any{"key": "dedicated", "value": nil, "effect": "NoSchedule"}}
+		}), []string{restart}},
+		{"nodeIP", edit(func(id map[string]any) {
+			id["kubernetes"] = map[string]any{"nodeName": "n1", "nodeIP": "192.168.100.21"}
+		}), []string{firewall, restart}},
+	} {
+		r.mu.Lock()
+		r.calls = nil
+		r.mu.Unlock()
+		resp, err := apply(s, step.identity, "")
+		if err != nil {
+			t.Fatalf("%s: %v", step.name, err)
+		}
+		var got []string
+		for _, c := range r.calls {
+			if strings.Contains(c, "kubernetes") || strings.Contains(c, "kubelet") || strings.Contains(c, "firewall") {
+				got = append(got, c)
+			}
+		}
+		if !slices.Equal(got, step.want) {
+			t.Errorf("%s: commands %v, want %v", step.name, got, step.want)
+		}
+		if restarted := slices.Contains(resp.RestartedUnits, "kubelet.service"); restarted != slices.Contains(step.want, restart) {
+			t.Errorf("%s: restarted %v", step.name, resp.RestartedUnits)
+		}
+	}
+}
+
+// A share delivered to a running control plane reaches its loop at once, which starts again
+// with it.
+func TestApplyIdentityRestartsControlPlaneLoopWithNewShare(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	// Only a reload restarts the loop this quickly.
+	k.RestartBackoff = time.Hour
+	shares := make(chan kpki.Share, 4)
+	k.ControlPlane = func(ctx context.Context, share kpki.Share, applied func(int)) error {
+		shares <- share
+		applied(19)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	if _, err := bootstrap(s, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	<-shares
+	replaced := testShare(t, k8s.KindControlPlane)
+	want, err := kpki.ParseShare(replaced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
+		Identity: kubernetesIdentity("n1"), KubernetesShare: replaced,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case second := <-shares:
+		if second.CA.Certificate != want.CA.Certificate {
+			t.Error("the loop started again with the old share")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the running loop did not start again with the delivered share")
+	}
+}

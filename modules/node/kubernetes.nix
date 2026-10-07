@@ -18,11 +18,12 @@ let
   '';
   run = "/run/chalkos/kubernetes";
   controlPlane = kind == "controlplane";
+  flannel = config.chalkos.cni.provider == "flannel";
 
   cniPlugins = [
     pkgs.cni-plugins
   ]
-  ++ lib.optional (config.chalkos.cni.provider == "flannel") pkgs.cni-plugin-flannel;
+  ++ lib.optional flannel pkgs.cni-plugin-flannel;
 
   kubeletConfig = {
     apiVersion = "kubelet.config.k8s.io/v1beta1";
@@ -203,8 +204,37 @@ in
           to = 32767;
         }
       ];
-      # flannel's VXLAN.
-      allowedUDPPorts = lib.optional (config.chalkos.cni.provider == "flannel") 8472;
+      # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to
+      # the node's nodeIP on the interface that holds it: the address flanneld binds to and other
+      # nodes send to. The identity loader writes the address before the firewall starts; a
+      # node without an identity accepts no VXLAN.
+      #
+      # A node without a nodeIP registers the address the kubelet picks, which is unknown when the
+      # firewall starts, so it accepts VXLAN on every interface: anyone who can send to such a
+      # node can inject packets into its pod network. Setting chalkos.nodes.<name>.kubernetes.nodeIP
+      # closes this.
+      extraCommands = lib.mkIf flannel ''
+        # The script runs with -e and a failure leaves the node without a firewall, so nothing
+        # here may fail; an unreadable identity or address adds no rule.
+        if [ -e ${config.chalkos.node.file} ] \
+          && nodeIP=$(jq -er '.kubernetes.nodeIP // ""' ${config.chalkos.node.file}); then
+          case "$nodeIP" in
+            "")
+              ip46tables -A nixos-fw -p udp --dport 8472 -j nixos-fw-accept || true
+              ;;
+            *:*)
+              ip6tables -A nixos-fw -p udp --dport 8472 -d "$nodeIP" \
+                -m addrtype --dst-type LOCAL --limit-iface-in -j nixos-fw-accept || true
+              ;;
+            *)
+              iptables -A nixos-fw -p udp --dport 8472 -d "$nodeIP" \
+                -m addrtype --dst-type LOCAL --limit-iface-in -j nixos-fw-accept || true
+              ;;
+          esac
+        fi
+      '';
+      extraPackages = lib.mkIf flannel [ pkgs.jq ];
     };
+    systemd.services.firewall.after = lib.mkIf flannel [ "chalkos-identity.service" ];
   };
 }

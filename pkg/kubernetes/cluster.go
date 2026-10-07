@@ -141,17 +141,26 @@ func ReadNode(path string) (Node, error) {
 	if err != nil {
 		return Node{}, err
 	}
+	n, err := ParseNode(data)
+	if err != nil {
+		return Node{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return n, nil
+}
+
+// ParseNode reads the node from its identity.
+func ParseNode(identity []byte) (Node, error) {
 	var id manifest.Identity
-	if err := json.Unmarshal(data, &id); err != nil {
-		return Node{}, fmt.Errorf("parse %s: %w", path, err)
+	if err := json.Unmarshal(identity, &id); err != nil {
+		return Node{}, fmt.Errorf("parse the identity: %w", err)
 	}
 	if id.Kubernetes == nil || id.Kubernetes.NodeName == "" {
-		return Node{}, fmt.Errorf("%s names no Kubernetes node", path)
+		return Node{}, errors.New("the identity names no Kubernetes node")
 	}
 	n := Node{Name: id.Kubernetes.NodeName, Hostname: id.Hostname, Labels: id.Labels, Taints: id.Taints}
 	if id.Kubernetes.NodeIP != "" {
 		if n.IP = net.ParseIP(id.Kubernetes.NodeIP); n.IP == nil {
-			return Node{}, fmt.Errorf("%s: nodeIP %q is not an address", path, id.Kubernetes.NodeIP)
+			return Node{}, fmt.Errorf("nodeIP %q is not an address", id.Kubernetes.NodeIP)
 		}
 	}
 	for _, a := range id.StaticAddresses() {

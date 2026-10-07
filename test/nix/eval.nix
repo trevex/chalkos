@@ -1547,21 +1547,40 @@ lib.runTests {
       other = false;
     };
   };
-  testFlannelPortFollowsProvider = {
+  testFlannelVXLANOnlyToNodeIP = {
     expr =
       let
         vxlan =
           provider:
-          lib.elem 8472
-            (role (cluster [ { chalkos.cni.provider = provider; } ])).networking.firewall.allowedUDPPorts;
+          let
+            config = role (cluster [ { chalkos.cni.provider = provider; } ]);
+            inherit (config.networking) firewall;
+          in
+          {
+            open = lib.elem 8472 firewall.allowedUDPPorts;
+            rule = lib.hasInfix "--dport 8472" firewall.extraCommands;
+            onInterface = lib.hasInfix "--limit-iface-in" firewall.extraCommands;
+            # The rule reads the node's address from its identity.
+            afterIdentity = lib.elem "chalkos-identity.service" config.systemd.services.firewall.after;
+          };
       in
       {
         flannel = vxlan "flannel";
         none = vxlan "none";
       };
     expected = {
-      flannel = true;
-      none = false;
+      flannel = {
+        open = false;
+        rule = true;
+        onInterface = true;
+        afterIdentity = true;
+      };
+      none = {
+        open = false;
+        rule = false;
+        onInterface = false;
+        afterIdentity = false;
+      };
     };
   };
   testChalkdAfterKubernetesPreparation = {

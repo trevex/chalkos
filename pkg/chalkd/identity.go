@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -126,21 +127,16 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 			return nil, err
 		}
 	}
-	restarted, err := s.applyIdentity(ctx, d.data)
+	restarted, old, err := s.applyIdentity(ctx, d.data)
 	if err != nil {
 		return nil, err
 	}
-	if share != nil {
-		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
-			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
-		}
-		// The kubelet's credentials and the control plane's certificates come from the share.
-		units := []string{"chalkos-kubernetes.service", "kubelet.service"}
-		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"restart"}, units...)...); err != nil {
-			return nil, failed(connect.CodeInternal, "restart the kubelet with the new share: %v", err)
+	if s.Kubernetes != nil {
+		units, err := s.applyKubernetes(ctx, old, d.data, share)
+		if err != nil {
+			return nil, err
 		}
 		restarted = append(restarted, units...)
-		s.Kubernetes.Start()
 	}
 	resp := &nodev1.ApplyIdentityResponse{RestartedUnits: restarted}
 	for _, c := range changes {
@@ -381,34 +377,68 @@ func (s *Server) stopUnits(ctx context.Context, units []string) error {
 }
 
 // applyIdentity records the identity on STATE, applies it, and restarts the units that read
-// keys whose values changed.
-func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]string, error) {
+// keys whose values changed. It returns them and the identity it replaced.
+func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]string, []byte, error) {
 	path := filepath.Join(s.Paths.StateDir, "identity.json")
 	old, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, nil, failed(connect.CodeInternal, "%v", err)
 	}
 	if err := install.WriteFile(path, data, 0o600); err != nil {
-		return nil, failed(connect.CodeInternal, "record the identity: %v", err)
+		return nil, nil, failed(connect.CodeInternal, "record the identity: %v", err)
 	}
 	if err := s.Identity.Apply(data); err != nil {
-		return nil, failed(connect.CodeInternal, "apply the identity: %v", err)
+		return nil, nil, failed(connect.CodeInternal, "apply the identity: %v", err)
 	}
 	if _, err := s.Run.Run(ctx, "networkctl", "reload"); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, nil, failed(connect.CodeInternal, "%v", err)
 	}
 	consumers, err := identity.ReadConsumers(s.Identity.Consumers)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, nil, failed(connect.CodeInternal, "%v", err)
 	}
 	units, err := identity.Restarts(consumers, old, data)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, nil, failed(connect.CodeInternal, "%v", err)
 	}
 	for _, unit := range units {
 		if _, err := s.Run.Run(ctx, "systemctl", "try-restart", unit); err != nil {
-			return nil, failed(connect.CodeInternal, "restart %s: %v", unit, err)
+			return nil, nil, failed(connect.CodeInternal, "restart %s: %v", unit, err)
 		}
+	}
+	return units, old, nil
+}
+
+// applyKubernetes records a delivered share and, when it or the node's Kubernetes identity
+// changed, prepares the node's Kubernetes files again and restarts what reads them. It returns
+// the restarted units.
+func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte) ([]string, error) {
+	before, errBefore := k8s.ParseNode(old)
+	after, errAfter := k8s.ParseNode(data)
+	// An identity that does not parse counts as changed.
+	changed := errBefore != nil || errAfter != nil || !reflect.DeepEqual(before, after)
+	if share == nil && !changed {
+		return nil, nil
+	}
+	if share != nil {
+		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
+			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
+		}
+	}
+	// The firewall's VXLAN rule names the nodeIP.
+	if changed && (errBefore != nil || errAfter != nil || !before.IP.Equal(after.IP)) {
+		if _, err := s.Run.Run(ctx, "systemctl", "try-reload-or-restart", "firewall.service"); err != nil {
+			return nil, failed(connect.CodeInternal, "reload the firewall for the new nodeIP: %v", err)
+		}
+	}
+	// The kubelet's credentials and flags and the control plane's certificates come from the
+	// share and the identity.
+	units := []string{"chalkos-kubernetes.service", "kubelet.service"}
+	if _, err := s.Run.Run(ctx, "systemctl", append([]string{"restart"}, units...)...); err != nil {
+		return nil, failed(connect.CodeInternal, "restart the kubelet: %v", err)
+	}
+	if share != nil {
+		s.Kubernetes.Reload()
 	}
 	return units, nil
 }
