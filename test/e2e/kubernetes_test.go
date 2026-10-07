@@ -44,7 +44,8 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // address only, that pods on both nodes reach each other and resolve the API server's service,
 // also after the control plane rebooted with newly issued certificates, and that a worker whose
 // link is cut turns NotReady. The images come from a registry the test serves; with
-// CHALKLAB_K8S_ONLINE=1 the nodes pull them from upstream.
+// CHALKLAB_K8S_ONLINE=1 the test does not start that registry, so the nodes' mirror is
+// unreachable and containerd falls back to pulling from upstream.
 func TestKubernetesCluster(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR", "CHALKLAB_K8S_WORKER_IMAGE_DIR"}, chalkdEnv...)...)
 	online := os.Getenv("CHALKLAB_K8S_ONLINE") == "1"

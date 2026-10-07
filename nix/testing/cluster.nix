@@ -119,8 +119,6 @@ in
     inherit pkgs;
     kubernetesVersion = cluster.cluster.kubernetes.package.version;
   };
-  # The same cluster pulling from the upstream registries, for a test run with network access.
-  online = self.lib.mkCluster { modules = [ definition ]; };
   inherit secrets;
   manifests = pkgs.linkFarm "chalkos-test-manifests" {
     "base.json" = manifestOf "base" [ ];
