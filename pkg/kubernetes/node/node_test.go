@@ -408,6 +408,44 @@ func TestReadPin(t *testing.T) {
 	}
 }
 
+// A node joining an existing cluster renders etcd alone first, then the whole control plane, both
+// with the cluster it joined.
+func TestRenderJoiningEtcd(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	if err := Prepare(p, now, picked, nil); err != nil {
+		t.Fatal(err)
+	}
+	initial := "cp0=https://192.168.100.10:2380,cp1=https://192.168.100.11:2380"
+	if err := WriteInitialCluster(p, initial); err != nil {
+		t.Fatal(err)
+	}
+	if err := RenderEtcd(p); err != nil {
+		t.Fatal(err)
+	}
+	if pods := staticPods(t, p); !slices.Equal(pods, []string{"etcd.json"}) {
+		t.Fatalf("static pods %v, want etcd alone", pods)
+	}
+	if err := RenderStaticPods(p); err != nil {
+		t.Fatal(err)
+	}
+	if pods := staticPods(t, p); len(pods) != 4 {
+		t.Fatalf("static pods %v", pods)
+	}
+	data, err := os.ReadFile(filepath.Join(p.Manifests(), "etcd.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"--initial-cluster=" + initial, "--initial-cluster-state=existing"} {
+		if !strings.Contains(string(data), flag) {
+			t.Errorf("etcd lacks %s", flag)
+		}
+	}
+	write(t, p.EtcdInitialCluster(), "\n")
+	if err := RenderStaticPods(p); err == nil {
+		t.Error("rendered etcd with an empty initial cluster")
+	}
+}
+
 func TestReadNodeIPs(t *testing.T) {
 	p := testNode(t, kubernetes.KindWorker, "w1", nil)
 	for content, ok := range map[string]bool{

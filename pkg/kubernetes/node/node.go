@@ -81,6 +81,9 @@ func (p Paths) PrepareError() string { return filepath.Join(p.Run, "prepare.erro
 // files it is still writing.
 func (p Paths) Prepared() string { return filepath.Join(p.Run, "prepared") }
 
+// EtcdInitialCluster holds etcd's initial cluster when the node joined an existing cluster.
+func (p Paths) EtcdInitialCluster() string { return filepath.Join(p.State, "etcd-initial-cluster") }
+
 // EtcdInitialised marks that etcd answered ready after the bootstrap, so its data exists.
 func (p Paths) EtcdInitialised() string { return filepath.Join(p.State, "etcd-initialised") }
 
@@ -549,9 +552,41 @@ func checkRenewedClient(path string, ca pki.CertKey, want *x509.Certificate, nod
 	return nil
 }
 
+// WriteInitialCluster records the initial cluster the node's etcd joins with.
+func WriteInitialCluster(p Paths, initialCluster string) error {
+	return install.WriteFile(p.EtcdInitialCluster(), []byte(initialCluster+"\n"), 0o644)
+}
+
+// readInitialCluster returns the initial cluster the node joined with, "" when it started its own.
+func readInitialCluster(p Paths) (string, error) {
+	data, err := os.ReadFile(p.EtcdInitialCluster())
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	initial := strings.TrimSpace(string(data))
+	if initial == "" {
+		return "", fmt.Errorf("%s is empty", p.EtcdInitialCluster())
+	}
+	return initial, nil
+}
+
 // RenderStaticPods writes the static pods from the certificates Prepare wrote, unless etcd's
 // data is missing.
 func RenderStaticPods(p Paths) error {
+	return render(p, "")
+}
+
+// RenderEtcd writes etcd's static pod alone, for a node whose etcd joins as a learner: its API
+// server would not start before etcd is a voter.
+func RenderEtcd(p Paths) error {
+	return render(p, "etcd.json")
+}
+
+// render writes the static pods, or only the one in the file only names.
+func render(p Paths, only string) error {
 	if err := CheckEtcdData(p); err != nil {
 		return err
 	}
@@ -570,7 +605,11 @@ func RenderStaticPods(p Paths) error {
 	if err != nil {
 		return fmt.Errorf("read the control plane's certificates: %w", err)
 	}
-	pods, err := manifests.StaticPods(c, n, files)
+	initialCluster, err := readInitialCluster(p)
+	if err != nil {
+		return err
+	}
+	pods, err := manifests.StaticPods(c, n, files, initialCluster)
 	if err != nil {
 		return err
 	}
@@ -578,6 +617,9 @@ func RenderStaticPods(p Paths) error {
 		return err
 	}
 	for name, data := range pods {
+		if only != "" && name != only {
+			continue
+		}
 		if err := install.WriteFile(filepath.Join(p.Manifests(), name), data, 0o644); err != nil {
 			return err
 		}

@@ -35,23 +35,28 @@ const (
 )
 
 // StaticPods renders the static pods by file name. files are the control plane's certificates
-// as pki.ControlPlane issues them.
-func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte) (map[string][]byte, error) {
+// as pki.ControlPlane issues them. initialCluster is etcd's --initial-cluster when the node joins
+// an existing cluster; empty starts a new cluster of the node alone.
+func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte, initialCluster string) (map[string][]byte, error) {
 	if len(n.IPs) == 0 {
 		return nil, errors.New("the node has no address")
 	}
 	// etcd and the API server advertise the address of the primary family.
 	ip := n.IPs[0].String()
 	pki := func(file string) string { return path.Join(podPKIDir, file) }
+	state := "existing"
+	if initialCluster == "" {
+		initialCluster, state = n.Name+"=https://"+net.JoinHostPort(ip, "2380"), "new"
+	}
 
 	etcd := pod("etcd", c.Images.Etcd, flags(c, "etcd", map[string]string{
 		"name":                        n.Name,
 		"data-dir":                    EtcdDataDir,
 		"advertise-client-urls":       "https://" + net.JoinHostPort(ip, "2379"),
 		"initial-advertise-peer-urls": "https://" + net.JoinHostPort(ip, "2380"),
-		"initial-cluster":             n.Name + "=https://" + net.JoinHostPort(ip, "2380"),
+		"initial-cluster":             initialCluster,
 		// A member with data ignores the initial cluster, so a restart never starts a new one.
-		"initial-cluster-state": "new",
+		"initial-cluster-state": state,
 		"listen-client-urls":    "https://127.0.0.1:2379,https://" + net.JoinHostPort(ip, "2379"),
 		"listen-peer-urls":      "https://" + net.JoinHostPort(ip, "2380"),
 		"listen-metrics-urls":   "http://127.0.0.1:2381",

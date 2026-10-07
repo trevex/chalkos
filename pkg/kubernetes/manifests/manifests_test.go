@@ -57,7 +57,7 @@ func testFiles() map[string][]byte {
 }
 
 func TestStaticPodsGolden(t *testing.T) {
-	pods, err := StaticPods(testCluster(), testNode, testFiles())
+	pods, err := StaticPods(testCluster(), testNode, testFiles(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,8 +96,29 @@ func decode(t *testing.T, data []byte) corev1.Pod {
 	return p
 }
 
+// A member joining an existing cluster starts with the cluster's members.
+func TestEtcdJoiningExistingCluster(t *testing.T) {
+	initial := "cp1=https://10.0.0.11:2380,cp2=https://10.0.0.12:2380"
+	n := kubernetes.Node{Name: "cp2", IPs: []net.IP{net.ParseIP("10.0.0.12")}}
+	pods, err := StaticPods(testCluster(), n, testFiles(), initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags := commandFlags(t, pods["etcd.json"])
+	if flags["initial-cluster"] != initial || flags["initial-cluster-state"] != "existing" || flags["initial-advertise-peer-urls"] != "https://10.0.0.12:2380" {
+		t.Errorf("etcd flags %v", flags)
+	}
+	pods, err = StaticPods(testCluster(), testNode, testFiles(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flags := commandFlags(t, pods["etcd.json"]); flags["initial-cluster"] != "cp1=https://10.0.0.11:2380" || flags["initial-cluster-state"] != "new" {
+		t.Errorf("etcd flags of a new cluster %v", flags)
+	}
+}
+
 func TestExtraArgsOverride(t *testing.T) {
-	pods, err := StaticPods(testCluster(), testNode, testFiles())
+	pods, err := StaticPods(testCluster(), testNode, testFiles(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +144,7 @@ func commandFlags(t *testing.T, data []byte) map[string]string {
 }
 
 func TestSecurityFlags(t *testing.T) {
-	pods, err := StaticPods(testCluster(), testNode, testFiles())
+	pods, err := StaticPods(testCluster(), testNode, testFiles(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,12 +179,12 @@ func TestSecurityFlags(t *testing.T) {
 
 func TestCertificatesHashFollowsMountedFiles(t *testing.T) {
 	files := testFiles()
-	before, err := StaticPods(testCluster(), testNode, files)
+	before, err := StaticPods(testCluster(), testNode, files, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	files[kpki.FileEtcdServer] = []byte("reissued")
-	after, err := StaticPods(testCluster(), testNode, files)
+	after, err := StaticPods(testCluster(), testNode, files, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +208,7 @@ func TestCertificatesHashFollowsMountedFiles(t *testing.T) {
 }
 
 func TestStaticPodsNeedNodeIP(t *testing.T) {
-	if _, err := StaticPods(testCluster(), kubernetes.Node{Name: "cp1"}, testFiles()); err == nil {
+	if _, err := StaticPods(testCluster(), kubernetes.Node{Name: "cp1"}, testFiles(), ""); err == nil {
 		t.Error("rendered static pods without the node's address")
 	}
 }
