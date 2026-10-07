@@ -1,6 +1,6 @@
-// Package node prepares a node's Kubernetes files at boot: the kubelet's credentials,
-// kubeconfig and flags from the node's share and identity, and on control-plane nodes the
-// control plane's certificates and, once bootstrapped, its static pods.
+// Package node prepares a node's Kubernetes files at boot: the node's address, the kubelet's
+// credentials, kubeconfig and flags from the node's share and identity, and on control-plane
+// nodes the control plane's certificates and, once bootstrapped, its static pods.
 package node
 
 import (
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -60,6 +62,12 @@ func (p Paths) Share() string        { return filepath.Join(p.State, "share.json
 func (p Paths) Bootstrapped() string { return filepath.Join(p.State, "bootstrapped") }
 func (p Paths) Manifests() string    { return filepath.Join(p.Run, "manifests") }
 func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
+
+// NodeIP holds the address the node picked; the firewall's VXLAN rule reads it too.
+func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
+
+// NodeIPError holds why the node has no address.
+func (p Paths) NodeIPError() string { return filepath.Join(p.Run, "node-ip.error") }
 
 // EtcdInitialised marks that etcd answered ready after the bootstrap, so its data exists.
 func (p Paths) EtcdInitialised() string { return filepath.Join(p.State, "etcd-initialised") }
@@ -165,16 +173,67 @@ func Load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
 	return share, c, n, nil
 }
 
-// Prepare writes the kubelet's files and, on a control-plane node, the control plane's
-// certificates, and its static pods once the node is bootstrapped. A node without a share gets
-// nothing, so its kubelet does not start.
-func Prepare(p Paths, now time.Time) error {
+// Resolver picks the node's address.
+type Resolver func(c kubernetes.Cluster, n kubernetes.Node) (net.IP, error)
+
+// ResolveNodeIP waits up to the cluster's timeout for the address the node's identity and its
+// cluster select.
+func ResolveNodeIP(c kubernetes.Cluster, n kubernetes.Node) (net.IP, error) {
+	sel, err := c.NodeIPSelector(n)
+	if err != nil {
+		return nil, err
+	}
+	timeout := time.Duration(c.NodeIP.Timeout) * time.Second
+	log.Printf("picking the node's address by %s, waiting up to %v", sel, timeout)
+	ip, err := nodeip.NewWaiter().Wait(sel, timeout)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("the node's address is %s", ip)
+	return net.IP(ip.AsSlice()), nil
+}
+
+// ReadNodeIP reads the address Prepare picked.
+func ReadNodeIP(p Paths) (net.IP, error) {
+	data, err := os.ReadFile(p.NodeIP())
+	if err != nil {
+		return nil, err
+	}
+	ip := net.ParseIP(strings.TrimSpace(string(data)))
+	if ip == nil {
+		return nil, fmt.Errorf("%s holds no address", p.NodeIP())
+	}
+	return ip, nil
+}
+
+// Prepare picks the node's address and writes the kubelet's files and, on a control-plane node,
+// the control plane's certificates, and its static pods once the node is bootstrapped. A node
+// without a share or an address gets none of them, so its kubelet does not start.
+func Prepare(p Paths, now time.Time, resolve Resolver) error {
+	// An address picked before must not outlive an attempt that fails.
+	for _, f := range []string{p.NodeIP(), p.NodeIPError()} {
+		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
 	share, c, n, err := Load(p)
 	if errors.Is(err, ErrNoShare) {
 		log.Print(err)
 		return os.RemoveAll(p.KubeletDir())
 	}
 	if err != nil {
+		return err
+	}
+	if n.IP, err = resolve(c, n); err != nil {
+		for _, dir := range []string{p.KubeletDir(), p.Manifests()} {
+			if rerr := os.RemoveAll(dir); rerr != nil {
+				log.Print(rerr)
+			}
+		}
+		// chalkd reports the reason in the node's status.
+		if werr := install.WriteFile(p.NodeIPError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
+			log.Print(werr)
+		}
 		return err
 	}
 	kubeletCert := share.Kubelet
@@ -214,6 +273,10 @@ func Prepare(p Paths, now time.Time) error {
 		if err := install.WriteFile(filepath.Join(p.KubeletDir(), name), data, 0o644); err != nil {
 			return err
 		}
+	}
+	// Written once the certificates naming it are, which Bootstrap relies on.
+	if err := install.WriteFile(p.NodeIP(), []byte(n.IP.String()+"\n"), 0o644); err != nil {
+		return err
 	}
 	// The kubelet starts once its kubeconfig exists, so it is written last.
 	if err := install.WriteFile(p.Kubeconfig(), kubeconfig, 0o644); err != nil {
@@ -343,6 +406,9 @@ func RenderStaticPods(p Paths) error {
 	n, err := kubernetes.ReadNode(p.NodeFile)
 	if err != nil {
 		return err
+	}
+	if n.IP, err = ReadNodeIP(p); err != nil {
+		return fmt.Errorf("the node's address: %w", err)
 	}
 	files, err := readDir(p.PKI)
 	if err != nil {

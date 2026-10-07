@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -54,11 +55,16 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 	write(t, p.NodeFile, `{"hostname": "n1", "kubernetes": {"nodeName": "n1", "nodeIP": "192.168.100.11"}}`)
 	if share {
 		write(t, p.Share(), string(testShare(t, kind)))
-		if err := knode.Prepare(p, time.Now()); err != nil {
+		if err := knode.Prepare(p, time.Now(), nodeIP("192.168.100.11")); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return s, r
+}
+
+// nodeIP is a resolver that finds the address at once.
+func nodeIP(ip string) knode.Resolver {
+	return func(k8s.Cluster, k8s.Node) (net.IP, error) { return net.ParseIP(ip), nil }
 }
 
 func testShare(t *testing.T, kind string) []byte {

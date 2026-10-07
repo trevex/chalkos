@@ -38,7 +38,7 @@ const (
 // as pki.ControlPlane issues them.
 func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte) (map[string][]byte, error) {
 	if n.IP == nil {
-		return nil, errors.New("a control-plane node needs an address (kubernetes.nodeIP)")
+		return nil, errors.New("the node has no address")
 	}
 	ip := n.IP.String()
 	pki := func(file string) string { return path.Join(podPKIDir, file) }

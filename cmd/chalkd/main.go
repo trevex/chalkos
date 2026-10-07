@@ -33,7 +33,7 @@ const usage = `usage: chalkd <command>
 commands:
   serve               serve the node API
   load-identity       apply the identity recorded on STATE
-  prepare-kubernetes  write the kubelet's and the control plane's certificates and configuration`
+  prepare-kubernetes  pick the node's address and write its Kubernetes certificates and configuration`
 
 func main() {
 	log.SetFlags(0)
@@ -49,7 +49,7 @@ func main() {
 	case "load-identity":
 		err = identity.Default().Load()
 	case "prepare-kubernetes":
-		err = knode.Prepare(knode.DefaultPaths(), time.Now())
+		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.ResolveNodeIP)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
