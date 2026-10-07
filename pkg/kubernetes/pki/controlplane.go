@@ -182,10 +182,13 @@ func encryptionConfig(key []byte) ([]byte, error) {
 	}, "", "  ")
 }
 
-// IssueChalkd issues chalkd's client certificate on a control-plane node.
-func IssueChalkd(s Share, now time.Time) (pki.CertKey, error) {
+// IssueChalkd issues chalkd's client certificate on a control-plane node, valid for validity.
+func IssueChalkd(s Share, validity time.Duration, now time.Time) (pki.CertKey, error) {
 	if s.Kind != kubernetes.KindControlPlane {
 		return pki.CertKey{}, errors.New("only control-plane nodes hold the CA key")
 	}
-	return pki.IssueLeaf(s.CA, pki.Leaf{CommonName: ChalkdUser, Organization: []string{MastersGroup}, Client: true}, now)
+	if validity <= 0 {
+		return pki.CertKey{}, errors.New("chalkd's certificate needs a validity")
+	}
+	return pki.IssueLeaf(s.CA, pki.Leaf{CommonName: ChalkdUser, Organization: []string{MastersGroup}, Client: true, Validity: validity}, now)
 }

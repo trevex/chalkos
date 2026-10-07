@@ -1418,4 +1418,24 @@ lib.runTests {
       none = false;
     };
   };
+  testChalkdAfterKubernetesPreparation = {
+    expr =
+      let
+        chalkd = (role (cluster [ ])).systemd.services.chalkd;
+      in
+      {
+        after = lib.elem "chalkos-kubernetes.service" chalkd.after;
+        # chalkd must start even when the preparation fails.
+        depends = lib.any (lib.elem "chalkos-kubernetes.service") [
+          chalkd.requires
+          chalkd.wants
+          chalkd.bindsTo
+          chalkd.requisite
+        ];
+      };
+    expected = {
+      after = true;
+      depends = false;
+    };
+  };
 }

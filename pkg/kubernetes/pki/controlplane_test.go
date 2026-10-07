@@ -158,7 +158,7 @@ func TestControlPlaneCertificates(t *testing.T) {
 		}
 	}
 
-	chalkd, err := IssueChalkd(ControlPlaneShare(k), now)
+	chalkd, err := IssueChalkd(ControlPlaneShare(k), time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,16 +215,20 @@ func TestControlPlaneNeedsControlPlaneShare(t *testing.T) {
 	if _, err := ControlPlane(w, testCluster(), testNode, now); err == nil {
 		t.Error("issued control-plane certificates from a worker share")
 	}
-	if _, err := IssueChalkd(w, now); err == nil {
+	if _, err := IssueChalkd(w, time.Hour, now); err == nil {
 		t.Error("issued chalkd's certificate from a worker share")
 	}
-	ck, err := IssueChalkd(ControlPlaneShare(k), now)
+	ck, err := IssueChalkd(ControlPlaneShare(k), time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cert, _, _ := ck.Parse()
 	if cert.Subject.CommonName != ChalkdUser || strings.Join(cert.Subject.Organization, ",") != MastersGroup {
 		t.Errorf("chalkd certificate subject %v", cert.Subject)
+	}
+	// It is in system:masters, so it lives no longer than asked.
+	if !cert.NotAfter.Equal(now.Add(time.Hour)) {
+		t.Errorf("chalkd certificate expires %v, want %v", cert.NotAfter, now.Add(time.Hour))
 	}
 }
 

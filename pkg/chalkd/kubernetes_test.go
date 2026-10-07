@@ -44,7 +44,7 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 			EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 		},
 		Manifests:    filepath.Join(root, "etc", "manifests.json"),
-		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) { applied(19) },
+		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
 		NodeReady:    func(context.Context) (string, error) { return "True", nil },
 	}
 	p := s.Kubernetes.Paths
@@ -143,7 +143,7 @@ func TestBootstrapRefusals(t *testing.T) {
 
 func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	s.Kubernetes.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) { <-ctx.Done() }
+	s.Kubernetes.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error { <-ctx.Done(); return ctx.Err() }
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	_, err := bootstrap(s, ctx)
@@ -200,7 +200,7 @@ func TestApplyIdentityRefusesShare(t *testing.T) {
 		share    []byte
 		code     connect.Code
 	}{
-		"no Kubernetes":        {plain, kubernetesIdentity("n1"), testShare(t, k8s.KindWorker), connect.CodeFailedPrecondition},
+		"no Kubernetes":        {plain, kubernetesIdentity("n1"), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
 		"broken share":         {worker, kubernetesIdentity("n1"), []byte(`{"kind": "worker"}`), connect.CodeInvalidArgument},
 		"another node's share": {worker, kubernetesIdentity("n1"), testShareFor(t, k8s.KindWorker, "n2"), connect.CodeInvalidArgument},
 		"no node name":         {worker, identityWith("rack-a", section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
@@ -300,5 +300,100 @@ func TestStatusEtcdDataMissing(t *testing.T) {
 	}
 	if got := resp.Msg.Kubernetes.State; got != "etcd data missing: restore etcd or reinstall the node" {
 		t.Errorf("state %q", got)
+	}
+}
+
+func TestApplyIdentityRefusesShareOfAnotherKind(t *testing.T) {
+	for image, share := range map[string]string{k8s.KindWorker: k8s.KindControlPlane, k8s.KindControlPlane: k8s.KindWorker} {
+		s, r := kubernetesServer(t, image, false)
+		identity := filepath.Join(s.Paths.StateDir, "identity.json")
+		before, _ := os.ReadFile(identity)
+		_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
+			Identity: kubernetesIdentity("n1"), KubernetesShare: testShare(t, share),
+		}))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
+			t.Errorf("%s share on a %s image: %v", share, image, err)
+		}
+		if len(r.calls) != 0 {
+			t.Errorf("%s share on a %s image ran %v", share, image, r.calls)
+		}
+		if _, err := os.Stat(s.Kubernetes.Paths.Share()); err == nil {
+			t.Errorf("%s share on a %s image was recorded", share, image)
+		}
+		if after, _ := os.ReadFile(identity); !bytes.Equal(after, before) {
+			t.Errorf("%s share on a %s image: the identity was recorded", share, image)
+		}
+	}
+}
+
+// The control plane's loop starts again after an error, with the share as STATE holds it then.
+func TestControlPlaneLoopRestarts(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	k.RestartBackoff = 10 * time.Millisecond
+	replaced := testShare(t, k8s.KindControlPlane)
+	want, err := kpki.ParseShare(replaced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runs atomic.Int32
+	var second kpki.Share
+	k.ControlPlane = func(_ context.Context, share kpki.Share, applied func(int)) error {
+		if runs.Add(1) == 1 {
+			if err := os.WriteFile(k.Paths.Share(), replaced, 0o600); err != nil {
+				return err
+			}
+			return errors.New("the API server went away")
+		}
+		second = share
+		applied(19)
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := bootstrap(s, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Applied != 19 || runs.Load() != 2 {
+		t.Errorf("applied %d objects after %d runs", resp.Applied, runs.Load())
+	}
+	if second.CA.Certificate != want.CA.Certificate {
+		t.Error("the restarted loop did not read the share again")
+	}
+}
+
+func TestCredentialIsShortLived(t *testing.T) {
+	share, err := kpki.ParseShare(testShare(t, k8s.KindControlPlane))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Now()
+	c := newCredential(share, time.Hour, func() time.Time { return clock })
+	first, err := c.GetClientCertificate(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := first.Leaf.NotAfter.Sub(clock); d < 59*time.Minute || d > time.Hour {
+		t.Errorf("the certificate expires after %v, want an hour", d)
+	}
+	if !slices.Equal(first.Leaf.Subject.Organization, []string{kpki.MastersGroup}) {
+		t.Errorf("groups %v", first.Leaf.Subject.Organization)
+	}
+
+	clock = clock.Add(29 * time.Minute)
+	if again, err := c.GetClientCertificate(nil); err != nil || again != first {
+		t.Errorf("issued again before half the lifetime passed: %v", err)
+	}
+	clock = clock.Add(2 * time.Minute)
+	next, err := c.GetClientCertificate(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == first || !next.Leaf.NotAfter.After(first.Leaf.NotAfter) {
+		t.Error("not issued again after half the lifetime passed")
+	}
+	if !c.rotated() || c.rotated() {
+		t.Error("the replaced certificate's connections are not closed exactly once")
 	}
 }

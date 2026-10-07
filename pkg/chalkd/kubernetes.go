@@ -29,12 +29,15 @@ type Kubernetes struct {
 	Paths knode.Paths
 	// Manifests is the image's list of objects the control plane applies.
 	Manifests string
-	// ControlPlane runs on a bootstrapped control-plane node until ctx ends: it applies the
-	// manifests, calls applied with their number once that succeeded, and approves kubelet
-	// serving certificates. Tests replace it.
-	ControlPlane func(ctx context.Context, share kpki.Share, applied func(n int))
+	// ControlPlane runs on a bootstrapped control-plane node until ctx ends or it fails: it
+	// applies the manifests, calls applied with their number once that succeeded, and approves
+	// kubelet serving certificates. Tests replace it.
+	ControlPlane func(ctx context.Context, share kpki.Share, applied func(n int)) error
 	// NodeReady returns the status of the node's Ready condition.
 	NodeReady func(ctx context.Context) (string, error)
+	// RestartBackoff is the first wait before ControlPlane starts again after it failed; it
+	// doubles up to MaxRestartBackoff. Zero means 5 seconds and a minute.
+	RestartBackoff, MaxRestartBackoff time.Duration
 
 	mu      sync.Mutex
 	started bool
@@ -84,15 +87,10 @@ func (k *Kubernetes) start() chan struct{} {
 	if k.started {
 		return k.done
 	}
-	share, err := knode.ReadShare(k.Paths)
-	if err != nil {
-		log.Printf("kubernetes: %v", err)
-		return k.done
-	}
 	k.started = true
 	done := k.done
 	var once sync.Once
-	go k.ControlPlane(context.Background(), share, func(n int) {
+	go k.superviseControlPlane(context.Background(), func(n int) {
 		once.Do(func() {
 			k.mu.Lock()
 			k.count = n
@@ -103,22 +101,59 @@ func (k *Kubernetes) start() chan struct{} {
 	return done
 }
 
+// superviseControlPlane runs the control plane's loop and starts it again with backoff when it
+// fails. Each start reads the share from STATE, so a share delivered since takes effect.
+func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n int)) {
+	first, limit := k.RestartBackoff, k.MaxRestartBackoff
+	if first <= 0 {
+		first = 5 * time.Second
+	}
+	if limit <= 0 {
+		limit = time.Minute
+	}
+	backoff := first
+	for {
+		started := time.Now()
+		err := k.runControlPlaneOnce(ctx, applied)
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+		// A loop that ran for a while failed afresh rather than again.
+		if time.Since(started) > limit {
+			backoff = first
+		}
+		log.Printf("kubernetes: the control plane's loop stopped: %v; starting it again in %v", err, backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(2*backoff, limit)
+	}
+}
+
+func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int)) error {
+	share, err := knode.ReadShare(k.Paths)
+	if err != nil {
+		return err
+	}
+	return k.ControlPlane(ctx, share, applied)
+}
+
 // runControlPlane waits for the local API server, applies the manifests until that succeeds,
 // and then approves kubelet serving certificates. chalkd's credential exists only in memory.
-func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, applied func(n int)) {
-	cert, err := kpki.IssueChalkd(share, time.Now())
-	if err != nil {
-		log.Printf("kubernetes: %v", err)
-		return
+func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, applied func(n int)) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cred := newCredential(share, credentialValidity, time.Now)
+	// Issuing once up front fails the loop early on a share that cannot issue.
+	if _, err := cred.GetClientCertificate(nil); err != nil {
+		return fmt.Errorf("issue chalkd's client certificate: %w", err)
 	}
-	cfg := &rest.Config{
-		Host: kpki.LocalAPIServer,
-		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   []byte(share.CA.Certificate),
-			CertData: []byte(cert.Certificate),
-			KeyData:  []byte(cert.Key),
-		},
-		Timeout: 30 * time.Second,
+	go cred.renew(ctx)
+	cfg, err := cred.restConfig()
+	if err != nil {
+		return err
 	}
 	for {
 		n, err := k.applyOnce(ctx, cfg)
@@ -130,16 +165,16 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 		log.Printf("kubernetes: %v; retrying", err)
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		case <-time.After(10 * time.Second):
 		}
 	}
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		log.Printf("kubernetes: %v", err)
-		return
+		return err
 	}
 	(&kapply.Approver{Client: client}).Run(ctx, 10*time.Second)
+	return ctx.Err()
 }
 
 func (k *Kubernetes) applyOnce(ctx context.Context, cfg *rest.Config) (int, error) {

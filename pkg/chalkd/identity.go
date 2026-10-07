@@ -18,6 +18,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -55,11 +56,18 @@ func (s *Server) kubernetesShare(d delivered, data []byte) ([]byte, error) {
 		return nil, nil
 	}
 	if s.Kubernetes == nil {
-		return nil, failed(connect.CodeFailedPrecondition, "the node's role has no Kubernetes, so it takes no Kubernetes share")
+		return nil, failed(connect.CodeInvalidArgument, "the node's role has no Kubernetes, so it takes no Kubernetes share")
 	}
 	share, err := kpki.ParseShare(data)
 	if err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
+	if err != nil {
+		return nil, failed(connect.CodeInvalidArgument, "the node's image has no Kubernetes: %v", err)
+	}
+	if share.Kind != c.Kind {
+		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's image is for %s nodes", share.Kind, c.Kind)
 	}
 	nodeName, err := install.KubernetesNodeName(d.data)
 	if err != nil {

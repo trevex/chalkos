@@ -111,7 +111,8 @@ func (a *Approver) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// Once looks at the pending requests once.
+// Once looks at the pending requests once. A request that fails does not stop the others;
+// the error names every one that failed.
 func (a *Approver) Once(ctx context.Context) error {
 	if a.refused == nil {
 		a.refused = map[string]bool{}
@@ -120,40 +121,56 @@ func (a *Approver) Once(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	exists := map[string]bool{}
+	var errs []error
 	for i := range list.Items {
 		csr := &list.Items[i]
-		if csr.Spec.SignerName != certificatesv1.KubeletServingSignerName || decided(csr) {
-			continue
+		exists[csr.Name] = true
+		if err := a.review(ctx, csr); err != nil {
+			errs = append(errs, fmt.Errorf("certificate request %s: %w", csr.Name, err))
 		}
-		var node *corev1.Node
-		if name, ok := strings.CutPrefix(csr.Spec.Username, nodeUserPrefix); ok && name != "" {
-			n, err := a.Client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
-			switch {
-			case err == nil:
-				node = n
-			case !apierrors.IsNotFound(err):
-				return err
-			}
-		}
-		if err := Approvable(csr, node); err != nil {
-			if !a.refused[csr.Name] {
-				log.Printf("leaving certificate request %s pending: %v", csr.Name, err)
-				a.refused[csr.Name] = true
-			}
-			continue
-		}
-		csr.Status.Conditions = append(csr.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{
-			Type:           certificatesv1.CertificateApproved,
-			Status:         corev1.ConditionTrue,
-			Reason:         "ChalkdApproved",
-			Message:        "The node's name and addresses match its Node object.",
-			LastUpdateTime: metav1.Now(),
-		})
-		if _, err := a.Client.CertificatesV1().CertificateSigningRequests().UpdateApproval(ctx, csr.Name, csr, metav1.UpdateOptions{}); err != nil {
-			return fmt.Errorf("approve %s: %w", csr.Name, err)
-		}
-		log.Printf("approved certificate request %s of %s", csr.Name, csr.Spec.Username)
 	}
+	for name := range a.refused {
+		if !exists[name] {
+			delete(a.refused, name)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// review approves one request if Approvable accepts it.
+func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSigningRequest) error {
+	if csr.Spec.SignerName != certificatesv1.KubeletServingSignerName || decided(csr) {
+		return nil
+	}
+	var node *corev1.Node
+	if name, ok := strings.CutPrefix(csr.Spec.Username, nodeUserPrefix); ok && name != "" {
+		n, err := a.Client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+		switch {
+		case err == nil:
+			node = n
+		case !apierrors.IsNotFound(err):
+			return fmt.Errorf("read node %s: %w", name, err)
+		}
+	}
+	if err := Approvable(csr, node); err != nil {
+		if !a.refused[csr.Name] {
+			log.Printf("leaving certificate request %s pending: %v", csr.Name, err)
+			a.refused[csr.Name] = true
+		}
+		return nil
+	}
+	csr.Status.Conditions = append(csr.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{
+		Type:           certificatesv1.CertificateApproved,
+		Status:         corev1.ConditionTrue,
+		Reason:         "ChalkdApproved",
+		Message:        "The node's name and addresses match its Node object.",
+		LastUpdateTime: metav1.Now(),
+	})
+	if _, err := a.Client.CertificatesV1().CertificateSigningRequests().UpdateApproval(ctx, csr.Name, csr, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("approve: %w", err)
+	}
+	log.Printf("approved certificate request %s of %s", csr.Name, csr.Spec.Username)
 	return nil
 }
 

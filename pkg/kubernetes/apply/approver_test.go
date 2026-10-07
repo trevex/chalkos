@@ -8,14 +8,18 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"net"
 	"net/url"
+	"strings"
 	"testing"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // request is a certificate request; fields left empty take the values of node w1.
@@ -147,5 +151,60 @@ func TestApproverApprovesOnlyMatchingRequests(t *testing.T) {
 	got, _ := cs.CertificatesV1().CertificateSigningRequests().Get(context.Background(), "good", metav1.GetOptions{})
 	if len(got.Status.Conditions) != 1 || got.Status.Conditions[0].Type != certificatesv1.CertificateApproved {
 		t.Errorf("conditions of good = %v", got.Status.Conditions)
+	}
+}
+
+// A request that fails, reading its Node or approving it, does not keep the others waiting.
+func TestApproverContinuesPastFailingRequest(t *testing.T) {
+	failApproval := request{}.csr(t, "a-fails")
+	failNode := request{username: "system:node:w2", names: []string{"w2"}, ips: []string{"192.168.100.13"}}.csr(t, "b-fails")
+	good := request{}.csr(t, "c-good")
+	cs := fake.NewClientset(w1, failApproval, failNode, good)
+	cs.PrependReactor("update", "certificatesigningrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		update := action.(k8stesting.UpdateAction)
+		if update.GetSubresource() == "approval" && update.GetObject().(*certificatesv1.CertificateSigningRequest).Name == "a-fails" {
+			return true, nil, errors.New("conflict")
+		}
+		return false, nil, nil
+	})
+	cs.PrependReactor("get", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.(k8stesting.GetAction).GetName() == "w2" {
+			return true, nil, errors.New("timeout")
+		}
+		return false, nil, nil
+	})
+	err := (&Approver{Client: cs}).Once(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "a-fails") || !strings.Contains(err.Error(), "b-fails") {
+		t.Errorf("err = %v, want both failures", err)
+	}
+	for name, want := range map[string]bool{"a-fails": false, "b-fails": false, "c-good": true} {
+		got, err := cs.CertificatesV1().CertificateSigningRequests().Get(context.Background(), name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if decided(got) != want {
+			t.Errorf("%s: decided %v, want %v", name, decided(got), want)
+		}
+	}
+}
+
+func TestApproverForgetsDeletedRequests(t *testing.T) {
+	spoofed := request{ips: []string{"192.168.100.11"}}.csr(t, "spoofed")
+	cs := fake.NewClientset(w1, spoofed)
+	a := &Approver{Client: cs}
+	if err := a.Once(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !a.refused["spoofed"] {
+		t.Fatal("the refused request is not remembered")
+	}
+	if err := cs.CertificatesV1().CertificateSigningRequests().Delete(context.Background(), "spoofed", metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Once(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.refused) != 0 {
+		t.Errorf("refused %v after the request was deleted", a.refused)
 	}
 }
