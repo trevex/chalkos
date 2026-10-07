@@ -1,0 +1,245 @@
+package node
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/trevex/chalkos/pkg/kubernetes"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/pki"
+)
+
+var now = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+
+func write(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// testNode prepares the files of a node of the kind named name, with a share issued from k.
+func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
+	t.Helper()
+	root := t.TempDir()
+	p := Paths{
+		State:      filepath.Join(root, "state", "kubernetes"),
+		Cluster:    filepath.Join(root, "etc", "cluster.json"),
+		NodeFile:   filepath.Join(root, "run", "node.json"),
+		Run:        filepath.Join(root, "run", "kubernetes"),
+		PKI:        filepath.Join(root, "run", "kubernetes", "pki"),
+		KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
+		EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
+	}
+	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
+	  "podCIDR": "10.244.0.0/16", "serviceCIDR": "10.96.0.0/12", "dnsIP": "10.96.0.10", "domain": "cluster.local",
+	  "allowSchedulingOnControlPlanes": false, "extraArgs": {},
+	  "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`)
+	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
+	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIP": "192.168.100.11"}}`)
+	if k != nil {
+		share, err := kpki.ShareFor(k, kind, name, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := share.Encode()
+		write(t, p.Share(), string(data))
+	}
+	return p
+}
+
+func secrets(t *testing.T) *pki.KubernetesSecrets {
+	t.Helper()
+	k, err := pki.NewKubernetesSecrets(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// currentClient returns the kubelet's current client certificate.
+func currentClient(t *testing.T, p Paths) pki.CertKey {
+	t.Helper()
+	data, err := os.ReadFile(p.kubeletClient())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, rest, _ := strings.Cut(string(data), "-----END CERTIFICATE-----\n")
+	return pki.CertKey{Certificate: cert + "-----END CERTIFICATE-----\n", Key: rest}
+}
+
+func TestPrepareWithoutShare(t *testing.T) {
+	p := testNode(t, kubernetes.KindWorker, "w1", nil)
+	write(t, p.Kubeconfig(), "stale")
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if exists(p.Kubeconfig()) {
+		t.Error("a node without a share has a kubelet kubeconfig")
+	}
+}
+
+func TestPrepareWorker(t *testing.T) {
+	k := secrets(t)
+	p := testNode(t, kubernetes.KindWorker, "w1", k)
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	share, err := ReadShare(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := currentClient(t, p); got != *share.Kubelet {
+		t.Error("the kubelet's current client certificate is not the share's")
+	}
+	if link, err := os.Readlink(p.kubeletClient()); err != nil || link != "kubelet-client-chalkos.pem" {
+		t.Errorf("current client certificate link = %q, %v", link, err)
+	}
+	ca, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "ca.crt"))
+	if string(ca) != k.CA.Certificate {
+		t.Error("the kubelet's CA is not the cluster's")
+	}
+	kubeconfig, _ := os.ReadFile(p.Kubeconfig())
+	for _, want := range []string{`"server": "https://192.168.100.11:6443"`, `"client-certificate": "` + p.kubeletClient() + `"`} {
+		if !strings.Contains(string(kubeconfig), want) {
+			t.Errorf("kubeconfig lacks %s:\n%s", want, kubeconfig)
+		}
+	}
+	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
+	if string(flags) != "KUBELET_ARGS=--hostname-override=w1 --node-ip=192.168.100.11 --node-labels=disk=ssd,zone=a\n" {
+		t.Errorf("flags = %q", flags)
+	}
+	if exists(p.PKI) || exists(p.Manifests()) {
+		t.Error("a worker has control-plane files")
+	}
+}
+
+func TestPrepareKeepsRenewedCertificate(t *testing.T) {
+	k := secrets(t)
+	p := testNode(t, kubernetes.KindWorker, "w1", k)
+	renewed, err := kpki.IssueKubeletClient(k.CA, "w1", now.Add(30*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(p.KubeletPKI, "kubelet-client-2026-11-05.pem"), renewed.Certificate+renewed.Key)
+	if err := os.Symlink("kubelet-client-2026-11-05.pem", p.kubeletClient()); err != nil {
+		t.Fatal(err)
+	}
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := currentClient(t, p); got != renewed {
+		t.Error("Prepare replaced a certificate the kubelet renewed")
+	}
+
+	// A share delivered later carries a newer certificate, which replaces the renewed one.
+	newer, err := kpki.WorkerShare(k, "w1", now.Add(60*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := newer.Encode()
+	write(t, p.Share(), string(data))
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := currentClient(t, p); got != *newer.Kubelet {
+		t.Error("a newer share's certificate did not replace the current one")
+	}
+}
+
+func TestPrepareControlPlane(t *testing.T) {
+	k := secrets(t)
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", k)
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(p.PKI); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("certificate directory: %v, %v", info, err)
+	}
+	for _, f := range []string{kpki.FileCAKey, kpki.FileAPIServerKey, kpki.FileEtcdServerKey, kpki.FileEncryptionConfig} {
+		info, err := os.Stat(filepath.Join(p.PKI, f))
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Errorf("%s: %v, %v", f, info, err)
+		}
+	}
+	cert, _, err := currentClient(t, p).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.Subject.CommonName != "system:node:cp1" {
+		t.Errorf("kubelet client certificate for %s", cert.Subject.CommonName)
+	}
+	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
+	if !strings.Contains(string(flags), "--register-with-taints=node-role.kubernetes.io/control-plane:NoSchedule") {
+		t.Errorf("flags = %q", flags)
+	}
+	entries, err := os.ReadDir(p.Manifests())
+	if err != nil || len(entries) != 0 {
+		t.Errorf("a control plane waiting for bootstrap has static pods: %v, %v", entries, err)
+	}
+
+	write(t, p.Bootstrapped(), "")
+	if err := Prepare(p, now); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ = os.ReadDir(p.Manifests())
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if !slices.Equal(names, []string{"etcd.json", "kube-apiserver.json", "kube-controller-manager.json", "kube-scheduler.json"}) {
+		t.Errorf("static pods %v", names)
+	}
+}
+
+func TestPrepareRefusesMismatchedShare(t *testing.T) {
+	k := secrets(t)
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	worker, _ := kpki.WorkerShare(k, "cp1", now)
+	data, _ := worker.Encode()
+	write(t, p.Share(), string(data))
+	if err := Prepare(p, now); err == nil || !strings.Contains(err.Error(), "worker") {
+		t.Errorf("err = %v, want a kind mismatch", err)
+	}
+
+	p = testNode(t, kubernetes.KindWorker, "w1", nil)
+	other, _ := kpki.WorkerShare(k, "w2", now)
+	data, _ = other.Encode()
+	write(t, p.Share(), string(data))
+	if err := Prepare(p, now); err == nil || !strings.Contains(err.Error(), "w2") {
+		t.Errorf("err = %v, want a node mismatch", err)
+	}
+}
+
+func TestKubeletFlags(t *testing.T) {
+	c := kubernetes.Cluster{Kind: kubernetes.KindControlPlane, AllowSchedulingOnControlPlanes: true}
+	n := kubernetes.Node{Name: "cp1", Taints: []manifest.Taint{{Key: "dedicated", Value: "db", Effect: "NoSchedule"}, {Key: "spot", Effect: "PreferNoSchedule"}}}
+	got := strings.Join(KubeletFlags(c, n), " ")
+	if got != "--hostname-override=cp1 --register-with-taints=dedicated=db:NoSchedule,spot:PreferNoSchedule" {
+		t.Errorf("flags = %s", got)
+	}
+}
+
+func TestEtcdHasData(t *testing.T) {
+	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	if has, err := EtcdHasData(p); err != nil || has {
+		t.Errorf("missing directory: %v, %v", has, err)
+	}
+	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
+	if has, err := EtcdHasData(p); err != nil || !has {
+		t.Errorf("directory with a member: %v, %v", has, err)
+	}
+}
