@@ -29,13 +29,17 @@ import (
 // vipElectionPrefix is the etcd key prefix of the election whose leader holds the VIPs.
 const vipElectionPrefix = "/chalkos/vip"
 
+// electionCleanupTimeout bounds resigning from the election and revoking its lease, which run
+// also while chalkd stops.
+const electionCleanupTimeout = 3 * time.Second
+
 // localEtcd is where chalkd reaches the etcd member on its own node.
 const localEtcd = "https://127.0.0.1:2379"
 
 // AddressManager holds the node's virtual IPs.
 type AddressManager interface {
 	// Acquire adds the addresses to the node and announces them; again, it adds what went
-	// missing and announces them again.
+	// missing and announces only that.
 	Acquire() error
 	// Release removes the addresses from the node.
 	Release() error
@@ -118,11 +122,22 @@ func (v *vipElection) lead(ctx context.Context) error {
 	rctx, stopRenewing := context.WithCancel(ctx)
 	defer stopRenewing()
 	go v.renew(rctx, grant.ID, ttl, renewed)
-	session, err := concurrency.NewSession(v.client, concurrency.WithLease(grant.ID), concurrency.WithTTL(int(grant.TTL)), concurrency.WithContext(ctx))
+	// The session outlives ctx, so a stopping node still resigns and revokes its lease, and the
+	// next candidate need not wait for the lease to expire.
+	sctx, endSession := context.WithCancel(context.Background())
+	defer endSession()
+	session, err := concurrency.NewSession(v.client, concurrency.WithLease(grant.ID), concurrency.WithTTL(int(grant.TTL)), concurrency.WithContext(sctx))
 	if err != nil {
 		return err
 	}
-	defer session.Close()
+	defer func() {
+		session.Orphan()
+		rctx, cancel := context.WithTimeout(context.Background(), electionCleanupTimeout)
+		defer cancel()
+		if _, err := v.client.Revoke(rctx, grant.ID); err != nil {
+			log.Printf("kubernetes: revoke the lease of the VIPs: %v", err)
+		}
+	}()
 	election := concurrency.NewElection(session, vipElectionPrefix)
 	campaign, unhealthy := context.WithCancel(ctx)
 	defer unhealthy()
@@ -131,7 +146,7 @@ func (v *vipElection) lead(ctx context.Context) error {
 		return err
 	}
 	resign := func() {
-		rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		rctx, cancel := context.WithTimeout(context.Background(), electionCleanupTimeout)
 		defer cancel()
 		if err := election.Resign(rctx); err != nil {
 			log.Printf("kubernetes: resign from the VIP election: %v", err)
@@ -162,6 +177,7 @@ func (v *vipElection) lead(ctx context.Context) error {
 			v.release()
 			return errLeaseLost
 		case <-campaign.Done():
+			// The API server turned unhealthy, or chalkd stops.
 			v.release()
 			resign()
 			return nil
@@ -173,6 +189,7 @@ func (v *vipElection) lead(ctx context.Context) error {
 				continue
 			}
 			v.release()
+			resign()
 			return errLeaseUnrenewed
 		case <-acquire.C:
 			if err := v.addrs.Acquire(); err != nil {
@@ -334,24 +351,81 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 
 // vipAddresses are the cluster's VIPs on this node: each on the interface the cluster names, or
 // else on the one holding the node's address of its family.
-type vipAddresses []vip.Address
+type vipAddresses struct {
+	addrs []vip.Address
+	// add, announce and remove change the node's interfaces and tell its neighbours; tests
+	// replace them.
+	add      func(vip.Address) (bool, error)
+	announce func(vip.Address) error
+	remove   func(vip.Address) error
+	// announcements is how often an added address is announced, spacing apart, so neighbours
+	// that missed the first announcement still learn of it.
+	announcements int
+	spacing       time.Duration
 
-func (a vipAddresses) Acquire() error {
-	for _, addr := range a {
-		if err := vip.Add(addr); err != nil {
-			return err
-		}
-		if err := vip.Announce(addr); err != nil {
-			return err
-		}
-	}
-	return nil
+	mu sync.Mutex
+	// releases counts the releases, after which earlier announcements stop.
+	releases int
 }
 
-func (a vipAddresses) Release() error {
+func newVIPAddresses(addrs []vip.Address) *vipAddresses {
+	return &vipAddresses{addrs: addrs, add: vip.Add, announce: vip.Announce, remove: vip.Remove, announcements: 3, spacing: time.Second}
+}
+
+// Acquire adds the addresses that are missing and announces those alone: an address that was
+// there already was announced when it was added.
+func (a *vipAddresses) Acquire() error {
 	var errs []error
-	for _, addr := range a {
-		errs = append(errs, vip.Remove(addr))
+	var added []vip.Address
+	for _, addr := range a.addrs {
+		ok, err := a.add(addr)
+		if err != nil {
+			errs = append(errs, err)
+		} else if ok {
+			added = append(added, addr)
+		}
+	}
+	if len(added) == 0 {
+		return errors.Join(errs...)
+	}
+	a.mu.Lock()
+	releases := a.releases
+	errs = append(errs, a.announceLocked(added))
+	a.mu.Unlock()
+	go func() {
+		for range a.announcements - 1 {
+			time.Sleep(a.spacing)
+			a.mu.Lock()
+			if a.releases != releases {
+				a.mu.Unlock()
+				return
+			}
+			err := a.announceLocked(added)
+			a.mu.Unlock()
+			if err != nil {
+				log.Printf("kubernetes: %v", err)
+			}
+		}
+	}()
+	return errors.Join(errs...)
+}
+
+func (a *vipAddresses) announceLocked(addrs []vip.Address) error {
+	var errs []error
+	for _, addr := range addrs {
+		errs = append(errs, a.announce(addr))
+	}
+	return errors.Join(errs...)
+}
+
+// Release stops the announcements and removes the addresses.
+func (a *vipAddresses) Release() error {
+	a.mu.Lock()
+	a.releases++
+	a.mu.Unlock()
+	var errs []error
+	for _, addr := range a.addrs {
+		errs = append(errs, a.remove(addr))
 	}
 	return errors.Join(errs...)
 }
@@ -362,12 +436,12 @@ func systemVIPAddresses(c k8s.Cluster, p knode.Paths) (AddressManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	var held vipAddresses
+	var held []vip.Address
 	if c.VIP.Interface != "" {
 		for _, ip := range vips {
 			held = append(held, vip.Address{IP: ip, Interface: c.VIP.Interface})
 		}
-		return held, nil
+		return newVIPAddresses(held), nil
 	}
 	ips, err := knode.ReadNodeIPs(p)
 	if err != nil {
@@ -392,7 +466,7 @@ func systemVIPAddresses(c k8s.Cluster, p knode.Paths) (AddressManager, error) {
 		}
 		held = append(held, vip.Address{IP: ip, Interface: system[i].Interface})
 	}
-	return held, nil
+	return newVIPAddresses(held), nil
 }
 
 // apiServerReady reports whether the node's API server answers ready.

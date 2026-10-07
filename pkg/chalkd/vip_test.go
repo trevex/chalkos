@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -220,6 +221,31 @@ func TestVIPReleasedOnStop(t *testing.T) {
 	}
 }
 
+// A stopping holder resigns, so the next candidate takes the VIPs without waiting for its lease
+// to expire.
+func TestVIPResignedOnStop(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m := etcdtest.StartNew(t, ca, "cp0")
+	h := &holders{}
+	current := startNode(t, ca, m.ClientURL, "cp1", 60, h)
+	holder(t, []*electionNode{current})
+	for i := range 4 {
+		next := startNode(t, ca, m.ClientURL, "cp"+string(rune('2'+i)), 60, h)
+		time.Sleep(200 * time.Millisecond)
+		stopped := time.Now()
+		current.stop()
+		<-current.done
+		eventually(t, "the next candidate to hold the VIPs", func() bool { return next.addrs.held.Load() })
+		if d := time.Since(stopped); d > 10*time.Second {
+			t.Fatalf("the next candidate took the VIPs %v after the holder stopped", d)
+		}
+		current = next
+	}
+	if _, most := h.count(); most != 1 {
+		t.Errorf("%d nodes held the VIPs at once", most)
+	}
+}
+
 // A holder cut off from etcd releases the VIPs before etcd lets its lease expire, and so before
 // another node takes them, also when etcd's replies reached it late.
 func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
@@ -392,16 +418,68 @@ func TestSystemVIPAddresses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a := got.(vipAddresses); len(a) != 1 || a[0].Interface != "lo" || a[0].IP.String() != "10.0.0.10" {
+	if a := got.(*vipAddresses).addrs; len(a) != 1 || a[0].Interface != "lo" || a[0].IP.String() != "10.0.0.10" {
 		t.Errorf("VIPs %v, want 10.0.0.10 on lo", a)
 	}
 	c.VIP.Interface = "bond0"
 	got, err = systemVIPAddresses(c, p)
-	if a := got.(vipAddresses); err != nil || len(a) != 1 || a[0] != (vip.Address{IP: a[0].IP, Interface: "bond0"}) {
+	if a := got.(*vipAddresses).addrs; err != nil || len(a) != 1 || a[0] != (vip.Address{IP: a[0].IP, Interface: "bond0"}) {
 		t.Errorf("VIPs %v, %v, want them on bond0", got, err)
 	}
 	c.VIP = k8s.VIP{Addresses: []string{"fd00::10"}, Mode: "l2"}
 	if _, err := systemVIPAddresses(c, p); err == nil {
 		t.Error("found an interface for an IPv6 VIP on a node without an IPv6 address")
+	}
+}
+
+// The holder announces only the addresses it added, a few times, and stops once it released
+// them.
+func TestVIPAnnouncesAddedAddressesOnly(t *testing.T) {
+	present := vip.Address{IP: netip.MustParseAddr("10.0.0.10"), Interface: "eth0"}
+	missing := vip.Address{IP: netip.MustParseAddr("fd00::10"), Interface: "eth0"}
+	var mu sync.Mutex
+	announced := map[vip.Address]int{}
+	count := func(addr vip.Address) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return announced[addr]
+	}
+	a := newVIPAddresses([]vip.Address{present, missing})
+	a.add = func(addr vip.Address) (bool, error) { return addr != present, nil }
+	a.announce = func(addr vip.Address) error {
+		mu.Lock()
+		defer mu.Unlock()
+		announced[addr]++
+		return nil
+	}
+	a.remove = func(vip.Address) error { return nil }
+	a.spacing = 50 * time.Millisecond
+	if err := a.Acquire(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(400 * time.Millisecond)
+	if count(present) != 0 || count(missing) != 3 {
+		t.Errorf("announced the present address %d times and the added one %d times, want 0 and 3", count(present), count(missing))
+	}
+	// Both stay on the node: acquiring them again announces nothing.
+	a.add = func(vip.Address) (bool, error) { return false, nil }
+	if err := a.Acquire(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if count(missing) != 3 {
+		t.Errorf("announced %d times after acquiring present addresses, want 3", count(missing))
+	}
+	// Released at once after being added again, it is announced no more.
+	a.add = func(addr vip.Address) (bool, error) { return addr == missing, nil }
+	if err := a.Acquire(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Release(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(400 * time.Millisecond)
+	if count(missing) != 4 || count(present) != 0 {
+		t.Errorf("announced %d and %d times after the release, want 4 and 0", count(missing), count(present))
 	}
 }

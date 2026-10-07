@@ -112,12 +112,12 @@ func TestAddAnnounceRemove(t *testing.T) {
 	v4 := Address{IP: netip.MustParseAddr("10.9.0.10"), Interface: "v0"}
 	v6 := Address{IP: netip.MustParseAddr("fd00::10"), Interface: "v0"}
 	for _, a := range []Address{v4, v6} {
-		if err := Add(a); err != nil {
-			t.Fatal(err)
+		if added, err := Add(a); err != nil || !added {
+			t.Fatalf("adding %s: %v, %v", a.IP, added, err)
 		}
-		// Adding it again changes nothing.
-		if err := Add(a); err != nil {
-			t.Fatal(err)
+		// Adding it again changes nothing, and says it was there.
+		if added, err := Add(a); err != nil || added {
+			t.Fatalf("adding %s again: %v, %v", a.IP, added, err)
 		}
 		if a.IP.Is4() {
 			if !holds(t, "v0", a.IP) {
@@ -187,7 +187,7 @@ func TestAddAnnounceRemove(t *testing.T) {
 	if err := Remove(Address{IP: v4.IP, Interface: "gone0"}); err != nil {
 		t.Errorf("removing from a missing interface: %v", err)
 	}
-	if err := Add(Address{IP: v4.IP, Interface: "gone0"}); err == nil {
+	if _, err := Add(Address{IP: v4.IP, Interface: "gone0"}); err == nil {
 		t.Error("added an address to a missing interface")
 	}
 }

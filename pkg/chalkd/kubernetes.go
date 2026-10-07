@@ -93,6 +93,8 @@ type Kubernetes struct {
 	joinStep    string
 	joinWaiting bool
 	started     bool
+	// stopped is set once chalkd stops; no loop starts after it.
+	stopped bool
 	// split says why the node's etcd and the other control planes' belong to different clusters.
 	split string
 	// pinProblem says why the node cannot be pinned to its addresses.
@@ -125,9 +127,18 @@ func (k *Kubernetes) loops() context.Context {
 	return k.ctx
 }
 
-// Stop ends the loops and waits until the node released the VIPs, so they never stay on a node
-// that no longer holds their lease, and until the join stopped. Start starts them again.
+// Stop ends the loops for good, as chalkd stops: a Start or Reload arriving meanwhile starts
+// none again.
 func (k *Kubernetes) Stop() {
+	k.mu.Lock()
+	k.stopped = true
+	k.mu.Unlock()
+	k.stopLoops()
+}
+
+// stopLoops ends the loops and waits until the node released the VIPs, so they never stay on a
+// node that no longer holds their lease, and until the join stopped. Start starts them again.
+func (k *Kubernetes) stopLoops() {
 	k.mu.Lock()
 	cancel, vipDone, joinDone := k.cancel, k.vipDone, k.joinDone
 	k.ctx, k.cancel, k.vipDone, k.joinDone = nil, nil, nil, nil
@@ -194,7 +205,7 @@ func (k *Kubernetes) startLocked() chan struct{} {
 	if k.done == nil {
 		k.done = make(chan struct{})
 	}
-	if k.started {
+	if k.started || k.stopped {
 		return k.done
 	}
 	k.started = true

@@ -775,3 +775,32 @@ func TestApplyIdentityRefusesInvalidAddressSettings(t *testing.T) {
 		t.Errorf("a refused identity ran %v", r.calls)
 	}
 }
+
+// Once chalkd stops, a Start or Reload that arrives meanwhile, as from ApplyIdentity, starts no
+// loop again.
+func TestStartAfterStopDoesNothing(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	p := k.Paths
+	var runs atomic.Int32
+	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+		runs.Add(1)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	k.Stop()
+	// Not bootstrapped, the node would join.
+	k.Start()
+	k.Reload()
+	write(t, p.Bootstrapped(), "")
+	write(t, p.Pin(), "192.168.100.11\n")
+	k.Start()
+	k.Reload()
+	time.Sleep(200 * time.Millisecond)
+	k.mu.Lock()
+	started, joining := k.started, k.joining
+	k.mu.Unlock()
+	if started || joining || runs.Load() != 0 {
+		t.Errorf("after Stop: started %v, joining %v, %d runs of the control plane's loop", started, joining, runs.Load())
+	}
+}

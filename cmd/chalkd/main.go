@@ -204,6 +204,9 @@ func serve() error {
 	if _, err := os.Stat(knode.DefaultPaths().Cluster); err == nil && creds.mode == nodev1.Mode_MODE_NORMAL {
 		srv.Kubernetes = chalkd.NewKubernetes()
 		srv.Kubernetes.Start()
+		// On every way out the node releases the VIPs, which must not stay on a node whose chalkd
+		// no longer holds their lease, and closes its etcd clients.
+		defer srv.Kubernetes.Stop()
 	}
 	go announceAddresses(srv.Fingerprint)
 
@@ -221,10 +224,6 @@ func serve() error {
 	case err := <-served:
 		return err
 	case <-ctx.Done():
-	}
-	// The VIPs must not stay on a node whose chalkd no longer holds their lease.
-	if srv.Kubernetes != nil {
-		srv.Kubernetes.Stop()
 	}
 	return nil
 }

@@ -219,7 +219,7 @@ func (s *Server) EtcdLeave(ctx context.Context, _ *connect.Request[nodev1.EtcdLe
 		}
 	}()
 	stop := func() {
-		k.Stop()
+		k.stopLoops()
 		restart = true
 	}
 	// The join holds the membership while it waits for etcd, until its loop stops. A bootstrapped

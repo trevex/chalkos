@@ -24,17 +24,25 @@ func (a Address) String() string { return a.IP.String() + " on " + a.Interface }
 // Add adds the address to its interface as a host address, /32 or /128. An IPv6 address skips
 // duplicate address detection, which would hold it back while the neighbours still reach the
 // node that held it before, and is deprecated, so the node never uses it as the source address of
-// its own connections.
-func Add(a Address) error {
+// its own connections. added is false when the interface had the address already; its settings
+// are renewed then.
+func Add(a Address) (added bool, err error) {
 	ifi, err := net.InterfaceByName(a.Interface)
 	if err != nil {
-		return fmt.Errorf("add %s: %w", a, err)
+		return false, fmt.Errorf("add %s: %w", a, err)
 	}
-	flags := uint16(unix.NLM_F_CREATE | unix.NLM_F_REPLACE)
-	if err := addrRequest(unix.RTM_NEWADDR, flags, a.IP, ifi.Index); err != nil {
-		return fmt.Errorf("add %s: %w", a, err)
+	err = addrRequest(unix.RTM_NEWADDR, unix.NLM_F_CREATE|unix.NLM_F_EXCL, a.IP, ifi.Index)
+	if errors.Is(err, unix.EEXIST) {
+		err = addrRequest(unix.RTM_NEWADDR, unix.NLM_F_REPLACE, a.IP, ifi.Index)
+		if err != nil {
+			return false, fmt.Errorf("add %s: %w", a, err)
+		}
+		return false, nil
 	}
-	return nil
+	if err != nil {
+		return false, fmt.Errorf("add %s: %w", a, err)
+	}
+	return true, nil
 }
 
 // Remove removes the address from its interface. An address that is not there, also on an

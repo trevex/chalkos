@@ -49,7 +49,7 @@ func waitingForCluster(c k8s.Cluster) string {
 func (k *Kubernetes) startJoin() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.joining {
+	if k.joining || k.stopped {
 		return
 	}
 	k.joining = true
