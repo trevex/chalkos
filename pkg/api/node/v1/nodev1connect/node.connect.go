@@ -52,6 +52,8 @@ const (
 	NodeServiceLogsProcedure = "/chalkos.node.v1.NodeService/Logs"
 	// NodeServiceRebootProcedure is the fully-qualified name of the NodeService's Reboot RPC.
 	NodeServiceRebootProcedure = "/chalkos.node.v1.NodeService/Reboot"
+	// NodeServiceBootstrapProcedure is the fully-qualified name of the NodeService's Bootstrap RPC.
+	NodeServiceBootstrapProcedure = "/chalkos.node.v1.NodeService/Bootstrap"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -74,6 +76,10 @@ type NodeServiceClient interface {
 	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogsResponse], error)
 	// Reboot reboots the node once the response is sent.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
+	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
+	// the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
+	// so no second cluster is ever initialised.
+	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -135,6 +141,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Reboot")),
 			connect.WithClientOptions(opts...),
 		),
+		bootstrap: connect.NewClient[v1.BootstrapRequest, v1.BootstrapResponse](
+			httpClient,
+			baseURL+NodeServiceBootstrapProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Bootstrap")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -148,6 +160,7 @@ type nodeServiceClient struct {
 	status        *connect.Client[v1.StatusRequest, v1.StatusResponse]
 	logs          *connect.Client[v1.LogsRequest, v1.LogsResponse]
 	reboot        *connect.Client[v1.RebootRequest, v1.RebootResponse]
+	bootstrap     *connect.Client[v1.BootstrapRequest, v1.BootstrapResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -190,6 +203,11 @@ func (c *nodeServiceClient) Reboot(ctx context.Context, req *connect.Request[v1.
 	return c.reboot.CallUnary(ctx, req)
 }
 
+// Bootstrap calls chalkos.node.v1.NodeService.Bootstrap.
+func (c *nodeServiceClient) Bootstrap(ctx context.Context, req *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error) {
+	return c.bootstrap.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in both modes to readers.
@@ -210,6 +228,10 @@ type NodeServiceHandler interface {
 	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error
 	// Reboot reboots the node once the response is sent.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
+	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
+	// the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
+	// so no second cluster is ever initialised.
+	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -267,6 +289,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Reboot")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceBootstrapHandler := connect.NewUnaryHandler(
+		NodeServiceBootstrapProcedure,
+		svc.Bootstrap,
+		connect.WithSchema(nodeServiceMethods.ByName("Bootstrap")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -285,6 +313,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceLogsHandler.ServeHTTP(w, r)
 		case NodeServiceRebootProcedure:
 			nodeServiceRebootHandler.ServeHTTP(w, r)
+		case NodeServiceBootstrapProcedure:
+			nodeServiceBootstrapHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -324,4 +354,8 @@ func (UnimplementedNodeServiceHandler) Logs(context.Context, *connect.Request[v1
 
 func (UnimplementedNodeServiceHandler) Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Reboot is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Bootstrap is not implemented"))
 }

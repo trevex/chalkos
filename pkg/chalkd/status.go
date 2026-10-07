@@ -68,6 +68,11 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 			resp.FailedUnits = append(resp.FailedUnits, fields[0])
 		}
 	}
+	if s.Kubernetes != nil {
+		if resp.Kubernetes, err = s.Kubernetes.status(ctx); err != nil {
+			return nil, failed(connect.CodeInternal, "kubernetes: %v", err)
+		}
+	}
 	return connect.NewResponse(resp), nil
 }
 

@@ -97,7 +97,7 @@ func (r Request) validate() error {
 		if err != nil {
 			return err
 		}
-		nodeName, err := kubernetesNodeName(r.Identity)
+		nodeName, err := KubernetesNodeName(r.Identity)
 		if err != nil {
 			return err
 		}
@@ -110,10 +110,10 @@ func (r Request) validate() error {
 	return nil
 }
 
-// kubernetesNodeName returns the node's name in the cluster from its identity, as
+// KubernetesNodeName returns the node's name in the cluster from its identity, as
 // chalkos.nodes.<name>.identity.kubernetes.nodeName renders it; empty for a node of a role
 // without Kubernetes.
-func kubernetesNodeName(identity []byte) (string, error) {
+func KubernetesNodeName(identity []byte) (string, error) {
 	var id struct {
 		Kubernetes *struct {
 			NodeName string `json:"nodeName"`

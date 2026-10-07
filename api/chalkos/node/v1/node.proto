@@ -25,6 +25,10 @@ service NodeService {
   rpc Logs(LogsRequest) returns (stream LogsResponse);
   // Reboot reboots the node once the response is sent.
   rpc Reboot(RebootRequest) returns (RebootResponse);
+  // Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
+  // the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
+  // so no second cluster is ever initialised.
+  rpc Bootstrap(BootstrapRequest) returns (BootstrapResponse);
 }
 
 enum Mode {
@@ -195,6 +199,19 @@ message StatusResponse {
   repeated DiskStatus disks = 2;
   repeated VolumeStatus volumes = 3;
   repeated string failed_units = 4;
+  // Absent on a node of a role without Kubernetes.
+  KubernetesStatus kubernetes = 5;
+}
+
+message KubernetesStatus {
+  // controlplane or worker.
+  string kind = 1;
+  // What the node waits for or is: "no share", "waiting for bootstrap" or "bootstrapped" on a
+  // control-plane node; "no share" or "joined" on a worker.
+  string state = 2;
+  // The status of the Node's Ready condition (True, False or Unknown), or why it could not be
+  // read.
+  string node_ready = 3;
 }
 
 message DiskStatus {
@@ -228,3 +245,10 @@ message LogsResponse {
 message RebootRequest {}
 
 message RebootResponse {}
+
+message BootstrapRequest {}
+
+message BootstrapResponse {
+  // Objects applied from the cluster's manifests.
+  uint32 applied = 1;
+}

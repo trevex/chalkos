@@ -1,0 +1,275 @@
+package chalkd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"sync"
+	"time"
+
+	"connectrpc.com/connect"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/install"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
+	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+)
+
+// Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
+type Kubernetes struct {
+	Paths knode.Paths
+	// Manifests is the image's list of objects the control plane applies.
+	Manifests string
+	// ControlPlane runs on a bootstrapped control-plane node until ctx ends: it applies the
+	// manifests, calls applied with their number once that succeeded, and approves kubelet
+	// serving certificates. Tests replace it.
+	ControlPlane func(ctx context.Context, share kpki.Share, applied func(n int))
+	// NodeReady returns the status of the node's Ready condition.
+	NodeReady func(ctx context.Context) (string, error)
+
+	mu      sync.Mutex
+	started bool
+	// done is closed once the manifests were applied; count is how many.
+	done  chan struct{}
+	count int
+}
+
+// NewKubernetes returns the Kubernetes side of a node with the default paths.
+func NewKubernetes() *Kubernetes {
+	k := &Kubernetes{Paths: knode.DefaultPaths(), Manifests: "/etc/chalkos/kubernetes/manifests.json"}
+	k.ControlPlane = k.runControlPlane
+	k.NodeReady = k.nodeReady
+	return k
+}
+
+// Start runs the control plane's loop once, when the node is a bootstrapped control plane.
+func (k *Kubernetes) Start() {
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		log.Printf("kubernetes: %v", err)
+		return
+	}
+	bootstrapped, err := knode.Bootstrapped(k.Paths)
+	if err != nil {
+		log.Printf("kubernetes: %v", err)
+		return
+	}
+	if c.Kind == k8s.KindControlPlane && bootstrapped {
+		k.start()
+	}
+}
+
+// start runs the control plane's loop unless it runs already, and returns the channel closed
+// once the manifests were applied.
+func (k *Kubernetes) start() chan struct{} {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.done == nil {
+		k.done = make(chan struct{})
+	}
+	if k.started {
+		return k.done
+	}
+	share, err := knode.ReadShare(k.Paths)
+	if err != nil {
+		log.Printf("kubernetes: %v", err)
+		return k.done
+	}
+	k.started = true
+	done := k.done
+	var once sync.Once
+	go k.ControlPlane(context.Background(), share, func(n int) {
+		once.Do(func() {
+			k.mu.Lock()
+			k.count = n
+			k.mu.Unlock()
+			close(done)
+		})
+	})
+	return done
+}
+
+// runControlPlane waits for the local API server, applies the manifests until that succeeds,
+// and then approves kubelet serving certificates. chalkd's credential exists only in memory.
+func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, applied func(n int)) {
+	cert, err := kpki.IssueChalkd(share, time.Now())
+	if err != nil {
+		log.Printf("kubernetes: %v", err)
+		return
+	}
+	cfg := &rest.Config{
+		Host: kpki.LocalAPIServer,
+		TLSClientConfig: rest.TLSClientConfig{
+			CAData:   []byte(share.CA.Certificate),
+			CertData: []byte(cert.Certificate),
+			KeyData:  []byte(cert.Key),
+		},
+		Timeout: 30 * time.Second,
+	}
+	for {
+		n, err := k.applyOnce(ctx, cfg)
+		if err == nil {
+			log.Printf("kubernetes: applied %d objects", n)
+			applied(n)
+			break
+		}
+		log.Printf("kubernetes: %v; retrying", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Second):
+		}
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		log.Printf("kubernetes: %v", err)
+		return
+	}
+	(&kapply.Approver{Client: client}).Run(ctx, 10*time.Second)
+}
+
+func (k *Kubernetes) applyOnce(ctx context.Context, cfg *rest.Config) (int, error) {
+	if err := kapply.WaitReady(ctx, cfg); err != nil {
+		return 0, err
+	}
+	objects, err := kapply.ReadManifests(k.Manifests)
+	if err != nil {
+		return 0, err
+	}
+	a, err := kapply.NewApplier(cfg)
+	if err != nil {
+		return 0, err
+	}
+	if err := a.Apply(ctx, objects); err != nil {
+		return 0, err
+	}
+	return len(objects), nil
+}
+
+// nodeReady reads the node's Node object with the kubelet's credentials, which may read their
+// own node.
+func (k *Kubernetes) nodeReady(ctx context.Context) (string, error) {
+	n, err := k8s.ReadNode(k.Paths.NodeFile)
+	if err != nil {
+		return "", err
+	}
+	cfg, err := clientcmd.BuildConfigFromFlags("", k.Paths.Kubeconfig())
+	if err != nil {
+		return "", err
+	}
+	cfg.Timeout = 5 * time.Second
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+	node, err := client.CoreV1().Nodes().Get(ctx, n.Name, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == corev1.NodeReady {
+			return string(cond.Status), nil
+		}
+	}
+	return string(corev1.ConditionUnknown), nil
+}
+
+func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.BootstrapRequest]) (*connect.Response[nodev1.BootstrapResponse], error) {
+	k := s.Kubernetes
+	if k == nil {
+		return nil, failed(connect.CodeFailedPrecondition, "the node's role has no Kubernetes")
+	}
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
+	if c.Kind != k8s.KindControlPlane {
+		return nil, failed(connect.CodeFailedPrecondition, "the node is a worker; bootstrap a control-plane node")
+	}
+	s.mu.Lock()
+	done, err := s.bootstrap(k)
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return nil, failed(connect.CodeDeadlineExceeded, "etcd is initialised and the control plane starts, but its manifests were not applied yet; chalkctl status shows its progress")
+	}
+	k.mu.Lock()
+	n := k.count
+	k.mu.Unlock()
+	return connect.NewResponse(&nodev1.BootstrapResponse{Applied: uint32(n)}), nil
+}
+
+// bootstrap commits the node to initialising etcd: the marker comes first, so a failure after
+// it is retried by the next boot and never initialises a second cluster.
+func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
+	bootstrapped, err := knode.Bootstrapped(k.Paths)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
+	if bootstrapped {
+		return nil, failed(connect.CodeFailedPrecondition, "the node is bootstrapped already")
+	}
+	hasData, err := knode.EtcdHasData(k.Paths)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
+	if hasData {
+		return nil, failed(connect.CodeFailedPrecondition, "%s holds etcd data; reset VAR before bootstrapping a new cluster on this node", k.Paths.EtcdData)
+	}
+	if _, err := knode.ReadShare(k.Paths); err != nil {
+		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
+	}
+	if err := install.WriteFile(k.Paths.Bootstrapped(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		return nil, failed(connect.CodeInternal, "record the bootstrap: %v", err)
+	}
+	if err := knode.RenderStaticPods(k.Paths); err != nil {
+		return nil, failed(connect.CodeInternal, "render the static pods: %v", err)
+	}
+	log.Print("bootstrapped: the control plane starts")
+	return k.start(), nil
+}
+
+// status describes the node's Kubernetes state.
+func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, error) {
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		return nil, err
+	}
+	st := &nodev1.KubernetesStatus{Kind: c.Kind}
+	if _, err := os.Stat(k.Paths.Share()); errors.Is(err, os.ErrNotExist) {
+		st.State = "no share"
+		return st, nil
+	}
+	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {
+	case err != nil:
+		return nil, err
+	case c.Kind == k8s.KindWorker:
+		st.State = "joined"
+	case bootstrapped:
+		st.State = "bootstrapped"
+	default:
+		st.State = "waiting for bootstrap"
+		return st, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ready, err := k.NodeReady(ctx)
+	if err != nil {
+		ready = fmt.Sprintf("unknown: %v", err)
+	}
+	st.NodeReady = ready
+	return st, nil
+}

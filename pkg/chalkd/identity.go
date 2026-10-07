@@ -18,6 +18,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -47,6 +48,34 @@ func parseIdentity(data string) (delivered, error) {
 	return delivered{data: []byte(data), section: id.Storage}, nil
 }
 
+// kubernetesShare validates a delivered share for the node the identity names and returns it as
+// STATE keeps it, in its canonical encoding; nil when none was delivered.
+func (s *Server) kubernetesShare(d delivered, data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	if s.Kubernetes == nil {
+		return nil, failed(connect.CodeFailedPrecondition, "the node's role has no Kubernetes, so it takes no Kubernetes share")
+	}
+	share, err := kpki.ParseShare(data)
+	if err != nil {
+		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	nodeName, err := install.KubernetesNodeName(d.data)
+	if err != nil {
+		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	// A node must never run its kubelet with a certificate issued for another node.
+	if err := share.ValidateFor(nodeName); err != nil {
+		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	canonical, err := share.Encode()
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "encode the Kubernetes share: %v", err)
+	}
+	return canonical, nil
+}
+
 // classify compares the delivered section with the recorded one and the pinned disks.
 func (s *Server) classify(recorded, section storage.Section, pins storage.Pins) []storage.Change {
 	changes := storage.Classify(recorded, section)
@@ -60,6 +89,10 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	d, err := parseIdentity(req.Msg.Identity)
+	if err != nil {
+		return nil, err
+	}
+	share, err := s.kubernetesShare(d, req.Msg.KubernetesShare)
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +121,18 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	restarted, err := s.applyIdentity(ctx, d.data)
 	if err != nil {
 		return nil, err
+	}
+	if share != nil {
+		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
+			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
+		}
+		// The kubelet's credentials and the control plane's certificates come from the share.
+		units := []string{"chalkos-kubernetes.service", "kubelet.service"}
+		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"restart"}, units...)...); err != nil {
+			return nil, failed(connect.CodeInternal, "restart the kubelet with the new share: %v", err)
+		}
+		restarted = append(restarted, units...)
+		s.Kubernetes.Start()
 	}
 	resp := &nodev1.ApplyIdentityResponse{RestartedUnits: restarted}
 	for _, c := range changes {

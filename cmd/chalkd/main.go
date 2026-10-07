@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -30,8 +31,9 @@ import (
 const usage = `usage: chalkd <command>
 
 commands:
-  serve          serve the node API
-  load-identity  apply the identity recorded on STATE`
+  serve               serve the node API
+  load-identity       apply the identity recorded on STATE
+  prepare-kubernetes  write the kubelet's and the control plane's certificates and configuration`
 
 func main() {
 	log.SetFlags(0)
@@ -46,6 +48,8 @@ func main() {
 		err = serve()
 	case "load-identity":
 		err = identity.Default().Load()
+	case "prepare-kubernetes":
+		err = knode.Prepare(knode.DefaultPaths(), time.Now())
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
@@ -186,6 +190,11 @@ func serve() error {
 		log.Printf("maintenance mode, accepting any client; certificate fingerprint %s", srv.Fingerprint)
 	default:
 		log.Printf("maintenance mode, accepting clients of the OS CA; certificate fingerprint %s", srv.Fingerprint)
+	}
+	// Images of a role with Kubernetes carry the cluster file.
+	if _, err := os.Stat(knode.DefaultPaths().Cluster); err == nil && creds.mode == nodev1.Mode_MODE_NORMAL {
+		srv.Kubernetes = chalkd.NewKubernetes()
+		srv.Kubernetes.Start()
 	}
 	go announceAddresses(srv.Fingerprint)
 

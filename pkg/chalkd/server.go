@@ -93,6 +93,8 @@ type Server struct {
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
 	RebootNode func()
+	// Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
+	Kubernetes *Kubernetes
 
 	// mu serialises calls that change the node.
 	mu        sync.Mutex
@@ -116,6 +118,7 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceStatusProcedure:        {[]nodev1.Mode{normal}, pki.RoleReader},
 	nodev1connect.NodeServiceLogsProcedure:          {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
 	nodev1connect.NodeServiceRebootProcedure:        {[]nodev1.Mode{maintenance, normal}, pki.RoleOperator},
+	nodev1connect.NodeServiceBootstrapProcedure:     {[]nodev1.Mode{normal}, pki.RoleAdmin},
 }
 
 type roleKey struct{}
