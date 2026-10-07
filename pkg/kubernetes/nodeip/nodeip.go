@@ -39,6 +39,10 @@ func ParseFilter(subnets []string) (Filter, error) {
 		if err != nil {
 			return Filter{}, fmt.Errorf("validSubnets: %q is not a subnet in CIDR notation", s)
 		}
+		// Select compares addresses in their IPv4 form, which such a subnet never holds.
+		if prefix.Addr().Is4In6() {
+			return Filter{}, fmt.Errorf("validSubnets: %q is an IPv4-mapped IPv6 subnet; write the IPv4 form, such as 10.0.0.0/8", s)
+		}
 		if exclude {
 			f.exclude = append(f.exclude, prefix.Masked())
 		} else {

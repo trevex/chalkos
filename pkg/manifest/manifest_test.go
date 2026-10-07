@@ -153,3 +153,14 @@ func TestDecodeValidSubnets(t *testing.T) {
 		t.Errorf("kubernetes = %+v", k)
 	}
 }
+
+// A subnet the node would refuse is refused before chalkctl installs or applies anything.
+func TestDecodeRejectsInvalidSubnets(t *testing.T) {
+	for _, bad := range []string{"999.1.1.1/40", "a/1", "::::/999", "10.0.0.0/33", "fd00::/129", "!::ffff:10.0.0.10/128"} {
+		_, err := Decode(strings.NewReader(`{"schemaVersion": 0, "nodes": {"n1": {"role": "r", "identity": {
+		  "kubernetes": {"nodeName": "n1", "nodeIP": null, "validSubnets": ["10.0.0.0/8", "` + bad + `"]}}}}}`))
+		if err == nil || !strings.Contains(err.Error(), "node n1") || !strings.Contains(err.Error(), bad) {
+			t.Errorf("validSubnets %q: err = %v", bad, err)
+		}
+	}
+}

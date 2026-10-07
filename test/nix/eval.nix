@@ -1085,6 +1085,76 @@ lib.runTests {
       notAClusterSubnet = true;
     };
   };
+  # A subnet every node would refuse at boot is refused before any image is built.
+  testSubnetsAreChecked =
+    let
+      good = [
+        "10.0.0.0/8"
+        "!10.0.0.10/32"
+        "0.0.0.0/0"
+        "192.168.100.12/24"
+        "fd00::/64"
+        "!fd00::1/128"
+        "FD00:0:0:0:0:0:0:1/128"
+        "::/0"
+        "::1/128"
+        "fd00::/8"
+        "64:ff9b::192.0.2.1/128"
+      ];
+      bad = [
+        "999.1.1.1/40"
+        "a/1"
+        "::::/999"
+        "10.0.0.0/33"
+        "fd00::/129"
+        "10.0.0/8"
+        "010.0.0.0/8"
+        "10.0.0.0/08"
+        "fd00::1::/64"
+        "fd00:1:2:3:4:5:6:7:8/64"
+        "1:2:3:4:5:6:7::8/64"
+        "fd00:12345::/64"
+        "!!10.0.0.0/8"
+        " 10.0.0.0/8"
+        "fd00::/"
+        # IPv4-mapped: the node compares its addresses in their IPv4 form.
+        "::ffff:10.0.0.0/104"
+        "!::ffff:10.0.0.10/128"
+        "::ffff:a00:a/128"
+      ];
+      accepted =
+        subnet:
+        let
+          c = cluster [
+            {
+              chalkos.cluster.kubernetes.nodeIP.validSubnets = [ subnet ];
+              chalkos.nodes.n1 = {
+                role = "worker";
+                storage.system.disk = "/dev/vda";
+                kubernetes.validSubnets = [ subnet ];
+              };
+            }
+          ];
+        in
+        {
+          cluster = !fails (role c).environment.etc."chalkos/kubernetes/cluster.json".text;
+          node = !fails c.manifest.nodes.n1.identity.kubernetes;
+        };
+      all = value: _: {
+        cluster = value;
+        node = value;
+      };
+    in
+    {
+      expr = {
+        good = lib.genAttrs good accepted;
+        bad = lib.genAttrs bad accepted;
+      };
+      expected = {
+        good = lib.genAttrs good (all true);
+        bad = lib.genAttrs bad (all false);
+      };
+    };
   testEndpointWarnsWithoutControlPlaneAddress = {
     expr =
       let

@@ -33,9 +33,29 @@ func filter(t *testing.T, subnets ...string) Filter {
 var reserved = []netip.Prefix{netip.MustParsePrefix("10.244.0.0/16"), netip.MustParsePrefix("10.96.0.0/12")}
 
 func TestParseFilter(t *testing.T) {
-	for _, bad := range []string{"10.0.0.0", "10.0.0.0/33", "!", "!fd00::/129", "eth0", ""} {
+	for _, bad := range []string{
+		"10.0.0.0", "10.0.0.0/33", "999.1.1.1/40", "a/1", "::::/999", "fd00::/129", "!", "!fd00::/129", "eth0", "",
+		"10.0.0/8", "010.0.0.0/8", "10.0.0.0/08", "fd00::1::/64", "fd00:1:2:3:4:5:6:7:8/64", "1:2:3:4:5:6:7::8/64",
+		"fd00:12345::/64", "!!10.0.0.0/8", " 10.0.0.0/8", "fd00::/",
+	} {
 		if _, err := ParseFilter([]string{bad}); err == nil {
 			t.Errorf("ParseFilter(%q) accepted", bad)
+		}
+	}
+	for _, good := range []string{
+		"10.0.0.0/8", "!10.0.0.10/32", "0.0.0.0/0", "192.168.100.12/24", "fd00::/64", "!fd00::1/128", "FD00:0:0:0:0:0:0:1/128", "::/0",
+		"::1/128", "fd00::/8", "64:ff9b::192.0.2.1/128",
+	} {
+		if _, err := ParseFilter([]string{good}); err != nil {
+			t.Errorf("ParseFilter(%q): %v", good, err)
+		}
+	}
+	// The node's addresses are compared in their IPv4 form, which an IPv4-mapped subnet never
+	// holds: an exclusion written that way would exclude nothing.
+	for _, mapped := range []string{"::ffff:10.0.0.0/104", "!::ffff:10.0.0.10/128", "::ffff:a00:0/104"} {
+		_, err := ParseFilter([]string{mapped})
+		if err == nil || !strings.Contains(err.Error(), "IPv4 form") {
+			t.Errorf("ParseFilter(%q) = %v, want an error asking for the IPv4 form", mapped, err)
 		}
 	}
 	f := filter(t, "10.0.0.0/8", "!10.0.0.10/32", "fd00::/64")

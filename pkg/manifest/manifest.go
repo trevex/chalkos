@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -143,6 +144,12 @@ func Decode(r io.Reader) (*Manifest, error) {
 		for disk, d := range n.Identity.Storage.Disks {
 			if keys := d.Ref.UnknownKeys(); len(keys) > 0 {
 				return nil, fmt.Errorf("parse manifest: node %s, disk %s: unknown selector keys %s", name, disk, strings.Join(keys, ", "))
+			}
+		}
+		// The node would refuse them at every boot and run no kubelet.
+		if k := n.Identity.Kubernetes; k != nil {
+			if _, err := nodeip.ParseFilter(k.ValidSubnets); err != nil {
+				return nil, fmt.Errorf("parse manifest: node %s: kubernetes.%w", name, err)
 			}
 		}
 	}

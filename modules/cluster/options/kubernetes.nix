@@ -49,8 +49,103 @@ let
     ) config.chalkos.nodes
   );
 
-  # A subnet in CIDR notation, excluded with a leading "!"; chalkd checks the addresses.
-  subnet = types.strMatching "!?[0-9A-Fa-f.:]+/[0-9]{1,3}";
+  # The four octets of an IPv4 address, or null. Octets have no leading zeros, as in Go's netip.
+  parseIPv4 =
+    s:
+    let
+      octet = "(0|[1-9][0-9]{0,2})";
+      octets = builtins.match "${octet}\\.${octet}\\.${octet}\\.${octet}" s;
+      values = map lib.toInt octets;
+    in
+    if octets == null || lib.any (o: o > 255) values then null else values;
+
+  # The eight 16-bit groups of an IPv6 address, or null. "::" stands for at least one group of
+  # zeros, and the last two groups may be written as an IPv4 address.
+  parseIPv6 =
+    s:
+    let
+      halves = lib.splitString "::" s;
+      # The groups of the colon-separated fields of part, or null.
+      groupsOf =
+        last: part:
+        let
+          fields = if part == "" then [ ] else lib.splitString ":" part;
+          field =
+            i: f:
+            let
+              v4 = parseIPv4 f;
+            in
+            if builtins.match "[0-9A-Fa-f]{1,4}" f != null then
+              [ (lib.fromHexString f) ]
+            else if last && i == builtins.length fields - 1 && v4 != null then
+              [
+                (builtins.elemAt v4 0 * 256 + builtins.elemAt v4 1)
+                (builtins.elemAt v4 2 * 256 + builtins.elemAt v4 3)
+              ]
+            else
+              null;
+          groups = lib.imap0 field fields;
+        in
+        if lib.elem null groups then null else lib.concatLists groups;
+      head = groupsOf (builtins.length halves == 1) (builtins.head halves);
+      tail = groupsOf true (lib.last halves);
+      zeros = 8 - builtins.length head - builtins.length tail;
+    in
+    if builtins.length halves == 1 then
+      if head != null && builtins.length head == 8 then head else null
+    else if builtins.length halves == 2 && head != null && tail != null && zeros >= 1 then
+      head ++ lib.replicate zeros 0 ++ tail
+    else
+      null;
+
+  # A subnet filter as { exclude, ipv4, groups, prefix }, groups being the address's octets or
+  # 16-bit groups, or else a string saying what is wrong with it. It accepts what chalkd's
+  # nodeip.ParseFilter accepts.
+  parseSubnet =
+    s:
+    let
+      parts = builtins.match "(!?)([^/]+)/(0|[1-9][0-9]{0,2})" s;
+      address = builtins.elemAt parts 1;
+      prefix = lib.toInt (builtins.elemAt parts 2);
+      v4 = parseIPv4 address;
+      v6 = parseIPv6 address;
+      parsed = ipv4: groups: {
+        exclude = builtins.elemAt parts 0 == "!";
+        inherit ipv4 groups prefix;
+      };
+    in
+    if parts == null then
+      "is not a subnet in CIDR notation"
+    else if v4 != null then
+      if prefix > 32 then "has a prefix longer than 32 bits" else parsed true v4
+    else if v6 == null then
+      "is not a subnet in CIDR notation: ${address} is not an IPv4 or IPv6 address"
+    else if lib.take 6 v6 == lib.replicate 5 0 ++ [ 65535 ] then
+      # The node compares its addresses in their IPv4 form, which such a subnet never holds.
+      "is an IPv4-mapped IPv6 subnet; write the IPv4 form, such as 10.0.0.0/8"
+    else if prefix > 128 then
+      "has a prefix longer than 128 bits"
+    else
+      parsed false v6;
+
+  # A subnet in CIDR notation, excluded with a leading "!".
+  subnet = lib.mkOptionType {
+    name = "subnet";
+    description = ''subnet in CIDR notation, excluded with a leading "!"'';
+    check = builtins.isString;
+    merge =
+      loc: defs:
+      let
+        value = lib.mergeEqualOption loc defs;
+        parsed = parseSubnet value;
+      in
+      if builtins.isString parsed then
+        throw "${
+          lib.showOption (lib.filter (p: !lib.hasPrefix "[definition " p) loc)
+        }: \"${value}\" ${parsed}"
+      else
+        value;
+  };
   clusterSubnets = config.chalkos.cluster.kubernetes.nodeIP.validSubnets;
 in
 {
