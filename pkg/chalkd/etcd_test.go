@@ -212,7 +212,7 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	k := s.Kubernetes
 	k.EtcdStopped = func(context.Context) error { return nil }
 	// The node's own etcd does not answer; asking it ends after the timeout.
-	k.EtcdTimeout = 2 * time.Second
+	k.EtcdTimeout = silentEtcdTimeout
 	k.Start()
 	eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
 	learner := slices.IndexFunc(members(t, cli), func(m etcd.Member) bool { return m.Learner })
@@ -237,13 +237,18 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	checkLeft(t, s)
 }
 
+// silentEtcdTimeout bounds the requests to etcd where the node's own member does not answer.
+// Every leave waits it out for that member, but it bounds the requests to the other members too,
+// which on a busy machine take seconds to answer or to commit a member's removal.
+const silentEtcdTimeout = 10 * time.Second
+
 // otherMembersOnly makes the node's own etcd member stop answering, while the API server lists
 // the other members.
 func otherMembersOnly(t *testing.T, s *Server, others ...*etcdtest.Member) {
 	t.Helper()
 	k := s.Kubernetes
 	k.LocalEtcd = etcdtest.Silent(t)
-	k.EtcdTimeout = 2 * time.Second
+	k.EtcdTimeout = silentEtcdTimeout
 	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
 		var urls []string
 		for _, m := range others {

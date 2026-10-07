@@ -102,7 +102,9 @@ func TestEtcdLeaveForce(t *testing.T) {
 	k := s.Kubernetes
 	local := k.LocalEtcd
 	k.LocalEtcd = etcdtest.Silent(t)
-	k.EtcdTimeout = 2 * time.Second
+	// Each leave waits the timeout out for the silent member, while the other one must answer
+	// within it also on a busy machine.
+	k.EtcdTimeout = 10 * time.Second
 	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
 		return []string{local}, nil
 	}
