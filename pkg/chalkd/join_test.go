@@ -332,9 +332,12 @@ func TestJoinStatusAfterStall(t *testing.T) {
 	}
 	stallJoin(t, s, cli)
 	const prefix = "joining the cluster at https://192.168.100.11:6443: "
-	if got := kubernetesState(t, s); !strings.HasPrefix(got, prefix+"add this node to etcd as a learner") || !strings.HasSuffix(got, "; trying again") {
-		t.Errorf("state %q", got)
-	}
+	// Each attempt starts by checking etcd's members, so the state shows the failure only
+	// between attempts.
+	eventually(t, "the stall's state", func() bool {
+		got := kubernetesState(t, s)
+		return strings.HasPrefix(got, prefix+"add this node to etcd as a learner") && strings.HasSuffix(got, "; trying again")
+	})
 	unreachable.Store(true)
 	eventually(t, "the unreachable cluster's state", func() bool { return kubernetesState(t, s) == prefix+"connection refused" })
 	// chalkd started again remembers the join.
@@ -391,12 +394,12 @@ func TestJoinRefusesSplitClusters(t *testing.T) {
 		return []string{cp0.ClientURL, other.ClientURL}, nil
 	}
 	k.Start()
+	// Each attempt starts by checking etcd's members, so the state shows the split only between
+	// attempts.
 	eventually(t, "the split's state", func() bool {
-		return strings.Contains(kubernetesState(t, s), "the endpoints belong to different etcd clusters (")
+		got := kubernetesState(t, s)
+		return strings.Contains(got, "the endpoints belong to different etcd clusters (") && strings.Contains(got, "two nodes were bootstrapped separately")
 	})
-	if got := kubernetesState(t, s); !strings.Contains(got, "two nodes were bootstrapped separately") {
-		t.Errorf("state %q", got)
-	}
 	stopJoin(t, k)
 	if list := members(t, cli); len(list) != 1 {
 		t.Errorf("members %+v, want cp0 alone", list)
@@ -425,7 +428,6 @@ func TestControlPlaneReportsSplit(t *testing.T) {
 	local := etcdtest.StartNew(t, *share.EtcdCA, "n1")
 	other := etcdtest.StartNew(t, *share.EtcdCA, "cp0")
 	k.LocalEtcd = local.ClientURL
-	k.EtcdTimeout = time.Second
 	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
 		return []string{other.ClientURL}, nil
 	}
