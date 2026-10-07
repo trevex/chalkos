@@ -1760,7 +1760,20 @@ lib.runTests {
       {
         inherit (clusterFile) kind version endpoint;
         apiServer = clusterFile.images.kubeAPIServer;
-        firewall = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
+        # The API server, and etcd's clients and peers on the other control-plane nodes, which
+        # etcd authenticates by its CA.
+        firewall = lib.all (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
+          6443
+          2379
+          2380
+        ];
+        workerFirewall =
+          lib.any (port: lib.elem port (role (cluster [ ])).networking.firewall.allowedTCPPorts)
+            [
+              6443
+              2379
+              2380
+            ];
         # The built-in objects, then the cluster's own.
         manifests =
           builtins.fromJSON config.environment.etc."chalkos/kubernetes/manifests.json".text
@@ -1773,6 +1786,7 @@ lib.runTests {
       endpoint = "https://10.0.0.1:6443";
       apiServer = "registry.k8s.io/kube-apiserver:v1.37.1";
       firewall = true;
+      workerFirewall = false;
       manifests = true;
       etcdDir = true;
     };

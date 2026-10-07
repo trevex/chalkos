@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
+	"net"
 	"os"
 	"sync"
 	"time"
@@ -38,9 +40,24 @@ type Kubernetes struct {
 	// RestartBackoff is the first wait before ControlPlane starts again after it failed; it
 	// doubles up to MaxRestartBackoff. Zero means 5 seconds and a minute.
 	RestartBackoff, MaxRestartBackoff time.Duration
+	// EtcdEndpoints returns the client URLs of the cluster's etcd members other than the node's,
+	// as the API server at the cluster's endpoint lists them; it fails while there is none.
+	// Tests replace it.
+	EtcdEndpoints func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []net.IP) ([]string, error)
+	// ClusterAnswers reports whether the API server at the cluster's endpoint answers with the
+	// share's CA. Tests replace it.
+	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
+	// JoinRetry is the wait between two attempts to join the cluster; zero means 10 seconds.
+	JoinRetry time.Duration
 
-	mu      sync.Mutex
-	started bool
+	// membership serialises the bootstrap and the join, which both make the node an etcd member.
+	membership sync.Mutex
+
+	mu sync.Mutex
+	// joining is set while the join's loop runs; joinState is what it waits for or does.
+	joining   bool
+	joinState string
+	started   bool
 	// reload asks the running loop to start again.
 	reload chan struct{}
 	// done is closed once the manifests were applied; count is how many.
@@ -53,10 +70,13 @@ func NewKubernetes() *Kubernetes {
 	k := &Kubernetes{Paths: knode.DefaultPaths(), Manifests: "/etc/chalkos/kubernetes/manifests.json"}
 	k.ControlPlane = k.runControlPlane
 	k.NodeReady = k.nodeReady
+	k.EtcdEndpoints = k.etcdEndpoints
+	k.ClusterAnswers = clusterAnswers
 	return k
 }
 
-// Start runs the control plane's loop once, when the node is a bootstrapped control plane.
+// Start runs the control plane's loop once, when the node is a bootstrapped control plane, and
+// joins a control plane that is not to the cluster.
 func (k *Kubernetes) Start() {
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
@@ -68,7 +88,11 @@ func (k *Kubernetes) Start() {
 		log.Printf("kubernetes: %v", err)
 		return
 	}
-	if c.Kind != k8s.KindControlPlane || !bootstrapped {
+	if c.Kind != k8s.KindControlPlane {
+		return
+	}
+	if !bootstrapped {
+		k.startJoin()
 		return
 	}
 	if err := knode.CheckEtcdData(k.Paths); err != nil {
@@ -213,7 +237,7 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 		return fmt.Errorf("issue chalkd's client certificate: %w", err)
 	}
 	go cred.renew(ctx)
-	cfg, err := cred.restConfig()
+	cfg, err := cred.restConfig(kpki.LocalAPIServer)
 	if err != nil {
 		return err
 	}
@@ -302,7 +326,7 @@ func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.Bootst
 		return nil, failed(connect.CodeFailedPrecondition, "the node is a worker; bootstrap a control-plane node")
 	}
 	s.mu.Lock()
-	done, err := s.bootstrap(k)
+	done, err := s.bootstrap(ctx, k, c)
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -320,7 +344,7 @@ func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.Bootst
 
 // bootstrap commits the node to initialising etcd: the marker comes first, so a failure after
 // it is retried by the next boot and never initialises a second cluster.
-func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
+func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (chan struct{}, error) {
 	bootstrapped, err := knode.Bootstrapped(k.Paths)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
@@ -335,7 +359,8 @@ func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
 	if hasData {
 		return nil, failed(connect.CodeFailedPrecondition, "%s holds etcd data; reset VAR before bootstrapping a new cluster on this node", k.Paths.EtcdData)
 	}
-	if _, err := knode.ReadShare(k.Paths); err != nil {
+	share, err := knode.ReadShare(k.Paths)
+	if err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
 	// The static pods advertise the node's address and read the certificates the preparation
@@ -347,6 +372,25 @@ func (s *Server) bootstrap(k *Kubernetes) (chan struct{}, error) {
 		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs <node> --unit chalkos-kubernetes", errNotPrepared)
 	case problem != "":
 		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
+	}
+	if !k.membership.TryLock() {
+		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
+	}
+	defer k.membership.Unlock()
+	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {
+	case err != nil:
+		return nil, failed(connect.CodeInternal, "%v", err)
+	case bootstrapped:
+		return nil, failed(connect.CodeFailedPrecondition, "the node joined the cluster already")
+	}
+	if _, err := os.Stat(k.Paths.EtcdInitialCluster()); err == nil {
+		return nil, failed(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
+	// A second bootstrap would start a second cluster.
+	if k.ClusterAnswers(ctx, c, share) {
+		return nil, failed(connect.CodeFailedPrecondition, "the cluster's API server answers at %s; this node joins it on its own", c.Endpoint)
 	}
 	// etcd's peers and the certificates know the node by its addresses from now on.
 	if err := knode.WritePin(k.Paths); err != nil {
@@ -415,7 +459,7 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 		}
 		st.State = "bootstrapped"
 	default:
-		st.State = "waiting for bootstrap"
+		st.State = k.joinStatus(c)
 		return st, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)

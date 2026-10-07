@@ -15,16 +15,20 @@ import (
 	"k8s.io/client-go/util/connrotation"
 
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// credentialValidity is how long chalkd's client certificate for the API server lives. It is
-// in system:masters, so it is short-lived and exists only in memory.
+// credentialValidity is how long chalkd's client certificates for the API server and etcd live.
+// They allow everything, so they are short-lived and exist only in memory.
 const credentialValidity = time.Hour
 
-// credential issues chalkd's client certificate from the share's CA when a connection needs
-// one, and again once half its lifetime has passed.
+// credential issues one of chalkd's client certificates from a CA of the share when a connection
+// needs one, and again once half its lifetime has passed.
 type credential struct {
-	share    kpki.Share
+	// issue issues the certificate, valid for validity; ca is the PEM certificate of the CA
+	// that issues it and the server's certificate.
+	issue    func(validity time.Duration, now time.Time) (pki.CertKey, error)
+	ca       string
 	validity time.Duration
 	now      func() time.Time
 	// conns are the connections to the API server, closed when the certificate is replaced:
@@ -39,8 +43,23 @@ type credential struct {
 	issued, closed int
 }
 
+// newCredential issues chalkd's client certificate for the API server, in system:masters.
 func newCredential(share kpki.Share, validity time.Duration, now func() time.Time) *credential {
-	return &credential{share: share, validity: validity, now: now, conns: connrotation.NewConnectionTracker()}
+	issue := func(validity time.Duration, now time.Time) (pki.CertKey, error) {
+		return kpki.IssueChalkd(share, validity, now)
+	}
+	return &credential{issue: issue, ca: share.CA.Certificate, validity: validity, now: now, conns: connrotation.NewConnectionTracker()}
+}
+
+// newEtcdCredential issues chalkd's client certificate for etcd.
+func newEtcdCredential(share kpki.Share, validity time.Duration, now func() time.Time) (*credential, error) {
+	if share.EtcdCA == nil {
+		return nil, errors.New("the node's share holds no etcd CA")
+	}
+	issue := func(validity time.Duration, now time.Time) (pki.CertKey, error) {
+		return kpki.IssueEtcdClient(share, validity, now)
+	}
+	return &credential{issue: issue, ca: share.EtcdCA.Certificate, validity: validity, now: now, conns: connrotation.NewConnectionTracker()}, nil
 }
 
 // GetClientCertificate returns the current certificate, issuing one when there is none or
@@ -52,7 +71,7 @@ func (c *credential) GetClientCertificate(*tls.CertificateRequestInfo) (*tls.Cer
 	if c.cert != nil && now.Before(c.renewAt) {
 		return c.cert, nil
 	}
-	ck, err := kpki.IssueChalkd(c.share, c.validity, now)
+	ck, err := c.issue(c.validity, now)
 	if err != nil {
 		return nil, err
 	}
@@ -110,22 +129,27 @@ func (c *credential) renew(ctx context.Context) {
 	}
 }
 
-// restConfig reaches the local API server with the credential.
-func (c *credential) restConfig() (*rest.Config, error) {
+// tlsConfig trusts the CA and authenticates with the credential.
+func (c *credential) tlsConfig() (*tls.Config, error) {
 	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(c.share.CA.Certificate)) {
+	if !roots.AppendCertsFromPEM([]byte(c.ca)) {
 		return nil, errors.New("the share's CA holds no certificate")
+	}
+	return &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12, GetClientCertificate: c.GetClientCertificate}, nil
+}
+
+// restConfig reaches the API server at server, such as the local one, with the credential.
+func (c *credential) restConfig(server string) (*rest.Config, error) {
+	tlsConfig, err := c.tlsConfig()
+	if err != nil {
+		return nil, err
 	}
 	dialer := connrotation.NewDialerWithTracker((&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext, c.conns)
 	return &rest.Config{
-		Host: kpki.LocalAPIServer,
+		Host: server,
 		Transport: &http.Transport{
-			DialContext: dialer.DialContext,
-			TLSClientConfig: &tls.Config{
-				RootCAs:              roots,
-				MinVersion:           tls.VersionTLS12,
-				GetClientCertificate: c.GetClientCertificate,
-			},
+			DialContext:         dialer.DialContext,
+			TLSClientConfig:     tlsConfig,
 			ForceAttemptHTTP2:   true,
 			TLSHandshakeTimeout: 10 * time.Second,
 			IdleConnTimeout:     90 * time.Second,

@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -51,6 +52,11 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 		Manifests:    filepath.Join(root, "etc", "manifests.json"),
 		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
 		NodeReady:    func(context.Context) (string, error) { return "True", nil },
+		// No cluster answers at the endpoint.
+		EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
+			return nil, errors.New("connection refused")
+		},
+		ClusterAnswers: func(context.Context, k8s.Cluster, kpki.Share) bool { return false },
 	}
 	p := s.Kubernetes.Paths
 	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
@@ -358,7 +364,7 @@ func TestStatusKubernetes(t *testing.T) {
 		s    *Server
 		want *nodev1.KubernetesStatus
 	}{
-		"waiting":               {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap"}},
+		"waiting":               {waiting, &nodev1.KubernetesStatus{Kind: "controlplane", State: "waiting for bootstrap or for the cluster at https://192.168.100.11:6443"}},
 		"bootstrapped":          {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
 		"no share":              {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
 		"no address":            {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},

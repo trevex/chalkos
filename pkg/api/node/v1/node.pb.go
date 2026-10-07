@@ -1427,9 +1427,11 @@ type KubernetesStatus struct {
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// What the node waits for or is: "no share", "preparing" while its Kubernetes files are
 	// prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address
-	// matches validSubnets 10.0.0.0/8 (the node has ...)"; then "waiting for bootstrap",
-	// "bootstrapped" or "etcd data missing: restore etcd or reinstall the node" on a control-plane
-	// node, "joined" on a worker.
+	// matches validSubnets 10.0.0.0/8 (the node has ...)"; then on a control-plane node "waiting
+	// for bootstrap or for the cluster at <endpoint>", what joining that cluster does or waits for,
+	// such as "joining the cluster at <endpoint>: etcd member <id> catches up" or a stale member
+	// and how to remove it, "bootstrapped" or "etcd data missing: restore etcd or reinstall the
+	// node"; "joined" on a worker.
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	// The status of the Node's Ready condition (True, False or Unknown), or why it could not be
 	// read.

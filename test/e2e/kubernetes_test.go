@@ -120,7 +120,7 @@ func TestKubernetesCluster(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if !strings.Contains(out, "kubernetes controlplane: waiting for bootstrap") {
+		if !strings.Contains(out, "kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.100.11:6443") {
 			return fmt.Errorf("status before bootstrap:\n%s", out)
 		}
 		return nil

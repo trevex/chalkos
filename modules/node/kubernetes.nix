@@ -224,7 +224,16 @@ in
     };
 
     networking.firewall = {
-      allowedTCPPorts = [ 10250 ] ++ lib.optional controlPlane 6443;
+      # etcd's clients and peers on the other control-plane nodes need 2379 and 2380; etcd accepts
+      # only certificates of its CA there.
+      allowedTCPPorts = [
+        10250
+      ]
+      ++ lib.optionals controlPlane [
+        6443
+        2379
+        2380
+      ];
       allowedTCPPortRanges = [
         {
           from = 30000;
