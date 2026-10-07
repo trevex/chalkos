@@ -59,6 +59,9 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 		},
 		ClusterAnswers: func(context.Context, k8s.Cluster, kpki.Share) bool { return false },
 	}
+	// The loops a test started would run on against its removed files, and load the tests after
+	// it, until the test binary ends.
+	t.Cleanup(s.Kubernetes.Stop)
 	p := s.Kubernetes.Paths
 	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
 	  "podCIDR": "10.244.0.0/16", "serviceCIDR": "10.96.0.0/12", "dnsIP": "10.96.0.10", "domain": "cluster.local",
