@@ -44,6 +44,25 @@ type CertKey struct {
 	Key         string `json:"key,omitempty"`
 }
 
+// String names the certificate's subject and expiry and never prints the key, so logging a
+// CertKey or a struct holding one does not leak it.
+func (c CertKey) String() string {
+	key := "none"
+	if c.Key != "" {
+		key = "redacted"
+	}
+	cert, err := ParseCertificate([]byte(c.Certificate))
+	if err != nil {
+		return fmt.Sprintf("pki.CertKey{certificate: invalid, key: %s}", key)
+	}
+	return fmt.Sprintf("pki.CertKey{subject: %s, notAfter: %s, key: %s}", cert.Subject, cert.NotAfter.UTC().Format(time.RFC3339), key)
+}
+
+// GoString redacts a CertKey like String.
+func (c CertKey) GoString() string {
+	return c.String()
+}
+
 // Parse decodes the certificate and the key.
 func (c CertKey) Parse() (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	cert, err := ParseCertificate([]byte(c.Certificate))
@@ -105,7 +124,7 @@ func IssueClient(ca CertKey, name, role string, now time.Time) (CertKey, error) 
 	}
 	template.KeyUsage = x509.KeyUsageDigitalSignature
 	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
-	return issue(ca, template)
+	return issue(ca, template, now)
 }
 
 // IssueNode issues the certificate chalkd serves on an installed node, valid for the given host
@@ -119,7 +138,7 @@ func IssueNode(ca CertKey, name string, dnsNames []string, ips []net.IP, now tim
 	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	template.DNSNames = dnsNames
 	template.IPAddresses = ips
-	return issue(ca, template)
+	return issue(ca, template, now)
 }
 
 // Leaf describes a certificate IssueLeaf issues.
@@ -156,7 +175,7 @@ func IssueLeaf(ca CertKey, l Leaf, now time.Time) (CertKey, error) {
 	}
 	template.DNSNames = l.DNSNames
 	template.IPAddresses = l.IPs
-	return issue(ca, template)
+	return issue(ca, template, now)
 }
 
 // SelfSigned creates the certificate chalkd serves in maintenance mode, before the node has one
@@ -221,7 +240,7 @@ func newTemplate(commonName string, organization []string, now time.Time, validi
 	}, nil
 }
 
-func issue(ca CertKey, template *x509.Certificate) (CertKey, error) {
+func issue(ca CertKey, template *x509.Certificate, now time.Time) (CertKey, error) {
 	caCert, caKey, err := ca.Parse()
 	if err != nil {
 		return CertKey{}, fmt.Errorf("CA: %w", err)
@@ -232,6 +251,15 @@ func issue(ca CertKey, template *x509.Certificate) (CertKey, error) {
 	// Backdating must not start a certificate before its CA, or it never verifies at its start.
 	if template.NotBefore.Before(caCert.NotBefore) {
 		template.NotBefore = caCert.NotBefore
+	}
+	// Backdating would still leave a window, already past, under a CA that expired less than
+	// clockSkew ago.
+	if !caCert.NotAfter.After(now) {
+		return CertKey{}, fmt.Errorf("the CA expired %s", caCert.NotAfter.UTC().Format(time.RFC3339))
+	}
+	if !template.NotAfter.After(template.NotBefore) {
+		return CertKey{}, fmt.Errorf("the certificate would never be valid: the CA is valid from %s until %s",
+			caCert.NotBefore.UTC().Format(time.RFC3339), caCert.NotAfter.UTC().Format(time.RFC3339))
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

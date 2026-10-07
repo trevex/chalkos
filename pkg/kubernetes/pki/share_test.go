@@ -170,7 +170,9 @@ func TestKubeconfig(t *testing.T) {
 	c := kc.Clusters[0].Cluster
 	if c.Server != "https://127.0.0.1:16443" || c.TLSServerName != "10.0.0.10" || string(c.CAData) != k.CA.Certificate ||
 		string(kc.Users[0].User.CertData) != admin.Certificate || string(kc.Users[0].User.KeyData) != admin.Key || kc.CurrentContext != "lab" {
-		t.Errorf("kubeconfig = %s", data)
+		// The kubeconfig embeds the client key, so describe it rather than print it.
+		t.Errorf("kubeconfig: server %q, tls-server-name %q, context %q, or its CA, certificate or key differ",
+			c.Server, c.TLSServerName, kc.CurrentContext)
 	}
 
 	files, err := Kubeconfig{Name: "lab", Server: "https://10.0.0.10:6443", CAFile: "/ca.crt", ClientFile: "/client.pem"}.Encode()
@@ -185,5 +187,118 @@ func TestKubeconfig(t *testing.T) {
 	}
 	if _, err := IssueAdmin(k.CA, "admin", 0, now); err == nil {
 		t.Error("issued an admin certificate without validity")
+	}
+}
+
+func TestControlPlaneShareRejectsSharedCAs(t *testing.T) {
+	k := secrets(t)
+	for _, tc := range []struct {
+		name, a, b string
+		edit       func(s *Share)
+	}{
+		{"etcd CA is the Kubernetes CA", "ca", "etcdCA", func(s *Share) { ca := s.CA; s.EtcdCA = &ca }},
+		{"front-proxy CA is the Kubernetes CA", "ca", "frontProxyCA", func(s *Share) { ca := s.CA; s.FrontProxyCA = &ca }},
+		{"etcd CA is the front-proxy CA", "frontProxyCA", "etcdCA", func(s *Share) { ca := *s.FrontProxyCA; s.EtcdCA = &ca }},
+	} {
+		s := ControlPlaneShare(k)
+		tc.edit(&s)
+		err := s.Validate()
+		if err == nil {
+			t.Errorf("%s: accepted", tc.name)
+			continue
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, tc.a+" and "+tc.b) {
+			t.Errorf("%s: error %q does not name %s and %s", tc.name, msg, tc.a, tc.b)
+		}
+		if strings.Contains(msg, "PRIVATE KEY") || strings.Contains(msg, "CERTIFICATE") {
+			t.Errorf("%s: error contains key material: %q", tc.name, msg)
+		}
+	}
+}
+
+func TestParseShareStrict(t *testing.T) {
+	k := secrets(t)
+	w, err := WorkerShare(k, "w1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := w.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["caKey"] = k.CA.Key
+	extra, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseShare(extra); err == nil {
+		t.Error("accepted a worker share with an unknown caKey field")
+	} else if strings.Contains(err.Error(), "PRIVATE KEY") {
+		t.Errorf("error contains a key: %v", err)
+	}
+	for name, trailing := range map[string][]byte{
+		"garbage":       append(append([]byte{}, data...), []byte("garbage")...),
+		"second object": append(append([]byte{}, data...), data...),
+	} {
+		if _, err := ParseShare(trailing); err == nil {
+			t.Errorf("accepted a share followed by %s", name)
+		}
+	}
+	if _, err := ParseShare(append(append([]byte{}, data...), '\n')); err != nil {
+		t.Errorf("rejected a share with a trailing newline: %v", err)
+	}
+}
+
+func TestShareValidateKubeletSubject(t *testing.T) {
+	k := secrets(t)
+	w, err := WorkerShare(k, "w1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, leaf := range map[string]pki.Leaf{
+		"in system:masters":           {CommonName: NodeUserPrefix + "w1", Organization: []string{MastersGroup}, Client: true},
+		"in system:nodes and masters": {CommonName: NodeUserPrefix + "w1", Organization: []string{NodesGroup, MastersGroup}, Client: true},
+		"without a name":              {CommonName: NodeUserPrefix, Organization: []string{NodesGroup}, Client: true},
+		"with an invalid name":        {CommonName: NodeUserPrefix + "W_1", Organization: []string{NodesGroup}, Client: true},
+	} {
+		ck, err := pki.IssueLeaf(k.CA, leaf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := w
+		s.Kubelet = &ck
+		if err := s.Validate(); err == nil {
+			t.Errorf("accepted a kubelet certificate %s", name)
+		}
+	}
+	if err := w.Validate(); err != nil {
+		t.Errorf("rejected a valid worker share: %v", err)
+	}
+}
+
+func TestShareValidateFor(t *testing.T) {
+	k := secrets(t)
+	w2, err := WorkerShare(k, "w2", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w2.ValidateFor("w1"); err == nil {
+		t.Error("w1 accepted a share for w2")
+	}
+	if err := w2.ValidateFor("w2"); err != nil {
+		t.Errorf("w2 rejected its share: %v", err)
+	}
+	if err := ControlPlaneShare(k).ValidateFor("cp1"); err != nil {
+		t.Errorf("cp1 rejected its share: %v", err)
+	}
+	bad := w2
+	bad.ServiceAccountKey = k.ServiceAccountKey
+	if err := bad.ValidateFor("w2"); err == nil {
+		t.Error("ValidateFor accepted a share Validate rejects")
 	}
 }

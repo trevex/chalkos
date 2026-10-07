@@ -3,6 +3,7 @@ package pki
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -110,5 +111,56 @@ func TestSecretsStringRedactsKubernetes(t *testing.T) {
 	out := fmt.Sprintf("%v %+v %#v", s, s, s)
 	if strings.Contains(out, "PRIVATE KEY") || strings.Contains(out, base64.StdEncoding.EncodeToString(s.Kubernetes.EncryptionKey)) {
 		t.Errorf("formatted secrets leak Kubernetes keys: %s", out)
+	}
+}
+
+func TestValidateRejectsSharedCAs(t *testing.T) {
+	for _, tc := range []struct {
+		name, a, b string
+		edit       func(s *Secrets)
+	}{
+		{"etcd CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.etcdCA", func(s *Secrets) { s.Kubernetes.EtcdCA = s.Kubernetes.CA }},
+		{"front-proxy CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.frontProxyCA", func(s *Secrets) { s.Kubernetes.FrontProxyCA = s.Kubernetes.CA }},
+		{"etcd CA is the OS CA", "osCA", "kubernetes.etcdCA", func(s *Secrets) { s.Kubernetes.EtcdCA = s.OSCA }},
+	} {
+		s := generate(t)
+		tc.edit(&s)
+		err := s.Validate()
+		if err == nil {
+			t.Errorf("%s: accepted", tc.name)
+			continue
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, tc.a) || !strings.Contains(msg, tc.b) {
+			t.Errorf("%s: error %q does not name %s and %s", tc.name, msg, tc.a, tc.b)
+		}
+		if strings.Contains(msg, "PRIVATE KEY") || strings.Contains(msg, "CERTIFICATE") {
+			t.Errorf("%s: error contains key material: %q", tc.name, msg)
+		}
+	}
+
+	k := generate(t).Kubernetes
+	k.EtcdCA = k.CA
+	if err := k.Validate(); err == nil {
+		t.Error("KubernetesSecrets.Validate accepted an etcd CA that is the Kubernetes CA")
+	}
+}
+
+func TestKubernetesSecretsAndCertKeyRedacted(t *testing.T) {
+	k := generate(t).Kubernetes
+	ck := k.CA
+	out := fmt.Sprintf("%v %+v %#v %v %+v %#v %v %+v %#v", k, k, k, ck, ck, ck, &ck, &ck, &ck)
+	for name, secret := range map[string]string{
+		"a private key":                 "PRIVATE KEY",
+		"the encryption key in base64":  base64.StdEncoding.EncodeToString(k.EncryptionKey),
+		"the encryption key in hex":     hex.EncodeToString(k.EncryptionKey),
+		"the encryption key as numbers": fmt.Sprint(k.EncryptionKey),
+	} {
+		if strings.Contains(out, secret) {
+			t.Errorf("formatted Kubernetes secrets contain %s", name)
+		}
+	}
+	if !strings.Contains(out, "chalkos Kubernetes CA") {
+		t.Error("formatted Kubernetes secrets do not name the CA")
 	}
 }

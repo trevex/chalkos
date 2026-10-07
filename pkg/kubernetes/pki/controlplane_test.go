@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -66,6 +67,9 @@ func TestControlPlaneCertificates(t *testing.T) {
 		if cert.KeyUsage != x509.KeyUsageDigitalSignature {
 			t.Errorf("%s: key usage %v", tc.file, cert.KeyUsage)
 		}
+		if slices.Contains(cert.Subject.Organization, MastersGroup) {
+			t.Errorf("%s: in %s", tc.file, MastersGroup)
+		}
 		if _, err := cert.Verify(x509.VerifyOptions{Roots: roots(t, tc.ca), CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
 			t.Errorf("%s: not issued by its CA: %v", tc.file, err)
 		}
@@ -109,15 +113,20 @@ func TestControlPlaneCertificates(t *testing.T) {
 						Secret []byte `json:"secret"`
 					} `json:"keys"`
 				} `json:"secretbox"`
+				Identity *struct{} `json:"identity"`
 			} `json:"providers"`
 		} `json:"resources"`
 	}
 	if err := json.Unmarshal(files[FileEncryptionConfig], &enc); err != nil {
 		t.Fatal(err)
 	}
-	if enc.Kind != "EncryptionConfiguration" || enc.Resources[0].Resources[0] != "secrets" ||
-		string(enc.Resources[0].Providers[0].Secretbox.Keys[0].Secret) != string(k.EncryptionKey) {
-		t.Errorf("encryption configuration = %s", files[FileEncryptionConfig])
+	// The configuration holds the encryption key, so failures describe it rather than print it.
+	if enc.Kind != "EncryptionConfiguration" || len(enc.Resources) != 1 || !slices.Equal(enc.Resources[0].Resources, []string{"secrets"}) {
+		t.Errorf("encryption configuration: kind %q, %d resource entries, want secrets alone", enc.Kind, len(enc.Resources))
+	} else if p := enc.Resources[0].Providers; len(p) != 2 || p[0].Secretbox == nil || p[0].Identity != nil || p[1].Identity == nil || p[1].Secretbox != nil {
+		t.Errorf("encryption configuration: %d providers, want secretbox then the identity fallback", len(p))
+	} else if len(p[0].Secretbox.Keys) != 1 || string(p[0].Secretbox.Keys[0].Secret) != string(k.EncryptionKey) {
+		t.Error("encryption configuration: secretbox does not hold the share's encryption key")
 	}
 
 	for file, user := range map[string]string{FileControllerManagerConfig: ControllerManagerUser, FileSchedulerConfig: SchedulerUser} {
@@ -143,6 +152,44 @@ func TestControlPlaneCertificates(t *testing.T) {
 		if kc.Clusters[0].Cluster.Server != LocalAPIServer || cert.Subject.CommonName != user {
 			t.Errorf("%s: server %s, user %s", file, kc.Clusters[0].Cluster.Server, cert.Subject.CommonName)
 		}
+		clientOf(t, file, cert, k.CA)
+		if slices.Contains(cert.Subject.Organization, MastersGroup) {
+			t.Errorf("%s: in %s", file, MastersGroup)
+		}
+	}
+
+	chalkd, err := IssueChalkd(ControlPlaneShare(k), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chalkdCert, _, err := chalkd.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientOf(t, "chalkd", chalkdCert, k.CA)
+	if !slices.Equal(chalkdCert.Subject.Organization, []string{MastersGroup}) {
+		t.Errorf("chalkd: groups %v, want %s", chalkdCert.Subject.Organization, MastersGroup)
+	}
+
+	admin, err := IssueAdmin(k.CA, "admin", time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminCert, _, err := admin.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientOf(t, "admin", adminCert, k.CA)
+	if !slices.Equal(adminCert.Subject.Organization, []string{ClusterAdminGroup}) {
+		t.Errorf("admin: groups %v, want %s", adminCert.Subject.Organization, ClusterAdminGroup)
+	}
+}
+
+// clientOf checks that cert is a client certificate issued by ca.
+func clientOf(t *testing.T, name string, cert *x509.Certificate, ca pki.CertKey) {
+	t.Helper()
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots(t, ca), CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		t.Errorf("%s: not a client certificate of the Kubernetes CA: %v", name, err)
 	}
 }
 

@@ -90,7 +90,7 @@ func (s Secrets) Public() Public {
 
 // Validate checks that every secret is present, that the certificates belong to their keys, that
 // osCA is a CA certificate, that admin verifies against it and grants the admin role, and that a
-// version 2 file has valid Kubernetes secrets.
+// version 2 file has valid Kubernetes secrets whose CAs differ from each other and from osCA.
 func (s Secrets) Validate() error {
 	switch {
 	case s.Version != 1 && s.Version != SecretsVersion:
@@ -128,6 +128,9 @@ func (s Secrets) Validate() error {
 	}
 	if s.Kubernetes != nil {
 		if err := s.Kubernetes.Validate(); err != nil {
+			return err
+		}
+		if err := RequireDistinctCAs(append([]NamedCA{{"osCA", s.OSCA}}, s.Kubernetes.cas()...)...); err != nil {
 			return err
 		}
 	}

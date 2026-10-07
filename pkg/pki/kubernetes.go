@@ -1,6 +1,7 @@
 package pki
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -75,15 +76,33 @@ func (k *KubernetesSecrets) Public() *KubernetesPublic {
 	}
 }
 
-// Validate checks that every CA is a CA certificate with its key, and the sizes of the keys.
+// String names the CAs and never prints a key, so logging the secrets does not leak them.
+func (k KubernetesSecrets) String() string {
+	return fmt.Sprintf("pki.KubernetesSecrets{ca: %v, frontProxyCA: %v, etcdCA: %v, serviceAccountKey: redacted, encryptionKey: redacted}",
+		k.CA, k.FrontProxyCA, k.EtcdCA)
+}
+
+// GoString redacts the secrets like String.
+func (k KubernetesSecrets) GoString() string {
+	return k.String()
+}
+
+// cas names the Kubernetes CAs as the secrets file does.
+func (k *KubernetesSecrets) cas() []NamedCA {
+	return []NamedCA{{"kubernetes.ca", k.CA}, {"kubernetes.frontProxyCA", k.FrontProxyCA}, {"kubernetes.etcdCA", k.EtcdCA}}
+}
+
+// Validate checks that every CA is a CA certificate with its key and a key of its own, and the
+// sizes of the keys.
 func (k *KubernetesSecrets) Validate() error {
-	for _, ca := range []struct {
-		name string
-		ck   CertKey
-	}{{"ca", k.CA}, {"frontProxyCA", k.FrontProxyCA}, {"etcdCA", k.EtcdCA}} {
-		if err := ValidateCA(ca.ck); err != nil {
-			return fmt.Errorf("kubernetes.%s: %w", ca.name, err)
+	cas := k.cas()
+	for _, ca := range cas {
+		if err := ValidateCA(ca.CA); err != nil {
+			return fmt.Errorf("%s: %w", ca.Name, err)
 		}
+	}
+	if err := RequireDistinctCAs(cas...); err != nil {
+		return err
 	}
 	if _, err := ParseECKey(k.ServiceAccountKey); err != nil {
 		return fmt.Errorf("kubernetes.serviceAccountKey: %w", err)
@@ -94,7 +113,7 @@ func (k *KubernetesSecrets) Validate() error {
 	return nil
 }
 
-// ValidateCA checks that a certificate and key form a CA.
+// ValidateCA checks that a certificate and key form a CA that may sign certificates.
 func ValidateCA(ca CertKey) error {
 	cert, _, err := ca.Parse()
 	if err != nil {
@@ -102,6 +121,35 @@ func ValidateCA(ca CertKey) error {
 	}
 	if !cert.IsCA || !cert.BasicConstraintsValid {
 		return errors.New("not a CA certificate")
+	}
+	if cert.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return errors.New("the CA certificate lacks the certificate signing key usage")
+	}
+	return nil
+}
+
+// NamedCA is a CA with the name errors call it by.
+type NamedCA struct {
+	Name string
+	CA   CertKey
+}
+
+// RequireDistinctCAs checks that no two CAs share a public key. The CAs grant different
+// access: an etcd CA that is also the Kubernetes CA would give every certificate the Kubernetes
+// CA issues full access to etcd.
+func RequireDistinctCAs(cas ...NamedCA) error {
+	keys := make([][]byte, len(cas))
+	for i, ca := range cas {
+		cert, err := ParseCertificate([]byte(ca.CA.Certificate))
+		if err != nil {
+			return fmt.Errorf("%s: %w", ca.Name, err)
+		}
+		keys[i] = cert.RawSubjectPublicKeyInfo
+		for j := range i {
+			if bytes.Equal(keys[j], keys[i]) {
+				return fmt.Errorf("%s and %s share a key; every CA needs its own", cas[j].Name, ca.Name)
+			}
+		}
 	}
 	return nil
 }

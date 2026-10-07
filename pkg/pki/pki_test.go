@@ -1,6 +1,9 @@
 package pki
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
 	"net"
 	"regexp"
@@ -225,5 +228,53 @@ func TestLeafDoesNotPredateCA(t *testing.T) {
 	}
 	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: cert.NotBefore, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
 		t.Errorf("does not verify at its start: %v", err)
+	}
+}
+
+func TestValidateCARequiresCertSign(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := newTemplate("no cert sign", nil, now, CAValidity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template.IsCA = true
+	template.BasicConstraintsValid = true
+	template.KeyUsage = x509.KeyUsageCRLSign
+	ca, err := sign(template, template, key, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCA(ca); err == nil {
+		t.Error("accepted a CA certificate without the certificate signing key usage")
+	}
+	if err := ValidateCA(newTestCA(t)); err != nil {
+		t.Errorf("rejected a CA: %v", err)
+	}
+}
+
+func TestIssueFromExpiredCA(t *testing.T) {
+	for name, created := range map[string]time.Time{
+		"expired a day ago":        now.Add(-CAValidity - 24*time.Hour),
+		"expired half an hour ago": now.Add(-CAValidity - 30*time.Minute),
+	} {
+		ca, err := NewCA("old CA", created)
+		if err != nil {
+			t.Fatal(err)
+		}
+		caCert, _, _ := ca.Parse()
+		_, err = IssueLeaf(ca, Leaf{CommonName: "late", Client: true}, now)
+		if err == nil {
+			t.Errorf("%s: issued a certificate", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), caCert.NotAfter.UTC().Format(time.RFC3339)) {
+			t.Errorf("%s: error %q does not name the CA's expiry", name, err)
+		}
+		if strings.Contains(err.Error(), "PRIVATE KEY") {
+			t.Errorf("%s: error contains a key", name)
+		}
 	}
 }
