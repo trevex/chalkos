@@ -4,12 +4,15 @@
 package node
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -145,7 +148,7 @@ func Prepare(p Paths, now time.Time) error {
 		}
 		kubeletCert = &issued
 	}
-	if err := installKubeletClient(p, *kubeletCert); err != nil {
+	if err := installKubeletClient(p, share.CA, *kubeletCert, n.Name, now); err != nil {
 		return err
 	}
 	kubeconfig, err := kpki.Kubeconfig{
@@ -218,17 +221,17 @@ func KubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 }
 
 // installKubeletClient puts the certificate into the kubelet's certificate store unless the
-// store holds one that expires later, which the kubelet renewed itself.
-func installKubeletClient(p Paths, ck pki.CertKey) error {
+// store holds one the kubelet renewed itself that is trusted and expires later.
+func installKubeletClient(p Paths, ca pki.CertKey, ck pki.CertKey, node string, now time.Time) error {
 	cert, _, err := ck.Parse()
 	if err != nil {
 		return fmt.Errorf("kubelet client certificate: %w", err)
 	}
-	// The store writes the certificate before the key, so the first PEM block is the certificate.
-	if current, err := os.ReadFile(p.kubeletClient()); err == nil {
-		if have, err := pki.ParseCertificate(current); err == nil && have.NotAfter.After(cert.NotAfter) {
-			return nil
-		}
+	switch err := checkRenewedClient(p.kubeletClient(), ca, cert, node, now); {
+	case err == nil:
+		return nil
+	case !errors.Is(err, fs.ErrNotExist):
+		log.Printf("kubelet: installing the share's client certificate instead of %s: %v", p.kubeletClient(), err)
 	}
 	if err := os.MkdirAll(p.KubeletPKI, 0o700); err != nil {
 		return err
@@ -245,6 +248,42 @@ func installKubeletClient(p Paths, ck pki.CertKey) error {
 		return err
 	}
 	return os.Rename(tmp, p.kubeletClient())
+}
+
+// checkRenewedClient returns nil if the kubelet's current client certificate in path should be
+// kept: it was issued by ca for node with its own key, is valid now and expires after want.
+// Errors never include the file's contents.
+func checkRenewedClient(path string, ca pki.CertKey, want *x509.Certificate, node string, now time.Time) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// The kubelet stores the certificate and its key in one file; X509KeyPair also checks that
+	// the key belongs to the certificate, whatever encoding the key has.
+	pair, err := tls.X509KeyPair(data, data)
+	if err != nil {
+		return fmt.Errorf("not a certificate with its key: %w", err)
+	}
+	cert, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return err
+	}
+	caCert, err := pki.ParseCertificate([]byte(ca.Certificate))
+	if err != nil {
+		return fmt.Errorf("the cluster CA: %w", err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: now}); err != nil {
+		return err
+	}
+	if cert.Subject.CommonName != kpki.NodeUserPrefix+node || !slices.Equal(cert.Subject.Organization, []string{kpki.NodesGroup}) {
+		return fmt.Errorf("the certificate is for %q in groups %q, want node %s in %q only", cert.Subject.CommonName, cert.Subject.Organization, node, kpki.NodesGroup)
+	}
+	if !cert.NotAfter.After(want.NotAfter) {
+		return errors.New("it expires no later than the share's certificate")
+	}
+	return nil
 }
 
 // RenderStaticPods writes the static pods from the certificates Prepare wrote.

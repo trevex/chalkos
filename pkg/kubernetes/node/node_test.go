@@ -1,6 +1,9 @@
 package node
 
 import (
+	"crypto/ecdsa"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"slices"
@@ -127,6 +130,34 @@ func TestPrepareWorker(t *testing.T) {
 	}
 }
 
+// kubeletKey re-encodes a PKCS #8 key as the SEC 1 key the kubelet writes when it renews.
+func kubeletKey(t *testing.T, key string) string {
+	t.Helper()
+	block, _ := pem.Decode([]byte(key))
+	if block == nil {
+		t.Fatal("no PEM key")
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalECPrivateKey(parsed.(*ecdsa.PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}))
+}
+
+// storeRenewed puts a certificate and key into the kubelet's store as the kubelet does after
+// renewing: a dated file linked from the current one.
+func storeRenewed(t *testing.T, p Paths, cert, key string) {
+	t.Helper()
+	write(t, filepath.Join(p.KubeletPKI, "kubelet-client-2026-11-05.pem"), cert+kubeletKey(t, key))
+	if err := os.Symlink("kubelet-client-2026-11-05.pem", p.kubeletClient()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPrepareKeepsRenewedCertificate(t *testing.T) {
 	k := secrets(t)
 	p := testNode(t, kubernetes.KindWorker, "w1", k)
@@ -134,14 +165,11 @@ func TestPrepareKeepsRenewedCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(p.KubeletPKI, "kubelet-client-2026-11-05.pem"), renewed.Certificate+renewed.Key)
-	if err := os.Symlink("kubelet-client-2026-11-05.pem", p.kubeletClient()); err != nil {
+	storeRenewed(t, p, renewed.Certificate, renewed.Key)
+	if err := Prepare(p, now.Add(31*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := Prepare(p, now); err != nil {
-		t.Fatal(err)
-	}
-	if got := currentClient(t, p); got != renewed {
+	if got := currentClient(t, p); got.Certificate != renewed.Certificate {
 		t.Error("Prepare replaced a certificate the kubelet renewed")
 	}
 
@@ -152,11 +180,75 @@ func TestPrepareKeepsRenewedCertificate(t *testing.T) {
 	}
 	data, _ := newer.Encode()
 	write(t, p.Share(), string(data))
-	if err := Prepare(p, now); err != nil {
+	if err := Prepare(p, now.Add(61*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if got := currentClient(t, p); got != *newer.Kubelet {
 		t.Error("a newer share's certificate did not replace the current one")
+	}
+}
+
+// A certificate in the kubelet's store outranks the share's only if it is a valid kubelet
+// certificate for this node from the share's CA, with its own key.
+func TestPrepareReplacesUntrustedRenewedCertificate(t *testing.T) {
+	later := now.Add(30 * 24 * time.Hour)
+	issue := func(t *testing.T, ca pki.CertKey, cn string, groups []string, server bool) pki.CertKey {
+		t.Helper()
+		ck, err := pki.IssueLeaf(ca, pki.Leaf{CommonName: cn, Organization: groups, Client: !server, Server: server}, later)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ck
+	}
+	for _, tc := range []struct {
+		name string
+		// renewed returns the stored certificate and key.
+		renewed func(t *testing.T, k *pki.KubernetesSecrets) (cert, key string)
+		at      time.Time
+	}{
+		{"foreign CA", func(t *testing.T, _ *pki.KubernetesSecrets) (string, string) {
+			ck := issue(t, secrets(t).CA, "system:node:w1", []string{kpki.NodesGroup}, false)
+			return ck.Certificate, ck.Key
+		}, later},
+		{"other node", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+			ck := issue(t, k.CA, "system:node:w2", []string{kpki.NodesGroup}, false)
+			return ck.Certificate, ck.Key
+		}, later},
+		{"extra group", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup, kpki.MastersGroup}, false)
+			return ck.Certificate, ck.Key
+		}, later},
+		{"no client authentication", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, true)
+			return ck.Certificate, ck.Key
+		}, later},
+		{"mismatched key", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, false)
+			other := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, false)
+			return ck.Certificate, other.Key
+		}, later},
+		// It expires after the share's certificate, which has expired too.
+		{"expired", func(t *testing.T, k *pki.KubernetesSecrets) (string, string) {
+			ck := issue(t, k.CA, "system:node:w1", []string{kpki.NodesGroup}, false)
+			return ck.Certificate, ck.Key
+		}, later.Add(pki.LeafValidity + time.Hour)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := secrets(t)
+			p := testNode(t, kubernetes.KindWorker, "w1", k)
+			cert, key := tc.renewed(t, k)
+			storeRenewed(t, p, cert, key)
+			if err := Prepare(p, tc.at); err != nil {
+				t.Fatal(err)
+			}
+			share, err := ReadShare(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := currentClient(t, p); got != *share.Kubelet {
+				t.Error("Prepare kept an untrusted certificate in the kubelet's store")
+			}
+		})
 	}
 }
 
