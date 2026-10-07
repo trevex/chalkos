@@ -13,6 +13,8 @@ in
     # VM-to-VM networking, and the forwards that reach registries the tests serve.
     pkgs.vde2
     pkgs.socat
+    # Interfaces for the tests of the virtual IPs, which run in a network namespace of their own.
+    pkgs.iproute2
   ];
 
   vars = {
