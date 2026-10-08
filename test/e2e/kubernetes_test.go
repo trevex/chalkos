@@ -51,7 +51,9 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // a node's status but cannot reboot it, that the worker renews its node certificate through the
 // control plane, that the control plane renews its node certificate and its own certificates in
 // place, after which the API server serves the new ones and the controller-manager and the
-// scheduler take the lead again, and that a worker whose link is cut turns NotReady.
+// scheduler take the lead again, that a worker whose link is cut turns NotReady, and that the OS
+// CA, the Kubernetes CAs, the service-account key and the encryption key rotate with the cluster
+// working throughout.
 // The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 the test does not
 // start that registry, so the nodes' mirror is unreachable and containerd falls back to pulling
 // from upstream.
@@ -236,6 +238,8 @@ func TestKubernetesCluster(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, 5*time.Minute, "w1 Ready with its link back", func() error { return nodesReady(ctx, cs, "w1") })
+
+	rotations(t, ctx, nodes, p, dir, apiPort)
 }
 
 // anonymousOnlyHealth checks that a request without credentials reaches the health endpoints
