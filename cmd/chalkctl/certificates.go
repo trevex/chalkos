@@ -144,7 +144,11 @@ func (a *app) deliverNodeCA(ctx context.Context, c *cluster, endpointFlag, name 
 	if err != nil {
 		return err
 	}
-	conn, err := dialInstalled(&target{cluster: c, name: name, node: node, secrets: secrets, addr: addr})
+	creds, err := secretCredentials(secrets)
+	if err != nil {
+		return err
+	}
+	conn, err := dialInstalled(&target{cluster: c, name: name, node: node, creds: creds, secrets: secrets, addr: addr})
 	if err != nil {
 		return err
 	}

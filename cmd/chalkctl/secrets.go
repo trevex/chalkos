@@ -40,15 +40,11 @@ func (s *secretFlags) register(fs *flag.FlagSet) {
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
 // the file is encrypted.
 func (a *app) loadSecrets(ctx context.Context, s secretFlags, flake string) (pki.Secrets, error) {
-	path := s.path
-	if path == "" {
-		path = filepath.Join(flake, "secrets.age")
-		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-			path = filepath.Join(flake, "secrets.json")
-		}
+	path, _, err := secretsPath(s, flake)
+	if err != nil {
+		return pki.Secrets{}, err
 	}
 	var data []byte
-	var err error
 	if path == "-" {
 		data, err = io.ReadAll(a.stdin)
 	} else {
@@ -62,6 +58,24 @@ func (a *app) loadSecrets(ctx context.Context, s secretFlags, flake string) (pki
 		return pki.Secrets{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return secrets, nil
+}
+
+// secretsPath is the secrets file --secrets names, else secrets.age, else secrets.json, in the
+// flake directory; found says whether it was given or exists.
+func secretsPath(s secretFlags, flake string) (path string, found bool, err error) {
+	if s.path != "" {
+		return s.path, true, nil
+	}
+	for _, name := range []string{"secrets.age", "secrets.json"} {
+		path = filepath.Join(flake, name)
+		switch _, err := os.Stat(path); {
+		case err == nil:
+			return path, true, nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return "", false, err
+		}
+	}
+	return path, false, nil
 }
 
 // ageIdentities parses the given identity files, which must all load, or the default ones that
@@ -228,7 +242,7 @@ func (a *app) genSecrets(args []string) error {
 	if *plaintext {
 		name = "secrets.json"
 	}
-	secretsPath := filepath.Join(*out, name)
+	secretsFile := filepath.Join(*out, name)
 	publicPath := filepath.Join(*out, "secrets.pub.json")
 	// The secrets file is written once: a new one would orphan every installed node.
 	for _, p := range []string{filepath.Join(*out, "secrets.age"), filepath.Join(*out, "secrets.json"), publicPath} {
@@ -241,12 +255,12 @@ func (a *app) genSecrets(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.writeSecrets(secrets, recipients, *plaintext, secretsPath, publicPath); err != nil {
+	if err := a.writeSecrets(secrets, recipients, *plaintext, secretsFile, publicPath); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "wrote %s and %s\n", secretsPath, publicPath)
+	fmt.Fprintf(a.stdout, "wrote %s and %s\n", secretsFile, publicPath)
 	if *plaintext {
-		fmt.Fprintf(a.stderr, "warning: %s holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry\n", secretsPath)
+		fmt.Fprintf(a.stderr, "warning: %s holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry\n", secretsFile)
 	}
 	return nil
 }

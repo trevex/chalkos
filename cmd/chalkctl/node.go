@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -37,6 +36,8 @@ type nodeCommand struct {
 	cluster  clusterFlags
 	secrets  secretFlags
 	endpoint string
+	// config is the client file of commands that a client file may run.
+	config string
 }
 
 func (n *nodeCommand) register(fs *flag.FlagSet) {
@@ -45,20 +46,50 @@ func (n *nodeCommand) register(fs *flag.FlagSet) {
 	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the node's first static address)")
 }
 
-// target is a node of the cluster with the cluster's secrets.
+// registerClient registers the flags of a command that a client file may run.
+func (n *nodeCommand) registerClient(fs *flag.FlagSet) {
+	n.register(fs)
+	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, when there is no secrets file)")
+}
+
+// target is a node of the cluster with the credentials chalkctl reaches it with. secrets holds
+// the secrets file for the commands that need it, and nothing for a client file.
 type target struct {
 	cluster *cluster
 	name    string
 	node    manifest.Node
+	creds   *credentials
 	secrets pki.Secrets
 	addr    string
 }
 
+// target addresses a node with the secrets file.
 func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, error) {
 	c, err := a.loadCluster(ctx, n.cluster)
 	if err != nil {
 		return nil, err
 	}
+	creds, err := a.loadSecretCredentials(ctx, n.secrets, n.cluster.flake)
+	if err != nil {
+		return nil, err
+	}
+	return targetIn(c, n, name, creds)
+}
+
+// clientTarget addresses a node with the secrets file or a client file.
+func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*target, error) {
+	creds, err := a.loadCredentials(ctx, n.secrets, n.config, n.cluster.flake)
+	if err != nil {
+		return nil, err
+	}
+	c, err := a.clusterFor(ctx, n.cluster, creds)
+	if err != nil {
+		return nil, err
+	}
+	return targetIn(c, n, name, creds)
+}
+
+func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*target, error) {
 	node, err := c.node(name)
 	if err != nil {
 		return nil, err
@@ -67,28 +98,11 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := a.loadSecrets(ctx, n.secrets, n.cluster.flake)
-	if err != nil {
-		return nil, err
+	t := &target{cluster: c, name: name, node: node, creds: creds, addr: addr}
+	if creds.secrets != nil {
+		t.secrets = *creds.secrets
 	}
-	return &target{cluster: c, name: name, node: node, secrets: secrets, addr: addr}, nil
-}
-
-// adminValidity is how long the admin certificate chalkctl issues itself from the secrets file
-// lives: it serves one run and is never stored.
-const adminValidity = time.Hour
-
-// adminCertificate issues chalkctl an admin certificate from the OS CA for this run.
-func adminCertificate(s pki.Secrets) (*tls.Certificate, error) {
-	ck, err := pki.IssueClient(s.OSCA, "chalkctl", pki.RoleAdmin, adminValidity, time.Now())
-	if err != nil {
-		return nil, fmt.Errorf("issue an admin certificate: %w", err)
-	}
-	cert, err := tls.X509KeyPair([]byte(ck.Certificate), []byte(ck.Key))
-	if err != nil {
-		return nil, err
-	}
-	return &cert, nil
+	return t, nil
 }
 
 // dialInstalled connects to an installed node, verifying it by the OS CA and its name.
@@ -99,17 +113,11 @@ func dialInstalled(t *target) (*client.Conn, error) {
 // dialNode connects to an installed node; ignoreValidity accepts a node certificate that expired,
 // for chalkctl node renew alone.
 func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
-	cert, err := adminCertificate(t.secrets)
+	roots, err := t.creds.roots()
 	if err != nil {
 		return nil, err
 	}
-	ca, err := pki.ParseCertificate([]byte(t.secrets.OSCA.Certificate))
-	if err != nil {
-		return nil, err
-	}
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
-	return client.Dial(t.addr, client.Options{CA: pool, ServerName: t.name, Certificate: cert, IgnoreValidity: ignoreValidity})
+	return client.Dial(t.addr, client.Options{CA: roots, ServerName: t.name, Certificate: t.creds.cert, IgnoreValidity: ignoreValidity})
 }
 
 // pinning verifies a node in maintenance mode, which serves a self-signed certificate.
@@ -143,6 +151,9 @@ func (a *app) fallbackSecret(ctx context.Context, t *target, passwordFile string
 	case storage.FallbackNone:
 		return "", nil
 	case "recovery-key":
+		if t.creds.secrets == nil {
+			return "", fmt.Errorf("node %s unlocks with its recovery key when its TPM fails, which only the secrets file gives; pass --secrets", t.name)
+		}
 		return pki.RecoveryKey(t.secrets.RecoverySecret, t.cluster.manifest.Cluster.Name, t.name)
 	case "password":
 		if passwordFile != "" {
@@ -262,10 +273,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	cert, err := adminCertificate(t.secrets)
-	if err != nil {
-		return err
-	}
+	cert := t.creds.cert
 	conn, err := p.dial(t.addr, cert)
 	if err != nil {
 		return err
@@ -474,7 +482,7 @@ func (a *app) disks(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("disks", flag.ContinueOnError)
 	var n nodeCommand
 	var p pinning
-	n.register(fs)
+	n.registerClient(fs)
 	p.register(fs)
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -483,16 +491,12 @@ func (a *app) disks(ctx context.Context, args []string) error {
 	var conn *client.Conn
 	switch {
 	case len(pos) == 1:
-		t, err := a.target(ctx, n, pos[0])
+		t, err := a.clientTarget(ctx, n, pos[0])
 		if err != nil {
 			return err
 		}
 		if p.set() {
-			cert, err := adminCertificate(t.secrets)
-			if err != nil {
-				return err
-			}
-			conn, err = p.dial(t.addr, cert)
+			conn, err = p.dial(t.addr, t.creds.cert)
 		} else {
 			conn, err = dialInstalled(t)
 		}
@@ -500,17 +504,15 @@ func (a *app) disks(ctx context.Context, args []string) error {
 			return err
 		}
 	case len(pos) == 0 && n.endpoint != "":
-		// A node not in the cluster definition yet: only maintenance mode, with the admin
-		// certificate when there is a secrets file for an image with an OS CA.
+		// A node not in the cluster definition yet: only maintenance mode, with a certificate when
+		// a secrets file or a client file is given, for an image with an OS CA.
 		var cert *tls.Certificate
-		if n.secrets.path != "" {
-			secrets, err := a.loadSecrets(ctx, n.secrets, n.cluster.flake)
+		if n.secrets.path != "" || n.config != "" {
+			creds, err := a.loadCredentials(ctx, n.secrets, n.config, n.cluster.flake)
 			if err != nil {
 				return err
 			}
-			if cert, err = adminCertificate(secrets); err != nil {
-				return err
-			}
+			cert = creds.cert
 		}
 		if conn, err = p.dial(n.endpoint, cert); err != nil {
 			return err
@@ -602,7 +604,7 @@ func (a *app) applyIdentity(ctx context.Context, args []string) error {
 func (a *app) resetVolume(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("storage reset", flag.ContinueOnError)
 	var n nodeCommand
-	n.register(fs)
+	n.registerClient(fs)
 	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -611,9 +613,12 @@ func (a *app) resetVolume(ctx context.Context, args []string) error {
 	if len(pos) != 2 {
 		return errors.New("usage: chalkctl storage reset <node> <volume>")
 	}
-	t, err := a.target(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
+	}
+	if t.cluster.partial {
+		return errors.New("storage reset creates the volume as the node's identity defines it, which only the cluster definition gives; pass --flake or --manifest")
 	}
 	conn, err := dialInstalled(t)
 	if err != nil {
@@ -637,7 +642,7 @@ func (a *app) resetVolume(ctx context.Context, args []string) error {
 func (a *app) status(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	var n nodeCommand
-	n.register(fs)
+	n.registerClient(fs)
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -645,7 +650,7 @@ func (a *app) status(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl status <node>")
 	}
-	t, err := a.target(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
 	}
@@ -658,13 +663,16 @@ func (a *app) status(ctx context.Context, args []string) error {
 		return err
 	}
 	s := resp.Msg
-	id, err := identityJSON(t.node)
-	if err != nil {
-		return err
-	}
-	state := "the cluster definition's"
-	if identity.IdentityVersion([]byte(id)) != s.IdentityVersion {
-		state = "not the cluster definition's; chalkctl apply-identity " + t.name + " delivers it"
+	state := "no cluster definition to compare it with"
+	if !t.cluster.partial {
+		id, err := identityJSON(t.node)
+		if err != nil {
+			return err
+		}
+		state = "the cluster definition's"
+		if identity.IdentityVersion([]byte(id)) != s.IdentityVersion {
+			state = "not the cluster definition's; chalkctl apply-identity " + t.name + " delivers it"
+		}
 	}
 	fmt.Fprintf(a.stdout, "identity %s (%s)\n", s.IdentityVersion, state)
 	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
@@ -714,7 +722,7 @@ func (a *app) logs(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
 	var n nodeCommand
 	var p pinning
-	n.register(fs)
+	n.registerClient(fs)
 	p.register(fs)
 	follow := fs.Bool("f", false, "keep printing new entries")
 	unit := fs.String("unit", "", "show only this unit's entries")
@@ -725,7 +733,7 @@ func (a *app) logs(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl logs <node> [-f] [--unit U]")
 	}
-	t, err := a.target(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
 	}
@@ -755,7 +763,7 @@ func (a *app) reboot(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("reboot", flag.ContinueOnError)
 	var n nodeCommand
 	var p pinning
-	n.register(fs)
+	n.registerClient(fs)
 	p.register(fs)
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -764,7 +772,7 @@ func (a *app) reboot(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl reboot <node>")
 	}
-	t, err := a.target(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
 	}
@@ -783,11 +791,7 @@ func (a *app) reboot(ctx context.Context, args []string) error {
 // and to an installed node otherwise.
 func (a *app) dialEither(t *target, p pinning) (*client.Conn, error) {
 	if p.set() {
-		cert, err := adminCertificate(t.secrets)
-		if err != nil {
-			return nil, err
-		}
-		return p.dial(t.addr, cert)
+		return p.dial(t.addr, t.creds.cert)
 	}
 	return dialInstalled(t)
 }

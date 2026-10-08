@@ -35,7 +35,7 @@ func kubernetesShare(t *target, now time.Time) ([]byte, error) {
 func (a *app) bootstrap(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	var n nodeCommand
-	n.register(fs)
+	n.registerClient(fs)
 	timeout := fs.Duration("timeout", 20*time.Minute, "how long to wait for the control plane to apply its manifests")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -44,11 +44,12 @@ func (a *app) bootstrap(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl bootstrap <node>")
 	}
-	t, err := a.target(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
 	}
-	if kind := t.cluster.manifest.Roles[t.node.Role].Kind; kind != manifest.KindControlPlane {
+	// Without the cluster definition the node itself refuses when it is a worker.
+	if kind := t.cluster.manifest.Roles[t.node.Role].Kind; !t.cluster.partial && kind != manifest.KindControlPlane {
 		return fmt.Errorf("%s is not a control-plane node; bootstrap one of the cluster's control-plane nodes", t.name)
 	}
 	conn, err := dialInstalled(t)

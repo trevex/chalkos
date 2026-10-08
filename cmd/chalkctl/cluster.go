@@ -48,6 +48,9 @@ type cluster struct {
 	// attr is the flake attribute the manifest was evaluated from, such as chalkos.homelab.
 	attr     string
 	manifest *manifest.Manifest
+	// partial is set when a client file named the nodes, without a cluster definition: the
+	// manifest holds the cluster's name and the nodes' addresses alone.
+	partial bool
 }
 
 // loadCluster reads the manifest with nix eval, or from the file --manifest names.

@@ -34,7 +34,11 @@ func (a *app) etcd(ctx context.Context, args []string) error {
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
 func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip string, call func(conn *client.Conn) error) error {
-	c, err := a.loadCluster(ctx, n.cluster)
+	creds, err := a.loadCredentials(ctx, n.secrets, n.config, n.cluster.flake)
+	if err != nil {
+		return err
+	}
+	c, err := a.clusterFor(ctx, n.cluster, creds)
 	if err != nil {
 		return err
 	}
@@ -43,26 +47,21 @@ func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip 
 		if n.endpoint != "" {
 			return errors.New("--endpoint reaches one node; name it with --via")
 		}
+		if c.partial {
+			return errors.New("a client file does not say which nodes are control planes; name one with --via, or pass --flake or --manifest")
+		}
 		names = controlPlaneNodes(c.manifest, skip)
 		if len(names) == 0 {
 			return errors.New("the cluster has no other control-plane node to ask")
 		}
 	}
-	secrets, err := a.loadSecrets(ctx, n.secrets, n.cluster.flake)
-	if err != nil {
-		return err
-	}
 	var last error
 	for _, name := range names {
-		node, err := c.node(name)
+		t, err := targetIn(c, n, name, creds)
 		if err != nil {
 			return err
 		}
-		addr, err := endpoint(n.endpoint, name, node.Identity)
-		if err != nil {
-			return err
-		}
-		conn, err := dialInstalled(&target{cluster: c, name: name, node: node, secrets: secrets, addr: addr})
+		conn, err := dialInstalled(t)
 		if err != nil {
 			return err
 		}
@@ -106,7 +105,7 @@ func controlPlaneNodes(m *manifest.Manifest, skip string) []string {
 func (a *app) etcdMembers(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("etcd members", flag.ContinueOnError)
 	var n nodeCommand
-	n.register(fs)
+	n.registerClient(fs)
 	via := fs.String("via", "", "control-plane node to ask (default the first one that answers)")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -147,7 +146,7 @@ func (a *app) etcdMembers(ctx context.Context, args []string) error {
 func (a *app) etcdRemoveMember(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("etcd remove-member", flag.ContinueOnError)
 	var n nodeCommand
-	n.register(fs)
+	n.registerClient(fs)
 	via := fs.String("via", "", "control-plane node that removes the member (default the first other one that answers)")
 	force := fs.Bool("force", false, "remove the member even when the voters left would have no healthy quorum")
 	pos, err := parse(fs, args)
@@ -175,7 +174,7 @@ func (a *app) etcdRemoveMember(ctx context.Context, args []string) error {
 func (a *app) etcdLeave(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("etcd leave", flag.ContinueOnError)
 	var n nodeCommand
-	n.register(fs)
+	n.registerClient(fs)
 	force := fs.Bool("force", false, "leave through the other members also when the node's own etcd member does not answer, as when it lost its pinned address")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -184,7 +183,7 @@ func (a *app) etcdLeave(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl etcd leave <node> [--force]")
 	}
-	t, err := a.target(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
 		return err
 	}
