@@ -84,79 +84,172 @@ in
     CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";
   };
 
-  # The VXLAN rule's script against an iptables that records what it is asked to do.
+  # The VXLAN rule's script with the firewall of the test cluster's worker, in a network namespace:
+  # a peer sends UDP to port 8472 over a veth pair, and the node receives what the firewall
+  # accepts.
   vxlan-rule =
     let
-      iptables = pkgs.runCommand "fake-iptables" { } ''
-        mkdir -p $out/bin
-        cat >$out/bin/iptables <<'EOF'
-        #!${pkgs.runtimeShell}
-        echo "''${0##*/} $*" >>"$IPTABLES_LOG"
-        EOF
-        chmod +x $out/bin/iptables
-        ln -s iptables $out/bin/ip6tables
-      '';
+      worker =
+        (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.config;
+      # The script NixOS runs to load and reload the firewall.
+      firewall = builtins.elemAt worker.systemd.services.nftables.serviceConfig.ExecReload 1;
       rule = lib.getExe (
         pkgs.callPackage ../modules/node/vxlan-rule.nix {
-          inherit iptables;
           lockFile = "vxlan.lock";
+          mark = "0x01000000";
         }
       );
     in
-    pkgs.runCommand "chalkos-vxlan-rule" { } ''
-      export IPTABLES_LOG=$PWD/log
-      fail() {
-        echo "error: $*" >&2
-        cat "$IPTABLES_LOG" >&2
-        exit 1
+    pkgs.runCommand "chalkos-vxlan-rule"
+      {
+        nativeBuildInputs = [
+          pkgs.nftables
+          pkgs.iproute2
+          pkgs.util-linux
+          pkgs.socat
+        ];
       }
-      # Runs the script with the arguments, setting status.
-      run() {
-        : >"$IPTABLES_LOG"
-        status=0
-        ${rule} "$@" || status=$?
-      }
-      # Runs the script with node-ip holding the content, with escapes.
-      holding() {
-        printf '%b' "$1" >node-ip
-        run node-ip
-      }
-      flushed() {
-        grep -qx 'iptables -w -F chalkos-vxlan' "$IPTABLES_LOG" &&
-          grep -qx 'ip6tables -w -F chalkos-vxlan' "$IPTABLES_LOG"
-      }
-      added() {
-        grep -- '-A chalkos-vxlan' "$IPTABLES_LOG" || true
-      }
-      accepts() {
-        echo "$1 -w -A chalkos-vxlan -p udp --dport 8472 -d $2 -m addrtype --dst-type LOCAL --limit-iface-in -j ACCEPT"
-      }
+      ''
+        cat >test.sh <<'TEST'
+        set -euo pipefail
+        fail() {
+          echo "error: $*" >&2
+          nft list ruleset >&2
+          exit 1
+        }
+        # This namespace is the node; the peer gets one of its own.
+        ip link set lo up
+        unshare -n sh -c 'touch peer-ready; exec sleep 600' &
+        peer=$!
+        until [ -e peer-ready ]; do sleep 0.1; done
+        on_peer() { nsenter -t "$peer" -n "$@"; }
+        ip link add v0 type veth peer name v1 netns "$peer"
+        ip addr add 10.0.0.11/24 dev v0
+        ip addr add fd00::11/64 dev v0 nodad
+        ip link set v0 up
+        # Addresses of the node on another interface.
+        ip link add d0 type dummy
+        ip addr add 10.0.1.11/24 dev d0
+        ip addr add fd00:1::11/64 dev d0 nodad
+        ip link set d0 up
+        on_peer ip link set lo up
+        on_peer ip addr add 10.0.0.12/24 dev v1
+        on_peer ip addr add fd00::12/64 dev v1 nodad
+        on_peer ip link set v1 up
+        on_peer ip route add 10.0.1.0/24 via 10.0.0.11
+        on_peer ip route add fd00:1::/64 via fd00::11
 
-      holding '10.0.0.11\n'
-      { [ "$status" = 0 ] && flushed && [ "$(added)" = "$(accepts iptables 10.0.0.11)" ]; } || fail "IPv4 address"
-      holding 'fd00::11'
-      { [ "$status" = 0 ] && flushed && [ "$(added)" = "$(accepts ip6tables fd00::11)" ]; } || fail "IPv6 address"
-      # A dual-stack node has an address of each family.
-      holding 'fd00::11\n10.0.0.11\n'
-      { [ "$status" = 0 ] && flushed && [ "$(added | sort)" = "$(printf '%s\n%s' "$(accepts ip6tables fd00::11)" "$(accepts iptables 10.0.0.11)" | sort)" ]; } ||
-        fail "an address of each family"
+        # The firewall as NixOS loads it, with the state file it keeps in /var/lib/nftables here.
+        sed "s|/var/lib/nftables/deletions.nft|$PWD/deletions.nft|" ${firewall} >firewall.nft
+        touch deletions.nft
+        nft -f firewall.nft
+        # Counts the packets the firewall accepted, and those still marked then.
+        nft -f - <<'NFT'
+        table inet count {
+          chain input {
+            type filter hook input priority filter + 10; policy accept;
+            udp dport 8472 counter name accepted
+            udp dport 8472 meta mark & 0x01000000 != 0 counter name marked
+          }
+          counter accepted {}
+          counter marked {}
+        }
+        NFT
 
-      # Anything but bare addresses, one per family, adds no rule, empties the chain and fails.
-      for content in "" '\n' '10.0.0.0/8\n' '10.0.0.11\n10.0.0.12\n' 'fd00::11\nfd00::12\n' '10.0.0.11\nfd00::11 -j DROP\n' \
-        '10.0.0.11 -j DROP\n' '-s 0.0.0.0/0\n' 'eth0\n' '10.0.0.11\n\n' \
-        'cafe.be\n' 'cafe\n' 'be\n' '10.0.0\n' '10.0.0.11.12\n' '10.0.0.256\n' '10.0.0.0x1\n' '10.0..11\n'; do
-        holding "$content"
-        { [ "$status" != 0 ] && flushed && [ -z "$(added)" ]; } || fail "accepted node-ip holding '$content'"
-      done
+        socat -u UDP4-RECV:8472 OPEN:received,creat,append &
+        socat -u UDP6-RECV:8472,ipv6only=1 OPEN:received,creat,append &
+        sleep 0.5
+        n=0
+        # Whether a datagram the peer sends to the address arrives.
+        arrives() {
+          n=$((n + 1))
+          local to=$1
+          case $1 in *:*) to="[$1]" ;; esac
+          echo "datagram $n" | on_peer socat -u - "UDP-SENDTO:$to:8472"
+          for _ in $(seq 20); do
+            grep -qx "datagram $n" received && return 0
+            sleep 0.1
+          done
+          return 1
+        }
+        # Runs the script with the arguments, setting status; the rules it prints go to rules.log.
+        run() {
+          status=0
+          ${rule} "$@" >rules.log 2>errors.log || status=$?
+        }
+        # Runs the script with the file holding the content, with escapes.
+        holding() {
+          printf '%b' "$1" >vxlan
+          run vxlan
+        }
+        v4='destination 10.0.0.11 interface\n'
+        v6='destination fd00::11 interface\n'
+        rules() {
+          grep -c 'udp dport 8472' rules.log || true
+        }
 
-      # Without the file or an argument the chain is emptied.
-      rm node-ip
-      run node-ip
-      { [ "$status" = 0 ] && flushed && [ -z "$(added)" ]; } || fail "without node-ip"
-      run
-      { [ "$status" = 0 ] && flushed && [ -z "$(added)" ]; } || fail "without an argument"
-      touch $out
-    '';
+        if arrives 10.0.0.11; then fail "VXLAN arrived without the rule"; fi
+
+        holding "$v4$v6"
+        [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "an address of each family"
+        arrives 10.0.0.11 || fail "IPv4 VXLAN to the node's address was refused"
+        arrives fd00::11 || fail "IPv6 VXLAN to the node's address was refused"
+        # The node's other addresses, and the picked ones arriving on another interface.
+        if arrives 10.0.1.11; then fail "VXLAN arrived at another address"; fi
+        if arrives fd00:1::11; then fail "IPv6 VXLAN arrived at another address"; fi
+        [ "$(nft list counter inet count marked | grep -o 'packets [0-9]*')" = "packets 0" ] || fail "accepted packets keep the mark"
+
+        # A reload of the firewall replaces its own table alone.
+        nft add table ip kube-proxy
+        nft add table ip6 flannel-ipv6
+        nft -f firewall.nft
+        nft list tables | grep -qx 'table ip kube-proxy' || fail "the firewall's reload removed kube-proxy's table"
+        nft list tables | grep -qx 'table ip6 flannel-ipv6' || fail "the firewall's reload removed flannel's table"
+        arrives 10.0.0.11 || fail "VXLAN was refused after the firewall's reload"
+        arrives fd00::11 || fail "IPv6 VXLAN was refused after the firewall's reload"
+
+        holding "$v6"
+        [ "$status" = 0 ] && [ "$(rules)" = 1 ] || fail "the IPv6 address alone"
+        if arrives 10.0.0.11; then fail "VXLAN arrived at an address no longer picked"; fi
+        arrives fd00::11 || fail "IPv6 VXLAN to the node's address was refused"
+
+        # An address on a dummy interface, as a routing daemon announces it, takes VXLAN that
+        # arrives on another interface.
+        holding 'destination 10.0.1.11 any\ndestination fd00:1::11 any\n'
+        [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "addresses on a dummy interface"
+        arrives 10.0.1.11 || fail "VXLAN to the address on the dummy interface was refused"
+        arrives fd00:1::11 || fail "IPv6 VXLAN to the address on the dummy interface was refused"
+        if arrives 10.0.0.11; then fail "VXLAN arrived at an address no longer picked"; fi
+
+        # Anything but a destination line per family, of a bare address and a mode, adds no rule,
+        # empties the table and fails.
+        for content in "" '\n' '10.0.0.11\n' 'destination 10.0.0.11\n' 'destination 10.0.0.11 eth0\n' \
+          'destination 10.0.0.0/8 interface\n' "$v4"'destination 10.0.0.12 any\n' "$v6"'destination fd00::12 interface\n' \
+          "$v4"'destination fd00::11 interface accept\n' 'destination 10.0.0.11 interface accept\n' \
+          'destination fd00::11 }\n' 'destination  10.0.0.11 interface\n' 'destination 10.0.0.11 interface \n' \
+          'Destination 10.0.0.11 interface\n' 'source 10.0.0.0/24\n' "$v4"'\n' 'destination ::ffff: interface\n' \
+          'destination eth0 interface\n' 'destination cafe.be interface\n' 'destination cafe any\n' \
+          'destination 10.0.0 interface\n' 'destination 10.0.0.11.12 interface\n' 'destination 10.0.0.256 interface\n' \
+          'destination 10.0.0.0x1 interface\n' 'destination 10.0..11 interface\n' 'destination ::: interface\n'; do
+          holding "$v4"
+          holding "$content"
+          [ "$status" != 0 ] && [ "$(rules)" = 0 ] || fail "accepted a file holding '$content'"
+          if arrives 10.0.0.11; then fail "VXLAN arrived after the file held '$content'"; fi
+        done
+
+        # Without the file or an argument the table is emptied.
+        holding "$v4"
+        rm vxlan
+        run vxlan
+        [ "$status" = 0 ] && [ "$(rules)" = 0 ] || fail "without the file"
+        holding "$v4"
+        run
+        [ "$status" = 0 ] && [ "$(rules)" = 0 ] || fail "without an argument"
+        if arrives 10.0.0.11; then fail "VXLAN arrived without the file"; fi
+        TEST
+        unshare -rn bash test.sh
+        touch $out
+      '';
 
   # The generated API code is committed; it must match what buf generates from the proto files.
   api-generated =

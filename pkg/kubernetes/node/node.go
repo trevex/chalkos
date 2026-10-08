@@ -65,9 +65,12 @@ func (p Paths) Bootstrapped() string { return filepath.Join(p.State, "bootstrapp
 func (p Paths) Manifests() string    { return filepath.Join(p.Run, "manifests") }
 func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
 
-// NodeIP holds the addresses the node picked, one per line, the primary family's first; the
-// firewall's VXLAN rule reads it too.
+// NodeIP holds the addresses the node picked, one per line, the primary family's first.
 func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
+
+// VXLAN holds what the firewall's VXLAN rule accepts: a line "destination <address> <mode>" for
+// each of the node's addresses, where mode is interface or any.
+func (p Paths) VXLAN() string { return filepath.Join(p.Run, "vxlan") }
 
 // Pin holds the addresses a control-plane node was pinned to when it became an etcd member: its
 // etcd peers and the certificates know it by them, so every later boot uses exactly these.
@@ -395,6 +398,22 @@ func nodeSelector(p Paths, c kubernetes.Cluster, n kubernetes.Node) (nodeip.Sele
 	return c.NodeIPSelector(n)
 }
 
+// vxlanFile is the content of p.VXLAN() for the node's addresses. An address on a network
+// interface takes VXLAN on that interface alone. One on a loopback or dummy interface is an
+// address routers reach the node at through its other interfaces, as with a routing daemon that
+// announces it, so VXLAN to it arrives on any interface.
+func vxlanFile(picked []nodeip.Address) []byte {
+	var b strings.Builder
+	for _, a := range picked {
+		mode := "interface"
+		if a.Link.Loopback || a.Link.Kind == "dummy" {
+			mode = "any"
+		}
+		fmt.Fprintf(&b, "destination %s %s\n", a.IP, mode)
+	}
+	return []byte(b.String())
+}
+
 // nodeIPFile is the content of the file holding the addresses: one per line.
 func nodeIPFile(ips []net.IP) []byte {
 	var b strings.Builder
@@ -417,14 +436,14 @@ func PreparationError(p Paths) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// Firewall accepts VXLAN to the address in p.NodeIP(), or to none when the file does not exist.
+// Firewall accepts VXLAN as p.VXLAN() says, or none when the file does not exist.
 type Firewall func(p Paths) error
 
-// VXLANRule is the Firewall that runs script with the file holding the node's address. The
-// script prints the rules to the journal, which the error points to.
+// VXLANRule is the Firewall that runs script with p.VXLAN(). The script prints the rules to the
+// journal, which the error points to.
 func VXLANRule(script string) Firewall {
 	return func(p Paths) error {
-		cmd := exec.Command(script, p.NodeIP())
+		cmd := exec.Command(script, p.VXLAN())
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("accept VXLAN to the node's address: %w; see chalkctl logs <node> --unit chalkos-kubernetes", err)
@@ -456,7 +475,7 @@ func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error 
 	}
 	// The kubelet must not start with what an earlier attempt wrote, nor the control plane with
 	// certificates naming the address picked then, nor VXLAN reach that address.
-	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.NodeIP()} {
+	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.NodeIP(), p.VXLAN()} {
 		if rerr := os.RemoveAll(path); rerr != nil {
 			log.Print(rerr)
 		}
@@ -475,8 +494,10 @@ func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error 
 
 func prepare(p Paths, now time.Time, resolve Resolver) error {
 	// An address picked before must not outlive an attempt that fails.
-	if err := os.Remove(p.NodeIP()); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	for _, f := range []string{p.NodeIP(), p.VXLAN()} {
+		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 	}
 	share, c, n, err := Load(p)
 	if errors.Is(err, ErrNoShare) {
@@ -543,6 +564,9 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	}
 	// Written once the certificates naming it are, which Bootstrap relies on.
 	if err := install.WriteFile(p.NodeIP(), nodeIPFile(n.IPs), 0o644); err != nil {
+		return err
+	}
+	if err := install.WriteFile(p.VXLAN(), vxlanFile(picked), 0o644); err != nil {
 		return err
 	}
 	// The kubelet starts once its kubeconfig exists, so it is written last.

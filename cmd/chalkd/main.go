@@ -36,9 +36,9 @@ const usage = `usage: chalkd <command>
 commands:
   serve                            serve the node API
   load-identity                    apply the identity recorded on STATE
-  prepare-kubernetes [vxlan-rule]  pick the node's address and write its Kubernetes certificates
-                                   and configuration, then run vxlan-rule with the file holding
-                                   the address`
+  prepare-kubernetes [vxlan-rule]  pick the node's addresses and write its Kubernetes
+                                   certificates and configuration, then run vxlan-rule with the
+                                   file saying where VXLAN may arrive`
 
 func main() {
 	log.SetFlags(0)

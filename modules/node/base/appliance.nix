@@ -22,6 +22,13 @@
   # Nodes have no interactive logins, so no account needs a password or SSH key.
   users.allowNoPasswordLogin = true;
 
+  # The firewall runs on nftables, as kube-proxy and flannel do. Reloading it replaces its own
+  # table only, so theirs and chalkos's stay.
+  networking.nftables = {
+    enable = true;
+    flushRuleset = false;
+  };
+
   # A read-only /usr leaves nowhere to create /usr/bin/env.
   system.activationScripts.usrbinenv = lib.mkForce "";
 }

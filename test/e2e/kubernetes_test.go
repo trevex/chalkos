@@ -155,7 +155,7 @@ func TestKubernetesCluster(t *testing.T) {
 			t.Errorf("InternalIP of %s = %v, want %s", name, got, want)
 		}
 	}
-	if rules := vxlanRules(t, nodes["w1"], "w1"); !slices.Equal(rules, []string{"-d 192.168.100.12/32 -p udp -m udp --dport 8472 -m addrtype --dst-type LOCAL --limit-iface-in -j ACCEPT"}) {
+	if rules := vxlanRules(t, nodes["w1"], "w1"); !slices.Equal(rules, []string{"ip daddr 192.168.100.12 udp dport 8472 fib daddr . iif type local meta mark set meta mark | 0x01000000"}) {
 		t.Errorf("VXLAN rules of w1 = %q, want one to 192.168.100.12 only", rules)
 	}
 	anonymousOnlyHealth(t, ctx, cfg)
@@ -397,8 +397,11 @@ func internalIPs(t *testing.T, ctx context.Context, cs kubernetes.Interface, nam
 	return ips
 }
 
-// vxlanRules returns the rules of the node's VXLAN chain, as the node's preparation logged them
-// in this boot.
+// vxlanRuleRE is a rule of the node's VXLAN table as nft lists it.
+var vxlanRuleRE = regexp.MustCompile(`ip6? daddr \S+ udp dport 8472 .*$`)
+
+// vxlanRules returns the rules of the node's VXLAN table, as the node's preparation logged them
+// last in this boot.
 func vxlanRules(t *testing.T, n *node, name string) []string {
 	t.Helper()
 	out, err := chalkctl(t, n, "base", "logs", name, "--unit", "chalkos-kubernetes")
@@ -407,7 +410,11 @@ func vxlanRules(t *testing.T, n *node, name string) []string {
 	}
 	var rules []string
 	for _, line := range strings.Split(out, "\n") {
-		if _, rule, ok := strings.Cut(line, "-A chalkos-vxlan "); ok {
+		// The preparation empties the table first and lists it each time.
+		if strings.Contains(line, "table inet chalkos-vxlan {") {
+			rules = nil
+		}
+		if rule := vxlanRuleRE.FindString(line); rule != "" {
 			rules = append(rules, strings.TrimSpace(rule))
 		}
 	}

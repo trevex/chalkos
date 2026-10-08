@@ -2463,8 +2463,9 @@ lib.runTests {
       other = false;
     };
   };
-  # VXLAN is accepted only to the address chalkd picks: its preparation fills the firewall's
-  # chain, which a restarted firewall fills again from the same file.
+  # VXLAN is accepted only to the addresses chalkd picks: its preparation fills a table of its own
+  # that marks such packets, and the firewall accepts the mark. The firewall runs on nftables and
+  # its reloads replace its own table only.
   testFlannelVXLANOnlyToNodeIP = {
     expr =
       let
@@ -2472,68 +2473,61 @@ lib.runTests {
           modules:
           let
             config = role (cluster modules);
-            inherit (config.networking) firewall;
+            inherit (config.networking) firewall nftables;
             prepare = config.systemd.services.chalkos-kubernetes;
-            fills = command: lib.hasInfix "chalkos-vxlan-rule /run/chalkos/kubernetes/node-ip" command;
           in
           {
+            nftables = nftables.enable && !nftables.flushRuleset;
             open = lib.elem 8472 firewall.allowedUDPPorts;
-            chain = lib.hasInfix "-A nixos-fw -j chalkos-vxlan" firewall.extraCommands;
-            firewallFills = fills firewall.extraCommands;
-            # A failure to fill the chain must not fail the firewall.
-            firewallNeverFails = lib.hasInfix "chalkos-vxlan-rule /run/chalkos/kubernetes/node-ip || true" firewall.extraCommands;
-            # Emptied before the address is picked, filled after. The old address goes first, so a
-            # restarting firewall cannot fill the emptied chain from it again.
+            acceptsMark = lib.hasInfix "udp dport 8472 meta mark & 0x01000000 == 0x01000000 meta mark set meta mark & 0xfeffffff accept" firewall.extraInputRules;
+            # The ports the node opens, in the table of both families.
+            bothFamilies =
+              nftables.tables.nixos-fw.family == "inet"
+              && lib.hasInfix "tcp dport { 10250, 50000, 30000-32767 } accept" nftables.tables.nixos-fw.content;
+            # Emptied before the addresses are picked, filled after.
             emptied =
               let
                 pre = prepare.serviceConfig.ExecStartPre or [ ];
               in
-              builtins.length pre == 2
-              && lib.hasSuffix "/bin/rm -f /run/chalkos/kubernetes/node-ip" (builtins.elemAt pre 0)
-              && lib.hasSuffix "/bin/chalkos-vxlan-rule" (builtins.elemAt pre 1);
-            # The preparation fills the chain as its last step, and nothing fills it after a failure.
+              builtins.length pre == 1 && lib.hasSuffix "/bin/chalkos-vxlan-rule" (builtins.elemAt pre 0);
+            # The preparation fills the table as its last step, and nothing fills it after a failure.
             prepareFills =
               lib.hasSuffix "/bin/chalkos-vxlan-rule" prepare.serviceConfig.ExecStart
               && !(prepare.serviceConfig ? ExecStartPost);
-            afterFirewall = lib.elem "firewall.service" prepare.after;
-            # The firewall no longer reads the identity.
-            firewallAfterIdentity = lib.elem "chalkos-identity.service" config.systemd.services.firewall.after;
+            afterFirewall = lib.elem "nftables.service" prepare.after;
           };
       in
       {
         flannel = vxlan [ { chalkos.cni.provider = "flannel"; } ];
         none = vxlan [ { chalkos.cni.provider = "none"; } ];
-        # Without a firewall there is no chain to fill.
+        # Without a firewall there is nothing to accept the mark.
         withoutFirewall = removeAttrs (vxlan [
           { chalkos.roles.worker.nixosModules = [ { networking.firewall.enable = false; } ]; }
-        ]) [ "firewallAfterIdentity" ];
+        ]) [ "bothFamilies" ];
       };
     expected = {
       flannel = {
+        nftables = true;
         open = false;
-        chain = true;
-        firewallFills = true;
-        firewallNeverFails = true;
+        acceptsMark = true;
+        bothFamilies = true;
         emptied = true;
         prepareFills = true;
         afterFirewall = true;
-        firewallAfterIdentity = false;
       };
       none = {
+        nftables = true;
         open = false;
-        chain = false;
-        firewallFills = false;
-        firewallNeverFails = false;
+        acceptsMark = false;
+        bothFamilies = true;
         emptied = false;
         prepareFills = false;
         afterFirewall = false;
-        firewallAfterIdentity = false;
       };
       withoutFirewall = {
+        nftables = true;
         open = false;
-        chain = true;
-        firewallFills = true;
-        firewallNeverFails = true;
+        acceptsMark = true;
         emptied = false;
         prepareFills = false;
         afterFirewall = false;

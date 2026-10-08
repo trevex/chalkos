@@ -24,15 +24,18 @@ let
   flannel = config.chalkos.cni.provider == "flannel";
 
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
-  # node's address on the interface that holds it: the address flanneld binds to and other nodes
-  # send to. chalkd picks the address after the firewall started, so the rule lives in a chain of
-  # its own that this script fills from the file holding the address, and empties without one.
-  # The rule accepts directly: a jump to nixos-fw-accept would keep a restarting firewall from
-  # deleting that chain.
+  # node's addresses, which flanneld uses and other nodes send to: on the interface holding one,
+  # or on any for one on a loopback or dummy interface. chalkd picks them after the firewall
+  # started, so a table of chalkos's own marks such packets, filled by this script from the file
+  # the preparation writes and emptied without one, and the firewall accepts what carries the
+  # mark. The firewall's reloads leave that table alone.
   vxlanFirewall = flannel && config.networking.firewall.enable;
+  # A packet mark bit kube-proxy (0x4000, 0x8000) and flannel leave alone, and its complement.
+  vxlanMark = "0x01000000";
+  notMark = "0xfeffffff";
   vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
-    iptables = config.networking.firewall.package;
     ipv6 = config.networking.enableIPv6;
+    mark = vxlanMark;
   };
 
   cniPlugins = [
@@ -172,7 +175,7 @@ in
         "chalkos-identity.service"
         "local-fs.target"
       ]
-      ++ lib.optional vxlanFirewall "firewall.service";
+      ++ lib.optional vxlanFirewall "nftables.service";
       before = [ "kubelet.service" ];
       serviceConfig = {
         Type = "oneshot";
@@ -180,14 +183,10 @@ in
         ExecStart = "${lib.getExe chalkd} prepare-kubernetes";
       }
       // lib.optionalAttrs vxlanFirewall {
-        # No VXLAN is accepted while the address is picked, nor when none is found. The old address
-        # goes first, so a restarting firewall cannot fill the emptied chain from it again.
-        ExecStartPre = [
-          "${pkgs.coreutils}/bin/rm -f ${run}/node-ip"
-          (lib.getExe vxlanRule)
-        ];
-        # The preparation fills the chain last, so the node is marked prepared only with the rule in
-        # place, and a failure to fill it is the preparation's, which chalkd reports.
+        # No VXLAN is accepted while the addresses are picked, nor when none are found.
+        ExecStartPre = [ (lib.getExe vxlanRule) ];
+        # The preparation fills the table last, so the node is marked prepared only with the rules
+        # in place, and a failure to fill it is the preparation's, which chalkd reports.
         ExecStart = "${lib.getExe chalkd} prepare-kubernetes ${lib.getExe vxlanRule}";
       };
     };
@@ -247,13 +246,10 @@ in
           to = 32767;
         }
       ];
-      # A restarted firewall fills the VXLAN chain again from the address picked at boot. The
-      # script runs with -e, and a failure leaves the node without a firewall; a failure to fill
-      # the chain leaves it empty.
-      extraCommands = lib.mkIf flannel ''
-        ip46tables -N chalkos-vxlan 2>/dev/null || true
-        ip46tables -A nixos-fw -j chalkos-vxlan
-        ${lib.getExe vxlanRule} ${run}/node-ip || true
+      # Accept the VXLAN packets chalkos-vxlan marked, and clear the mark, so the packets they
+      # carry do not inherit it.
+      extraInputRules = lib.mkIf flannel ''
+        udp dport 8472 meta mark & ${vxlanMark} == ${vxlanMark} meta mark set meta mark & ${notMark} accept
       '';
     };
   };

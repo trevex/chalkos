@@ -1,80 +1,113 @@
-# Fills the chalkos-vxlan chain from the file holding the node's addresses, one per line and at
-# most one per family, and empties it without one. It fails, leaving the chain empty, when the
-# file holds anything else.
+# Fills the table chalkos-vxlan from the file the preparation writes, and empties it without one.
+# The file has a line "destination <address> <interface|any>" for each of the node's addresses,
+# at most one per family. It fails, leaving the table empty, when the file holds anything else.
+#
+# The NixOS firewall drops what its own input chain does not accept, whatever other tables do, so
+# the table only marks VXLAN packets sent to the node's addresses, and the firewall accepts
+# packets carrying the mark (see kubernetes.nix). The table is not the firewall's: reloading the
+# firewall leaves it alone.
 {
   lib,
   writeShellApplication,
   util-linux,
-  iptables,
+  nftables,
   ipv6 ? true,
   lockFile ? "/run/chalkos-vxlan-rule.lock",
+  # The packet mark bit the firewall accepts.
+  mark,
 }:
 writeShellApplication {
   name = "chalkos-vxlan-rule";
   runtimeInputs = [
-    iptables
+    nftables
     util-linux
   ];
   text = ''
-    # The firewall runs this whenever it starts, also while the node picks its addresses: one run
-    # at a time, so the last one sees the file as it is now.
+    # The preparation runs this before and after it picks the node's addresses: one run at a time,
+    # so the last one sees the file as it is now.
     exec 9>>${lib.escapeShellArg lockFile}
     flock 9
-    families=(iptables ${lib.optionalString ipv6 "ip6tables"})
-    for family in "''${families[@]}"; do
-      "$family" -w -F chalkos-vxlan
-    done
+    families=(ip ${lib.optionalString ipv6 "ip6"})
+
+    # The nft family of a bare address, or nothing. An IPv4 address is four decimal octets, an
+    # IPv6 one has a colon: nft would resolve anything else, such as cafe.be, as a host name.
+    family_of() {
+      case "$1" in
+        *:*)
+          if [[ "$1" =~ ^[0-9A-Fa-f.:]+$ ]]; then
+            echo ip6
+          fi
+          ;;
+        *)
+          if [[ "$1" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+            for octet in "''${BASH_REMATCH[@]:1}"; do
+              if ((10#$octet > 255)); then
+                return
+              fi
+            done
+            echo ip
+          fi
+          ;;
+      esac
+    }
+
+    rules=()
     status=0
     if [ "$#" -eq 1 ] && [ -e "$1" ]; then
       mapfile -t lines <"$1"
-      # Anything but bare addresses would end up among iptables's arguments, so every line is
-      # checked before any rule is added.
-      declare -A addresses=()
+      # Anything but these lines would end up in the ruleset, so every line is checked before any
+      # rule is written.
+      declare -A addresses=() modes=()
       for line in "''${lines[@]}"; do
-        # An IPv4 address is four decimal octets, an IPv6 one has a colon: iptables would resolve
-        # anything else, such as cafe.be, as a host name.
-        case "$line" in
-          *:*)
-            family=ip6tables
-            valid=0
-            [[ "$line" =~ ^[0-9A-Fa-f.:]+$ ]] || valid=1
-            ;;
-          *)
-            family=iptables
-            valid=0
-            if [[ "$line" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
-              for octet in "''${BASH_REMATCH[@]:1}"; do
-                if ((10#$octet > 255)); then
-                  valid=1
-                fi
-              done
-            else
-              valid=1
-            fi
-            ;;
-        esac
-        if [ "$valid" -ne 0 ] || [ -n "''${addresses[$family]:-}" ] ||
-          ! [[ " ''${families[*]} " == *" $family "* ]]; then
+        read -r kind address mode rest <<<"$line" || true
+        family=$(family_of "$address")
+        if [ "$kind" != destination ] || [ -z "$family" ] || [ -n "$rest" ] ||
+          [ -n "''${addresses[$family]:-}" ] || ! [[ " ''${families[*]} " == *" $family "* ]] ||
+          ! [[ "$mode" == interface || "$mode" == any ]] || [ "$line" != "$kind $address $mode" ]; then
           status=1
           break
         fi
-        addresses[$family]=$line
+        addresses[$family]=$address
+        modes[$family]=$mode
       done
       if [ "''${#addresses[@]}" -eq 0 ]; then
         status=1
       fi
       if [ "$status" -eq 0 ]; then
         for family in "''${!addresses[@]}"; do
-          "$family" -w -A chalkos-vxlan -p udp --dport 8472 -d "''${addresses[$family]}" \
-            -m addrtype --dst-type LOCAL --limit-iface-in -j ACCEPT
+          rule="$family daddr ''${addresses[$family]} udp dport 8472"
+          # An address on a network interface takes VXLAN on that interface alone. One on a
+          # loopback or dummy interface, which routers reach through the node's other interfaces,
+          # takes it on any.
+          if [ "''${modes[$family]}" = interface ]; then
+            rule+=" fib daddr . iif type local"
+          fi
+          rules+=("$rule meta mark set meta mark | ${mark}")
         done
       else
-        echo "chalkos-vxlan-rule: $1 holds no address per family; VXLAN stays refused" >&2
+        echo "chalkos-vxlan-rule: $1 does not hold the node's addresses; VXLAN stays refused" >&2
       fi
     fi
-    for family in "''${families[@]}"; do
-      "$family" -w -S chalkos-vxlan
-    done
+    # The table is replaced in one transaction. It runs before the firewall's input chain, which
+    # drops what it does not accept.
+    table() {
+      echo "table inet chalkos-vxlan"
+      echo "delete table inet chalkos-vxlan"
+      echo "table inet chalkos-vxlan {"
+      echo "  chain input {"
+      echo "    type filter hook input priority filter - 1; policy accept;"
+      for rule in "$@"; do
+        echo "    $rule"
+      done
+      echo "  }"
+      echo "}"
+    }
+    # A ruleset nft refuses changes nothing, so the old rules go then.
+    if ! table "''${rules[@]}" | nft -f -; then
+      table | nft -f -
+      status=1
+    fi
+    nft list table inet chalkos-vxlan
     exit "$status"
   '';
 }

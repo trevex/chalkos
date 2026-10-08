@@ -1053,8 +1053,41 @@ func TestPrepareRunsFirewallLast(t *testing.T) {
 	}
 }
 
-// The script that fills the firewall's VXLAN chain gets the file holding the node's address,
-// and its failure names it.
+// The firewall's VXLAN rule accepts VXLAN to the node's addresses: on the interface holding one,
+// or on any for an address on a loopback or dummy interface, which arrives through the others.
+func TestPrepareWritesVXLANDestinations(t *testing.T) {
+	links := map[string]nodeip.Link{"lo": {Loopback: true, MTU: 65536}, "bgp0": {Kind: "dummy", MTU: 1500}}
+	for _, tc := range []struct {
+		addrs []string
+		want  string
+	}{
+		{[]string{"eth0 192.168.100.11", "eth0 fd00::11"}, "destination 192.168.100.11 interface\ndestination fd00::11 interface\n"},
+		{[]string{"bgp0 192.168.100.11", "bgp0 fd00::11"}, "destination 192.168.100.11 any\ndestination fd00::11 any\n"},
+		{[]string{"lo 192.168.100.11", "lo fd00::11"}, "destination 192.168.100.11 any\ndestination fd00::11 any\n"},
+	} {
+		p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+		withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": {"mtu": 1430}, "kind":`)
+		write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}`)
+		if err := Prepare(p, now, on(links, tc.addrs...), nil); err != nil {
+			t.Fatal(err)
+		}
+		if data, err := os.ReadFile(p.VXLAN()); err != nil || string(data) != tc.want {
+			t.Errorf("%v: vxlan = %q, %v, want %q", tc.addrs, data, err, tc.want)
+		}
+	}
+	// A failed preparation leaves none.
+	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	if err := Prepare(p, now, picked, nil); err != nil || !exists(p.VXLAN()) {
+		t.Fatalf("Prepare() = %v", err)
+	}
+	write(t, p.NodeFile, pickingIdentity("w1"))
+	if err := Prepare(p, now, onNode("10.0.2.15"), nil); err == nil || exists(p.VXLAN()) {
+		t.Errorf("Prepare() = %v, vxlan kept: %v", err, exists(p.VXLAN()))
+	}
+}
+
+// The script that fills the firewall's VXLAN table gets the file saying what to accept, and its
+// failure names it.
 func TestVXLANRule(t *testing.T) {
 	p := testNode(t, kubernetes.KindWorker, "w1", nil)
 	dir := t.TempDir()
@@ -1071,7 +1104,7 @@ func TestVXLANRule(t *testing.T) {
 	if err := VXLANRule(script("ok", "exit 0"))(p); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(args); string(data) != p.NodeIP()+"\n" {
+	if data, _ := os.ReadFile(args); string(data) != p.VXLAN()+"\n" {
 		t.Errorf("arguments %q", data)
 	}
 	err := VXLANRule(script("fails", "exit 1"))(p)
