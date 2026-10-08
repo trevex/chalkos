@@ -119,6 +119,8 @@ func RenewThrough(ctx context.Context, cert *NodeCertificate, addr string, reque
 	if err != nil {
 		return "", err
 	}
+	// Renewals are hours apart: nothing is kept open in between.
+	defer conn.Close()
 	resp, err := conn.RenewNodeCertificate(ctx, connect.NewRequest(&nodev1.RenewNodeCertificateRequest{CertificateRequest: request}))
 	if err != nil {
 		return "", fmt.Errorf("the control plane at %s: %w", addr, err)
@@ -141,6 +143,9 @@ type Renewal struct {
 	// Check is the time between two checks; FirstRetry is the first wait after a failure, which
 	// doubles up to MaxRetry.
 	Check, FirstRetry, MaxRetry time.Duration
+	// Timeout bounds each attempt, so a peer that accepts the connection and never answers does
+	// not stop the renewal for good.
+	Timeout time.Duration
 
 	mu      sync.Mutex
 	problem string
@@ -148,7 +153,8 @@ type Renewal struct {
 	force chan struct{}
 }
 
-// newRenewal checks about hourly and retries after a minute, then up to hourly.
+// newRenewal checks about hourly, gives each attempt a minute and retries after a minute, then up
+// to hourly.
 func newRenewal(what string, due func() (time.Time, time.Time, error), renew func(context.Context, time.Time) error) *Renewal {
 	return &Renewal{
 		What:       what,
@@ -159,6 +165,7 @@ func newRenewal(what string, due func() (time.Time, time.Time, error), renew fun
 		Check:      time.Hour,
 		FirstRetry: time.Minute,
 		MaxRetry:   time.Hour,
+		Timeout:    time.Minute,
 		force:      make(chan struct{}, 1),
 	}
 }
@@ -210,7 +217,9 @@ func (r *Renewal) Run(ctx context.Context) {
 			continue
 		}
 		if err == nil {
-			err = r.Renew(ctx, now)
+			attempt, cancel := context.WithTimeout(ctx, r.Timeout)
+			err = r.Renew(attempt, now)
+			cancel()
 		}
 		if ctx.Err() != nil {
 			return
@@ -222,8 +231,10 @@ func (r *Renewal) Run(ctx context.Context) {
 				problem += "; expires " + expires.UTC().Format(time.RFC3339)
 			}
 			r.setProblem(problem)
-			log.Printf("%s: %s; trying again in %v", r.What, problem, retry)
-			wait = retry
+			// Jitter keeps the nodes that lost their control plane together from all asking again
+			// at once.
+			wait = retry - retry/10 + jitter(retry/5)
+			log.Printf("%s: %s; trying again in %v", r.What, problem, wait.Round(time.Second))
 			continue
 		}
 		retry = 0

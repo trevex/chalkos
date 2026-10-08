@@ -2,16 +2,21 @@ package chalkd
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -89,16 +94,35 @@ func TestRenewNodeCertificate(t *testing.T) {
 	broken := append([]byte{}, request...)
 	broken[len(broken)-1] ^= 0xff
 	other, _ := certificateRequest(t, "w1")
+	// Node keys are P-256; a request for any other key is refused.
+	p384, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, edKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notP256 [][]byte
+	for _, k := range []crypto.Signer{p384, edKey} {
+		der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "w1"}}, k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		notP256 = append(notP256, der)
+	}
 	for name, tc := range map[string]struct {
 		cert    *tls.Certificate
 		request []byte
 		code    connect.Code
 	}{
-		"an admin":                  {c.clients[pki.RoleAdmin], other, connect.CodePermissionDenied},
-		"a reader":                  {c.clients[pki.RoleReader], other, connect.CodePermissionDenied},
-		"no certificate":            {nil, other, connect.CodeUnavailable},
-		"a request of another key":  {pair(t, w1), broken, connect.CodeInvalidArgument},
-		"a request that is no PKCS": {pair(t, w1), []byte("not a request"), connect.CodeInvalidArgument},
+		"an admin":                     {c.clients[pki.RoleAdmin], other, connect.CodePermissionDenied},
+		"a reader":                     {c.clients[pki.RoleReader], other, connect.CodePermissionDenied},
+		"no certificate":               {nil, other, connect.CodeUnavailable},
+		"a request of another key":     {pair(t, w1), broken, connect.CodeInvalidArgument},
+		"a request that is no PKCS":    {pair(t, w1), []byte("not a request"), connect.CodeInvalidArgument},
+		"a request for a P-384 key":    {pair(t, w1), notP256[0], connect.CodeInvalidArgument},
+		"a request for an Ed25519 key": {pair(t, w1), notP256[1], connect.CodeInvalidArgument},
 	} {
 		_, err := dial(t, addr, tc.cert).RenewNodeCertificate(context.Background(), connect.NewRequest(&nodev1.RenewNodeCertificateRequest{CertificateRequest: tc.request}))
 		if connect.CodeOf(err) != tc.code {
@@ -239,7 +263,8 @@ func TestRenewalThresholdsAndBackoff(t *testing.T) {
 	if wait < 54*time.Minute || wait > 66*time.Minute {
 		t.Errorf("the next check comes after %v, want about an hour", wait)
 	}
-	// Once due, failures are tried again after a minute, doubling up to an hour.
+	// Once due, failures are tried again after about a minute, doubling up to about an hour; each
+	// wait is spread by up to a tenth either way, so nodes that failed together do not retry together.
 	var retries []time.Duration
 	now := renewAt
 	for range 9 {
@@ -248,9 +273,12 @@ func TestRenewalThresholdsAndBackoff(t *testing.T) {
 	}
 	want := []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 32 * time.Minute, time.Hour, time.Hour, time.Hour}
 	for i := range want {
-		if retries[i] != want[i] {
-			t.Fatalf("waits after failures %v, want %v", retries, want)
+		if retries[i] < want[i]-want[i]/10 || retries[i] > want[i]+want[i]/10 {
+			t.Fatalf("waits after failures %v, want about %v", retries, want)
 		}
+	}
+	if slices.Equal(retries, want) {
+		t.Errorf("waits after failures %v carry no jitter", retries)
 	}
 	problem := r.Problem()
 	if !strings.HasPrefix(problem, "renewal failing: connection refused; expires ") || !strings.Contains(problem, leaf.NotAfter.UTC().Format(time.RFC3339)) {
@@ -284,7 +312,7 @@ func TestRenewalRefusesWhatItDidNotAskFor(t *testing.T) {
 		"another OS CA": func(request []byte) (string, error) {
 			return signRequest(other.nodeCA, pki.NamesOf(leaf), request, time.Now())
 		},
-		"no earlier end": func(request []byte) (string, error) {
+		"no later end": func(request []byte) (string, error) {
 			return signRequest(c.nodeCA, pki.NamesOf(leaf), request, leaf.NotBefore.Add(time.Hour))
 		},
 		"garbage": func([]byte) (string, error) { return "garbage", nil },
@@ -350,5 +378,76 @@ func TestRenewOnApplyIdentity(t *testing.T) {
 		}
 		cancel()
 		<-done
+	}
+}
+
+// silentPeer completes TLS handshakes as the node of cert and then never answers, until the
+// client closes the connection.
+func silentPeer(t *testing.T, cert pki.CertKey) string {
+	t.Helper()
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{*pair(t, cert)}, NextProtos: []string{"h2", "http/1.1"}, MinVersion: tls.VersionTLS13})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_, _ = io.Copy(io.Discard, conn)
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
+	c := newCreds(t)
+	addr := silentPeer(t, c.node)
+	issued, err := pki.IssueNode(c.nodeCA, pki.NodeNames{CommonName: "w1", DNSNames: []string{"w1"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w1 := loadedCertificate(t, c, issued)
+	r := NewNodeRenewal(w1, func(ctx context.Context, request []byte) (string, error) {
+		return RenewThrough(ctx, w1, addr, request)
+	})
+	r.Timeout = time.Second
+	clock := newFakeClock(time.Now())
+	r.Now = func() time.Time { return clock.now }
+	r.After = clock.After
+
+	before := runtime.NumGoroutine()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { r.Run(ctx); close(done) }()
+	clock.next(t)
+	r.Force()
+	start := time.Now()
+	select {
+	case <-clock.waits:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("an attempt with a silent peer still runs after %v", time.Since(start))
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("the attempt ended after %v, want about its deadline of %v", elapsed, r.Timeout)
+	}
+	if !strings.HasPrefix(r.Problem(), "renewal failing: ") {
+		t.Errorf("problem = %q", r.Problem())
+	}
+	cancel()
+	<-done
+
+	// The attempt's connection and the goroutines serving it are gone.
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if after := runtime.NumGoroutine(); after > before {
+		t.Errorf("%d goroutines before the attempt, %d after", before, after)
 	}
 }

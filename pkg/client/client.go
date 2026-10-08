@@ -4,6 +4,7 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -47,6 +48,50 @@ type Conn struct {
 	nodev1connect.NodeServiceClient
 	mu          sync.Mutex
 	fingerprint string
+	// conns are the open connections, which Close ends.
+	conns map[*trackedConn]struct{}
+}
+
+// Close ends every connection to the node, calls on them fail. A call that ended at its deadline
+// may leave its connection open, waiting for an answer to HTTP/2's check of the connection, as
+// long as the node keeps it open; Close ends that one too. Later calls connect again.
+func (c *Conn) Close() {
+	c.mu.Lock()
+	conns := c.conns
+	c.conns = nil
+	c.mu.Unlock()
+	for conn := range conns {
+		conn.Close()
+	}
+}
+
+// dial connects to the node and keeps the connection for Close.
+func (c *Conn) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	t := &trackedConn{Conn: conn, owner: c}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conns == nil {
+		c.conns = map[*trackedConn]struct{}{}
+	}
+	c.conns[t] = struct{}{}
+	return t, nil
+}
+
+// trackedConn is a connection of a Conn, which forgets it once it is closed.
+type trackedConn struct {
+	net.Conn
+	owner *Conn
+}
+
+func (t *trackedConn) Close() error {
+	t.owner.mu.Lock()
+	delete(t.owner.conns, t)
+	t.owner.mu.Unlock()
+	return t.Conn.Close()
 }
 
 // Fingerprint returns the fingerprint of the certificate the node presented, once connected.
@@ -130,7 +175,7 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	}
 	cfg.GetClientCertificate = o.GetClientCertificate
 	transport := &http.Transport{
-		DialContext:         (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		DialContext:         c.dial,
 		TLSClientConfig:     cfg,
 		TLSHandshakeTimeout: 10 * time.Second,
 		ForceAttemptHTTP2:   true,
