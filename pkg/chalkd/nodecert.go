@@ -43,6 +43,13 @@ func LoadNodeCertificate(dir string) (*NodeCertificate, error) {
 		return nil, fmt.Errorf("read the OS CA: %w", err)
 	}
 	n := &NodeCertificate{path: filepath.Join(dir, NodeCertificateFile), osCA: string(osCA)}
+	// A crash in the middle of a replacement leaves its temporary file, which holds a key.
+	stale, _ := filepath.Glob(filepath.Join(dir, "."+NodeCertificateFile+".*"))
+	for _, path := range stale {
+		if err := os.Remove(path); err != nil {
+			return nil, fmt.Errorf("remove an interrupted write of the node certificate: %w", err)
+		}
+	}
 	data, err := os.ReadFile(n.path)
 	if err != nil {
 		return nil, fmt.Errorf("read the node certificate: %w", err)
@@ -91,7 +98,11 @@ func (n *NodeCertificate) Replace(chain, key string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	if err := install.WriteFile(n.path, []byte(chain+key), 0o600); err != nil {
+	file, err := pki.NodeFile(cred, n.osCA)
+	if err != nil {
+		return err
+	}
+	if err := install.WriteFile(n.path, file, 0o600); err != nil {
 		return fmt.Errorf("record the node certificate: %w", err)
 	}
 	n.current.Store(&cred)

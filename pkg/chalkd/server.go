@@ -80,7 +80,8 @@ type Server struct {
 	// AnyClient accepts clients without certificates, as admins. Only maintenance mode on an
 	// image without an OS CA does.
 	AnyClient bool
-	// Fingerprint is the SHA-256 of the certificate chalkd serves in maintenance mode.
+	// Fingerprint is the SHA-256 of the certificate chalkd served when it started, in either
+	// mode; CurrentFingerprint follows renewals of the node certificate.
 	Fingerprint string
 	// Certificate is the node certificate chalkd serves in normal mode.
 	Certificate *NodeCertificate

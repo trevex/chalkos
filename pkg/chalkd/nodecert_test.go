@@ -123,3 +123,49 @@ func TestLoadNodeCertificateKeepsAnExpiredOne(t *testing.T) {
 		t.Error("loaded a node certificate of another OS CA")
 	}
 }
+
+// A renewed chain arrives as PEM from another node; whatever its bytes, Replace must store a file
+// the next start loads, or refuse it.
+func TestNodeCertificateReplacementStaysLoadable(t *testing.T) {
+	c := newCreds(t)
+	other := newCreds(t)
+	for name, edit := range map[string]func(chain string) string{
+		"without a final newline":       func(chain string) string { return strings.TrimRight(chain, "\n") },
+		"with another key in the chain": func(chain string) string { return chain + other.node.Key },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := nodeCertificateDir(t, c)
+			n, err := LoadNodeCertificate(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now()
+			renewed, err := pki.IssueNode(c.nodeCA, pki.NamesOf(n.Current().Leaf), now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := n.Replace(edit(renewed.Certificate), renewed.Key, now); err != nil {
+				return
+			}
+			again, err := LoadNodeCertificate(dir)
+			if err != nil {
+				t.Fatalf("the replaced certificate cannot be loaded: %v", err)
+			}
+			if again.Fingerprint() != n.Fingerprint() {
+				t.Error("a restart loads another certificate than the one served")
+			}
+		})
+	}
+}
+
+func TestLoadNodeCertificateRemovesStaleTemporaryFiles(t *testing.T) {
+	dir := nodeCertificateDir(t, newCreds(t))
+	stale := filepath.Join(dir, "."+NodeCertificateFile+".123456")
+	write(t, stale, "left by a crash")
+	if _, err := LoadNodeCertificate(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("a temporary file from an interrupted write is still there: %v", err)
+	}
+}

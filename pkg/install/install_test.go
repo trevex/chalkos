@@ -871,3 +871,37 @@ func TestInstallRefusesForeignNodeCA(t *testing.T) {
 		t.Errorf("ran %v before refusing the share", r.calls)
 	}
 }
+
+// A node certificate arrives as two PEM strings that are joined into one file; whatever their
+// bytes, the file written must be one chalkd loads, or the install must be refused.
+func TestInPlaceWritesALoadableNodeCertificate(t *testing.T) {
+	other, err := pki.NewOSCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, edit := range map[string]func(chain string) string{
+		"without a final newline":       func(chain string) string { return strings.TrimRight(chain, "\n") },
+		"with another key in the chain": func(chain string) string { return chain + other.Key },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := &fakeRunner{}
+			i := newTestInstaller(t, r, vda)
+			r.add(inPlaceRules(i)...)
+			req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+			req.NodeCertificate = []byte(edit(string(req.NodeCertificate)))
+			if err := i.InPlace(context.Background(), req); err != nil {
+				if installed(t, i.StateDir) {
+					t.Error("a refused install wrote the installed marker")
+				}
+				return
+			}
+			data, err := os.ReadFile(filepath.Join(i.StateDir, "chalkd/node.pem"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pki.VerifyNode(string(data), string(data), string(req.CA), time.Time{}); err != nil {
+				t.Errorf("node.pem cannot be loaded: %v", err)
+			}
+		})
+	}
+}

@@ -243,10 +243,9 @@ func SignNode(nodeCA CertKey, names NodeNames, pub crypto.PublicKey, now time.Ti
 
 // NodeCredential is a node certificate whose chain verified.
 type NodeCredential struct {
-	// Leaf is the node certificate and Chain its PEM chain with the node CA's certificate.
-	Leaf  *x509.Certificate
-	Chain string
-	TLS   tls.Certificate
+	// Leaf is the node certificate; TLS holds it, the node CA's certificate and the key.
+	Leaf *x509.Certificate
+	TLS  tls.Certificate
 }
 
 // VerifyNode checks that a PEM chain and key are a node certificate with its key that chains
@@ -287,7 +286,31 @@ func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
 			return NodeCredential{}, fmt.Errorf("the node certificate does not verify against the OS CA: %w", err)
 		}
 	}
-	return NodeCredential{Leaf: leaf, Chain: chain, TLS: pair}, nil
+	return NodeCredential{Leaf: leaf, TLS: pair}, nil
+}
+
+// NodeFile encodes a verified node certificate as the one PEM file a node keeps it in: the chain,
+// then the key. It is built from the parsed certificates and key, never from the bytes they
+// arrived as, which may lack a final newline or carry other blocks that the joined file would
+// misread. The file is checked as it is loaded, without dates, before it is returned.
+func NodeFile(cred NodeCredential, osCA string) ([]byte, error) {
+	var file []byte
+	for _, der := range cred.TLS.Certificate {
+		file = append(file, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(cred.TLS.PrivateKey)
+	if err != nil {
+		return nil, errors.New("encode the node certificate's key")
+	}
+	file = append(file, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})...)
+	loaded, err := VerifyNode(string(file), string(file), osCA, time.Time{})
+	if err != nil {
+		return nil, fmt.Errorf("the encoded node certificate: %w", err)
+	}
+	if !loaded.Leaf.Equal(cred.Leaf) {
+		return nil, errors.New("the encoded node certificate is not the one verified")
+	}
+	return file, nil
 }
 
 // RenewAt is when a certificate is renewed: once two thirds of its lifetime have passed.

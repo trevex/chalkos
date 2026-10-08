@@ -94,7 +94,7 @@ func (r Request) validate() error {
 	}
 	// A node whose certificate does not chain through the node CA to the OS CA could not be
 	// reached once installed. The node's clock may not be set yet, so dates are not checked.
-	if _, err := pki.VerifyNode(string(r.NodeCertificate), string(r.NodeKey), string(r.CA), time.Time{}); err != nil {
+	if _, err := r.nodeFile(); err != nil {
 		return err
 	}
 	if len(r.KubernetesShare) > 0 {
@@ -118,6 +118,15 @@ func (r Request) validate() error {
 		}
 	}
 	return nil
+}
+
+// nodeFile is the file chalkd loads its node certificate from.
+func (r Request) nodeFile() ([]byte, error) {
+	cred, err := pki.VerifyNode(string(r.NodeCertificate), string(r.NodeKey), string(r.CA), time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	return pki.NodeFile(cred, string(r.CA))
 }
 
 // Installer holds what installing works on; tests point it at temporary directories and a
@@ -293,6 +302,10 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	if err := os.Chmod(chalkdDir, 0o700); err != nil {
 		return err
 	}
+	nodeFile, err := req.nodeFile()
+	if err != nil {
+		return err
+	}
 	files := []struct {
 		path string
 		data []byte
@@ -300,7 +313,7 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	}{
 		{"identity.json", req.Identity, 0o600},
 		// One file, so the chain and the key are only ever replaced together.
-		{"chalkd/node.pem", append(append([]byte{}, req.NodeCertificate...), req.NodeKey...), 0o600},
+		{"chalkd/node.pem", nodeFile, 0o600},
 		{"chalkd/ca.crt", req.CA, 0o644},
 	}
 	for _, f := range files {
