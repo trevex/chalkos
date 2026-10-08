@@ -15,10 +15,10 @@ import (
 
 func testCluster() kubernetes.Cluster {
 	return kubernetes.Cluster{
-		Kind:        kubernetes.KindControlPlane,
-		Endpoint:    "https://api.lab.example:6443",
-		ServiceCIDR: "10.96.0.0/12",
-		Domain:      "cluster.local",
+		Kind:         kubernetes.KindControlPlane,
+		Endpoint:     "https://api.lab.example:6443",
+		ServiceCIDRs: kubernetes.ByFamily[string]{IPv4: "10.96.0.0/12", IPv6: "fd00:10:96::/112"},
+		Domain:       "cluster.local",
 	}
 }
 

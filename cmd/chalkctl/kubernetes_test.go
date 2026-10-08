@@ -159,8 +159,9 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	}
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
-	writeFile(t, s.Kubernetes.Paths.Cluster, `{"kind": "worker", "endpoint": "https://10.0.0.10:6443", "podCIDR": "10.244.0.0/16",
-	  "serviceCIDR": "10.96.0.0/12", "dnsIP": "10.96.0.10", "domain": "cluster.local"}`)
+	writeFile(t, s.Kubernetes.Paths.Cluster, `{"kind": "worker", "endpoint": "https://10.0.0.10:6443",
+	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
+	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
 	return s, r
 }
 

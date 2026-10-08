@@ -68,13 +68,11 @@ let
   clusterFile = {
     inherit kind;
     inherit (cluster) endpoint;
-    inherit (k)
-      podCIDR
-      serviceCIDR
-      dnsIP
-      domain
-      allowSchedulingOnControlPlanes
-      ;
+    inherit (k) domain allowSchedulingOnControlPlanes;
+    podCIDRs.ipv4 = k.podCIDR;
+    serviceCIDRs.ipv4 = k.serviceCIDR;
+    dnsIPs.ipv4 = k.dnsIP;
+    nodeCIDRMaskSizes.ipv4 = 24;
     version = k.package.version;
     inherit (k) ipFamilies;
     nodeIP = { inherit (k.nodeIP) validSubnets timeout; };

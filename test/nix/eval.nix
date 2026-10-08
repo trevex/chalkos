@@ -1765,7 +1765,15 @@ lib.runTests {
         clusterFile = builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text;
       in
       {
-        inherit (clusterFile) kind version endpoint;
+        inherit (clusterFile)
+          kind
+          version
+          endpoint
+          podCIDRs
+          serviceCIDRs
+          dnsIPs
+          nodeCIDRMaskSizes
+          ;
         apiServer = clusterFile.images.kubeAPIServer;
         # The API server, and etcd's clients and peers on the other control-plane nodes, which
         # etcd authenticates by its CA.
@@ -1791,6 +1799,11 @@ lib.runTests {
       kind = "controlplane";
       version = "1.37.1";
       endpoint = "https://10.0.0.1:6443";
+      # The ranges by family.
+      podCIDRs.ipv4 = "10.244.0.0/16";
+      serviceCIDRs.ipv4 = "10.96.0.0/12";
+      dnsIPs.ipv4 = "10.96.0.10";
+      nodeCIDRMaskSizes.ipv4 = 24;
       apiServer = "registry.k8s.io/kube-apiserver:v1.37.1";
       firewall = true;
       workerFirewall = false;

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"net"
 	"net/netip"
 	"net/url"
@@ -31,14 +30,18 @@ type Cluster struct {
 	Endpoint string `json:"endpoint"`
 	// Version is the Kubernetes release, such as 1.37.1.
 	Version                        string `json:"version"`
-	PodCIDR                        string `json:"podCIDR"`
-	ServiceCIDR                    string `json:"serviceCIDR"`
-	DNSIP                          string `json:"dnsIP"`
 	Domain                         string `json:"domain"`
 	AllowSchedulingOnControlPlanes bool   `json:"allowSchedulingOnControlPlanes"`
 	// IPFamilies are the address families nodes have an address of, ipv4 or ipv6, the primary
 	// one first. Empty means ipv4.
 	IPFamilies []string `json:"ipFamilies"`
+	// PodCIDRs and ServiceCIDRs are the pod and service ranges of each family, DNSIPs the cluster
+	// DNS's service address and NodeCIDRMaskSizes the prefix length of each node's part of the
+	// pod range. Only the entries of IPFamilies count.
+	PodCIDRs          ByFamily[string] `json:"podCIDRs"`
+	ServiceCIDRs      ByFamily[string] `json:"serviceCIDRs"`
+	DNSIPs            ByFamily[string] `json:"dnsIPs"`
+	NodeCIDRMaskSizes ByFamily[int]    `json:"nodeCIDRMaskSizes"`
 	// NodeIP is how nodes without a fixed address pick theirs.
 	NodeIP NodeIP `json:"nodeIP"`
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
@@ -47,6 +50,20 @@ type Cluster struct {
 	// kube-apiserver, without leading dashes.
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
 	Images    Images                       `json:"images"`
+}
+
+// ByFamily holds a value of each address family.
+type ByFamily[T any] struct {
+	IPv4 T `json:"ipv4"`
+	IPv6 T `json:"ipv6"`
+}
+
+// Of returns the value of family f.
+func (b ByFamily[T]) Of(f nodeip.Family) T {
+	if f == nodeip.IPv6 {
+		return b.IPv6
+	}
+	return b.IPv4
 }
 
 // NodeIP is how a node picks its address.
@@ -98,8 +115,8 @@ func ReadCluster(path string) (Cluster, error) {
 // extra flags must not override them.
 var ProtectedAPIServerFlags = []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"}
 
-// Validate checks the kind, the endpoint, the address ranges, how nodes pick their address and
-// the extra flags.
+// Validate checks the kind, the endpoint, the address families and their ranges, how nodes pick
+// their address, the VIPs and the extra flags.
 func (c Cluster) Validate() error {
 	for _, flag := range ProtectedAPIServerFlags {
 		if _, ok := c.ExtraArgs["kube-apiserver"][flag]; ok {
@@ -111,15 +128,6 @@ func (c Cluster) Validate() error {
 	}
 	if _, err := c.EndpointHost(); err != nil {
 		return err
-	}
-	if _, err := c.APIServerServiceIP(); err != nil {
-		return err
-	}
-	if _, _, err := net.ParseCIDR(c.PodCIDR); err != nil {
-		return fmt.Errorf("podCIDR: %w", err)
-	}
-	if net.ParseIP(c.DNSIP) == nil {
-		return fmt.Errorf("dnsIP %q is not an address", c.DNSIP)
 	}
 	if c.Domain == "" {
 		return errors.New("no cluster domain")
@@ -133,6 +141,11 @@ func (c Cluster) Validate() error {
 	families, err := c.Families()
 	if err != nil {
 		return err
+	}
+	for _, f := range families {
+		if err := c.validateRanges(f); err != nil {
+			return err
+		}
 	}
 	vips, err := c.VIPAddresses()
 	if err != nil {
@@ -173,6 +186,97 @@ func (c Cluster) Families() ([]nodeip.Family, error) {
 	return families, nil
 }
 
+// Primary returns the primary address family, the first of IPFamilies. Every value that exists
+// for one family only, such as the kubernetes service's address, follows it.
+func (c Cluster) Primary() nodeip.Family {
+	families, err := c.Families()
+	if err != nil {
+		return nodeip.IPv4
+	}
+	return families[0]
+}
+
+// validateRanges checks the ranges of family f as kubeadm does: each a network of its family,
+// the pod and service ranges apart, at most 2^20 service addresses, node parts of the pod range
+// longer than it by at most 16 bits, and the DNS address inside the service range, but neither
+// its network address nor its first address, which the kubernetes service gets.
+func (c Cluster) validateRanges(f nodeip.Family) error {
+	pod, err := parseRange("podCIDRs", f, c.PodCIDRs.Of(f))
+	if err != nil {
+		return err
+	}
+	service, err := parseRange("serviceCIDRs", f, c.ServiceCIDRs.Of(f))
+	if err != nil {
+		return err
+	}
+	if pod.Overlaps(service) {
+		return fmt.Errorf("podCIDRs.%s %s and serviceCIDRs.%s %s overlap", f, pod, f, service)
+	}
+	bits := service.Addr().BitLen()
+	if bits-service.Bits() > 20 {
+		return fmt.Errorf("serviceCIDRs.%s %s holds more than 2^20 addresses; use a prefix of /%d or longer", f, service, bits-20)
+	}
+	mask := c.NodeCIDRMaskSizes.Of(f)
+	if mask <= pod.Bits() || mask-pod.Bits() > 16 || mask > bits {
+		return fmt.Errorf("nodeCIDRMaskSizes.%s %d must be longer than the prefix of podCIDRs.%s %s, by at most 16 bits", f, mask, f, pod)
+	}
+	s := c.DNSIPs.Of(f)
+	dns, err := netip.ParseAddr(s)
+	if err != nil || dns.Zone() != "" || !service.Contains(dns) {
+		return fmt.Errorf("dnsIPs.%s %q is not an address in serviceCIDRs.%s %s", f, s, f, service)
+	}
+	if dns == service.Addr() || dns == service.Addr().Next() {
+		return fmt.Errorf("dnsIPs.%s %s is the network address of serviceCIDRs.%s %s or the kubernetes service's address", f, dns, f, service)
+	}
+	return nil
+}
+
+// parseRange reads the range of family f that option holds: a network of that family in CIDR
+// notation, without host bits.
+func parseRange(option string, f nodeip.Family, s string) (netip.Prefix, error) {
+	p, err := netip.ParsePrefix(s)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("%s.%s %q is not an address range in CIDR notation", option, f, s)
+	}
+	if p.Addr().Is4In6() {
+		return netip.Prefix{}, fmt.Errorf("%s.%s %s is an IPv4-mapped IPv6 range; write the IPv4 form", option, f, p)
+	}
+	if p.Addr().Is4() != (f == nodeip.IPv4) {
+		return netip.Prefix{}, fmt.Errorf("%s.%s %s is not an %s range", option, f, p, f)
+	}
+	if p != p.Masked() {
+		return netip.Prefix{}, fmt.Errorf("%s.%s %s has host bits set; write %s", option, f, p, p.Masked())
+	}
+	return p, nil
+}
+
+// PodCIDRList returns the pod ranges of the cluster's families, the primary family's first.
+func (c Cluster) PodCIDRList() ([]netip.Prefix, error) {
+	return c.rangeList("podCIDRs", c.PodCIDRs)
+}
+
+// ServiceCIDRList returns the service ranges of the cluster's families, the primary family's
+// first.
+func (c Cluster) ServiceCIDRList() ([]netip.Prefix, error) {
+	return c.rangeList("serviceCIDRs", c.ServiceCIDRs)
+}
+
+func (c Cluster) rangeList(option string, ranges ByFamily[string]) ([]netip.Prefix, error) {
+	families, err := c.Families()
+	if err != nil {
+		return nil, err
+	}
+	var out []netip.Prefix
+	for _, f := range families {
+		p, err := parseRange(option, f, ranges.Of(f))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // VIPAddresses returns the virtual addresses.
 func (c Cluster) VIPAddresses() ([]netip.Addr, error) {
 	var vips []netip.Addr
@@ -211,21 +315,15 @@ func (c Cluster) EndpointHost() (string, error) {
 	return u.Hostname(), nil
 }
 
-// APIServerServiceIP returns the first address of the service range, which the kubernetes
-// service gets.
+// APIServerServiceIP returns the first address of the primary family's service range, which
+// the kubernetes service gets: the API server creates it in that family alone.
 func (c Cluster) APIServerServiceIP() (net.IP, error) {
-	_, cidr, err := net.ParseCIDR(c.ServiceCIDR)
+	f := c.Primary()
+	service, err := parseRange("serviceCIDRs", f, c.ServiceCIDRs.Of(f))
 	if err != nil {
-		return nil, fmt.Errorf("serviceCIDR: %w", err)
+		return nil, err
 	}
-	ip := cidr.IP
-	if v4 := ip.To4(); v4 != nil {
-		ip = v4
-	}
-	n := new(big.Int).Add(new(big.Int).SetBytes(ip), big.NewInt(1))
-	out := make(net.IP, len(ip))
-	n.FillBytes(out)
-	return out, nil
+	return net.IP(service.Addr().Next().AsSlice()), nil
 }
 
 // Node is this node as its identity describes it.
@@ -307,8 +405,8 @@ func (n Node) CertificateIPs() []net.IP {
 
 // NodeIPSelector is how node n picks its addresses, one of each of the cluster's families: its
 // fixed address of the family, or else the first address in the subnets of its identity or,
-// without those, of its cluster. Addresses in the pod and service ranges are never picked, and
-// the endpoint's and the virtual addresses only when no other matches.
+// without those, of its cluster. Addresses in the pod and service ranges of every family are
+// never picked, and the endpoint's and the virtual addresses only when no other matches.
 func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
 	families, err := c.Families()
 	if err != nil {
@@ -333,13 +431,15 @@ func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
 	if err := onePerFamily("nodeIPs", s.Fixed, families); err != nil {
 		return nodeip.Selector{}, err
 	}
-	for _, cidr := range []string{c.PodCIDR, c.ServiceCIDR} {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil {
-			return nodeip.Selector{}, fmt.Errorf("%q is not an address range: %w", cidr, err)
-		}
-		s.Reserved = append(s.Reserved, prefix.Masked())
+	pods, err := c.PodCIDRList()
+	if err != nil {
+		return nodeip.Selector{}, err
 	}
+	services, err := c.ServiceCIDRList()
+	if err != nil {
+		return nodeip.Selector{}, err
+	}
+	s.Reserved = append(pods, services...)
 	host, err := c.EndpointHost()
 	if err != nil {
 		return nodeip.Selector{}, err

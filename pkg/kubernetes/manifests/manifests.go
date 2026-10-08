@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -43,6 +45,18 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 	}
 	// etcd and the API server advertise the address of the primary family.
 	ip := n.IPs[0].String()
+	families, err := c.Families()
+	if err != nil {
+		return nil, err
+	}
+	podRanges, err := c.PodCIDRList()
+	if err != nil {
+		return nil, err
+	}
+	serviceRanges, err := c.ServiceCIDRList()
+	if err != nil {
+		return nil, err
+	}
 	pki := func(file string) string { return path.Join(podPKIDir, file) }
 	state := "existing"
 	if initialCluster == "" {
@@ -102,20 +116,20 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"service-account-issuer":             "https://kubernetes.default.svc." + c.Domain,
 		"service-account-key-file":           pki(kpki.FileServiceAccountPub),
 		"service-account-signing-key-file":   pki(kpki.FileServiceAccountKey),
-		"service-cluster-ip-range":           c.ServiceCIDR,
+		"service-cluster-ip-range":           joinRanges(serviceRanges),
 		"tls-cert-file":                      pki(kpki.FileAPIServer),
 		"tls-min-version":                    "VersionTLS12",
 		"tls-private-key-file":               pki(kpki.FileAPIServerKey),
 	}), ip, 6443, corev1.URISchemeHTTPS, "/livez", "/readyz", "/livez", "250m", "")
 	mountDir(apiServer, "k8s-certs", PKIDir, podPKIDir, true, corev1.HostPathDirectory)
 
-	controllerManager := pod("kube-controller-manager", c.Images.KubeControllerManager, flags(c, "kube-controller-manager", map[string]string{
+	controllerManagerFlags := map[string]string{
 		"allocate-node-cidrs":              "true",
 		"authentication-kubeconfig":        pki(kpki.FileControllerManagerConfig),
 		"authorization-kubeconfig":         pki(kpki.FileControllerManagerConfig),
 		"bind-address":                     "127.0.0.1",
 		"client-ca-file":                   pki(kpki.FileCA),
-		"cluster-cidr":                     c.PodCIDR,
+		"cluster-cidr":                     joinRanges(podRanges),
 		"cluster-name":                     "kubernetes",
 		"cluster-signing-cert-file":        pki(kpki.FileCA),
 		"cluster-signing-key-file":         pki(kpki.FileCAKey),
@@ -126,9 +140,14 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"requestheader-client-ca-file":     pki(kpki.FileFrontProxyCA),
 		"root-ca-file":                     pki(kpki.FileCA),
 		"service-account-private-key-file": pki(kpki.FileServiceAccountKey),
-		"service-cluster-ip-range":         c.ServiceCIDR,
+		"service-cluster-ip-range":         joinRanges(serviceRanges),
 		"use-service-account-credentials":  "true",
-	}), "127.0.0.1", 10257, corev1.URISchemeHTTPS, "/healthz", "", "/healthz", "200m", "")
+	}
+	for _, f := range families {
+		controllerManagerFlags["node-cidr-mask-size-"+string(f)] = strconv.Itoa(c.NodeCIDRMaskSizes.Of(f))
+	}
+	controllerManager := pod("kube-controller-manager", c.Images.KubeControllerManager, flags(c, "kube-controller-manager", controllerManagerFlags),
+		"127.0.0.1", 10257, corev1.URISchemeHTTPS, "/healthz", "", "/healthz", "200m", "")
 	mountDir(controllerManager, "k8s-certs", PKIDir, podPKIDir, true, corev1.HostPathDirectory)
 
 	schedulerConfig := "/etc/kubernetes/scheduler.kubeconfig"
@@ -156,6 +175,15 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		out[p.Name+".json"] = append(data, '\n')
 	}
 	return out, nil
+}
+
+// joinRanges lists address ranges as Kubernetes's flags take them, separated by commas.
+func joinRanges(ranges []netip.Prefix) string {
+	list := make([]string, len(ranges))
+	for i, r := range ranges {
+		list[i] = r.String()
+	}
+	return strings.Join(list, ",")
 }
 
 // flags turns the component's flags, with the cluster's extra flags for it on top, into

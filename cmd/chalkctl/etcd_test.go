@@ -31,8 +31,9 @@ func etcdNode(t *testing.T, ta *testApp) *chalkd.Server {
 		t.Fatal(err)
 	}
 	writeFile(t, k.Paths.Share(), string(data))
-	writeFile(t, k.Paths.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443", "podCIDR": "10.244.0.0/16",
-	  "serviceCIDR": "10.96.0.0/12", "dnsIP": "10.96.0.10", "domain": "cluster.local"}`)
+	writeFile(t, k.Paths.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
+	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
+	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
 	writeFile(t, k.Paths.NodeFile, `{"kubernetes": {"nodeName": "n1"}}`)
 	writeFile(t, k.Paths.Bootstrapped(), "")
 	k.LocalEtcd = etcdtest.StartNew(t, *share.EtcdCA, "n1").ClientURL

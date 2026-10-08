@@ -47,7 +47,8 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 		EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 	}
 	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
-	  "podCIDR": "10.244.0.0/16", "serviceCIDR": "10.96.0.0/12", "dnsIP": "10.96.0.10", "domain": "cluster.local",
+	  "podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": "fd00:10:244::/56"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": "fd00:10:96::/112"},
+	  "dnsIPs": {"ipv4": "10.96.0.10", "ipv6": "fd00:10:96::a"}, "nodeCIDRMaskSizes": {"ipv4": 24, "ipv6": 64}, "domain": "cluster.local",
 	  "allowSchedulingOnControlPlanes": false, "extraArgs": {},
 	  "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`)
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
@@ -772,9 +773,18 @@ func TestKubeletFlags(t *testing.T) {
 	if got != "--hostname-override=cp1 --register-with-taints=dedicated=db:NoSchedule,spot:PreferNoSchedule" {
 		t.Errorf("flags = %s", got)
 	}
-	n.IPs = []net.IP{net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")}
-	if got := KubeletFlags(c, n)[1]; got != "--node-ip=10.0.0.11,fd00::11" {
-		t.Errorf("flag = %s", got)
+	// One address per family, the primary family's first.
+	v4, v6 := net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")
+	for want, ips := range map[string][]net.IP{
+		"--node-ip=10.0.0.11":          {v4},
+		"--node-ip=10.0.0.11,fd00::11": {v4, v6},
+		"--node-ip=fd00::11,10.0.0.11": {v6, v4},
+		"--node-ip=fd00::11":           {v6},
+	} {
+		n.IPs = ips
+		if got := KubeletFlags(c, n)[1]; got != want {
+			t.Errorf("flag = %s, want %s", got, want)
+		}
 	}
 }
 

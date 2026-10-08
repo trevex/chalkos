@@ -20,13 +20,14 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 
 func testCluster() kubernetes.Cluster {
 	return kubernetes.Cluster{
-		Kind:        kubernetes.KindControlPlane,
-		Endpoint:    "https://10.0.0.10:6443",
-		Version:     "1.37.1",
-		PodCIDR:     "10.244.0.0/16",
-		ServiceCIDR: "10.96.0.0/12",
-		DNSIP:       "10.96.0.10",
-		Domain:      "cluster.local",
+		Kind:              kubernetes.KindControlPlane,
+		Endpoint:          "https://10.0.0.10:6443",
+		Version:           "1.37.1",
+		PodCIDRs:          kubernetes.ByFamily[string]{IPv4: "10.244.0.0/16", IPv6: "fd00:10:244::/56"},
+		ServiceCIDRs:      kubernetes.ByFamily[string]{IPv4: "10.96.0.0/12", IPv6: "fd00:10:96::/112"},
+		DNSIPs:            kubernetes.ByFamily[string]{IPv4: "10.96.0.10", IPv6: "fd00:10:96::a"},
+		NodeCIDRMaskSizes: kubernetes.ByFamily[int]{IPv4: 24, IPv6: 64},
+		Domain:            "cluster.local",
 		ExtraArgs: map[string]map[string]string{
 			"kube-apiserver": {"audit-log-maxage": "30", "kubelet-preferred-address-types": "InternalIP"},
 		},
@@ -56,33 +57,66 @@ func testFiles() map[string][]byte {
 	return files
 }
 
-func TestStaticPodsGolden(t *testing.T) {
-	pods, err := StaticPods(testCluster(), testNode, testFiles(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	for name := range pods {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	if strings.Join(names, " ") != "etcd.json kube-apiserver.json kube-controller-manager.json kube-scheduler.json" {
-		t.Fatalf("pods %v", names)
-	}
-	for _, name := range names {
-		golden := filepath.Join("testdata", name)
-		if *update {
-			if err := os.WriteFile(golden, pods[name], 0o644); err != nil {
-				t.Fatal(err)
-			}
-			continue
+// familySetups are the clusters of each setup of address families by the name of their golden
+// files' directory, with the node's addresses, the primary family's first.
+func familySetups() map[string]struct {
+	c kubernetes.Cluster
+	n kubernetes.Node
+} {
+	v4, v6 := net.ParseIP("10.0.0.11"), net.ParseIP("fd00::11")
+	setups := map[string]struct {
+		c kubernetes.Cluster
+		n kubernetes.Node
+	}{}
+	for name, families := range map[string][]net.IP{"ipv4": {v4}, "ipv4-ipv6": {v4, v6}, "ipv6-ipv4": {v6, v4}, "ipv6": {v6}} {
+		c := testCluster()
+		c.IPFamilies = strings.Split(name, "-")
+		if strings.HasPrefix(name, "ipv6") {
+			c.Endpoint = "https://[fd00::10]:6443"
 		}
-		want, err := os.ReadFile(golden)
+		setups[name] = struct {
+			c kubernetes.Cluster
+			n kubernetes.Node
+		}{c, kubernetes.Node{Name: "cp1", IPs: families}}
+	}
+	return setups
+}
+
+func TestStaticPodsGolden(t *testing.T) {
+	for setup, tc := range familySetups() {
+		if err := tc.c.Validate(); err != nil {
+			t.Fatalf("%s: %v", setup, err)
+		}
+		pods, err := StaticPods(tc.c, tc.n, testFiles(), "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(pods[name]) != string(want) {
-			t.Errorf("%s differs from %s; run go test ./pkg/kubernetes/manifests -update and review the diff:\n%s", name, golden, pods[name])
+		var names []string
+		for name := range pods {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if strings.Join(names, " ") != "etcd.json kube-apiserver.json kube-controller-manager.json kube-scheduler.json" {
+			t.Fatalf("pods %v", names)
+		}
+		for _, name := range names {
+			golden := filepath.Join("testdata", setup, name)
+			if *update {
+				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(golden, pods[name], 0o644); err != nil {
+					t.Fatal(err)
+				}
+				continue
+			}
+			want, err := os.ReadFile(golden)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(pods[name]) != string(want) {
+				t.Errorf("%s differs from %s; run go test ./pkg/kubernetes/manifests -update and review the diff:\n%s", name, golden, pods[name])
+			}
 		}
 	}
 }

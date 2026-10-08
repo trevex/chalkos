@@ -1,0 +1,128 @@
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "etcd",
+    "namespace": "kube-system",
+    "labels": {
+      "component": "etcd",
+      "tier": "control-plane"
+    },
+    "annotations": {
+      "chalkos.dev/certificates": "ebe7da63b3b9fa6e6ede622d80cd05868990edd878db60464ff6a5715b422af9"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "etcd-data",
+        "hostPath": {
+          "path": "/var/lib/etcd",
+          "type": "DirectoryOrCreate"
+        }
+      },
+      {
+        "name": "etcd-certs",
+        "hostPath": {
+          "path": "/run/chalkos/kubernetes/pki/etcd",
+          "type": "Directory"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "etcd",
+        "image": "registry.k8s.io/etcd:3.7.0-0",
+        "command": [
+          "etcd",
+          "--advertise-client-urls=https://10.0.0.11:2379",
+          "--cert-file=/etc/kubernetes/pki/etcd/server.crt",
+          "--client-cert-auth=true",
+          "--data-dir=/var/lib/etcd",
+          "--initial-advertise-peer-urls=https://10.0.0.11:2380",
+          "--initial-cluster=cp1=https://10.0.0.11:2380",
+          "--initial-cluster-state=new",
+          "--key-file=/etc/kubernetes/pki/etcd/server.key",
+          "--listen-client-urls=https://127.0.0.1:2379,https://10.0.0.11:2379",
+          "--listen-metrics-urls=http://127.0.0.1:2381",
+          "--listen-peer-urls=https://10.0.0.11:2380",
+          "--name=cp1",
+          "--peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt",
+          "--peer-client-cert-auth=true",
+          "--peer-key-file=/etc/kubernetes/pki/etcd/peer.key",
+          "--peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt",
+          "--snapshot-count=10000",
+          "--trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt"
+        ],
+        "ports": [
+          {
+            "name": "probe-port",
+            "containerPort": 2381,
+            "protocol": "TCP"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "100Mi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "etcd-data",
+            "mountPath": "/var/lib/etcd"
+          },
+          {
+            "name": "etcd-certs",
+            "readOnly": true,
+            "mountPath": "/etc/kubernetes/pki/etcd"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/livez",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTP"
+          },
+          "initialDelaySeconds": 10,
+          "timeoutSeconds": 15,
+          "periodSeconds": 10,
+          "failureThreshold": 8
+        },
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/readyz",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTP"
+          },
+          "timeoutSeconds": 15,
+          "periodSeconds": 1,
+          "failureThreshold": 3
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/readyz",
+            "port": "probe-port",
+            "host": "127.0.0.1",
+            "scheme": "HTTP"
+          },
+          "initialDelaySeconds": 10,
+          "timeoutSeconds": 15,
+          "periodSeconds": 10,
+          "failureThreshold": 24
+        },
+        "imagePullPolicy": "IfNotPresent"
+      }
+    ],
+    "hostNetwork": true,
+    "securityContext": {
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "priorityClassName": "system-node-critical"
+  },
+  "status": {}
+}

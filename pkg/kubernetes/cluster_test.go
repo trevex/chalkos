@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -15,9 +16,10 @@ const clusterJSON = `{
   "kind": "controlplane",
   "endpoint": "https://10.0.0.10:6443",
   "version": "1.37.1",
-  "podCIDR": "10.244.0.0/16",
-  "serviceCIDR": "10.96.0.0/12",
-  "dnsIP": "10.96.0.10",
+  "podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": "fd00:10:244::/56"},
+  "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": "fd00:10:96::/112"},
+  "dnsIPs": {"ipv4": "10.96.0.10", "ipv6": "fd00:10:96::a"},
+  "nodeCIDRMaskSizes": {"ipv4": 24, "ipv6": 64},
   "domain": "cluster.local",
   "allowSchedulingOnControlPlanes": false,
   "nodeIP": {"validSubnets": ["10.0.0.0/8", "!10.0.0.10/32"], "timeout": 300},
@@ -51,6 +53,84 @@ func TestReadCluster(t *testing.T) {
 	}
 }
 
+func TestClusterRanges(t *testing.T) {
+	c, err := ReadCluster(writeFile(t, clusterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		families       []string
+		primary        nodeip.Family
+		pods, services string
+		apiServerSvcIP string
+	}{
+		{[]string{"ipv4"}, nodeip.IPv4, "10.244.0.0/16", "10.96.0.0/12", "10.96.0.1"},
+		{[]string{"ipv4", "ipv6"}, nodeip.IPv4, "10.244.0.0/16 fd00:10:244::/56", "10.96.0.0/12 fd00:10:96::/112", "10.96.0.1"},
+		{[]string{"ipv6", "ipv4"}, nodeip.IPv6, "fd00:10:244::/56 10.244.0.0/16", "fd00:10:96::/112 10.96.0.0/12", "fd00:10:96::1"},
+		{[]string{"ipv6"}, nodeip.IPv6, "fd00:10:244::/56", "fd00:10:96::/112", "fd00:10:96::1"},
+	} {
+		c := c
+		c.IPFamilies = tc.families
+		if err := c.Validate(); err != nil {
+			t.Errorf("%v: %v", tc.families, err)
+		}
+		if got := c.Primary(); got != tc.primary {
+			t.Errorf("%v: Primary() = %s", tc.families, got)
+		}
+		pods, err := c.PodCIDRList()
+		if err != nil || fmt.Sprint(pods) != "["+tc.pods+"]" {
+			t.Errorf("%v: PodCIDRList() = %v, %v", tc.families, pods, err)
+		}
+		services, err := c.ServiceCIDRList()
+		if err != nil || fmt.Sprint(services) != "["+tc.services+"]" {
+			t.Errorf("%v: ServiceCIDRList() = %v, %v", tc.families, services, err)
+		}
+		if ip, err := c.APIServerServiceIP(); err != nil || !ip.Equal(net.ParseIP(tc.apiServerSvcIP)) {
+			t.Errorf("%v: APIServerServiceIP() = %v, %v", tc.families, ip, err)
+		}
+	}
+
+	// The checks of kubeadm, per family, naming the option and the value.
+	for _, tc := range []struct {
+		family string
+		edit   func(c *Cluster)
+		want   string
+	}{
+		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = "" }, `podCIDRs.ipv4 "" is not an address range in CIDR notation`},
+		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = "10.244.0.0" }, `podCIDRs.ipv4 "10.244.0.0" is not an address range`},
+		{"ipv4", func(c *Cluster) { c.PodCIDRs.IPv4 = "fd00:10:244::/56" }, "podCIDRs.ipv4 fd00:10:244::/56 is not an ipv4 range"},
+		{"ipv6", func(c *Cluster) { c.ServiceCIDRs.IPv6 = "10.96.0.0/12" }, "serviceCIDRs.ipv6 10.96.0.0/12 is not an ipv6 range"},
+		{"ipv6", func(c *Cluster) { c.PodCIDRs.IPv6 = "::ffff:10.244.0.0/112" }, "podCIDRs.ipv6 ::ffff:10.244.0.0/112 is an IPv4-mapped IPv6 range"},
+		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = "10.96.0.1/12" }, "serviceCIDRs.ipv4 10.96.0.1/12 has host bits set; write 10.96.0.0/12"},
+		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = "10.244.128.0/20" }, "podCIDRs.ipv4 10.244.0.0/16 and serviceCIDRs.ipv4 10.244.128.0/20 overlap"},
+		{"ipv6", func(c *Cluster) { c.PodCIDRs.IPv6 = "fd00:10::/32" }, "podCIDRs.ipv6 fd00:10::/32 and serviceCIDRs.ipv6 fd00:10:96::/112 overlap"},
+		{"ipv4", func(c *Cluster) { c.ServiceCIDRs.IPv4 = "10.96.0.0/11" }, "serviceCIDRs.ipv4 10.96.0.0/11 holds more than 2^20 addresses; use a prefix of /12 or longer"},
+		{"ipv6", func(c *Cluster) { c.ServiceCIDRs.IPv6 = "fd00:10:96::/107" }, "serviceCIDRs.ipv6 fd00:10:96::/107 holds more than 2^20 addresses; use a prefix of /108 or longer"},
+		{"ipv4", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv4 = 16 }, "nodeCIDRMaskSizes.ipv4 16 must be longer than the prefix of podCIDRs.ipv4 10.244.0.0/16, by at most 16 bits"},
+		{"ipv4", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv4 = 33 }, "nodeCIDRMaskSizes.ipv4 33 must be longer"},
+		{"ipv6", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv6 = 73 }, "nodeCIDRMaskSizes.ipv6 73 must be longer than the prefix of podCIDRs.ipv6 fd00:10:244::/56, by at most 16 bits"},
+		{"ipv6", func(c *Cluster) { c.NodeCIDRMaskSizes.IPv6 = 0 }, "nodeCIDRMaskSizes.ipv6 0 must be longer"},
+		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = "dns" }, `dnsIPs.ipv4 "dns" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
+		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = "10.112.0.10" }, `dnsIPs.ipv4 "10.112.0.10" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
+		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = "10.96.0.10" }, `dnsIPs.ipv6 "10.96.0.10" is not an address in serviceCIDRs.ipv6 fd00:10:96::/112`},
+		{"ipv4", func(c *Cluster) { c.DNSIPs.IPv4 = "10.96.0.1" }, "dnsIPs.ipv4 10.96.0.1 is the network address of serviceCIDRs.ipv4 10.96.0.0/12 or the kubernetes service's address"},
+		{"ipv6", func(c *Cluster) { c.DNSIPs.IPv6 = "fd00:10:96::" }, "dnsIPs.ipv6 fd00:10:96:: is the network address"},
+	} {
+		bad := c
+		bad.IPFamilies = []string{"ipv4", "ipv6"}
+		tc.edit(&bad)
+		if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("Validate() = %v, want %q", err, tc.want)
+		}
+		// Only the entries of the cluster's families count.
+		other := map[string]string{"ipv4": "ipv6", "ipv6": "ipv4"}[tc.family]
+		bad.IPFamilies = []string{other}
+		if err := bad.Validate(); err != nil {
+			t.Errorf("an %s cluster refused the %s entries: %v", other, tc.family, err)
+		}
+	}
+}
+
 func TestClusterValidate(t *testing.T) {
 	valid, err := ReadCluster(writeFile(t, clusterJSON))
 	if err != nil {
@@ -59,9 +139,6 @@ func TestClusterValidate(t *testing.T) {
 	for name, edit := range map[string]func(c *Cluster){
 		"kind":         func(c *Cluster) { c.Kind = "etcd" },
 		"endpoint":     func(c *Cluster) { c.Endpoint = "http://10.0.0.10:6443" },
-		"service CIDR": func(c *Cluster) { c.ServiceCIDR = "10.96.0.0" },
-		"pod CIDR":     func(c *Cluster) { c.PodCIDR = "" },
-		"DNS IP":       func(c *Cluster) { c.DNSIP = "dns" },
 		"domain":       func(c *Cluster) { c.Domain = "" },
 		"validSubnets": func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
 		"timeout":      func(c *Cluster) { c.NodeIP.Timeout = -1 },
@@ -246,6 +323,10 @@ func TestNodeIPSelector(t *testing.T) {
 	}
 	if got := sel.String(); got != "ipv4 by nodeIP 192.168.100.12, ipv6 by validSubnets fd00::/64" {
 		t.Errorf("dual stack: selector %s", got)
+	}
+	// The pod and service ranges of every family are never picked.
+	if got := fmt.Sprint(sel.Reserved); got != "[10.244.0.0/16 fd00:10:244::/56 10.96.0.0/12 fd00:10:96::/112]" {
+		t.Errorf("dual stack: reserved ranges %s", got)
 	}
 	if got, err := sel.Select(append(addrs, nodeip.Address{Interface: "eth1", IP: netip.MustParseAddr("fd00::12")})); err != nil || len(got) != 2 || got[1] != netip.MustParseAddr("fd00::12") {
 		t.Errorf("dual stack: Select() = %v, %v", got, err)
