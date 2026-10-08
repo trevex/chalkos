@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
@@ -464,14 +466,21 @@ func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]string, []by
 func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte) ([]string, error) {
 	before, errBefore := k8s.ParseNode(old)
 	after, errAfter := k8s.ParseNode(data)
-	// An identity that does not parse counts as changed.
-	changed := errBefore != nil || errAfter != nil || !reflect.DeepEqual(before, after)
+	// An identity that does not parse counts as changed, unless it is the same.
+	changed := !bytes.Equal(old, data) && (errBefore != nil || errAfter != nil || !reflect.DeepEqual(before, after))
 	if share == nil && !changed {
 		return nil, nil
 	}
 	if share != nil {
+		nodeCAOnly := !changed && s.onlyNodeCAChanges(share)
 		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
 			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
+		}
+		// The node CA is read from the share whenever a node certificate is issued; nothing else
+		// uses it, so a new one restarts nothing.
+		if nodeCAOnly {
+			log.Print("recorded the delivered share, which differs at most in the node CA; nothing restarts")
+			return nil, nil
 		}
 	}
 	// The node's address, the firewall's VXLAN rule, the kubelet's credentials and flags and the
@@ -627,4 +636,21 @@ func (s *Server) checkNodeCertificate(chain, key []byte) error {
 		return failed(connect.CodeInvalidArgument, "%v", err)
 	}
 	return nil
+}
+
+// onlyNodeCAChanges reports whether a delivered share differs from the node's in the node CA
+// alone, as after chalkctl node-ca rotate.
+func (s *Server) onlyNodeCAChanges(delivered []byte) bool {
+	current, err := knode.ReadShare(s.Kubernetes.Paths)
+	if err != nil {
+		return false
+	}
+	next, err := kpki.ParseShare(delivered)
+	if err != nil {
+		return false
+	}
+	current.NodeCA, next.NodeCA = nil, nil
+	a, errA := current.Encode()
+	b, errB := next.Encode()
+	return errA == nil && errB == nil && bytes.Equal(a, b)
 }

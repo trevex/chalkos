@@ -873,3 +873,37 @@ func testNodeCA(t *testing.T) pki.CertKey {
 	}
 	return nodeCA
 }
+
+func TestApplyIdentityRecordsNodeCAWithoutRestarts(t *testing.T) {
+	s, r := kubernetesServer(t, k8s.KindControlPlane, true)
+	p := s.Kubernetes.Paths
+	current, err := knode.ReadShare(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeCA := testNodeCA(t)
+	next := current
+	next.NodeCA = &nodeCA
+	data, err := next.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{KubernetesShare: data})); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := knode.ReadShare(p); err != nil || *got.NodeCA != nodeCA {
+		t.Errorf("the new node CA was not recorded: %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("a new node CA ran %v", r.calls)
+	}
+
+	// Any other change prepares the node's files again.
+	other := testShare(t, k8s.KindControlPlane)
+	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{KubernetesShare: other})); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("a new share ran %v", r.calls)
+	}
+}

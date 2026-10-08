@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/chalkd"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -84,5 +87,71 @@ func TestNodeRenewVerifiesTheNode(t *testing.T) {
 	addr := other.nodeWithCertificate(t, s, foreign)
 	if err := ta.run(context.Background(), ta.args([]string{"node", "renew", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "unknown authority") {
 		t.Errorf("err = %v, want the node of another OS CA refused", err)
+	}
+}
+
+func TestNodeCARotate(t *testing.T) {
+	ta := newTestApp(t)
+	withKind(t, ta, manifest.KindControlPlane)
+	s, r := kubernetesNode(t, ta)
+	p := s.Kubernetes.Paths
+	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
+	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
+	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
+	share, err := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.Share(), string(share))
+	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", chalkd.CAFile), ta.secrets.OSCA.Certificate)
+	addr := ta.startNode(t, s)
+
+	out := filepath.Join(ta.dir, "secrets.rotated.json")
+	pub := filepath.Join(ta.dir, "secrets.rotated.pub.json")
+	args := ta.args([]string{"node-ca", "rotate", "--plaintext", "--out", out, "--public-out", pub}, addr)
+	if err := ta.run(context.Background(), args); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := pki.ReadSecrets(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.NodeCA == ta.secrets.NodeCA {
+		t.Error("the node CA is the old one")
+	}
+	if rotated.OSCA != ta.secrets.OSCA || string(rotated.RecoverySecret) != string(ta.secrets.RecoverySecret) || rotated.Kubernetes.CA != ta.secrets.Kubernetes.CA {
+		t.Error("the rotation changed more than the node CA")
+	}
+	var public pki.Public
+	pubData, _ := os.ReadFile(pub)
+	if err := json.Unmarshal(pubData, &public); err != nil || public.NodeCA.Certificate != rotated.NodeCA.Certificate || strings.Contains(string(pubData), "PRIVATE") {
+		t.Errorf("public file: %v", err)
+	}
+	onNode, err := os.ReadFile(p.Share())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := kpki.ParseShare(onNode); err != nil || got.NodeCA == nil || *got.NodeCA != rotated.NodeCA {
+		t.Errorf("the node's share does not hold the new node CA: %v", err)
+	}
+	if !strings.Contains(ta.stdout.String(), "n1 renews node certificates with the new node CA") {
+		t.Errorf("stdout = %q", ta.stdout)
+	}
+	for _, c := range r.calls {
+		if strings.HasPrefix(c, "systemctl restart") {
+			t.Errorf("a new node CA restarted %s", c)
+		}
+	}
+
+	// The secrets file is never overwritten.
+	if err := ta.run(context.Background(), args); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("err = %v, want a refusal to overwrite", err)
+	}
+	if err := ta.run(context.Background(), ta.args([]string{"node-ca", "rotate", "--plaintext"}, addr)); err == nil || !strings.Contains(err.Error(), "--out") {
+		t.Errorf("err = %v, want --out required", err)
 	}
 }

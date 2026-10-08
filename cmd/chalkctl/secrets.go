@@ -241,31 +241,7 @@ func (a *app) genSecrets(args []string) error {
 	if err != nil {
 		return err
 	}
-	var data []byte
-	if *plaintext {
-		data, err = secrets.Encode()
-	} else {
-		var parsed []age.Recipient
-		for _, r := range recipients {
-			rec, err := pki.ParseRecipient(r, a.pluginUI())
-			if err != nil {
-				return err
-			}
-			parsed = append(parsed, rec)
-		}
-		data, err = secrets.Encrypt(parsed...)
-	}
-	if err != nil {
-		return err
-	}
-	public, err := json.MarshalIndent(secrets.Public(), "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := writeNew(secretsPath, data, 0o600); err != nil {
-		return err
-	}
-	if err := writeNew(publicPath, append(public, '\n'), 0o644); err != nil {
+	if err := a.writeSecrets(secrets, recipients, *plaintext, secretsPath, publicPath); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "wrote %s and %s\n", secretsPath, publicPath)
@@ -303,4 +279,46 @@ func createNew(path string, perm fs.FileMode, write func(w io.Writer) error) err
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
+}
+
+// writeSecrets writes the secrets file, encrypted to the recipients unless plaintext, and its
+// public half when publicPath is set. Neither may exist: a secrets file is never overwritten.
+func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext bool, path, publicPath string) error {
+	for _, p := range []string{path, publicPath} {
+		if p == "" {
+			continue
+		}
+		if _, err := os.Stat(p); err == nil {
+			return fmt.Errorf("%s exists; secrets are always written to a new file", p)
+		}
+	}
+	var data []byte
+	var err error
+	if plaintext {
+		data, err = secrets.Encode()
+	} else {
+		var parsed []age.Recipient
+		for _, r := range recipients {
+			rec, err := pki.ParseRecipient(r, a.pluginUI())
+			if err != nil {
+				return err
+			}
+			parsed = append(parsed, rec)
+		}
+		data, err = secrets.Encrypt(parsed...)
+	}
+	if err != nil {
+		return err
+	}
+	if err := writeNew(path, data, 0o600); err != nil {
+		return err
+	}
+	if publicPath == "" {
+		return nil
+	}
+	public, err := json.MarshalIndent(secrets.Public(), "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeNew(publicPath, append(public, '\n'), 0o644)
 }
