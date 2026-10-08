@@ -132,12 +132,23 @@ in
         ip addr add 10.0.1.11/24 dev d0
         ip addr add fd00:1::11/64 dev d0 nodad
         ip link set d0 up
+        # An interface of the pod network, over which the peer reaches the node too.
+        ip link add cni0 type veth peer name c1 netns "$peer"
+        ip addr add 10.0.2.11/24 dev cni0
+        ip addr add fd00:2::11/64 dev cni0 nodad
+        ip link set cni0 up
         on_peer ip link set lo up
         on_peer ip addr add 10.0.0.12/24 dev v1
         on_peer ip addr add fd00::12/64 dev v1 nodad
         on_peer ip link set v1 up
         on_peer ip route add 10.0.1.0/24 via 10.0.0.11
         on_peer ip route add fd00:1::/64 via fd00::11
+        on_peer ip addr add 10.0.2.12/24 dev c1
+        on_peer ip addr add fd00:2::12/64 dev c1 nodad
+        on_peer ip link set c1 up
+        # The routes of datagrams the peer sends out of c1.
+        on_peer ip route add 10.0.1.0/24 via 10.0.2.11 dev c1 metric 100
+        on_peer ip route add fd00:1::/64 via fd00:2::11 dev c1 metric 2048
 
         # The firewall as NixOS loads it, with the state file it keeps in /var/lib/nftables here.
         sed "s|/var/lib/nftables/deletions.nft|$PWD/deletions.nft|" ${firewall} >firewall.nft
@@ -160,12 +171,13 @@ in
         socat -u UDP6-RECV:8472,ipv6only=1 OPEN:received,creat,append &
         sleep 0.5
         n=0
-        # Whether a datagram the peer sends to the address arrives.
+        # Whether a datagram the peer sends to the address arrives, with further socat options
+        # for the sender, such as the interface it goes out of.
         arrives() {
           n=$((n + 1))
           local to=$1
           case $1 in *:*) to="[$1]" ;; esac
-          echo "datagram $n" | on_peer socat -u - "UDP-SENDTO:$to:8472"
+          echo "datagram $n" | on_peer socat -u - "UDP-SENDTO:$to:8472''${2:-}"
           for _ in $(seq 20); do
             grep -qx "datagram $n" received && return 0
             sleep 0.1
@@ -188,6 +200,13 @@ in
         rules() {
           grep -c 'udp dport 8472' rules.log || true
         }
+        # The rules in the table now, which may differ from what the script printed.
+        marking() {
+          nft list table inet chalkos-vxlan 2>/dev/null | grep -c 'meta mark set meta mark |' || true
+        }
+        marked() {
+          nft list counter inet count marked | grep -o 'packets [0-9]*'
+        }
 
         if arrives 10.0.0.11; then fail "VXLAN arrived without the rule"; fi
 
@@ -198,7 +217,7 @@ in
         # The node's other addresses, and the picked ones arriving on another interface.
         if arrives 10.0.1.11; then fail "VXLAN arrived at another address"; fi
         if arrives fd00:1::11; then fail "IPv6 VXLAN arrived at another address"; fi
-        [ "$(nft list counter inet count marked | grep -o 'packets [0-9]*')" = "packets 0" ] || fail "accepted packets keep the mark"
+        [ "$(marked)" = "packets 0" ] || fail "accepted packets keep the mark"
 
         # A reload of the firewall replaces its own table alone.
         nft add table ip kube-proxy
@@ -208,6 +227,12 @@ in
         nft list tables | grep -qx 'table ip6 flannel-ipv6' || fail "the firewall's reload removed flannel's table"
         arrives 10.0.0.11 || fail "VXLAN was refused after the firewall's reload"
         arrives fd00::11 || fail "IPv6 VXLAN was refused after the firewall's reload"
+
+        # Addresses on d0, taking VXLAN there alone, refuse it arriving on v0.
+        holding 'destination 10.0.1.11 interface\ndestination fd00:1::11 interface\n'
+        [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "addresses on another interface"
+        if arrives 10.0.1.11; then fail "VXLAN arrived on an interface not holding the address"; fi
+        if arrives fd00:1::11; then fail "IPv6 VXLAN arrived on an interface not holding the address"; fi
 
         holding "$v6"
         [ "$status" = 0 ] && [ "$(rules)" = 1 ] || fail "the IPv6 address alone"
@@ -221,6 +246,20 @@ in
         arrives 10.0.1.11 || fail "VXLAN to the address on the dummy interface was refused"
         arrives fd00:1::11 || fail "IPv6 VXLAN to the address on the dummy interface was refused"
         if arrives 10.0.0.11; then fail "VXLAN arrived at an address no longer picked"; fi
+        # Not on an interface of the pod network, where pods could send it.
+        if arrives 10.0.1.11 ,so-bindtodevice=c1; then fail "VXLAN arrived on the pod network"; fi
+        if arrives fd00:1::11 ,so-bindtodevice=c1; then fail "IPv6 VXLAN arrived on the pod network"; fi
+        # The mark goes once the firewall saw the packet, even one it accepts before looking at
+        # the mark, such as those the node sends itself over lo.
+        nft reset counters table inet count >/dev/null
+        n=$((n + 1))
+        echo "datagram $n" | socat -u - UDP-SENDTO:10.0.1.11:8472
+        for _ in $(seq 20); do
+          grep -qx "datagram $n" received && break
+          sleep 0.1
+        done
+        grep -qx "datagram $n" received || fail "VXLAN the node sent itself was refused"
+        [ "$(marked)" = "packets 0" ] || fail "packets the firewall accepted on lo keep the mark"
 
         # With source ranges VXLAN comes from them alone; a family without one takes none.
         holding "$v4$v6"'source 10.0.0.0/24\nsource fd00::/64\n'
@@ -248,11 +287,42 @@ in
           'destination 10.0.0.0x1 interface\n' 'destination 10.0..11 interface\n' 'destination ::: interface\n' \
           "$v4"'source 10.0.0.0\n' "$v4"'source 10.0.0.0/33\n' "$v4"'source fd00::/129\n' "$v4"'source 10.0.0.0/024\n' \
           "$v4"'source 10.0.0.0/\n' "$v4"'source cafe/8\n' "$v4"'source 10.0.0.0/24 accept\n' "$v4"'source 10.0.0.0/24 }\n' \
-          "$v4"'source  10.0.0.0/24\n' "$v4"'source 10.0.0.0/8/8\n' "$v4"'source 10.0.0.256/24\n'; do
+          "$v4"'source  10.0.0.0/24\n' "$v4"'source 10.0.0.0/8/8\n' "$v4"'source 10.0.0.256/24\n' \
+          'destination a:b interface\n' 'destination cafe:babe interface\n' 'destination 1::2::3 interface\n' \
+          'destination 12345:: interface\n' 'destination fe80::1%v0 interface\n' 'destination 1:2:3:4:5:6:7:8:9 interface\n' \
+          'destination 1:2:3:4:5:6:7::8 interface\n' 'destination :1::2 interface\n' 'destination 1::2: interface\n' \
+          'destination ::10.0.0 interface\n' 'destination fd00:10.0.0.11 interface\n' 'destination ::10.0.0.11:1 interface\n' \
+          'destination 10.0.0.011 interface\n' "$v4"'source a:b/64\n' "$v4"'source 1::2::3/64\n'; do
           holding "$v4"
           holding "$content"
           [ "$status" != 0 ] && [ "$(rules)" = 0 ] || fail "accepted a file holding '$content'"
           if arrives 10.0.0.11; then fail "VXLAN arrived after the file held '$content'"; fi
+        done
+
+        # IPv6 addresses written out in full, and with an IPv4 address at the end.
+        holding "$v4"'destination fd00:0:0:0:0:0:0:11 interface\n'
+        [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "an IPv6 address in full"
+        arrives fd00::11 || fail "IPv6 VXLAN to the address in full was refused"
+        holding 'destination ::ffff:10.0.0.11 interface\n'
+        [ "$status" = 0 ] && [ "$(rules)" = 1 ] || fail "an IPv6 address ending in an IPv4 one"
+
+        # A file that cannot be read empties the table and fails.
+        for kind in directory socket; do
+          holding "$v4"
+          rm vxlan
+          case $kind in
+            directory) mkdir vxlan ;;
+            socket)
+              socat UNIX-LISTEN:vxlan /dev/null &
+              listener=$!
+              until [ -S vxlan ]; do sleep 0.1; done
+              ;;
+          esac
+          run vxlan
+          [ "$status" != 0 ] && [ "$(marking)" = 0 ] || fail "accepted a $kind"
+          if arrives 10.0.0.11; then fail "VXLAN arrived after the file was a $kind"; fi
+          if [ "$kind" = socket ]; then kill "$listener"; wait "$listener" || true; fi
+          rm -rf vxlan
         done
 
         # Without the file or an argument the table is emptied.

@@ -30,26 +30,80 @@ writeShellApplication {
     flock 9
     families=(ip ${lib.optionalString ipv6 "ip6"})
 
-    # The nft family of a bare address, or nothing. An IPv4 address is four decimal octets, an
-    # IPv6 one has a colon: nft would resolve anything else, such as cafe.be, as a host name.
-    family_of() {
-      case "$1" in
-        *:*)
-          if [[ "$1" =~ ^[0-9A-Fa-f.:]+$ ]]; then
-            echo ip6
-          fi
+    # The table, replaced in one transaction, with the rules given. Its input chain runs before
+    # the firewall's, which drops what it does not accept, and its clear chain after it, so the
+    # mark never outlives the firewall: not on packets the firewall accepted before looking at it,
+    # such as those on lo or of established connections, nor on the packets VXLAN carries.
+    table() {
+      echo "table inet chalkos-vxlan"
+      echo "delete table inet chalkos-vxlan"
+      echo "table inet chalkos-vxlan {"
+      echo "  chain input {"
+      echo "    type filter hook input priority filter - 1; policy accept;"
+      for rule in "$@"; do
+        echo "    $rule"
+      done
+      echo "  }"
+      echo "  chain clear {"
+      echo "    type filter hook input priority filter + 1; policy accept;"
+      echo "    meta mark & ${mark} == ${mark} meta mark set meta mark ^ ${mark}"
+      echo "  }"
+      echo "}"
+    }
+    # Should anything fail before the table is written, reading the file for one, it is emptied,
+    # or removed should that fail too: no rule of an earlier run stays.
+    written=false
+    trap '"$written" || table | nft -f - || nft delete table inet chalkos-vxlan' EXIT
+
+    # Whether the string is four decimal octets. Leading zeros are refused: nft may read them as
+    # octal.
+    ipv4() {
+      [[ "$1" =~ ^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$ ]] || return 1
+      local octet
+      for octet in "''${BASH_REMATCH[@]:1}"; do
+        ((octet <= 255)) || return 1
+      done
+    }
+
+    # Whether the string is an IPv6 address without a zone: eight groups of up to four hex digits,
+    # the last two possibly written as an IPv4 address, or fewer around a single "::".
+    ipv6() {
+      local address=$1 group='[0-9A-Fa-f]{1,4}' part colons count=0
+      local groups="^$group(:$group)*\$"
+      if [[ "$address" == *.* ]]; then
+        ipv4 "''${address##*:}" || return 1
+        address="''${address%:*}:0:0"
+      fi
+      case "$address" in
+        *::*::*)
+          return 1
+          ;;
+        *::*)
+          for part in "''${address%%::*}" "''${address#*::}"; do
+            if [ -n "$part" ]; then
+              [[ "$part" =~ $groups ]] || return 1
+              colons=''${part//[^:]/}
+              count=$((count + ''${#colons} + 1))
+            fi
+          done
+          ((count <= 7))
           ;;
         *)
-          if [[ "$1" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
-            for octet in "''${BASH_REMATCH[@]:1}"; do
-              if ((10#$octet > 255)); then
-                return
-              fi
-            done
-            echo ip
-          fi
+          [[ "$address" =~ $groups ]] || return 1
+          colons=''${address//[^:]/}
+          ((''${#colons} == 7))
           ;;
       esac
+    }
+
+    # The nft family of a bare address, or nothing: nft would resolve anything else, such as
+    # cafe.be, as a host name.
+    family_of() {
+      if ipv4 "$1"; then
+        echo ip
+      elif ipv6 "$1"; then
+        echo ip6
+      fi
     }
 
     rules=()
@@ -93,20 +147,25 @@ writeShellApplication {
       if [ "$status" -eq 0 ]; then
         for family in "''${!addresses[@]}"; do
           rule="$family daddr ''${addresses[$family]} udp dport 8472"
-          # With source ranges a family without one takes no VXLAN. A source of the node's own
-          # needs no rule: the kernel drops such packets as martians where they arrive from the
-          # network (accept_local is off).
+          # With source ranges a family without one takes no VXLAN. The ranges limit who may send
+          # VXLAN; within them a source may be forged. The kernel drops an IPv4 packet with a
+          # source of the node's own arriving from the network (accept_local is off), but IPv6
+          # has no such check.
           if [ "''${#sources[@]}" -gt 0 ]; then
             if [ -z "''${sources[$family]:-}" ]; then
               continue
             fi
             rule="$family saddr { ''${sources[$family]} } $rule"
           fi
-          # An address on a network interface takes VXLAN on that interface alone. One on a
-          # loopback or dummy interface, which routers reach through the node's other interfaces,
-          # takes it on any.
           if [ "''${modes[$family]}" = interface ]; then
+            # An address on a network interface takes VXLAN on that interface alone.
             rule+=" fib daddr . iif type local"
+          else
+            # One on a loopback or dummy interface, which routers reach through the node's other
+            # interfaces, takes it on any but those of the pod network and kube-proxy, where pods
+            # could send it. The prefixes are kubernetesInterfaces' in
+            # pkg/kubernetes/nodeip/nodeip.go; keep them in sync.
+            rule+=' iifname != { "cni*", "flannel*", "kube-*", "veth*" }'
           fi
           rules+=("$rule meta mark set meta mark | ${mark}")
         done
@@ -114,25 +173,12 @@ writeShellApplication {
         echo "chalkos-vxlan-rule: $1 does not hold the node's addresses; VXLAN stays refused" >&2
       fi
     fi
-    # The table is replaced in one transaction. It runs before the firewall's input chain, which
-    # drops what it does not accept.
-    table() {
-      echo "table inet chalkos-vxlan"
-      echo "delete table inet chalkos-vxlan"
-      echo "table inet chalkos-vxlan {"
-      echo "  chain input {"
-      echo "    type filter hook input priority filter - 1; policy accept;"
-      for rule in "$@"; do
-        echo "    $rule"
-      done
-      echo "  }"
-      echo "}"
-    }
     # A ruleset nft refuses changes nothing, so the old rules go then.
     if ! table "''${rules[@]}" | nft -f -; then
       table | nft -f -
       status=1
     fi
+    written=true
     nft list table inet chalkos-vxlan
     exit "$status"
   '';

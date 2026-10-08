@@ -30,9 +30,8 @@ let
   # the preparation writes and emptied without one, and the firewall accepts what carries the
   # mark. The firewall's reloads leave that table alone.
   vxlanFirewall = flannel && config.networking.firewall.enable;
-  # A packet mark bit kube-proxy (0x4000, 0x8000) and flannel leave alone, and its complement.
+  # A packet mark bit kube-proxy (0x4000, 0x8000) and flannel leave alone.
   vxlanMark = "0x01000000";
-  notMark = "0xfeffffff";
   vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
     ipv6 = config.networking.enableIPv6;
     mark = vxlanMark;
@@ -258,10 +257,10 @@ in
           to = 32767;
         }
       ];
-      # Accept the VXLAN packets chalkos-vxlan marked, and clear the mark, so the packets they
-      # carry do not inherit it.
+      # Accept the VXLAN packets chalkos-vxlan marked. The table clears the mark after this chain,
+      # so neither these packets nor those they carry keep it.
       extraInputRules = lib.mkIf flannel ''
-        udp dport 8472 meta mark & ${vxlanMark} == ${vxlanMark} meta mark set meta mark & ${notMark} accept
+        udp dport 8472 meta mark & ${vxlanMark} == ${vxlanMark} accept
       '';
     };
   };

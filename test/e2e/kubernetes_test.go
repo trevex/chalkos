@@ -469,7 +469,7 @@ var dualStackAddresses = map[string][]string{"cp1": {"192.168.100.11", "fd00:100
 // dualStackNode checks that the node registered its addresses, one per family, IPv4 first; that
 // flannel uses the same, and the VXLAN rules of this boot take VXLAN to them alone, from the
 // cluster's source ranges, on the interface holding the address or, on w1's dummy interface, on
-// any; and that the node has a pod range of each family.
+// any but the pod network's; and that the node has a pod range of each family.
 func dualStackNode(t *testing.T, ctx context.Context, cs kubernetes.Interface, n *node, name string) {
 	t.Helper()
 	want := dualStackAddresses[name]
@@ -484,7 +484,7 @@ func dualStackNode(t *testing.T, ctx context.Context, cs kubernetes.Interface, n
 	slices.Sort(rules)
 	arrival := " fib daddr . iif type local"
 	if name == "w1" {
-		arrival = ""
+		arrival = ` iifname != { "cni*", "flannel*", "kube-*", "veth*" }`
 	}
 	if want := []string{
 		"ip saddr { 192.168.100.0/24, 192.168.200.0/24 } ip daddr " + want[0] + " udp dport 8472" + arrival + " meta mark set meta mark | 0x01000000",

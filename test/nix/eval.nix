@@ -2663,7 +2663,7 @@ lib.runTests {
           {
             nftables = nftables.enable && !nftables.flushRuleset;
             open = lib.elem 8472 firewall.allowedUDPPorts;
-            acceptsMark = lib.hasInfix "udp dport 8472 meta mark & 0x01000000 == 0x01000000 meta mark set meta mark & 0xfeffffff accept" firewall.extraInputRules;
+            acceptsMark = lib.hasInfix "udp dport 8472 meta mark & 0x01000000 == 0x01000000 accept" firewall.extraInputRules;
             # The ports the node opens, in the table of both families.
             bothFamilies =
               nftables.tables.nixos-fw.family == "inet"
