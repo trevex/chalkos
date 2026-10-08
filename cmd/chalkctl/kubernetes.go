@@ -98,7 +98,7 @@ func (a *app) kubeconfig(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	kc := kpki.Kubeconfig{Name: c.manifest.Cluster.Name, Server: c.manifest.Cluster.Endpoint, CA: []byte(k.CA.Certificate), Client: admin}
+	kc := kpki.Kubeconfig{Name: c.manifest.Cluster.Name, Server: c.manifest.Cluster.Endpoint, CA: []byte(k.CABundle()), Client: admin}
 	if *server != "" {
 		endpoint, err := url.Parse(c.manifest.Cluster.Endpoint)
 		if err != nil {

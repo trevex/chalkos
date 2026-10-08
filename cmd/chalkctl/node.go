@@ -775,6 +775,9 @@ func kubernetesLine(k *nodev1.KubernetesStatus) string {
 	if k.Vip != "" {
 		line += ", vip " + k.Vip
 	}
+	if k.ControlPlane != "" {
+		line += ", control plane " + k.ControlPlane
+	}
 	return line
 }
 

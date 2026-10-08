@@ -135,7 +135,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"client-ca-file":                   pki(kpki.FileCA),
 		"cluster-cidr":                     joinRanges(podRanges),
 		"cluster-name":                     "kubernetes",
-		"cluster-signing-cert-file":        pki(kpki.FileCA),
+		"cluster-signing-cert-file":        pki(kpki.FileCASigning),
 		"cluster-signing-key-file":         pki(kpki.FileCAKey),
 		"controllers":                      "*,-bootstrapsigner,-tokencleaner",
 		"kubeconfig":                       pki(kpki.FileControllerManagerConfig),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -159,5 +161,100 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	}
 	if _, err := s.ApplyIdentity(asCaller(admin), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))})); err != nil {
 		t.Errorf("OS CAs with the node CA's: %v", err)
+	}
+}
+
+// trustOf returns the node's status's trust entries by name.
+func trustOf(t *testing.T, s *Server) map[string]*nodev1.TrustStatus {
+	t.Helper()
+	trust := map[string]*nodev1.TrustStatus{}
+	for _, tr := range status(t, s).Trust {
+		trust[tr.Name] = tr
+	}
+	return trust
+}
+
+// TestStatusReportsKubernetesTrust checks that a control plane reports the CAs and keys its
+// components run with, the issuing ones marked, and a worker the CAs its kubelet trusts.
+func TestStatusReportsKubernetesTrust(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
+	secrets, err := pki.GenerateSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secrets.BeginRotation(pki.RotateEncryptionKey, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	secrets.NodeCA = testNodeCA(t)
+	share, err := kpki.ShareFor(&secrets, k8s.KindControlPlane, "n1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := share.Encode()
+	write(t, s.Kubernetes.Paths.Share(), string(data))
+	if err := knode.Prepare(s.Kubernetes.Paths, time.Now(), nodeIP("192.168.100.11"), nil); err != nil {
+		t.Fatal(err)
+	}
+	trust := trustOf(t, s)
+	k := secrets.Kubernetes
+	ca, _ := pki.ParseCertificate([]byte(k.CA.Certificate))
+	for name, want := range map[string][]string{
+		"Kubernetes CA":   {pki.Fingerprint(ca.Raw)},
+		"front-proxy CA":  nil,
+		"etcd CA":         nil,
+		"encryption keys": {k.EncryptionKeys()[0].Fingerprint(), k.EncryptionKeys()[1].Fingerprint()},
+	} {
+		tr := trust[name]
+		if tr == nil || len(tr.Fingerprints) == 0 || tr.Issuing != tr.Fingerprints[0] {
+			t.Errorf("%s: %v, want the issuing value first and marked", name, tr)
+			continue
+		}
+		if want != nil && !slices.Equal(tr.Fingerprints, want) {
+			t.Errorf("%s: %v, want %v", name, tr.Fingerprints, want)
+		}
+	}
+	pub, _ := pki.ServiceAccountPublicKey(k.ServiceAccountKey)
+	fp, _ := pki.PublicKeyFingerprint(pub)
+	if tr := trust["service-account keys"]; tr == nil || !slices.Equal(tr.Fingerprints, []string{fp}) || tr.Issuing != fp {
+		t.Errorf("service-account keys: %v, want %s", tr, fp)
+	}
+
+	w, _ := kubernetesServer(t, k8s.KindWorker, true)
+	workerShare, _ := knode.ReadShare(w.Kubernetes.Paths)
+	want, _ := pki.Fingerprints(workerShare.CABundle())
+	if tr := trustOf(t, w)["Kubernetes CA"]; tr == nil || !slices.Equal(tr.Fingerprints, want) || tr.Issuing != "" {
+		t.Errorf("worker: Kubernetes CA %v, want %v and nothing issuing", tr, want)
+	}
+}
+
+// TestStatusReportsTheControlPlanesState checks that a bootstrapped control plane says whether
+// it runs on its current certificates.
+func TestStatusReportsTheControlPlanesState(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	if err := knode.MarkBootstrapped(s.Kubernetes.Paths, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	s.Kubernetes.ControlPlaneState = func(context.Context, k8s.Cluster, kpki.Share) string { return "current" }
+	if got := status(t, s).Kubernetes.ControlPlane; got != "current" {
+		t.Errorf("control plane %q", got)
+	}
+}
+
+func TestServesFile(t *testing.T) {
+	served, _ := pki.SelfSigned("served", time.Now())
+	other, _ := pki.SelfSigned("other", time.Now())
+	pair, _ := tls.X509KeyPair([]byte(served.Certificate), []byte(served.Key))
+	addr := serveTLS(t, http.NotFoundHandler(), TLSConfig(StaticCertificate(&pair), nil))
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "served.crt"), served.Certificate)
+	write(t, filepath.Join(dir, "other.crt"), other.Certificate)
+	if err := servesFile(context.Background(), addr, filepath.Join(dir, "served.crt")); err != nil {
+		t.Error(err)
+	}
+	if err := servesFile(context.Background(), addr, filepath.Join(dir, "other.crt")); err == nil || !strings.Contains(err.Error(), "replaced") {
+		t.Errorf("another certificate: %v", err)
+	}
+	if err := servesFile(context.Background(), "127.0.0.1:1", filepath.Join(dir, "served.crt")); err == nil || !strings.Contains(err.Error(), "does not answer") {
+		t.Errorf("nothing listening: %v", err)
 	}
 }

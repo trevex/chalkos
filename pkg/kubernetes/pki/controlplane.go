@@ -4,11 +4,11 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -30,8 +30,12 @@ const (
 
 // Files of the control plane's certificates, keys and kubeconfigs, by path relative to the
 // directory the static pods mount.
+// The CA files ca.crt, front-proxy-ca.crt and etcd/ca.crt hold every CA the components trust,
+// the one that issues first; ca-signing.crt holds the issuing Kubernetes CA alone, with which the
+// controller-manager signs, and sa.pub every service-account public key the API server accepts.
 const (
 	FileCA                      = "ca.crt"
+	FileCASigning               = "ca-signing.crt"
 	FileCAKey                   = "ca.key"
 	FileFrontProxyCA            = "front-proxy-ca.crt"
 	FileFrontProxyClient        = "front-proxy-client.crt"
@@ -94,10 +98,11 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 	etcdNames := []string{"localhost", n.Name}
 
 	files := map[string][]byte{
-		FileCA:           []byte(s.CA.Certificate),
+		FileCA:           []byte(s.CABundle()),
+		FileCASigning:    []byte(s.CA.Certificate),
 		FileCAKey:        []byte(s.CA.Key),
-		FileFrontProxyCA: []byte(s.FrontProxyCA.Certificate),
-		FileEtcdCA:       []byte(s.EtcdCA.Certificate),
+		FileFrontProxyCA: []byte(s.FrontProxyCABundle()),
+		FileEtcdCA:       []byte(s.EtcdCABundle()),
 	}
 	leaves := []struct {
 		cert, key string
@@ -128,25 +133,21 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 		if err != nil {
 			return nil, fmt.Errorf("issue %s: %w", kc.file, err)
 		}
-		data, err := Kubeconfig{Name: "chalkos", Server: c.LocalAPIServer(), CA: []byte(s.CA.Certificate), Client: ck}.Encode()
+		data, err := Kubeconfig{Name: "chalkos", Server: c.LocalAPIServer(), CA: []byte(s.CABundle()), Client: ck}.Encode()
 		if err != nil {
 			return nil, err
 		}
 		files[kc.file] = data
 	}
 
-	key, err := pki.ParseECKey(s.ServiceAccountKey)
+	pubs, err := s.ServiceAccountPublicKeys()
 	if err != nil {
 		return nil, fmt.Errorf("service account key: %w", err)
 	}
-	pub, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	if err != nil {
-		return nil, err
-	}
 	files[FileServiceAccountKey] = []byte(s.ServiceAccountKey)
-	files[FileServiceAccountPub] = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pub})
+	files[FileServiceAccountPub] = []byte(strings.Join(pubs, ""))
 
-	encryption, err := encryptionConfig(s.EncryptionKey)
+	encryption, err := encryptionConfig(s.EncryptionKeys())
 	if err != nil {
 		return nil, err
 	}
@@ -172,23 +173,65 @@ func authenticationConfig() ([]byte, error) {
 	}, "", "  ")
 }
 
-// encryptionConfig encrypts secrets with secretbox; identity still reads secrets written
-// before encryption was configured.
-func encryptionConfig(key []byte) ([]byte, error) {
-	if len(key) != pki.EncryptionKeySize {
-		return nil, fmt.Errorf("the encryption key must be %d bytes", pki.EncryptionKeySize)
+// EncryptedResources are the resources the API server encrypts in etcd.
+var EncryptedResources = []string{"secrets"}
+
+// encryptionConfig encrypts secrets with secretbox and the first of the keys; the others decrypt
+// what was encrypted with them. identity still reads secrets written before encryption was
+// configured.
+func encryptionConfig(keys []pki.EncryptionKey) ([]byte, error) {
+	var entries []any
+	for _, key := range keys {
+		if len(key.Key) != pki.EncryptionKeySize {
+			return nil, fmt.Errorf("the encryption key %s must be %d bytes", key.Name, pki.EncryptionKeySize)
+		}
+		entries = append(entries, map[string]any{"name": key.Name, "secret": base64.StdEncoding.EncodeToString(key.Key)})
 	}
 	return json.MarshalIndent(map[string]any{
 		"apiVersion": "apiserver.config.k8s.io/v1",
 		"kind":       "EncryptionConfiguration",
 		"resources": []any{map[string]any{
-			"resources": []string{"secrets"},
+			"resources": EncryptedResources,
 			"providers": []any{
-				map[string]any{"secretbox": map[string]any{"keys": []any{map[string]any{"name": "chalkos", "secret": base64.StdEncoding.EncodeToString(key)}}}},
+				map[string]any{"secretbox": map[string]any{"keys": entries}},
 				map[string]any{"identity": map[string]any{}},
 			},
 		}},
 	}, "", "  ")
+}
+
+// ParseEncryptionConfig reads the secretbox keys of an encryption configuration encryptionConfig
+// wrote, the encrypting one first.
+func ParseEncryptionConfig(data []byte) ([]pki.EncryptionKey, error) {
+	var config struct {
+		Resources []struct {
+			Providers []struct {
+				Secretbox *struct {
+					Keys []struct {
+						Name   string `json:"name"`
+						Secret []byte `json:"secret"`
+					} `json:"keys"`
+				} `json:"secretbox"`
+			} `json:"providers"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		// The configuration holds keys: the error does not quote it.
+		return nil, errors.New("the encryption configuration is no JSON")
+	}
+	for _, r := range config.Resources {
+		for _, p := range r.Providers {
+			if p.Secretbox == nil {
+				continue
+			}
+			var keys []pki.EncryptionKey
+			for _, k := range p.Secretbox.Keys {
+				keys = append(keys, pki.EncryptionKey{Name: k.Name, Key: k.Secret})
+			}
+			return keys, nil
+		}
+	}
+	return nil, errors.New("the encryption configuration has no secretbox keys")
 }
 
 // IssueChalkd issues chalkd's client certificate on a control-plane node, valid for validity.

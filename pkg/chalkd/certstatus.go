@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/csv"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +18,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -60,6 +62,88 @@ func (s *Server) trust() []*nodev1.TrustStatus {
 	var list []*nodev1.TrustStatus
 	if fps, err := pki.Fingerprints(s.osCAs()); err == nil {
 		list = append(list, &nodev1.TrustStatus{Name: "OS CA", Fingerprints: fps})
+	}
+	if s.Kubernetes != nil {
+		list = append(list, s.Kubernetes.trust()...)
+	}
+	return list
+}
+
+// trust lists the Kubernetes CAs and keys the node's components run with, from the files the
+// preparation wrote: the kubelet's CAs on every node, the control plane's CAs and keys on a
+// control plane. A CA issues if it issued the control plane's certificate of its kind.
+func (k *Kubernetes) trust() []*nodev1.TrustStatus {
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		return nil
+	}
+	if prepared, err := knode.Prepared(k.Paths); err != nil || !prepared {
+		return nil
+	}
+	if c.Kind != k8s.KindControlPlane {
+		data, err := os.ReadFile(filepath.Join(k.Paths.KubeletDir(), "ca.crt"))
+		if err != nil {
+			return nil
+		}
+		fps, err := pki.Fingerprints(string(data))
+		if err != nil {
+			return nil
+		}
+		return []*nodev1.TrustStatus{{Name: "Kubernetes CA", Fingerprints: fps}}
+	}
+	file := func(name string) string { return filepath.Join(k.Paths.PKI, name) }
+	var list []*nodev1.TrustStatus
+	for _, ca := range []struct{ name, bundle, leaf string }{
+		{"Kubernetes CA", kpki.FileCA, kpki.FileAPIServer},
+		{"front-proxy CA", kpki.FileFrontProxyCA, kpki.FileFrontProxyClient},
+		{"etcd CA", kpki.FileEtcdCA, kpki.FileEtcdServer},
+	} {
+		data, err := os.ReadFile(file(ca.bundle))
+		if err != nil {
+			continue
+		}
+		certs, err := pki.ParseBundle(string(data))
+		if err != nil {
+			continue
+		}
+		st := &nodev1.TrustStatus{Name: ca.name}
+		for _, cert := range certs {
+			st.Fingerprints = append(st.Fingerprints, pki.Fingerprint(cert.Raw))
+		}
+		if leaf, err := readPEMCertificate(file(ca.leaf)); err == nil {
+			if issuer := issuerIn(leaf, certs); issuer != nil {
+				st.Issuing = pki.Fingerprint(issuer.Raw)
+			}
+		}
+		list = append(list, st)
+	}
+	if pubs, err := os.ReadFile(file(kpki.FileServiceAccountPub)); err == nil {
+		st := &nodev1.TrustStatus{Name: "service-account keys"}
+		rest := pubs
+		for {
+			var block *pem.Block
+			if block, rest = pem.Decode(rest); block == nil {
+				break
+			}
+			if fp, err := pki.PublicKeyFingerprint(string(pem.EncodeToMemory(block))); err == nil {
+				st.Fingerprints = append(st.Fingerprints, fp)
+			}
+		}
+		if private, err := os.ReadFile(file(kpki.FileServiceAccountKey)); err == nil {
+			if pub, err := pki.ServiceAccountPublicKey(string(private)); err == nil {
+				st.Issuing, _ = pki.PublicKeyFingerprint(pub)
+			}
+		}
+		list = append(list, st)
+	}
+	if config, err := os.ReadFile(file(kpki.FileEncryptionConfig)); err == nil {
+		if keys, err := kpki.ParseEncryptionConfig(config); err == nil && len(keys) > 0 {
+			st := &nodev1.TrustStatus{Name: "encryption keys", Issuing: keys[0].Fingerprint()}
+			for _, key := range keys {
+				st.Fingerprints = append(st.Fingerprints, key.Fingerprint())
+			}
+			list = append(list, st)
+		}
 	}
 	return list
 }
@@ -110,9 +194,6 @@ func (s *Server) readOSCA() []byte {
 // control plane's leaf certificates and the kubelet's.
 func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 	var list []*nodev1.CertificateStatus
-	add := func(name string, cert *x509.Certificate, problem string) {
-		list = append(list, certificateStatus(name, cert, nil, problem))
-	}
 	share, err := knode.ReadShare(k.Paths)
 	if errors.Is(err, knode.ErrNoShare) {
 		return nil
@@ -120,6 +201,16 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 	if err != nil {
 		// Its expiry is unknown, as are those of the certificates the share holds.
 		return []*nodev1.CertificateStatus{{Name: "Kubernetes share", Problem: "unreadable: " + err.Error()}}
+	}
+	// The CAs that may have issued the node's Kubernetes certificates.
+	var issuers []*x509.Certificate
+	for _, bundle := range []string{share.CABundle(), share.FrontProxyCABundle(), share.EtcdCABundle()} {
+		if certs, err := pki.ParseBundle(bundle); err == nil {
+			issuers = append(issuers, certs...)
+		}
+	}
+	add := func(name string, cert *x509.Certificate, problem string) {
+		list = append(list, certificateStatus(name, cert, issuerIn(cert, issuers), problem))
 	}
 	cas := []struct {
 		name    string

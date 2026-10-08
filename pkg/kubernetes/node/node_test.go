@@ -1182,3 +1182,40 @@ func testNodeCA(t *testing.T) pki.CertKey {
 	}
 	return nodeCA
 }
+
+// TestPrepareGivesTheKubeletEveryCA checks that while the Kubernetes CAs rotate, the kubelet
+// trusts both, and keeps no client certificate of a CA that no longer issues.
+func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
+	s, err := pki.GenerateSecrets(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := testNode(t, kubernetes.KindWorker, "w1", &s.Kubernetes)
+	if err := Prepare(p, now, picked, nil); err != nil {
+		t.Fatal(err)
+	}
+	old := currentClient(t, p)
+	if err := s.BeginRotation(pki.RotateKubernetesCA, now); err != nil {
+		t.Fatal(err)
+	}
+	s.Rotation.Applied = true
+	if err := s.SwitchRotation(now); err != nil {
+		t.Fatal(err)
+	}
+	share, err := kpki.ShareFor(&s, kubernetes.KindWorker, "w1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := share.Encode()
+	write(t, p.Share(), string(data))
+	if err := Prepare(p, now, picked, nil); err != nil {
+		t.Fatal(err)
+	}
+	ca, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "ca.crt"))
+	if string(ca) != s.Kubernetes.CABundle() || strings.Count(string(ca), "BEGIN CERTIFICATE") != 2 {
+		t.Error("the kubelet does not trust both Kubernetes CAs")
+	}
+	if got := currentClient(t, p); got == old || got != *share.Kubelet {
+		t.Error("the kubelet kept its client certificate of the CA that no longer issues")
+	}
+}

@@ -363,10 +363,19 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
+	// The share is read for each check: while the Kubernetes CAs rotate, the API server may serve
+	// a certificate of a CA the share this election started with does not hold.
+	healthy := func(ctx context.Context) bool {
+		current, err := knode.ReadShare(k.Paths)
+		if err != nil {
+			current = share
+		}
+		return k.APIServerReady(ctx, c, current)
+	}
 	election := &vipElection{
 		client:   cli,
 		name:     n.Name,
-		healthy:  func(ctx context.Context) bool { return k.APIServerReady(ctx, c, share) },
+		healthy:  healthy,
 		addrs:    addrs,
 		ttl:      ttl,
 		interval: interval,
@@ -501,7 +510,7 @@ func systemVIPAddresses(c k8s.Cluster, p knode.Paths) (AddressManager, error) {
 // apiServerReady reports whether the node's API server answers ready.
 func apiServerReady(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
 	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(share.CA.Certificate)) {
+	if !roots.AppendCertsFromPEM([]byte(share.CABundle())) {
 		return false
 	}
 	client := &http.Client{

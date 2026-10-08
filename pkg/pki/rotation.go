@@ -238,7 +238,14 @@ func (s Secrets) validateAccepted() error {
 			return fmt.Errorf("accepted.osCA[%d]: %w", i, err)
 		}
 	}
-	k := s.Kubernetes
+	return s.Kubernetes.ValidateAccepted()
+}
+
+// ValidateAccepted checks what the Kubernetes components accept besides what issues or signs:
+// certificates of CAs, P-256 public keys, and encryption keys of the right size under names of
+// their own that the API server can tell apart. A worker's share holds CA certificates alone and
+// no service-account or encryption key, which ValidateAccepted does not ask for.
+func (k KubernetesSecrets) ValidateAccepted() error {
 	for _, list := range []struct {
 		name  string
 		certs []string
@@ -248,6 +255,12 @@ func (s Secrets) validateAccepted() error {
 				return fmt.Errorf("%s[%d]: %w", list.name, i, err)
 			}
 		}
+	}
+	if k.ServiceAccountKey == "" && len(k.EncryptionKey) == 0 {
+		if len(k.Accepted.ServiceAccountKeys) > 0 || len(k.Accepted.EncryptionKeys) > 0 {
+			return errors.New("kubernetes.accepted holds keys without the keys they are accepted besides")
+		}
+		return nil
 	}
 	signing, err := ServiceAccountPublicKey(k.ServiceAccountKey)
 	if err != nil {

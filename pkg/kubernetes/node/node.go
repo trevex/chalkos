@@ -611,7 +611,7 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 		return err
 	}
 	for name, data := range map[string][]byte{
-		"ca.crt": []byte(share.CA.Certificate),
+		"ca.crt": []byte(share.CABundle()),
 		"flags":  []byte("KUBELET_ARGS=" + strings.Join(KubeletFlags(c, n), " ") + "\n"),
 	} {
 		if err := install.WriteFile(filepath.Join(p.KubeletDir(), name), data, 0o644); err != nil {

@@ -297,6 +297,10 @@ message KubernetesStatus {
   // On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds
   // them, "standby" otherwise. Empty on other nodes.
   string vip = 4;
+  // On a bootstrapped control-plane node: "current" once its API server and etcd serve the
+  // certificates the node holds now and the API server answers ready, otherwise what is not so,
+  // such as "the API server serves certificates the node replaced". Empty on other nodes.
+  string control_plane = 5;
 }
 
 message DiskStatus {

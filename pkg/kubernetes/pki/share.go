@@ -44,13 +44,19 @@ type Share struct {
 	// NodeCA is the node CA with its key, with which a control-plane node renews node
 	// certificates. Workers do not hold it.
 	NodeCA *pki.CertKey `json:"nodeCA,omitempty"`
+	// EncryptionKeyName is the name the encryption key encrypts under; empty is
+	// pki.DefaultEncryptionKeyName.
+	EncryptionKeyName string `json:"encryptionKeyName,omitempty"`
+	// Accepted holds what the node still trusts besides the values above while one of them
+	// rotates: on a worker the Kubernetes CAs alone.
+	Accepted *pki.KubernetesAccepted `json:"accepted,omitempty"`
 }
 
 // ControlPlaneShare is what a control-plane node receives: every Kubernetes CA with its key, the
-// keys, and the node CA.
+// keys, the node CA, and what is accepted besides them.
 func ControlPlaneShare(k *pki.KubernetesSecrets, nodeCA pki.CertKey) Share {
 	front, etcd := k.FrontProxyCA, k.EtcdCA
-	return Share{
+	s := Share{
 		Kind:              kubernetes.KindControlPlane,
 		CA:                k.CA,
 		FrontProxyCA:      &front,
@@ -59,16 +65,76 @@ func ControlPlaneShare(k *pki.KubernetesSecrets, nodeCA pki.CertKey) Share {
 		EncryptionKey:     k.EncryptionKey,
 		NodeCA:            &nodeCA,
 	}
+	if k.EncryptionKeyName != pki.DefaultEncryptionKeyName {
+		s.EncryptionKeyName = k.EncryptionKeyName
+	}
+	if accepted := k.Accepted; !isZero(accepted) {
+		s.Accepted = &accepted
+	}
+	return s
 }
 
-// WorkerShare is what a worker receives: the CA certificate and a kubelet client certificate
-// for the node, issued now.
+// WorkerShare is what a worker receives: the CA certificate, those accepted besides it, and a
+// kubelet client certificate for the node, issued now.
 func WorkerShare(k *pki.KubernetesSecrets, node string, now time.Time) (Share, error) {
 	kubelet, err := IssueKubeletClient(k.CA, node, now)
 	if err != nil {
 		return Share{}, err
 	}
-	return Share{Kind: kubernetes.KindWorker, CA: pki.CertKey{Certificate: k.CA.Certificate}, Kubelet: &kubelet}, nil
+	s := Share{Kind: kubernetes.KindWorker, CA: pki.CertKey{Certificate: k.CA.Certificate}, Kubelet: &kubelet}
+	if len(k.Accepted.CA) > 0 {
+		s.Accepted = &pki.KubernetesAccepted{CA: k.Accepted.CA}
+	}
+	return s, nil
+}
+
+func isZero(a pki.KubernetesAccepted) bool {
+	return len(a.CA)+len(a.FrontProxyCA)+len(a.EtcdCA)+len(a.ServiceAccountKeys)+len(a.EncryptionKeys) == 0
+}
+
+// secrets returns the share as the Kubernetes secrets it holds, without the CAs and keys it
+// lacks.
+func (s Share) secrets() pki.KubernetesSecrets {
+	k := pki.KubernetesSecrets{CA: s.CA, ServiceAccountKey: s.ServiceAccountKey, EncryptionKey: s.EncryptionKey, EncryptionKeyName: s.EncryptionKeyName}
+	if s.FrontProxyCA != nil {
+		k.FrontProxyCA = *s.FrontProxyCA
+	}
+	if s.EtcdCA != nil {
+		k.EtcdCA = *s.EtcdCA
+	}
+	if s.Accepted != nil {
+		k.Accepted = *s.Accepted
+	}
+	return k
+}
+
+// CABundle is the Kubernetes CAs the node trusts, the one that issues first; FrontProxyCABundle
+// and EtcdCABundle are the front-proxy and etcd CAs a control plane trusts.
+func (s Share) CABundle() string { return s.secrets().CABundle() }
+
+func (s Share) FrontProxyCABundle() string {
+	if s.FrontProxyCA == nil {
+		return ""
+	}
+	return s.secrets().FrontProxyCABundle()
+}
+
+func (s Share) EtcdCABundle() string {
+	if s.EtcdCA == nil {
+		return ""
+	}
+	return s.secrets().EtcdCABundle()
+}
+
+// ServiceAccountPublicKeys are the public keys the API server accepts tokens of, the signing
+// key's first.
+func (s Share) ServiceAccountPublicKeys() ([]string, error) {
+	return s.secrets().ServiceAccountPublicKeys()
+}
+
+// EncryptionKeys are the keys the API server decrypts with, the one that encrypts first.
+func (s Share) EncryptionKeys() []pki.EncryptionKey {
+	return s.secrets().EncryptionKeys()
 }
 
 // ShareFor returns the share of a node of the kind from the secrets file.
@@ -133,9 +199,18 @@ func (s Share) Validate() error {
 		if len(s.EncryptionKey) != pki.EncryptionKeySize {
 			return fmt.Errorf("Kubernetes share: the encryption key must be %d bytes", pki.EncryptionKeySize)
 		}
+		if err := s.validateAccepted(); err != nil {
+			return err
+		}
 	case kubernetes.KindWorker:
-		if s.CA.Key != "" || s.FrontProxyCA != nil || s.EtcdCA != nil || s.NodeCA != nil || s.ServiceAccountKey != "" || s.EncryptionKey != nil {
+		if s.CA.Key != "" || s.FrontProxyCA != nil || s.EtcdCA != nil || s.NodeCA != nil || s.ServiceAccountKey != "" || s.EncryptionKey != nil || s.EncryptionKeyName != "" {
 			return errors.New("a worker share holds no CA key, node CA, service account key or encryption key")
+		}
+		if a := s.Accepted; a != nil && (len(a.FrontProxyCA)+len(a.EtcdCA)+len(a.ServiceAccountKeys)+len(a.EncryptionKeys) > 0) {
+			return errors.New("a worker share accepts Kubernetes CAs alone")
+		}
+		if err := s.validateAccepted(); err != nil {
+			return err
 		}
 		ca, err := pki.ParseCertificate([]byte(s.CA.Certificate))
 		if err != nil {
@@ -167,6 +242,34 @@ func (s Share) Validate() error {
 		}
 	default:
 		return fmt.Errorf("Kubernetes share: unknown kind %q", s.Kind)
+	}
+	return nil
+}
+
+// validateAccepted checks what the share accepts besides the values that issue, and that no CA
+// it accepts is one that issues.
+func (s Share) validateAccepted() error {
+	if s.Accepted == nil {
+		return nil
+	}
+	k := s.secrets()
+	if err := k.ValidateAccepted(); err != nil {
+		return fmt.Errorf("Kubernetes share: %w", err)
+	}
+	cas := []pki.NamedCA{{Name: "ca", CA: s.CA}}
+	if s.FrontProxyCA != nil {
+		cas = append(cas, pki.NamedCA{Name: "frontProxyCA", CA: *s.FrontProxyCA}, pki.NamedCA{Name: "etcdCA", CA: *s.EtcdCA})
+	}
+	for _, list := range []struct {
+		name  string
+		certs []string
+	}{{"accepted.ca", s.Accepted.CA}, {"accepted.frontProxyCA", s.Accepted.FrontProxyCA}, {"accepted.etcdCA", s.Accepted.EtcdCA}} {
+		for i, c := range list.certs {
+			cas = append(cas, pki.NamedCA{Name: fmt.Sprintf("%s[%d]", list.name, i), CA: pki.CertKey{Certificate: c}})
+		}
+	}
+	if err := pki.RequireDistinctCAs(cas...); err != nil {
+		return fmt.Errorf("Kubernetes share: %w", err)
 	}
 	return nil
 }

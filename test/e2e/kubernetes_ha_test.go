@@ -133,7 +133,7 @@ func (c *haCluster) kubernetes(name string) string {
 func (c *haCluster) holders(names ...string) []string {
 	var holders []string
 	for _, name := range names {
-		if strings.HasSuffix(c.kubernetes(name), "vip holder") {
+		if strings.Contains(c.kubernetes(name), ", vip holder") {
 			holders = append(holders, name)
 		}
 	}
@@ -310,7 +310,7 @@ func TestKubernetesHA(t *testing.T) {
 		return nil
 	})
 	waitFor(t, 2*time.Minute, "cp1 to release the VIP", func() error {
-		if got := c.kubernetes("cp1"); strings.HasSuffix(got, "vip holder") {
+		if got := c.kubernetes("cp1"); strings.Contains(got, ", vip holder") {
 			return fmt.Errorf("status of cp1: %q", got)
 		}
 		return nil

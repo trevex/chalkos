@@ -2,13 +2,16 @@ package chalkd
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -77,6 +80,9 @@ type Kubernetes struct {
 	// EtcdStopped waits until the node's etcd stopped once its static pod is gone. Tests replace
 	// it.
 	EtcdStopped func(ctx context.Context, c k8s.Cluster) error
+	// ControlPlaneState says whether the node's API server and etcd run with the certificates the
+	// node holds now: "current", or what is not so. Tests replace it.
+	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -136,7 +142,51 @@ func NewKubernetes() *Kubernetes {
 	k.VIPAddresses = systemVIPAddresses
 	k.APIServerReady = apiServerReady
 	k.EtcdStopped = etcdStopped
+	k.ControlPlaneState = k.controlPlaneState
 	return k
+}
+
+// controlPlaneState checks that the API server and etcd present the certificates in the
+// control plane's files and that the API server answers ready: after the files were replaced,
+// the kubelet starts the static pods again, and until then they run on the ones before.
+func (k *Kubernetes) controlPlaneState(ctx context.Context, c k8s.Cluster, share kpki.Share) string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for _, server := range []struct{ name, url, file string }{
+		{"the API server", c.LocalAPIServer(), kpki.FileAPIServer},
+		{"etcd", k.localEtcd(c), kpki.FileEtcdServer},
+	} {
+		u, err := url.Parse(server.url)
+		if err != nil {
+			return fmt.Sprintf("%s: %v", server.name, err)
+		}
+		if err := servesFile(ctx, u.Host, filepath.Join(k.Paths.PKI, server.file)); err != nil {
+			return fmt.Sprintf("%s %v", server.name, err)
+		}
+	}
+	if !k.APIServerReady(ctx, c, share) {
+		return "the API server is not ready"
+	}
+	return "current"
+}
+
+// servesFile checks that the TLS server at addr presents the certificate the file holds. The
+// server is not verified: its certificate is only compared with the file, and nothing is sent.
+func servesFile(ctx context.Context, addr, file string) error {
+	want, err := readPEMCertificate(file)
+	if err != nil {
+		return fmt.Errorf("has no certificate: %v", err)
+	}
+	d := tls.Dialer{NetDialer: &net.Dialer{Timeout: 3 * time.Second}, Config: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("does not answer: %v", err)
+	}
+	defer conn.Close()
+	if got := conn.(*tls.Conn).ConnectionState().PeerCertificates; len(got) == 0 || !got[0].Equal(want) {
+		return errors.New("serves certificates the node replaced")
+	}
+	return nil
 }
 
 // loops returns the context the loops run in; k.mu is held.
@@ -726,6 +776,9 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 			if k.vipHolder.Load() {
 				st.Vip = "holder"
 			}
+		}
+		if share, err := knode.ReadShare(k.Paths); err == nil && k.ControlPlaneState != nil {
+			st.ControlPlane = k.ControlPlaneState(ctx, c, share)
 		}
 	default:
 		if st.State, err = k.joinStatus(c); err != nil {

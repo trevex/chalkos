@@ -1724,7 +1724,11 @@ type KubernetesStatus struct {
 	NodeReady string `protobuf:"bytes,3,opt,name=node_ready,json=nodeReady,proto3" json:"node_ready,omitempty"`
 	// On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds
 	// them, "standby" otherwise. Empty on other nodes.
-	Vip           string `protobuf:"bytes,4,opt,name=vip,proto3" json:"vip,omitempty"`
+	Vip string `protobuf:"bytes,4,opt,name=vip,proto3" json:"vip,omitempty"`
+	// On a bootstrapped control-plane node: "current" once its API server and etcd serve the
+	// certificates the node holds now and the API server answers ready, otherwise what is not so,
+	// such as "the API server serves certificates the node replaced". Empty on other nodes.
+	ControlPlane  string `protobuf:"bytes,5,opt,name=control_plane,json=controlPlane,proto3" json:"control_plane,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1783,6 +1787,13 @@ func (x *KubernetesStatus) GetNodeReady() string {
 func (x *KubernetesStatus) GetVip() string {
 	if x != nil {
 		return x.Vip
+	}
+	return ""
+}
+
+func (x *KubernetesStatus) GetControlPlane() string {
+	if x != nil {
+		return x.ControlPlane
 	}
 	return ""
 }
@@ -2729,13 +2740,14 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fsynchronised\x18\x01 \x01(\bR\fsynchronised\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12%\n" +
 	"\x0eoffset_seconds\x18\x03 \x01(\x01R\roffsetSeconds\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"m\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\x92\x01\n" +
 	"\x10KubernetesStatus\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x1d\n" +
 	"\n" +
 	"node_ready\x18\x03 \x01(\tR\tnodeReady\x12\x10\n" +
-	"\x03vip\x18\x04 \x01(\tR\x03vip\"N\n" +
+	"\x03vip\x18\x04 \x01(\tR\x03vip\x12#\n" +
+	"\rcontrol_plane\x18\x05 \x01(\tR\fcontrolPlane\"N\n" +
 	"\n" +
 	"DiskStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +

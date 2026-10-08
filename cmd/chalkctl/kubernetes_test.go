@@ -218,9 +218,10 @@ func TestStatusShowsKubernetes(t *testing.T) {
 
 func TestKubernetesLine(t *testing.T) {
 	for want, k := range map[string]*nodev1.KubernetesStatus{
-		"kubernetes worker: joined, node ready: True":                         {Kind: "worker", State: "joined", NodeReady: "True"},
-		"kubernetes controlplane: bootstrapped, node ready: True, vip holder": {Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder"},
-		"kubernetes controlplane: preparing":                                  {Kind: "controlplane", State: "preparing"},
+		"kubernetes worker: joined, node ready: True":                                    {Kind: "worker", State: "joined", NodeReady: "True"},
+		"kubernetes controlplane: bootstrapped, node ready: True, vip holder":            {Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder"},
+		"kubernetes controlplane: preparing":                                             {Kind: "controlplane", State: "preparing"},
+		"kubernetes controlplane: bootstrapped, node ready: True, control plane current": {Kind: "controlplane", State: "bootstrapped", NodeReady: "True", ControlPlane: "current"},
 	} {
 		if got := kubernetesLine(k); got != want {
 			t.Errorf("kubernetesLine(%v) = %q, want %q", k, got, want)
@@ -242,5 +243,30 @@ func TestBootstrapNeedsControlPlane(t *testing.T) {
 	addr = ta.startNode(t, plain)
 	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "has no Kubernetes") {
 		t.Errorf("err = %v, want the node's refusal", err)
+	}
+}
+
+// TestKubeconfigTrustsBothCAs checks that a kubeconfig issued while the Kubernetes CAs rotate
+// trusts both, so it keeps working once the new CA issues the API server's certificate.
+func TestKubeconfigTrustsBothCAs(t *testing.T) {
+	ta := newTestApp(t)
+	ta.beginRotation(t, pki.RotateKubernetesCA)
+	out := filepath.Join(ta.dir, "kubeconfig")
+	if err := ta.run(context.Background(), []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir, "--out", out}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(out)
+	var kc struct {
+		Clusters []struct {
+			Cluster struct {
+				CA []byte `json:"certificate-authority-data"`
+			} `json:"cluster"`
+		} `json:"clusters"`
+	}
+	if err := json.Unmarshal(data, &kc); err != nil {
+		t.Fatal(err)
+	}
+	if string(kc.Clusters[0].Cluster.CA) != ta.secrets.Kubernetes.CABundle() || strings.Count(string(kc.Clusters[0].Cluster.CA), "BEGIN") != 2 {
+		t.Error("the kubeconfig does not trust both Kubernetes CAs")
 	}
 }

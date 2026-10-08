@@ -340,7 +340,7 @@ func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
 		return false
 	}
 	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(share.CA.Certificate)) {
+	if !roots.AppendCertsFromPEM([]byte(share.CABundle())) {
 		return false
 	}
 	port := u.Port()
