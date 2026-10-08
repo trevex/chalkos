@@ -17,6 +17,9 @@ let
     install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet
   '';
   run = "/run/chalkos/kubernetes";
+  primary = builtins.head k.ipFamilies;
+  # The entries of the families in use.
+  ofFamilies = byFamily: lib.genAttrs k.ipFamilies (family: byFamily.${family});
   controlPlane = kind == "controlplane";
   flannel = config.chalkos.cni.provider == "flannel";
 
@@ -52,7 +55,7 @@ let
     # changing them itself.
     protectKernelDefaults = true;
     cgroupDriver = "systemd";
-    clusterDNS = [ k.dnsIP ];
+    clusterDNS = [ k.dnsIPs.${primary} ];
     clusterDomain = k.domain;
     containerRuntimeEndpoint = "unix:///run/containerd/containerd.sock";
     # The client certificate from chalkos is renewed by the kubelet; the serving certificate is
@@ -69,10 +72,10 @@ let
     inherit kind;
     inherit (cluster) endpoint;
     inherit (k) domain allowSchedulingOnControlPlanes;
-    podCIDRs.ipv4 = k.podCIDR;
-    serviceCIDRs.ipv4 = k.serviceCIDR;
-    dnsIPs.ipv4 = k.dnsIP;
-    nodeCIDRMaskSizes.ipv4 = 24;
+    podCIDRs = ofFamilies k.podCIDRs;
+    serviceCIDRs = ofFamilies k.serviceCIDRs;
+    dnsIPs = ofFamilies k.dnsIPs;
+    nodeCIDRMaskSizes = ofFamilies k.nodeCIDRMaskSizes;
     version = k.package.version;
     inherit (k) ipFamilies;
     nodeIP = { inherit (k.nodeIP) validSubnets timeout; };

@@ -106,7 +106,7 @@ let
           ];
         };
         "net-conf.json" = builtins.toJSON {
-          Network = k.podCIDR;
+          Network = k.podCIDRs.ipv4;
           EnableNFTables = false;
           Backend.Type = "vxlan";
         };

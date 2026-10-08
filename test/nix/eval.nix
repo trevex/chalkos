@@ -1201,6 +1201,269 @@ lib.runTests {
       unknownFamily = true;
     };
   };
+  # The ranges of the families in use reach the nodes in their order; values that exist once
+  # follow the primary family.
+  testAddressRanges = {
+    expr =
+      let
+        setup =
+          families:
+          let
+            c = cluster [ { chalkos.cluster.kubernetes.ipFamilies = families; } ];
+            config = role c;
+            named =
+              kind: name:
+              lib.findFirst (m: m.kind == kind && m.metadata.name == name) null c.cluster.kubernetes.addons;
+            clusterFile = builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text;
+            kubeProxy = builtins.fromJSON (named "ConfigMap" "kube-proxy").data."config.conf";
+          in
+          {
+            inherit (clusterFile)
+              ipFamilies
+              podCIDRs
+              serviceCIDRs
+              dnsIPs
+              nodeCIDRMaskSizes
+              ;
+            clusterDNS =
+              (builtins.fromJSON config.environment.etc."chalkos/kubernetes/kubelet.json".text).clusterDNS;
+            dnsService = {
+              inherit ((named "Service" "kube-dns").spec) clusterIP ipFamilyPolicy ipFamilies;
+            };
+            kubeProxyClusterCIDR = kubeProxy.clusterCIDR;
+          };
+        # The DNS address defaults to the 10th address of the service range, written as Go writes
+        # addresses.
+        dnsIPs =
+          serviceCIDRs:
+          (cluster [
+            {
+              chalkos.cluster.kubernetes = {
+                ipFamilies = [
+                  "ipv4"
+                  "ipv6"
+                ];
+                inherit serviceCIDRs;
+              };
+            }
+          ]).cluster.kubernetes.dnsIPs;
+      in
+      {
+        ipv4 = setup [ "ipv4" ];
+        dual = setup [
+          "ipv4"
+          "ipv6"
+        ];
+        ipv6Primary = setup [
+          "ipv6"
+          "ipv4"
+        ];
+        ipv6 = setup [ "ipv6" ];
+        defaultDNSIPs = dnsIPs {
+          ipv4 = "10.100.0.0/16";
+          ipv6 = "fd00:0:0:5::/112";
+        };
+        firstLongestZeros = (dnsIPs { ipv6 = "fd00:0:0:5:0:0:1:0/112"; }).ipv6;
+        # A service range of fewer than ten addresses needs a DNS address set.
+        tooSmallForDefault = fails (dnsIPs { ipv4 = "10.100.0.248/29"; }).ipv4;
+      };
+    expected = {
+      ipv4 = {
+        ipFamilies = [ "ipv4" ];
+        podCIDRs.ipv4 = "10.244.0.0/16";
+        serviceCIDRs.ipv4 = "10.96.0.0/12";
+        dnsIPs.ipv4 = "10.96.0.10";
+        nodeCIDRMaskSizes.ipv4 = 24;
+        clusterDNS = [ "10.96.0.10" ];
+        dnsService = {
+          clusterIP = "10.96.0.10";
+          ipFamilyPolicy = "SingleStack";
+          ipFamilies = [ "IPv4" ];
+        };
+        kubeProxyClusterCIDR = "10.244.0.0/16";
+      };
+      dual = {
+        ipFamilies = [
+          "ipv4"
+          "ipv6"
+        ];
+        podCIDRs = {
+          ipv4 = "10.244.0.0/16";
+          ipv6 = "fd00:10:244::/56";
+        };
+        serviceCIDRs = {
+          ipv4 = "10.96.0.0/12";
+          ipv6 = "fd00:10:96::/112";
+        };
+        dnsIPs = {
+          ipv4 = "10.96.0.10";
+          ipv6 = "fd00:10:96::a";
+        };
+        nodeCIDRMaskSizes = {
+          ipv4 = 24;
+          ipv6 = 64;
+        };
+        clusterDNS = [ "10.96.0.10" ];
+        dnsService = {
+          clusterIP = "10.96.0.10";
+          ipFamilyPolicy = "SingleStack";
+          ipFamilies = [ "IPv4" ];
+        };
+        kubeProxyClusterCIDR = "10.244.0.0/16,fd00:10:244::/56";
+      };
+      ipv6Primary = {
+        ipFamilies = [
+          "ipv6"
+          "ipv4"
+        ];
+        podCIDRs = {
+          ipv4 = "10.244.0.0/16";
+          ipv6 = "fd00:10:244::/56";
+        };
+        serviceCIDRs = {
+          ipv4 = "10.96.0.0/12";
+          ipv6 = "fd00:10:96::/112";
+        };
+        dnsIPs = {
+          ipv4 = "10.96.0.10";
+          ipv6 = "fd00:10:96::a";
+        };
+        nodeCIDRMaskSizes = {
+          ipv4 = 24;
+          ipv6 = 64;
+        };
+        clusterDNS = [ "fd00:10:96::a" ];
+        dnsService = {
+          clusterIP = "fd00:10:96::a";
+          ipFamilyPolicy = "SingleStack";
+          ipFamilies = [ "IPv6" ];
+        };
+        kubeProxyClusterCIDR = "fd00:10:244::/56,10.244.0.0/16";
+      };
+      ipv6 = {
+        ipFamilies = [ "ipv6" ];
+        podCIDRs.ipv6 = "fd00:10:244::/56";
+        serviceCIDRs.ipv6 = "fd00:10:96::/112";
+        dnsIPs.ipv6 = "fd00:10:96::a";
+        nodeCIDRMaskSizes.ipv6 = 64;
+        clusterDNS = [ "fd00:10:96::a" ];
+        dnsService = {
+          clusterIP = "fd00:10:96::a";
+          ipFamilyPolicy = "SingleStack";
+          ipFamilies = [ "IPv6" ];
+        };
+        kubeProxyClusterCIDR = "fd00:10:244::/56";
+      };
+      defaultDNSIPs = {
+        ipv4 = "10.100.0.10";
+        ipv6 = "fd00:0:0:5::a";
+      };
+      firstLongestZeros = "fd00::5:0:0:1:a";
+      tooSmallForDefault = true;
+    };
+  };
+  # The ranges are checked as kubeadm checks them, for the families in use only, and the removed
+  # options name their replacements.
+  testAddressRangeChecks = {
+    expr =
+      let
+        dual = kubernetes: {
+          chalkos.cluster.kubernetes = {
+            ipFamilies = [
+              "ipv4"
+              "ipv6"
+            ];
+          }
+          // kubernetes;
+        };
+        refused =
+          kubernetes:
+          let
+            c = cluster [ (dual kubernetes) ];
+          in
+          fails (removeAttrs c.cluster.kubernetes [ "package" ])
+          && fails (role c).environment.etc."chalkos/kubernetes/cluster.json".text;
+      in
+      {
+        valid =
+          !refused {
+            podCIDRs = {
+              ipv4 = "10.32.0.0/12";
+              ipv6 = "fd00:32::/48";
+            };
+            serviceCIDRs = {
+              ipv4 = "10.16.0.0/16";
+              ipv6 = "fd00:16::/108";
+            };
+            nodeCIDRMaskSizes = {
+              ipv4 = 28;
+              ipv6 = 64;
+            };
+          };
+        # Entries of a family not in use are ignored.
+        otherFamily =
+          !fails
+            (role (cluster [
+              {
+                chalkos.cluster.kubernetes = {
+                  podCIDRs.ipv6 = "10.244.0.0";
+                  dnsIPs.ipv6 = "dns";
+                  nodeCIDRMaskSizes.ipv6 = 0;
+                };
+              }
+            ])).environment.etc."chalkos/kubernetes/cluster.json".text;
+        notARange = refused { podCIDRs.ipv4 = "10.244.0.0"; };
+        exclusion = refused { podCIDRs.ipv4 = "!10.244.0.0/16"; };
+        wrongFamily = refused { podCIDRs.ipv6 = "10.244.0.0/16"; };
+        ipv4Mapped = refused { podCIDRs.ipv6 = "::ffff:10.244.0.0/112"; };
+        hostBits = refused { serviceCIDRs.ipv4 = "10.96.0.1/12"; };
+        overlap = refused { serviceCIDRs.ipv4 = "10.244.128.0/20"; };
+        overlapIPv6 = refused { podCIDRs.ipv6 = "fd00:10::/32"; };
+        tooManyServices = refused { serviceCIDRs.ipv4 = "10.96.0.0/11"; };
+        tooManyServicesIPv6 = refused {
+          serviceCIDRs.ipv6 = "fd00:10:96::/107";
+          dnsIPs.ipv6 = "fd00:10:96::a";
+        };
+        maskNotLonger = refused { nodeCIDRMaskSizes.ipv4 = 16; };
+        maskTooLong = refused { nodeCIDRMaskSizes.ipv6 = 73; };
+        maskBeyondAddress = refused {
+          podCIDRs.ipv4 = "10.244.0.0/24";
+          nodeCIDRMaskSizes.ipv4 = 33;
+        };
+        dnsOutside = refused { dnsIPs.ipv4 = "10.112.0.10"; };
+        dnsNotAnAddress = refused { dnsIPs.ipv6 = "dns"; };
+        dnsWrongFamily = refused { dnsIPs.ipv6 = "10.96.0.10"; };
+        dnsKubernetesService = refused { dnsIPs.ipv4 = "10.96.0.1"; };
+        dnsNetwork = refused { dnsIPs.ipv6 = "fd00:10:96::"; };
+        podCIDR = refused { podCIDR = "10.244.0.0/16"; };
+        serviceCIDR = refused { serviceCIDR = "10.96.0.0/12"; };
+        dnsIP = refused { dnsIP = "10.96.0.10"; };
+      };
+    expected = {
+      valid = true;
+      otherFamily = true;
+      notARange = true;
+      exclusion = true;
+      wrongFamily = true;
+      ipv4Mapped = true;
+      hostBits = true;
+      overlap = true;
+      overlapIPv6 = true;
+      tooManyServices = true;
+      tooManyServicesIPv6 = true;
+      maskNotLonger = true;
+      maskTooLong = true;
+      maskBeyondAddress = true;
+      dnsOutside = true;
+      dnsNotAnAddress = true;
+      dnsWrongFamily = true;
+      dnsKubernetesService = true;
+      dnsNetwork = true;
+      podCIDR = true;
+      serviceCIDR = true;
+      dnsIP = true;
+    };
+  };
   # The VIPs reach the nodes in the cluster file; the endpoint is one of them.
   testVIP = {
     expr =
@@ -1614,9 +1877,26 @@ lib.runTests {
       "addons"
     ];
     expected = {
-      podCIDR = "10.244.0.0/16";
-      serviceCIDR = "10.96.0.0/12";
-      dnsIP = "10.96.0.10";
+      podCIDRs = {
+        ipv4 = "10.244.0.0/16";
+        ipv6 = "fd00:10:244::/56";
+      };
+      serviceCIDRs = {
+        ipv4 = "10.96.0.0/12";
+        ipv6 = "fd00:10:96::/112";
+      };
+      dnsIPs = {
+        ipv4 = "10.96.0.10";
+        ipv6 = "fd00:10:96::a";
+      };
+      nodeCIDRMaskSizes = {
+        ipv4 = 24;
+        ipv6 = 64;
+      };
+      # Removed: they only name their replacements.
+      podCIDR = null;
+      serviceCIDR = null;
+      dnsIP = null;
       domain = "cluster.local";
       allowSchedulingOnControlPlanes = false;
       ipFamilies = [ "ipv4" ];
@@ -1647,8 +1927,8 @@ lib.runTests {
           (cluster [
             {
               chalkos.cluster.kubernetes = {
-                podCIDR = "10.250.0.0/16";
-                dnsIP = "10.100.0.10";
+                podCIDRs.ipv4 = "10.250.0.0/16";
+                dnsIPs.ipv4 = "10.100.0.10";
                 domain = "lab.local";
               };
             }
@@ -1919,7 +2199,7 @@ lib.runTests {
         config = role (cluster [
           {
             chalkos.cluster.kubernetes = {
-              dnsIP = "10.100.0.10";
+              dnsIPs.ipv4 = "10.100.0.10";
               domain = "lab.local";
               extraArgs.kubelet.v = "2";
             };

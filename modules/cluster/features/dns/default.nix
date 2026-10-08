@@ -1,8 +1,9 @@
-# The cluster DNS: CoreDNS answers for the cluster domain at the service address dnsIP and
-# forwards other names to the nodes' resolvers.
+# The cluster DNS: CoreDNS answers for the cluster domain at the primary family's dnsIPs entry
+# and forwards other names to the nodes' resolvers.
 { config, lib, ... }:
 let
   k = config.chalkos.cluster.kubernetes;
+  primary = builtins.head k.ipFamilies;
   labels.k8s-app = "kube-dns";
   corefile = ''
     .:53 {
@@ -243,8 +244,18 @@ let
           "kubernetes.io/name" = "CoreDNS";
         };
       };
+      # One address of the primary family, which every pod has, as kubeadm's DNS service gets:
+      # the kubelet hands pods one name server. It still answers A and AAAA queries.
       spec = {
-        clusterIP = k.dnsIP;
+        clusterIP = k.dnsIPs.${primary};
+        ipFamilyPolicy = "SingleStack";
+        ipFamilies = [
+          {
+            ipv4 = "IPv4";
+            ipv6 = "IPv6";
+          }
+          .${primary}
+        ];
         selector = labels;
         ports = [
           {

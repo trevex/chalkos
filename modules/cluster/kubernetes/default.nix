@@ -30,7 +30,7 @@ let
     apiVersion = "kubeproxy.config.k8s.io/v1alpha1";
     kind = "KubeProxyConfiguration";
     mode = "iptables";
-    clusterCIDR = k.podCIDR;
+    clusterCIDR = lib.concatMapStringsSep "," (family: k.podCIDRs.${family}) k.ipFamilies;
     clientConnection.kubeconfig = "/var/lib/kube-proxy/kubeconfig.conf";
   };
   # Pods reach the API server at the cluster endpoint: the service address needs kube-proxy.

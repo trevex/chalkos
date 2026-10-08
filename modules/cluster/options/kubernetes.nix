@@ -197,6 +197,161 @@ let
 
   familyOf = parsed: if parsed.ipv4 then "ipv4" else "ipv6";
   inherit (config.chalkos.cluster.kubernetes) ipFamilies;
+  k = config.chalkos.cluster.kubernetes;
+
+  # The parsed address n addresses after the parsed address, carrying from group to group.
+  offset =
+    parsed: n:
+    let
+      unit = if parsed.ipv4 then 256 else 65536;
+      sum =
+        lib.foldr
+          (
+            g: acc:
+            let
+              v = g + acc.carry;
+            in
+            {
+              carry = v / unit;
+              groups = [ (lib.mod v unit) ] ++ acc.groups;
+            }
+          )
+          {
+            carry = n;
+            groups = [ ];
+          }
+          parsed.groups;
+    in
+    parsed // { inherit (sum) groups; };
+
+  # The parsed address as Go's netip writes it: IPv6 in lower case with the first longest run of
+  # two or more zero groups shortened to "::".
+  formatAddress =
+    parsed:
+    let
+      inherit (parsed) groups;
+      hex = map (g: lib.toLower (lib.toHexString g)) groups;
+      zerosFrom = i: if i < 8 && builtins.elemAt groups i == 0 then 1 + zerosFrom (i + 1) else 0;
+      longest =
+        lib.foldl'
+          (
+            best: i:
+            if zerosFrom i > best.length then
+              {
+                start = i;
+                length = zerosFrom i;
+              }
+            else
+              best
+          )
+          {
+            start = 0;
+            length = 0;
+          }
+          (lib.range 0 7);
+    in
+    if parsed.ipv4 then
+      lib.concatMapStringsSep "." toString groups
+    else if longest.length < 2 then
+      lib.concatStringsSep ":" hex
+    else
+      lib.concatStringsSep ":" (lib.take longest.start hex)
+      + "::"
+      + lib.concatStringsSep ":" (lib.drop (longest.start + longest.length) hex);
+
+  # The parsed range with its host bits cleared.
+  masked =
+    range:
+    let
+      width = if range.ipv4 then 8 else 16;
+      pow2 = n: builtins.foldl' (x: _: x * 2) 1 (lib.range 1 n);
+      clear =
+        i: group:
+        let
+          unit = pow2 (width - lib.max 0 (lib.min width (range.prefix - i * width)));
+        in
+        group / unit * unit;
+    in
+    range // { groups = lib.imap0 clear range.groups; };
+
+  # The range of the family that option holds, parsed like a subnet filter, or else a string
+  # saying what is wrong with it.
+  parseRange =
+    family: s:
+    let
+      parsed = parseSubnet s;
+      network = masked parsed;
+    in
+    if builtins.isString parsed then
+      "\"${s}\" ${parsed}"
+    else if parsed.exclude then
+      "\"${s}\" is not an address range in CIDR notation"
+    else if familyOf parsed != family then
+      "\"${s}\" is not an ${family} range"
+    else if network.groups != parsed.groups then
+      "\"${s}\" has host bits set; write ${formatAddress network}/${toString parsed.prefix}"
+    else
+      parsed;
+
+  # A range of family of the option at path, checked for the families in use with check, which
+  # returns the problems of the range as given and as parsed; the value is the range as given.
+  checkedRange =
+    path: family: check: value:
+    let
+      parsed = parseRange family value;
+      problems = if builtins.isString parsed then [ parsed ] else check value parsed;
+    in
+    if !lib.elem family ipFamilies || problems == [ ] then
+      value
+    else
+      throw "chalkos.cluster.kubernetes.${path}.${family}: ${lib.concatStringsSep "; " problems}";
+
+  # The parsed ranges of a family, or else what is wrong with them.
+  serviceRange = family: parseRange family k.serviceCIDRs.${family};
+  podRange = family: parseRange family k.podCIDRs.${family};
+  # The 10th address of the family's service range, which kubeadm gives the cluster DNS.
+  defaultDNSIP =
+    family:
+    let
+      service = serviceRange family;
+    in
+    if builtins.isString service then "" else formatAddress (offset service 10);
+
+  # An option per family, with its defaults.
+  perFamily =
+    {
+      type,
+      description,
+      ipv4,
+      ipv6,
+      apply ? _: v: v,
+      defaultText ? null,
+    }:
+    lib.mapAttrs (
+      family: default:
+      mkOption (
+        {
+          inherit type default description;
+          apply = apply family;
+        }
+        // lib.optionalAttrs (defaultText != null) { defaultText = defaultText.${family}; }
+      )
+    ) { inherit ipv4 ipv6; };
+
+  # An option that was replaced: setting it fails evaluation, naming its replacement.
+  removedOption =
+    name: replacement:
+    mkOption {
+      type = types.unspecified;
+      default = null;
+      visible = false;
+      apply =
+        value:
+        if value == null then
+          null
+        else
+          throw "chalkos.cluster.kubernetes.${name} was removed; set chalkos.cluster.kubernetes.${replacement} instead";
+    };
 
   # Whether a control-plane node may hold the endpoint's address: as its fixed address of that
   # family, or as one it picks at boot from the subnets that apply to it.
@@ -279,21 +434,99 @@ in
         upstream images of the same version. A Kubernetes upgrade is an image upgrade.
       '';
     };
-    podCIDR = mkOption {
+    podCIDRs = perFamily {
       type = types.str;
-      default = "10.244.0.0/16";
-      description = "Address range of pods; each node gets a part of it.";
+      ipv4 = "10.244.0.0/16";
+      ipv6 = "fd00:10:244::/56";
+      # The service range of a family in use is checked first, so a problem of both names it.
+      apply =
+        family:
+        checkedRange "podCIDRs" family (
+          value: pod:
+          let
+            service = serviceRange family;
+          in
+          lib.optional (
+            !builtins.isString service && (holds pod service || holds service pod)
+          ) "\"${value}\" overlaps serviceCIDRs.${family} \"${k.serviceCIDRs.${family}}\""
+        );
+      description = ''
+        Address range of pods of each family of ipFamilies; each node gets a part of it.
+      '';
     };
-    serviceCIDR = mkOption {
+    serviceCIDRs = perFamily {
       type = types.str;
-      default = "10.96.0.0/12";
-      description = "Address range of services.";
+      ipv4 = "10.96.0.0/12";
+      ipv6 = "fd00:10:96::/112";
+      # At most 2^20 addresses, as kubeadm allows.
+      apply =
+        family:
+        checkedRange "serviceCIDRs" family (
+          value: service:
+          let
+            bits = if service.ipv4 then 32 else 128;
+          in
+          lib.optional (
+            bits - service.prefix > 20
+          ) "\"${value}\" holds more than 2^20 addresses; use a prefix of /${toString (bits - 20)} or longer"
+        );
+      description = ''
+        Address range of services of each family of ipFamilies. The API server's kubernetes
+        service gets the first address of the primary family's.
+      '';
     };
-    dnsIP = mkOption {
+    dnsIPs = perFamily {
       type = types.str;
-      default = "10.96.0.10";
-      description = "Service address of the cluster DNS, inside serviceCIDR.";
+      ipv4 = defaultDNSIP "ipv4";
+      ipv6 = defaultDNSIP "ipv6";
+      defaultText = {
+        ipv4 = lib.literalMD "the 10th address of serviceCIDRs.ipv4, `10.96.0.10`";
+        ipv6 = lib.literalMD "the 10th address of serviceCIDRs.ipv6, `fd00:10:96::a`";
+      };
+      apply =
+        family: value:
+        let
+          service = serviceRange family;
+          dns = parseAddress value;
+          option = "chalkos.cluster.kubernetes.dnsIPs.${family}";
+        in
+        if !lib.elem family ipFamilies || builtins.isString service then
+          value
+        else if dns == null || !holds service dns then
+          throw "${option}: \"${value}\" is not an address in serviceCIDRs.${family} \"${k.serviceCIDRs.${family}}\""
+        else if dns.groups == service.groups || dns.groups == (offset service 1).groups then
+          throw "${option}: \"${value}\" is the network address of serviceCIDRs.${family} \"${k.serviceCIDRs.${family}}\" or the kubernetes service's address"
+        else
+          value;
+      description = ''
+        Service address of the cluster DNS in each family's service range. Pods use the primary
+        family's: the DNS service has that family alone, as with kubeadm.
+      '';
     };
+    nodeCIDRMaskSizes = perFamily {
+      type = types.int;
+      ipv4 = 24;
+      ipv6 = 64;
+      apply =
+        family: value:
+        let
+          pod = podRange family;
+        in
+        if
+          !lib.elem family ipFamilies
+          || builtins.isString pod
+          || value > pod.prefix && value - pod.prefix <= 16 && value <= (if pod.ipv4 then 32 else 128)
+        then
+          value
+        else
+          throw "chalkos.cluster.kubernetes.nodeCIDRMaskSizes.${family}: ${toString value} must be longer than the prefix of podCIDRs.${family} \"${k.podCIDRs.${family}}\", by at most 16 bits";
+      description = ''
+        Prefix length of each node's part of the pod range of each family.
+      '';
+    };
+    podCIDR = removedOption "podCIDR" "podCIDRs.ipv4";
+    serviceCIDR = removedOption "serviceCIDR" "serviceCIDRs.ipv4";
+    dnsIP = removedOption "dnsIP" "dnsIPs.ipv4";
     domain = mkOption {
       type = types.str;
       default = "cluster.local";
@@ -316,16 +549,23 @@ in
         "ipv4"
         "ipv6"
       ];
+      # Every image and node reads the families, so the removed options are checked here too.
       apply =
         families:
         if families != [ ] && lib.allUnique families then
-          families
+          lib.foldr builtins.seq families [
+            k.podCIDR
+            k.serviceCIDR
+            k.dnsIP
+          ]
         else
           throw "chalkos.cluster.kubernetes.ipFamilies must list ipv4, ipv6 or both, each once";
       description = ''
-        Address families of the nodes, the primary one first. Every node has one address of each:
-        the kubelet registers them, the control plane's certificates name them, and etcd and the
-        API server advertise the primary one.
+        Address families of the cluster, the primary one first. Every node has one address of
+        each: the kubelet registers them, the control plane's certificates name them, and etcd and
+        the API server advertise the primary one. Pods get an address of each, services one of
+        each family they ask for. The families, and their order, are fixed when the cluster is
+        created.
       '';
     };
     vip = {
