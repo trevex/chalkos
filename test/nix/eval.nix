@@ -2739,4 +2739,36 @@ lib.runTests {
       depends = false;
     };
   };
+  # The preparation picks the node's addresses once they settled: after network-online.target by
+  # default, and after the units of extensions that add addresses.
+  testNodeAddressesTarget = {
+    expr =
+      let
+        # An extension announcing addresses, as a BGP daemon would.
+        bgp = {
+          systemd.services.bgp = {
+            before = [ "chalkos-node-addresses.target" ];
+            wantedBy = [ "chalkos-node-addresses.target" ];
+            serviceConfig.ExecStart = "/bin/true";
+          };
+        };
+        config = role (cluster [ { chalkos.roles.worker.nixosModules = [ bgp ]; } ]);
+        target = config.systemd.targets.chalkos-node-addresses;
+        prepare = config.systemd.services.chalkos-kubernetes;
+      in
+      {
+        targetAfter = target.after;
+        targetWants = target.wants;
+        prepareAfter = lib.elem "chalkos-node-addresses.target" prepare.after;
+        prepareWants = lib.elem "chalkos-node-addresses.target" prepare.wants;
+        extension = lib.elem "chalkos-node-addresses.target" config.systemd.units."bgp.service".wantedBy;
+      };
+    expected = {
+      targetAfter = [ "network-online.target" ];
+      targetWants = [ "network-online.target" ];
+      prepareAfter = true;
+      prepareWants = true;
+      extension = true;
+    };
+  };
 }

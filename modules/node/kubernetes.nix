@@ -168,13 +168,24 @@ in
     ]
     ++ lib.optional controlPlane "d /var/lib/etcd 0700 root root -";
 
+    # The node's addresses have settled. A unit that configures or announces addresses, such as a
+    # routing daemon's, orders itself before the target and is wanted by it; the preparation picks
+    # the node's addresses after it, and still waits up to nodeIP.timeout for them.
+    systemd.targets.chalkos-node-addresses = {
+      description = "The node's addresses have settled";
+      wants = [ "network-online.target" ];
+      after = [ "network-online.target" ];
+    };
+
     # Certificates, kubeconfigs and kubelet flags from the node's share and identity.
     systemd.services.chalkos-kubernetes = {
       description = "Prepare the node's Kubernetes certificates and configuration";
       wantedBy = [ "multi-user.target" ];
+      wants = [ "chalkos-node-addresses.target" ];
       after = [
         "chalkos-identity.service"
         "local-fs.target"
+        "chalkos-node-addresses.target"
       ]
       ++ lib.optional vxlanFirewall "nftables.service";
       before = [ "kubelet.service" ];

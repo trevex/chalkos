@@ -318,7 +318,7 @@ func TestKubernetesHA(t *testing.T) {
 	c.stop("cp3", false)
 	c.start("cp3", "52:54:00:00:02:23", false)
 	waitFor(t, 10*time.Minute, "cp3 to fail without its pinned address", func() error {
-		want := "kubernetes controlplane: preparation failed: pinned address 192.168.100.13 is not present; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node"
+		want := "kubernetes controlplane: preparation failed: pinned address 192.168.100.13 is not present, 30s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node"
 		if got := c.kubernetes("cp3"); got != want {
 			return fmt.Errorf("status of cp3: %q", got)
 		}

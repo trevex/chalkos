@@ -49,7 +49,7 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
 	  "podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": "fd00:10:244::/56"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": "fd00:10:96::/112"},
 	  "dnsIPs": {"ipv4": "10.96.0.10", "ipv6": "fd00:10:96::a"}, "nodeCIDRMaskSizes": {"ipv4": 24, "ipv6": 64}, "domain": "cluster.local",
-	  "allowSchedulingOnControlPlanes": false, "extraArgs": {},
+	  "allowSchedulingOnControlPlanes": false, "nodeIP": {"timeout": 300}, "extraArgs": {},
 	  "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`)
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
 	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"]}}`)
@@ -193,7 +193,7 @@ func TestPrepareWithoutNodeIP(t *testing.T) {
 	}
 
 	err := Prepare(p, now, onNode("10.0.2.15"), nil)
-	want := "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)"
+	want := "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0), 5m0s after chalkos-node-addresses.target"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
 	}
@@ -323,7 +323,7 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 		"dummy without MTU":         {`{"mtu": 0}`, []string{"small 192.168.100.11", "small fd00::11"}, ""},
 		"dummy too small for IPv6":  {`{"mtu": 1430}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address fd00::11 is on the dummy interface small with MTU 1440; flannel's ipv6 VXLAN with chalkos.cni.flannel.mtu 1430 needs an MTU of at least 1450 there"},
 		"dummy too small for IPv4":  {`{"mtu": 1450}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address 192.168.100.11 is on the dummy interface small with MTU 1440; flannel's ipv4 VXLAN with chalkos.cni.flannel.mtu 1450 needs an MTU of at least 1450 there"},
-		"two interfaces":            {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, "flannel needs the node's IPv4 and IPv6 addresses on one interface; 192.168.100.11 is on eth0, fd00::11 on eth1"},
+		"two interfaces":            {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, "flannel needs the node's IPv4 and IPv6 addresses on one interface; 192.168.100.11 is on eth0, fd00::11 on eth1, 5m0s after chalkos-node-addresses.target"},
 		"two interfaces without it": {`null`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -420,7 +420,7 @@ func TestPreparePinned(t *testing.T) {
 	}
 
 	err = Prepare(p, now, onNode("192.168.100.5"), nil)
-	want := "pinned address 192.168.100.11 is not present; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"
+	want := "pinned address 192.168.100.11 is not present, 5m0s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
 	}
@@ -961,7 +961,7 @@ func TestPreparationError(t *testing.T) {
 	if err := Prepare(p, now, onNode("10.0.2.15"), nil); err == nil {
 		t.Fatal("prepared without an address")
 	}
-	if got := reason(); got != "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)" {
+	if got := reason(); got != "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0), 5m0s after chalkos-node-addresses.target" {
 		t.Errorf("without an address: %q", got)
 	}
 

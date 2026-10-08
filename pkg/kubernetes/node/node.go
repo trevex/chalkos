@@ -278,6 +278,9 @@ func Load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
 	return share, c, n, nil
 }
 
+// AddressesTarget is the systemd target that says the node's addresses have settled.
+const AddressesTarget = "chalkos-node-addresses.target"
+
 // Resolver waits up to timeout for the addresses the selector picks.
 type Resolver func(sel nodeip.Selector, timeout time.Duration) ([]nodeip.Address, error)
 
@@ -538,7 +541,13 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err != nil {
 		return err
 	}
-	picked, err := resolve(sel, time.Duration(c.NodeIP.Timeout)*time.Second)
+	timeout := time.Duration(c.NodeIP.Timeout) * time.Second
+	picked, err := resolve(sel, timeout)
+	if err != nil {
+		// Units that add the node's addresses, such as a routing daemon's, order themselves before
+		// the target, which the preparation runs after.
+		err = fmt.Errorf("%w, %v after %s", err, timeout, AddressesTarget)
+	}
 	if pinned := (*nodeip.PinnedError)(nil); errors.As(err, &pinned) {
 		return fmt.Errorf("%w; restore it, or remove the node's etcd member with chalkctl etcd remove-member %s and reinstall the node", err, n.Name)
 	}
