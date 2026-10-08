@@ -263,10 +263,11 @@ func TestKubernetesHA(t *testing.T) {
 	}
 	c.ipv6Only(ctx, cs)
 	p := peers{
-		nodes:    [2]string{"cp1", "cp2"},
-		nodeIPs:  [2][]string{{"fd00:100::11"}, {"fd00:100::12"}},
-		families: []corev1.IPFamily{corev1.IPv6Protocol},
-		dnsIP:    "fd00:10:96::a",
+		nodes:        [2]string{"cp1", "cp2"},
+		nodeIPs:      [2][]string{{"fd00:100::11"}, {"fd00:100::12"}},
+		families:     []corev1.IPFamily{corev1.IPv6Protocol},
+		dnsIP:        "fd00:10:96::a",
+		kubernetesIP: "fd00:10:96::1",
 	}
 	p.create(t, ctx, cs)
 	waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
@@ -390,7 +391,8 @@ func TestKubernetesHA(t *testing.T) {
 }
 
 // ipv6Only checks that the Nodes and the etcd members have IPv6 addresses alone and that etcd
-// and the API server reach each other on IPv6's loopback address.
+// and the API server reach each other on IPv6's loopback address, and that cp1 takes VXLAN from
+// any source without source ranges.
 func (c *haCluster) ipv6Only(ctx context.Context, cs kubernetes.Interface) {
 	c.t.Helper()
 	for _, hn := range haNodes {
@@ -422,6 +424,12 @@ func (c *haCluster) ipv6Only(ctx context.Context, cs kubernetes.Interface) {
 				c.t.Errorf("%s runs without %s: %v", pod, flag, p.Spec.Containers[0].Command)
 			}
 		}
+	}
+	// Without vxlanSourceSubnets VXLAN may come from any source, to cp1's address on the interface
+	// holding it.
+	want := []string{"ip6 daddr fd00:100::11 udp dport 8472 fib daddr . iif type local meta mark set meta mark | 0x01000000"}
+	if rules := vxlanRules(c.t, c.nodes["cp1"].node, "ha", "cp1"); !slices.Equal(rules, want) {
+		c.t.Errorf("VXLAN rules of cp1 = %q, want %q", rules, want)
 	}
 }
 

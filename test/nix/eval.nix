@@ -2799,6 +2799,10 @@ lib.runTests {
         prepareAfter = lib.elem "chalkos-node-addresses.target" prepare.after;
         prepareWants = lib.elem "chalkos-node-addresses.target" prepare.wants;
         extension = lib.elem "chalkos-node-addresses.target" config.systemd.units."bgp.service".wantedBy;
+        # The unit is ordered before the target, so the preparation sees its addresses.
+        extensionBefore =
+          lib.hasInfix "\nBefore=chalkos-node-addresses.target\n"
+            config.systemd.units."bgp.service".text;
       };
     expected = {
       targetAfter = [ "network-online.target" ];
@@ -2806,6 +2810,7 @@ lib.runTests {
       prepareAfter = true;
       prepareWants = true;
       extension = true;
+      extensionBefore = true;
     };
   };
 }
