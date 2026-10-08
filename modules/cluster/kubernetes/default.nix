@@ -26,11 +26,22 @@ let
     inherit name;
   };
 
+  # kube-proxy serves every family the node has addresses of; it binds as kubeadm's does, by the
+  # primary family.
   kubeProxyConfig = {
     apiVersion = "kubeproxy.config.k8s.io/v1alpha1";
     kind = "KubeProxyConfiguration";
-    mode = "iptables";
+    # The node's firewall and flannel run on nftables too.
+    mode = "nftables";
     clusterCIDR = lib.concatMapStringsSep "," (family: k.podCIDRs.${family}) k.ipFamilies;
+    bindAddress =
+      {
+        ipv4 = "0.0.0.0";
+        ipv6 = "::";
+      }
+      .${builtins.head k.ipFamilies};
+    # NodePorts answer on the node's own addresses, one per family, as the kubelet registered them.
+    nodePortAddresses = [ "primary" ];
     clientConnection.kubeconfig = "/var/lib/kube-proxy/kubeconfig.conf";
   };
   # Pods reach the API server at the cluster endpoint: the service address needs kube-proxy.

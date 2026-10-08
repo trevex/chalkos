@@ -1541,6 +1541,65 @@ lib.runTests {
       portmapFindsNft = true;
     };
   };
+  # kube-proxy runs on nftables in every family, binding by the primary one.
+  testKubeProxyFamilies = {
+    expr =
+      let
+        kubeProxy =
+          families:
+          let
+            addons =
+              (cluster [ { chalkos.cluster.kubernetes.ipFamilies = families; } ]).cluster.kubernetes.addons;
+            configMap = lib.findFirst (m: m.kind == "ConfigMap" && m.metadata.name == "kube-proxy") null addons;
+          in
+          {
+            inherit (builtins.fromJSON configMap.data."config.conf")
+              mode
+              clusterCIDR
+              bindAddress
+              nodePortAddresses
+              ;
+          };
+      in
+      {
+        ipv4 = kubeProxy [ "ipv4" ];
+        dual = kubeProxy [
+          "ipv4"
+          "ipv6"
+        ];
+        ipv6Primary = kubeProxy [
+          "ipv6"
+          "ipv4"
+        ];
+        ipv6 = kubeProxy [ "ipv6" ];
+      };
+    expected = {
+      ipv4 = {
+        mode = "nftables";
+        clusterCIDR = "10.244.0.0/16";
+        bindAddress = "0.0.0.0";
+        nodePortAddresses = [ "primary" ];
+      };
+      dual = {
+        mode = "nftables";
+        clusterCIDR = "10.244.0.0/16,fd00:10:244::/56";
+        bindAddress = "0.0.0.0";
+        nodePortAddresses = [ "primary" ];
+      };
+      ipv6Primary = {
+        mode = "nftables";
+        clusterCIDR = "fd00:10:244::/56,10.244.0.0/16";
+        bindAddress = "::";
+        nodePortAddresses = [ "primary" ];
+      };
+      ipv6 = {
+        mode = "nftables";
+        clusterCIDR = "fd00:10:244::/56";
+        bindAddress = "::";
+        nodePortAddresses = [ "primary" ];
+      };
+    };
+  };
   # The VIPs reach the nodes in the cluster file; the endpoint is one of them.
   testVIP = {
     expr =
