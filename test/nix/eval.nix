@@ -1528,6 +1528,51 @@ lib.runTests {
               [ { chalkos.cni.provider = "none"; } ]
             ];
         notAnMTU = fails (cluster [ { chalkos.cni.flannel.mtu = 0; } ]).cni.flannel.mtu;
+        # Pods get the MTU minus 50, which must leave IPv6 its 1280 and IPv4 its 576.
+        tooSmall =
+          map
+            (
+              { families, mtu }:
+              fails
+                (cluster [
+                  {
+                    chalkos.cluster.kubernetes.ipFamilies = families;
+                    chalkos.cni.flannel.mtu = mtu;
+                  }
+                ]).cni.flannel.mtu
+            )
+            [
+              {
+                families = [ "ipv4" ];
+                mtu = 625;
+              }
+              {
+                families = [ "ipv4" ];
+                mtu = 626;
+              }
+              {
+                families = [
+                  "ipv4"
+                  "ipv6"
+                ];
+                mtu = 1329;
+              }
+              {
+                families = [
+                  "ipv4"
+                  "ipv6"
+                ];
+                mtu = 1330;
+              }
+              {
+                families = [ "ipv6" ];
+                mtu = 1329;
+              }
+              {
+                families = [ "ipv6" ];
+                mtu = 1330;
+              }
+            ];
         # containerd runs portmap, which needs nft.
         portmapFindsNft =
           lib.any (p: (p.pname or "") == "nftables")
@@ -1578,6 +1623,14 @@ lib.runTests {
         null
       ];
       notAnMTU = true;
+      tooSmall = [
+        true
+        false
+        true
+        false
+        true
+        false
+      ];
       portmapFindsNft = true;
     };
   };

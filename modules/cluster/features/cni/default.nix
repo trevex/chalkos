@@ -319,6 +319,27 @@ in
       type = lib.types.nullOr lib.types.ints.positive;
       default = null;
       example = 1430;
+      apply =
+        mtu:
+        let
+          # Pods get 50 less, which must leave them their family's minimum MTU.
+          family =
+            if inUse "ipv6" then
+              {
+                name = "IPv6";
+                minimum = 1280;
+              }
+            else
+              {
+                name = "IPv4";
+                minimum = 576;
+              };
+          least = toString (family.minimum + 50);
+        in
+        if mtu != null && mtu < family.minimum + 50 then
+          throw "chalkos.cni.flannel.mtu: ${toString mtu} is below the minimum of ${least}: pods get 50 less, and ${family.name} needs an MTU of at least ${toString family.minimum}"
+        else
+          mtu;
       description = ''
         MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the
         pods get 50 less. null takes the MTU of the interface holding the node's address. Nodes
@@ -326,7 +347,8 @@ in
         node's address needs an MTU of at least this, 20 more for an IPv6 address: the nodes
         refuse to prepare otherwise. flannel subtracts 50 in both families but IPv6 VXLAN needs
         70, so with IPv6 in use set this to the network's MTU minus 20; otherwise IPv6 pod packets
-        near the full size rely on path MTU discovery.
+        near the full size rely on path MTU discovery. At least 1330 with IPv6 in use, so pods get
+        IPv6's minimum of 1280, and 626 otherwise.
       '';
     };
   };
