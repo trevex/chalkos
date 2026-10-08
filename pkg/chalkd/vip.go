@@ -32,6 +32,10 @@ const vipElectionPrefix = "/chalkos/vip"
 // also while chalkd stops.
 const electionCleanupTimeout = 3 * time.Second
 
+// errEtcdStalled means etcd did not answer the resignation from a cancelled campaign in time, and
+// the election's client was closed.
+var errEtcdStalled = errors.New("etcd did not answer the resignation from the VIP election")
+
 // localEtcd is where chalkd reaches the etcd member on its own node.
 const localEtcd = "https://127.0.0.1:2379"
 
@@ -66,17 +70,30 @@ type vipElection struct {
 	holder   *atomic.Bool
 	// keepAlive renews the lease once; nil means the client's KeepAliveOnce.
 	keepAlive func(context.Context, clientv3.LeaseID) (*clientv3.LeaseKeepAliveResponse, error)
+	// closed closes the client once, when its campaign stalled or the election ended.
+	closed sync.Once
 }
 
-// run takes part in the election until ctx ends, and leaves the VIPs released.
-func (v *vipElection) run(ctx context.Context) {
+// closeClient closes the client; again, it does nothing.
+func (v *vipElection) closeClient() {
+	v.closed.Do(func() { v.client.Close() })
+}
+
+// run takes part in the election until ctx ends or its client was closed, and leaves the VIPs
+// released.
+func (v *vipElection) run(ctx context.Context) error {
 	// A chalkd that stopped without releasing them leaves them behind.
 	v.release()
 	for ctx.Err() == nil {
 		if !v.waitHealthy(ctx) {
-			return
+			break
 		}
-		if err := v.lead(ctx); err != nil && ctx.Err() == nil {
+		err := v.lead(ctx)
+		if ctx.Err() == nil && v.client.Ctx().Err() != nil {
+			// The election starts again with a new connection.
+			return errEtcdStalled
+		}
+		if err != nil && ctx.Err() == nil {
 			log.Printf("kubernetes: the VIP election: %v", err)
 			select {
 			case <-ctx.Done():
@@ -84,6 +101,7 @@ func (v *vipElection) run(ctx context.Context) {
 			}
 		}
 	}
+	return ctx.Err()
 }
 
 // waitHealthy waits until the API server is ready; false when ctx ended first.
@@ -131,6 +149,10 @@ func (v *vipElection) lead(ctx context.Context) error {
 	}
 	defer func() {
 		session.Orphan()
+		// A closed client would retry the revocation until it timed out; the lease expires.
+		if v.client.Ctx().Err() != nil {
+			return
+		}
 		rctx, cancel := context.WithTimeout(context.Background(), electionCleanupTimeout)
 		defer cancel()
 		if _, err := v.client.Revoke(rctx, grant.ID); err != nil {
@@ -141,7 +163,7 @@ func (v *vipElection) lead(ctx context.Context) error {
 	campaign, unhealthy := context.WithCancel(ctx)
 	defer unhealthy()
 	go v.watchHealth(campaign, unhealthy)
-	if err := election.Campaign(campaign, v.name); err != nil {
+	if err := v.campaign(campaign, election); err != nil {
 		return err
 	}
 	resign := func() {
@@ -196,6 +218,25 @@ func (v *vipElection) lead(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// campaign campaigns until the node leads or ctx ends. Campaign cancelled while it waits resigns
+// with the client's own context, which ends only when the client is closed: a connection that
+// stays open but no longer answers would block it forever. The client is closed when that
+// resignation takes longer than electionCleanupTimeout, and the lease is left to expire.
+func (v *vipElection) campaign(ctx context.Context, election *concurrency.Election) error {
+	returned := make(chan struct{})
+	defer close(returned)
+	stop := context.AfterFunc(ctx, func() {
+		select {
+		case <-returned:
+		case <-time.After(electionCleanupTimeout):
+			log.Print("kubernetes: etcd does not answer the resignation from the VIP election; closing the connection")
+			v.closeClient()
+		}
+	})
+	defer stop()
+	return election.Campaign(ctx, v.name)
 }
 
 // renewals holds when the request of the newest successful renewal of the lease was sent.
@@ -318,7 +359,6 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer cli.Close()
 	ttl, interval := k.VIPTTL, k.VIPInterval
 	if ttl <= 0 {
 		ttl = 10
@@ -326,7 +366,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
-	(&vipElection{
+	election := &vipElection{
 		client:   cli,
 		name:     n.Name,
 		healthy:  func(ctx context.Context) bool { return k.APIServerReady(ctx, share) },
@@ -336,8 +376,9 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 		margin:   2 * time.Second,
 		failures: 3,
 		holder:   &k.vipHolder,
-	}).run(ctx)
-	return ctx.Err()
+	}
+	defer election.closeClient()
+	return election.run(ctx)
 }
 
 // vipAddresses are the cluster's VIPs on this node: each on the interface the cluster names, or

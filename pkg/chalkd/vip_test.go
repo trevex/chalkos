@@ -74,6 +74,8 @@ type electionNode struct {
 	renewals atomic.Int32
 	stop     context.CancelFunc
 	done     chan struct{}
+	// err is why its election ended, once done is closed.
+	err error
 }
 
 // electionTTL is the lifetime in seconds of the leases in the election tests. Each renewal gets a
@@ -106,7 +108,6 @@ func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *h
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cli.Close() })
 	node := &electionNode{addrs: &fakeAddresses{holders: h}, done: make(chan struct{})}
 	node.healthy.Store(true)
 	node.election = &vipElection{
@@ -120,6 +121,7 @@ func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *h
 		failures: 3,
 		holder:   &atomic.Bool{},
 	}
+	t.Cleanup(node.election.closeClient)
 	if configure != nil {
 		configure(node.election)
 	}
@@ -138,7 +140,7 @@ func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *h
 	node.stop = cancel
 	go func() {
 		defer close(node.done)
-		node.election.run(ctx)
+		node.err = node.election.run(ctx)
 	}()
 	t.Cleanup(func() { cancel(); <-node.done })
 	return node
@@ -317,6 +319,66 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	if _, most := h.count(); most != 1 {
 		t.Errorf("%d nodes held the VIPs at once", most)
 	}
+}
+
+// stalledStandby runs the election of a holder and a standby whose campaign waits for the holder's
+// key to go, then lets the standby's connection to etcd stay open but no longer answer.
+func stalledStandby(t *testing.T) (first, standby *electionNode) {
+	t.Helper()
+	ca := etcdtest.NewCA(t)
+	m := etcdtest.StartNew(t, ca, "cp0")
+	h := &holders{}
+	first = startNode(t, ca, m.ClientURL, "cp1", electionTTL, h)
+	holder(t, []*electionNode{first})
+	proxy := etcdtest.NewProxy(t, m.ClientURL, 0)
+	standby = startNode(t, ca, proxy.URL, "cp2", electionTTL, h)
+	cli := first.election.client
+	eventually(t, "the standby's campaign", func() bool {
+		resp, err := cli.Get(context.Background(), vipElectionPrefix, clientv3.WithPrefix(), clientv3.WithCountOnly())
+		return err == nil && resp.Count == 2
+	})
+	// Renewals sent after its key was written return after the reply to its campaign: it waits
+	// for the holder's key to go.
+	renewed := standby.renewals.Load()
+	eventually(t, "renewals of the standby's lease", func() bool { return standby.renewals.Load() >= renewed+2 })
+	proxy.Pause()
+	return first, standby
+}
+
+// waitStalled waits for the election of the standby to end, which it must once its cancelled
+// campaign gave up resigning.
+func waitStalled(t *testing.T, first, standby *electionNode, want error) {
+	t.Helper()
+	select {
+	case <-standby.done:
+	case <-time.After(electionCleanupTimeout + 3*time.Second):
+		// Unblock the election, so the test's cleanup does not wait for it forever.
+		standby.election.closeClient()
+		<-standby.done
+		t.Fatal("the standby's election did not end while etcd did not answer")
+	}
+	if standby.err != want {
+		t.Errorf("the standby's election ended with %v, want %v", standby.err, want)
+	}
+	if standby.addrs.held.Load() || !first.addrs.held.Load() {
+		t.Error("the VIPs moved to the standby")
+	}
+}
+
+// A stopping standby whose connection to etcd stays open but no longer answers stops in time:
+// the resignation the cancelled campaign starts on its own would wait for an answer forever.
+func TestVIPStandbyStopsWhenEtcdStalls(t *testing.T) {
+	first, standby := stalledStandby(t)
+	standby.stop()
+	waitStalled(t, first, standby, context.Canceled)
+}
+
+// A standby whose API server turned unhealthy while its connection to etcd stalled leaves the
+// election, which starts again with a new connection.
+func TestVIPUnhealthyStandbyLeavesWhenEtcdStalls(t *testing.T) {
+	first, standby := stalledStandby(t)
+	standby.healthy.Store(false)
+	waitStalled(t, first, standby, errEtcdStalled)
 }
 
 // A healthy holder whose lease is renewed keeps the VIPs, also over a slow network.
