@@ -107,6 +107,20 @@ type Kubernetes struct {
 	// done is closed once the manifests were applied; count is how many.
 	done  chan struct{}
 	count int
+	// leaves renews the control plane's certificates while the control plane's loop runs.
+	leaves *Renewal
+}
+
+// LeavesProblem says why renewing the control plane's certificates failed last; "" while it
+// did not.
+func (k *Kubernetes) LeavesProblem() string {
+	k.mu.Lock()
+	leaves := k.leaves
+	k.mu.Unlock()
+	if leaves == nil {
+		return ""
+	}
+	return leaves.Problem()
 }
 
 // NewKubernetes returns the Kubernetes side of a node with the default paths.
@@ -221,6 +235,18 @@ func (k *Kubernetes) startLocked() chan struct{} {
 		k.vipDone = make(chan struct{})
 		go k.superviseVIP(ctx, k.vipDone)
 	}
+	if k.leaves == nil {
+		k.leaves = newRenewal("Kubernetes control-plane certificates", func() (time.Time, time.Time, error) {
+			renewAt, first, err := knode.ControlPlaneRenewAt(k.Paths)
+			if err != nil {
+				return time.Time{}, time.Time{}, err
+			}
+			return renewAt, first.NotAfter, nil
+		}, func(_ context.Context, now time.Time) error {
+			return knode.RenewControlPlane(k.Paths, now)
+		})
+	}
+	go k.leaves.Run(ctx)
 	var once sync.Once
 	go k.superviseControlPlane(ctx, func(n int) {
 		once.Do(func() {

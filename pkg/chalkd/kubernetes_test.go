@@ -907,3 +907,35 @@ func TestApplyIdentityRecordsNodeCAWithoutRestarts(t *testing.T) {
 		t.Errorf("a new share ran %v", r.calls)
 	}
 }
+
+func TestControlPlaneRenewsItsCertificates(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	if _, err := bootstrap(s, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	k := s.Kubernetes
+	k.mu.Lock()
+	leaves := k.leaves
+	k.mu.Unlock()
+	if leaves == nil {
+		t.Fatal("a bootstrapped control plane does not renew its certificates")
+	}
+	renewAt, expires, err := leaves.Due()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lifetime := expires.Sub(renewAt); lifetime < 100*24*time.Hour || lifetime > 130*24*time.Hour {
+		t.Errorf("renewal %v before the first certificate expires, want a third of a year", lifetime)
+	}
+	apiServer := filepath.Join(k.Paths.PKI, kpki.FileAPIServer)
+	before, _ := os.ReadFile(apiServer)
+	if err := leaves.Renew(context.Background(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(apiServer); bytes.Equal(after, before) {
+		t.Error("the API server's certificate was not issued again")
+	}
+	if k.LeavesProblem() != "" {
+		t.Errorf("problem = %q", k.LeavesProblem())
+	}
+}

@@ -489,12 +489,18 @@ func VXLANRule(script string) Firewall {
 // accepts no VXLAN. The node is marked prepared only once all of this is done; otherwise
 // PrepareError says why.
 func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error {
+	// chalkd renews the control plane's certificates only between preparations.
+	unlock, err := lockPKI(p, true)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	for _, f := range []string{p.Prepared(), p.PrepareError()} {
 		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 	}
-	err := prepare(p, now, resolve)
+	err = prepare(p, now, resolve)
 	if err == nil && firewall != nil {
 		err = firewall(p)
 	}
@@ -505,7 +511,7 @@ func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error 
 	}
 	// The kubelet must not start with what an earlier attempt wrote, nor the control plane with
 	// certificates naming the address picked then, nor VXLAN reach that address.
-	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.NodeIP(), p.VXLAN()} {
+	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.OldPKI(), p.NodeIP(), p.VXLAN()} {
 		if rerr := os.RemoveAll(path); rerr != nil {
 			log.Print(rerr)
 		}
@@ -576,7 +582,7 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 		if err != nil {
 			return err
 		}
-		if err := writeDir(p.PKI, files); err != nil {
+		if err := replaceDir(p.PKI, files); err != nil {
 			return err
 		}
 		issued, err := kpki.IssueKubeletClient(share.CA, n.Name, now)
@@ -828,26 +834,6 @@ func EtcdHasData(p Paths) (bool, error) {
 		return false, err
 	}
 	return len(entries) > 0, nil
-}
-
-// writeDir replaces dir with the files, readable by root only, as they hold keys.
-func writeDir(dir string, files map[string][]byte) error {
-	if err := os.RemoveAll(dir); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	for name, data := range files {
-		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return err
-		}
-		if err := install.WriteFile(path, data, 0o600); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func readDir(dir string) (map[string][]byte, error) {

@@ -126,12 +126,15 @@ func RenewThrough(ctx context.Context, cert *NodeCertificate, addr string, reque
 	return string(resp.Msg.CertificateChain), nil
 }
 
-// Renewal renews the node certificate once two thirds of its lifetime have passed. A failed
-// renewal keeps the current certificate and is tried again with backoff.
+// Renewal renews a certificate, or a set of them, once it is due, checking about hourly. A failed
+// renewal keeps what is there and is tried again with backoff.
 type Renewal struct {
-	Certificate *NodeCertificate
-	// Issue obtains a node certificate chain for a PKCS #10 request.
-	Issue func(ctx context.Context, request []byte) (string, error)
+	// What names what is renewed, in the log.
+	What string
+	// Due returns when the renewal is due and when what it renews expires.
+	Due func() (renewAt, expires time.Time, err error)
+	// Renew renews.
+	Renew func(ctx context.Context, now time.Time) error
 	// Now and After are the clock; tests replace them.
 	Now   func() time.Time
 	After func(time.Duration) <-chan time.Time
@@ -143,20 +146,33 @@ type Renewal struct {
 	problem string
 }
 
-// NewRenewal checks about hourly and retries after a minute, then up to hourly.
-func NewRenewal(cert *NodeCertificate, issue func(context.Context, []byte) (string, error)) *Renewal {
+// newRenewal checks about hourly and retries after a minute, then up to hourly.
+func newRenewal(what string, due func() (time.Time, time.Time, error), renew func(context.Context, time.Time) error) *Renewal {
 	return &Renewal{
-		Certificate: cert,
-		Issue:       issue,
-		Now:         time.Now,
-		After:       time.After,
-		Check:       time.Hour,
-		FirstRetry:  time.Minute,
-		MaxRetry:    time.Hour,
+		What:       what,
+		Due:        due,
+		Renew:      renew,
+		Now:        time.Now,
+		After:      time.After,
+		Check:      time.Hour,
+		FirstRetry: time.Minute,
+		MaxRetry:   time.Hour,
 	}
 }
 
-// Problem says why the last renewal failed and when the certificate expires; "" while none
+// NewNodeRenewal renews the node certificate once two thirds of its lifetime have passed, with a
+// certificate issue obtains for a new key.
+func NewNodeRenewal(cert *NodeCertificate, issue func(context.Context, []byte) (string, error)) *Renewal {
+	due := func() (time.Time, time.Time, error) {
+		leaf := cert.Current().Leaf
+		return pki.RenewAt(leaf), leaf.NotAfter, nil
+	}
+	return newRenewal("node certificate", due, func(ctx context.Context, now time.Time) error {
+		return renewNodeCertificate(ctx, cert, issue, now)
+	})
+}
+
+// Problem says why the last renewal failed and when what it renews expires; "" while none
 // failed.
 func (r *Renewal) Problem() string {
 	r.mu.Lock()
@@ -170,8 +186,8 @@ func (r *Renewal) setProblem(problem string) {
 	r.problem = problem
 }
 
-// Run renews the certificate when it is due until ctx ends. The first check comes soon after the
-// start, so a node that was off when its certificate fell due renews it at once.
+// Run renews when due until ctx ends. The first check comes soon after the start, so a node that
+// was off when a renewal fell due renews at once.
 func (r *Renewal) Run(ctx context.Context) {
 	wait := jitter(r.Check / 10)
 	retry := time.Duration(0)
@@ -182,34 +198,39 @@ func (r *Renewal) Run(ctx context.Context) {
 		case <-r.After(wait):
 		}
 		now := r.Now()
-		leaf := r.Certificate.Current().Leaf
-		if retry == 0 && now.Before(pki.RenewAt(leaf)) {
+		renewAt, expires, err := r.Due()
+		if err == nil && retry == 0 && now.Before(renewAt) {
 			wait = r.Check - r.Check/10 + jitter(r.Check/5)
 			continue
 		}
-		err := r.renew(ctx, now)
+		if err == nil {
+			err = r.Renew(ctx, now)
+		}
 		if ctx.Err() != nil {
 			return
 		}
 		if err != nil {
 			retry = min(max(2*retry, r.FirstRetry), r.MaxRetry)
-			problem := fmt.Sprintf("renewal failing: %v; expires %s", err, leaf.NotAfter.UTC().Format(time.RFC3339))
+			problem := "renewal failing: " + err.Error()
+			if !expires.IsZero() {
+				problem += "; expires " + expires.UTC().Format(time.RFC3339)
+			}
 			r.setProblem(problem)
-			log.Printf("node certificate: %s; trying again in %v", problem, retry)
+			log.Printf("%s: %s; trying again in %v", r.What, problem, retry)
 			wait = retry
 			continue
 		}
 		retry = 0
 		r.setProblem("")
-		log.Printf("node certificate renewed; it expires %s", r.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
+		log.Printf("%s renewed", r.What)
 		wait = r.Check - r.Check/10 + jitter(r.Check/5)
 	}
 }
 
-// renew obtains a certificate for a new key, checks it is for exactly the current certificate's
-// names and lasts longer, and switches to it.
-func (r *Renewal) renew(ctx context.Context, now time.Time) error {
-	current := r.Certificate.Current().Leaf
+// renewNodeCertificate obtains a node certificate for a new key, checks it is for exactly the
+// current certificate's names and lasts longer, and switches to it.
+func renewNodeCertificate(ctx context.Context, cert *NodeCertificate, issue func(context.Context, []byte) (string, error), now time.Time) error {
+	current := cert.Current().Leaf
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -218,7 +239,7 @@ func (r *Renewal) renew(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	chain, err := r.Issue(ctx, request)
+	chain, err := issue(ctx, request)
 	if err != nil {
 		return err
 	}
@@ -237,7 +258,7 @@ func (r *Renewal) renew(ctx context.Context, now time.Time) error {
 		return err
 	}
 	// Replace checks that the key is the new one and that the chain leads to the OS CA.
-	return r.Certificate.Replace(chain, keyPEM, now)
+	return cert.Replace(chain, keyPEM, now)
 }
 
 // jitter returns a random duration below d, so nodes that started together spread their checks.

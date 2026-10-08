@@ -235,7 +235,7 @@ func serve() error {
 		defer srv.Kubernetes.Stop()
 		// The cluster's control planes renew node certificates; a node without Kubernetes knows
 		// none and is renewed with chalkctl node renew.
-		srv.Renewal = chalkd.NewRenewal(creds.node, srv.IssueNodeCertificate)
+		srv.Renewal = chalkd.NewNodeRenewal(creds.node, srv.IssueNodeCertificate)
 		go srv.Renewal.Run(ctx)
 	}
 	go announceAddresses(srv.CurrentFingerprint)

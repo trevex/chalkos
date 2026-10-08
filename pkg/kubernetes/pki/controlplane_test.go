@@ -336,3 +336,26 @@ func TestAuthenticationConfig(t *testing.T) {
 		t.Errorf("authentication configuration %s", files[FileAuthenticationConfig])
 	}
 }
+
+func TestControlPlaneLeaves(t *testing.T) {
+	files, err := ControlPlane(ControlPlaneShare(secrets(t), testNodeCA(t)), testCluster(), testNode, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaves, err := ControlPlaneLeaves(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leaves) != len(Leaves)+len(Kubeconfigs) {
+		t.Errorf("%d leaves", len(leaves))
+	}
+	for name, user := range map[string]string{FileSchedulerConfig: SchedulerUser, FileControllerManagerConfig: ControllerManagerUser, FileAPIServer: "kube-apiserver"} {
+		if got := leaves[name].Subject.CommonName; got != user {
+			t.Errorf("%s holds a certificate for %q, want %q", name, got, user)
+		}
+	}
+	delete(files, FileEtcdPeer)
+	if _, err := ControlPlaneLeaves(files); err == nil {
+		t.Error("a missing certificate went unnoticed")
+	}
+}

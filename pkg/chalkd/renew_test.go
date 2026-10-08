@@ -141,10 +141,10 @@ func TestWorkerRenewsThroughControlPlane(t *testing.T) {
 	}
 	w1 := loadedCertificate(t, c, issued)
 	before := w1.Fingerprint()
-	r := NewRenewal(w1, func(ctx context.Context, request []byte) (string, error) {
+	r := NewNodeRenewal(w1, func(ctx context.Context, request []byte) (string, error) {
 		return RenewThrough(ctx, w1, addr, request)
 	})
-	if err := r.renew(context.Background(), time.Now()); err != nil {
+	if err := r.Renew(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if w1.Fingerprint() == before || !pki.NamesOf(w1.Current().Leaf).Equal(names) {
@@ -196,7 +196,7 @@ func TestRenewalThresholdsAndBackoff(t *testing.T) {
 	clock := newFakeClock(start)
 	failing := true
 	issued := 0
-	r := NewRenewal(cert, func(_ context.Context, request []byte) (string, error) {
+	r := NewNodeRenewal(cert, func(_ context.Context, request []byte) (string, error) {
 		issued++
 		if failing {
 			return "", errors.New("connection refused")
@@ -287,8 +287,8 @@ func TestRenewalRefusesWhatItDidNotAskFor(t *testing.T) {
 		},
 		"garbage": func([]byte) (string, error) { return "garbage", nil },
 	} {
-		r := NewRenewal(cert, func(_ context.Context, request []byte) (string, error) { return issue(request) })
-		if err := r.renew(context.Background(), time.Now()); err == nil {
+		r := NewNodeRenewal(cert, func(_ context.Context, request []byte) (string, error) { return issue(request) })
+		if err := r.Renew(context.Background(), time.Now()); err == nil {
 			t.Errorf("%s: renewed", name)
 		}
 		if cert.Current().Leaf != leaf {
@@ -305,9 +305,9 @@ func TestIssueNodeCertificateLocallyOnControlPlanes(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Certificate = loadedCertificate(t, c, issued)
-	r := NewRenewal(s.Certificate, s.IssueNodeCertificate)
+	r := NewNodeRenewal(s.Certificate, s.IssueNodeCertificate)
 	before := s.Certificate.Fingerprint()
-	if err := r.renew(context.Background(), time.Now()); err != nil {
+	if err := r.Renew(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if s.Certificate.Fingerprint() == before {

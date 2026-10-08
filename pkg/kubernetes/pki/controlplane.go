@@ -213,3 +213,49 @@ func IssueEtcdClient(s Share, validity time.Duration, now time.Time) (pki.CertKe
 	}
 	return pki.IssueLeaf(*s.EtcdCA, pki.Leaf{CommonName: ChalkdUser, Client: true, Validity: validity}, now)
 }
+
+// Leaves are the files of the control plane's leaf certificates, renewed together, and
+// Kubeconfigs those of the kubeconfigs that embed one.
+var (
+	Leaves      = []string{FileAPIServer, FileAPIServerKubeletClient, FileAPIServerEtcdClient, FileFrontProxyClient, FileEtcdServer, FileEtcdPeer}
+	Kubeconfigs = []string{FileControllerManagerConfig, FileSchedulerConfig}
+)
+
+// ControlPlaneLeaves parses the leaf certificates of a control plane's files, as ControlPlane
+// issues them, by file name.
+func ControlPlaneLeaves(files map[string][]byte) (map[string]*x509.Certificate, error) {
+	leaves := map[string]*x509.Certificate{}
+	for _, name := range Leaves {
+		cert, err := pki.ParseCertificate(files[name])
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		leaves[name] = cert
+	}
+	for _, name := range Kubeconfigs {
+		cert, err := kubeconfigCertificate(files[name])
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		leaves[name] = cert
+	}
+	return leaves, nil
+}
+
+// kubeconfigCertificate parses the client certificate a kubeconfig embeds.
+func kubeconfigCertificate(data []byte) (*x509.Certificate, error) {
+	var kc struct {
+		Users []struct {
+			User struct {
+				Certificate []byte `json:"client-certificate-data"`
+			} `json:"user"`
+		} `json:"users"`
+	}
+	if err := json.Unmarshal(data, &kc); err != nil {
+		return nil, fmt.Errorf("parse the kubeconfig: %w", err)
+	}
+	if len(kc.Users) != 1 {
+		return nil, errors.New("the kubeconfig has no single user")
+	}
+	return pki.ParseCertificate(kc.Users[0].User.Certificate)
+}
