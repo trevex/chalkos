@@ -32,7 +32,7 @@ commands:
   node renew <node>                             issue a node a new node certificate, also once its own expired
   node-ca rotate                                issue a new node CA and deliver it to the control-plane nodes
   config new --name N --role R [--out FILE]     write a client file, which operates the cluster without the secrets file
-  rotate os-ca [--resume | --finish]            rotate the OS CA
+  rotate KIND [--resume | --finish]             rotate os-ca, kubernetes-ca, service-account-key or encryption-key
   bootstrap <node>                              initialise the cluster on a control-plane node
   kubeconfig [--ttl 8760h] [--out FILE]         write an admin kubeconfig
   etcd members [--via NODE]                     list etcd's members and their health

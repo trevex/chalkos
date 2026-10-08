@@ -19,7 +19,7 @@ import (
 )
 
 // rotateHelp explains chalkctl rotate.
-const rotateHelp = `usage: chalkctl rotate os-ca [--resume | --finish] [flags]
+const rotateHelp = `usage: chalkctl rotate os-ca|kubernetes-ca|service-account-key|encryption-key [--resume | --finish [--force]] [flags]
 
 Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
 status before the next one starts: accept (every node trusts the new value besides the old one),
@@ -64,17 +64,18 @@ func (a *app) rotate(ctx context.Context, args []string) error {
 	fs.Var(endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address)")
 	resume := fs.Bool("resume", false, "continue the rotation the secrets file records")
 	finish := fs.Bool("finish", false, "remove the old value from every node and the secrets file")
+	force := fs.Bool("force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")
 	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for each node to apply a phase")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 || *resume && *finish {
-		return errors.New("usage: chalkctl rotate os-ca [--resume | --finish]")
+	if len(pos) != 1 || *resume && *finish || *force && !*finish {
+		return errors.New("usage: chalkctl rotate " + strings.Join(pki.RotationKinds, "|") + " [--resume | --finish [--force]]")
 	}
 	kind := pos[0]
-	if kind != pki.RotateOSCA {
-		return fmt.Errorf("rotate: unknown kind %q; rotate os-ca", kind)
+	if !slices.Contains(pki.RotationKinds, kind) {
+		return fmt.Errorf("rotate: unknown kind %q; rotate one of %s", kind, strings.Join(pki.RotationKinds, ", "))
 	}
 	c, err := a.loadCluster(ctx, cf)
 	if err != nil {
@@ -92,7 +93,7 @@ func (a *app) rotate(ctx context.Context, args []string) error {
 	r := &rotation{a: a, cluster: c, file: f, endpoints: endpoints, timeout: *timeout, poll: a.poll()}
 	switch {
 	case *finish:
-		return r.finish(ctx, kind)
+		return r.finish(ctx, kind, *force)
 	case *resume:
 		return r.resume(ctx, kind)
 	}
@@ -172,7 +173,7 @@ func (r *rotation) running(kind string) error {
 	return nil
 }
 
-func (r *rotation) finish(ctx context.Context, kind string) error {
+func (r *rotation) finish(ctx context.Context, kind string, force bool) error {
 	if err := r.running(kind); err != nil {
 		return err
 	}
@@ -181,11 +182,22 @@ func (r *rotation) finish(ctx context.Context, kind string) error {
 		if rot.Phase != pki.PhaseRefresh || !rot.Applied {
 			return fmt.Errorf("the rotation of the %s is in its %s phase; finish it once its refresh phase is applied, after chalkctl rotate %s --resume", pki.RotationName(kind), rot.Phase, kind)
 		}
+		if err := r.finishGuard(ctx, kind, force); err != nil {
+			return err
+		}
 		if err := r.save(func(s *pki.Secrets) error { return s.FinishRotation() }); err != nil {
 			return err
 		}
 	}
 	return r.run(ctx)
+}
+
+// finishGuard refuses to remove an old value something still needs.
+func (r *rotation) finishGuard(ctx context.Context, kind string, force bool) error {
+	if kind == pki.RotateOSCA {
+		return nil
+	}
+	return r.finishGuardKubernetes(ctx, kind, force)
 }
 
 // run applies the phase the secrets file records and the ones after it, up to the kind's pause
@@ -202,6 +214,9 @@ func (r *rotation) run(ctx context.Context) error {
 				return err
 			}
 			r.say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
+			if rot.Phase != pki.PhaseFinish && pausesAfter(rot.Kind, rot.Phase) {
+				return r.paused(ctx, rot)
+			}
 		}
 		var err error
 		switch rot.Phase {
@@ -226,7 +241,10 @@ func (r *rotation) run(ctx context.Context) error {
 
 // apply delivers a phase to the nodes and waits until each confirms it.
 func (r *rotation) apply(ctx context.Context, kind, phase string) error {
-	return r.applyOSCA(ctx, phase)
+	if kind == pki.RotateOSCA {
+		return r.applyOSCA(ctx, phase)
+	}
+	return r.applyKubernetes(ctx, kind, phase)
 }
 
 // nodesOf lists the cluster's nodes of a Kubernetes kind in name order: control planes,
@@ -486,6 +504,9 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 
 // paused says what the operator does before the rotation continues.
 func (r *rotation) paused(ctx context.Context, rot pki.Rotation) error {
+	if rot.Kind != pki.RotateOSCA {
+		return r.pausedKubernetes(ctx, rot)
+	}
 	r.say("Every node serves a certificate of the new OS CA and trusts the old and the new one. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
 	return nil
 }
