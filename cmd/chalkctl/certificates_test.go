@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -189,6 +191,22 @@ func TestTimeLine(t *testing.T) {
 	} {
 		if got := timeLine(tc.status); got != tc.want {
 			t.Errorf("timeLine = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+func TestCertificateLine(t *testing.T) {
+	expires := time.Date(2027, 10, 8, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		status *nodev1.CertificateStatus
+		want   string
+	}{
+		{&nodev1.CertificateStatus{Name: "node", NotAfter: timestamppb.New(expires)}, "  node\texpires 2027-10-08"},
+		{&nodev1.CertificateStatus{Name: "node", NotAfter: timestamppb.New(expires), Problem: "expired; renew it with chalkctl node renew <node>"}, "  node\texpires 2027-10-08\texpired; renew it with chalkctl node renew n1"},
+		{&nodev1.CertificateStatus{Name: "Kubernetes share", Problem: "unreadable: parse the Kubernetes share"}, "  Kubernetes share\texpiry unknown\tunreadable: parse the Kubernetes share"},
+	} {
+		if got := certificateLine(tc.status, "n1"); got != tc.want {
+			t.Errorf("certificateLine = %q, want %q", got, tc.want)
 		}
 	}
 }

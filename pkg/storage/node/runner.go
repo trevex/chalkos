@@ -22,6 +22,12 @@ type Runner interface {
 	RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error)
 }
 
+// QuietRunner runs a tool whose standard error its error carries alone, for a tool that runs often
+// and whose failure the caller reports, such as on each status request.
+type QuietRunner interface {
+	RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
 // ToolError is a tool that ran and exited with a non-zero status.
 type ToolError struct {
 	Command string
@@ -41,6 +47,10 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte,
 	return run(ctx, nil, nil, name, args...)
 }
 
+func (ExecRunner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return runTo(ctx, nil, nil, io.Discard, name, args...)
+}
+
 func (ExecRunner) RunWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
 	return run(ctx, env, nil, name, args...)
 }
@@ -50,6 +60,11 @@ func (ExecRunner) RunWithInput(ctx context.Context, input []byte, name string, a
 }
 
 func run(ctx context.Context, env []string, input []byte, name string, args ...string) ([]byte, error) {
+	return runTo(ctx, env, input, os.Stderr, name, args...)
+}
+
+// runTo runs a tool, copying its standard error to console as well as into its error.
+func runTo(ctx context.Context, env []string, input []byte, console io.Writer, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if env != nil {
 		cmd.Env = append(os.Environ(), env...)
@@ -59,7 +74,7 @@ func run(ctx context.Context, env []string, input []byte, name string, args ...s
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	cmd.Stderr = io.MultiWriter(console, &stderr)
 	err := cmd.Run()
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {

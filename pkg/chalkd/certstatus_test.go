@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
 func status(t *testing.T, s *Server) *nodev1.StatusResponse {
@@ -146,5 +148,100 @@ func TestStatusTime(t *testing.T) {
 	r.rules = append(r.rules, rule{prefix: "chronyc -n -c tracking", out: "C0A80001,10.0.2.2,2,1791460000.1,-0.5,0,0,0,0,0,0,0,64,Normal\n"})
 	if st := status(t, s).Time; !st.Synchronised || st.Source != "10.0.2.2" || st.OffsetSeconds != 0.5 || st.Error != "" {
 		t.Errorf("time = %+v", st)
+	}
+}
+
+// kubeletStatus returns the status entry of the kubelet's client certificate.
+func kubeletStatus(t *testing.T, s *Server) *nodev1.CertificateStatus {
+	t.Helper()
+	for _, c := range status(t, s).Certificates {
+		if c.Name == "kubelet client" {
+			return c
+		}
+	}
+	t.Fatal("no kubelet client certificate in the status")
+	return nil
+}
+
+// The kubelet renews its certificates itself once 70 to 90 % of their lifetime passed; status
+// warns only when it fell behind.
+func TestStatusKubeletCertificatesWarnLate(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	// A CA from before the certificates it issues, so they keep their dates.
+	k, err := pki.NewKubernetesSecrets(time.Now().Add(-2 * pki.LeafValidity))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		issued time.Duration
+		warn   bool
+	}{
+		{-250 * 24 * time.Hour, false},
+		{-350 * 24 * time.Hour, true},
+	} {
+		ck, err := kpki.IssueKubeletClient(k.CA, "n1", time.Now().Add(tc.issued))
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, s.Kubernetes.Paths.KubeletClient(), ck.Certificate+ck.Key)
+		if got := kubeletStatus(t, s).Problem; (got != "") != tc.warn {
+			t.Errorf("issued %v ago: problem %q, want a warning %v", -tc.issued, got, tc.warn)
+		}
+	}
+}
+
+func TestStatusNamesTheOSCA(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
+	// Issued so long ago that it expires within the year.
+	osCA, err := pki.NewOSCA(time.Now().Add(-pki.CAValidity + 100*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
+	for _, c := range status(t, s).Certificates {
+		if c.Name == "OS CA" && !strings.HasPrefix(c.Problem, "OS CA expires ") {
+			t.Errorf("OS CA problem %q, want it named as the other CAs are", c.Problem)
+		}
+	}
+}
+
+// A share chalkd cannot read leaves the Kubernetes certificates unknown, which status says.
+func TestStatusReportsAnUnreadableShare(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	write(t, s.Kubernetes.Paths.Share(), "not a share")
+	var found bool
+	for _, c := range status(t, s).Certificates {
+		if strings.Contains(c.Problem, "share") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("certificates %v, want the unreadable share", certificateNames(status(t, s).Certificates))
+	}
+}
+
+// chronyc fails on every status while chronyd is down; its standard error shows once, in the
+// status, and not in chalkd's log on each call.
+func TestStatusTimeWhileChronydIsDown(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	r.rules = append(r.rules, rule{prefix: "chronyc -n -c tracking", err: &node.ToolError{Command: "chronyc -n -c tracking", Code: 1, Stderr: "506 Cannot talk to daemon\n"}})
+	st := status(t, s).Time
+	if strings.Count(st.Error, "506 Cannot talk to daemon") != 1 {
+		t.Errorf("time error %q, want chronyc's message once", st.Error)
+	}
+	if !r.quiet["chronyc -n -c tracking"] {
+		t.Error("chronyc's standard error went to chalkd's log")
+	}
+}
+
+func TestParseTrackingReadsTheLeapStatusField(t *testing.T) {
+	// A later chrony may add fields after the leap status.
+	st, err := parseTracking([]byte("C0A80001,10.0.2.2,2,1791460000.1,0,0,0,0,0,0,0,0,64,Not synchronised,0\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Synchronised {
+		t.Errorf("synchronised with leap status %q", "Not synchronised")
 	}
 }

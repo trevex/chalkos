@@ -1463,8 +1463,10 @@ type CertificateStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA",
 	// "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one
-	// that expires first), "kubelet client" or "kubelet serving".
-	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the
+	// node's share cannot be read, so the certificates it holds are unknown.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Unset when the expiry is unknown.
 	NotAfter *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
 	// Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
 	// as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl

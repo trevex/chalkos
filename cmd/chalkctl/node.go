@@ -704,11 +704,7 @@ func (a *app) status(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.stdout, "certificates:")
 		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 		for _, c := range s.Certificates {
-			line := fmt.Sprintf("  %s\texpires %s", c.Name, c.NotAfter.AsTime().UTC().Format(time.DateOnly))
-			if c.Problem != "" {
-				line += "\t" + strings.ReplaceAll(c.Problem, "<node>", t.name)
-			}
-			fmt.Fprintln(w, line)
+			fmt.Fprintln(w, certificateLine(c, t.name))
 		}
 		if err := w.Flush(); err != nil {
 			return err
@@ -721,6 +717,18 @@ func (a *app) status(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
 	}
 	return nil
+}
+
+// certificateLine is a certificate's line of the status, with tabs between its columns.
+func certificateLine(c *nodev1.CertificateStatus, node string) string {
+	line := fmt.Sprintf("  %s\texpires %s", c.Name, c.NotAfter.AsTime().UTC().Format(time.DateOnly))
+	if c.NotAfter == nil {
+		line = fmt.Sprintf("  %s\texpiry unknown", c.Name)
+	}
+	if c.Problem != "" {
+		line += "\t" + strings.ReplaceAll(c.Problem, "<node>", node)
+	}
+	return line
 }
 
 // timeLine is the status line of the node's clock.

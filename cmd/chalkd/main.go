@@ -174,6 +174,16 @@ func maintenanceCertificate(runDir string, now time.Time) (tls.Certificate, erro
 	return cert, nil
 }
 
+// renewOnApplyIdentity reports whether the renewal hook is on, which the chalklab test image
+// alone sets; chalkd says so in its log, so a node that runs it by mistake shows it.
+func renewOnApplyIdentity(getenv func(string) string) bool {
+	if getenv("CHALKD_TEST_RENEW_ON_APPLY_IDENTITY") != "1" {
+		return false
+	}
+	log.Print("test image: renewing the certificates after each ApplyIdentity")
+	return true
+}
+
 func loadPool(path string) (*x509.CertPool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -216,8 +226,7 @@ func serve() error {
 		},
 	}
 
-	// Set by the chalklab test image alone.
-	srv.RenewOnApplyIdentity = os.Getenv("CHALKD_TEST_RENEW_ON_APPLY_IDENTITY") == "1"
+	srv.RenewOnApplyIdentity = renewOnApplyIdentity(os.Getenv)
 
 	switch {
 	case creds.mode == nodev1.Mode_MODE_NORMAL:

@@ -451,3 +451,26 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 		t.Errorf("%d goroutines before the attempt, %d after", before, after)
 	}
 }
+
+// On a control plane whose loop runs, the test images' hook renews the control plane's
+// certificates after ApplyIdentity too.
+func TestRenewOnApplyIdentityRenewsTheControlPlane(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	if _, err := bootstrap(s, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s.RenewOnApplyIdentity = true
+	apiServer := filepath.Join(s.Kubernetes.Paths.PKI, kpki.FileAPIServer)
+	before, err := os.ReadFile(apiServer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: string(recorded)})); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the control plane's certificates to be renewed", func() bool {
+		after, _ := os.ReadFile(apiServer)
+		return len(after) > 0 && string(after) != string(before)
+	})
+}

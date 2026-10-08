@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,4 +177,22 @@ func TestMaintenanceCertificateAcrossRestarts(t *testing.T) {
 			t.Error("kept an expired maintenance certificate")
 		}
 	})
+}
+
+// The test images' renewal hook says so in the log once, as chalkd starts; other images run
+// without it and log nothing about it.
+func TestRenewalHookIsLogged(t *testing.T) {
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	for _, value := range []string{"", "0", "1"} {
+		logged.Reset()
+		on := renewOnApplyIdentity(func(string) string { return value })
+		if on != (value == "1") {
+			t.Errorf("%q: hook %v", value, on)
+		}
+		if lines := strings.Count(logged.String(), "\n"); lines != map[bool]int{true: 1, false: 0}[on] {
+			t.Errorf("%q: logged %q", value, logged.String())
+		}
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
 // How long before they expire CAs are reported: a year, and for the node CA 18 months, as node
@@ -45,7 +47,11 @@ func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 		add("node", leaf, problem)
 	}
 	if osCA, err := pki.ParseCertificate(s.readOSCA()); err == nil {
-		add("OS CA", osCA, caProblem(osCA, now, caWarning))
+		problem := caProblem(osCA, now, caWarning)
+		if problem != "" {
+			problem = "OS CA " + problem
+		}
+		add("OS CA", osCA, problem)
 	}
 	if s.Kubernetes != nil {
 		list = append(list, s.Kubernetes.certificates(now)...)
@@ -66,8 +72,12 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 		list = append(list, &nodev1.CertificateStatus{Name: name, NotAfter: timestamppb.New(cert.NotAfter), Problem: problem})
 	}
 	share, err := knode.ReadShare(k.Paths)
-	if err != nil {
+	if errors.Is(err, knode.ErrNoShare) {
 		return nil
+	}
+	if err != nil {
+		// Its expiry is unknown, as are those of the certificates the share holds.
+		return []*nodev1.CertificateStatus{{Name: "Kubernetes share", Problem: "unreadable: " + err.Error()}}
 	}
 	cas := []struct {
 		name    string
@@ -103,7 +113,7 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 	}
 	client, clientErr := readPEMCertificate(k.Paths.KubeletClient())
 	if clientErr == nil {
-		add("kubelet client", client, leafProblem(client, now))
+		add("kubelet client", client, kubeletProblem(client, now))
 	}
 	// A worker whose kubelet renewed its certificate on VAR starts from the share's again once
 	// VAR is lost; if that one expired too, the kubelet cannot join until a new one arrives.
@@ -113,7 +123,7 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 		}
 	}
 	if serving, err := readPEMCertificate(k.Paths.KubeletServing()); err == nil {
-		add("kubelet serving", serving, leafProblem(serving, now))
+		add("kubelet serving", serving, kubeletProblem(serving, now))
 	}
 	return list
 }
@@ -126,6 +136,18 @@ func leafProblem(cert *x509.Certificate, now time.Time) string {
 		return "expired"
 	case !now.Before(pki.RenewAt(cert)):
 		return "less than a third of its lifetime remains"
+	}
+	return ""
+}
+
+// kubeletProblem warns once less than a tenth of a kubelet certificate's lifetime remains: the
+// kubelet renews it itself once 70 to 90 % passed, so a warning before would be noise.
+func kubeletProblem(cert *x509.Certificate, now time.Time) string {
+	switch {
+	case !now.Before(cert.NotAfter):
+		return "expired"
+	case cert.NotAfter.Sub(now) < cert.NotAfter.Sub(cert.NotBefore)/10:
+		return "less than a tenth of its lifetime remains, though the kubelet renews it itself"
 	}
 	return ""
 }
@@ -155,7 +177,13 @@ func readPEMCertificate(path string) (*x509.Certificate, error) {
 func (s *Server) timeStatus(ctx context.Context) *nodev1.TimeStatus {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := s.Run.Run(ctx, "chronyc", "-n", "-c", "tracking")
+	// chronyc fails on every request while chronyd is down: its error goes into the status, not
+	// once more into chalkd's log.
+	run := s.Run.Run
+	if quiet, ok := s.Run.(node.QuietRunner); ok {
+		run = quiet.RunQuiet
+	}
+	out, err := run(ctx, "chronyc", "-n", "-c", "tracking")
 	if err != nil {
 		return &nodev1.TimeStatus{Error: err.Error()}
 	}
@@ -167,7 +195,8 @@ func (s *Server) timeStatus(ctx context.Context) *nodev1.TimeStatus {
 }
 
 // parseTracking reads chronyc's tracking report in its CSV form: reference ID, source, stratum,
-// reference time, the system clock's offset (positive when it is slow), ... and leap status last.
+// reference time, the system clock's offset (positive when it is slow), ... and the leap status
+// as field 13. Later fields, which a newer chrony may add, are ignored.
 func parseTracking(out []byte) (*nodev1.TimeStatus, error) {
 	records, err := csv.NewReader(strings.NewReader(string(out))).ReadAll()
 	if err != nil || len(records) != 1 || len(records[0]) < 14 {
@@ -183,7 +212,7 @@ func parseTracking(out []byte) (*nodev1.TimeStatus, error) {
 		return nil, fmt.Errorf("chronyc tracking: offset %q", r[4])
 	}
 	st := &nodev1.TimeStatus{
-		Synchronised:  r[len(r)-1] != "Not synchronised" && stratum > 0 && stratum < 16,
+		Synchronised:  r[13] != "Not synchronised" && stratum > 0 && stratum < 16,
 		OffsetSeconds: -slow,
 	}
 	if st.Synchronised {

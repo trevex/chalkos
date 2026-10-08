@@ -41,6 +41,8 @@ type fakeRunner struct {
 	envs  map[string][]string
 	// inputs holds what commands received on standard input, by command line.
 	inputs map[string]string
+	// quiet holds the command lines run without their standard error reaching the log.
+	quiet map[string]bool
 }
 
 func (f *fakeRunner) RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
@@ -60,6 +62,16 @@ type rule struct {
 }
 
 func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return f.RunWithEnv(ctx, nil, name, args...)
+}
+
+func (f *fakeRunner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
+	f.mu.Lock()
+	if f.quiet == nil {
+		f.quiet = map[string]bool{}
+	}
+	f.quiet[strings.Join(append([]string{name}, args...), " ")] = true
+	f.mu.Unlock()
 	return f.RunWithEnv(ctx, nil, name, args...)
 }
 

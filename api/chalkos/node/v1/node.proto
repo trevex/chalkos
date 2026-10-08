@@ -232,8 +232,10 @@ message StatusResponse {
 message CertificateStatus {
   // What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA",
   // "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one
-  // that expires first), "kubelet client" or "kubelet serving".
+  // that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the
+  // node's share cannot be read, so the certificates it holds are unknown.
   string name = 1;
+  // Unset when the expiry is unknown.
   google.protobuf.Timestamp not_after = 2;
   // Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
   // as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
