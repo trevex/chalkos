@@ -281,9 +281,21 @@ func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
 	if at.IsZero() {
 		at = leaf.NotBefore
 	}
+	// The node CA's signature on the leaf is what makes it a node certificate: a leaf the OS CA
+	// signed itself verifies without the node CA that follows it, so every chain must run through
+	// that node CA.
+	if err := leaf.CheckSignatureFrom(nodeCA); err != nil {
+		return NodeCredential{}, errors.New("the node certificate is not signed by the node CA that follows it")
+	}
 	for _, usage := range nodeCAUsages {
-		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{usage}, CurrentTime: at}); err != nil {
+		chains, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{usage}, CurrentTime: at})
+		if err != nil {
 			return NodeCredential{}, fmt.Errorf("the node certificate does not verify against the OS CA: %w", err)
+		}
+		for _, chain := range chains {
+			if len(chain) != 3 || !chain[1].Equal(nodeCA) || !chain[2].Equal(root) {
+				return NodeCredential{}, errors.New("the node certificate does not chain through its node CA to the OS CA")
+			}
 		}
 	}
 	return NodeCredential{Leaf: leaf, TLS: pair}, nil

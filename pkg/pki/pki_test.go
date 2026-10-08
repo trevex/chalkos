@@ -149,14 +149,22 @@ func TestVerifyNode(t *testing.T) {
 	leafOnly, _, _ := strings.Cut(node.Certificate, "-----END CERTIFICATE-----\n")
 	leafOnly += "-----END CERTIFICATE-----\n"
 	expired := now.Add(2 * LeafValidity)
+	// A leaf the OS CA issued itself, followed by a valid node CA it was not signed by.
+	rootIssued, err := IssueLeaf(osCA, Leaf{CommonName: "w1", Organization: []string{RoleNode}, DNSNames: []string{"w1"}, Server: true, Client: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeCAOnly, _, _ := strings.Cut(strings.TrimPrefix(node.Certificate, leafOnly), "-----END CERTIFICATE-----\n")
+	nodeCAOnly += "-----END CERTIFICATE-----\n"
 	for name, tc := range map[string]struct {
 		chain, key, root string
 		at               time.Time
 	}{
-		"another node's key":   {node.Certificate, other.Key, osCA.Certificate, now},
-		"another OS CA":        {node.Certificate, node.Key, otherOS.Certificate, now},
-		"without the node CA":  {leafOnly, node.Key, osCA.Certificate, now},
-		"expired at that time": {node.Certificate, node.Key, osCA.Certificate, expired},
+		"another node's key":                     {node.Certificate, other.Key, osCA.Certificate, now},
+		"another OS CA":                          {node.Certificate, node.Key, otherOS.Certificate, now},
+		"without the node CA":                    {leafOnly, node.Key, osCA.Certificate, now},
+		"expired at that time":                   {node.Certificate, node.Key, osCA.Certificate, expired},
+		"not signed by the node CA that follows": {rootIssued.Certificate + nodeCAOnly, rootIssued.Key, osCA.Certificate, now},
 	} {
 		_, err := VerifyNode(tc.chain, tc.key, tc.root, tc.at)
 		if err == nil {
