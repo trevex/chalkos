@@ -374,9 +374,11 @@ func TestPreparePinned(t *testing.T) {
 func TestPreparePinnedFamiliesChanged(t *testing.T) {
 	for name, tc := range map[string]struct{ pin, families, want string }{
 		"family added": {"192.168.100.11\n", `["ipv4", "ipv6"]`,
-			"the node is pinned to 192.168.100.11 (ipv4), but the cluster's ipFamilies are ipv4, ipv6; restore ipFamilies, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"},
+			"the cluster was created with families [ipv4]; ipFamilies is [ipv4 ipv6]; changing the families of a running cluster is not supported"},
+		"family removed": {"192.168.100.11\nfd00::11\n", `["ipv4"]`,
+			"the cluster was created with families [ipv4 ipv6]; ipFamilies is [ipv4]; changing the families of a running cluster is not supported"},
 		"primary family changed": {"192.168.100.11\nfd00::11\n", `["ipv6", "ipv4"]`,
-			"the node is pinned to 192.168.100.11, fd00::11 (ipv4, ipv6), but the cluster's ipFamilies are ipv6, ipv4; restore ipFamilies, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"},
+			"the cluster was created with families [ipv4 ipv6]; ipFamilies is [ipv6 ipv4]; changing the families of a running cluster is not supported"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))

@@ -352,15 +352,16 @@ func nodeSelector(p Paths, c kubernetes.Cluster, n kubernetes.Node) (nodeip.Sele
 			for _, ip := range pin {
 				sel.Families = append(sel.Families, nodeip.FamilyOf(ip))
 			}
-			// Another set of families would change the node's addresses, which etcd's peers know
-			// it by.
+			// The pin holds an address of each family the cluster was created with, the primary
+			// one first. Other families, or another order, would change the cluster's addressing
+			// and the addresses etcd's peers know the node by.
 			families, err := c.Families()
 			if err != nil {
 				return nodeip.Selector{}, err
 			}
 			if !slices.Equal(sel.Families, families) {
-				return nodeip.Selector{}, fmt.Errorf("the node is pinned to %s (%s), but the cluster's ipFamilies are %s; restore ipFamilies, or remove the node's etcd member with chalkctl etcd remove-member %s and reinstall the node",
-					joinList(pin), joinList(sel.Families), joinList(families), n.Name)
+				return nodeip.Selector{}, fmt.Errorf("the cluster was created with families %v; ipFamilies is %v; changing the families of a running cluster is not supported",
+					sel.Families, families)
 			}
 			return sel, nil
 		}
@@ -768,13 +769,4 @@ func readDir(dir string) (map[string][]byte, error) {
 		return nil
 	})
 	return files, err
-}
-
-// joinList lists the values, separated by commas.
-func joinList[T any](values []T) string {
-	s := make([]string, len(values))
-	for i, v := range values {
-		s[i] = fmt.Sprint(v)
-	}
-	return strings.Join(s, ", ")
 }
