@@ -249,8 +249,8 @@ type NodeCredential struct {
 }
 
 // VerifyNode checks that a PEM chain and key are a node certificate with its key that chains
-// through a node CA to the OS CA for TLS servers and clients, at the time given; at zero checks
-// no dates. Errors never hold the key.
+// through a node CA to an OS CA of the bundle osCA for TLS servers and clients, at the time
+// given; at zero checks no dates. Errors never hold the key.
 func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
 	pair, err := tls.X509KeyPair([]byte(chain), []byte(key))
 	if err != nil {
@@ -268,7 +268,7 @@ func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
 	if err != nil {
 		return NodeCredential{}, err
 	}
-	root, err := ParseCertificate([]byte(osCA))
+	osCAs, err := ParseBundle(osCA)
 	if err != nil {
 		return NodeCredential{}, fmt.Errorf("the OS CA: %w", err)
 	}
@@ -276,7 +276,9 @@ func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
 		return NodeCredential{}, errors.New("the node certificate's issuer is not a node CA")
 	}
 	roots, intermediates := x509.NewCertPool(), x509.NewCertPool()
-	roots.AddCert(root)
+	for _, root := range osCAs {
+		roots.AddCert(root)
+	}
 	intermediates.AddCert(nodeCA)
 	if at.IsZero() {
 		at = leaf.NotBefore
@@ -293,7 +295,7 @@ func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
 			return NodeCredential{}, fmt.Errorf("the node certificate does not verify against the OS CA: %w", err)
 		}
 		for _, chain := range chains {
-			if len(chain) != 3 || !chain[1].Equal(nodeCA) || !chain[2].Equal(root) {
+			if len(chain) != 3 || !chain[1].Equal(nodeCA) || !slices.ContainsFunc(osCAs, chain[2].Equal) {
 				return NodeCredential{}, errors.New("the node certificate does not chain through its node CA to the OS CA")
 			}
 		}

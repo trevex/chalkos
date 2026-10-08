@@ -99,7 +99,7 @@ func (s Secrets) Validate() error {
 	if err := ValidateCA(s.OSCA); err != nil {
 		return fmt.Errorf("osCA: %w", err)
 	}
-	if err := ValidateNodeCA(s.NodeCA, s.OSCA); err != nil {
+	if err := ValidateNodeCA(s.NodeCA, s.OSCA.Certificate); err != nil {
 		return fmt.Errorf("nodeCA: %w", err)
 	}
 	if len(s.RecoverySecret) != RecoverySecretSize {
@@ -111,35 +111,42 @@ func (s Secrets) Validate() error {
 	return RequireDistinctCAs(append([]NamedCA{{"osCA", s.OSCA}, {"nodeCA", s.NodeCA}}, s.Kubernetes.cas()...)...)
 }
 
-// ValidateNodeCA checks that nodeCA, with its key, is a node CA that osCA issued, and that osCA
-// may issue it. Dates are not checked: an expired node CA is replaced, not refused.
-func ValidateNodeCA(nodeCA, osCA CertKey) error {
+// ValidateNodeCA checks that nodeCA, with its key, is a node CA that an OS CA of the bundle osCA
+// issued, and that this OS CA may issue it. Dates are not checked: an expired node CA is
+// replaced, not refused.
+func ValidateNodeCA(nodeCA CertKey, osCA string) error {
 	if err := ValidateCA(nodeCA); err != nil {
 		return err
 	}
-	return verifyNodeCA(nodeCA.Certificate, osCA.Certificate)
+	return verifyNodeCA(nodeCA.Certificate, osCA)
 }
 
-// verifyNodeCA checks the certificate of a node CA against the OS CA's.
+// verifyNodeCA checks the certificate of a node CA against the bundle of OS CAs.
 func verifyNodeCA(nodeCA, osCA string) error {
 	cert, err := ParseCertificate([]byte(nodeCA))
 	if err != nil {
 		return err
 	}
-	root, err := ParseCertificate([]byte(osCA))
+	roots, err := ParseBundle(osCA)
 	if err != nil {
 		return fmt.Errorf("the OS CA: %w", err)
 	}
 	if !IsNodeCA(cert) {
 		return errors.New("not a node CA: it must be a CA for TLS servers and clients that issues no CA")
 	}
-	// A root that issues leaves only would refuse every node certificate's chain.
-	if root.MaxPathLenZero {
+	pool := x509.NewCertPool()
+	issuers := 0
+	for _, root := range roots {
+		// A root that issues leaves only would refuse every node certificate's chain.
+		if !root.MaxPathLenZero {
+			pool.AddCert(root)
+			issuers++
+		}
+	}
+	if issuers == 0 {
 		return errors.New("the OS CA issues no intermediate CA, so it cannot have a node CA")
 	}
-	roots := x509.NewCertPool()
-	roots.AddCert(root)
-	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: nodeCAUsages, CurrentTime: cert.NotBefore}); err != nil {
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: nodeCAUsages, CurrentTime: cert.NotBefore}); err != nil {
 		return fmt.Errorf("does not verify against the OS CA: %w", err)
 	}
 	return nil

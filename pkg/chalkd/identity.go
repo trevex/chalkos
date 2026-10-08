@@ -102,7 +102,7 @@ func (s *Server) kubernetesShare(d delivered, data []byte) ([]byte, error) {
 			return nil, failed(connect.CodeInternal, "read the OS CA: %v", err)
 		}
 		// Certificates of another node CA would never verify against the node's OS CA.
-		if err := pki.ValidateNodeCA(*share.NodeCA, pki.CertKey{Certificate: string(osCA)}); err != nil {
+		if err := pki.ValidateNodeCA(*share.NodeCA, string(osCA)); err != nil {
 			return nil, failed(connect.CodeInvalidArgument, "the share's node CA: %v", err)
 		}
 	}
