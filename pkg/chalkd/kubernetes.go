@@ -65,6 +65,9 @@ type Kubernetes struct {
 	// EtcdTimeout bounds each request to etcd, so an etcd member that does not answer never holds
 	// up a loop or the membership lock; zero means 30 seconds.
 	EtcdTimeout time.Duration
+	// EtcdStatusTimeout is how long a health check waits for each etcd member; zero means three
+	// seconds. Tests raise it: their members share one busy process.
+	EtcdStatusTimeout time.Duration
 	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means
 	// https://127.0.0.1:2379. Tests replace it.
 	LocalEtcd string
@@ -643,8 +646,11 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	return st, nil
 }
 
-// etcdRequest bounds one request to etcd.
+// etcdRequest bounds one request to etcd, and the health checks in it.
 func (k *Kubernetes) etcdRequest(ctx context.Context) (context.Context, context.CancelFunc) {
+	if k.EtcdStatusTimeout > 0 {
+		ctx = etcd.WithStatusTimeout(ctx, k.EtcdStatusTimeout)
+	}
 	return context.WithTimeout(ctx, k.etcdTimeout())
 }
 

@@ -124,6 +124,12 @@ func TestJoinAndPromote(t *testing.T) {
 	if unhealthy := Health(ctx, cli, list); len(unhealthy) != 0 {
 		t.Errorf("unhealthy = %v", unhealthy)
 	}
+	// A member that does not answer is unhealthy once its status timeout passed.
+	silent := Member{ID: 7, Name: "silent", ClientURLs: []string{etcdtest.Silent(t)}}
+	start := time.Now()
+	if unhealthy := Health(WithStatusTimeout(ctx, 500*time.Millisecond), cli, []Member{silent}); unhealthy[7] == nil || time.Since(start) > 3*time.Second {
+		t.Errorf("unhealthy = %v after %v, want the silent member after half a second", unhealthy, time.Since(start))
+	}
 	// Promoting a voter changes nothing.
 	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Errorf("promote a voter: %v", err)

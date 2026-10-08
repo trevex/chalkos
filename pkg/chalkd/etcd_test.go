@@ -237,6 +237,11 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	checkLeft(t, s)
 }
 
+// liveEtcdTimeout is how long a health check waits for each etcd member where all of them are up.
+// The members run in the test's process, beside the other packages' tests, and on a busy machine
+// one may take more than the three seconds of a node to answer the check's new connection.
+const liveEtcdTimeout = 10 * time.Second
+
 // silentEtcdTimeout bounds the requests to etcd where the node's own member does not answer.
 // Every leave waits it out for that member, but it bounds the requests to the other members too,
 // which on a busy machine take seconds to answer or to commit a member's removal.
@@ -249,6 +254,7 @@ func otherMembersOnly(t *testing.T, s *Server, others ...*etcdtest.Member) {
 	k := s.Kubernetes
 	k.LocalEtcd = etcdtest.Silent(t)
 	k.EtcdTimeout = silentEtcdTimeout
+	k.EtcdStatusTimeout = liveEtcdTimeout
 	k.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
 		var urls []string
 		for _, m := range others {

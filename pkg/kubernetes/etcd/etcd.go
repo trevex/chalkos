@@ -78,6 +78,15 @@ func Members(ctx context.Context, cli *clientv3.Client) ([]Member, error) {
 	return members, nil
 }
 
+// statusTimeoutKey keys the time Health waits for each member in a context.
+type statusTimeoutKey struct{}
+
+// WithStatusTimeout makes Health, also Remove's, wait up to d for each member's status instead of
+// three seconds.
+func WithStatusTimeout(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, statusTimeoutKey{}, d)
+}
+
 // Health asks each member for its status at its client URLs and returns why each one that did
 // not answer is unhealthy. A member that has not started has no client URLs.
 func Health(ctx context.Context, cli *clientv3.Client, members []Member) map[uint64]error {
@@ -104,9 +113,13 @@ func status(ctx context.Context, cli *clientv3.Client, m Member) error {
 	if len(m.ClientURLs) == 0 {
 		return errors.New("not started")
 	}
+	timeout := 3 * time.Second
+	if d, ok := ctx.Value(statusTimeoutKey{}).(time.Duration); ok && d > 0 {
+		timeout = d
+	}
 	var err error
 	for _, url := range m.ClientURLs {
-		sctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		sctx, cancel := context.WithTimeout(ctx, timeout)
 		_, err = cli.Status(sctx, url)
 		cancel()
 		if err == nil {
