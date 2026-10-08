@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -37,8 +39,8 @@ type Kubernetes struct {
 	// applies the manifests, calls applied with their number once that succeeded, and approves
 	// kubelet serving certificates. Tests replace it.
 	ControlPlane func(ctx context.Context, share kpki.Share, applied func(n int)) error
-	// NodeReady returns the status of the node's Ready condition.
-	NodeReady func(ctx context.Context) (string, error)
+	// Node returns the node's Node object. Tests replace it.
+	Node func(ctx context.Context) (*corev1.Node, error)
 	// RestartBackoff is the first wait before ControlPlane starts again after it failed; it
 	// doubles up to MaxRestartBackoff. Zero means 5 seconds and a minute.
 	RestartBackoff, MaxRestartBackoff time.Duration
@@ -111,7 +113,7 @@ type Kubernetes struct {
 func NewKubernetes() *Kubernetes {
 	k := &Kubernetes{Paths: knode.DefaultPaths(), Manifests: "/etc/chalkos/kubernetes/manifests.json"}
 	k.ControlPlane = k.runControlPlane
-	k.NodeReady = k.nodeReady
+	k.Node = k.node
 	k.EtcdEndpoints = k.etcdEndpoints
 	k.ClusterAnswers = clusterAnswers
 	k.VIPAddresses = systemVIPAddresses
@@ -429,32 +431,62 @@ func (k *Kubernetes) applyOnce(ctx context.Context, cfg *rest.Config) (int, erro
 	return len(objects), nil
 }
 
-// nodeReady reads the node's Node object with the kubelet's credentials, which may read their
-// own node.
-func (k *Kubernetes) nodeReady(ctx context.Context) (string, error) {
+// node reads the node's Node object with the kubelet's credentials, which may read their own
+// node.
+func (k *Kubernetes) node(ctx context.Context) (*corev1.Node, error) {
 	n, err := k8s.ReadNode(k.Paths.NodeFile)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	cfg, err := clientcmd.BuildConfigFromFlags("", k.Paths.Kubeconfig())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	cfg.Timeout = 5 * time.Second
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	node, err := client.CoreV1().Nodes().Get(ctx, n.Name, metav1.GetOptions{})
+	return client.CoreV1().Nodes().Get(ctx, n.Name, metav1.GetOptions{})
+}
+
+// nodeReady returns the status of the Node's Ready condition.
+func nodeReady(node *corev1.Node) string {
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == corev1.NodeReady {
+			return string(cond.Status)
+		}
+	}
+	return string(corev1.ConditionUnknown)
+}
+
+// missingPodRanges says which of the cluster's families the Node has no pod range of, once the
+// controller-manager allocated it any: it allocates ranges of the families the control plane
+// runs with, which a worker's image cannot change.
+func missingPodRanges(c k8s.Cluster, node *corev1.Node) (string, error) {
+	if len(node.Spec.PodCIDRs) == 0 {
+		return "", nil
+	}
+	families, err := c.Families()
 	if err != nil {
 		return "", err
 	}
-	for _, cond := range node.Status.Conditions {
-		if cond.Type == corev1.NodeReady {
-			return string(cond.Status), nil
+	have := map[nodeip.Family]bool{}
+	for _, cidr := range node.Spec.PodCIDRs {
+		if p, err := netip.ParsePrefix(cidr); err == nil {
+			have[nodeip.FamilyOf(p.Addr())] = true
 		}
 	}
-	return string(corev1.ConditionUnknown), nil
+	var missing []string
+	for _, f := range families {
+		if !have[f] {
+			missing = append(missing, string(f))
+		}
+	}
+	if len(missing) == 0 {
+		return "", nil
+	}
+	return fmt.Sprintf("the Node has no %s pod range; the control plane allocates ranges of the families the cluster was created with", strings.Join(missing, " or ")), nil
 }
 
 func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.BootstrapRequest]) (*connect.Response[nodev1.BootstrapResponse], error) {
@@ -646,11 +678,21 @@ func (k *Kubernetes) status(ctx context.Context) (*nodev1.KubernetesStatus, erro
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	ready, err := k.NodeReady(ctx)
+	node, err := k.Node(ctx)
 	if err != nil {
-		ready = fmt.Sprintf("unknown: %v", err)
+		st.NodeReady = fmt.Sprintf("unknown: %v", err)
+		return st, nil
 	}
-	st.NodeReady = ready
+	st.NodeReady = nodeReady(node)
+	if c.Kind == k8s.KindWorker {
+		problem, err := missingPodRanges(c, node)
+		if err != nil {
+			return nil, err
+		}
+		if problem != "" {
+			st.State += ": " + problem
+		}
+	}
 	return st, nil
 }
 

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/install"
@@ -155,7 +157,9 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 			NodeFile: filepath.Join(root, "node.json"),
 			Run:      filepath.Join(root, "run"),
 		},
-		NodeReady: func(context.Context) (string, error) { return "True", nil },
+		Node: func(context.Context) (*corev1.Node, error) {
+			return &corev1.Node{Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}, nil
+		},
 	}
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)

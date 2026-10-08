@@ -1431,7 +1431,8 @@ type KubernetesStatus struct {
 	// for bootstrap or for the cluster at <endpoint>", what joining that cluster does or waits for,
 	// such as "joining the cluster at <endpoint>: etcd member <id> catches up" or a stale member
 	// and how to remove it, "bootstrapped" or "etcd data missing: restore etcd or reinstall the
-	// node"; "joined" on a worker.
+	// node"; "joined" on a worker, followed by ": the Node has no <family> pod range; ..." when the
+	// control plane allocated it no pod range of one of the worker's families.
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	// The status of the Node's Ready condition (True, False or Unknown), or why it could not be
 	// read.

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -52,7 +53,7 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 		},
 		Manifests:    filepath.Join(root, "etc", "manifests.json"),
 		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
-		NodeReady:    func(context.Context) (string, error) { return "True", nil },
+		Node:         func(context.Context) (*corev1.Node, error) { return readyNode(), nil },
 		// No cluster answers at the endpoint.
 		EtcdEndpoints: func(context.Context, k8s.Cluster, kpki.Share, []net.IP) ([]string, error) {
 			return nil, errors.New("connection refused")
@@ -75,6 +76,14 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 		}
 	}
 	return s, r
+}
+
+// readyNode is a Ready Node with the pod ranges.
+func readyNode(podCIDRs ...string) *corev1.Node {
+	return &corev1.Node{
+		Spec:   corev1.NodeSpec{PodCIDRs: podCIDRs},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}},
+	}
 }
 
 // nodeIP is a resolver that finds the address at once.
@@ -363,7 +372,23 @@ func TestStatusKubernetes(t *testing.T) {
 	if err := os.Remove(writing.Kubernetes.Paths.Prepared()); err != nil {
 		t.Fatal(err)
 	}
-	worker.Kubernetes.NodeReady = func(context.Context) (string, error) { return "", errors.New("connection refused") }
+	worker.Kubernetes.Node = func(context.Context) (*corev1.Node, error) { return nil, errors.New("connection refused") }
+	// A dual-stack worker whose Node has a pod range of one family only, as when the control plane
+	// runs with that family alone.
+	dualStack := func(podCIDRs ...string) *Server {
+		s, _ := kubernetesServer(t, k8s.KindWorker, true)
+		p := s.Kubernetes.Paths
+		data, err := os.ReadFile(p.Cluster)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cluster := strings.NewReplacer(`"podCIDRs": {`, `"ipFamilies": ["ipv4", "ipv6"], "podCIDRs": {"ipv6": "fd00:10:244::/56", `,
+			`"serviceCIDRs": {`, `"serviceCIDRs": {"ipv6": "fd00:10:96::/112", `, `"dnsIPs": {`, `"dnsIPs": {"ipv6": "fd00:10:96::a", `,
+			`"nodeCIDRMaskSizes": {`, `"nodeCIDRMaskSizes": {"ipv6": 64, `).Replace(string(data))
+		write(t, p.Cluster, cluster)
+		s.Kubernetes.Node = func(context.Context) (*corev1.Node, error) { return readyNode(podCIDRs...), nil }
+		return s
+	}
 	plain, _ := installedServer(t, section("", ""), false)
 	for name, tc := range map[string]struct {
 		s    *Server
@@ -378,7 +403,11 @@ func TestStatusKubernetes(t *testing.T) {
 		"preparing":             {preparing, &nodev1.KubernetesStatus{Kind: "controlplane", State: "preparing"}},
 		"writing":               {writing, &nodev1.KubernetesStatus{Kind: "worker", State: "preparing"}},
 		"worker":                {worker, &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "unknown: connection refused"}},
-		"no Kubernetes":         {plain, nil},
+		"dual-stack worker":     {dualStack("10.244.1.0/24", "fd00:10:244:1::/64"), &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "True"}},
+		"no pod range yet":      {dualStack(), &nodev1.KubernetesStatus{Kind: "worker", State: "joined", NodeReady: "True"}},
+		"no ipv6 pod range": {dualStack("10.244.1.0/24"), &nodev1.KubernetesStatus{Kind: "worker", NodeReady: "True",
+			State: "joined: the Node has no ipv6 pod range; the control plane allocates ranges of the families the cluster was created with"}},
+		"no Kubernetes": {plain, nil},
 	} {
 		resp, err := tc.s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
 		if err != nil {
