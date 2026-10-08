@@ -451,7 +451,7 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "networkctl reload"}) {
+	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking", "networkctl reload"}) {
 		t.Errorf("node ran %v", r.calls)
 	}
 	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); !bytes.Equal(got, current) {
@@ -677,7 +677,7 @@ func TestApplyIdentityAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Fatalf("err = %v, want the typo noticed", err)
 	}
-	if len(ta.prompts) != 2 || !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager"}) {
+	if len(ta.prompts) != 2 || !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking"}) {
 		t.Errorf("prompts = %q, node ran %v", ta.prompts, r.calls)
 	}
 }

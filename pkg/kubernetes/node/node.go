@@ -101,10 +101,14 @@ func (p Paths) Joining() string { return filepath.Join(p.State, "joining") }
 // Kubeconfig is the kubelet's kubeconfig, which chalkd also reads the Node with.
 func (p Paths) Kubeconfig() string { return filepath.Join(p.KubeletDir(), "kubeconfig") }
 
-// kubeletClient is the file the kubelet's certificate store keeps its current client
-// certificate in; it is a link to the newest one.
-func (p Paths) kubeletClient() string {
+// KubeletClient is the file the kubelet's certificate store keeps its current client certificate
+// in; it is a link to the newest one. KubeletServing is that of its serving certificate.
+func (p Paths) KubeletClient() string {
 	return filepath.Join(p.KubeletPKI, "kubelet-client-current.pem")
+}
+
+func (p Paths) KubeletServing() string {
+	return filepath.Join(p.KubeletPKI, "kubelet-server-current.pem")
 }
 
 // ErrNoShare means the node has no Kubernetes share yet.
@@ -598,7 +602,7 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 		Name:       "chalkos",
 		Server:     c.Endpoint,
 		CAFile:     filepath.Join(p.KubeletDir(), "ca.crt"),
-		ClientFile: p.kubeletClient(),
+		ClientFile: p.KubeletClient(),
 	}.Encode()
 	if err != nil {
 		return err
@@ -685,11 +689,11 @@ func installKubeletClient(p Paths, ca pki.CertKey, ck pki.CertKey, node string, 
 	if err != nil {
 		return fmt.Errorf("kubelet client certificate: %w", err)
 	}
-	switch err := checkRenewedClient(p.kubeletClient(), ca, cert, node, now); {
+	switch err := checkRenewedClient(p.KubeletClient(), ca, cert, node, now); {
 	case err == nil:
 		return nil
 	case !errors.Is(err, fs.ErrNotExist):
-		log.Printf("kubelet: installing the share's client certificate instead of %s: %v", p.kubeletClient(), err)
+		log.Printf("kubelet: installing the share's client certificate instead of %s: %v", p.KubeletClient(), err)
 	}
 	if err := os.MkdirAll(p.KubeletPKI, 0o700); err != nil {
 		return err
@@ -700,12 +704,12 @@ func installKubeletClient(p Paths, ca pki.CertKey, ck pki.CertKey, node string, 
 		return err
 	}
 	// The kubelet's store follows the link and refuses to replace a file that is not one.
-	tmp := p.kubeletClient() + ".chalkos"
+	tmp := p.KubeletClient() + ".chalkos"
 	os.Remove(tmp)
 	if err := os.Symlink(name, tmp); err != nil {
 		return err
 	}
-	return os.Rename(tmp, p.kubeletClient())
+	return os.Rename(tmp, p.KubeletClient())
 }
 
 // checkRenewedClient returns nil if the kubelet's current client certificate in path should be

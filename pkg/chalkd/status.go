@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -73,6 +74,8 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 			return nil, failed(connect.CodeInternal, "kubernetes: %v", err)
 		}
 	}
+	resp.Certificates = s.certificates(time.Now())
+	resp.Time = s.timeStatus(ctx)
 	return connect.NewResponse(resp), nil
 }
 

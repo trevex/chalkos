@@ -96,7 +96,7 @@ func exists(path string) bool {
 // currentClient returns the kubelet's current client certificate.
 func currentClient(t *testing.T, p Paths) pki.CertKey {
 	t.Helper()
-	data, err := os.ReadFile(p.kubeletClient())
+	data, err := os.ReadFile(p.KubeletClient())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestPrepareWorker(t *testing.T) {
 	if got := currentClient(t, p); got != *share.Kubelet {
 		t.Error("the kubelet's current client certificate is not the share's")
 	}
-	if link, err := os.Readlink(p.kubeletClient()); err != nil || link != "kubelet-client-chalkos.pem" {
+	if link, err := os.Readlink(p.KubeletClient()); err != nil || link != "kubelet-client-chalkos.pem" {
 		t.Errorf("current client certificate link = %q, %v", link, err)
 	}
 	ca, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "ca.crt"))
@@ -140,7 +140,7 @@ func TestPrepareWorker(t *testing.T) {
 		t.Error("the kubelet's CA is not the cluster's")
 	}
 	kubeconfig, _ := os.ReadFile(p.Kubeconfig())
-	for _, want := range []string{`"server": "https://192.168.100.11:6443"`, `"client-certificate": "` + p.kubeletClient() + `"`} {
+	for _, want := range []string{`"server": "https://192.168.100.11:6443"`, `"client-certificate": "` + p.KubeletClient() + `"`} {
 		if !strings.Contains(string(kubeconfig), want) {
 			t.Errorf("kubeconfig lacks %s:\n%s", want, kubeconfig)
 		}
@@ -669,7 +669,7 @@ func kubeletKey(t *testing.T, key string) string {
 func storeRenewed(t *testing.T, p Paths, cert, key string) {
 	t.Helper()
 	write(t, filepath.Join(p.KubeletPKI, "kubelet-client-2026-11-05.pem"), cert+kubeletKey(t, key))
-	if err := os.Symlink("kubelet-client-2026-11-05.pem", p.kubeletClient()); err != nil {
+	if err := os.Symlink("kubelet-client-2026-11-05.pem", p.KubeletClient()); err != nil {
 		t.Fatal(err)
 	}
 }

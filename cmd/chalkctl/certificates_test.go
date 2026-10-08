@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
@@ -68,7 +69,7 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 	}
 	// Only the certificate was delivered: the identity and storage stayed as they were.
 	for _, c := range r.calls {
-		if !strings.HasPrefix(c, "systemctl list-units") {
+		if !strings.HasPrefix(c, "systemctl list-units") && c != "chronyc -n -c tracking" {
 			t.Errorf("node renew ran %s", c)
 		}
 	}
@@ -153,5 +154,41 @@ func TestNodeCARotate(t *testing.T) {
 	}
 	if err := ta.run(context.Background(), ta.args([]string{"node-ca", "rotate", "--plaintext"}, addr)); err == nil || !strings.Contains(err.Error(), "--out") {
 		t.Errorf("err = %v, want --out required", err)
+	}
+}
+
+func TestStatusShowsCertificatesAndTime(t *testing.T) {
+	ta := newTestApp(t)
+	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	s, _ := installedNode(t, ta, current)
+	cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ta.nodeWithCertificate(t, s, cert)
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	out := ta.stdout.String()
+	leaf, _, _ := cert.Parse()
+	for _, want := range []string{"certificates:\n", "  node   expires " + leaf.NotAfter.UTC().Format(time.DateOnly) + "\n", "  OS CA  expires ", "time: unknown: "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestTimeLine(t *testing.T) {
+	for _, tc := range []struct {
+		status *nodev1.TimeStatus
+		want   string
+	}{
+		{&nodev1.TimeStatus{Synchronised: true, Source: "10.0.2.2", OffsetSeconds: -0.0000123}, "time: synchronised to 10.0.2.2, offset -0.000012 s"},
+		{&nodev1.TimeStatus{}, "time: not synchronised; certificates are checked against this clock"},
+		{&nodev1.TimeStatus{Error: "506 Cannot talk to daemon"}, "time: unknown: 506 Cannot talk to daemon"},
+	} {
+		if got := timeLine(tc.status); got != tc.want {
+			t.Errorf("timeLine = %q, want %q", got, tc.want)
+		}
 	}
 }

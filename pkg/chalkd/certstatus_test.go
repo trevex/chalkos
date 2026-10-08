@@ -1,0 +1,150 @@
+package chalkd
+
+import (
+	"context"
+	"crypto/x509"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/pki"
+)
+
+func status(t *testing.T, s *Server) *nodev1.StatusResponse {
+	t.Helper()
+	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.Msg
+}
+
+func certificateNames(list []*nodev1.CertificateStatus) []string {
+	var names []string
+	for _, c := range list {
+		names = append(names, c.Name)
+	}
+	return names
+}
+
+func TestStatusCertificatesOfAControlPlane(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	withNodeCertificate(t, s)
+	st := status(t, s)
+	want := []string{"node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA", "etcd CA", "Kubernetes control plane", "kubelet client"}
+	if got := certificateNames(st.Certificates); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("certificates %v, want %v", got, want)
+	}
+	for _, c := range st.Certificates {
+		if c.Problem != "" || !c.NotAfter.AsTime().After(time.Now()) {
+			t.Errorf("%s: expires %v, problem %q", c.Name, c.NotAfter.AsTime(), c.Problem)
+		}
+	}
+
+	// A failing renewal shows with the certificate it renews.
+	s.Renewal = NewNodeRenewal(s.Certificate, nil)
+	s.Renewal.setProblem("renewal failing: connection refused; expires 2027-10-08T12:00:00Z")
+	if got := status(t, s).Certificates[0]; got.Problem != "renewal failing: connection refused; expires 2027-10-08T12:00:00Z" {
+		t.Errorf("node certificate problem %q", got.Problem)
+	}
+}
+
+func TestStatusCertificatesOfAWorker(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindWorker, true)
+	withNodeCertificate(t, s)
+	want := []string{"node", "OS CA", "Kubernetes CA", "kubelet client"}
+	if got := certificateNames(status(t, s).Certificates); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("certificates %v, want %v", got, want)
+	}
+
+	// VAR lost the kubelet's renewed certificate and the share's expired too.
+	past := time.Now().Add(-2 * pki.LeafValidity)
+	k, err := pki.NewKubernetesSecrets(past)
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := kpki.WorkerShare(k, "n1", past)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := share.Encode()
+	write(t, s.Kubernetes.Paths.Share(), string(data))
+	if err := os.Remove(s.Kubernetes.Paths.KubeletClient()); err != nil {
+		t.Fatal(err)
+	}
+	var kubelet *nodev1.CertificateStatus
+	for _, c := range status(t, s).Certificates {
+		if c.Name == "kubelet client" {
+			kubelet = c
+		}
+	}
+	if kubelet == nil || !strings.Contains(kubelet.Problem, "chalkctl apply-identity <node> --kubernetes-share") {
+		t.Errorf("kubelet client: %v, want the command that delivers a new one", kubelet)
+	}
+}
+
+func TestStatusCertificatesWithoutKubernetes(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
+	st := status(t, s)
+	if got := certificateNames(st.Certificates); strings.Join(got, ",") != "node,OS CA" {
+		t.Errorf("certificates %v", got)
+	}
+}
+
+func TestCertificateProblems(t *testing.T) {
+	now := time.Now()
+	cert := func(from, until time.Duration) *x509.Certificate {
+		return &x509.Certificate{NotBefore: now.Add(from), NotAfter: now.Add(until)}
+	}
+	for _, tc := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"leaf early", leafProblem(cert(-time.Hour, 300*24*time.Hour), now), ""},
+		{"leaf in its last third", leafProblem(cert(-250*24*time.Hour, 100*24*time.Hour), now), "less than a third of its lifetime remains"},
+		{"leaf expired", leafProblem(cert(-400*24*time.Hour, -time.Hour), now), "expired"},
+		{"CA with years left", caProblem(cert(0, 2*caWarning), now, caWarning), ""},
+		{"CA within its warning", caProblem(cert(0, caWarning-time.Hour), now, caWarning), "expires " + now.Add(caWarning-time.Hour).UTC().Format(time.DateOnly)},
+		{"node CA within 18 months", caProblem(cert(0, 500*24*time.Hour), now, nodeCAWarning), "expires " + now.Add(500*24*time.Hour).UTC().Format(time.DateOnly)},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+func TestParseTracking(t *testing.T) {
+	synced, err := parseTracking([]byte("C0A80001,10.0.2.2,2,1791460000.123456789,0.000012345,0.000001000,0.000020000,-12.345,0.001,0.020,0.010000000,0.001000000,64.4,Normal\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !synced.Synchronised || synced.Source != "10.0.2.2" || synced.OffsetSeconds != -0.000012345 {
+		t.Errorf("synchronised: %+v", synced)
+	}
+	unsynced, err := parseTracking([]byte("00000000,,0,0.000000000,0.000000000,0.000000000,0.000000000,0.000,0.000,0.000,1.000000000,1.000000000,0.0,Not synchronised\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unsynced.Synchronised || unsynced.Source != "" {
+		t.Errorf("not synchronised: %+v", unsynced)
+	}
+	if _, err := parseTracking([]byte("506 Cannot talk to daemon\n")); err == nil {
+		t.Error("parsed chronyc's error")
+	}
+}
+
+func TestStatusTime(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	r.rules = append(r.rules, rule{prefix: "chronyc -n -c tracking", out: "C0A80001,10.0.2.2,2,1791460000.1,-0.5,0,0,0,0,0,0,0,64,Normal\n"})
+	if st := status(t, s).Time; !st.Synchronised || st.Source != "10.0.2.2" || st.OffsetSeconds != 0.5 || st.Error != "" {
+		t.Errorf("time = %+v", st)
+	}
+}

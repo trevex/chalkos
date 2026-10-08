@@ -6,6 +6,8 @@ package chalkos.node.v1;
 
 option go_package = "github.com/trevex/chalkos/pkg/api/node/v1;nodev1";
 
+import "google/protobuf/timestamp.proto";
+
 service NodeService {
   // Info describes the node and the agent. Available in both modes to readers.
   rpc Info(InfoRequest) returns (InfoResponse);
@@ -221,6 +223,33 @@ message StatusResponse {
   repeated string failed_units = 4;
   // Absent on a node of a role without Kubernetes.
   KubernetesStatus kubernetes = 5;
+  // Every certificate the node holds or issues, with its expiry and what needs doing about it.
+  repeated CertificateStatus certificates = 6;
+  // How the node keeps its clock.
+  TimeStatus time = 7;
+}
+
+message CertificateStatus {
+  // What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA",
+  // "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one
+  // that expires first), "kubelet client" or "kubelet serving".
+  string name = 1;
+  google.protobuf.Timestamp not_after = 2;
+  // Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
+  // as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
+  // node-ca rotate"; empty when there is nothing to do. <node> stands for the node's name.
+  string problem = 3;
+}
+
+message TimeStatus {
+  // Whether chrony synchronises the clock with a server.
+  bool synchronised = 1;
+  // The server the clock follows.
+  string source = 2;
+  // How far the clock is from the server's time, in seconds; positive when it is ahead.
+  double offset_seconds = 3;
+  // Why chrony's state could not be read; empty when it was.
+  string error = 4;
 }
 
 message KubernetesStatus {

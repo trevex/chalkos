@@ -700,10 +700,38 @@ func (a *app) status(ctx context.Context, args []string) error {
 	if k := s.Kubernetes; k != nil {
 		fmt.Fprintln(a.stdout, kubernetesLine(k))
 	}
+	if len(s.Certificates) > 0 {
+		fmt.Fprintln(a.stdout, "certificates:")
+		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		for _, c := range s.Certificates {
+			line := fmt.Sprintf("  %s\texpires %s", c.Name, c.NotAfter.AsTime().UTC().Format(time.DateOnly))
+			if c.Problem != "" {
+				line += "\t" + strings.ReplaceAll(c.Problem, "<node>", t.name)
+			}
+			fmt.Fprintln(w, line)
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	}
+	if s.Time != nil {
+		fmt.Fprintln(a.stdout, timeLine(s.Time))
+	}
 	for _, u := range s.FailedUnits {
 		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
 	}
 	return nil
+}
+
+// timeLine is the status line of the node's clock.
+func timeLine(t *nodev1.TimeStatus) string {
+	switch {
+	case t.Error != "":
+		return "time: unknown: " + t.Error
+	case !t.Synchronised:
+		return "time: not synchronised; certificates are checked against this clock"
+	}
+	return fmt.Sprintf("time: synchronised to %s, offset %+.6f s", t.Source, t.OffsetSeconds)
 }
 
 // kubernetesLine is the status line of the node's Kubernetes side.
