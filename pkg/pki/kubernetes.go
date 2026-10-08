@@ -26,8 +26,13 @@ type KubernetesSecrets struct {
 	EtcdCA CertKey `json:"etcdCA"`
 	// ServiceAccountKey signs service account tokens (ES256), PEM PKCS#8.
 	ServiceAccountKey string `json:"serviceAccountKey"`
-	// EncryptionKey encrypts secrets in etcd.
-	EncryptionKey []byte `json:"encryptionKey"`
+	// EncryptionKey encrypts secrets in etcd, under the name EncryptionKeyName, which ciphertexts
+	// carry; empty names the key DefaultEncryptionKeyName.
+	EncryptionKey     []byte `json:"encryptionKey"`
+	EncryptionKeyName string `json:"encryptionKeyName,omitempty"`
+	// Accepted holds what the components still trust besides the values above while one of them
+	// rotates.
+	Accepted KubernetesAccepted `json:"accepted,omitzero"`
 }
 
 // KubernetesPublic holds the certificates of the Kubernetes CAs.
@@ -60,6 +65,7 @@ func NewKubernetesSecrets(now time.Time) (*KubernetesSecrets, error) {
 		return nil, err
 	}
 	k.ServiceAccountKey = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	k.EncryptionKeyName = DefaultEncryptionKeyName
 	k.EncryptionKey = make([]byte, EncryptionKeySize)
 	if _, err := rand.Read(k.EncryptionKey); err != nil {
 		return nil, err

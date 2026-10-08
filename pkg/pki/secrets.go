@@ -17,8 +17,8 @@ import (
 // SecretsVersion is the only version of the secrets file this package reads and writes.
 const SecretsVersion = 3
 
-// Secrets is the cluster's secrets file. It is written by chalkctl gen secrets and, with a new
-// node CA, by chalkctl node-ca rotate, always to a new file, so it can live in any secret manager.
+// Secrets is the cluster's secrets file. chalkctl gen secrets writes it; chalkctl node-ca rotate
+// and chalkctl rotate change it.
 type Secrets struct {
 	Version int `json:"version"`
 	// OSCA is the root every node and client of chalkd trusts. It issues client certificates and
@@ -30,6 +30,10 @@ type Secrets struct {
 	RecoverySecret []byte `json:"recoverySecret"`
 	// Kubernetes holds the secrets of the Kubernetes control plane.
 	Kubernetes KubernetesSecrets `json:"kubernetes"`
+	// Accepted holds the OS CAs still trusted besides OSCA while it rotates.
+	Accepted Accepted `json:"accepted,omitzero"`
+	// Rotation records the rotation that runs, if one does.
+	Rotation *Rotation `json:"rotation,omitempty"`
 }
 
 // Public is the public half of the secrets file, secrets.pub.json, which the cluster definition
@@ -70,7 +74,11 @@ func (s Secrets) String() string {
 	if ca, _, err := s.OSCA.Parse(); err == nil {
 		subject = ca.Subject.CommonName
 	}
-	return fmt.Sprintf("pki.Secrets{version: %d, osCA: %s, redacted}", s.Version, subject)
+	rotation := ""
+	if s.Rotation != nil {
+		rotation = ", rotation: " + s.Rotation.String()
+	}
+	return fmt.Sprintf("pki.Secrets{version: %d, osCA: %s%s, redacted}", s.Version, subject, rotation)
 }
 
 // GoString redacts a Secrets the same way String does, so %#v in a log or test failure never
@@ -91,7 +99,8 @@ func (s Secrets) Public() Public {
 
 // Validate checks the version, that every secret is present, that the certificates belong to
 // their keys, that osCA is a CA that may issue the node CA, that nodeCA is a node CA osCA
-// issued, that the Kubernetes secrets are valid, and that no two CAs share a key.
+// issued, that the Kubernetes secrets and the accepted values are valid, that no two CAs share a
+// key, and that a running rotation is consistent.
 func (s Secrets) Validate() error {
 	if s.Version != SecretsVersion {
 		return fmt.Errorf("version %d is not supported; chalkos reads version %d only, so generate new secrets with chalkctl gen secrets", s.Version, SecretsVersion)
@@ -108,7 +117,13 @@ func (s Secrets) Validate() error {
 	if err := s.Kubernetes.Validate(); err != nil {
 		return err
 	}
-	return RequireDistinctCAs(append([]NamedCA{{"osCA", s.OSCA}, {"nodeCA", s.NodeCA}}, s.Kubernetes.cas()...)...)
+	if err := s.validateAccepted(); err != nil {
+		return err
+	}
+	if err := RequireDistinctCAs(s.cas()...); err != nil {
+		return err
+	}
+	return s.validateRotation()
 }
 
 // ValidateNodeCA checks that nodeCA, with its key, is a node CA that an OS CA of the bundle osCA
