@@ -29,7 +29,8 @@ type Config struct {
 	// Certificate and Key are PEM.
 	Certificate string `json:"certificate"`
 	Key         string `json:"key"`
-	// OSCA is the PEM certificate of the OS CA, which nodes' certificates chain to.
+	// OSCA holds the PEM certificates of the OS CAs nodes' certificates chain to: the one that
+	// issued the certificate, and while it rotates the other one.
 	OSCA string `json:"osCA"`
 	// Nodes are the nodes' addresses by name, as the cluster definition had them when the file
 	// was issued; used only when no cluster definition is at hand.
@@ -37,13 +38,13 @@ type Config struct {
 }
 
 // NewConfig issues a client certificate of the role from the OS CA for a new key, valid for
-// validity and never beyond the OS CA.
-func NewConfig(osCA pki.CertKey, cluster, name, role string, validity time.Duration, nodes map[string]string, now time.Time) (Config, error) {
+// validity and never beyond the OS CA, for a cluster whose nodes chain to the OS CAs trusted.
+func NewConfig(osCA pki.CertKey, trusted, cluster, name, role string, validity time.Duration, nodes map[string]string, now time.Time) (Config, error) {
 	ck, err := pki.IssueClient(osCA, name, role, validity, now)
 	if err != nil {
 		return Config{}, err
 	}
-	c := Config{Version: ConfigVersion, Cluster: cluster, Name: name, Role: role, Certificate: ck.Certificate, Key: ck.Key, OSCA: osCA.Certificate, Nodes: nodes}
+	c := Config{Version: ConfigVersion, Cluster: cluster, Name: name, Role: role, Certificate: ck.Certificate, Key: ck.Key, OSCA: pki.Bundle(osCA.Certificate, trusted), Nodes: nodes}
 	if err := c.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -72,8 +73,8 @@ func ReadConfig(path string) (Config, error) {
 	return c, nil
 }
 
-// Validate checks the version, that the certificate belongs to the key, that the OS CA issued it
-// itself for clients, and that it grants the role and names the user the file says.
+// Validate checks the version, that the certificate belongs to the key, that an OS CA of the file
+// issued it itself for clients, and that it grants the role and names the user the file says.
 func (c Config) Validate() error {
 	if c.Version != ConfigVersion {
 		return fmt.Errorf("client file version %d is not supported (want %d)", c.Version, ConfigVersion)
@@ -85,12 +86,13 @@ func (c Config) Validate() error {
 	if err != nil {
 		return fmt.Errorf("the certificate: %w", err)
 	}
-	root, err := pki.ParseCertificate([]byte(c.OSCA))
+	if _, err := pki.ValidateOSCABundle(c.OSCA); err != nil {
+		return fmt.Errorf("the OS CA: %w", err)
+	}
+	roots, err := pki.BundlePool(c.OSCA)
 	if err != nil {
 		return fmt.Errorf("the OS CA: %w", err)
 	}
-	roots := x509.NewCertPool()
-	roots.AddCert(root)
 	chains, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: cert.NotBefore})
 	if err != nil {
 		return fmt.Errorf("the certificate does not verify against the OS CA: %w", err)

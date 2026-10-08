@@ -61,8 +61,8 @@ type Request struct {
 	// Kubernetes is the identity's Kubernetes section; nil on a node of a role without Kubernetes.
 	Kubernetes *manifest.KubernetesIdentity
 	// NodeCertificate, the node certificate followed by the node CA's, and NodeKey are what chalkd
-	// serves once the node is installed; CA, the OS CA, issues the client certificates it accepts
-	// and the node CA. All are PEM.
+	// serves once the node is installed; CA holds the OS CAs, which issue the client certificates
+	// it accepts and the node CA. All are PEM.
 	NodeCertificate, NodeKey, CA []byte
 	// FallbackSecret is enrolled as the second keyslot of every encrypted volume.
 	FallbackSecret string
@@ -89,7 +89,7 @@ func (r Request) validate() error {
 	if r.Section.Fallback != storage.FallbackNone && r.FallbackSecret == "" {
 		return fmt.Errorf("the node's fallback is %s, but no fallback secret was sent", r.Section.Fallback)
 	}
-	if _, err := pki.ParseCertificate(r.CA); err != nil {
+	if _, err := pki.ValidateOSCABundle(string(r.CA)); err != nil {
 		return fmt.Errorf("CA certificate: %w", err)
 	}
 	// A node whose certificate does not chain through the node CA to the OS CA could not be

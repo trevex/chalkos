@@ -32,7 +32,7 @@ func (ta *testApp) nodeWithCertificate(t *testing.T, s *chalkd.Server, cert pki.
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	return serveTLS(t, s.Handler(), chalkd.TLSConfig(s.Certificate.GetCertificate, pool))
+	return serveTLS(t, s.Handler(), chalkd.TLSConfig(s.Certificate.GetCertificate, s.Certificate.ClientCAs))
 }
 
 func TestNodeRenewReachesAnExpiredNode(t *testing.T) {

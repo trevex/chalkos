@@ -318,7 +318,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		Identity:        id,
 		NodeCertificate: []byte(nodeCert.Certificate),
 		NodeKey:         []byte(nodeCert.Key),
-		CaCertificate:   []byte(t.secrets.OSCA.Certificate),
+		CaCertificate:   []byte(t.secrets.OSCABundle()),
 		FallbackSecret:  fallback,
 		WipeDisk:        *wipe,
 		KubernetesShare: share,
@@ -710,6 +710,16 @@ func (a *app) status(ctx context.Context, args []string) error {
 			return err
 		}
 	}
+	if len(s.Trust) > 0 {
+		fmt.Fprintln(a.stdout, "trust:")
+		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		for _, tr := range s.Trust {
+			fmt.Fprintln(w, trustLine(tr))
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	}
 	if s.Time != nil {
 		fmt.Fprintln(a.stdout, timeLine(s.Time))
 	}
@@ -729,6 +739,20 @@ func certificateLine(c *nodev1.CertificateStatus, node string) string {
 		line += "\t" + strings.ReplaceAll(c.Problem, "<node>", node)
 	}
 	return line
+}
+
+// trustLine is a line of the status's trust section: what is trusted, by the first 16 hex digits
+// of each fingerprint, the issuing one marked.
+func trustLine(t *nodev1.TrustStatus) string {
+	var fps []string
+	for _, fp := range t.Fingerprints {
+		short := fp[:min(16, len(fp))]
+		if fp == t.Issuing {
+			short += " (issues)"
+		}
+		fps = append(fps, short)
+	}
+	return fmt.Sprintf("  %s\t%s", t.Name, strings.Join(fps, ", "))
 }
 
 // timeLine is the status line of the node's clock.

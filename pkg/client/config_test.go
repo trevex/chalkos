@@ -14,7 +14,7 @@ import (
 func TestConfigRoundTrip(t *testing.T) {
 	now := time.Now()
 	osCA, _ := pki.NewOSCA(now)
-	c, err := NewConfig(osCA, "lab", "alice", pki.RoleReader, 30*24*time.Hour, map[string]string{"n1": "10.0.0.11"}, now)
+	c, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleReader, 30*24*time.Hour, map[string]string{"n1": "10.0.0.11"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if out := fmt.Sprintf("%v %+v %#v", got, got, got); strings.Contains(out, "PRIVATE KEY") {
 		t.Errorf("a formatted client file holds its key: %s", out)
 	}
-	if _, err := NewConfig(osCA, "lab", "bob", pki.RoleNode, time.Hour, nil, now); err == nil {
+	if _, err := NewConfig(osCA, osCA.Certificate, "lab", "bob", pki.RoleNode, time.Hour, nil, now); err == nil {
 		t.Error("issued a client file for the node role")
 	}
 }
@@ -47,7 +47,7 @@ func TestConfigValidate(t *testing.T) {
 	osCA, _ := pki.NewOSCA(now)
 	nodeCA, _ := pki.NewNodeCA(osCA, now)
 	other, _ := pki.NewOSCA(now)
-	valid, err := NewConfig(osCA, "lab", "alice", pki.RoleOperator, time.Hour, nil, now)
+	valid, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleOperator, time.Hour, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}

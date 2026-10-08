@@ -297,7 +297,7 @@ func serve(t *testing.T, s *Server, c creds, clientCAs *x509.CertPool) string {
 		t.Fatal(err)
 	}
 	s.AnyClient = clientCAs == nil
-	return serveTLS(t, s.Handler(), TLSConfig(StaticCertificate(&pair), clientCAs))
+	return serveTLS(t, s.Handler(), TLSConfig(StaticCertificate(&pair), StaticCAs(clientCAs)))
 }
 
 // serveTLS serves h with the configuration as chalkd does, and returns the address. httptest's

@@ -28,11 +28,47 @@ const (
 	nodeCAWarning = 548 * 24 * time.Hour
 )
 
+// certificateStatus describes a certificate with its fingerprint and, when known, its issuer's.
+func certificateStatus(name string, cert, issuer *x509.Certificate, problem string) *nodev1.CertificateStatus {
+	st := &nodev1.CertificateStatus{Name: name, NotAfter: timestamppb.New(cert.NotAfter), Problem: problem, Fingerprint: pki.Fingerprint(cert.Raw)}
+	if issuer != nil {
+		st.Issuer = pki.Fingerprint(issuer.Raw)
+	}
+	return st
+}
+
+// issuerIn returns the certificate of cas that signed cert; nil when none did.
+func issuerIn(cert *x509.Certificate, cas []*x509.Certificate) *x509.Certificate {
+	for _, ca := range cas {
+		if cert.CheckSignatureFrom(ca) == nil {
+			return ca
+		}
+	}
+	return nil
+}
+
+// osCAs returns the OS CAs the node trusts.
+func (s *Server) osCAs() string {
+	if s.Certificate != nil {
+		return s.Certificate.OSCA()
+	}
+	return string(s.readOSCA())
+}
+
+// trust lists what the node trusts and issues with, by fingerprint.
+func (s *Server) trust() []*nodev1.TrustStatus {
+	var list []*nodev1.TrustStatus
+	if fps, err := pki.Fingerprints(s.osCAs()); err == nil {
+		list = append(list, &nodev1.TrustStatus{Name: "OS CA", Fingerprints: fps})
+	}
+	return list
+}
+
 // certificates lists every certificate the node holds or issues with what needs doing about it.
 func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 	var list []*nodev1.CertificateStatus
-	add := func(name string, cert *x509.Certificate, problem string) {
-		list = append(list, &nodev1.CertificateStatus{Name: name, NotAfter: timestamppb.New(cert.NotAfter), Problem: problem})
+	add := func(name string, cert, issuer *x509.Certificate, problem string) {
+		list = append(list, certificateStatus(name, cert, issuer, problem))
 	}
 	if s.Certificate != nil {
 		leaf := s.Certificate.Current().Leaf
@@ -44,14 +80,20 @@ func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 			// Only nodes with Kubernetes reach a control plane to renew it.
 			problem += "; renew it with chalkctl node renew <node>"
 		}
-		add("node", leaf, problem)
-	}
-	if osCA, err := pki.ParseCertificate(s.readOSCA()); err == nil {
-		problem := caProblem(osCA, now, caWarning)
-		if problem != "" {
-			problem = "OS CA " + problem
+		var issuer *x509.Certificate
+		if chain := s.Certificate.Current().TLS.Certificate; len(chain) > 1 {
+			issuer, _ = x509.ParseCertificate(chain[1])
 		}
-		add("OS CA", osCA, problem)
+		add("node", leaf, issuer, problem)
+	}
+	if osCAs, err := pki.ParseBundle(s.osCAs()); err == nil {
+		for _, osCA := range osCAs {
+			problem := caProblem(osCA, now, caWarning)
+			if problem != "" {
+				problem = "OS CA " + problem
+			}
+			add("OS CA", osCA, osCA, problem)
+		}
 	}
 	if s.Kubernetes != nil {
 		list = append(list, s.Kubernetes.certificates(now)...)
@@ -69,7 +111,7 @@ func (s *Server) readOSCA() []byte {
 func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 	var list []*nodev1.CertificateStatus
 	add := func(name string, cert *x509.Certificate, problem string) {
-		list = append(list, &nodev1.CertificateStatus{Name: name, NotAfter: timestamppb.New(cert.NotAfter), Problem: problem})
+		list = append(list, certificateStatus(name, cert, nil, problem))
 	}
 	share, err := knode.ReadShare(k.Paths)
 	if errors.Is(err, knode.ErrNoShare) {

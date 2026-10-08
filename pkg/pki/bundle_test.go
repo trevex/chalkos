@@ -76,3 +76,32 @@ func TestVerifyNodeAgainstBundle(t *testing.T) {
 		t.Error("verified against a bundle holding a key")
 	}
 }
+
+func TestBundleLeavesOutRepeats(t *testing.T) {
+	a, b, c := newTestCA(t), newTestCA(t), newTestCA(t)
+	got := Bundle(a.Certificate, Bundle(b.Certificate, a.Certificate), c.Certificate+"\n\n", b.Certificate)
+	if want := a.Certificate + b.Certificate + c.Certificate; got != want {
+		t.Errorf("bundle of a, a and b, and c, b holds %d certificates, want a, b and c", strings.Count(got, "BEGIN"))
+	}
+	if _, err := ParseBundle(Bundle(a.Certificate, "garbage")); err == nil {
+		t.Error("a bundle keeps no trace of what followed the certificates")
+	}
+}
+
+// TestValidateOSCABundle checks that a bundle of OS CAs holds self-signed roots alone.
+func TestValidateOSCABundle(t *testing.T) {
+	osCA, nodeCA := newTestNodeCA(t)
+	other, _ := newTestNodeCA(t)
+	if certs, err := ValidateOSCABundle(Bundle(osCA.Certificate, other.Certificate)); err != nil || len(certs) != 2 {
+		t.Errorf("two roots: %v", err)
+	}
+	leaf, _ := IssueLeaf(osCA, Leaf{CommonName: "leaf", Client: true}, now)
+	for name, bundle := range map[string]string{
+		"a node CA": Bundle(osCA.Certificate, nodeCA.Certificate),
+		"a leaf":    Bundle(osCA.Certificate, leaf.Certificate),
+	} {
+		if _, err := ValidateOSCABundle(bundle); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

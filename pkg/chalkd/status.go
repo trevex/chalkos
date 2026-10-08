@@ -75,6 +75,7 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 		}
 	}
 	resp.Certificates = s.certificates(time.Now())
+	resp.Trust = s.trust()
 	resp.Time = s.timeStatus(ctx)
 	return connect.NewResponse(resp), nil
 }

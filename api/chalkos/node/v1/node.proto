@@ -132,7 +132,8 @@ message InstallHeader {
   // PEM certificate and key chalkd serves once the node is installed.
   bytes node_certificate = 2;
   bytes node_key = 3;
-  // PEM certificate of the OS CA, which issues client certificates.
+  // PEM certificates of the OS CAs the node trusts, the one that issues client certificates and
+  // the node CA first, then those still trusted while it rotates.
   bytes ca_certificate = 4;
   // Recovery key or password enrolled as the second keyslot of every encrypted volume; empty
   // when the node's fallback is none.
@@ -189,6 +190,10 @@ message ApplyIdentityRequest {
   // it (PEM), and its key, which chalkd serves from then on; empty keeps the node's.
   bytes node_certificate = 4;
   bytes node_key = 5;
+  // The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them;
+  // empty keeps the node's. They must verify the node's certificate, the caller's and a control
+  // plane's node CA. Not together with a node certificate.
+  bytes trust = 6;
 }
 
 message ApplyIdentityResponse {
@@ -227,6 +232,22 @@ message StatusResponse {
   repeated CertificateStatus certificates = 6;
   // How the node keeps its clock.
   TimeStatus time = 7;
+  // What the node trusts and issues with, by fingerprint.
+  repeated TrustStatus trust = 8;
+}
+
+message TrustStatus {
+  // What is trusted: "OS CA" on every node; "Kubernetes CA" on nodes with Kubernetes; on
+  // control-plane nodes also "front-proxy CA", "etcd CA", "service-account keys" and "encryption
+  // keys".
+  string name = 1;
+  // The SHA-256 fingerprints of what is trusted, in lower-case hex: of certificates and of public
+  // keys in DER, and of encryption keys hashed apart from both. The one that issues or signs
+  // comes first.
+  repeated string fingerprints = 2;
+  // The fingerprint of the value the node issues, signs or encrypts with; empty where it does
+  // none of these.
+  string issuing = 3;
 }
 
 message CertificateStatus {
@@ -241,6 +262,10 @@ message CertificateStatus {
   // as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
   // node-ca rotate"; empty when there is nothing to do. <node> stands for the node's name.
   string problem = 3;
+  // The SHA-256 fingerprint of the certificate, and of the certificate that issued it when the
+  // node holds that one, in lower-case hex.
+  string fingerprint = 4;
+  string issuer = 5;
 }
 
 message TimeStatus {

@@ -20,7 +20,7 @@ import (
 // now, and returns its path.
 func (ta *testApp) writeConfig(t *testing.T, name, role string, validity time.Duration, now time.Time) string {
 	t.Helper()
-	c, err := client.NewConfig(ta.secrets.OSCA, "lab", name, role, validity, map[string]string{"n1": "10.0.0.11"}, now)
+	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", name, role, validity, map[string]string{"n1": "10.0.0.11"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestClientFileNodes(t *testing.T) {
 	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
-	c, err := client.NewConfig(ta.secrets.OSCA, "lab", "alice", pki.RoleReader, time.Hour, map[string]string{"n1": addr}, time.Now())
+	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", pki.RoleReader, time.Hour, map[string]string{"n1": addr}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -192,17 +192,23 @@ func TestStatusKubeletCertificatesWarnLate(t *testing.T) {
 
 func TestStatusNamesTheOSCA(t *testing.T) {
 	s, _ := installedServer(t, section("", ""), false)
-	withNodeCertificate(t, s)
-	// Issued so long ago that it expires within the year.
+	// Issued so long ago that it expires within the year; the node trusts it besides its own.
 	osCA, err := pki.NewOSCA(time.Now().Add(-pki.CAValidity + 100*24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
+	own, _ := testOSCA()
+	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), pki.Bundle(own.Certificate, osCA.Certificate))
+	withNodeCertificate(t, s)
+	expiring, _ := pki.ParseCertificate([]byte(osCA.Certificate))
+	var named bool
 	for _, c := range status(t, s).Certificates {
-		if c.Name == "OS CA" && !strings.HasPrefix(c.Problem, "OS CA expires ") {
-			t.Errorf("OS CA problem %q, want it named as the other CAs are", c.Problem)
+		if c.Name == "OS CA" && c.Fingerprint == pki.Fingerprint(expiring.Raw) {
+			named = strings.HasPrefix(c.Problem, "OS CA expires ")
 		}
+	}
+	if !named {
+		t.Error("the expiring OS CA's problem does not name it as the other CAs' do")
 	}
 }
 

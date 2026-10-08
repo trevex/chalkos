@@ -63,17 +63,29 @@ func BundlePool(bundle string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// Bundle joins PEM certificates into a bundle, in the order given, leaving out repeats.
+// Bundle joins PEM certificates and bundles into one bundle, in the order given, leaving out
+// repeated certificates. What follows the last PEM block of an argument is kept, so ParseBundle
+// still refuses it.
 func Bundle(certs ...string) string {
 	var b strings.Builder
 	seen := map[string]bool{}
 	for _, c := range certs {
-		c = strings.TrimSpace(c)
-		if c == "" || seen[c] {
-			continue
+		rest := []byte(c)
+		for {
+			block, r := pem.Decode(rest)
+			if block == nil {
+				break
+			}
+			rest = r
+			encoded := string(pem.EncodeToMemory(block))
+			if !seen[encoded] {
+				seen[encoded] = true
+				b.WriteString(encoded)
+			}
 		}
-		seen[c] = true
-		b.WriteString(c + "\n")
+		if trailing := bytes.TrimSpace(rest); len(trailing) > 0 {
+			b.Write(append(trailing, '\n'))
+		}
 	}
 	return b.String()
 }
@@ -89,4 +101,23 @@ func Fingerprints(bundle string) ([]string, error) {
 		fps[i] = Fingerprint(cert.Raw)
 	}
 	return fps, nil
+}
+
+// ValidateOSCABundle checks that every certificate of a bundle of OS CAs is a self-signed CA's
+// that may sign certificates and no node CA's, and returns them. A node CA trusted as a root
+// would make what control planes issue verify as the OS CA's own client certificates.
+func ValidateOSCABundle(bundle string) ([]*x509.Certificate, error) {
+	certs, err := ParseBundle(bundle)
+	if err != nil {
+		return nil, err
+	}
+	for i, cert := range certs {
+		if !cert.IsCA || !cert.BasicConstraintsValid || cert.KeyUsage&x509.KeyUsageCertSign == 0 {
+			return nil, fmt.Errorf("certificate %d of the bundle, %s, is not a CA's", i+1, cert.Subject.CommonName)
+		}
+		if IsNodeCA(cert) || cert.CheckSignatureFrom(cert) != nil {
+			return nil, fmt.Errorf("certificate %d of the bundle, %s, is not a self-signed root CA's", i+1, cert.Subject.CommonName)
+		}
+	}
+	return certs, nil
 }

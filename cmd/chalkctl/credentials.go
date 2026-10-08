@@ -27,18 +27,16 @@ type credentials struct {
 	config     *client.Config
 	configPath string
 	cert       *tls.Certificate
-	// osCA is the PEM certificate nodes are verified by.
+	// osCA holds the PEM certificates of the OS CAs nodes are verified by.
 	osCA string
 }
 
-// roots holds the OS CA.
+// roots holds the OS CAs.
 func (c *credentials) roots() (*x509.CertPool, error) {
-	ca, err := pki.ParseCertificate([]byte(c.osCA))
+	pool, err := pki.BundlePool(c.osCA)
 	if err != nil {
 		return nil, fmt.Errorf("the OS CA: %w", err)
 	}
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
 	return pool, nil
 }
 
@@ -65,7 +63,7 @@ func secretCredentials(s pki.Secrets) (*credentials, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &credentials{secrets: &s, cert: cert, osCA: s.OSCA.Certificate}, nil
+	return &credentials{secrets: &s, cert: cert, osCA: s.OSCABundle()}, nil
 }
 
 // loadSecretCredentials reads the secrets file for commands that need it.
@@ -197,7 +195,7 @@ func (a *app) configNew(ctx context.Context, args []string) error {
 			nodes[node] = addrs[0]
 		}
 	}
-	config, err := client.NewConfig(secrets.OSCA, c.manifest.Cluster.Name, *name, *role, *ttl, nodes, time.Now())
+	config, err := client.NewConfig(secrets.OSCA, secrets.OSCABundle(), c.manifest.Cluster.Name, *name, *role, *ttl, nodes, time.Now())
 	if err != nil {
 		return err
 	}

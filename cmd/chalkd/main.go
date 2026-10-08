@@ -76,8 +76,9 @@ type credentials struct {
 	// maintenance mode.
 	node        *chalkd.NodeCertificate
 	maintenance *tls.Certificate
-	// clientCAs issue the client certificates chalkd requires; nil accepts any client.
-	clientCAs *x509.CertPool
+	// clientCAs returns the CAs that issue the client certificates chalkd requires; nil accepts
+	// any client.
+	clientCAs func() *x509.CertPool
 }
 
 // getCertificate serves the certificate of the mode.
@@ -115,11 +116,7 @@ func loadCredentials(stateDir, imageCA, runDir string, now time.Time) (credentia
 		if err != nil {
 			return credentials{}, err
 		}
-		pool, err := loadPool(filepath.Join(dir, chalkd.CAFile))
-		if err != nil {
-			return credentials{}, err
-		}
-		return credentials{mode: nodev1.Mode_MODE_NORMAL, node: node, clientCAs: pool}, nil
+		return credentials{mode: nodev1.Mode_MODE_NORMAL, node: node, clientCAs: node.ClientCAs}, nil
 	}
 
 	cert, err := maintenanceCertificate(runDir, now)
@@ -128,9 +125,11 @@ func loadCredentials(stateDir, imageCA, runDir string, now time.Time) (credentia
 	}
 	c := credentials{mode: nodev1.Mode_MODE_MAINTENANCE, maintenance: &cert}
 	if _, err := os.Stat(imageCA); err == nil {
-		if c.clientCAs, err = loadPool(imageCA); err != nil {
+		pool, err := loadPool(imageCA)
+		if err != nil {
 			return credentials{}, err
 		}
+		c.clientCAs = chalkd.StaticCAs(pool)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return credentials{}, err
 	}

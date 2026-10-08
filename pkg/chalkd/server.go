@@ -210,14 +210,28 @@ func (a authorizer) WrapStreamingHandler(next connect.StreamingHandlerFunc) conn
 }
 
 // TLSConfig serves the certificate getCertificate returns for each connection and, with
-// clientCAs, requires client certificates that verify against them.
-func TLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error), clientCAs *x509.CertPool) *tls.Config {
+// clientCAs, requires client certificates that verify against the pool it returns for each
+// connection, so the OS CAs a node trusts change without a restart.
+func TLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error), clientCAs func() *x509.CertPool) *tls.Config {
 	cfg := &tls.Config{GetCertificate: getCertificate, MinVersion: tls.VersionTLS13}
 	if clientCAs != nil {
 		cfg.ClientAuth = tls.RequireAndVerifyClientCert
-		cfg.ClientCAs = clientCAs
+		cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			c := cfg.Clone()
+			c.GetConfigForClient = nil
+			c.ClientCAs = clientCAs()
+			return c, nil
+		}
 	}
 	return cfg
+}
+
+// StaticCAs verifies clients by one pool, as chalkd does in maintenance mode.
+func StaticCAs(pool *x509.CertPool) func() *x509.CertPool {
+	if pool == nil {
+		return nil
+	}
+	return func() *x509.CertPool { return pool }
 }
 
 // storage is the node's storage setup, as the booted system sees it.

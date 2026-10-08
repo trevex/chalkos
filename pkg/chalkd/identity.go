@@ -3,6 +3,7 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,9 +69,10 @@ func parseIdentity(data string) (delivered, error) {
 	return delivered{data: []byte(data), section: id.Storage, kubernetes: id.Kubernetes}, nil
 }
 
-// kubernetesShare validates a delivered share for the node the identity names and returns it as
-// STATE keeps it, in its canonical encoding; nil when none was delivered.
-func (s *Server) kubernetesShare(d delivered, data []byte) ([]byte, error) {
+// kubernetesShare validates a delivered share for the node the identity names, a node CA in it
+// against the OS CAs osCA, and returns it as STATE keeps it, in its canonical encoding; nil when
+// none was delivered.
+func (s *Server) kubernetesShare(d delivered, data []byte, osCA string) ([]byte, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
@@ -96,13 +98,9 @@ func (s *Server) kubernetesShare(d delivered, data []byte) ([]byte, error) {
 	if err := share.ValidateFor(nodeName); err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "%v", err)
 	}
+	// Certificates of another node CA would never verify against the node's OS CA.
 	if share.NodeCA != nil {
-		osCA, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "chalkd", CAFile))
-		if err != nil {
-			return nil, failed(connect.CodeInternal, "read the OS CA: %v", err)
-		}
-		// Certificates of another node CA would never verify against the node's OS CA.
-		if err := pki.ValidateNodeCA(*share.NodeCA, string(osCA)); err != nil {
+		if err := pki.ValidateNodeCA(*share.NodeCA, osCA); err != nil {
 			return nil, failed(connect.CodeInvalidArgument, "the share's node CA: %v", err)
 		}
 	}
@@ -128,8 +126,16 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	m := req.Msg
 	// Without an identity the node keeps its own, which the share is checked against.
 	keep := m.Identity == ""
-	if keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers no identity, share or node certificate")
+	if keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers no identity, share, node certificate or OS CAs")
+	}
+	// A node certificate is checked against the OS CAs the node trusts when it arrives.
+	if len(m.Trust) > 0 && len(m.NodeCertificate) > 0 {
+		return nil, failed(connect.CodeInvalidArgument, "deliver the OS CAs and a node certificate one after the other")
+	}
+	osCA, err := s.trustFor(ctx, m.Trust)
+	if err != nil {
+		return nil, err
 	}
 	identity := m.Identity
 	if keep {
@@ -143,12 +149,24 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	if err != nil {
 		return nil, err
 	}
-	share, err := s.kubernetesShare(d, m.KubernetesShare)
+	share, err := s.kubernetesShare(d, m.KubernetesShare, osCA)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
 		return nil, err
+	}
+	if len(m.Trust) > 0 {
+		if share == nil {
+			// A control plane keeps renewing node certificates with the node CA it holds.
+			if err := s.checkKeptNodeCA(osCA); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.Certificate.ReplaceTrust(osCA, peerOf(ctx)...); err != nil {
+			return nil, failed(connect.CodeInvalidArgument, "%v", err)
+		}
+		log.Printf("trusting %d OS CAs from now on", strings.Count(osCA, "-----BEGIN CERTIFICATE-----"))
 	}
 	var changes []storage.Change
 	var restarted []string
@@ -653,6 +671,52 @@ func reverse(s []string) []string {
 		out[len(s)-1-i] = v
 	}
 	return out
+}
+
+// trustFor returns the OS CAs the node is to trust after the request: those delivered, checked
+// as NodeCertificate.ReplaceTrust does, or else its own.
+func (s *Server) trustFor(ctx context.Context, delivered []byte) (string, error) {
+	if s.Certificate == nil {
+		if len(delivered) > 0 {
+			return "", failed(connect.CodeFailedPrecondition, "the node serves no node certificate the OS CAs would verify")
+		}
+		return string(s.readOSCA()), nil
+	}
+	if len(delivered) == 0 {
+		return s.Certificate.OSCA(), nil
+	}
+	if err := s.Certificate.CheckTrust(string(delivered), peerOf(ctx)...); err != nil {
+		return "", failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	return pki.Bundle(string(delivered)), nil
+}
+
+// checkKeptNodeCA refuses OS CAs that the node CA a control plane holds does not chain to.
+func (s *Server) checkKeptNodeCA(osCA string) error {
+	if s.Kubernetes == nil {
+		return nil
+	}
+	share, err := knode.ReadShare(s.Kubernetes.Paths)
+	if errors.Is(err, knode.ErrNoShare) {
+		return nil
+	}
+	if err != nil {
+		return failed(connect.CodeInternal, "%v", err)
+	}
+	if share.NodeCA != nil {
+		if err := pki.ValidateNodeCA(*share.NodeCA, osCA); err != nil {
+			return failed(connect.CodeInvalidArgument, "the OS CAs do not verify the node's node CA, which it renews node certificates with: %v", err)
+		}
+	}
+	return nil
+}
+
+// peerOf returns the verified client certificate of the call, if there is one.
+func peerOf(ctx context.Context) []*x509.Certificate {
+	if peer, ok := ctx.Value(peerKey{}).(*x509.Certificate); ok && peer != nil {
+		return []*x509.Certificate{peer}
+	}
+	return nil
 }
 
 // checkNodeCertificate refuses a delivered node certificate before anything changes, as

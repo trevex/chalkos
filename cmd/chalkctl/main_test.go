@@ -149,7 +149,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	return serveTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), pool))
+	return serveTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), chalkd.StaticCAs(pool)))
 }
 
 // serveTLS serves h with the configuration as chalkd does, and returns the address. httptest's

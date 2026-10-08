@@ -15,17 +15,35 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// NodeCertificate is the certificate an installed node's chalkd serves and presents to renew it.
-// It is replaced while chalkd runs: connections made afterwards get the new one.
+// NodeCertificate is the certificate an installed node's chalkd serves and presents to renew it,
+// with the OS CAs the node trusts. Both are replaced while chalkd runs: connections made
+// afterwards get the new ones.
 type NodeCertificate struct {
-	// path holds the chain and the key in one file, so a replacement switches both at once.
-	path string
-	// osCA is the PEM certificate of the OS CA the chain must lead to.
-	osCA string
+	// path holds the chain and the key in one file, so a replacement switches both at once;
+	// caPath holds the OS CAs.
+	path, caPath string
 
-	// mu serialises replacements; current is read without it.
+	// mu serialises replacements; current and trust are read without it.
 	mu      sync.Mutex
 	current atomic.Pointer[pki.NodeCredential]
+	trust   atomic.Pointer[trust]
+}
+
+// trust is a bundle of OS CAs, the one that issues first, as a pool too.
+type trust struct {
+	bundle string
+	pool   *x509.CertPool
+}
+
+func newTrust(bundle string) (*trust, error) {
+	if _, err := pki.ValidateOSCABundle(bundle); err != nil {
+		return nil, fmt.Errorf("the OS CA: %w", err)
+	}
+	pool, err := pki.BundlePool(bundle)
+	if err != nil {
+		return nil, err
+	}
+	return &trust{bundle: bundle, pool: pool}, nil
 }
 
 // NodeCertificateFile is the file below STATE's chalkd directory that holds the node's chain and
@@ -43,7 +61,12 @@ func LoadNodeCertificate(dir string) (*NodeCertificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read the OS CA: %w", err)
 	}
-	n := &NodeCertificate{path: filepath.Join(dir, NodeCertificateFile), osCA: string(osCA)}
+	t, err := newTrust(string(osCA))
+	if err != nil {
+		return nil, err
+	}
+	n := &NodeCertificate{path: filepath.Join(dir, NodeCertificateFile), caPath: filepath.Join(dir, CAFile)}
+	n.trust.Store(t)
 	// A crash in the middle of a replacement leaves its temporary file, which holds a key.
 	stale, _ := filepath.Glob(filepath.Join(dir, "."+NodeCertificateFile+".*"))
 	for _, path := range stale {
@@ -56,7 +79,7 @@ func LoadNodeCertificate(dir string) (*NodeCertificate, error) {
 		return nil, fmt.Errorf("read the node certificate: %w", err)
 	}
 	// The file holds the chain and the key; each parser takes its own blocks.
-	cred, err := pki.VerifyNode(string(data), string(data), n.osCA, time.Time{})
+	cred, err := pki.VerifyNode(string(data), string(data), t.bundle, time.Time{})
 	if err != nil {
 		return nil, fmt.Errorf("load the node certificate: %w", err)
 	}
@@ -69,9 +92,57 @@ func (n *NodeCertificate) Current() *pki.NodeCredential {
 	return n.current.Load()
 }
 
-// OSCA returns the PEM certificate of the OS CA.
+// OSCA returns the PEM certificates of the OS CAs the node trusts, the one that issues first.
 func (n *NodeCertificate) OSCA() string {
-	return n.osCA
+	return n.trust.Load().bundle
+}
+
+// ClientCAs returns the OS CAs as the pool chalkd verifies clients by.
+func (n *NodeCertificate) ClientCAs() *x509.CertPool {
+	return n.trust.Load().pool
+}
+
+// ReplaceTrust makes the node trust the OS CAs of bundle from now on. It refuses a bundle that
+// would lock the node out: one its own certificate or any of keep, such as the caller's client
+// certificate, does not verify against. The bundle is written to STATE before it is used, so a
+// restart keeps it.
+func (n *NodeCertificate) ReplaceTrust(bundle string, keep ...*x509.Certificate) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	t, err := n.checkTrust(bundle, keep...)
+	if err != nil {
+		return err
+	}
+	if t.bundle == n.OSCA() {
+		return nil
+	}
+	if err := install.WriteFile(n.caPath, []byte(t.bundle), 0o644); err != nil {
+		return fmt.Errorf("record the OS CAs: %w", err)
+	}
+	n.trust.Store(t)
+	return nil
+}
+
+// CheckTrust checks a bundle as ReplaceTrust does, without trusting it.
+func (n *NodeCertificate) CheckTrust(bundle string, keep ...*x509.Certificate) error {
+	_, err := n.checkTrust(bundle, keep...)
+	return err
+}
+
+func (n *NodeCertificate) checkTrust(bundle string, keep ...*x509.Certificate) (*trust, error) {
+	t, err := newTrust(pki.Bundle(bundle))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := pki.NodeFile(*n.Current(), t.bundle); err != nil {
+		return nil, fmt.Errorf("the OS CAs do not verify the node's certificate: %w", err)
+	}
+	for _, cert := range keep {
+		if _, err := cert.Verify(x509.VerifyOptions{Roots: t.pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+			return nil, fmt.Errorf("the OS CAs do not verify the certificate of %s, which would lose access: %w", cert.Subject.CommonName, err)
+		}
+	}
+	return t, nil
 }
 
 // Fingerprint returns the SHA-256 of the certificate served now.
@@ -114,7 +185,7 @@ func (n *NodeCertificate) replace(from *x509.Certificate, chain, key string, now
 	if err != nil {
 		return false, err
 	}
-	file, err := pki.NodeFile(cred, n.osCA)
+	file, err := pki.NodeFile(cred, n.OSCA())
 	if err != nil {
 		return false, err
 	}
@@ -132,7 +203,7 @@ func (n *NodeCertificate) Check(chain, key string, now time.Time) error {
 }
 
 func (n *NodeCertificate) check(chain, key string, now time.Time) (pki.NodeCredential, error) {
-	cred, err := pki.VerifyNode(chain, key, n.osCA, now)
+	cred, err := pki.VerifyNode(chain, key, n.OSCA(), now)
 	if err != nil {
 		return pki.NodeCredential{}, err
 	}
