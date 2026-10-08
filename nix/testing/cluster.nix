@@ -6,11 +6,15 @@ let
   # The registry the Kubernetes test serves on the host, as the VMs reach it through their
   # user-mode NIC.
   registry = "http://10.0.2.100:5000";
-  # The Kubernetes nodes' network between the VMs, on their second NIC.
-  clusterNetwork = mac: address: {
+  # The Kubernetes nodes' network between the VMs, on their second NIC: 192.168.100.0/24 and
+  # fd00:100::/64, with host n at .n and ::n. It has no router.
+  clusterNetwork = mac: n: {
     networks."10-cluster" = {
       matchConfig.MACAddress = mac;
-      address = [ "${address}/24" ];
+      address = [
+        "192.168.100.${n}/24"
+        "fd00:100::${n}/64"
+      ];
     };
   };
   # containerd, the kubelet and the CNI plugins outgrow the test image's verity partition.
@@ -23,8 +27,24 @@ let
       name = "chalklab";
       endpoint = "https://192.168.100.11:6443";
       osCA = "${secrets}/secrets.pub.json";
-      kubernetes.allowSchedulingOnControlPlanes = true;
+      kubernetes = {
+        allowSchedulingOnControlPlanes = true;
+        ipFamilies = [
+          "ipv4"
+          "ipv6"
+        ];
+        # The cluster network and w1's routed addresses.
+        vxlanSourceSubnets = [
+          "192.168.100.0/24"
+          "fd00:100::/64"
+          "192.168.200.0/24"
+          "fd00:200::/64"
+        ];
+      };
     };
+    # w1's addresses are on a dummy interface, whose MTU flannel would take: the cluster network's
+    # 1500 less IPv6's VXLAN overhead of 70.
+    chalkos.cni.flannel.mtu = 1430;
     # The default layout: VAR fills the system disk.
     chalkos.roles.test = {
       kubernetes.kind = null;
@@ -76,17 +96,47 @@ let
       kubernetes.kind = "worker";
       nixosModules = kubernetesImage;
     };
+    # cp1 reaches w1's addresses through w1's address on the cluster network, as a routing daemon
+    # would install the routes.
     chalkos.nodes.cp1 = {
       role = "k8s-controlplane";
       storage.system.disk = "/dev/vda";
-      network = clusterNetwork "52:54:00:00:01:11" "192.168.100.11";
+      network = pkgs.lib.recursiveUpdate (clusterNetwork "52:54:00:00:01:11" "11") {
+        networks."10-cluster".routes = [
+          {
+            Destination = "192.168.200.12/32";
+            Gateway = "192.168.100.12";
+          }
+          {
+            Destination = "fd00:200::12/128";
+            Gateway = "fd00:100::12";
+          }
+        ];
+      };
     };
-    # w1 picks its address at boot: the cluster network's, not its user-mode NIC's 10.0.2.15.
+    # w1's addresses are on a dummy interface, as a routing daemon announces them; it picks them
+    # at boot, neither its user-mode NIC's nor its cluster network's.
     chalkos.nodes.w1 = {
       role = "k8s-worker";
       storage.system.disk = "/dev/vda";
-      network = clusterNetwork "52:54:00:00:01:12" "192.168.100.12";
-      kubernetes.validSubnets = [ "192.168.100.0/24" ];
+      network = pkgs.lib.recursiveUpdate (clusterNetwork "52:54:00:00:01:12" "12") {
+        netdevs."20-bgp0".netdevConfig = {
+          Kind = "dummy";
+          Name = "bgp0";
+          MTUBytes = "1500";
+        };
+        networks."20-bgp0" = {
+          matchConfig.Name = "bgp0";
+          address = [
+            "192.168.200.12/32"
+            "fd00:200::12/128"
+          ];
+        };
+      };
+      kubernetes.validSubnets = [
+        "192.168.200.0/24"
+        "fd00:200::/64"
+      ];
     };
   };
   # Three control planes behind the VIP 192.168.100.10, connected through the switch of the HA
@@ -115,7 +165,7 @@ let
       {
         role = "k8s-ha";
         storage.system.disk = "/dev/vda";
-        network = clusterNetwork "52:54:00:00:02:1${n}" "192.168.100.1${n}";
+        network = clusterNetwork "52:54:00:00:02:1${n}" "1${n}";
       }
     );
   };

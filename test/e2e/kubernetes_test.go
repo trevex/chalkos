@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -39,13 +40,15 @@ var kubernetesNodes = []struct {
 // probeDoneRE is the probe's last fact on the console, written once a boot is up.
 var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 
-// TestKubernetesCluster installs a control plane and a worker that picks its address from a
-// subnet, bootstraps the cluster and checks that the worker registers and accepts VXLAN on that
-// address only, that pods on both nodes reach each other and resolve the API server's service,
-// also after the control plane rebooted with newly issued certificates, and that a worker whose
-// link is cut turns NotReady. The images come from a registry the test serves; with
-// CHALKLAB_K8S_ONLINE=1 the test does not start that registry, so the nodes' mirror is
-// unreachable and containerd falls back to pulling from upstream.
+// TestKubernetesCluster installs a dual-stack cluster, IPv4 primary, of a control plane and a
+// worker that picks its addresses from subnets, bootstraps it and checks that the worker
+// registers and accepts VXLAN on those addresses only, that pods on both nodes have addresses of
+// both families and reach each other over both, directly, through a dual-stack service and at a
+// host port, and resolve names through the IPv4 DNS address, also after the control plane
+// rebooted with newly issued certificates, and that a worker whose link is cut turns NotReady.
+// The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 the test does not
+// start that registry, so the nodes' mirror is unreachable and containerd falls back to pulling
+// from upstream.
 func TestKubernetesCluster(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR", "CHALKLAB_K8S_WORKER_IMAGE_DIR"}, chalkdEnv...)...)
 	online := os.Getenv("CHALKLAB_K8S_ONLINE") == "1"
@@ -149,21 +152,25 @@ func TestKubernetesCluster(t *testing.T) {
 	if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
 		t.Errorf("status of w1: %v\n%s", err, out)
 	}
-	// cp1 has a fixed address; w1 picks the one in its validSubnets.
-	for name, want := range map[string]string{"cp1": "192.168.100.11", "w1": "192.168.100.12"} {
-		if got := internalIPs(t, ctx, cs, name); !slices.Equal(got, []string{want}) {
-			t.Errorf("InternalIP of %s = %v, want %s", name, got, want)
-		}
-	}
-	if rules := vxlanRules(t, nodes["w1"], "w1"); !slices.Equal(rules, []string{"ip daddr 192.168.100.12 udp dport 8472 fib daddr . iif type local meta mark set meta mark | 0x01000000"}) {
-		t.Errorf("VXLAN rules of w1 = %q, want one to 192.168.100.12 only", rules)
+	// cp1 has fixed addresses; w1 picks the ones in its validSubnets.
+	for _, name := range []string{"cp1", "w1"} {
+		dualStackNode(t, ctx, cs, nodes[name], name)
 	}
 	anonymousOnlyHealth(t, ctx, cfg)
+	kubeProxyNFTables(t, ctx, cs)
+	dnsService(t, ctx, cs)
 
-	createPeers(t, ctx, cs)
+	p := peers{
+		nodes:    [2]string{"cp1", "w1"},
+		nodeIPs:  [2][]string{dualStackAddresses["cp1"], dualStackAddresses["w1"]},
+		families: []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol},
+		dnsIP:    "10.96.0.10",
+	}
+	p.create(t, ctx, cs)
 	start := time.Now()
-	waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return peersReached(ctx, cs, nil) })
+	waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
 	t.Logf("pods reached each other after %v", time.Since(start).Round(time.Second))
+	p.check(t, ctx, cs)
 	logMemory(t, ctx, cs)
 
 	before := servingCertificate(t, apiPort)
@@ -188,7 +195,8 @@ func TestKubernetesCluster(t *testing.T) {
 	if after := servingCertificate(t, apiPort); after.SerialNumber.Cmp(before.SerialNumber) == 0 {
 		t.Error("the API server serves the certificate from before the reboot")
 	}
-	waitFor(t, 10*time.Minute, "pods reaching each other after the reboot", func() error { return peersReached(ctx, cs, &rebooted) })
+	waitFor(t, 10*time.Minute, "pods reaching each other after the reboot", func() error { return p.reached(ctx, cs, &rebooted) })
+	dualStackNode(t, ctx, cs, cp1, "cp1")
 	logMemory(t, ctx, cs)
 
 	// A worker whose link is cut turns NotReady, and Ready again once its link is back.
@@ -281,40 +289,116 @@ func servingCertificates(ctx context.Context, cs kubernetes.Interface, names ...
 	return nil
 }
 
-// peerScript serves the pod's name and reports each time it reached the other pod by its DNS
-// name after resolving the API server's service.
+// peerHostPort is the port of the peers on their nodes' addresses.
+const peerHostPort = 31080
+
+// peerScript serves the pod's name, says which name server it uses, and reports each time it
+// reached the other pod in a family: at the addresses its name under the headless service
+// resolves to, at those of the other pod's service, for each record type of TYPES, and at its
+// host port on each of the addresses in PEER_NODE.
 const peerScript = `mkdir -p /www && hostname > /www/index.html && httpd -p 8080 -h /www
+echo "name server $(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
+reach() {
+  case $1 in *:*) url="http://[$1]:$2/" ;; *) url="http://$1:$2/" ;; esac
+  wget -q -T 2 -O - "$url" 2>/dev/null | grep -qx "$PEER"
+}
 while true; do
-  if nslookup kubernetes.default.svc.cluster.local >/dev/null 2>&1 && wget -q -T 2 -O - "http://$PEER.peers.default.svc.cluster.local:8080/" >/dev/null 2>&1; then
-    echo reached "$PEER"
-  fi
+  for name in "$PEER.peers" "peer-$PEER"; do
+    for type in $TYPES; do
+      for ip in $(nslookup -type=$type "$name.default.svc.cluster.local" 2>/dev/null | awk '/^Address: / {print $2}'); do
+        if reach "$ip" 8080; then
+          echo "reached $name $type $ip"
+        fi
+      done
+    done
+  done
+  for ip in $PEER_NODE; do
+    if reach "$ip" $HOST_PORT; then
+      echo "reached host port $ip"
+    fi
+  done
   sleep 2
 done`
 
-// createPeers starts pod a on the control plane and pod b on the worker, behind a headless
-// service that gives each a DNS name.
-func createPeers(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+// peers are pod a on one node and pod b on another, which reach each other in every family of
+// the cluster: at the addresses their names under a headless service resolve to, through a
+// service of each, and at a host port on the other's node.
+type peers struct {
+	nodes [2]string
+	// nodeIPs are the addresses of the nodes, the primary family's first.
+	nodeIPs [2][]string
+	// families are the cluster's, the primary one first.
+	families []corev1.IPFamily
+	// dnsIP is the cluster DNS's address, which the pods resolve names through.
+	dnsIP string
+}
+
+// recordTypes are the DNS record types of the families, as nslookup names them.
+func (p peers) recordTypes() []string {
+	var types []string
+	for _, f := range p.families {
+		types = append(types, map[corev1.IPFamily]string{corev1.IPv4Protocol: "a", corev1.IPv6Protocol: "aaaa"}[f])
+	}
+	return types
+}
+
+// create starts the pods behind a headless service that gives each a DNS name, and gives each a
+// service of its own; all of them have the cluster's families. A headless service has the primary
+// family alone unless it asks for more.
+func (p peers) create(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
-	labels := map[string]string{"app": "peer"}
+	policy := corev1.IPFamilyPolicySingleStack
+	if len(p.families) == 2 {
+		policy = corev1.IPFamilyPolicyRequireDualStack
+	}
 	_, err := cs.CoreV1().Services("default").Create(ctx, &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "peers"},
-		Spec:       corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone, Selector: labels, Ports: []corev1.ServicePort{{Port: 8080}}},
+		Spec: corev1.ServiceSpec{
+			ClusterIP:      corev1.ClusterIPNone,
+			IPFamilyPolicy: &policy,
+			IPFamilies:     p.families,
+			Selector:       map[string]string{"app": "peer"},
+			Ports:          []corev1.ServicePort{{Port: 8080}},
+		},
 	}, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []struct{ name, node, peer string }{{"a", "cp1", "b"}, {"b", "w1", "a"}} {
+	for _, name := range []string{"a", "b"} {
+		svc, err := cs.CoreV1().Services("default").Create(ctx, &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "peer-" + name},
+			Spec: corev1.ServiceSpec{
+				IPFamilyPolicy: &policy,
+				IPFamilies:     p.families,
+				Selector:       map[string]string{"peer": name},
+				Ports:          []corev1.ServicePort{{Port: 8080}},
+			},
+		}, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(svc.Spec.IPFamilies, p.families) || len(svc.Spec.ClusterIPs) != len(p.families) {
+			t.Errorf("service peer-%s: families %v, addresses %v, want one of each of %v", name, svc.Spec.IPFamilies, svc.Spec.ClusterIPs, p.families)
+		}
+	}
+	for i, pod := range []struct{ name, peer string }{{"a", "b"}, {"b", "a"}} {
 		_, err := cs.CoreV1().Pods("default").Create(ctx, &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: p.name, Labels: labels},
+			ObjectMeta: metav1.ObjectMeta{Name: pod.name, Labels: map[string]string{"app": "peer", "peer": pod.name}},
 			Spec: corev1.PodSpec{
-				Hostname:     p.name,
+				Hostname:     pod.name,
 				Subdomain:    "peers",
-				NodeSelector: map[string]string{"kubernetes.io/hostname": p.node},
+				NodeSelector: map[string]string{"kubernetes.io/hostname": p.nodes[i]},
 				Containers: []corev1.Container{{
 					Name:    "peer",
 					Image:   "docker.io/library/busybox:1.37.0",
 					Command: []string{"sh", "-c", peerScript},
-					Env:     []corev1.EnvVar{{Name: "PEER", Value: p.peer}},
+					Ports:   []corev1.ContainerPort{{ContainerPort: 8080, HostPort: peerHostPort}},
+					Env: []corev1.EnvVar{
+						{Name: "PEER", Value: pod.peer},
+						{Name: "TYPES", Value: strings.Join(p.recordTypes(), " ")},
+						{Name: "PEER_NODE", Value: strings.Join(p.nodeIPs[1-i], " ")},
+						{Name: "HOST_PORT", Value: strconv.Itoa(peerHostPort)},
+					},
 				}},
 			},
 		}, metav1.CreateOptions{})
@@ -324,18 +408,152 @@ func createPeers(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	}
 }
 
-// peersReached checks that both pods logged reaching the other, since the time when given.
-func peersReached(ctx context.Context, cs kubernetes.Interface, since *metav1.Time) error {
-	for _, p := range []struct{ name, peer string }{{"a", "b"}, {"b", "a"}} {
-		logs, err := cs.CoreV1().Pods("default").GetLogs(p.name, &corev1.PodLogOptions{SinceTime: since}).DoRaw(ctx)
+// reached checks that both pods logged reaching the other in every family, directly, through its
+// service and at its host port, since the time when given.
+func (p peers) reached(ctx context.Context, cs kubernetes.Interface, since *metav1.Time) error {
+	for i, pod := range []struct{ name, peer string }{{"a", "b"}, {"b", "a"}} {
+		logs, err := cs.CoreV1().Pods("default").GetLogs(pod.name, &corev1.PodLogOptions{SinceTime: since}).DoRaw(ctx)
 		if err != nil {
-			return fmt.Errorf("logs of pod %s: %w", p.name, err)
+			return fmt.Errorf("logs of pod %s: %w", pod.name, err)
 		}
-		if !strings.Contains(string(logs), "reached "+p.peer) {
-			return fmt.Errorf("pod %s has not reached pod %s", p.name, p.peer)
+		for _, name := range []string{pod.peer + ".peers", "peer-" + pod.peer} {
+			for _, typ := range p.recordTypes() {
+				if via := name + " " + typ + " "; !strings.Contains(string(logs), "reached "+via) {
+					return fmt.Errorf("pod %s has not reached %s", pod.name, via)
+				}
+			}
+		}
+		for _, ip := range p.nodeIPs[1-i] {
+			if !strings.Contains(string(logs), "reached host port "+ip+"\n") {
+				return fmt.Errorf("pod %s has not reached pod %s's host port at %s", pod.name, pod.peer, ip)
+			}
 		}
 	}
 	return nil
+}
+
+// check checks that the pods have an address of each of the cluster's families, the primary
+// one's first, and resolve names through the cluster DNS's address.
+func (p peers) check(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+	t.Helper()
+	for _, name := range []string{"a", "b"} {
+		pod, err := cs.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var families []corev1.IPFamily
+		for _, ip := range pod.Status.PodIPs {
+			family := corev1.IPv4Protocol
+			if strings.Contains(ip.IP, ":") {
+				family = corev1.IPv6Protocol
+			}
+			families = append(families, family)
+		}
+		if !slices.Equal(families, p.families) {
+			t.Errorf("addresses of pod %s %v, want one of each of %v", name, pod.Status.PodIPs, p.families)
+		}
+		logs, err := cs.CoreV1().Pods("default").GetLogs(name, &corev1.PodLogOptions{}).DoRaw(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(logs), "name server "+p.dnsIP+"\n") {
+			t.Errorf("pod %s does not resolve through %s:\n%s", name, p.dnsIP, logs)
+		}
+	}
+}
+
+// dualStackAddresses are the addresses of the nodes of the dual-stack cluster, IPv4 first. w1's
+// are on a dummy interface, routed through its address on the cluster network.
+var dualStackAddresses = map[string][]string{"cp1": {"192.168.100.11", "fd00:100::11"}, "w1": {"192.168.200.12", "fd00:200::12"}}
+
+// dualStackNode checks that the node registered its addresses, one per family, IPv4 first; that
+// flannel uses the same, and the VXLAN rules of this boot take VXLAN to them alone, from the
+// cluster's source ranges, on the interface holding the address or, on w1's dummy interface, on
+// any; and that the node has a pod range of each family.
+func dualStackNode(t *testing.T, ctx context.Context, cs kubernetes.Interface, n *node, name string) {
+	t.Helper()
+	want := dualStackAddresses[name]
+	if got := internalIPs(t, ctx, cs, name); !slices.Equal(got, want) {
+		t.Errorf("InternalIPs of %s = %v, want %v", name, got, want)
+	}
+	waitFor(t, 5*time.Minute, "flannel on "+name+" to use the node's addresses", func() error { return flannelAddresses(ctx, cs, name, want) })
+	if err := dualStackPodRanges(ctx, cs, name); err != nil {
+		t.Error(err)
+	}
+	rules := vxlanRules(t, n, name)
+	slices.Sort(rules)
+	arrival := " fib daddr . iif type local"
+	if name == "w1" {
+		arrival = ""
+	}
+	if want := []string{
+		"ip saddr { 192.168.100.0/24, 192.168.200.0/24 } ip daddr " + want[0] + " udp dport 8472" + arrival + " meta mark set meta mark | 0x01000000",
+		"ip6 saddr { fd00:100::/64, fd00:200::/64 } ip6 daddr " + want[1] + " udp dport 8472" + arrival + " meta mark set meta mark | 0x01000000",
+	}; !slices.Equal(rules, want) {
+		t.Errorf("VXLAN rules of %s = %q, want %q", name, rules, want)
+	}
+}
+
+// flannelAddresses checks that flannel on the node announced exactly the addresses, one per
+// family.
+func flannelAddresses(ctx context.Context, cs kubernetes.Interface, name string, want []string) error {
+	n, err := cs.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	got := []string{n.Annotations["flannel.alpha.coreos.com/public-ip"], n.Annotations["flannel.alpha.coreos.com/public-ipv6"]}
+	if !slices.Equal(got, want) {
+		return fmt.Errorf("flannel on %s uses %v, want %v", name, got, want)
+	}
+	return nil
+}
+
+// dualStackPodRanges checks that the node has a pod range of each family, IPv4 first.
+func dualStackPodRanges(ctx context.Context, cs kubernetes.Interface, name string) error {
+	n, err := cs.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if r := n.Spec.PodCIDRs; len(r) != 2 || !strings.HasPrefix(r[0], "10.244.") || !strings.HasPrefix(r[1], "fd00:10:244:") {
+		return fmt.Errorf("pod ranges of %s %v, want one of each family, IPv4 first", name, r)
+	}
+	return nil
+}
+
+// kubeProxyNFTables checks that kube-proxy runs in nftables mode on every node.
+func kubeProxyNFTables(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+	t.Helper()
+	pods, err := cs.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "k8s-app=kube-proxy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pods.Items) != len(kubernetesNodes) {
+		t.Errorf("%d kube-proxy pods, want %d", len(pods.Items), len(kubernetesNodes))
+	}
+	for _, pod := range pods.Items {
+		waitFor(t, 2*time.Minute, "kube-proxy's logs on "+pod.Spec.NodeName, func() error {
+			logs, err := cs.CoreV1().Pods("kube-system").GetLogs(pod.Name, &corev1.PodLogOptions{}).DoRaw(ctx)
+			if err != nil {
+				return err
+			}
+			if !strings.Contains(string(logs), "Using nftables Proxier") {
+				return fmt.Errorf("kube-proxy on %s does not use nftables:\n%s", pod.Spec.NodeName, logs)
+			}
+			return nil
+		})
+	}
+}
+
+// dnsService checks that the cluster DNS has the IPv4 DNS address alone, as kubeadm's has.
+func dnsService(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+	t.Helper()
+	svc, err := cs.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(svc.Spec.ClusterIPs, []string{"10.96.0.10"}) || !slices.Equal(svc.Spec.IPFamilies, []corev1.IPFamily{corev1.IPv4Protocol}) {
+		t.Errorf("kube-dns: addresses %v, families %v, want 10.96.0.10 alone", svc.Spec.ClusterIPs, svc.Spec.IPFamilies)
+	}
 }
 
 // logMemory reports the memory each node uses, as its kubelet measures it.
@@ -398,7 +616,7 @@ func internalIPs(t *testing.T, ctx context.Context, cs kubernetes.Interface, nam
 }
 
 // vxlanRuleRE is a rule of the node's VXLAN table as nft lists it.
-var vxlanRuleRE = regexp.MustCompile(`ip6? daddr \S+ udp dport 8472 .*$`)
+var vxlanRuleRE = regexp.MustCompile(`ip6? (saddr \{[^}]*\} ip6? )?daddr \S+ udp dport 8472 .*$`)
 
 // vxlanRules returns the rules of the node's VXLAN table, as the node's preparation logged them
 // last in this boot.
