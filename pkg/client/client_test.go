@@ -157,3 +157,37 @@ func TestCARequiresServerName(t *testing.T) {
 		t.Fatalf("Dial = %v, %v; want a refusal before connecting", c, err)
 	}
 }
+
+func TestAnyNode(t *testing.T) {
+	now := time.Now()
+	ca, _ := pki.NewOSCA(now)
+	nodeCA, _ := pki.NewNodeCA(ca, now)
+	node, _ := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "cp1"}, now)
+	caCert, _ := pki.ParseCertificate([]byte(ca.Certificate))
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+	_, addr := serve(t, node)
+	c, err := Dial(addr, Options{CA: pool, AnyNode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := info(c); err != nil {
+		t.Errorf("a node certificate was refused: %v", err)
+	}
+
+	// A server certificate the OS CA issued itself is no node's.
+	leaf, _ := pki.IssueLeaf(ca, pki.Leaf{CommonName: "cp1", Server: true}, now)
+	_, rootAddr := serve(t, leaf)
+	c, err = Dial(rootAddr, Options{CA: pool, AnyNode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := info(c); err == nil || !strings.Contains(err.Error(), "not a node certificate") {
+		t.Errorf("err = %v, want a refusal of a certificate that is not a node's", err)
+	}
+	for _, o := range []Options{{AnyNode: true}, {AnyNode: true, CA: pool, ServerName: "cp1"}} {
+		if _, err := Dial(addr, o); err == nil {
+			t.Errorf("accepted %+v", o)
+		}
+	}
+}

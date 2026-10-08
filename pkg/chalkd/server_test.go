@@ -159,6 +159,11 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 		},
 		RebootNode: func() {},
 	}
+	osCA, err := testOSCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
 	return s, r
 }
@@ -227,6 +232,14 @@ var deniedEverything = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
 	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied,
 	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodePermissionDenied,
+	"RenewNodeCertificate": connect.CodePermissionDenied,
+}
+
+// nodeRole is what a node gets in normal mode: RenewNodeCertificate alone, which a node without
+// Kubernetes refuses after authorisation.
+var nodeRole = map[string]connect.Code{
+	"Info": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
+	"ApplyIdentity": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
 }
 
 // clientWithOrganization issues a client certificate with the Organization given, bypassing the
@@ -323,6 +336,8 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: "cp2"}))
 	case "EtcdLeave":
 		_, err = c.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{}))
+	case "RenewNodeCertificate":
+		_, err = c.RenewNodeCertificate(ctx, connect.NewRequest(&nodev1.RenewNodeCertificateRequest{}))
 	case "Logs":
 		var s *connect.ServerStreamForClient[nodev1.LogsResponse]
 		if s, err = c.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{})); err == nil {
@@ -359,13 +374,13 @@ func TestAuthorisation(t *testing.T) {
 			// The identity "{}" lacks a storage section and the node has no Kubernetes; refusing them
 			// means the call got through.
 			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition,
-				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition},
+				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition, "RenewNodeCertificate": connect.CodePermissionDenied},
 			// A certificate of the OS CA without a role's Organization grants nothing.
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,
 			// Whatever its Organization says, a certificate of the node CA is a node's.
-			nodeCAAdmin:  deniedEverything,
-			pki.RoleNode: deniedEverything,
+			nodeCAAdmin:  nodeRole,
+			pki.RoleNode: nodeRole,
 		}},
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},

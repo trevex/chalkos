@@ -29,8 +29,14 @@ type Options struct {
 	// CA verifies the certificate of an installed node, which must be valid for ServerName.
 	CA         *x509.CertPool
 	ServerName string
-	// Certificate is presented to the node; nil presents none.
-	Certificate *tls.Certificate
+	// AnyNode accepts, instead of ServerName, any node certificate that verifies against CA
+	// through a node CA, as a node reaching a control plane through an address that names no
+	// node, such as a VIP, does.
+	AnyNode bool
+	// Certificate is presented to the node; nil presents none. GetClientCertificate, when set,
+	// replaces it.
+	Certificate          *tls.Certificate
+	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 }
 
 // Conn is a client of one node.
@@ -60,8 +66,11 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 		return nil, errors.New("exactly one of a fingerprint, insecure or a CA must be given")
 	}
 	// The CA issues every node's certificate; only the name tells this node from the others.
-	if o.CA != nil && o.ServerName == "" {
+	if o.CA != nil && o.ServerName == "" && !o.AnyNode {
 		return nil, errors.New("verifying the node by the CA needs the node's name")
+	}
+	if o.AnyNode && (o.CA == nil || o.ServerName != "") {
+		return nil, errors.New("accepting any node needs the CA and no node's name")
 	}
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
 		endpoint = net.JoinHostPort(endpoint, Port)
@@ -94,13 +103,21 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 			for _, cert := range cs.PeerCertificates[1:] {
 				intermediates.AddCert(cert)
 			}
-			_, err := leaf.Verify(x509.VerifyOptions{Roots: o.CA, Intermediates: intermediates, DNSName: o.ServerName})
-			return err
+			chains, err := leaf.Verify(x509.VerifyOptions{Roots: o.CA, Intermediates: intermediates, DNSName: o.ServerName,
+				KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+			if err != nil {
+				return err
+			}
+			if role, _ := pki.ClientRole(chains); o.AnyNode && role != pki.RoleNode {
+				return errors.New("the peer's certificate is not a node certificate")
+			}
+			return nil
 		},
 	}
 	if o.Certificate != nil {
 		cfg.Certificates = []tls.Certificate{*o.Certificate}
 	}
+	cfg.GetClientCertificate = o.GetClientCertificate
 	transport := &http.Transport{
 		DialContext:         (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
 		TLSClientConfig:     cfg,

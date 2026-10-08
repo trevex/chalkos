@@ -40,6 +40,10 @@ service NodeService {
   // unpins its addresses. The node joins the cluster again only once it is reinstalled. A
   // bootstrapped node whose own member does not answer leaves only when forced.
   rpc EtcdLeave(EtcdLeaveRequest) returns (EtcdLeaveResponse);
+  // RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
+  // the names of the node certificate it authenticated with. Available on control-plane nodes, to
+  // nodes only.
+  rpc RenewNodeCertificate(RenewNodeCertificateRequest) returns (RenewNodeCertificateResponse);
 }
 
 enum Mode {
@@ -307,3 +311,14 @@ message EtcdLeaveRequest {
 }
 
 message EtcdLeaveResponse {}
+
+message RenewNodeCertificateRequest {
+  // PKCS #10 certificate request (DER) signed with the node's new key, which never leaves the
+  // node. Only its key is used; the names come from the caller's certificate.
+  bytes certificate_request = 1;
+}
+
+message RenewNodeCertificateResponse {
+  // The new node certificate followed by the certificate of the node CA that issued it (PEM).
+  bytes certificate_chain = 1;
+}

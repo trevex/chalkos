@@ -842,3 +842,32 @@ func TestInPlaceStoresCanonicalShare(t *testing.T) {
 		t.Errorf("share.json = %s, want the canonical encoding %s", got, canonical)
 	}
 }
+
+// TestInstallRefusesForeignNodeCA guards against a control plane renewing node certificates no
+// node trusts.
+func TestInstallRefusesForeignNodeCA(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	k, err := pki.NewKubernetesSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := pki.NewOSCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeCA, err := pki.NewNodeCA(other, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.KubernetesShare, err = kpki.ControlPlaneShare(k, nodeCA).Encode(); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "node CA") {
+		t.Fatalf("err = %v, want the node CA refused", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v before refusing the share", r.calls)
+	}
+}

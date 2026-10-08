@@ -41,10 +41,14 @@ type Share struct {
 	EncryptionKey     []byte       `json:"encryptionKey,omitempty"`
 	// Kubelet is a worker's kubelet client certificate, which the kubelet renews itself.
 	Kubelet *pki.CertKey `json:"kubelet,omitempty"`
+	// NodeCA is the node CA with its key, with which a control-plane node renews node
+	// certificates. Workers do not hold it.
+	NodeCA *pki.CertKey `json:"nodeCA,omitempty"`
 }
 
-// ControlPlaneShare is what a control-plane node receives: every CA with its key and the keys.
-func ControlPlaneShare(k *pki.KubernetesSecrets) Share {
+// ControlPlaneShare is what a control-plane node receives: every Kubernetes CA with its key, the
+// keys, and the node CA.
+func ControlPlaneShare(k *pki.KubernetesSecrets, nodeCA pki.CertKey) Share {
 	front, etcd := k.FrontProxyCA, k.EtcdCA
 	return Share{
 		Kind:              kubernetes.KindControlPlane,
@@ -53,6 +57,7 @@ func ControlPlaneShare(k *pki.KubernetesSecrets) Share {
 		EtcdCA:            &etcd,
 		ServiceAccountKey: k.ServiceAccountKey,
 		EncryptionKey:     k.EncryptionKey,
+		NodeCA:            &nodeCA,
 	}
 }
 
@@ -66,13 +71,13 @@ func WorkerShare(k *pki.KubernetesSecrets, node string, now time.Time) (Share, e
 	return Share{Kind: kubernetes.KindWorker, CA: pki.CertKey{Certificate: k.CA.Certificate}, Kubelet: &kubelet}, nil
 }
 
-// ShareFor returns the share of a node of the kind.
-func ShareFor(k *pki.KubernetesSecrets, kind, node string, now time.Time) (Share, error) {
+// ShareFor returns the share of a node of the kind from the secrets file.
+func ShareFor(s *pki.Secrets, kind, node string, now time.Time) (Share, error) {
 	switch kind {
 	case kubernetes.KindControlPlane:
-		return ControlPlaneShare(k), nil
+		return ControlPlaneShare(&s.Kubernetes, s.NodeCA), nil
 	case kubernetes.KindWorker:
-		return WorkerShare(k, node, now)
+		return WorkerShare(&s.Kubernetes, node, now)
 	}
 	return Share{}, fmt.Errorf("unknown Kubernetes kind %q", kind)
 }
@@ -107,10 +112,13 @@ func ParseShare(data []byte) (Share, error) {
 func (s Share) Validate() error {
 	switch s.Kind {
 	case kubernetes.KindControlPlane:
-		if s.FrontProxyCA == nil || s.EtcdCA == nil || s.Kubelet != nil {
-			return errors.New("a control-plane share holds the front-proxy and etcd CAs and no kubelet certificate")
+		if s.FrontProxyCA == nil || s.EtcdCA == nil || s.NodeCA == nil || s.Kubelet != nil {
+			return errors.New("a control-plane share holds the front-proxy, etcd and node CAs and no kubelet certificate")
 		}
-		cas := []pki.NamedCA{{Name: "ca", CA: s.CA}, {Name: "frontProxyCA", CA: *s.FrontProxyCA}, {Name: "etcdCA", CA: *s.EtcdCA}}
+		if nodeCA, err := pki.ParseCertificate([]byte(s.NodeCA.Certificate)); err != nil || !pki.IsNodeCA(nodeCA) {
+			return errors.New("Kubernetes share: nodeCA is not a node CA")
+		}
+		cas := []pki.NamedCA{{Name: "ca", CA: s.CA}, {Name: "frontProxyCA", CA: *s.FrontProxyCA}, {Name: "etcdCA", CA: *s.EtcdCA}, {Name: "nodeCA", CA: *s.NodeCA}}
 		for _, ca := range cas {
 			if err := pki.ValidateCA(ca.CA); err != nil {
 				return fmt.Errorf("Kubernetes share: %s: %w", ca.Name, err)
@@ -126,8 +134,8 @@ func (s Share) Validate() error {
 			return fmt.Errorf("Kubernetes share: the encryption key must be %d bytes", pki.EncryptionKeySize)
 		}
 	case kubernetes.KindWorker:
-		if s.CA.Key != "" || s.FrontProxyCA != nil || s.EtcdCA != nil || s.ServiceAccountKey != "" || s.EncryptionKey != nil {
-			return errors.New("a worker share holds no CA key, service account key or encryption key")
+		if s.CA.Key != "" || s.FrontProxyCA != nil || s.EtcdCA != nil || s.NodeCA != nil || s.ServiceAccountKey != "" || s.EncryptionKey != nil {
+			return errors.New("a worker share holds no CA key, node CA, service account key or encryption key")
 		}
 		ca, err := pki.ParseCertificate([]byte(s.CA.Certificate))
 		if err != nil {

@@ -111,6 +111,11 @@ func (r Request) validate() error {
 		if err := share.ValidateFor(nodeName); err != nil {
 			return err
 		}
+		if share.NodeCA != nil {
+			if err := pki.ValidateNodeCA(*share.NodeCA, pki.CertKey{Certificate: string(r.CA)}); err != nil {
+				return fmt.Errorf("the share's node CA: %w", err)
+			}
+		}
 	}
 	return nil
 }

@@ -36,20 +36,24 @@ func roots(t *testing.T, ca pki.CertKey) *x509.CertPool {
 
 func TestShareByKind(t *testing.T) {
 	k := secrets(t)
-	cp, err := ShareFor(k, kubernetes.KindControlPlane, "cp1", now)
+	secrets := withNodeCA(t, k)
+	cp, err := ShareFor(secrets, kubernetes.KindControlPlane, "cp1", now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cp.NodeCA == nil || *cp.NodeCA != secrets.NodeCA {
+		t.Error("the control-plane share lacks the node CA")
 	}
 	if cp.CA != k.CA || *cp.EtcdCA != k.EtcdCA || *cp.FrontProxyCA != k.FrontProxyCA || cp.ServiceAccountKey != k.ServiceAccountKey ||
 		string(cp.EncryptionKey) != string(k.EncryptionKey) || cp.Kubelet != nil {
 		t.Error("the control-plane share lacks a secret of the control plane")
 	}
 
-	w, err := ShareFor(k, kubernetes.KindWorker, "w1", now)
+	w, err := ShareFor(withNodeCA(t, k), kubernetes.KindWorker, "w1", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w.CA.Key != "" || w.FrontProxyCA != nil || w.EtcdCA != nil || w.ServiceAccountKey != "" || w.EncryptionKey != nil {
+	if w.CA.Key != "" || w.FrontProxyCA != nil || w.EtcdCA != nil || w.NodeCA != nil || w.ServiceAccountKey != "" || w.EncryptionKey != nil {
 		t.Errorf("the worker share holds a control-plane secret: %+v", w.Kind)
 	}
 	cert, _, err := w.Kubelet.Parse()
@@ -68,7 +72,7 @@ func TestShareByKind(t *testing.T) {
 	if w.Node() != "w1" {
 		t.Errorf("Node() = %q", w.Node())
 	}
-	if _, err := ShareFor(k, "etcd", "e1", now); err == nil {
+	if _, err := ShareFor(withNodeCA(t, k), "etcd", "e1", now); err == nil {
 		t.Error("issued a share of an unknown kind")
 	}
 }
@@ -76,7 +80,7 @@ func TestShareByKind(t *testing.T) {
 func TestParseShare(t *testing.T) {
 	k := secrets(t)
 	for _, kind := range []string{kubernetes.KindControlPlane, kubernetes.KindWorker} {
-		s, err := ShareFor(k, kind, "n1", now)
+		s, err := ShareFor(withNodeCA(t, k), kind, "n1", now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,7 +97,7 @@ func TestParseShare(t *testing.T) {
 func TestShareValidateRefuses(t *testing.T) {
 	k := secrets(t)
 	other := secrets(t)
-	cp := ControlPlaneShare(k)
+	cp := ControlPlaneShare(k, testNodeCA(t))
 	w, err := WorkerShare(k, "w1", now)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +127,7 @@ func TestShareValidateRefuses(t *testing.T) {
 }
 
 func TestShareStringRedacted(t *testing.T) {
-	s := ControlPlaneShare(secrets(t))
+	s := ControlPlaneShare(secrets(t), testNodeCA(t))
 	out := fmt.Sprintf("%v %+v %#v", s, s, s)
 	if strings.Contains(out, "PRIVATE KEY") {
 		t.Errorf("formatted share leaks a key: %s", out)
@@ -200,7 +204,7 @@ func TestControlPlaneShareRejectsSharedCAs(t *testing.T) {
 		{"front-proxy CA is the Kubernetes CA", "ca", "frontProxyCA", func(s *Share) { ca := s.CA; s.FrontProxyCA = &ca }},
 		{"etcd CA is the front-proxy CA", "frontProxyCA", "etcdCA", func(s *Share) { ca := *s.FrontProxyCA; s.EtcdCA = &ca }},
 	} {
-		s := ControlPlaneShare(k)
+		s := ControlPlaneShare(k, testNodeCA(t))
 		tc.edit(&s)
 		err := s.Validate()
 		if err == nil {
@@ -293,12 +297,59 @@ func TestShareValidateFor(t *testing.T) {
 	if err := w2.ValidateFor("w2"); err != nil {
 		t.Errorf("w2 rejected its share: %v", err)
 	}
-	if err := ControlPlaneShare(k).ValidateFor("cp1"); err != nil {
+	if err := ControlPlaneShare(k, testNodeCA(t)).ValidateFor("cp1"); err != nil {
 		t.Errorf("cp1 rejected its share: %v", err)
 	}
 	bad := w2
 	bad.ServiceAccountKey = k.ServiceAccountKey
 	if err := bad.ValidateFor("w2"); err == nil {
 		t.Error("ValidateFor accepted a share Validate rejects")
+	}
+}
+
+// testNodeCA returns a node CA of a new OS CA.
+func testNodeCA(t *testing.T) pki.CertKey {
+	t.Helper()
+	osCA, err := pki.NewOSCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeCA, err := pki.NewNodeCA(osCA, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return nodeCA
+}
+
+// withNodeCA returns secrets with the Kubernetes secrets and a node CA.
+func withNodeCA(t *testing.T, k *pki.KubernetesSecrets) *pki.Secrets {
+	t.Helper()
+	return &pki.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}
+}
+
+func TestShareNodeCA(t *testing.T) {
+	k := secrets(t)
+	nodeCA := testNodeCA(t)
+	w, err := WorkerShare(k, "w1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.NodeCA = &nodeCA
+	without := ControlPlaneShare(k, nodeCA)
+	without.NodeCA = nil
+	osCA, err := pki.NewOSCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, s := range map[string]Share{
+		"a worker share with the node CA":          w,
+		"a control-plane share without it":         without,
+		"a control-plane share with the OS CA":     ControlPlaneShare(k, osCA),
+		"a control-plane share with a leaf CA":     ControlPlaneShare(k, k.FrontProxyCA),
+		"a control-plane share with a key-less CA": ControlPlaneShare(k, pki.CertKey{Certificate: nodeCA.Certificate}),
+	} {
+		if err := s.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

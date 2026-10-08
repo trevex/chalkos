@@ -61,6 +61,9 @@ const (
 	NodeServiceEtcdRemoveMemberProcedure = "/chalkos.node.v1.NodeService/EtcdRemoveMember"
 	// NodeServiceEtcdLeaveProcedure is the fully-qualified name of the NodeService's EtcdLeave RPC.
 	NodeServiceEtcdLeaveProcedure = "/chalkos.node.v1.NodeService/EtcdLeave"
+	// NodeServiceRenewNodeCertificateProcedure is the fully-qualified name of the NodeService's
+	// RenewNodeCertificate RPC.
+	NodeServiceRenewNodeCertificateProcedure = "/chalkos.node.v1.NodeService/RenewNodeCertificate"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -98,6 +101,10 @@ type NodeServiceClient interface {
 	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
 	// bootstrapped node whose own member does not answer leaves only when forced.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
+	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
+	// the names of the node certificate it authenticated with. Available on control-plane nodes, to
+	// nodes only.
+	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -183,23 +190,30 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("EtcdLeave")),
 			connect.WithClientOptions(opts...),
 		),
+		renewNodeCertificate: connect.NewClient[v1.RenewNodeCertificateRequest, v1.RenewNodeCertificateResponse](
+			httpClient,
+			baseURL+NodeServiceRenewNodeCertificateProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("RenewNodeCertificate")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
-	info             *connect.Client[v1.InfoRequest, v1.InfoResponse]
-	disks            *connect.Client[v1.DisksRequest, v1.DisksResponse]
-	install          *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyIdentity    *connect.Client[v1.ApplyIdentityRequest, v1.ApplyIdentityResponse]
-	resetVolume      *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
-	status           *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	logs             *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	reboot           *connect.Client[v1.RebootRequest, v1.RebootResponse]
-	bootstrap        *connect.Client[v1.BootstrapRequest, v1.BootstrapResponse]
-	etcdMembers      *connect.Client[v1.EtcdMembersRequest, v1.EtcdMembersResponse]
-	etcdRemoveMember *connect.Client[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse]
-	etcdLeave        *connect.Client[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse]
+	info                 *connect.Client[v1.InfoRequest, v1.InfoResponse]
+	disks                *connect.Client[v1.DisksRequest, v1.DisksResponse]
+	install              *connect.Client[v1.InstallRequest, v1.InstallResponse]
+	applyIdentity        *connect.Client[v1.ApplyIdentityRequest, v1.ApplyIdentityResponse]
+	resetVolume          *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
+	status               *connect.Client[v1.StatusRequest, v1.StatusResponse]
+	logs                 *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	reboot               *connect.Client[v1.RebootRequest, v1.RebootResponse]
+	bootstrap            *connect.Client[v1.BootstrapRequest, v1.BootstrapResponse]
+	etcdMembers          *connect.Client[v1.EtcdMembersRequest, v1.EtcdMembersResponse]
+	etcdRemoveMember     *connect.Client[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse]
+	etcdLeave            *connect.Client[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse]
+	renewNodeCertificate *connect.Client[v1.RenewNodeCertificateRequest, v1.RenewNodeCertificateResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -262,6 +276,11 @@ func (c *nodeServiceClient) EtcdLeave(ctx context.Context, req *connect.Request[
 	return c.etcdLeave.CallUnary(ctx, req)
 }
 
+// RenewNodeCertificate calls chalkos.node.v1.NodeService.RenewNodeCertificate.
+func (c *nodeServiceClient) RenewNodeCertificate(ctx context.Context, req *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error) {
+	return c.renewNodeCertificate.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in both modes to readers.
@@ -297,6 +316,10 @@ type NodeServiceHandler interface {
 	// unpins its addresses. The node joins the cluster again only once it is reinstalled. A
 	// bootstrapped node whose own member does not answer leaves only when forced.
 	EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error)
+	// RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
+	// the names of the node certificate it authenticated with. Available on control-plane nodes, to
+	// nodes only.
+	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -378,6 +401,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("EtcdLeave")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceRenewNodeCertificateHandler := connect.NewUnaryHandler(
+		NodeServiceRenewNodeCertificateProcedure,
+		svc.RenewNodeCertificate,
+		connect.WithSchema(nodeServiceMethods.ByName("RenewNodeCertificate")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -404,6 +433,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceEtcdRemoveMemberHandler.ServeHTTP(w, r)
 		case NodeServiceEtcdLeaveProcedure:
 			nodeServiceEtcdLeaveHandler.ServeHTTP(w, r)
+		case NodeServiceRenewNodeCertificateProcedure:
+			nodeServiceRenewNodeCertificateHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -459,4 +490,8 @@ func (UnimplementedNodeServiceHandler) EtcdRemoveMember(context.Context, *connec
 
 func (UnimplementedNodeServiceHandler) EtcdLeave(context.Context, *connect.Request[v1.EtcdLeaveRequest]) (*connect.Response[v1.EtcdLeaveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EtcdLeave is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RenewNodeCertificate is not implemented"))
 }

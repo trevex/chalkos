@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -148,7 +149,7 @@ func testShareFor(t *testing.T, kind, nodeName string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	share, err := kpki.ShareFor(k, kind, nodeName, time.Now())
+	share, err := kpki.ShareFor(&pki.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}, kind, nodeName, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,16 +328,34 @@ func TestApplyIdentityDeliversShare(t *testing.T) {
 func TestApplyIdentityRefusesShare(t *testing.T) {
 	plain, _ := installedServer(t, section("", ""), false)
 	worker, r := kubernetesServer(t, k8s.KindWorker, false)
+	controlPlane, _ := kubernetesServer(t, k8s.KindControlPlane, false)
+	other, err := pki.NewOSCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherNodeCA, err := pki.NewNodeCA(other, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := pki.NewKubernetesSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignNodeCA, err := kpki.ControlPlaneShare(k, otherNodeCA).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range map[string]struct {
 		s        *Server
 		identity string
 		share    []byte
 		code     connect.Code
 	}{
-		"no Kubernetes":        {plain, kubernetesIdentity("n1"), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
-		"broken share":         {worker, kubernetesIdentity("n1"), []byte(`{"kind": "worker"}`), connect.CodeInvalidArgument},
-		"another node's share": {worker, kubernetesIdentity("n1"), testShareFor(t, k8s.KindWorker, "n2"), connect.CodeInvalidArgument},
-		"no node name":         {worker, identityWith("rack-a", section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
+		"no Kubernetes":              {plain, kubernetesIdentity("n1"), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
+		"broken share":               {worker, kubernetesIdentity("n1"), []byte(`{"kind": "worker"}`), connect.CodeInvalidArgument},
+		"another node's share":       {worker, kubernetesIdentity("n1"), testShareFor(t, k8s.KindWorker, "n2"), connect.CodeInvalidArgument},
+		"no node name":               {worker, identityWith("rack-a", section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
+		"a node CA of another OS CA": {controlPlane, kubernetesIdentity("n1"), foreignNodeCA, connect.CodeInvalidArgument},
 	} {
 		_, err := tc.s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
 			Identity: tc.identity, KubernetesShare: tc.share,
@@ -836,4 +855,21 @@ func TestStartAfterStopDoesNothing(t *testing.T) {
 	if started || joining || runs.Load() != 0 {
 		t.Errorf("after Stop: started %v, joining %v, %d runs of the control plane's loop", started, joining, runs.Load())
 	}
+}
+
+// testOSCA is the OS CA of every test server's STATE.
+var testOSCA = sync.OnceValues(func() (pki.CertKey, error) { return pki.NewOSCA(time.Now()) })
+
+// testNodeCA returns a new node CA of the test servers' OS CA.
+func testNodeCA(t *testing.T) pki.CertKey {
+	t.Helper()
+	osCA, err := testOSCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeCA, err := pki.NewNodeCA(osCA, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return nodeCA
 }

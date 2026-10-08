@@ -54,7 +54,7 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
 	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"]}}`)
 	if k != nil {
-		share, err := kpki.ShareFor(k, kind, name, now)
+		share, err := kpki.ShareFor(&pki.Secrets{Kubernetes: *k, NodeCA: testNodeCA(t)}, kind, name, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1167,4 +1167,18 @@ func TestPrepareMarksPrepared(t *testing.T) {
 	if exists(p.Prepared()) {
 		t.Error("a preparation that refused the static pods is marked prepared")
 	}
+}
+
+// testNodeCA returns a node CA of a new OS CA.
+func testNodeCA(t *testing.T) pki.CertKey {
+	t.Helper()
+	osCA, err := pki.NewOSCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeCA, err := pki.NewNodeCA(osCA, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return nodeCA
 }

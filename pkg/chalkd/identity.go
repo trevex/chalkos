@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -87,6 +88,16 @@ func (s *Server) kubernetesShare(d delivered, data []byte) ([]byte, error) {
 	// A node must never run its kubelet with a certificate issued for another node.
 	if err := share.ValidateFor(nodeName); err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	if share.NodeCA != nil {
+		osCA, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "chalkd", CAFile))
+		if err != nil {
+			return nil, failed(connect.CodeInternal, "read the OS CA: %v", err)
+		}
+		// Certificates of another node CA would never verify against the node's OS CA.
+		if err := pki.ValidateNodeCA(*share.NodeCA, pki.CertKey{Certificate: string(osCA)}); err != nil {
+			return nil, failed(connect.CodeInvalidArgument, "the share's node CA: %v", err)
+		}
 	}
 	canonical, err := share.Encode()
 	if err != nil {

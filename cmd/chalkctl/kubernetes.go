@@ -25,7 +25,7 @@ func kubernetesShare(t *target, now time.Time) ([]byte, error) {
 	if role.Kind == "" {
 		return nil, nil
 	}
-	share, err := kpki.ShareFor(&t.secrets.Kubernetes, role.Kind, t.name, now)
+	share, err := kpki.ShareFor(&t.secrets, role.Kind, t.name, now)
 	if err != nil {
 		return nil, err
 	}

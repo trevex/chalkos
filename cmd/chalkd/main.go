@@ -224,6 +224,8 @@ func serve() error {
 	default:
 		log.Printf("maintenance mode, accepting clients of the OS CA; certificate fingerprint %s", srv.Fingerprint)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
 	// Images of a role with Kubernetes carry the cluster file.
 	if _, err := os.Stat(knode.DefaultPaths().Cluster); err == nil && creds.mode == nodev1.Mode_MODE_NORMAL {
 		srv.Kubernetes = chalkd.NewKubernetes()
@@ -231,6 +233,10 @@ func serve() error {
 		// On every way out the node releases the VIPs, which must not stay on a node whose chalkd
 		// no longer holds their lease, and closes its etcd clients.
 		defer srv.Kubernetes.Stop()
+		// The cluster's control planes renew node certificates; a node without Kubernetes knows
+		// none and is renewed with chalkctl node renew.
+		srv.Renewal = chalkd.NewRenewal(creds.node, srv.IssueNodeCertificate)
+		go srv.Renewal.Run(ctx)
 	}
 	go announceAddresses(srv.CurrentFingerprint)
 
@@ -238,8 +244,6 @@ func serve() error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-	defer stop()
 	served := make(chan error, 1)
 	go func() {
 		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.getCertificate(), creds.clientCAs)).ServeTLS(ln, "", "")

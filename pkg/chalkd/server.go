@@ -97,6 +97,8 @@ type Server struct {
 	RebootNode func()
 	// Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
 	Kubernetes *Kubernetes
+	// Renewal renews the node certificate; nil on a node that renews none.
+	Renewal *Renewal
 
 	// mu serialises calls that change the node.
 	mu        sync.Mutex
@@ -112,21 +114,25 @@ type permission struct {
 }
 
 var permissions = map[string]permission{
-	nodev1connect.NodeServiceInfoProcedure:             {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceDisksProcedure:            {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceInstallProcedure:          {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
-	nodev1connect.NodeServiceApplyIdentityProcedure:    {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceResetVolumeProcedure:      {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceStatusProcedure:           {[]nodev1.Mode{normal}, pki.RoleReader},
-	nodev1connect.NodeServiceLogsProcedure:             {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
-	nodev1connect.NodeServiceRebootProcedure:           {[]nodev1.Mode{maintenance, normal}, pki.RoleOperator},
-	nodev1connect.NodeServiceBootstrapProcedure:        {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceEtcdMembersProcedure:      {[]nodev1.Mode{normal}, pki.RoleReader},
-	nodev1connect.NodeServiceEtcdRemoveMemberProcedure: {[]nodev1.Mode{normal}, pki.RoleAdmin},
-	nodev1connect.NodeServiceEtcdLeaveProcedure:        {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceInfoProcedure:                 {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
+	nodev1connect.NodeServiceDisksProcedure:                {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
+	nodev1connect.NodeServiceInstallProcedure:              {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
+	nodev1connect.NodeServiceApplyIdentityProcedure:        {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceResetVolumeProcedure:          {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceStatusProcedure:               {[]nodev1.Mode{normal}, pki.RoleReader},
+	nodev1connect.NodeServiceLogsProcedure:                 {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
+	nodev1connect.NodeServiceRebootProcedure:               {[]nodev1.Mode{maintenance, normal}, pki.RoleOperator},
+	nodev1connect.NodeServiceBootstrapProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceEtcdMembersProcedure:          {[]nodev1.Mode{normal}, pki.RoleReader},
+	nodev1connect.NodeServiceEtcdRemoveMemberProcedure:     {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceEtcdLeaveProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {[]nodev1.Mode{normal}, pki.RoleNode},
 }
 
 type roleKey struct{}
+
+// peerKey holds the verified client certificate.
+type peerKey struct{}
 
 // Handler serves the API. Roles come from the verified client certificate's chains: see
 // pki.ClientRole.
@@ -140,13 +146,15 @@ func (s *Server) Handler() http.Handler {
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role := ""
+		ctx := r.Context()
 		switch {
 		case r.TLS != nil && len(r.TLS.VerifiedChains) > 0:
 			role, _ = pki.ClientRole(r.TLS.VerifiedChains)
+			ctx = context.WithValue(ctx, peerKey{}, r.TLS.VerifiedChains[0][0])
 		case s.AnyClient:
 			role = pki.RoleAdmin
 		}
-		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), roleKey{}, role)))
+		h.ServeHTTP(w, r.WithContext(context.WithValue(ctx, roleKey{}, role)))
 	})
 }
 

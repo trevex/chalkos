@@ -205,7 +205,7 @@ func IssueNode(nodeCA CertKey, names NodeNames, now time.Time) (CertKey, error) 
 	if err != nil {
 		return CertKey{}, err
 	}
-	keyPEM, err := encodeKey(key)
+	keyPEM, err := EncodeKey(key)
 	if err != nil {
 		return CertKey{}, err
 	}
@@ -429,7 +429,7 @@ func issue(ca CertKey, template *x509.Certificate, now time.Time) (CertKey, erro
 	if err != nil {
 		return CertKey{}, err
 	}
-	keyPEM, err := encodeKey(key)
+	keyPEM, err := EncodeKey(key)
 	if err != nil {
 		return CertKey{}, err
 	}
@@ -467,14 +467,15 @@ func sign(template, parent *x509.Certificate, key, parentKey *ecdsa.PrivateKey) 
 	if err != nil {
 		return CertKey{}, err
 	}
-	keyPEM, err := encodeKey(key)
+	keyPEM, err := EncodeKey(key)
 	if err != nil {
 		return CertKey{}, err
 	}
 	return CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), Key: keyPEM}, nil
 }
 
-func encodeKey(key *ecdsa.PrivateKey) (string, error) {
+// EncodeKey encodes a private key as PKCS #8 PEM, as chalkos stores keys.
+func EncodeKey(key *ecdsa.PrivateKey) (string, error) {
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", err

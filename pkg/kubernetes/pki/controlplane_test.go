@@ -43,7 +43,7 @@ func ips(cert *x509.Certificate) []string {
 
 func TestControlPlaneCertificates(t *testing.T) {
 	k := secrets(t)
-	files, err := ControlPlane(ControlPlaneShare(k), testCluster(), testNode, now)
+	files, err := ControlPlane(ControlPlaneShare(k, testNodeCA(t)), testCluster(), testNode, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestControlPlaneCertificates(t *testing.T) {
 	// API server are IPv6 ones.
 	v6 := testCluster()
 	v6.IPFamilies = []string{"ipv6", "ipv4"}
-	v6files, err := ControlPlane(ControlPlaneShare(k), v6, kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("fd00::11"), net.ParseIP("10.0.0.11")}}, now)
+	v6files, err := ControlPlane(ControlPlaneShare(k, testNodeCA(t)), v6, kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("fd00::11"), net.ParseIP("10.0.0.11")}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestControlPlaneCertificates(t *testing.T) {
 		}
 	}
 
-	chalkd, err := IssueChalkd(ControlPlaneShare(k), time.Hour, now)
+	chalkd, err := IssueChalkd(ControlPlaneShare(k, testNodeCA(t)), time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func clientOf(t *testing.T, name string, cert *x509.Certificate, ca pki.CertKey)
 func TestControlPlaneWithAddressEndpoint(t *testing.T) {
 	c := testCluster()
 	c.Endpoint = "https://10.0.0.10:6443"
-	files, err := ControlPlane(ControlPlaneShare(secrets(t)), c, testNode, now)
+	files, err := ControlPlane(ControlPlaneShare(secrets(t), testNodeCA(t)), c, testNode, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestControlPlaneWithDualStackVIPs(t *testing.T) {
 	c := testCluster()
 	c.Endpoint = "https://10.0.0.10:6443"
 	c.VIP = kubernetes.VIP{Addresses: []string{"10.0.0.10", "fd00::10"}, Mode: "l2"}
-	files, err := ControlPlane(ControlPlaneShare(secrets(t)), c, testNode, now)
+	files, err := ControlPlane(ControlPlaneShare(secrets(t), testNodeCA(t)), c, testNode, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestControlPlaneNeedsControlPlaneShare(t *testing.T) {
 	if _, err := IssueChalkd(w, time.Hour, now); err == nil {
 		t.Error("issued chalkd's certificate from a worker share")
 	}
-	ck, err := IssueChalkd(ControlPlaneShare(k), time.Hour, now)
+	ck, err := IssueChalkd(ControlPlaneShare(k, testNodeCA(t)), time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,10 +290,10 @@ func TestIssueEtcdClient(t *testing.T) {
 	if _, err := IssueEtcdClient(w, time.Hour, now); err == nil {
 		t.Error("issued an etcd client certificate from a worker share")
 	}
-	if _, err := IssueEtcdClient(ControlPlaneShare(k), 0, now); err == nil {
+	if _, err := IssueEtcdClient(ControlPlaneShare(k, testNodeCA(t)), 0, now); err == nil {
 		t.Error("issued an etcd client certificate without a validity")
 	}
-	ck, err := IssueEtcdClient(ControlPlaneShare(k), time.Hour, now)
+	ck, err := IssueEtcdClient(ControlPlaneShare(k, testNodeCA(t)), time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestIssueEtcdClient(t *testing.T) {
 // Anonymous requests reach only the health endpoints, which the kubelet probes without
 // credentials.
 func TestAuthenticationConfig(t *testing.T) {
-	files, err := ControlPlane(ControlPlaneShare(secrets(t)), testCluster(), testNode, now)
+	files, err := ControlPlane(ControlPlaneShare(secrets(t), testNodeCA(t)), testCluster(), testNode, now)
 	if err != nil {
 		t.Fatal(err)
 	}
