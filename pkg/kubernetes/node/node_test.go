@@ -67,7 +67,7 @@ func testNode(t *testing.T, kind, name string, k *pki.KubernetesSecrets) Paths {
 // onNode picks the node's addresses among addrs on eth0, as Prepare does on a node whose
 // addresses are there already.
 func onNode(addrs ...string) Resolver {
-	return func(sel nodeip.Selector, _ time.Duration) ([]netip.Addr, error) {
+	return func(sel nodeip.Selector, _ time.Duration) ([]nodeip.Address, error) {
 		var list []nodeip.Address
 		for _, a := range addrs {
 			list = append(list, nodeip.Address{Interface: "eth0", IP: netip.MustParseAddr(a)})
@@ -277,6 +277,70 @@ func TestPrepareControlPlaneWithPickedAddress(t *testing.T) {
 
 // A dual-stack node picks one address of each family: the kubelet registers both, the
 // certificates name both, and etcd and the API server advertise the primary family's.
+// on picks the node's addresses among addrs, given as "interface address", on links of the
+// interfaces given.
+func on(links map[string]nodeip.Link, addrs ...string) Resolver {
+	return func(sel nodeip.Selector, _ time.Duration) ([]nodeip.Address, error) {
+		var list []nodeip.Address
+		for _, a := range addrs {
+			iface, ip, _ := strings.Cut(a, " ")
+			link := links[iface]
+			link.Name = iface
+			list = append(list, nodeip.Address{Interface: iface, IP: netip.MustParseAddr(ip), Link: link})
+		}
+		return sel.Select(list)
+	}
+}
+
+// withCluster edits the node's cluster file: each pair replaces old with new once.
+func withCluster(t *testing.T, p Paths, oldNew ...string) {
+	t.Helper()
+	data, err := os.ReadFile(p.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Cluster, strings.NewReplacer(oldNew...).Replace(string(data)))
+}
+
+// With flannel the node's addresses are on one interface, and an address on a loopback or a
+// dummy interface needs an MTU flannel can use.
+func TestPrepareFlannelInterfaces(t *testing.T) {
+	links := map[string]nodeip.Link{
+		"lo":    {Loopback: true, MTU: 65536},
+		"bgp0":  {Kind: "dummy", MTU: 1500},
+		"small": {Kind: "dummy", MTU: 1440},
+	}
+	for name, tc := range map[string]struct {
+		flannel string
+		addrs   []string
+		want    string
+	}{
+		"NIC":                       {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth0 fd00::11"}, ""},
+		"loopback without flannel":  {`null`, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
+		"loopback without MTU":      {`{"mtu": 0}`, []string{"lo 192.168.100.11", "lo fd00::11"}, "the node's address 192.168.100.11 is on the loopback interface lo, whose MTU flannel would take; set chalkos.cni.flannel.mtu"},
+		"loopback with MTU":         {`{"mtu": 1430}`, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
+		"dummy":                     {`{"mtu": 1430}`, []string{"bgp0 192.168.100.11", "bgp0 fd00::11"}, ""},
+		"dummy without MTU":         {`{"mtu": 0}`, []string{"small 192.168.100.11", "small fd00::11"}, ""},
+		"dummy too small for IPv6":  {`{"mtu": 1430}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address fd00::11 is on the dummy interface small with MTU 1440; flannel's ipv6 VXLAN with chalkos.cni.flannel.mtu 1430 needs an MTU of at least 1450 there"},
+		"dummy too small for IPv4":  {`{"mtu": 1450}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address 192.168.100.11 is on the dummy interface small with MTU 1440; flannel's ipv4 VXLAN with chalkos.cni.flannel.mtu 1450 needs an MTU of at least 1450 there"},
+		"two interfaces":            {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, "flannel needs the node's IPv4 and IPv6 addresses on one interface; 192.168.100.11 is on eth0, fd00::11 on eth1"},
+		"two interfaces without it": {`null`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+			withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": `+tc.flannel+`, "kind":`)
+			write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}`)
+			err := Prepare(p, now, on(links, tc.addrs...), nil)
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+			if tc.want != "" && (exists(p.Kubeconfig()) || exists(p.NodeIP())) {
+				t.Error("a refused node keeps its kubeconfig or addresses")
+			}
+		})
+	}
+}
+
 func TestPrepareDualStack(t *testing.T) {
 	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
 	write(t, p.Bootstrapped(), "")
@@ -1029,7 +1093,7 @@ func TestPrepareMarksPrepared(t *testing.T) {
 	}
 
 	marked := true
-	noAddress := func(nodeip.Selector, time.Duration) ([]netip.Addr, error) {
+	noAddress := func(nodeip.Selector, time.Duration) ([]nodeip.Address, error) {
 		marked = exists(p.Prepared())
 		return nil, errors.New("no node address matches the default filter")
 	}

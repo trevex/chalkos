@@ -88,8 +88,8 @@ func readyNode(podCIDRs ...string) *corev1.Node {
 
 // nodeIP is a resolver that finds the address at once.
 func nodeIP(ip string) knode.Resolver {
-	return func(nodeip.Selector, time.Duration) ([]netip.Addr, error) {
-		return []netip.Addr{netip.MustParseAddr(ip)}, nil
+	return func(nodeip.Selector, time.Duration) ([]nodeip.Address, error) {
+		return []nodeip.Address{{Interface: "eth0", IP: netip.MustParseAddr(ip)}}, nil
 	}
 }
 

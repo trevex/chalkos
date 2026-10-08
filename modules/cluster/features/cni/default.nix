@@ -9,7 +9,10 @@ let
   # rules flannel needs in nftables tables of its own.
   netConf = {
     EnableNFTables = true;
-    Backend.Type = "vxlan";
+    Backend = {
+      Type = "vxlan";
+    }
+    // lib.optionalAttrs (cfg.flannel.mtu != null) { MTU = cfg.flannel.mtu; };
   }
   // lib.optionalAttrs (inUse "ipv4") { Network = k.podCIDRs.ipv4; }
   // lib.optionalAttrs (!inUse "ipv4") { EnableIPv4 = false; }
@@ -309,6 +312,20 @@ in
       type = lib.types.str;
       default = "ghcr.io/flannel-io/flannel:v0.28.9";
       description = "Image of flannel.";
+    };
+    flannel.mtu = lib.mkOption {
+      type = lib.types.nullOr lib.types.ints.positive;
+      default = null;
+      example = 1430;
+      description = ''
+        MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the
+        pods get 50 less. null takes the MTU of the interface holding the node's address. Nodes
+        whose address is on a loopback interface need it set, and a dummy interface holding a
+        node's address needs an MTU of at least this, 20 more for an IPv6 address: the nodes
+        refuse to prepare otherwise. flannel subtracts 50 in both families but IPv6 VXLAN needs
+        70, so with IPv6 in use set this to the network's MTU minus 20; otherwise IPv6 pod packets
+        near the full size rely on path MTU discovery.
+      '';
     };
   };
 

@@ -79,6 +79,8 @@ let
     version = k.package.version;
     inherit (k) ipFamilies;
     nodeIP = { inherit (k.nodeIP) validSubnets timeout; };
+    # The nodes check that their addresses suit flannel.
+    flannel = if flannel then { mtu = lib.defaultTo 0 config.chalkos.cni.flannel.mtu; } else null;
     vip = { inherit (k.vip) addresses mode interface; };
     extraArgs = removeAttrs k.extraArgs [ "kubelet" ];
     images = {

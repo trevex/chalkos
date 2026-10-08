@@ -1499,6 +1499,28 @@ lib.runTests {
           && lib.hasInfix "--public-ipv6=$ip" (lib.last container.command);
         noInterface = !lib.any (lib.hasInfix "--iface") container.command;
         portmap = (lib.findFirst (p: p.type == "portmap") null cniConf.plugins).backend;
+        # The MTU option reaches flannel and the nodes, which check their interfaces against it.
+        mtu =
+          let
+            c = cluster [ { chalkos.cni.flannel.mtu = 1430; } ];
+            named =
+              kind: name:
+              lib.findFirst (m: m.kind == kind && m.metadata.name == name) null c.cluster.kubernetes.addons;
+          in
+          (builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."net-conf.json").Backend;
+        clusterFile =
+          map
+            (
+              modules:
+              (builtins.fromJSON (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text)
+              .flannel
+            )
+            [
+              [ ]
+              [ { chalkos.cni.flannel.mtu = 1430; } ]
+              [ { chalkos.cni.provider = "none"; } ]
+            ];
+        notAnMTU = fails (cluster [ { chalkos.cni.flannel.mtu = 0; } ]).cni.flannel.mtu;
         # containerd runs portmap, which needs nft.
         portmapFindsNft =
           lib.any (p: (p.pname or "") == "nftables")
@@ -1538,6 +1560,16 @@ lib.runTests {
       publicAddresses = true;
       noInterface = true;
       portmap = "nftables";
+      mtu = {
+        Type = "vxlan";
+        MTU = 1430;
+      };
+      clusterFile = [
+        { mtu = 0; }
+        { mtu = 1430; }
+        null
+      ];
+      notAnMTU = true;
       portmapFindsNft = true;
     };
   };

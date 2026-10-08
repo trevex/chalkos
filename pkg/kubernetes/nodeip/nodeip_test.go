@@ -22,6 +22,15 @@ func addresses(t *testing.T, list ...string) []Address {
 	return addrs
 }
 
+// ipsOf returns the addresses' IPs.
+func ipsOf(addrs []Address) []netip.Addr {
+	var out []netip.Addr
+	for _, a := range addrs {
+		out = append(out, a.IP)
+	}
+	return out
+}
+
 func filter(t *testing.T, subnets ...string) Filter {
 	t.Helper()
 	f, err := ParseFilter(subnets)
@@ -148,15 +157,58 @@ func TestSelect(t *testing.T) {
 			}
 			continue
 		}
-		if err != nil || !slices.Equal(got, ips(tc.want...)) {
+		if err != nil || !slices.Equal(ipsOf(got), ips(tc.want...)) {
 			t.Errorf("%s: Select() = %v, %v, want %s", name, got, err, tc.want)
 		}
 	}
 
 	// An address on lo that is not a loopback address, as BGP speakers announce them.
 	got, err := Selector{Filter: filter(t, "198.51.100.0/24")}.Select(addresses(t, "lo 127.0.0.1", "lo 198.51.100.7"))
-	if err != nil || !slices.Equal(got, ips("198.51.100.7")) {
+	if err != nil || !slices.Equal(ipsOf(got), ips("198.51.100.7")) {
 		t.Errorf("address on lo: %v, %v", got, err)
+	}
+}
+
+// With SameInterface a dual-stack node's addresses are on one interface: the first address of
+// the primary family with an address of the other family on its interface.
+func TestSelectSameInterface(t *testing.T) {
+	dual := []Family{IPv4, IPv6}
+	for name, tc := range map[string]struct {
+		sel   Selector
+		addrs []string
+		want  []string
+	}{
+		"same interface first": {Selector{Families: dual, SameInterface: true},
+			[]string{"eth0 10.0.0.11", "eth0 fd00::11", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"10.0.0.11 on eth0", "fd00::11 on eth0"}},
+		// eth0's IPv4 address sorts first, but only eth1 has both.
+		"pair on the second interface": {Selector{Families: dual, SameInterface: true},
+			[]string{"eth0 10.0.0.11", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"10.0.1.11 on eth1", "fd00:1::11 on eth1"}},
+		"IPv6 primary": {Selector{Families: []Family{IPv6, IPv4}, SameInterface: true},
+			[]string{"eth0 fd00::11", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"fd00:1::11 on eth1", "10.0.1.11 on eth1"}},
+		// A dummy interface holds both, as a routing daemon announces them.
+		"dummy": {Selector{Families: dual, Filter: filter(t, "192.168.200.0/24", "fd00:200::/64"), SameInterface: true},
+			[]string{"eth0 192.168.100.12", "bgp0 192.168.200.12", "bgp0 fd00:200::12", "eth0 fd00:100::12"}, []string{"192.168.200.12 on bgp0", "fd00:200::12 on bgp0"}},
+		"fixed": {Selector{Families: dual, Fixed: ips("fd00:1::11"), SameInterface: true},
+			[]string{"eth0 10.0.0.11", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"10.0.1.11 on eth1", "fd00:1::11 on eth1"}},
+		"without the condition": {Selector{Families: dual},
+			[]string{"eth0 10.0.0.11", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"10.0.0.11 on eth0", "fd00:1::11 on eth1"}},
+		"one family": {Selector{SameInterface: true}, []string{"eth0 10.0.0.11", "eth1 fd00:1::11"}, []string{"10.0.0.11 on eth0"}},
+	} {
+		got, err := tc.sel.Select(addresses(t, tc.addrs...))
+		var s []string
+		for _, a := range got {
+			s = append(s, a.String())
+		}
+		if err != nil || !slices.Equal(s, tc.want) {
+			t.Errorf("%s: Select() = %v, %v, want %v", name, s, err, tc.want)
+		}
+	}
+
+	sel := Selector{Families: []Family{IPv4, IPv6}, Filter: filter(t, "10.0.0.0/24", "fd00:1::/64"), SameInterface: true}
+	_, err := sel.Select(addresses(t, "eth0 10.0.0.11", "eth1 fd00:1::11", "eth0 fd00::11"))
+	var iface *InterfaceError
+	if !errors.As(err, &iface) || err.Error() != "flannel needs the node's IPv4 and IPv6 addresses on one interface; 10.0.0.11 is on eth0, fd00:1::11 on eth1" {
+		t.Errorf("no pair: Select() = %v", err)
 	}
 }
 
@@ -165,12 +217,12 @@ func TestSelectOrderIsStable(t *testing.T) {
 	a := addresses(t, "eth1 192.168.1.5", "eth0 2001:db8::1", "eth1 192.168.1.4", "eth0 10.0.0.9")
 	b := []Address{a[3], a[2], a[1], a[0]}
 	for _, addrs := range [][]Address{a, b} {
-		if got, err := sel.Select(addrs); err != nil || !slices.Equal(got, ips("10.0.0.9")) {
+		if got, err := sel.Select(addrs); err != nil || !slices.Equal(ipsOf(got), ips("10.0.0.9")) {
 			t.Errorf("Select(%v) = %v, %v", addrs, got, err)
 		}
 	}
 	// Within an interface the lower address comes first.
-	if got, _ := sel.Select(addresses(t, "eth1 192.168.1.5", "eth1 192.168.1.4")); !slices.Equal(got, ips("192.168.1.4")) {
+	if got, _ := sel.Select(addresses(t, "eth1 192.168.1.5", "eth1 192.168.1.4")); !slices.Equal(ipsOf(got), ips("192.168.1.4")) {
 		t.Errorf("Select() = %v", got)
 	}
 }
@@ -184,21 +236,21 @@ func TestSelectLast(t *testing.T) {
 		addresses(t, "eth0 10.0.0.10", "eth1 10.0.0.11"),
 	} {
 		got, err := Selector{Last: []netip.Addr{vip}, Reserved: reserved}.Select(addrs)
-		if err != nil || !slices.Equal(got, ips("10.0.0.11")) {
+		if err != nil || !slices.Equal(ipsOf(got), ips("10.0.0.11")) {
 			t.Errorf("Select(%v) = %v, %v, want the node's own address", addrs, got, err)
 		}
 	}
 	got, err := Selector{Families: []Family{IPv6, IPv4}, Last: []netip.Addr{vip, vip6}, Reserved: reserved}.Select(
 		addresses(t, "eth0 10.0.0.10", "eth0 2001:db8::10", "eth1 2001:db8::11", "eth1 10.0.0.11"))
-	if err != nil || !slices.Equal(got, ips("2001:db8::11", "10.0.0.11")) {
+	if err != nil || !slices.Equal(ipsOf(got), ips("2001:db8::11", "10.0.0.11")) {
 		t.Errorf("dual stack: Select() = %v, %v", got, err)
 	}
 	// A single control plane whose endpoint is its own address still picks it.
-	if got, err := (Selector{Last: []netip.Addr{vip}, Reserved: reserved}).Select(addresses(t, "lo 127.0.0.1", "eth0 10.0.0.10")); err != nil || !slices.Equal(got, []netip.Addr{vip}) {
+	if got, err := (Selector{Last: []netip.Addr{vip}, Reserved: reserved}).Select(addresses(t, "lo 127.0.0.1", "eth0 10.0.0.10")); err != nil || !slices.Equal(ipsOf(got), []netip.Addr{vip}) {
 		t.Errorf("only the endpoint's address: Select() = %v, %v", got, err)
 	}
 	// A fixed address is picked even when it is the endpoint's.
-	if got, err := (Selector{Fixed: []netip.Addr{vip}, Last: []netip.Addr{vip}}).Select(addresses(t, "eth0 10.0.0.10", "eth0 10.0.0.9")); err != nil || !slices.Equal(got, []netip.Addr{vip}) {
+	if got, err := (Selector{Fixed: []netip.Addr{vip}, Last: []netip.Addr{vip}}).Select(addresses(t, "eth0 10.0.0.10", "eth0 10.0.0.9")); err != nil || !slices.Equal(ipsOf(got), []netip.Addr{vip}) {
 		t.Errorf("fixed endpoint address: Select() = %v, %v", got, err)
 	}
 }
@@ -278,7 +330,7 @@ func TestWaitForLateAddress(t *testing.T) {
 		Interval: time.Second,
 	}
 	got, err := w.Wait(Selector{Filter: filter(t, "192.168.100.0/24")}, 5*time.Minute)
-	if err != nil || !slices.Equal(got, ips("192.168.100.12")) {
+	if err != nil || !slices.Equal(ipsOf(got), ips("192.168.100.12")) {
 		t.Fatalf("Wait() = %v, %v", got, err)
 	}
 	if calls != 5 || clock.now.Sub(start) != 4*time.Second {

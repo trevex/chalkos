@@ -90,7 +90,7 @@ func holds(t *testing.T, iface string, addr netip.Addr) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return slices.Contains(addrs, nodeip.Address{Interface: iface, IP: addr})
+	return slices.ContainsFunc(addrs, func(a nodeip.Address) bool { return a.Interface == iface && a.IP == addr })
 }
 
 // The address is added as a host address, announced to the neighbours and removed again.

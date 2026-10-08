@@ -44,6 +44,8 @@ type Cluster struct {
 	NodeCIDRMaskSizes ByFamily[int]    `json:"nodeCIDRMaskSizes"`
 	// NodeIP is how nodes without a fixed address pick theirs.
 	NodeIP NodeIP `json:"nodeIP"`
+	// Flannel is flannel's configuration when it is the pod network; nil otherwise.
+	Flannel *Flannel `json:"flannel"`
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
 	VIP VIP `json:"vip"`
 	// ExtraArgs are flags of the control-plane components by component name, such as
@@ -73,6 +75,14 @@ type NodeIP struct {
 	ValidSubnets []string `json:"validSubnets"`
 	// Timeout is how many seconds a node waits for its address.
 	Timeout int `json:"timeout"`
+}
+
+// Flannel is how flannel connects the nodes' pods.
+type Flannel struct {
+	// MTU is the MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN
+	// devices and the pods get 50 less. Zero takes the MTU of the interface holding the node's
+	// address.
+	MTU int `json:"mtu"`
 }
 
 // VIP is the cluster's virtual IP.
@@ -137,6 +147,9 @@ func (c Cluster) Validate() error {
 	}
 	if c.NodeIP.Timeout < 0 {
 		return fmt.Errorf("nodeIP: the timeout %d is negative", c.NodeIP.Timeout)
+	}
+	if c.Flannel != nil && c.Flannel.MTU < 0 {
+		return fmt.Errorf("flannel: the MTU %d is negative", c.Flannel.MTU)
 	}
 	families, err := c.Families()
 	if err != nil {
@@ -440,7 +453,8 @@ func (c Cluster) NodeIPSelector(n Node) (nodeip.Selector, error) {
 	if err != nil {
 		return nodeip.Selector{}, err
 	}
-	s := nodeip.Selector{Families: families, Filter: filter}
+	// flannel uses the interface of the primary family's address for every family.
+	s := nodeip.Selector{Families: families, Filter: filter, SameInterface: c.Flannel != nil && len(families) > 1}
 	for _, ip := range n.FixedIPs {
 		fixed, ok := netip.AddrFromSlice(ip)
 		if !ok {

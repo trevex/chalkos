@@ -142,6 +142,7 @@ func TestClusterValidate(t *testing.T) {
 		"domain":       func(c *Cluster) { c.Domain = "" },
 		"validSubnets": func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
 		"timeout":      func(c *Cluster) { c.NodeIP.Timeout = -1 },
+		"flannel MTU":  func(c *Cluster) { c.Flannel = &Flannel{MTU: -1} },
 		// These flags decide who may do what; chalkos sets them.
 		"authorization-mode": func(c *Cluster) {
 			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"authorization-mode": "AlwaysAllow"}}
@@ -223,11 +224,11 @@ func TestNodeIPSelectorEndpointLast(t *testing.T) {
 		for _, ip := range list {
 			addrs = append(addrs, nodeip.Address{Interface: "eth0", IP: netip.MustParseAddr(ip)})
 		}
-		ips, err := sel.Select(addrs)
+		picked, err := sel.Select(addrs)
 		if err != nil {
 			return err.Error()
 		}
-		return ips[0].String()
+		return picked[0].IP.String()
 	}
 	// The endpoint 10.0.0.10 is a virtual address that sorts before the node's own one.
 	if got := pick(c, "10.0.0.10", "10.0.0.11"); got != "10.0.0.11" {
@@ -328,8 +329,22 @@ func TestNodeIPSelector(t *testing.T) {
 	if got := fmt.Sprint(sel.Reserved); got != "[10.244.0.0/16 fd00:10:244::/56 10.96.0.0/12 fd00:10:96::/112]" {
 		t.Errorf("dual stack: reserved ranges %s", got)
 	}
-	if got, err := sel.Select(append(addrs, nodeip.Address{Interface: "eth1", IP: netip.MustParseAddr("fd00::12")})); err != nil || len(got) != 2 || got[1] != netip.MustParseAddr("fd00::12") {
+	if got, err := sel.Select(append(addrs, nodeip.Address{Interface: "eth1", IP: netip.MustParseAddr("fd00::12")})); err != nil || len(got) != 2 || got[1].IP != netip.MustParseAddr("fd00::12") {
 		t.Errorf("dual stack: Select() = %v, %v", got, err)
+	}
+	// With flannel a dual-stack node's addresses are on one interface: eth1 holds both, though
+	// eth0's address sorts first.
+	flannel := dual
+	flannel.Flannel = &Flannel{}
+	sel, err = flannel.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "validSubnets": []}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := sel.Select(append(addrs, nodeip.Address{Interface: "eth1", IP: netip.MustParseAddr("fd00::12")})); err != nil || len(got) != 2 || got[0].Interface != "eth1" || got[1].Interface != "eth1" {
+		t.Errorf("flannel: Select() = %v, %v, want both on eth1", got, err)
+	}
+	if sel, _ := dual.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1"}}`)); sel.SameInterface {
+		t.Error("the selector of a cluster without flannel keeps the addresses on one interface")
 	}
 	// A fixed address of a family the cluster does not have is refused.
 	if _, err := c.NodeIPSelector(node(`{"kubernetes": {"nodeName": "n1", "nodeIPs": ["fd00::12"]}}`)); err == nil {
@@ -362,7 +377,7 @@ func TestNodeIPSelector(t *testing.T) {
 			}
 			continue
 		}
-		if err != nil || len(got) != 1 || got[0] != netip.MustParseAddr(tc.want) {
+		if err != nil || len(got) != 1 || got[0].IP != netip.MustParseAddr(tc.want) {
 			t.Errorf("%s: Select() = %v, %v, want %s", name, got, err, tc.want)
 		}
 	}

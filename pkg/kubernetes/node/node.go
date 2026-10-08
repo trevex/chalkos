@@ -275,17 +275,43 @@ func Load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
 }
 
 // Resolver waits up to timeout for the addresses the selector picks.
-type Resolver func(sel nodeip.Selector, timeout time.Duration) ([]netip.Addr, error)
+type Resolver func(sel nodeip.Selector, timeout time.Duration) ([]nodeip.Address, error)
 
 // WaitForAddresses waits for the addresses the selector picks among the node's own.
-func WaitForAddresses(sel nodeip.Selector, timeout time.Duration) ([]netip.Addr, error) {
+func WaitForAddresses(sel nodeip.Selector, timeout time.Duration) ([]nodeip.Address, error) {
 	log.Printf("picking the node's addresses, %s, waiting up to %v", sel, timeout)
-	ips, err := nodeip.NewWaiter().Wait(sel, timeout)
+	picked, err := nodeip.NewWaiter().Wait(sel, timeout)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("the node's addresses are %v", ips)
-	return ips, nil
+	log.Printf("the node's addresses are %v", picked)
+	return picked, nil
+}
+
+// checkFlannelLinks refuses node addresses on interfaces flannel's VXLAN cannot use as they
+// are. flannel takes its MTU from the interface holding the node's address unless one is set,
+// which on a loopback interface is far beyond any network's. It gives its VXLAN devices that MTU
+// minus 50, and the kernel limits them to the interface's MTU minus the encapsulation, 50 for
+// IPv4 and 70 for IPv6, without telling flannel, so a dummy interface needs room for the MTU set.
+func checkFlannelLinks(c kubernetes.Cluster, picked []nodeip.Address) error {
+	if c.Flannel == nil {
+		return nil
+	}
+	for _, a := range picked {
+		switch {
+		case a.Link.Loopback && c.Flannel.MTU == 0:
+			return fmt.Errorf("the node's address %s is on the loopback interface %s, whose MTU flannel would take; set chalkos.cni.flannel.mtu", a.IP, a.Interface)
+		case a.Link.Kind == "dummy" && c.Flannel.MTU > 0:
+			need := c.Flannel.MTU
+			if a.IP.Is6() {
+				need += 20
+			}
+			if a.Link.MTU < need {
+				return fmt.Errorf("the node's address %s is on the dummy interface %s with MTU %d; flannel's %s VXLAN with chalkos.cni.flannel.mtu %d needs an MTU of at least %d there", a.IP, a.Interface, a.Link.MTU, nodeip.FamilyOf(a.IP), c.Flannel.MTU, need)
+			}
+		}
+	}
+	return nil
 }
 
 // ReadNodeIPs reads the addresses Prepare picked, the primary family's first.
@@ -348,7 +374,7 @@ func nodeSelector(p Paths, c kubernetes.Cluster, n kubernetes.Node) (nodeip.Sele
 			return nodeip.Selector{}, err
 		}
 		if pin != nil {
-			sel := nodeip.Selector{Fixed: pin, Pinned: true}
+			sel := nodeip.Selector{Fixed: pin, Pinned: true, SameInterface: c.Flannel != nil && len(pin) > 1}
 			for _, ip := range pin {
 				sel.Families = append(sel.Families, nodeip.FamilyOf(ip))
 			}
@@ -464,15 +490,18 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err != nil {
 		return err
 	}
-	ips, err := resolve(sel, time.Duration(c.NodeIP.Timeout)*time.Second)
+	picked, err := resolve(sel, time.Duration(c.NodeIP.Timeout)*time.Second)
 	if pinned := (*nodeip.PinnedError)(nil); errors.As(err, &pinned) {
 		return fmt.Errorf("%w; restore it, or remove the node's etcd member with chalkctl etcd remove-member %s and reinstall the node", err, n.Name)
 	}
 	if err != nil {
 		return err
 	}
-	for _, ip := range ips {
-		n.IPs = append(n.IPs, net.IP(ip.AsSlice()))
+	if err := checkFlannelLinks(c, picked); err != nil {
+		return err
+	}
+	for _, a := range picked {
+		n.IPs = append(n.IPs, net.IP(a.IP.AsSlice()))
 	}
 	kubeletCert := share.Kubelet
 	if c.Kind == kubernetes.KindControlPlane {

@@ -15,6 +15,19 @@ import (
 type Address struct {
 	Interface string
 	IP        netip.Addr
+	// Link is the interface holding the address, as SystemAddresses finds it.
+	Link Link
+}
+
+// Link is an interface of the node.
+type Link struct {
+	Name string
+	// Loopback is set on loopback interfaces, such as lo.
+	Loopback bool
+	// Kind is the kind of a virtual interface as netlink reports it, such as dummy, vlan or
+	// bridge; empty for a physical one.
+	Kind string
+	MTU  int
 }
 
 func (a Address) String() string { return a.IP.String() + " on " + a.Interface }
@@ -120,6 +133,10 @@ type Selector struct {
 	// Last are addresses picked only when no other address of their family matches: the API
 	// server endpoint's and the virtual IPs, which move between control-plane nodes.
 	Last []netip.Addr
+	// SameInterface picks the addresses of all families on one interface, as flannel needs
+	// them: the first address of the primary family that has an address of every other family
+	// on its interface, with those.
+	SameInterface bool
 }
 
 // families returns the families in order, IPv4 alone when none are listed.
@@ -164,11 +181,13 @@ func (s Selector) String() string {
 // is taken once an interface holds it. Otherwise it is the first global unicast address of the
 // family outside the reserved ranges and the interfaces of Kubernetes that the filter matches,
 // by interface name and by address, so the choice does not depend on the order the kernel lists
-// them in, and the Last addresses after all others.
-func (s Selector) Select(addrs []Address) ([]netip.Addr, error) {
+// them in, and the Last addresses after all others. With SameInterface the addresses are on one
+// interface, or Select fails with an *InterfaceError.
+func (s Selector) Select(addrs []Address) ([]Address, error) {
 	sorted := make([]Address, 0, len(addrs))
 	for _, a := range addrs {
-		sorted = append(sorted, Address{Interface: a.Interface, IP: a.IP.Unmap().WithZone("")})
+		a.IP = a.IP.Unmap().WithZone("")
+		sorted = append(sorted, a)
 	}
 	slices.SortFunc(sorted, compare)
 	last := func(ip netip.Addr) bool {
@@ -183,39 +202,61 @@ func (s Selector) Select(addrs []Address) ([]netip.Addr, error) {
 		}
 		return 0
 	})
-	var picked []netip.Addr
+	var picked []Address
+	var candidates [][]Address
 	for _, f := range s.families() {
-		ip, err := s.selectFamily(f, sorted)
+		c, err := s.candidates(f, sorted)
 		if err != nil {
 			return nil, err
 		}
-		picked = append(picked, ip)
+		candidates = append(candidates, c)
+		picked = append(picked, c[0])
 	}
-	return picked, nil
+	if !s.SameInterface || len(picked) < 2 {
+		return picked, nil
+	}
+	for _, first := range candidates[0] {
+		pair := []Address{first}
+		for _, other := range candidates[1:] {
+			if i := slices.IndexFunc(other, func(a Address) bool { return a.Interface == first.Interface }); i >= 0 {
+				pair = append(pair, other[i])
+			}
+		}
+		if len(pair) == len(picked) {
+			return pair, nil
+		}
+	}
+	return nil, &InterfaceError{Addresses: picked}
 }
 
-func (s Selector) selectFamily(f Family, sorted []Address) (netip.Addr, error) {
+// candidates returns the addresses of family f the selector may pick, in order: the fixed
+// address, or the eligible ones the filter matches.
+func (s Selector) candidates(f Family, sorted []Address) ([]Address, error) {
 	fixed, isFixed := s.fixed(f)
-	var seen []Address
+	var seen, matching []Address
 	for _, a := range sorted {
 		if FamilyOf(a.IP) != f {
 			continue
 		}
 		if isFixed && a.IP == fixed {
-			return a.IP, nil
+			matching = append(matching, a)
+			continue
 		}
 		if !a.IP.IsGlobalUnicast() {
 			continue
 		}
 		seen = append(seen, a)
 		if !isFixed && s.eligible(a) && s.Filter.Matches(a.IP) {
-			return a.IP, nil
+			matching = append(matching, a)
 		}
 	}
-	if isFixed && s.Pinned {
-		return netip.Addr{}, &PinnedError{Address: fixed}
+	switch {
+	case len(matching) > 0:
+		return matching, nil
+	case isFixed && s.Pinned:
+		return nil, &PinnedError{Address: fixed}
 	}
-	return netip.Addr{}, &NoMatchError{Family: f, Selector: s.describe(f), Addresses: seen}
+	return nil, &NoMatchError{Family: f, Selector: s.describe(f), Addresses: seen}
 }
 
 func (s Selector) eligible(a Address) bool {
@@ -265,6 +306,24 @@ func (e *NoMatchError) Error() string {
 	return fmt.Sprintf("no %s node address matches %s (%s)", e.Family, e.Selector, have)
 }
 
+// InterfaceError means the node has no addresses of all families on one interface. Addresses
+// are the ones picked without that condition.
+type InterfaceError struct {
+	Addresses []Address
+}
+
+func (e *InterfaceError) Error() string {
+	where := make([]string, len(e.Addresses))
+	for i, a := range e.Addresses {
+		on := " on "
+		if i == 0 {
+			on = " is on "
+		}
+		where[i] = a.IP.String() + on + a.Interface
+	}
+	return "flannel needs the node's IPv4 and IPv6 addresses on one interface; " + strings.Join(where, ", ")
+}
+
 // PinnedError means an address the node was pinned to is on none of its interfaces.
 type PinnedError struct {
 	Address netip.Addr
@@ -293,14 +352,14 @@ func NewWaiter() Waiter {
 
 // Wait returns the addresses s selects as soon as there are all of them. It looks at least
 // once, and returns the last error once timeout passed.
-func (w Waiter) Wait(s Selector, timeout time.Duration) ([]netip.Addr, error) {
+func (w Waiter) Wait(s Selector, timeout time.Duration) ([]Address, error) {
 	deadline := w.Now().Add(timeout)
 	for {
 		addrs, err := w.Addresses()
 		if err == nil {
-			var ips []netip.Addr
-			if ips, err = s.Select(addrs); err == nil {
-				return ips, nil
+			var picked []Address
+			if picked, err = s.Select(addrs); err == nil {
+				return picked, nil
 			}
 		}
 		remaining := deadline.Sub(w.Now())
