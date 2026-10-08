@@ -492,7 +492,8 @@ var dualStackAddresses = map[string][]string{"cp1": {"192.168.100.11", "fd00:100
 // dualStackNode checks that the node registered its addresses, one per family, IPv4 first; that
 // flannel uses the same, and the VXLAN rules of this boot take VXLAN to them alone, from the
 // cluster's source ranges, on the interface holding the address or, on w1's dummy interface, on
-// any but the pod network's; and that the node has a pod range of each family.
+// any but the pod network's, and drop the VXLAN pods send to those ranges; and that the node has
+// a pod range of each family.
 func dualStackNode(t *testing.T, ctx context.Context, cs kubernetes.Interface, n *node, name string) {
 	t.Helper()
 	want := dualStackAddresses[name]
@@ -503,7 +504,7 @@ func dualStackNode(t *testing.T, ctx context.Context, cs kubernetes.Interface, n
 	if err := dualStackPodRanges(ctx, cs, name); err != nil {
 		t.Error(err)
 	}
-	rules := vxlanRules(t, n, "base", name)
+	rules, drops := vxlanRules(t, n, "base", name)
 	slices.Sort(rules)
 	arrival := " fib daddr . iif type local"
 	if name == "w1" {
@@ -514,6 +515,13 @@ func dualStackNode(t *testing.T, ctx context.Context, cs kubernetes.Interface, n
 		"ip6 saddr { fd00:100::/64, fd00:200::/64 } ip6 daddr " + want[1] + " udp dport 8472" + arrival + " meta mark set meta mark | 0x01000000",
 	}; !slices.Equal(rules, want) {
 		t.Errorf("VXLAN rules of %s = %q, want %q", name, rules, want)
+	}
+	slices.Sort(drops)
+	if want := []string{
+		"ip saddr 10.244.0.0/16 ip daddr { 192.168.100.0/24, 192.168.200.0/24 } udp dport 8472 drop",
+		"ip6 saddr fd00:10:244::/56 ip6 daddr { fd00:100::/64, fd00:200::/64 } udp dport 8472 drop",
+	}; !slices.Equal(drops, want) {
+		t.Errorf("VXLAN rules of %s for pods = %q, want %q", name, drops, want)
 	}
 }
 
@@ -667,26 +675,32 @@ func internalIPs(t *testing.T, ctx context.Context, cs kubernetes.Interface, nam
 	return ips
 }
 
-// vxlanRuleRE is a rule of the node's VXLAN table as nft lists it.
-var vxlanRuleRE = regexp.MustCompile(`ip6? (saddr \{[^}]*\} ip6? )?daddr \S+ udp dport 8472 .*$`)
+// vxlanRuleRE is a rule of the node's VXLAN table that marks VXLAN to the node, as nft lists it;
+// vxlanDropRE one that drops VXLAN pods send through the node.
+var (
+	vxlanRuleRE = regexp.MustCompile(`ip6? (saddr \{[^}]*\} ip6? )?daddr \S+ udp dport 8472 .*meta mark set .*$`)
+	vxlanDropRE = regexp.MustCompile(`ip6? saddr \S+ ip6? daddr .* udp dport 8472 drop$`)
+)
 
-// vxlanRules returns the rules of the node's VXLAN table, as the node's preparation logged them
-// last in this boot; manifest names the cluster's manifest, base or ha.
-func vxlanRules(t *testing.T, n *node, manifest, name string) []string {
+// vxlanRules returns the marking and the dropping rules of the node's VXLAN table, as the node's
+// preparation logged them last in this boot; manifest names the cluster's manifest, base or ha.
+func vxlanRules(t *testing.T, n *node, manifest, name string) (marks, drops []string) {
 	t.Helper()
 	out, err := chalkctl(t, n, manifest, "logs", name, "--unit", "chalkos-kubernetes")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rules []string
 	for _, line := range strings.Split(out, "\n") {
 		// The preparation empties the table first and lists it each time.
 		if strings.Contains(line, "table inet chalkos-vxlan {") {
-			rules = nil
+			marks, drops = nil, nil
 		}
 		if rule := vxlanRuleRE.FindString(line); rule != "" {
-			rules = append(rules, strings.TrimSpace(rule))
+			marks = append(marks, strings.TrimSpace(rule))
+		}
+		if rule := vxlanDropRE.FindString(line); rule != "" {
+			drops = append(drops, strings.TrimSpace(rule))
 		}
 	}
-	return rules
+	return marks, drops
 }

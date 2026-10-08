@@ -681,9 +681,11 @@ in
         VXLAN only from a source in a range of its family. Every node's addresses must be in them:
         its fixed nodeIPs and the subnets it picks its addresses from are checked at evaluation,
         and a node that picks one outside them refuses to prepare. They need a range of each of
-        ipFamilies and may not overlap podCIDRs or serviceCIDRs, from which pods could send. Empty
-        takes VXLAN from any source. A node joining changes nothing on the others as long as its
-        addresses are in these ranges.
+        ipFamilies and may not overlap podCIDRs or serviceCIDRs, from which pods could send. The
+        nodes masquerade what pods send to other nodes behind their own addresses, so they drop
+        VXLAN that pods send to these ranges. Empty takes VXLAN from any source, so pods too
+        reach the other nodes' VXLAN port, directly or through that masquerade. A node joining
+        changes nothing on the others as long as its addresses are in these ranges.
       '';
     };
     nodeIP = {

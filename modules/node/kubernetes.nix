@@ -35,6 +35,8 @@ let
   vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
     ipv6 = config.networking.enableIPv6;
     mark = vxlanMark;
+    podCIDRs = lib.attrValues (ofFamilies k.podCIDRs);
+    sourceSubnets = k.vxlanSourceSubnets;
   };
 
   cniPlugins = [

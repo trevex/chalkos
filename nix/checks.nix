@@ -93,12 +93,25 @@ in
         (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.config;
       # The script NixOS runs to load and reload the firewall.
       firewall = builtins.elemAt worker.systemd.services.nftables.serviceConfig.ExecReload 1;
-      rule = lib.getExe (
-        pkgs.callPackage ../modules/node/vxlan-rule.nix {
-          lockFile = "vxlan.lock";
-          mark = "0x01000000";
-        }
-      );
+      script =
+        sourceSubnets:
+        lib.getExe (
+          pkgs.callPackage ../modules/node/vxlan-rule.nix {
+            lockFile = "vxlan.lock";
+            mark = "0x01000000";
+            podCIDRs = [
+              "10.244.0.0/16"
+              "fd00:10:244::/56"
+            ];
+            inherit sourceSubnets;
+          }
+        );
+      rule = script [
+        "10.0.0.0/24"
+        "fd00::/64"
+      ];
+      # The script of a cluster without source ranges.
+      anySource = script [ ];
     in
     pkgs.runCommand "chalkos-vxlan-rule"
       {
@@ -149,6 +162,27 @@ in
         # The routes of datagrams the peer sends out of c1.
         on_peer ip route add 10.0.1.0/24 via 10.0.2.11 dev c1 metric 100
         on_peer ip route add fd00:1::/64 via fd00:2::11 dev c1 metric 2048
+        # A pod on the node, whose datagrams the node forwards to the peer.
+        unshare -n sh -c 'touch pod-ready; exec sleep 600' &
+        pod=$!
+        until [ -e pod-ready ]; do sleep 0.1; done
+        on_pod() { nsenter -t "$pod" -n "$@"; }
+        ip link add p0 type veth peer name p1 netns "$pod"
+        ip addr add 10.244.0.1/24 dev p0
+        ip addr add fd00:10:244::1/64 dev p0 nodad
+        ip link set p0 up
+        on_pod ip link set lo up
+        on_pod ip addr add 10.244.0.2/24 dev p1
+        on_pod ip addr add fd00:10:244::2/64 dev p1 nodad
+        on_pod ip link set p1 up
+        on_pod ip route add default via 10.244.0.1
+        on_pod ip route add default via fd00:10:244::1
+        echo 1 >/proc/sys/net/ipv4/ip_forward
+        echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
+        # The peer has no route back to the pod; it takes the pod's datagrams nonetheless.
+        for conf in all v1 c1; do
+          on_peer sh -c "echo 0 >/proc/sys/net/ipv4/conf/$conf/rp_filter"
+        done
 
         # The firewall as NixOS loads it, with the state file it keeps in /var/lib/nftables here.
         sed "s|/var/lib/nftables/deletions.nft|$PWD/deletions.nft|" ${firewall} >firewall.nft
@@ -169,6 +203,10 @@ in
 
         socat -u UDP4-RECV:8472 OPEN:received,creat,append &
         socat -u UDP6-RECV:8472,ipv6only=1 OPEN:received,creat,append &
+        for port in 8472 8473; do
+          on_peer socat -u UDP4-RECV:$port OPEN:peer-received,creat,append &
+          on_peer socat -u UDP6-RECV:$port,ipv6only=1 OPEN:peer-received,creat,append &
+        done
         sleep 0.5
         n=0
         # Whether a datagram the peer sends to the address arrives, with further socat options
@@ -180,6 +218,19 @@ in
           echo "datagram $n" | on_peer socat -u - "UDP-SENDTO:$to:8472''${2:-}"
           for _ in $(seq 20); do
             grep -qx "datagram $n" received && return 0
+            sleep 0.1
+          done
+          return 1
+        }
+        # Whether a datagram the pod sends to the address and port reaches the peer through the
+        # node.
+        forwarded() {
+          n=$((n + 1))
+          local to=$1
+          case $1 in *:*) to="[$1]" ;; esac
+          echo "datagram $n" | on_pod socat -u - "UDP-SENDTO:$to:$2"
+          for _ in $(seq 20); do
+            grep -qx "datagram $n" peer-received && return 0
             sleep 0.1
           done
           return 1
@@ -198,7 +249,7 @@ in
         v4='destination 10.0.0.11 interface\n'
         v6='destination fd00::11 interface\n'
         rules() {
-          grep -c 'udp dport 8472' rules.log || true
+          grep -c 'meta mark set meta mark |' rules.log || true
         }
         # The rules in the table now, which may differ from what the script printed.
         marking() {
@@ -218,6 +269,34 @@ in
         if arrives 10.0.1.11; then fail "VXLAN arrived at another address"; fi
         if arrives fd00:1::11; then fail "IPv6 VXLAN arrived at another address"; fi
         [ "$(marked)" = "packets 0" ] || fail "accepted packets keep the mark"
+
+        # A mark another table set earlier opens nothing.
+        nft -f - <<'NFT'
+        table inet premark {
+          chain input {
+            type filter hook input priority filter - 10; policy accept;
+            udp dport 8472 meta mark set meta mark | 0x01000000
+          }
+        }
+        NFT
+        if arrives 10.0.1.11; then fail "VXLAN marked by another table arrived"; fi
+        if arrives fd00:1::11; then fail "IPv6 VXLAN marked by another table arrived"; fi
+        arrives 10.0.0.11 || fail "VXLAN marked by another table too was refused"
+        nft delete table inet premark
+
+        # Pods cannot send VXLAN through the node to the source ranges, where the node's
+        # masquerade would give it a source the other nodes take VXLAN from.
+        forwarded 10.0.0.12 8473 || fail "a pod's datagram to another port was dropped"
+        forwarded fd00::12 8473 || fail "a pod's IPv6 datagram to another port was dropped"
+        if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range"; fi
+        if forwarded fd00::12 8472; then fail "a pod sent IPv6 VXLAN to a source range"; fi
+        forwarded 10.0.2.12 8472 || fail "a pod's VXLAN outside the source ranges was dropped"
+        forwarded fd00:2::12 8472 || fail "a pod's IPv6 VXLAN outside the source ranges was dropped"
+        # Without source ranges VXLAN may come from anywhere, so nothing is dropped.
+        ${anySource} vxlan >/dev/null
+        forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without source ranges"
+        forwarded fd00::12 8472 || fail "a pod's IPv6 VXLAN was dropped without source ranges"
+        holding "$v4$v6"
 
         # A reload of the firewall replaces its own table alone.
         nft add table ip kube-proxy
@@ -325,6 +404,15 @@ in
           rm -rf vxlan
         done
 
+        # A lock that cannot be taken empties the table and fails.
+        holding "$v4"
+        rm vxlan.lock
+        mkdir vxlan.lock
+        run vxlan
+        [ "$status" != 0 ] && [ "$(marking)" = 0 ] || fail "kept its rules without the lock"
+        if arrives 10.0.0.11; then fail "VXLAN arrived after the lock could not be taken"; fi
+        rmdir vxlan.lock
+
         # Without the file or an argument the table is emptied.
         holding "$v4"
         rm vxlan
@@ -334,6 +422,7 @@ in
         run
         [ "$status" = 0 ] && [ "$(rules)" = 0 ] || fail "without an argument"
         if arrives 10.0.0.11; then fail "VXLAN arrived without the file"; fi
+        if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range without the file"; fi
         TEST
         unshare -rn bash test.sh
         touch $out

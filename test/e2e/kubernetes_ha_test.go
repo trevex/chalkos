@@ -426,10 +426,14 @@ func (c *haCluster) ipv6Only(ctx context.Context, cs kubernetes.Interface) {
 		}
 	}
 	// Without vxlanSourceSubnets VXLAN may come from any source, to cp1's address on the interface
-	// holding it.
+	// holding it, and nothing drops what pods send.
 	want := []string{"ip6 daddr fd00:100::11 udp dport 8472 fib daddr . iif type local meta mark set meta mark | 0x01000000"}
-	if rules := vxlanRules(c.t, c.nodes["cp1"].node, "ha", "cp1"); !slices.Equal(rules, want) {
+	rules, drops := vxlanRules(c.t, c.nodes["cp1"].node, "ha", "cp1")
+	if !slices.Equal(rules, want) {
 		c.t.Errorf("VXLAN rules of cp1 = %q, want %q", rules, want)
+	}
+	if len(drops) > 0 {
+		c.t.Errorf("VXLAN rules of cp1 for pods = %q, want none", drops)
 	}
 }
 

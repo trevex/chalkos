@@ -6,7 +6,8 @@
 # The NixOS firewall drops what its own input chain does not accept, whatever other tables do, so
 # the table only marks VXLAN packets sent to the node's addresses, and the firewall accepts
 # packets carrying the mark (see kubernetes.nix). The table is not the firewall's: reloading the
-# firewall leaves it alone.
+# firewall leaves it alone. With source ranges it also drops the VXLAN pods send through the node
+# to them, whatever the file holds.
 {
   lib,
   writeShellApplication,
@@ -16,7 +17,38 @@
   lockFile ? "/run/chalkos-vxlan-rule.lock",
   # The packet mark bit the firewall accepts.
   mark,
+  # The cluster's pod ranges and vxlanSourceSubnets.
+  podCIDRs,
+  sourceSubnets,
 }:
+let
+  clear = "meta mark & ${mark} == ${mark} meta mark set meta mark ^ ${mark}";
+  # The node masquerades what pods send to other nodes behind its own address, which is in the
+  # source ranges, so pods could send VXLAN the other nodes take as this node's. The chain drops
+  # it as the node forwards it, per family. flannel's own VXLAN is the node's, not forwarded.
+  familyOf = range: if lib.hasInfix ":" range then "ip6" else "ip";
+  forwardRules = lib.concatMap (
+    family:
+    let
+      pods = lib.filter (r: familyOf r == family) podCIDRs;
+      sources = lib.filter (r: familyOf r == family) sourceSubnets;
+      set = ranges: "{ ${lib.concatStringsSep ", " ranges} }";
+    in
+    lib.optional (
+      pods != [ ] && sources != [ ]
+    ) "${family} saddr ${set pods} ${family} daddr ${set sources} udp dport 8472 drop"
+  ) (lib.unique (map familyOf podCIDRs));
+  forwardChain = lib.concatMapStrings (line: "echo ${lib.escapeShellArg line}\n") (
+    lib.optionals (forwardRules != [ ]) (
+      [
+        "  chain forward {"
+        "    type filter hook forward priority filter; policy accept;"
+      ]
+      ++ map (rule: "    ${rule}") forwardRules
+      ++ [ "  }" ]
+    )
+  );
+in
 writeShellApplication {
   name = "chalkos-vxlan-rule";
   runtimeInputs = [
@@ -24,36 +56,40 @@ writeShellApplication {
     util-linux
   ];
   text = ''
-    # The preparation runs this before and after it picks the node's addresses: one run at a time,
-    # so the last one sees the file as it is now.
-    exec 9>>${lib.escapeShellArg lockFile}
-    flock 9
     families=(ip ${lib.optionalString ipv6 "ip6"})
 
     # The table, replaced in one transaction, with the rules given. Its input chain runs before
-    # the firewall's, which drops what it does not accept, and its clear chain after it, so the
-    # mark never outlives the firewall: not on packets the firewall accepted before looking at it,
-    # such as those on lo or of established connections, nor on the packets VXLAN carries.
+    # the firewall's, which drops what it does not accept, and first clears the mark, so only
+    # these rules set it whatever ran earlier; its clear chain runs after the firewall's, so the
+    # mark never outlives it: not on packets the firewall accepted before looking at it, such as
+    # those on lo or of established connections, nor on the packets VXLAN carries.
     table() {
       echo "table inet chalkos-vxlan"
       echo "delete table inet chalkos-vxlan"
       echo "table inet chalkos-vxlan {"
       echo "  chain input {"
       echo "    type filter hook input priority filter - 1; policy accept;"
+      echo "    ${clear}"
       for rule in "$@"; do
         echo "    $rule"
       done
       echo "  }"
       echo "  chain clear {"
       echo "    type filter hook input priority filter + 1; policy accept;"
-      echo "    meta mark & ${mark} == ${mark} meta mark set meta mark ^ ${mark}"
+      echo "    ${clear}"
       echo "  }"
+      ${forwardChain}
       echo "}"
     }
-    # Should anything fail before the table is written, reading the file for one, it is emptied,
-    # or removed should that fail too: no rule of an earlier run stays.
+    # Should anything fail before the table is written, taking the lock or reading the file, it is
+    # emptied, or removed should that fail too: no rule of an earlier run stays.
     written=false
     trap '"$written" || table | nft -f - || nft delete table inet chalkos-vxlan' EXIT
+
+    # The preparation runs this before and after it picks the node's addresses: one run at a time,
+    # so the last one sees the file as it is now.
+    exec 9>>${lib.escapeShellArg lockFile}
+    flock 9
 
     # Whether the string is four decimal octets. Leading zeros are refused: nft may read them as
     # octal.
