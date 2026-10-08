@@ -193,11 +193,32 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 		}
 		restarted = append(restarted, units...)
 	}
+	if s.RenewOnApplyIdentity {
+		s.forceRenewals()
+	}
 	resp := &nodev1.ApplyIdentityResponse{RestartedUnits: restarted}
 	for _, c := range changes {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// forceRenewals renews the node certificate and, on a control plane whose loop runs, its
+// certificates at once.
+func (s *Server) forceRenewals() {
+	if s.Renewal != nil {
+		log.Print("renewing the node certificate, as this test image does after each identity")
+		s.Renewal.Force()
+	}
+	if s.Kubernetes != nil {
+		s.Kubernetes.mu.Lock()
+		leaves := s.Kubernetes.leaves
+		s.Kubernetes.mu.Unlock()
+		if leaves != nil {
+			log.Print("renewing the control plane's certificates, as this test image does after each identity")
+			leaves.Force()
+		}
+	}
 }
 
 // applyStorage applies additive changes: repart creates and grows partitions, new encrypted

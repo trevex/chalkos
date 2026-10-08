@@ -368,6 +368,23 @@ lib.runTests {
         };
       };
   };
+  # The renewal hook of chalkd exists on the test image alone.
+  testRenewalHookOnTestImagesOnly = {
+    expr =
+      let
+        hook = c: c.systemd.services.chalkd.environment ? CHALKD_TEST_RENEW_ON_APPLY_IDENTITY;
+      in
+      {
+        role = hook (role (cluster [ ]));
+        testImage = hook (
+          role (cluster [ { chalkos.roles.worker.nixosModules = [ ../../modules/testing/test-image.nix ]; } ])
+        );
+      };
+    expected = {
+      role = false;
+      testImage = true;
+    };
+  };
   testClusterBuildsInstaller = {
     expr =
       let

@@ -144,6 +144,8 @@ type Renewal struct {
 
 	mu      sync.Mutex
 	problem string
+	// force asks for a renewal now, whether it is due or not.
+	force chan struct{}
 }
 
 // newRenewal checks about hourly and retries after a minute, then up to hourly.
@@ -157,6 +159,7 @@ func newRenewal(what string, due func() (time.Time, time.Time, error), renew fun
 		Check:      time.Hour,
 		FirstRetry: time.Minute,
 		MaxRetry:   time.Hour,
+		force:      make(chan struct{}, 1),
 	}
 }
 
@@ -192,14 +195,17 @@ func (r *Renewal) Run(ctx context.Context) {
 	wait := jitter(r.Check / 10)
 	retry := time.Duration(0)
 	for {
+		forced := false
 		select {
 		case <-ctx.Done():
 			return
 		case <-r.After(wait):
+		case <-r.force:
+			forced = true
 		}
 		now := r.Now()
 		renewAt, expires, err := r.Due()
-		if err == nil && retry == 0 && now.Before(renewAt) {
+		if err == nil && retry == 0 && !forced && now.Before(renewAt) {
 			wait = r.Check - r.Check/10 + jitter(r.Check/5)
 			continue
 		}
@@ -271,4 +277,14 @@ func jitter(d time.Duration) time.Duration {
 		return 0
 	}
 	return time.Duration(n.Int64())
+}
+
+// Force renews at once, whether the renewal is due or not. Only test images use it, through
+// Server.RenewOnApplyIdentity.
+func (r *Renewal) Force() {
+	select {
+	case r.force <- struct{}{}:
+	default:
+		// A forced renewal is pending already.
+	}
 }

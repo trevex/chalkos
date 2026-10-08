@@ -10,6 +10,8 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -312,5 +314,41 @@ func TestIssueNodeCertificateLocallyOnControlPlanes(t *testing.T) {
 	}
 	if s.Certificate.Fingerprint() == before {
 		t.Error("the control plane did not renew its own certificate")
+	}
+}
+
+// TestRenewOnApplyIdentity checks the test images' hook: with it, ApplyIdentity renews the node
+// certificate though it is not due; without it, as on every other image, it does not.
+func TestRenewOnApplyIdentity(t *testing.T) {
+	for _, hook := range []bool{false, true} {
+		s, _ := installedServer(t, section("", ""), false)
+		withNodeCertificate(t, s)
+		s.RenewOnApplyIdentity = hook
+		issued := make(chan struct{}, 1)
+		s.Renewal = NewNodeRenewal(s.Certificate, func(context.Context, []byte) (string, error) {
+			issued <- struct{}{}
+			return "", errors.New("the test issues none")
+		})
+		// The clock never ends a wait: only a forced renewal runs.
+		s.Renewal.After = func(time.Duration) <-chan time.Time { return nil }
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { s.Renewal.Run(ctx); close(done) }()
+		recorded, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+		if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: string(recorded)})); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-issued:
+			if !hook {
+				t.Error("ApplyIdentity renewed the node certificate without the test hook")
+			}
+		case <-time.After(time.Second):
+			if hook {
+				t.Error("ApplyIdentity did not renew the node certificate with the test hook")
+			}
+		}
+		cancel()
+		<-done
 	}
 }

@@ -216,6 +216,9 @@ func serve() error {
 		},
 	}
 
+	// Set by the chalklab test image alone.
+	srv.RenewOnApplyIdentity = os.Getenv("CHALKD_TEST_RENEW_ON_APPLY_IDENTITY") == "1"
+
 	switch {
 	case creds.mode == nodev1.Mode_MODE_NORMAL:
 		log.Printf("normal mode; certificate fingerprint %s", srv.Fingerprint)
