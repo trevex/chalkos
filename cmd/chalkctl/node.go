@@ -282,7 +282,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		// An insecure connection's fingerprint vouches only for that connection. The secrets go
 		// over a new one pinned to the fingerprint printed here.
 		if _, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{})); err != nil {
-			return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
+			return maintenanceError(t, err)
 		}
 		fp := conn.Fingerprint()
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", fp)
@@ -292,7 +292,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 	}
 	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 	if err != nil {
-		return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
+		return maintenanceError(t, err)
 	}
 	if info.Msg.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
@@ -409,6 +409,37 @@ func (a *app) install(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
 	}
 	return nil
+}
+
+// maintenanceError explains why a node in maintenance mode did not answer. A node in maintenance
+// mode whose image carries an OS CA accepts clients of that OS CA alone; it refuses chalkctl's
+// certificate when the image was built from a secrets.pub.json before the OS CA rotated.
+func maintenanceError(t *target, err error) error {
+	if refusesCertificate(t.addr, t.creds.cert) {
+		return fmt.Errorf("reach %s at %s: the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate; build the image and the installer media again from the current secrets.pub.json", t.name, t.addr)
+	}
+	return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
+}
+
+// refusesCertificate reports whether the chalkd at addr refuses cert for an OS CA it does not
+// know. A server refuses a client certificate with an alert after the handshake, which an RPC may
+// report as a broken connection; reading from a connection of its own receives the alert itself.
+// Nothing is sent over the connection, so the server is not verified.
+func refusesCertificate(addr string, cert *tls.Certificate) bool {
+	if cert == nil {
+		return false
+	}
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		addr = net.JoinHostPort(addr, client.Port)
+	}
+	cfg := &tls.Config{InsecureSkipVerify: true, Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS13, NextProtos: []string{"h2"}}
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", addr, cfg)
+	if err == nil {
+		defer conn.Close()
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, err = conn.Read(make([]byte, 1))
+	}
+	return err != nil && strings.Contains(err.Error(), "remote error: tls: unknown certificate authority")
 }
 
 // readDefinitions reads a role image's repart.d files.
