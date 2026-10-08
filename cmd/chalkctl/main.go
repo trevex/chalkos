@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
@@ -31,6 +32,7 @@ commands:
   node renew <node>                             issue a node a new node certificate, also once its own expired
   node-ca rotate                                issue a new node CA and deliver it to the control-plane nodes
   config new --name N --role R [--out FILE]     write a client file, which operates the cluster without the secrets file
+  rotate os-ca [--resume | --finish]            rotate the OS CA
   bootstrap <node>                              initialise the cluster on a control-plane node
   kubeconfig [--ttl 8760h] [--out FILE]         write an admin kubeconfig
   etcd members [--via NODE]                     list etcd's members and their health
@@ -51,6 +53,10 @@ type app struct {
 	home string
 	// readSecret asks for a secret on the terminal without echoing it.
 	readSecret func(ctx context.Context, prompt string) ([]byte, error)
+	// clock is the time; nil is the system's. pollInterval is the time between two looks at a
+	// node waited for; zero is three seconds. Tests set both.
+	clock        func() time.Time
+	pollInterval time.Duration
 }
 
 func main() {
@@ -127,6 +133,8 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.nodeCARotate(ctx, rest[1:])
 	case cmd == "config" && len(rest) > 0 && rest[0] == "new":
 		return a.configNew(ctx, rest[1:])
+	case cmd == "rotate":
+		return a.rotate(ctx, rest)
 	case cmd == "sign":
 		return runSign(rest)
 	}
