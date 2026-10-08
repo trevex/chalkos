@@ -46,8 +46,12 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // registers and accepts VXLAN on those addresses only, that pods on both nodes have addresses of
 // both families and reach each other over both, directly, through a dual-stack service and at a
 // host port, and resolve the API server's service and other names through the IPv4 DNS address,
-// all of it again after the control plane rebooted with newly issued certificates, and that a
-// worker whose link is cut turns NotReady.
+// all of it again after the control plane rebooted with newly issued certificates. It checks
+// that both nodes keep their clocks with the test's NTP server, that a reader's client file reads
+// a node's status but cannot reboot it, that the worker renews its node certificate through the
+// control plane, that the control plane renews its node certificate and its own certificates in
+// place, after which the API server serves the new ones and the controller-manager and the
+// scheduler take the lead again, and that a worker whose link is cut turns NotReady.
 // The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 the test does not
 // start that registry, so the nodes' mirror is unreachable and containerd falls back to pulling
 // from upstream.

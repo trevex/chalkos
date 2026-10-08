@@ -124,14 +124,20 @@ func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
 // test cluster, with the named manifest of CHALKLAB_MANIFESTS.
 func chalkctl(t *testing.T, n *node, manifest string, args ...string) (string, error) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	return chalkctlContext(ctx, t, n, manifest, args...)
+}
+
+// chalkctlContext is chalkctl ended when ctx is.
+func chalkctlContext(ctx context.Context, t *testing.T, n *node, manifest string, args ...string) (string, error) {
+	t.Helper()
 	args = append(args,
 		"--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), manifest+".json"),
 		"--secrets", os.Getenv("CHALKLAB_SECRETS"))
 	if n != nil {
 		args = append(args, "--endpoint", n.addr)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
 	out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
 	t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
 	return string(out), err

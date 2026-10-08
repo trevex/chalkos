@@ -37,8 +37,11 @@ func chalkctlWith(t *testing.T, n *node, manifest, config string, args ...string
 // synchronised waits until chrony on the node follows the test's NTP server.
 func synchronised(t *testing.T, n *node, name string) {
 	t.Helper()
+	// A status that hangs ends with the wait rather than after it.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	waitFor(t, 5*time.Minute, name+"'s clock to follow the test's NTP server", func() error {
-		out, err := chalkctl(t, n, "base", "status", name)
+		out, err := chalkctlContext(ctx, t, n, "base", "status", name)
 		if err != nil {
 			return err
 		}
@@ -119,6 +122,10 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 	if err != nil {
 		t.Fatal(err)
 	}
+	leaders, err := leaseHolders(ctx, cs, "kube-controller-manager", "kube-scheduler")
+	if err != nil {
+		t.Fatal(err)
+	}
 	start := time.Now()
 	if _, err := chalkctl(t, cp1, "base", "apply-identity", "cp1"); err != nil {
 		t.Fatal(err)
@@ -131,10 +138,11 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 	})
 	t.Logf("the control plane answered with renewed certificates after %v", time.Since(start).Round(time.Second))
 	waitFor(t, 5*time.Minute, "both nodes Ready after the renewal", func() error { return nodesReady(ctx, cs, "cp1", "w1") })
-	// The controller-manager and the scheduler restarted with the renewed kubeconfigs and lead
-	// again; the clocks agree, as chrony follows the test's NTP server.
+	// The controller-manager and the scheduler restarted with the renewed kubeconfigs and took
+	// the lead again: a restarted process holds the lease under a new identity. The clocks agree,
+	// as chrony follows the test's NTP server.
 	waitFor(t, 10*time.Minute, "the controller-manager and the scheduler to lead again after the renewal", func() error {
-		return leadingSince(ctx, cs, start, "kube-controller-manager", "kube-scheduler")
+		return leadingAgain(ctx, cs, start, leaders)
 	})
 	t.Logf("the controller-manager and the scheduler led again after %v", time.Since(start).Round(time.Second))
 	if out, err := chalkctl(t, cp1, "base", "status", "cp1"); err != nil || strings.Contains(out, "renewal failing") {
@@ -142,15 +150,32 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 	}
 }
 
-// leadingSince checks that each component renewed its leader election lease since the time
-// given, and says which of the control plane's pods restart when one did not.
-func leadingSince(ctx context.Context, cs kubernetes.Interface, since time.Time, components ...string) error {
+// leaseHolders returns who holds each component's leader election lease.
+func leaseHolders(ctx context.Context, cs kubernetes.Interface, components ...string) (map[string]string, error) {
+	holders := map[string]string{}
 	for _, name := range components {
+		lease, err := cs.CoordinationV1().Leases("kube-system").Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		holders[name] = valueOf(lease.Spec.HolderIdentity)
+	}
+	return holders, nil
+}
+
+// leadingAgain checks that each component's leader election lease was taken again since the time
+// given, by another holder than before or acquired since then, and that it is still renewed. It
+// says which of the control plane's pods restart when one was not.
+func leadingAgain(ctx context.Context, cs kubernetes.Interface, since time.Time, before map[string]string) error {
+	for name, holder := range before {
 		lease, err := cs.CoordinationV1().Leases("kube-system").Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
-		if lease.Spec.RenewTime == nil || lease.Spec.RenewTime.Time.Before(since) {
+		spec := lease.Spec
+		takenAgain := spec.HolderIdentity != nil && *spec.HolderIdentity != "" && *spec.HolderIdentity != holder ||
+			spec.AcquireTime != nil && !spec.AcquireTime.Time.Before(since)
+		if !takenAgain || spec.RenewTime == nil || spec.RenewTime.Time.Before(since) {
 			pods, err := cs.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{})
 			if err != nil {
 				return err
@@ -161,8 +186,16 @@ func leadingSince(ctx context.Context, cs kubernetes.Interface, since time.Time,
 					restarts = append(restarts, fmt.Sprintf("%s: ready %v, %d restarts", p.Name, c.Ready, c.RestartCount))
 				}
 			}
-			return fmt.Errorf("%s last renewed its lease at %v; %s", name, lease.Spec.RenewTime, strings.Join(restarts, "; "))
+			return fmt.Errorf("%s's lease is held by %v, acquired at %v and renewed at %v; %s", name, valueOf(spec.HolderIdentity), spec.AcquireTime, spec.RenewTime, strings.Join(restarts, "; "))
 		}
 	}
 	return nil
+}
+
+// valueOf is the string s points to, "" for none.
+func valueOf(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
