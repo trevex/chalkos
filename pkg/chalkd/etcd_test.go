@@ -71,7 +71,7 @@ func memberServer(t *testing.T, others ...string) (*Server, *clientv3.Client, ma
 		members[name] = addMember(t, cli, *share.EtcdCA, name)
 	}
 	k.LocalEtcd = n1.ClientURL
-	k.EtcdStopped = func(context.Context) error { return nil }
+	k.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
 	ips, err := knode.ReadNodeIPs(p)
 	if err != nil {
 		t.Fatal(err)
@@ -210,7 +210,7 @@ func TestEtcdLeave(t *testing.T) {
 func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	s, _, cli := joiningServer(t)
 	k := s.Kubernetes
-	k.EtcdStopped = func(context.Context) error { return nil }
+	k.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
 	// The node's own etcd does not answer; asking it ends after the timeout.
 	k.EtcdTimeout = silentEtcdTimeout
 	k.Start()

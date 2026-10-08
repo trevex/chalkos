@@ -121,6 +121,65 @@ func TestStaticPodsGolden(t *testing.T) {
 	}
 }
 
+// Every value that exists for one family only follows the primary family, the first of
+// ipFamilies; the controller-manager and the scheduler stay on IPv4's loopback address.
+func TestPrimaryFamilyValues(t *testing.T) {
+	for setup, want := range map[string]struct{ loopback, node, kubernetesService string }{
+		"ipv4":      {"127.0.0.1", "10.0.0.11", "10.96.0.1"},
+		"ipv4-ipv6": {"127.0.0.1", "10.0.0.11", "10.96.0.1"},
+		"ipv6-ipv4": {"::1", "fd00::11", "fd00:10:96::1"},
+		"ipv6":      {"::1", "fd00::11", "fd00:10:96::1"},
+	} {
+		tc := familySetups()[setup]
+		url := func(scheme, ip, port string) string { return scheme + "://" + net.JoinHostPort(ip, port) }
+		if got := tc.c.LocalEtcd(); got != url("https", want.loopback, "2379") {
+			t.Errorf("%s: LocalEtcd() = %s", setup, got)
+		}
+		if got := tc.c.LocalAPIServer(); got != url("https", want.loopback, "6443") {
+			t.Errorf("%s: LocalAPIServer() = %s", setup, got)
+		}
+		if ip, err := tc.c.APIServerServiceIP(); err != nil || ip.String() != want.kubernetesService {
+			t.Errorf("%s: APIServerServiceIP() = %v, %v", setup, ip, err)
+		}
+		pods, err := StaticPods(tc.c, tc.n, testFiles(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for pod, flags := range map[string]map[string]string{
+			"etcd.json": {
+				"listen-client-urls":          url("https", want.loopback, "2379") + "," + url("https", want.node, "2379"),
+				"listen-metrics-urls":         url("http", want.loopback, "2381"),
+				"advertise-client-urls":       url("https", want.node, "2379"),
+				"listen-peer-urls":            url("https", want.node, "2380"),
+				"initial-advertise-peer-urls": url("https", want.node, "2380"),
+			},
+			"kube-apiserver.json":          {"etcd-servers": url("https", want.loopback, "2379"), "advertise-address": want.node},
+			"kube-controller-manager.json": {"bind-address": "127.0.0.1"},
+			"kube-scheduler.json":          {"bind-address": "127.0.0.1"},
+		} {
+			got := commandFlags(t, pods[pod])
+			for name, value := range flags {
+				if got[name] != value {
+					t.Errorf("%s: %s --%s=%s, want %s", setup, pod, name, got[name], value)
+				}
+			}
+		}
+		for pod, host := range map[string]string{
+			"etcd.json":                    want.loopback,
+			"kube-apiserver.json":          want.node,
+			"kube-controller-manager.json": "127.0.0.1",
+			"kube-scheduler.json":          "127.0.0.1",
+		} {
+			c := decode(t, pods[pod]).Spec.Containers[0]
+			for _, probe := range []*corev1.Probe{c.LivenessProbe, c.ReadinessProbe, c.StartupProbe} {
+				if probe != nil && probe.HTTPGet.Host != host {
+					t.Errorf("%s: %s probes %s, want %s", setup, pod, probe.HTTPGet.Host, host)
+				}
+			}
+		}
+	}
+}
+
 func decode(t *testing.T, data []byte) corev1.Pod {
 	t.Helper()
 	var p corev1.Pod

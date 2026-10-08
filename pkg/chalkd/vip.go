@@ -36,9 +36,6 @@ const electionCleanupTimeout = 3 * time.Second
 // the election's client was closed.
 var errEtcdStalled = errors.New("etcd did not answer the resignation from the VIP election")
 
-// localEtcd is where chalkd reaches the etcd member on its own node.
-const localEtcd = "https://127.0.0.1:2379"
-
 // AddressManager holds the node's virtual IPs.
 type AddressManager interface {
 	// Acquire adds the addresses to the node and announces them; again, it adds what went
@@ -355,7 +352,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cli, err := k.dialEtcd(share)
+	cli, err := k.dialEtcd(c, share)
 	if err != nil {
 		return err
 	}
@@ -369,7 +366,7 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 	election := &vipElection{
 		client:   cli,
 		name:     n.Name,
-		healthy:  func(ctx context.Context) bool { return k.APIServerReady(ctx, share) },
+		healthy:  func(ctx context.Context) bool { return k.APIServerReady(ctx, c, share) },
 		addrs:    addrs,
 		ttl:      ttl,
 		interval: interval,
@@ -502,7 +499,7 @@ func systemVIPAddresses(c k8s.Cluster, p knode.Paths) (AddressManager, error) {
 }
 
 // apiServerReady reports whether the node's API server answers ready.
-func apiServerReady(ctx context.Context, share kpki.Share) bool {
+func apiServerReady(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM([]byte(share.CA.Certificate)) {
 		return false
@@ -514,7 +511,7 @@ func apiServerReady(ctx context.Context, share kpki.Share) bool {
 			DisableKeepAlives: true,
 		},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kpki.LocalAPIServer+"/readyz", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.LocalAPIServer()+"/readyz", nil)
 	if err != nil {
 		return false
 	}

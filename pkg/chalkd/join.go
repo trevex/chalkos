@@ -191,7 +191,7 @@ func (k *Kubernetes) joinOnce(ctx context.Context) error {
 		return waitingError{err}
 	}
 	k.setJoinStep("checking etcd's members")
-	cli, err := k.dialEtcd(share, endpoints...)
+	cli, err := k.dialEtcd(c, share, endpoints...)
 	if err != nil {
 		return err
 	}
@@ -406,21 +406,21 @@ func (k *Kubernetes) checkSplit(ctx context.Context, share kpki.Share) (*etcd.Sp
 	if err != nil {
 		return nil, err
 	}
-	cli, err := k.dialEtcd(share)
+	cli, err := k.dialEtcd(c, share)
 	if err != nil {
 		return nil, err
 	}
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
-	answered, err := etcd.OneCluster(rctx, cli, append([]string{k.localEtcd()}, others...))
+	answered, err := etcd.OneCluster(rctx, cli, append([]string{k.localEtcd(c)}, others...))
 	if split := (*etcd.SplitError)(nil); errors.As(err, &split) {
 		return split, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if answered[0] != k.localEtcd() {
+	if answered[0] != k.localEtcd(c) {
 		return nil, errors.New("the node's etcd member did not answer")
 	}
 	return nil, nil

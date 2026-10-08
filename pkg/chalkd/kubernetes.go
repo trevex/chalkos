@@ -57,7 +57,7 @@ type Kubernetes struct {
 	// VIPAddresses are the cluster's VIPs on this node's interfaces. Tests replace it.
 	VIPAddresses func(c k8s.Cluster, p knode.Paths) (AddressManager, error)
 	// APIServerReady reports whether the node's API server answers ready. Tests replace it.
-	APIServerReady func(ctx context.Context, share kpki.Share) bool
+	APIServerReady func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
 	// VIPTTL is the lifetime in seconds of the lease that holds the VIPs, and VIPInterval the
 	// time between two health checks of the API server; zero means 10 seconds and 2 seconds.
 	VIPTTL      int
@@ -68,12 +68,12 @@ type Kubernetes struct {
 	// EtcdStatusTimeout is how long a health check waits for each etcd member; zero means three
 	// seconds. Tests raise it: their members share one busy process.
 	EtcdStatusTimeout time.Duration
-	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means
-	// https://127.0.0.1:2379. Tests replace it.
+	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means the cluster's
+	// LocalEtcd. Tests replace it.
 	LocalEtcd string
 	// EtcdStopped waits until the node's etcd stopped once its static pod is gone. Tests replace
 	// it.
-	EtcdStopped func(ctx context.Context) error
+	EtcdStopped func(ctx context.Context, c k8s.Cluster) error
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -317,10 +317,14 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 	if err != nil {
 		return err
 	}
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		return err
+	}
 	if pin, err := knode.ReadPin(k.Paths); err != nil {
 		return err
 	} else if pin == nil {
-		if err := k.pinFromEtcd(ctx, share); err != nil {
+		if err := k.pinFromEtcd(ctx, c, share); err != nil {
 			return err
 		}
 	}
@@ -331,19 +335,19 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 // pinFromEtcd pins a bootstrapped node without a pin, as an older image left it, to its
 // addresses once its etcd member's peer URL confirms them: etcd's peers know the member by that
 // URL. A node whose address differs is not pinned, and its status says so.
-func (k *Kubernetes) pinFromEtcd(ctx context.Context, share kpki.Share) error {
+func (k *Kubernetes) pinFromEtcd(ctx context.Context, c k8s.Cluster, share kpki.Share) error {
 	ips, err := knode.ReadNodeIPs(k.Paths)
 	if err != nil {
 		return err
 	}
-	cli, err := k.dialEtcd(share)
+	cli, err := k.dialEtcd(c, share)
 	if err != nil {
 		return err
 	}
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
-	self, err := etcd.Local(rctx, cli, k.localEtcd())
+	self, err := etcd.Local(rctx, cli, k.localEtcd(c))
 	if err != nil {
 		return fmt.Errorf("pin the node's addresses: %w", err)
 	}
@@ -367,13 +371,17 @@ func (k *Kubernetes) setPinProblem(problem string) {
 func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, applied func(n int)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		return err
+	}
 	cred := newCredential(share, credentialValidity, time.Now)
 	// Issuing once up front fails the loop early on a share that cannot issue.
 	if _, err := cred.GetClientCertificate(nil); err != nil {
 		return fmt.Errorf("issue chalkd's client certificate: %w", err)
 	}
 	go cred.renew(ctx)
-	cfg, err := cred.restConfig(kpki.LocalAPIServer)
+	cfg, err := cred.restConfig(c.LocalAPIServer())
 	if err != nil {
 		return err
 	}
@@ -661,9 +669,10 @@ func (k *Kubernetes) etcdTimeout() time.Duration {
 	return k.EtcdTimeout
 }
 
-func (k *Kubernetes) localEtcd() string {
+// localEtcd is where chalkd reaches the node's own etcd member.
+func (k *Kubernetes) localEtcd(c k8s.Cluster) string {
 	if k.LocalEtcd != "" {
 		return k.LocalEtcd
 	}
-	return localEtcd
+	return c.LocalEtcd()
 }

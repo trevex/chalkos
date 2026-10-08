@@ -45,20 +45,20 @@ func (k *Kubernetes) controlPlane() (k8s.Cluster, string, kpki.Share, error) {
 	return c, n.Name, share, nil
 }
 
-// member checks that the node is an etcd member and returns its name and share.
-func (k *Kubernetes) member() (string, kpki.Share, error) {
-	_, name, share, err := k.controlPlane()
+// member checks that the node is an etcd member and returns its cluster, name and share.
+func (k *Kubernetes) member() (k8s.Cluster, string, kpki.Share, error) {
+	c, name, share, err := k.controlPlane()
 	if err != nil {
-		return "", kpki.Share{}, err
+		return k8s.Cluster{}, "", kpki.Share{}, err
 	}
 	switch bootstrapped, err := knode.Bootstrapped(k.Paths); {
 	case err != nil:
-		return "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
+		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeInternal, "%v", err)
 	case !bootstrapped:
 		// chalkctl asks the next control plane on this answer.
-		return "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node is not an etcd member; ask another control-plane node")
+		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node is not an etcd member; ask another control-plane node")
 	}
-	return name, share, nil
+	return c, name, share, nil
 }
 
 // mayBeMember reports whether the node is, or may be, an etcd member: it was bootstrapped, or it
@@ -81,9 +81,9 @@ func mayBeMember(p knode.Paths) (bool, error) {
 
 // dialEtcd connects to the endpoints, the node's own member by default, with chalkd's etcd
 // credential.
-func (k *Kubernetes) dialEtcd(share kpki.Share, endpoints ...string) (*clientv3.Client, error) {
+func (k *Kubernetes) dialEtcd(c k8s.Cluster, share kpki.Share, endpoints ...string) (*clientv3.Client, error) {
 	if len(endpoints) == 0 {
-		endpoints = []string{k.localEtcd()}
+		endpoints = []string{k.localEtcd(c)}
 	}
 	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
 	if err != nil {
@@ -106,11 +106,11 @@ func memberMessage(m etcd.Member, unhealthy error) *nodev1.EtcdMember {
 
 func (s *Server) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.EtcdMembersRequest]) (*connect.Response[nodev1.EtcdMembersResponse], error) {
 	k := s.Kubernetes
-	_, share, err := k.member()
+	c, _, share, err := k.member()
 	if err != nil {
 		return nil, err
 	}
-	cli, err := k.dialEtcd(share)
+	cli, err := k.dialEtcd(c, share)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -133,11 +133,11 @@ func (s *Server) EtcdRemoveMember(ctx context.Context, req *connect.Request[node
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := s.Kubernetes
-	name, share, err := k.member()
+	c, name, share, err := k.member()
 	if err != nil {
 		return nil, err
 	}
-	cli, err := k.dialEtcd(share)
+	cli, err := k.dialEtcd(c, share)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -192,7 +192,7 @@ func (k *Kubernetes) ownMember(members []etcd.Member, name string) (etcd.Member,
 // leaveEndpoints are the node's own etcd member and the other control planes' that the API
 // server lists, which still answer when the node's member was removed.
 func (k *Kubernetes) leaveEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Share) []string {
-	endpoints := []string{k.localEtcd()}
+	endpoints := []string{k.localEtcd(c)}
 	// Without its addresses the node's own member is listed too, which only repeats it.
 	ips, _ := knode.ReadNodeIPs(k.Paths)
 	rctx, cancel := k.etcdRequest(ctx)
@@ -247,7 +247,7 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	defer k.membership.Unlock()
 
 	endpoints := k.leaveEndpoints(ctx, c, share)
-	cli, err := k.dialEtcd(share, endpoints...)
+	cli, err := k.dialEtcd(c, share, endpoints...)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -275,8 +275,8 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	if ok {
 		// A bootstrapped node leaves through the other members alone only when forced: its own
 		// member may be healthy but cut off, or unable to run, as without its pinned address.
-		if bootstrapped && !req.Msg.Force && !slices.Contains(answered, k.localEtcd()) {
-			return nil, failed(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd())
+		if bootstrapped && !req.Msg.Force && !slices.Contains(answered, k.localEtcd(c)) {
+			return nil, failed(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
 		}
 		rctx, cancel := k.etcdRequest(ctx)
 		err := etcd.CheckQuorum(members, etcd.Health(rctx, cli, members), self.ID)
@@ -294,7 +294,7 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 		if len(others) == 0 {
 			return nil, failed(connect.CodeFailedPrecondition, "etcd has no other voter to remove %s through", self)
 		}
-		remover, err := k.dialEtcd(share, others...)
+		remover, err := k.dialEtcd(c, share, others...)
 		if err != nil {
 			return nil, failed(connect.CodeInternal, "%v", err)
 		}
@@ -322,7 +322,7 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	if err := removeStaticPods(p); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
 	}
-	if err := k.EtcdStopped(ctx); err != nil {
+	if err := k.EtcdStopped(ctx, c); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but its etcd did not stop: %v; its data stays in %s until chalkctl etcd leave runs again", err, p.EtcdData)
 	}
 	if err := knode.RemoveEtcdData(p); err != nil {
@@ -354,21 +354,22 @@ func removeStaticPods(p knode.Paths) error {
 
 // etcdStopped waits until the node's etcd no longer listens, as the kubelet stops it once its
 // static pod is gone.
-func etcdStopped(ctx context.Context) error {
+func etcdStopped(ctx context.Context, c k8s.Cluster) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	addr := net.JoinHostPort(c.Loopback().String(), "2379")
 	for {
-		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", "127.0.0.1:2379")
+		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", addr)
 		if err != nil && ctx.Err() == nil {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("etcd still listens on 127.0.0.1:2379: %w", ctx.Err())
+			return fmt.Errorf("etcd still listens on %s: %w", addr, ctx.Err())
 		}
 		conn.Close()
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("etcd still listens on 127.0.0.1:2379: %w", ctx.Err())
+			return fmt.Errorf("etcd still listens on %s: %w", addr, ctx.Err())
 		case <-time.After(time.Second):
 		}
 	}

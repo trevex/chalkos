@@ -196,6 +196,26 @@ func (c Cluster) Primary() nodeip.Family {
 	return families[0]
 }
 
+// Loopback returns the primary family's loopback address, which the control plane's own
+// connections on a node use: etcd's local listeners, the API server's connection to etcd, and the
+// connections of the controller-manager, the scheduler and chalkd to the API server.
+func (c Cluster) Loopback() netip.Addr {
+	if c.Primary() == nodeip.IPv6 {
+		return netip.IPv6Loopback()
+	}
+	return netip.AddrFrom4([4]byte{127, 0, 0, 1})
+}
+
+// LocalAPIServer is where components on a control-plane node reach their own API server.
+func (c Cluster) LocalAPIServer() string {
+	return "https://" + net.JoinHostPort(c.Loopback().String(), "6443")
+}
+
+// LocalEtcd is where the API server and chalkd on a control-plane node reach its etcd member.
+func (c Cluster) LocalEtcd() string {
+	return "https://" + net.JoinHostPort(c.Loopback().String(), "2379")
+}
+
 // validateRanges checks the ranges of family f as kubeadm does: each a network of its family,
 // the pod and service ranges apart, at most 2^20 service addresses, node parts of the pod range
 // longer than it by at most 16 bits, and the DNS address inside the service range, but neither

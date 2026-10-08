@@ -95,6 +95,29 @@ func TestControlPlaneCertificates(t *testing.T) {
 		t.Errorf("etcd names %v, addresses %s", etcd.DNSNames, got)
 	}
 
+	// In a cluster whose primary family is IPv6 the kubernetes service's address and the local
+	// API server are IPv6 ones.
+	v6 := testCluster()
+	v6.IPFamilies = []string{"ipv6", "ipv4"}
+	v6files, err := ControlPlane(ControlPlaneShare(k), v6, kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("fd00::11"), net.ParseIP("10.0.0.11")}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(ips(leaf(t, v6files, FileAPIServer)), ","); got != "fd00:10:96::1,127.0.0.1,::1,fd00::11,10.0.0.11" {
+		t.Errorf("API server addresses with IPv6 primary %s", got)
+	}
+	// The kubeconfig holds a key, so a failure names the server alone.
+	var kc struct {
+		Clusters []struct {
+			Cluster struct {
+				Server string `json:"server"`
+			} `json:"cluster"`
+		} `json:"clusters"`
+	}
+	if err := json.Unmarshal(v6files[FileSchedulerConfig], &kc); err != nil || kc.Clusters[0].Cluster.Server != "https://[::1]:6443" {
+		t.Errorf("scheduler kubeconfig with IPv6 primary: server %v, %v", kc.Clusters, err)
+	}
+
 	if string(files[FileCA]) != k.CA.Certificate || string(files[FileCAKey]) != k.CA.Key ||
 		string(files[FileEtcdCA]) != k.EtcdCA.Certificate || string(files[FileFrontProxyCA]) != k.FrontProxyCA.Certificate {
 		t.Error("the CA files differ from the share")
@@ -149,7 +172,7 @@ func TestControlPlaneCertificates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
-		if kc.Clusters[0].Cluster.Server != LocalAPIServer || cert.Subject.CommonName != user {
+		if kc.Clusters[0].Cluster.Server != "https://127.0.0.1:6443" || cert.Subject.CommonName != user {
 			t.Errorf("%s: server %s, user %s", file, kc.Clusters[0].Cluster.Server, cert.Subject.CommonName)
 		}
 		clientOf(t, file, cert, k.CA)

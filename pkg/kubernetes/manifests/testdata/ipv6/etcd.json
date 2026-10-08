@@ -43,8 +43,8 @@
           "--initial-cluster=cp1=https://[fd00::11]:2380",
           "--initial-cluster-state=new",
           "--key-file=/etc/kubernetes/pki/etcd/server.key",
-          "--listen-client-urls=https://127.0.0.1:2379,https://[fd00::11]:2379",
-          "--listen-metrics-urls=http://127.0.0.1:2381",
+          "--listen-client-urls=https://[::1]:2379,https://[fd00::11]:2379",
+          "--listen-metrics-urls=http://[::1]:2381",
           "--listen-peer-urls=https://[fd00::11]:2380",
           "--name=cp1",
           "--peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt",
@@ -82,7 +82,7 @@
           "httpGet": {
             "path": "/livez",
             "port": "probe-port",
-            "host": "127.0.0.1",
+            "host": "::1",
             "scheme": "HTTP"
           },
           "initialDelaySeconds": 10,
@@ -94,7 +94,7 @@
           "httpGet": {
             "path": "/readyz",
             "port": "probe-port",
-            "host": "127.0.0.1",
+            "host": "::1",
             "scheme": "HTTP"
           },
           "timeoutSeconds": 15,
@@ -105,7 +105,7 @@
           "httpGet": {
             "path": "/readyz",
             "port": "probe-port",
-            "host": "127.0.0.1",
+            "host": "::1",
             "scheme": "HTTP"
           },
           "initialDelaySeconds": 10,

@@ -43,8 +43,10 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 	if len(n.IPs) == 0 {
 		return nil, errors.New("the node has no address")
 	}
-	// etcd and the API server advertise the address of the primary family.
+	// etcd and the API server advertise the address of the primary family, and listen on its
+	// loopback address for their own node.
 	ip := n.IPs[0].String()
+	loopback := c.Loopback().String()
 	families, err := c.Families()
 	if err != nil {
 		return nil, err
@@ -71,9 +73,9 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"initial-cluster":             initialCluster,
 		// A member with data ignores the initial cluster, so a restart never starts a new one.
 		"initial-cluster-state": state,
-		"listen-client-urls":    "https://127.0.0.1:2379,https://" + net.JoinHostPort(ip, "2379"),
+		"listen-client-urls":    c.LocalEtcd() + ",https://" + net.JoinHostPort(ip, "2379"),
 		"listen-peer-urls":      "https://" + net.JoinHostPort(ip, "2380"),
-		"listen-metrics-urls":   "http://127.0.0.1:2381",
+		"listen-metrics-urls":   "http://" + net.JoinHostPort(loopback, "2381"),
 		"cert-file":             pki(kpki.FileEtcdServer),
 		"key-file":              pki(kpki.FileEtcdServerKey),
 		"trusted-ca-file":       pki(kpki.FileEtcdCA),
@@ -83,7 +85,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"peer-trusted-ca-file":  pki(kpki.FileEtcdCA),
 		"peer-client-cert-auth": "true",
 		"snapshot-count":        "10000",
-	}), "127.0.0.1", 2381, corev1.URISchemeHTTP, "/livez", "/readyz", "/readyz", "100m", "100Mi")
+	}), loopback, 2381, corev1.URISchemeHTTP, "/livez", "/readyz", "/readyz", "100m", "100Mi")
 	mountDir(etcd, "etcd-data", EtcdDataDir, EtcdDataDir, false, corev1.HostPathDirectoryOrCreate)
 	mountDir(etcd, "etcd-certs", path.Join(PKIDir, "etcd"), path.Join(podPKIDir, "etcd"), true, corev1.HostPathDirectory)
 
@@ -99,7 +101,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 		"etcd-cafile":                        pki(kpki.FileEtcdCA),
 		"etcd-certfile":                      pki(kpki.FileAPIServerEtcdClient),
 		"etcd-keyfile":                       pki(kpki.FileAPIServerEtcdClientKey),
-		"etcd-servers":                       "https://127.0.0.1:2379",
+		"etcd-servers":                       c.LocalEtcd(),
 		"kubelet-certificate-authority":      pki(kpki.FileCA),
 		"kubelet-client-certificate":         pki(kpki.FileAPIServerKubeletClient),
 		"kubelet-client-key":                 pki(kpki.FileAPIServerKubeletKey),
@@ -123,6 +125,8 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, files map[string][]byte
 	}), ip, 6443, corev1.URISchemeHTTPS, "/livez", "/readyz", "/livez", "250m", "")
 	mountDir(apiServer, "k8s-certs", PKIDir, podPKIDir, true, corev1.HostPathDirectory)
 
+	// The controller-manager and the scheduler serve their health endpoints on IPv4's loopback
+	// address in every setup, as kubeadm's do: every node has it.
 	controllerManagerFlags := map[string]string{
 		"allocate-node-cidrs":              "true",
 		"authentication-kubeconfig":        pki(kpki.FileControllerManagerConfig),

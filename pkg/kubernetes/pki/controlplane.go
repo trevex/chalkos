@@ -28,9 +28,6 @@ const (
 	MastersGroup = "system:masters"
 )
 
-// LocalAPIServer is where components on a control-plane node reach their own API server.
-const LocalAPIServer = "https://127.0.0.1:6443"
-
 // Files of the control plane's certificates, keys and kubeconfigs, by path relative to the
 // directory the static pods mount.
 const (
@@ -131,7 +128,7 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 		if err != nil {
 			return nil, fmt.Errorf("issue %s: %w", kc.file, err)
 		}
-		data, err := Kubeconfig{Name: "chalkos", Server: LocalAPIServer, CA: []byte(s.CA.Certificate), Client: ck}.Encode()
+		data, err := Kubeconfig{Name: "chalkos", Server: c.LocalAPIServer(), CA: []byte(s.CA.Certificate), Client: ck}.Encode()
 		if err != nil {
 			return nil, err
 		}
