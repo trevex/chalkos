@@ -544,15 +544,16 @@ in
         family: value:
         let
           pod = podRange family;
+          option = "chalkos.cluster.kubernetes.nodeCIDRMaskSizes.${family}";
         in
-        if
-          !lib.elem family ipFamilies
-          || builtins.isString pod
-          || value > pod.prefix && value - pod.prefix <= 16 && value <= (if pod.ipv4 then 32 else 128)
-        then
+        if !lib.elem family ipFamilies || builtins.isString pod then
+          value
+        else if value > (if pod.ipv4 then 32 else 128) then
+          throw "${option}: ${toString value} is longer than an ${family} address"
+        else if value > pod.prefix && value - pod.prefix <= 16 then
           value
         else
-          throw "chalkos.cluster.kubernetes.nodeCIDRMaskSizes.${family}: ${toString value} must be longer than the prefix of podCIDRs.${family} \"${k.podCIDRs.${family}}\", by at most 16 bits";
+          throw "${option}: ${toString value} must be longer than the prefix of podCIDRs.${family} \"${k.podCIDRs.${family}}\", by at most 16 bits";
       description = ''
         Prefix length of each node's part of the pod range of each family.
       '';
@@ -699,7 +700,7 @@ in
           matching address: IPv4 before IPv6, then by interface name and address, and the
           endpoint's address, which may be a virtual one, only when no other matches. Empty takes
           any global unicast address. Addresses in the pod and service ranges and on the
-          interfaces of the pod network and kube-proxy (`flannel.*`, `cni*`, `veth*`, `kube-*`)
+          interfaces of the pod network and kube-proxy (`flannel*`, `cni*`, `veth*`, `kube-*`)
           are never taken. chalkos.nodes.<name>.kubernetes.validSubnets overrides this per node.
         '';
       };

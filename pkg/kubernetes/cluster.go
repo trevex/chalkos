@@ -266,7 +266,10 @@ func (c Cluster) validateRanges(f nodeip.Family) error {
 		return fmt.Errorf("serviceCIDRs.%s %s holds more than 2^20 addresses; use a prefix of /%d or longer", f, service, bits-20)
 	}
 	mask := c.NodeCIDRMaskSizes.Of(f)
-	if mask <= pod.Bits() || mask-pod.Bits() > 16 || mask > bits {
+	if mask > bits {
+		return fmt.Errorf("nodeCIDRMaskSizes.%s %d is longer than an %s address", f, mask, f)
+	}
+	if mask <= pod.Bits() || mask-pod.Bits() > 16 {
 		return fmt.Errorf("nodeCIDRMaskSizes.%s %d must be longer than the prefix of podCIDRs.%s %s, by at most 16 bits", f, mask, f, pod)
 	}
 	s := c.DNSIPs.Of(f)

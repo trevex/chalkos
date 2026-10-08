@@ -25,6 +25,8 @@ let
   # public addresses flanneld finds the interface holding them.
   flanneld = ''
     set -- --ip-masq --kube-subnet-mgr --healthz-port=8081
+    # Split on commas alone, without expanding file names.
+    set -f
     IFS=,
     for ip in $POD_IPS; do
       case $ip in

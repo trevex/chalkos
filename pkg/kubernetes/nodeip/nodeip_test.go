@@ -193,6 +193,14 @@ func TestSelectSameInterface(t *testing.T) {
 		"without the condition": {Selector{Families: dual},
 			[]string{"eth0 10.0.0.11", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"10.0.0.11 on eth0", "fd00:1::11 on eth1"}},
 		"one family": {Selector{SameInterface: true}, []string{"eth0 10.0.0.11", "eth1 fd00:1::11"}, []string{"10.0.0.11 on eth0"}},
+		// A virtual address pairs only when no other address of its family does: here eth0's
+		// IPv4 address sorts first and eth0 holds the IPv6 VIP, but eth1 has a pair of its own.
+		"virtual address on the first interface": {Selector{Families: dual, Last: ips("fd00::10"), SameInterface: true},
+			[]string{"eth0 10.0.0.11", "eth0 fd00::10", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"10.0.1.11 on eth1", "fd00:1::11 on eth1"}},
+		"virtual address of the first family": {Selector{Families: dual, Last: ips("10.0.0.10"), SameInterface: true},
+			[]string{"eth0 10.0.0.10", "eth0 fd00::11", "eth1 10.0.1.11", "eth1 fd00:1::11"}, []string{"10.0.1.11 on eth1", "fd00:1::11 on eth1"}},
+		"virtual address alone": {Selector{Families: dual, Last: ips("fd00::10"), SameInterface: true},
+			[]string{"eth0 10.0.0.11", "eth0 fd00::10", "eth1 fd00:1::11"}, []string{"10.0.0.11 on eth0", "fd00::10 on eth0"}},
 	} {
 		got, err := tc.sel.Select(addresses(t, tc.addrs...))
 		var s []string
@@ -209,6 +217,16 @@ func TestSelectSameInterface(t *testing.T) {
 	var iface *InterfaceError
 	if !errors.As(err, &iface) || err.Error() != "flannel needs the node's IPv4 and IPv6 addresses on one interface; 10.0.0.11 is on eth0, fd00:1::11 on eth1" {
 		t.Errorf("no pair: Select() = %v", err)
+	}
+}
+
+// flannel's IPv6 VXLAN device holds an address of the pod range, which is never the node's.
+func TestSelectSkipsFlannelIPv6(t *testing.T) {
+	sel := Selector{Families: []Family{IPv6}, Filter: filter(t, "fd00:10:244::/56")}
+	_, err := sel.Select(addresses(t, "eth0 2001:db8::15", "flannel-v6.1 fd00:10:244:1::"))
+	var none *NoMatchError
+	if !errors.As(err, &none) {
+		t.Errorf("Select() = %v, want no match", err)
 	}
 }
 

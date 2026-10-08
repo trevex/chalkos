@@ -1430,6 +1430,10 @@ lib.runTests {
           podCIDRs.ipv4 = "10.244.0.0/24";
           nodeCIDRMaskSizes.ipv4 = 33;
         };
+        maskBeyondAddressIPv6 = refused {
+          podCIDRs.ipv6 = "fd00:10:244::/120";
+          nodeCIDRMaskSizes.ipv6 = 129;
+        };
         dnsOutside = refused { dnsIPs.ipv4 = "10.112.0.10"; };
         dnsNotAnAddress = refused { dnsIPs.ipv6 = "dns"; };
         dnsWrongFamily = refused { dnsIPs.ipv6 = "10.96.0.10"; };
@@ -1454,6 +1458,7 @@ lib.runTests {
       maskNotLonger = true;
       maskTooLong = true;
       maskBeyondAddress = true;
+      maskBeyondAddressIPv6 = true;
       dnsOutside = true;
       dnsNotAnAddress = true;
       dnsWrongFamily = true;
@@ -1497,6 +1502,8 @@ lib.runTests {
         publicAddresses =
           lib.hasInfix "--public-ip=$ip" (lib.last container.command)
           && lib.hasInfix "--public-ipv6=$ip" (lib.last container.command);
+        # The addresses are split on commas alone, never expanded as file names.
+        noGlob = lib.hasInfix "set -f\nIFS=,\nfor ip in $POD_IPS" (lib.last container.command);
         noInterface = !lib.any (lib.hasInfix "--iface") container.command;
         portmap = (lib.findFirst (p: p.type == "portmap") null cniConf.plugins).backend;
         # The MTU option reaches flannel and the nodes, which check their interfaces against it.
@@ -1558,6 +1565,7 @@ lib.runTests {
         valueFrom.fieldRef.fieldPath = "status.podIPs";
       };
       publicAddresses = true;
+      noGlob = true;
       noInterface = true;
       portmap = "nftables";
       mtu = {

@@ -33,8 +33,9 @@ type Link struct {
 func (a Address) String() string { return a.IP.String() + " on " + a.Interface }
 
 // kubernetesInterfaces are name prefixes of the interfaces the pod network and kube-proxy
-// create; their addresses are never the node's.
-var kubernetesInterfaces = []string{"flannel.", "cni", "veth", "kube-"}
+// create, such as flannel.1 and flannel-v6.1; their addresses are never the node's. The VXLAN
+// rule in modules/node/vxlan-rule.nix refuses VXLAN arriving on them; keep the two in sync.
+var kubernetesInterfaces = []string{"flannel", "cni", "veth", "kube-"}
 
 // Filter selects addresses by subnet: an address matches when an included subnet holds it, or
 // no subnet is included, and no excluded subnet holds it.
@@ -215,15 +216,23 @@ func (s Selector) Select(addrs []Address) ([]Address, error) {
 	if !s.SameInterface || len(picked) < 2 {
 		return picked, nil
 	}
-	for _, first := range candidates[0] {
-		pair := []Address{first}
-		for _, other := range candidates[1:] {
-			if i := slices.IndexFunc(other, func(a Address) bool { return a.Interface == first.Interface }); i >= 0 {
-				pair = append(pair, other[i])
+	// Pairs of the node's own addresses come first, so a Last address pairs only when no other
+	// address of its family does.
+	for _, withLast := range []bool{false, true} {
+		usable := func(a Address) bool { return withLast || !last(a.IP) }
+		for _, first := range candidates[0] {
+			if !usable(first) {
+				continue
 			}
-		}
-		if len(pair) == len(picked) {
-			return pair, nil
+			pair := []Address{first}
+			for _, other := range candidates[1:] {
+				if i := slices.IndexFunc(other, func(a Address) bool { return a.Interface == first.Interface && usable(a) }); i >= 0 {
+					pair = append(pair, other[i])
+				}
+			}
+			if len(pair) == len(picked) {
+				return pair, nil
+			}
 		}
 	}
 	return nil, &InterfaceError{Addresses: picked}
