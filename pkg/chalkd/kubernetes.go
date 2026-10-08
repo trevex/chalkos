@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/netip"
@@ -239,21 +240,7 @@ func (k *Kubernetes) startLocked() chan struct{} {
 		go k.superviseVIP(ctx, k.vipDone)
 	}
 	if k.leaves == nil {
-		k.leaves = newRenewal("Kubernetes control-plane certificates", func() (time.Time, time.Time, error) {
-			renewAt, first, err := knode.ControlPlaneRenewAt(k.Paths)
-			if err != nil {
-				return time.Time{}, time.Time{}, err
-			}
-			// Static pods left on the certificates before the current ones are rendered at once.
-			if stale, err := knode.StaticPodsStale(k.Paths); err != nil {
-				return time.Time{}, time.Time{}, err
-			} else if stale {
-				return time.Time{}, first.NotAfter, nil
-			}
-			return renewAt, first.NotAfter, nil
-		}, func(ctx context.Context, now time.Time) error {
-			return knode.RenewControlPlane(ctx, k.Paths, now)
-		})
+		k.leaves = k.controlPlaneRenewal()
 	}
 	k.leavesDone = make(chan struct{})
 	go func(leaves *Renewal, done chan struct{}) {
@@ -270,6 +257,32 @@ func (k *Kubernetes) startLocked() chan struct{} {
 		})
 	}, k.reload)
 	return done
+}
+
+// controlPlaneRenewal renews the control plane's certificates.
+func (k *Kubernetes) controlPlaneRenewal() *Renewal {
+	return newRenewal("Kubernetes control-plane certificates", func(now time.Time) (bool, time.Time, error) {
+		// Until the preparation wrote the certificates, as right after boot, there are none to
+		// renew; those it writes are new.
+		if prepared, err := knode.Prepared(k.Paths); err != nil || !prepared {
+			return false, time.Time{}, err
+		}
+		renewAt, first, err := knode.ControlPlaneRenewAt(k.Paths)
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, time.Time{}, nil
+		}
+		if err != nil {
+			return false, time.Time{}, err
+		}
+		// Static pods left on the certificates before the current ones are rendered at once.
+		stale, err := knode.StaticPodsStale(k.Paths)
+		if err != nil {
+			return false, first.NotAfter, err
+		}
+		return stale || !now.Before(renewAt), first.NotAfter, nil
+	}, func(ctx context.Context, now time.Time) error {
+		return knode.RenewControlPlane(ctx, k.Paths, now)
+	})
 }
 
 // Reload makes a running control-plane loop start again with the share STATE holds now, or

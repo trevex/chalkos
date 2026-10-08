@@ -921,12 +921,16 @@ func TestControlPlaneRenewsItsCertificates(t *testing.T) {
 	if leaves == nil {
 		t.Fatal("a bootstrapped control plane does not renew its certificates")
 	}
-	renewAt, expires, err := leaves.Due()
-	if err != nil {
-		t.Fatal(err)
+	due, expires, err := leaves.Due(time.Now())
+	if err != nil || due {
+		t.Fatalf("due %v, %v with new certificates", due, err)
 	}
-	if lifetime := expires.Sub(renewAt); lifetime < 100*24*time.Hour || lifetime > 130*24*time.Hour {
-		t.Errorf("renewal %v before the first certificate expires, want a third of a year", lifetime)
+	// Due once a third of a year remains.
+	if due, _, _ := leaves.Due(expires.Add(-130 * 24 * time.Hour)); due {
+		t.Error("due with 130 days left")
+	}
+	if due, _, _ := leaves.Due(expires.Add(-100 * 24 * time.Hour)); !due {
+		t.Error("not due with 100 days left")
 	}
 	apiServer := filepath.Join(k.Paths.PKI, kpki.FileAPIServer)
 	before, _ := os.ReadFile(apiServer)
@@ -978,9 +982,8 @@ func TestControlPlaneRendersStaleStaticPods(t *testing.T) {
 
 	// The renewal is due at once and renders the pods, without issuing certificates again.
 	rendered := staleStaticPod(t, p)
-	renewAt, _, err := leaves.Due()
-	if err != nil || renewAt.After(time.Now()) {
-		t.Errorf("due at %v, %v with stale static pods, want now", renewAt, err)
+	if due, _, err := leaves.Due(time.Now()); err != nil || !due {
+		t.Errorf("due %v, %v with stale static pods, want due", due, err)
 	}
 	if err := leaves.Renew(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
@@ -1008,8 +1011,8 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
 	entered, release := make(chan struct{}), make(chan struct{})
-	k.leaves = newRenewal("test", func() (time.Time, time.Time, error) {
-		return time.Time{}, time.Time{}, nil
+	k.leaves = newRenewal("test", func(time.Time) (bool, time.Time, error) {
+		return true, time.Time{}, nil
 	}, func(context.Context, time.Time) error {
 		close(entered)
 		<-release

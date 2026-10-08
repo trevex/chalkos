@@ -133,8 +133,9 @@ func RenewThrough(ctx context.Context, cert *NodeCertificate, addr string, reque
 type Renewal struct {
 	// What names what is renewed, in the log.
 	What string
-	// Due returns when the renewal is due and when what it renews expires.
-	Due func() (renewAt, expires time.Time, err error)
+	// Due reports whether the renewal is due at now and when what it renews expires; there being
+	// nothing to renew yet is no error.
+	Due func(now time.Time) (due bool, expires time.Time, err error)
 	// Renew renews.
 	Renew func(ctx context.Context, now time.Time) error
 	// Now and After are the clock; tests replace them.
@@ -155,7 +156,7 @@ type Renewal struct {
 
 // newRenewal checks about hourly, gives each attempt a minute and retries after a minute, then up
 // to hourly.
-func newRenewal(what string, due func() (time.Time, time.Time, error), renew func(context.Context, time.Time) error) *Renewal {
+func newRenewal(what string, due func(time.Time) (bool, time.Time, error), renew func(context.Context, time.Time) error) *Renewal {
 	return &Renewal{
 		What:       what,
 		Due:        due,
@@ -173,9 +174,9 @@ func newRenewal(what string, due func() (time.Time, time.Time, error), renew fun
 // NewNodeRenewal renews the node certificate once two thirds of its lifetime have passed, with a
 // certificate issue obtains for a new key.
 func NewNodeRenewal(cert *NodeCertificate, issue func(context.Context, []byte) (string, error)) *Renewal {
-	due := func() (time.Time, time.Time, error) {
+	due := func(now time.Time) (bool, time.Time, error) {
 		leaf := cert.Current().Leaf
-		return pki.RenewAt(leaf), leaf.NotAfter, nil
+		return !now.Before(pki.RenewAt(leaf)), leaf.NotAfter, nil
 	}
 	return newRenewal("node certificate", due, func(ctx context.Context, now time.Time) error {
 		return renewNodeCertificate(ctx, cert, issue, now)
@@ -201,8 +202,11 @@ func (r *Renewal) setProblem(problem string) {
 func (r *Renewal) Run(ctx context.Context) {
 	wait := jitter(r.Check / 10)
 	retry := time.Duration(0)
+	// forced is a forced renewal that has not succeeded yet. Any other attempt follows a check
+	// that found the renewal due: one that failed may have been made unnecessary since, by a
+	// preparation or a delivered certificate, and renewing again would restart what runs on it.
+	forced := false
 	for {
-		forced := false
 		select {
 		case <-ctx.Done():
 			return
@@ -211,8 +215,10 @@ func (r *Renewal) Run(ctx context.Context) {
 			forced = true
 		}
 		now := r.Now()
-		renewAt, expires, err := r.Due()
-		if err == nil && retry == 0 && !forced && now.Before(renewAt) {
+		due, expires, err := r.Due(now)
+		if err == nil && !forced && !due {
+			retry = 0
+			r.setProblem("")
 			wait = r.Check - r.Check/10 + jitter(r.Check/5)
 			continue
 		}
@@ -237,7 +243,7 @@ func (r *Renewal) Run(ctx context.Context) {
 			log.Printf("%s: %s; trying again in %v", r.What, problem, wait.Round(time.Second))
 			continue
 		}
-		retry = 0
+		retry, forced = 0, false
 		r.setProblem("")
 		log.Printf("%s renewed", r.What)
 		wait = r.Check - r.Check/10 + jitter(r.Check/5)
