@@ -177,7 +177,8 @@ in
           status=0
           ${rule} "$@" >rules.log 2>errors.log || status=$?
         }
-        # Runs the script with the file holding the content, with escapes.
+        # Runs the script with the file holding the content, with escapes. Without source lines
+        # VXLAN may come from any source.
         holding() {
           printf '%b' "$1" >vxlan
           run vxlan
@@ -221,8 +222,22 @@ in
         arrives fd00:1::11 || fail "IPv6 VXLAN to the address on the dummy interface was refused"
         if arrives 10.0.0.11; then fail "VXLAN arrived at an address no longer picked"; fi
 
-        # Anything but a destination line per family, of a bare address and a mode, adds no rule,
-        # empties the table and fails.
+        # With source ranges VXLAN comes from them alone; a family without one takes none.
+        holding "$v4$v6"'source 10.0.0.0/24\nsource fd00::/64\n'
+        [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "sources of each family"
+        arrives 10.0.0.11 || fail "VXLAN from a source in the ranges was refused"
+        arrives fd00::11 || fail "IPv6 VXLAN from a source in the ranges was refused"
+        holding "$v4$v6"'source 10.0.9.0/24\nsource fd00:9::/64\nsource 192.168.0.0/16\n'
+        [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "sources elsewhere"
+        if arrives 10.0.0.11; then fail "VXLAN arrived from a source outside the ranges"; fi
+        if arrives fd00::11; then fail "IPv6 VXLAN arrived from a source outside the ranges"; fi
+        holding "$v4$v6"'source 10.0.0.0/24\n'
+        [ "$status" = 0 ] && [ "$(rules)" = 1 ] || fail "sources of one family"
+        arrives 10.0.0.11 || fail "VXLAN from a source in the ranges was refused"
+        if arrives fd00::11; then fail "IPv6 VXLAN arrived without an IPv6 source range"; fi
+
+        # Anything but a destination line per family, of a bare address and a mode, and source
+        # lines of a range each, adds no rule, empties the table and fails.
         for content in "" '\n' '10.0.0.11\n' 'destination 10.0.0.11\n' 'destination 10.0.0.11 eth0\n' \
           'destination 10.0.0.0/8 interface\n' "$v4"'destination 10.0.0.12 any\n' "$v6"'destination fd00::12 interface\n' \
           "$v4"'destination fd00::11 interface accept\n' 'destination 10.0.0.11 interface accept\n' \
@@ -230,7 +245,10 @@ in
           'Destination 10.0.0.11 interface\n' 'source 10.0.0.0/24\n' "$v4"'\n' 'destination ::ffff: interface\n' \
           'destination eth0 interface\n' 'destination cafe.be interface\n' 'destination cafe any\n' \
           'destination 10.0.0 interface\n' 'destination 10.0.0.11.12 interface\n' 'destination 10.0.0.256 interface\n' \
-          'destination 10.0.0.0x1 interface\n' 'destination 10.0..11 interface\n' 'destination ::: interface\n'; do
+          'destination 10.0.0.0x1 interface\n' 'destination 10.0..11 interface\n' 'destination ::: interface\n' \
+          "$v4"'source 10.0.0.0\n' "$v4"'source 10.0.0.0/33\n' "$v4"'source fd00::/129\n' "$v4"'source 10.0.0.0/024\n' \
+          "$v4"'source 10.0.0.0/\n' "$v4"'source cafe/8\n' "$v4"'source 10.0.0.0/24 accept\n' "$v4"'source 10.0.0.0/24 }\n' \
+          "$v4"'source  10.0.0.0/24\n' "$v4"'source 10.0.0.0/8/8\n' "$v4"'source 10.0.0.256/24\n'; do
           holding "$v4"
           holding "$content"
           [ "$status" != 0 ] && [ "$(rules)" = 0 ] || fail "accepted a file holding '$content'"

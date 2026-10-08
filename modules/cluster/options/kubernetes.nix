@@ -275,7 +275,7 @@ let
     range // { groups = lib.imap0 clear range.groups; };
 
   # The range of the family that option holds, parsed like a subnet filter, or else a string
-  # saying what is wrong with it.
+  # saying what is wrong with it. The family "" takes either.
   parseRange =
     family: s:
     let
@@ -286,7 +286,7 @@ let
       "\"${s}\" ${parsed}"
     else if parsed.exclude then
       "\"${s}\" is not an address range in CIDR notation"
-    else if familyOf parsed != family then
+    else if family != "" && familyOf parsed != family then
       "\"${s}\" is not an ${family} range"
     else if network.groups != parsed.groups then
       "\"${s}\" has host bits set; write ${formatAddress network}/${toString parsed.prefix}"
@@ -381,6 +381,38 @@ let
       # A family is picked from the subnets when they include one of it or include none at all.
       picks = family: included == [ ] || lib.any (s: familyOf s == family) included;
       option = "chalkos.nodes.${name}.kubernetes";
+      # With VXLAN source subnets the other nodes take VXLAN from the node's addresses only when
+      # they hold them, so every address the node may have must be in them.
+      sources = map (parseRange "") k.vxlanSourceSubnets;
+      covered =
+        parsed:
+        lib.any (
+          s:
+          s.ipv4 == parsed.ipv4
+          && s.prefix <= (parsed.prefix or (if parsed.ipv4 then 32 else 128))
+          && holds s parsed
+        ) sources;
+      outside = lib.optionals (k.vxlanSourceSubnets != [ ] && lib.all builtins.isAttrs sources) (
+        map (
+          a:
+          "${option}.nodeIPs: ${a} is outside chalkos.cluster.kubernetes.vxlanSourceSubnets, whose VXLAN the other nodes take alone"
+        ) (lib.filter (a: parseAddress a != null && !covered (parseAddress a)) nodeIPs)
+        ++
+          map
+            (
+              s:
+              "${option}: the node picks its address from ${s}, which is not inside chalkos.cluster.kubernetes.vxlanSourceSubnets, whose VXLAN the other nodes take alone"
+            )
+            (
+              lib.filter (
+                s:
+                let
+                  p = parseSubnet s;
+                in
+                !builtins.isString p && !p.exclude && !covered p
+              ) subnets
+            )
+      );
     in
     lib.optional (nodeIP != null && nodeIPs != [ nodeIP ]) "${option}: set nodeIP or nodeIPs, not both"
     ++ map (a: "${option}.nodeIPs: \"${a}\" is not an address") (
@@ -396,7 +428,8 @@ let
     ++ map (
       f:
       "${option}: no ${f} address in nodeIPs, and no ${f} subnet in the validSubnets that apply, so the node cannot pick its ${f} address"
-    ) (lib.filter (f: !lib.elem f families && !picks f) ipFamilies);
+    ) (lib.filter (f: !lib.elem f families && !picks f) ipFamilies)
+    ++ outside;
 
   # The virtual addresses, checked: one per family of the cluster, and the endpoint one of them
   # unless it is a host name.
@@ -596,6 +629,43 @@ in
           address of the address's family.
         '';
       };
+    };
+    vxlanSourceSubnets = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = [
+        "10.0.0.0/16"
+        "fd00:10::/48"
+      ];
+      apply =
+        subnets:
+        let
+          parsed = map (parseRange "") subnets;
+          # The families of the ranges, also of those with a problem of their own.
+          families = lib.unique (map familyOf (lib.filter builtins.isAttrs (map parseSubnet subnets)));
+          errors =
+            lib.filter builtins.isString parsed
+            ++ map (
+              f: "an ${f} range, but chalkos.cluster.kubernetes.ipFamilies is [ ${toString ipFamilies} ]"
+            ) (lib.filter (f: !lib.elem f ipFamilies) families)
+            ++ lib.optionals (subnets != [ ]) (
+              map (f: "no ${f} range, so no node would take ${f} VXLAN") (
+                lib.filter (f: !lib.elem f families) ipFamilies
+              )
+            );
+        in
+        if errors == [ ] then
+          subnets
+        else
+          throw "chalkos.cluster.kubernetes.vxlanSourceSubnets: ${lib.concatStringsSep "; " errors}";
+      description = ''
+        Ranges in CIDR notation, IPv4 or IPv6, that flannel's VXLAN must come from: a node takes
+        VXLAN only from a source in a range of its family. Every node's addresses must be in them:
+        its fixed nodeIPs and the subnets it picks its addresses from are checked at evaluation,
+        and a node that picks one outside them refuses to prepare. They need a range of each of
+        ipFamilies. Empty takes VXLAN from any source. A node joining changes nothing on the
+        others as long as its addresses are in these ranges.
+      '';
     };
     nodeIP = {
       validSubnets = mkOption {

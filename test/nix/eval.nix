@@ -1632,6 +1632,189 @@ lib.runTests {
       };
     };
   };
+  # VXLAN source ranges are networks of the cluster's families, one at least of each, and hold
+  # every address a node may have; they reach the nodes in the cluster file.
+  testVXLANSourceSubnets = {
+    expr =
+      let
+        dual = kubernetes: {
+          chalkos.cluster.kubernetes = {
+            ipFamilies = [
+              "ipv4"
+              "ipv6"
+            ];
+          }
+          // kubernetes;
+        };
+        sources = subnets: dual { vxlanSourceSubnets = subnets; };
+        both = sources [
+          "192.168.0.0/16"
+          "fd00:100::/64"
+        ];
+        clusterFile =
+          modules:
+          (builtins.fromJSON (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text)
+          .vxlanSourceSubnets;
+        # Node n1 with a static address of each family, and the settings of its kubernetes.
+        node =
+          modules: kubernetes:
+          (cluster (
+            modules
+            ++ [
+              {
+                chalkos.nodes.n1 = {
+                  role = "worker";
+                  storage.system.disk = "/dev/vda";
+                  network.networks."10-a".address = [
+                    "192.168.100.5/24"
+                    "fd00:100::5/64"
+                  ];
+                  inherit kubernetes;
+                };
+              }
+            ]
+          )).manifest.nodes.n1.identity.kubernetes.nodeIPs;
+      in
+      {
+        none = clusterFile [ ];
+        set = clusterFile [ both ];
+        notARange = fails (clusterFile [
+          (sources [
+            "192.168.0.0"
+            "fd00:100::/64"
+          ])
+        ]);
+        hostBits = fails (clusterFile [
+          (sources [
+            "192.168.0.1/16"
+            "fd00:100::/64"
+          ])
+        ]);
+        ipv4Mapped = fails (clusterFile [
+          (sources [
+            "192.168.0.0/16"
+            "::ffff:10.0.0.0/104"
+          ])
+        ]);
+        exclusion = fails (clusterFile [
+          (sources [
+            "192.168.0.0/16"
+            "!fd00:100::/64"
+          ])
+        ]);
+        tooLong = fails (clusterFile [
+          (sources [
+            "192.168.0.0/33"
+            "fd00:100::/64"
+          ])
+        ]);
+        missingFamily = fails (clusterFile [ (sources [ "192.168.0.0/16" ]) ]);
+        otherFamily = fails (clusterFile [
+          {
+            chalkos.cluster.kubernetes.vxlanSourceSubnets = [
+              "192.168.0.0/16"
+              "fd00::/48"
+            ];
+          }
+        ]);
+        # The node's static addresses, its fixed nodeIPs by default, are in the ranges.
+        staticInside = node [ both ] { };
+        fixedOutside = fails (node [ both ] { nodeIPs = [ "10.0.0.5" ]; });
+        subnetInside = node [ both ] {
+          validSubnets = [
+            "192.168.100.0/24"
+            "fd00:100::/64"
+          ];
+        };
+        subnetOutside = fails (
+          node [ both ] {
+            validSubnets = [
+              "192.168.0.0/15"
+              "fd00:100::/64"
+            ];
+          }
+        );
+        # Exclusions need not be inside.
+        exclusionOutside = node [ both ] {
+          validSubnets = [
+            "192.168.100.0/24"
+            "fd00:100::/64"
+            "!10.0.0.0/8"
+          ];
+        };
+        clusterSubnetOutside = fails (
+          node [
+            both
+            { chalkos.cluster.kubernetes.nodeIP.validSubnets = [ "10.0.0.0/8" ]; }
+          ] { }
+        );
+        withoutSources = node [ ] { nodeIPs = [ "10.0.0.5" ]; };
+      };
+    expected = {
+      none = [ ];
+      set = [
+        "192.168.0.0/16"
+        "fd00:100::/64"
+      ];
+      notARange = true;
+      hostBits = true;
+      ipv4Mapped = true;
+      exclusion = true;
+      tooLong = true;
+      missingFamily = true;
+      otherFamily = true;
+      staticInside = [
+        "192.168.100.5"
+        "fd00:100::5"
+      ];
+      fixedOutside = true;
+      subnetInside = [ ];
+      subnetOutside = true;
+      exclusionOutside = [ ];
+      clusterSubnetOutside = true;
+      withoutSources = [ "10.0.0.5" ];
+    };
+  };
+  # A node joining changes nothing on the others: their cluster file and image stay the same as
+  # long as no cluster-wide option changes.
+  testNodeJoinChangesNoOtherNode = {
+    expr =
+      let
+        base = [
+          {
+            chalkos.cluster.kubernetes.vxlanSourceSubnets = [ "192.168.0.0/16" ];
+            chalkos.nodes.n1 = {
+              role = "worker";
+              storage.system.disk = "/dev/vda";
+              network.networks."10-a".address = [ "192.168.100.5/24" ];
+            };
+          }
+        ];
+        joined = base ++ [
+          {
+            chalkos.nodes.n2 = {
+              role = "worker";
+              storage.system.disk = "/dev/vda";
+              network.networks."10-a".address = [ "192.168.100.6/24" ];
+            };
+          }
+        ];
+        image = modules: (cluster modules).roles.worker.image.drvPath;
+        clusterFile =
+          modules: (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text;
+        identity = modules: (cluster modules).manifest.nodes.n1;
+      in
+      {
+        clusterFile = clusterFile base == clusterFile joined;
+        image = image base == image joined;
+        identity = identity base == identity joined;
+      };
+    expected = {
+      clusterFile = true;
+      image = true;
+      identity = true;
+    };
+  };
   # The VIPs reach the nodes in the cluster file; the endpoint is one of them.
   testVIP = {
     expr =
@@ -2068,6 +2251,7 @@ lib.runTests {
       domain = "cluster.local";
       allowSchedulingOnControlPlanes = false;
       ipFamilies = [ "ipv4" ];
+      vxlanSourceSubnets = [ ];
       nodeIP = {
         validSubnets = [ ];
         timeout = 300;

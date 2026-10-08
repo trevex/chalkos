@@ -46,6 +46,9 @@ type Cluster struct {
 	NodeIP NodeIP `json:"nodeIP"`
 	// Flannel is flannel's configuration when it is the pod network; nil otherwise.
 	Flannel *Flannel `json:"flannel"`
+	// VXLANSourceSubnets are the ranges VXLAN must come from, at least one of each family; empty
+	// takes it from any source.
+	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
 	VIP VIP `json:"vip"`
 	// ExtraArgs are flags of the control-plane components by component name, such as
@@ -159,6 +162,9 @@ func (c Cluster) Validate() error {
 		if err := c.validateRanges(f); err != nil {
 			return err
 		}
+	}
+	if _, err := c.VXLANSources(); err != nil {
+		return err
 	}
 	vips, err := c.VIPAddresses()
 	if err != nil {
@@ -281,6 +287,38 @@ func parseRange(option string, f nodeip.Family, s string) (netip.Prefix, error) 
 		return netip.Prefix{}, fmt.Errorf("%s.%s %s has host bits set; write %s", option, f, p, p.Masked())
 	}
 	return p, nil
+}
+
+// VXLANSources returns the ranges VXLAN must come from: networks of the cluster's families, at
+// least one of each, or none.
+func (c Cluster) VXLANSources() ([]netip.Prefix, error) {
+	families, err := c.Families()
+	if err != nil {
+		return nil, err
+	}
+	var sources []netip.Prefix
+	have := map[nodeip.Family]bool{}
+	for _, s := range c.VXLANSourceSubnets {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return nil, fmt.Errorf("vxlanSourceSubnets: %q is not an address range in CIDR notation", s)
+		}
+		f := nodeip.FamilyOf(p.Addr())
+		if p, err = parseRange("vxlanSourceSubnets", f, s); err != nil {
+			return nil, err
+		}
+		if !slices.Contains(families, f) {
+			return nil, fmt.Errorf("vxlanSourceSubnets: %s is an %s range, but the cluster's families are %v", p, f, families)
+		}
+		have[f] = true
+		sources = append(sources, p)
+	}
+	for _, f := range families {
+		if len(sources) > 0 && !have[f] {
+			return nil, fmt.Errorf("vxlanSourceSubnets: no %s range, so no node would take %s VXLAN", f, f)
+		}
+	}
+	return sources, nil
 }
 
 // PodCIDRList returns the pod ranges of the cluster's families, the primary family's first.

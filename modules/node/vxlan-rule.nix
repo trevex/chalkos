@@ -1,6 +1,7 @@
 # Fills the table chalkos-vxlan from the file the preparation writes, and empties it without one.
 # The file has a line "destination <address> <interface|any>" for each of the node's addresses,
-# at most one per family. It fails, leaving the table empty, when the file holds anything else.
+# at most one per family, and a line "source <range>" for each range VXLAN must come from; without
+# those, any source will do. It fails, leaving the table empty, when the file holds anything else.
 #
 # The NixOS firewall drops what its own input chain does not accept, whatever other tables do, so
 # the table only marks VXLAN packets sent to the node's addresses, and the firewall accepts
@@ -57,9 +58,25 @@ writeShellApplication {
       mapfile -t lines <"$1"
       # Anything but these lines would end up in the ruleset, so every line is checked before any
       # rule is written.
-      declare -A addresses=() modes=()
+      declare -A addresses=() modes=() sources=()
       for line in "''${lines[@]}"; do
         read -r kind address mode rest <<<"$line" || true
+        if [ "$kind" = source ] && [ -z "$mode" ] && [ "$line" = "source $address" ]; then
+          # A range: an address and a prefix length no longer than the family's addresses.
+          length=''${address##*/}
+          family=$(family_of "''${address%/*}")
+          longest=128
+          if [ "$family" = ip ]; then
+            longest=32
+          fi
+          if [ -n "$family" ] && [[ "$address" == */* ]] && [[ "$length" =~ ^(0|[1-9][0-9]{0,2})$ ]] &&
+            ((length <= longest)) && [[ " ''${families[*]} " == *" $family "* ]]; then
+            sources[$family]+="''${sources[$family]:+, }$address"
+            continue
+          fi
+          status=1
+          break
+        fi
         family=$(family_of "$address")
         if [ "$kind" != destination ] || [ -z "$family" ] || [ -n "$rest" ] ||
           [ -n "''${addresses[$family]:-}" ] || ! [[ " ''${families[*]} " == *" $family "* ]] ||
@@ -76,6 +93,15 @@ writeShellApplication {
       if [ "$status" -eq 0 ]; then
         for family in "''${!addresses[@]}"; do
           rule="$family daddr ''${addresses[$family]} udp dport 8472"
+          # With source ranges a family without one takes no VXLAN. A source of the node's own
+          # needs no rule: the kernel drops such packets as martians where they arrive from the
+          # network (accept_local is off).
+          if [ "''${#sources[@]}" -gt 0 ]; then
+            if [ -z "''${sources[$family]:-}" ]; then
+              continue
+            fi
+            rule="$family saddr { ''${sources[$family]} } $rule"
+          fi
           # An address on a network interface takes VXLAN on that interface alone. One on a
           # loopback or dummy interface, which routers reach through the node's other interfaces,
           # takes it on any.

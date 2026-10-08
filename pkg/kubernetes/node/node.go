@@ -69,7 +69,8 @@ func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
 func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
 
 // VXLAN holds what the firewall's VXLAN rule accepts: a line "destination <address> <mode>" for
-// each of the node's addresses, where mode is interface or any.
+// each of the node's addresses, where mode is interface or any, and a line "source <range>" for
+// each range VXLAN must come from.
 func (p Paths) VXLAN() string { return filepath.Join(p.Run, "vxlan") }
 
 // Pin holds the addresses a control-plane node was pinned to when it became an etcd member: its
@@ -402,7 +403,7 @@ func nodeSelector(p Paths, c kubernetes.Cluster, n kubernetes.Node) (nodeip.Sele
 // interface takes VXLAN on that interface alone. One on a loopback or dummy interface is an
 // address routers reach the node at through its other interfaces, as with a routing daemon that
 // announces it, so VXLAN to it arrives on any interface.
-func vxlanFile(picked []nodeip.Address) []byte {
+func vxlanFile(picked []nodeip.Address, sources []netip.Prefix) []byte {
 	var b strings.Builder
 	for _, a := range picked {
 		mode := "interface"
@@ -411,7 +412,33 @@ func vxlanFile(picked []nodeip.Address) []byte {
 		}
 		fmt.Fprintf(&b, "destination %s %s\n", a.IP, mode)
 	}
+	for _, s := range sources {
+		fmt.Fprintf(&b, "source %s\n", s)
+	}
 	return []byte(b.String())
+}
+
+// checkVXLANSources refuses node addresses outside the ranges the other nodes take VXLAN from:
+// their pods could not reach this node's.
+func checkVXLANSources(picked []nodeip.Address, sources []netip.Prefix) error {
+	if len(sources) == 0 {
+		return nil
+	}
+	for _, a := range picked {
+		if !slices.ContainsFunc(sources, func(p netip.Prefix) bool { return p.Contains(a.IP) }) {
+			return fmt.Errorf("the node's address %s is outside vxlanSourceSubnets %s, from which alone the other nodes take VXLAN", a.IP, joinPrefixes(sources))
+		}
+	}
+	return nil
+}
+
+// joinPrefixes lists the ranges, separated by commas.
+func joinPrefixes(prefixes []netip.Prefix) string {
+	list := make([]string, len(prefixes))
+	for i, p := range prefixes {
+		list[i] = p.String()
+	}
+	return strings.Join(list, ", ")
 }
 
 // nodeIPFile is the content of the file holding the addresses: one per line.
@@ -521,6 +548,15 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err := checkFlannelLinks(c, picked); err != nil {
 		return err
 	}
+	sources, err := c.VXLANSources()
+	if err != nil {
+		return err
+	}
+	if c.Flannel != nil {
+		if err := checkVXLANSources(picked, sources); err != nil {
+			return err
+		}
+	}
 	for _, a := range picked {
 		n.IPs = append(n.IPs, net.IP(a.IP.AsSlice()))
 	}
@@ -566,7 +602,7 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err := install.WriteFile(p.NodeIP(), nodeIPFile(n.IPs), 0o644); err != nil {
 		return err
 	}
-	if err := install.WriteFile(p.VXLAN(), vxlanFile(picked), 0o644); err != nil {
+	if err := install.WriteFile(p.VXLAN(), vxlanFile(picked, sources), 0o644); err != nil {
 		return err
 	}
 	// The kubelet starts once its kubeconfig exists, so it is written last.

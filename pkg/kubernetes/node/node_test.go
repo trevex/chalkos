@@ -1075,8 +1075,24 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 			t.Errorf("%v: vxlan = %q, %v, want %q", tc.addrs, data, err, tc.want)
 		}
 	}
-	// A failed preparation leaves none.
+	// The ranges VXLAN must come from follow; the node's addresses must be in them.
 	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": {"mtu": 1430}, "vxlanSourceSubnets": ["192.168.100.0/24", "fd00::/64", "10.1.0.0/16"], "kind":`)
+	write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.0.0/16", "fd00::/48"]}}`)
+	if err := Prepare(p, now, on(links, "bgp0 192.168.100.11", "bgp0 fd00::11"), nil); err != nil {
+		t.Fatal(err)
+	}
+	want := "destination 192.168.100.11 any\ndestination fd00::11 any\nsource 192.168.100.0/24\nsource fd00::/64\nsource 10.1.0.0/16\n"
+	if data, err := os.ReadFile(p.VXLAN()); err != nil || string(data) != want {
+		t.Errorf("vxlan = %q, %v, want %q", data, err, want)
+	}
+	err := Prepare(p, now, on(links, "bgp0 192.168.200.11", "bgp0 fd00::11"), nil)
+	if err == nil || err.Error() != "the node's address 192.168.200.11 is outside vxlanSourceSubnets 192.168.100.0/24, fd00::/64, 10.1.0.0/16, from which alone the other nodes take VXLAN" || exists(p.VXLAN()) {
+		t.Errorf("an address outside the sources: %v", err)
+	}
+
+	// A failed preparation leaves none.
+	p = testNode(t, kubernetes.KindWorker, "w1", secrets(t))
 	if err := Prepare(p, now, picked, nil); err != nil || !exists(p.VXLAN()) {
 		t.Fatalf("Prepare() = %v", err)
 	}

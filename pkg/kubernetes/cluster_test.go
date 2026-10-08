@@ -382,3 +382,41 @@ func TestNodeIPSelector(t *testing.T) {
 		}
 	}
 }
+
+// The ranges VXLAN must come from are networks of the cluster's families, at least one of each.
+func TestVXLANSources(t *testing.T) {
+	c, err := ReadCluster(writeFile(t, clusterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.IPFamilies = []string{"ipv4", "ipv6"}
+	c.VXLANSourceSubnets = []string{"10.0.0.0/8", "fd00::/48", "192.168.0.0/16"}
+	if sources, err := c.VXLANSources(); err != nil || fmt.Sprint(sources) != "[10.0.0.0/8 fd00::/48 192.168.0.0/16]" {
+		t.Errorf("VXLANSources() = %v, %v", sources, err)
+	}
+	c.VXLANSourceSubnets = nil
+	if sources, err := c.VXLANSources(); err != nil || sources != nil {
+		t.Errorf("without ranges: VXLANSources() = %v, %v", sources, err)
+	}
+	for subnets, want := range map[string]string{
+		"10.0.0.0":                  `vxlanSourceSubnets: "10.0.0.0" is not an address range in CIDR notation`,
+		"10.0.0.1/8 fd00::/48":      "vxlanSourceSubnets.ipv4 10.0.0.1/8 has host bits set; write 10.0.0.0/8",
+		"::ffff:10.0.0.0/104":       "vxlanSourceSubnets.ipv4 ::ffff:10.0.0.0/104 is an IPv4-mapped IPv6 range",
+		"10.0.0.0/8":                "vxlanSourceSubnets: no ipv6 range, so no node would take ipv6 VXLAN",
+		"fd00::/48":                 "vxlanSourceSubnets: no ipv4 range, so no node would take ipv4 VXLAN",
+		"!10.0.0.0/8 fd00::/48":     `vxlanSourceSubnets: "!10.0.0.0/8" is not an address range in CIDR notation`,
+		"10.0.0.0/8 fd00::/48 10.1": `vxlanSourceSubnets: "10.1" is not an address range in CIDR notation`,
+	} {
+		bad := c
+		bad.VXLANSourceSubnets = strings.Fields(subnets)
+		if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: Validate() = %v, want %q", subnets, err, want)
+		}
+	}
+	ipv4 := c
+	ipv4.IPFamilies = []string{"ipv4"}
+	ipv4.VXLANSourceSubnets = []string{"10.0.0.0/8", "fd00::/48"}
+	if err := ipv4.Validate(); err == nil || !strings.Contains(err.Error(), "vxlanSourceSubnets: fd00::/48 is an ipv6 range, but the cluster's families are [ipv4]") {
+		t.Errorf("a range of another family: %v", err)
+	}
+}
