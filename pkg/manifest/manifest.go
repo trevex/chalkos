@@ -83,6 +83,20 @@ type TimeServer struct {
 	Port int    `json:"port,omitempty"`
 }
 
+// UnmarshalJSON reads a time server, authenticated with NTS unless "nts" is false, as the Nix
+// option defaults to: a server is never left unauthenticated because a field was left out.
+func (s *TimeServer) UnmarshalJSON(data []byte) error {
+	type plain TimeServer
+	server := plain{NTS: true}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&server); err != nil {
+		return err
+	}
+	*s = TimeServer(server)
+	return nil
+}
+
 // timeHost is what a time server's host may be: a host name or an address.
 var timeHost = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:-]*$`)
 

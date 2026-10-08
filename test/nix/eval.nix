@@ -276,6 +276,13 @@ lib.runTests {
         default = timeOf [ ];
         cluster = timeOf [ { chalkos.time.servers = [ { host = "time.example.org"; } ]; } ];
         invalidHost = fails (timeOf [ { chalkos.time.servers = [ { host = "a b"; } ]; } ]);
+        # A newline would end chrony's source line and start another.
+        newlineHost = fails (timeOf [
+          { chalkos.time.servers = [ { host = "time.example.org\nserver evil.example.org"; } ]; }
+        ]);
+        newlineNodeHost = fails (timeOf [
+          { chalkos.nodes.n1.time.servers = [ { host = "time.example.org\nserver evil.example.org"; } ]; }
+        ]);
       };
     expected = {
       default = {
@@ -309,6 +316,8 @@ lib.runTests {
         ];
       };
       invalidHost = true;
+      newlineHost = true;
+      newlineNodeHost = true;
     };
   };
   testChrony = {
@@ -330,6 +339,12 @@ lib.runTests {
           certTimeCheck = lib.hasInfix "nocerttimecheck 1" c.services.chrony.extraConfig;
           ntsDump = lib.hasInfix "ntsdumpdir /var/lib/chrony" c.services.chrony.extraConfig;
           dhcpPath = c.systemd.paths ? chalkos-chrony-dhcp;
+          # The servers DHCP announced at boot are read once networkd is up, not only on a change.
+          dhcpAtBoot =
+            c.systemd.services ? chalkos-chrony-dhcp
+            && lib.elem "multi-user.target" c.systemd.services.chalkos-chrony-dhcp.wantedBy
+            && lib.elem "systemd-networkd.service" c.systemd.services.chalkos-chrony-dhcp.after;
+          dhcpDir = lib.elem "d /run/chalkos/chrony-dhcp 0755 root root - -" c.systemd.tmpfiles.rules;
           chalkdHasChronyc = lib.elem c.services.chrony.package c.systemd.services.chalkd.path;
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
         };
@@ -353,6 +368,8 @@ lib.runTests {
           certTimeCheck = true;
           ntsDump = true;
           dhcpPath = false;
+          dhcpAtBoot = false;
+          dhcpDir = false;
           chalkdHasChronyc = true;
           chalkdProtectsClock = true;
         };
@@ -365,6 +382,8 @@ lib.runTests {
             "sourcedir /run/chalkos/chrony-dhcp"
           ];
           dhcpPath = true;
+          dhcpAtBoot = true;
+          dhcpDir = true;
         };
       };
   };

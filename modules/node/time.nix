@@ -1,6 +1,8 @@
-# The node's clock, kept by chrony. Certificates are checked against it, so chrony starts before
-# chalkd and steps the clock at boot. The servers come with the node's identity, which chalkd's
-# identity loader writes to a sources file: one image serves nodes with different servers.
+# The node's clock, kept by chrony. Certificates are checked against it, so chrony steps a clock
+# that is off at boot instead of slewing it for hours; until then chalkd and the control plane
+# may refuse certificates that are valid. The servers come with the node's identity, which
+# chalkd's identity loader writes to a sources file: one image serves nodes with different
+# servers.
 {
   config,
   lib,
@@ -31,6 +33,8 @@ in
       # A clock far off at boot would fail the NTS servers' certificates; their time check is
       # skipped until the clock was first set.
       nocerttimecheck 1
+      # On VAR, so the NTS cookies survive a reboot and the node needs no new key exchange with
+      # each server, which a clock that is far off at boot could fail.
       ntsdumpdir ${config.services.chrony.directory}
     '';
   };
@@ -40,14 +44,19 @@ in
   ]
   ++ lib.optional dhcp "d ${dhcpSources} 0755 root root - -";
 
-  # The servers DHCP announced, from networkd's state of each link, whenever it changes.
+  # The servers DHCP announced, from networkd's state of each link: once networkd runs at boot,
+  # and whenever that state changes.
   systemd.paths.chalkos-chrony-dhcp = lib.mkIf dhcp {
     wantedBy = [ "multi-user.target" ];
     pathConfig.PathChanged = "/run/systemd/netif/links";
   };
   systemd.services.chalkos-chrony-dhcp = lib.mkIf dhcp {
     description = "Pass the time servers DHCP announced to chrony";
-    after = [ "chronyd.service" ];
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "chronyd.service"
+      "systemd-networkd.service"
+    ];
     path = [
       pkgs.coreutils
       pkgs.gnused
