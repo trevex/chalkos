@@ -46,9 +46,11 @@ in
     {
       pname = "chalkos-go-unit";
       nativeBuildInputs = old.nativeBuildInputs ++ testEnv.tools;
+      # With the VM checks running alongside, a package's tests can take longer than go test's
+      # default of 10 minutes.
       buildPhase = ''
         runHook preBuild
-        ${runTests "go test -v ./pkg/... ./cmd/..."}
+        ${runTests "go test -v -timeout 30m ./pkg/... ./cmd/..."}
         runHook postBuild
       '';
       doCheck = false;
