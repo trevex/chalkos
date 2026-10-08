@@ -64,6 +64,7 @@ func TestKubernetesCluster(t *testing.T) {
 	if !online {
 		forwards = []lab.GuestForward{{Guest: "10.0.2.100:5000", Host: startRegistry(t)}}
 	}
+	startNTP(t)
 	sw, err := lab.StartSwitch(ctx, filepath.Join(dir, "switch"))
 	if err != nil {
 		t.Fatal(err)
@@ -154,6 +155,10 @@ func TestKubernetesCluster(t *testing.T) {
 	if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
 		t.Errorf("status of w1: %v\n%s", err, out)
 	}
+	for _, name := range []string{"cp1", "w1"} {
+		synchronised(t, nodes[name], name)
+	}
+	readerClientFile(t, nodes["w1"], filepath.Join(dir, "reader.json"))
 	// The checks of the nodes and of the cluster's networking, again after cp1's reboot. cp1 has
 	// fixed addresses; w1 picks the ones in its validSubnets.
 	checkNetworking := func() {
@@ -210,6 +215,8 @@ func TestKubernetesCluster(t *testing.T) {
 	checkNetworking()
 	p.check(t, ctx, cs)
 	logMemory(t, ctx, cs)
+
+	renewals(t, ctx, cs, nodes, apiPort)
 
 	// A worker whose link is cut turns NotReady, and Ready again once its link is back.
 	if err := nodes["w1"].vm.SetLink(false); err != nil {

@@ -42,6 +42,14 @@ let
         ];
       };
     };
+    # The tests answer NTP on the host, which the user-mode NIC reaches at 10.0.2.2, without NTS.
+    chalkos.time.servers = [
+      {
+        host = "10.0.2.2";
+        nts = false;
+        port = 12300;
+      }
+    ];
     # w1's addresses are on a dummy interface, whose MTU flannel would take: the cluster network's
     # 1500 less IPv6's VXLAN overhead of 70.
     chalkos.cni.flannel.mtu = 1430;
