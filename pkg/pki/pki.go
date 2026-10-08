@@ -21,7 +21,8 @@ import (
 )
 
 // Roles a client certificate grants through its Organization, from most to least privileged.
-// RoleNode marks node certificates, which grant no client role.
+// RoleNode is the role of every certificate the node CA issued, whatever its Organization; it is
+// none of the others.
 const (
 	RoleAdmin    = "admin"
 	RoleOperator = "operator"
@@ -31,8 +32,9 @@ const (
 
 // Validity of what chalkos issues.
 const (
-	CAValidity   = 10 * 365 * 24 * time.Hour
-	LeafValidity = 365 * 24 * time.Hour
+	CAValidity     = 10 * 365 * 24 * time.Hour
+	NodeCAValidity = 5 * 365 * 24 * time.Hour
+	LeafValidity   = 365 * 24 * time.Hour
 )
 
 // clockSkew backdates certificates so a node whose clock lags slightly behind still accepts them.
@@ -96,8 +98,19 @@ func ParseCertificate(data []byte) (*x509.Certificate, error) {
 	return x509.ParseCertificate(block.Bytes)
 }
 
-// NewCA creates a self-signed ECDSA P-256 CA valid for ten years.
+// NewCA creates a self-signed ECDSA P-256 CA valid for ten years that issues leaf certificates
+// only.
 func NewCA(commonName string, now time.Time) (CertKey, error) {
+	return newRootCA(commonName, 0, now)
+}
+
+// NewOSCA creates the OS CA: a self-signed ECDSA P-256 CA valid for ten years, which issues
+// client certificates and the node CA.
+func NewOSCA(now time.Time) (CertKey, error) {
+	return newRootCA("chalkos OS CA", 1, now)
+}
+
+func newRootCA(commonName string, maxPathLen int, now time.Time) (CertKey, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return CertKey{}, err
@@ -108,9 +121,37 @@ func NewCA(commonName string, now time.Time) (CertKey, error) {
 	}
 	template.IsCA = true
 	template.BasicConstraintsValid = true
-	template.MaxPathLenZero = true
+	template.MaxPathLen = maxPathLen
+	template.MaxPathLenZero = maxPathLen == 0
 	template.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
 	return sign(template, template, key, key)
+}
+
+// nodeCAUsages are the only extended key usages of the node CA. Chain verification requires
+// every certificate of a chain to allow the usage asked for, so nothing the node CA issues
+// verifies for anything but TLS servers and clients.
+var nodeCAUsages = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
+
+// NewNodeCA issues the node CA from the OS CA: an intermediate CA, valid for five years and never
+// beyond the OS CA, that issues node certificates and nothing below it.
+func NewNodeCA(osCA CertKey, now time.Time) (CertKey, error) {
+	template, err := newTemplate("chalkos node CA", nil, now, NodeCAValidity)
+	if err != nil {
+		return CertKey{}, err
+	}
+	template.IsCA = true
+	template.BasicConstraintsValid = true
+	template.MaxPathLenZero = true
+	template.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
+	template.ExtKeyUsage = nodeCAUsages
+	return issue(osCA, template, now)
+}
+
+// IsNodeCA reports whether cert is a node CA: a CA that issues no CA below it, for TLS servers
+// and clients only.
+func IsNodeCA(cert *x509.Certificate) bool {
+	return cert.IsCA && cert.BasicConstraintsValid && cert.MaxPathLenZero && cert.MaxPathLen == 0 &&
+		slices.Equal(cert.ExtKeyUsage, nodeCAUsages) && len(cert.UnknownExtKeyUsage) == 0
 }
 
 // IssueClient issues a client certificate whose Organization grants role.
@@ -219,9 +260,35 @@ func Role(cert *x509.Certificate) (role string, ok bool) {
 	return "", false
 }
 
-// Allows reports whether a client with role may call something that requires the role need. An
+// ClientRole derives the role of a client from the chains its certificate verified with. A chain
+// with a certificate between the client's and the root passes through the node CA, the only
+// intermediate the OS CA issues, so the client is a node whatever its Organization says: control
+// planes hold the node CA and must not be able to issue anything else. A certificate the root
+// issued directly gets the role of its Organization.
+func ClientRole(chains [][]*x509.Certificate) (role string, ok bool) {
+	if len(chains) == 0 {
+		return "", false
+	}
+	for _, chain := range chains {
+		if len(chain) > 2 {
+			return RoleNode, true
+		}
+	}
+	for _, chain := range chains {
+		if len(chain) != 2 {
+			return "", false
+		}
+	}
+	return Role(chains[0][0])
+}
+
+// Allows reports whether a client with role may call something that requires the role need. The
+// node role is apart from the others: it allows only what needs it, and only it allows that. An
 // unrecognised need fails closed: Allows reports false rather than letting every role through.
 func Allows(role, need string) bool {
+	if role == RoleNode || need == RoleNode {
+		return role == need && role != ""
+	}
 	rank := map[string]int{RoleReader: 1, RoleOperator: 2, RoleAdmin: 3}
 	r, ok := rank[need]
 	return ok && rank[role] >= r

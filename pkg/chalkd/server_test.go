@@ -174,7 +174,7 @@ type creds struct {
 func newCreds(t *testing.T) creds {
 	t.Helper()
 	now := time.Now()
-	ca, err := pki.NewCA("chalkos OS CA", now)
+	ca, err := pki.NewOSCA(now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,6 +196,14 @@ func newCreds(t *testing.T) creds {
 	c.clients[pki.RoleNode] = &pair
 	c.clients[unknownOrganization] = clientWithOrganization(t, ca, []string{"root"})
 	c.clients[noOrganization] = clientWithOrganization(t, ca, nil)
+	nodeCA, err := pki.NewNodeCA(ca, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := clientWithOrganization(t, nodeCA, []string{pki.RoleAdmin})
+	nodeCACert, _ := pki.ParseCertificate([]byte(nodeCA.Certificate))
+	admin.Certificate = append(admin.Certificate, nodeCACert.Raw)
+	c.clients[nodeCAAdmin] = admin
 	return c
 }
 
@@ -203,6 +211,8 @@ func newCreds(t *testing.T) creds {
 const (
 	unknownOrganization = "unknown organization"
 	noOrganization      = "no organization"
+	// nodeCAAdmin holds a certificate of the node CA that names the admin role.
+	nodeCAAdmin = "admin organization from the node CA"
 )
 
 // deniedEverything is what a client without a role gets in normal mode.
@@ -337,6 +347,8 @@ func TestAuthorisation(t *testing.T) {
 			// A certificate of the OS CA without a role's Organization grants nothing.
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,
+			// Whatever its Organization says, a certificate of the node CA is a node's.
+			nodeCAAdmin: deniedEverything,
 			// A node certificate carries no ClientAuth extended key usage, so presenting it as a
 			// client certificate fails the TLS handshake itself, before authorisation runs.
 			pki.RoleNode: {"Info": connect.CodeUnavailable},

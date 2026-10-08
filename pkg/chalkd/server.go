@@ -126,7 +126,8 @@ var permissions = map[string]permission{
 
 type roleKey struct{}
 
-// Handler serves the API. Roles come from the verified client certificate's Organization.
+// Handler serves the API. Roles come from the verified client certificate's chains: see
+// pki.ClientRole.
 func (s *Server) Handler() http.Handler {
 	_, h := nodev1connect.NewNodeServiceHandler(s,
 		connect.WithInterceptors(authorizer{s}),
@@ -139,7 +140,7 @@ func (s *Server) Handler() http.Handler {
 		role := ""
 		switch {
 		case r.TLS != nil && len(r.TLS.VerifiedChains) > 0:
-			role, _ = pki.Role(r.TLS.VerifiedChains[0][0])
+			role, _ = pki.ClientRole(r.TLS.VerifiedChains)
 		case s.AnyClient:
 			role = pki.RoleAdmin
 		}

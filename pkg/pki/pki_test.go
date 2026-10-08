@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"net"
 	"regexp"
 	"strings"
@@ -144,6 +145,10 @@ func TestAllows(t *testing.T) {
 		{RoleReader, RoleNode, false},
 		{RoleReader, "", false},
 		{RoleAdmin, "admn", false},
+		{RoleNode, RoleNode, true},
+		{RoleAdmin, RoleNode, false},
+		{"", RoleNode, false},
+		{RoleNode, RoleAdmin, false},
 	} {
 		if got := Allows(c.role, c.need); got != c.want {
 			t.Errorf("Allows(%q, %q) = %v, want %v", c.role, c.need, got, c.want)
@@ -282,5 +287,154 @@ func TestIssueFromExpiredCA(t *testing.T) {
 		if strings.Contains(err.Error(), "PRIVATE KEY") {
 			t.Errorf("%s: error contains a key", name)
 		}
+	}
+}
+
+// newTestNodeCA returns an OS CA and a node CA it issued.
+func newTestNodeCA(t *testing.T) (osCA, nodeCA CertKey) {
+	t.Helper()
+	osCA, err := NewOSCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodeCA, err = NewNodeCA(osCA, now); err != nil {
+		t.Fatal(err)
+	}
+	return osCA, nodeCA
+}
+
+// signWith issues a certificate from ca as the template says, bypassing the checks of the
+// package's issuers, as a holder of ca's key could.
+func signWith(t *testing.T, ca CertKey, template *x509.Certificate) CertKey {
+	t.Helper()
+	full, err := newTemplate(template.Subject.CommonName, template.Subject.Organization, now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full.ExtKeyUsage, full.KeyUsage = template.ExtKeyUsage, template.KeyUsage|x509.KeyUsageDigitalSignature
+	full.IsCA, full.BasicConstraintsValid, full.MaxPathLenZero = template.IsCA, template.BasicConstraintsValid, template.MaxPathLenZero
+	ck, err := issue(ca, full, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ck
+}
+
+func verifyChain(t *testing.T, osCA CertKey, leaf CertKey, intermediates []CertKey, usage x509.ExtKeyUsage) ([][]*x509.Certificate, error) {
+	t.Helper()
+	cert, err := ParseCertificate([]byte(leaf.Certificate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inter := x509.NewCertPool()
+	for _, i := range intermediates {
+		c, err := ParseCertificate([]byte(i.Certificate))
+		if err != nil {
+			t.Fatal(err)
+		}
+		inter.AddCert(c)
+	}
+	return cert.Verify(x509.VerifyOptions{Roots: pool(t, osCA), Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{usage}})
+}
+
+func TestNodeCA(t *testing.T) {
+	osCA, nodeCA := newTestNodeCA(t)
+	cert, _, err := nodeCA.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsNodeCA(cert) || cert.Subject.CommonName != "chalkos node CA" {
+		t.Errorf("node CA = %s, IsNodeCA %v", cert.Subject, IsNodeCA(cert))
+	}
+	if got := cert.NotAfter.Sub(now); got != NodeCAValidity {
+		t.Errorf("node CA valid for %v after now, want %v", got, NodeCAValidity)
+	}
+	if root, _ := ParseCertificate([]byte(osCA.Certificate)); IsNodeCA(root) {
+		t.Error("the OS CA counts as a node CA")
+	}
+
+	// The OS CA's own end is the node CA's: it never outlives the root.
+	late := now.Add(CAValidity - 24*time.Hour)
+	capped, err := NewNodeCA(osCA, late)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cappedCert, _ := ParseCertificate([]byte(capped.Certificate))
+	root, _ := ParseCertificate([]byte(osCA.Certificate))
+	if !cappedCert.NotAfter.Equal(root.NotAfter) {
+		t.Errorf("node CA issued a day before the OS CA expires ends %v, want the OS CA's %v", cappedCert.NotAfter, root.NotAfter)
+	}
+
+	// A Kubernetes CA issues leaves only, so it cannot issue a node CA.
+	k8sCA := newTestCA(t)
+	sub, err := NewNodeCA(k8sCA, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := signWith(t, sub, &x509.Certificate{Subject: pkix.Name{CommonName: "n1"}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+	if _, err := verifyChain(t, k8sCA, leaf, []CertKey{sub}, x509.ExtKeyUsageServerAuth); err == nil {
+		t.Error("a leaf CA's intermediate verifies")
+	}
+}
+
+// TestNodeCAKeyUsages checks that whatever the node CA's key signs verifies for TLS servers and
+// clients alone, and that it cannot create a CA of its own.
+func TestNodeCAKeyUsages(t *testing.T) {
+	osCA, nodeCA := newTestNodeCA(t)
+	for _, tc := range []struct {
+		name  string
+		leaf  []x509.ExtKeyUsage
+		usage x509.ExtKeyUsage
+		ok    bool
+	}{
+		{"server", []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, x509.ExtKeyUsageServerAuth, true},
+		{"client", []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, x509.ExtKeyUsageClientAuth, true},
+		{"code signing", []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, x509.ExtKeyUsageCodeSigning, false},
+		{"email", []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection}, x509.ExtKeyUsageEmailProtection, false},
+		{"any usage asked as code signing", []x509.ExtKeyUsage{x509.ExtKeyUsageAny}, x509.ExtKeyUsageCodeSigning, false},
+		{"no usage asked as time stamping", nil, x509.ExtKeyUsageTimeStamping, false},
+	} {
+		leaf := signWith(t, nodeCA, &x509.Certificate{Subject: pkix.Name{CommonName: "n1"}, ExtKeyUsage: tc.leaf})
+		_, err := verifyChain(t, osCA, leaf, []CertKey{nodeCA}, tc.usage)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: verify = %v, want ok %v", tc.name, err, tc.ok)
+		}
+	}
+
+	sub := signWith(t, nodeCA, &x509.Certificate{Subject: pkix.Name{CommonName: "sub CA"}, IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign})
+	leaf := signWith(t, sub, &x509.Certificate{Subject: pkix.Name{CommonName: "n1"}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+	if _, err := verifyChain(t, osCA, leaf, []CertKey{nodeCA, sub}, x509.ExtKeyUsageClientAuth); err == nil {
+		t.Error("a certificate of a CA the node CA issued verifies")
+	}
+}
+
+func TestClientRole(t *testing.T) {
+	osCA, nodeCA := newTestNodeCA(t)
+	for _, tc := range []struct {
+		name         string
+		ca           CertKey
+		organization []string
+		role         string
+		ok           bool
+	}{
+		{"admin from the OS CA", osCA, []string{RoleAdmin}, RoleAdmin, true},
+		{"reader from the OS CA", osCA, []string{RoleReader}, RoleReader, true},
+		{"node organization from the OS CA", osCA, []string{RoleNode}, "", false},
+		{"no organization from the OS CA", osCA, nil, "", false},
+		{"admin from the node CA", nodeCA, []string{RoleAdmin}, RoleNode, true},
+		{"operator and reader from the node CA", nodeCA, []string{RoleOperator, RoleReader}, RoleNode, true},
+		{"no organization from the node CA", nodeCA, nil, RoleNode, true},
+	} {
+		leaf := signWith(t, tc.ca, &x509.Certificate{Subject: pkix.Name{CommonName: "c", Organization: tc.organization}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+		chains, err := verifyChain(t, osCA, leaf, []CertKey{nodeCA}, x509.ExtKeyUsageClientAuth)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if role, ok := ClientRole(chains); role != tc.role || ok != tc.ok {
+			t.Errorf("%s: role %q, %v; want %q, %v", tc.name, role, ok, tc.role, tc.ok)
+		}
+	}
+	if _, ok := ClientRole(nil); ok {
+		t.Error("a client without a verified chain has a role")
 	}
 }
