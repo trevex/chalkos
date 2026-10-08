@@ -76,8 +76,14 @@ type testApp struct {
 
 func newTestApp(t *testing.T) *testApp {
 	t.Helper()
+	return newTestAppAt(t, time.Now())
+}
+
+// newTestAppAt is newTestApp with secrets generated at now.
+func newTestAppAt(t *testing.T, now time.Time) *testApp {
+	t.Helper()
 	dir := t.TempDir()
-	secrets, err := pki.GenerateSecrets(time.Now())
+	secrets, err := pki.GenerateSecrets(now)
 	if err != nil {
 		t.Fatal(err)
 	}

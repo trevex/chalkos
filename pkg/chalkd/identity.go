@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -118,39 +119,66 @@ func (s *Server) classify(recorded, section storage.Section, pins storage.Pins) 
 func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.ApplyIdentityRequest]) (*connect.Response[nodev1.ApplyIdentityResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	d, err := parseIdentity(req.Msg.Identity)
-	if err != nil {
-		return nil, err
+	m := req.Msg
+	// Without an identity the node keeps its own, which the share is checked against.
+	keep := m.Identity == ""
+	if keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 {
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers no identity, share or node certificate")
 	}
-	share, err := s.kubernetesShare(d, req.Msg.KubernetesShare)
-	if err != nil {
-		return nil, err
-	}
-	recorded, pins, err := s.recorded()
-	if err != nil {
-		return nil, err
-	}
-	changes := s.classify(recorded, d.section, pins)
-	var destructive []string
-	for _, c := range changes {
-		if c.Class == storage.Destructive {
-			destructive = append(destructive, fmt.Sprintf("%s; reset it with chalkctl storage reset <node> %s", c, c.Volume))
+	identity := m.Identity
+	if keep {
+		data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+		if err != nil {
+			return nil, failed(connect.CodeInternal, "read the identity: %v", err)
 		}
+		identity = string(data)
 	}
-	if len(destructive) > 0 {
-		return nil, failed(connect.CodeFailedPrecondition, "the identity changes storage destructively: %s", strings.Join(destructive, "; "))
+	d, err := parseIdentity(identity)
+	if err != nil {
+		return nil, err
 	}
-	if len(changes) > 0 {
-		if err := s.verifyFallback(ctx, recorded, d.section, pins, req.Msg.FallbackSecret); err != nil {
+	share, err := s.kubernetesShare(d, m.KubernetesShare)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
+		return nil, err
+	}
+	var changes []storage.Change
+	var restarted []string
+	old := d.data
+	if !keep {
+		recorded, pins, err := s.recorded()
+		if err != nil {
 			return nil, err
 		}
-		if err := s.applyStorage(ctx, recorded, d.section, req.Msg.FallbackSecret, changes); err != nil {
+		changes = s.classify(recorded, d.section, pins)
+		var destructive []string
+		for _, c := range changes {
+			if c.Class == storage.Destructive {
+				destructive = append(destructive, fmt.Sprintf("%s; reset it with chalkctl storage reset <node> %s", c, c.Volume))
+			}
+		}
+		if len(destructive) > 0 {
+			return nil, failed(connect.CodeFailedPrecondition, "the identity changes storage destructively: %s", strings.Join(destructive, "; "))
+		}
+		if len(changes) > 0 {
+			if err := s.verifyFallback(ctx, recorded, d.section, pins, m.FallbackSecret); err != nil {
+				return nil, err
+			}
+			if err := s.applyStorage(ctx, recorded, d.section, m.FallbackSecret, changes); err != nil {
+				return nil, err
+			}
+		}
+		if restarted, old, err = s.applyIdentity(ctx, d.data); err != nil {
 			return nil, err
 		}
 	}
-	restarted, old, err := s.applyIdentity(ctx, d.data)
-	if err != nil {
-		return nil, err
+	if len(m.NodeCertificate) > 0 {
+		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
+			return nil, failed(connect.CodeInvalidArgument, "%v", err)
+		}
+		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
 	if s.Kubernetes != nil {
 		units, err := s.applyKubernetes(ctx, old, d.data, share)
@@ -584,4 +612,19 @@ func reverse(s []string) []string {
 		out[len(s)-1-i] = v
 	}
 	return out
+}
+
+// checkNodeCertificate refuses a delivered node certificate before anything changes, as
+// NodeCertificate.Replace would; none delivered passes.
+func (s *Server) checkNodeCertificate(chain, key []byte) error {
+	if len(chain) == 0 && len(key) == 0 {
+		return nil
+	}
+	if s.Certificate == nil {
+		return failed(connect.CodeFailedPrecondition, "the node serves no node certificate to replace")
+	}
+	if err := s.Certificate.Check(string(chain), string(key), time.Now()); err != nil {
+		return failed(connect.CodeInvalidArgument, "%v", err)
+	}
+	return nil
 }

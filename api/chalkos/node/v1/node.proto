@@ -174,7 +174,8 @@ message ImageChunk {
 message InstallResponse {}
 
 message ApplyIdentityRequest {
-  // The node's identity as the manifest renders it (JSON).
+  // The node's identity as the manifest renders it (JSON); empty keeps the node's identity and
+  // storage, for a request that delivers only a share or a node certificate.
   string identity = 1;
   // Enrolled on encrypted volumes the identity adds; required when it adds one and the node's
   // fallback is not none.
@@ -182,6 +183,10 @@ message ApplyIdentityRequest {
   // A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
   // keeps the node's share.
   bytes kubernetes_share = 3;
+  // A new node certificate for the node, followed by the certificate of the node CA that issued
+  // it (PEM), and its key, which chalkd serves from then on; empty keeps the node's.
+  bytes node_certificate = 4;
+  bytes node_key = 5;
 }
 
 message ApplyIdentityResponse {

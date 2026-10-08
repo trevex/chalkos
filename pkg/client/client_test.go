@@ -191,3 +191,42 @@ func TestAnyNode(t *testing.T) {
 		}
 	}
 }
+
+func TestIgnoreValidityAcceptsAnExpiredNode(t *testing.T) {
+	past := time.Now().Add(-2 * pki.LeafValidity)
+	ca, _ := pki.NewOSCA(past)
+	nodeCA, _ := pki.NewNodeCA(ca, past)
+	expired, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, past)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCert, _ := pki.ParseCertificate([]byte(ca.Certificate))
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+	other, _ := pki.NewOSCA(time.Now())
+	otherCert, _ := pki.ParseCertificate([]byte(other.Certificate))
+	otherPool := x509.NewCertPool()
+	otherPool.AddCert(otherCert)
+	_, addr := serve(t, expired)
+	for _, tc := range []struct {
+		name string
+		o    Options
+		ok   bool
+	}{
+		{"with dates", Options{CA: pool, ServerName: "n1"}, false},
+		{"without dates", Options{CA: pool, ServerName: "n1", IgnoreValidity: true}, true},
+		{"without dates for another name", Options{CA: pool, ServerName: "n2", IgnoreValidity: true}, false},
+		{"without dates by another CA", Options{CA: otherPool, ServerName: "n1", IgnoreValidity: true}, false},
+	} {
+		c, err := Dial(addr, tc.o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := info(c); (err == nil) != tc.ok {
+			t.Errorf("%s: %v, want ok %v", tc.name, err, tc.ok)
+		}
+	}
+	if _, err := Dial(addr, Options{Insecure: true, IgnoreValidity: true}); err == nil {
+		t.Error("ignored the validity without a CA")
+	}
+}

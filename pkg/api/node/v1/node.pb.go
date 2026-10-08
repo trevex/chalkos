@@ -1033,7 +1033,8 @@ func (*InstallResponse) Descriptor() ([]byte, []int) {
 
 type ApplyIdentityRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The node's identity as the manifest renders it (JSON).
+	// The node's identity as the manifest renders it (JSON); empty keeps the node's identity and
+	// storage, for a request that delivers only a share or a node certificate.
 	Identity string `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
 	// Enrolled on encrypted volumes the identity adds; required when it adds one and the node's
 	// fallback is not none.
@@ -1041,6 +1042,10 @@ type ApplyIdentityRequest struct {
 	// A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
 	// keeps the node's share.
 	KubernetesShare []byte `protobuf:"bytes,3,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
+	// A new node certificate for the node, followed by the certificate of the node CA that issued
+	// it (PEM), and its key, which chalkd serves from then on; empty keeps the node's.
+	NodeCertificate []byte `protobuf:"bytes,4,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
+	NodeKey         []byte `protobuf:"bytes,5,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1092,6 +1097,20 @@ func (x *ApplyIdentityRequest) GetFallbackSecret() string {
 func (x *ApplyIdentityRequest) GetKubernetesShare() []byte {
 	if x != nil {
 		return x.KubernetesShare
+	}
+	return nil
+}
+
+func (x *ApplyIdentityRequest) GetNodeCertificate() []byte {
+	if x != nil {
+		return x.NodeCertificate
+	}
+	return nil
+}
+
+func (x *ApplyIdentityRequest) GetNodeKey() []byte {
+	if x != nil {
+		return x.NodeKey
 	}
 	return nil
 }
@@ -2397,11 +2416,13 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ImageChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x11\n" +
-	"\x0fInstallResponse\"\x86\x01\n" +
+	"\x0fInstallResponse\"\xcc\x01\n" +
 	"\x14ApplyIdentityRequest\x12\x1a\n" +
 	"\bidentity\x18\x01 \x01(\tR\bidentity\x12'\n" +
 	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\x12)\n" +
-	"\x10kubernetes_share\x18\x03 \x01(\fR\x0fkubernetesShare\"z\n" +
+	"\x10kubernetes_share\x18\x03 \x01(\fR\x0fkubernetesShare\x12)\n" +
+	"\x10node_certificate\x18\x04 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
+	"\bnode_key\x18\x05 \x01(\fR\anodeKey\"z\n" +
 	"\x15ApplyIdentityResponse\x128\n" +
 	"\achanges\x18\x01 \x03(\v2\x1e.chalkos.node.v1.StorageChangeR\achanges\x12'\n" +
 	"\x0frestarted_units\x18\x02 \x03(\tR\x0erestartedUnits\"a\n" +

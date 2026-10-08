@@ -93,6 +93,12 @@ func adminCertificate(s pki.Secrets) (*tls.Certificate, error) {
 
 // dialInstalled connects to an installed node, verifying it by the OS CA and its name.
 func dialInstalled(t *target) (*client.Conn, error) {
+	return dialNode(t, false)
+}
+
+// dialNode connects to an installed node; ignoreValidity accepts a node certificate that expired,
+// for chalkctl node renew alone.
+func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	cert, err := adminCertificate(t.secrets)
 	if err != nil {
 		return nil, err
@@ -103,7 +109,7 @@ func dialInstalled(t *target) (*client.Conn, error) {
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	return client.Dial(t.addr, client.Options{CA: pool, ServerName: t.name, Certificate: cert})
+	return client.Dial(t.addr, client.Options{CA: pool, ServerName: t.name, Certificate: cert, IgnoreValidity: ignoreValidity})
 }
 
 // pinning verifies a node in maintenance mode, which serves a self-signed certificate.

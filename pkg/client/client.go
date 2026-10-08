@@ -33,6 +33,9 @@ type Options struct {
 	// through a node CA, as a node reaching a control plane through an address that names no
 	// node, such as a VIP, does.
 	AnyNode bool
+	// IgnoreValidity verifies the node's chain by CA as of the node certificate's start, so a node
+	// whose certificate expired is reached to deliver it a new one. Nothing else may use it.
+	IgnoreValidity bool
 	// Certificate is presented to the node; nil presents none. GetClientCertificate, when set,
 	// replaces it.
 	Certificate          *tls.Certificate
@@ -69,6 +72,9 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	if o.CA != nil && o.ServerName == "" && !o.AnyNode {
 		return nil, errors.New("verifying the node by the CA needs the node's name")
 	}
+	if o.IgnoreValidity && (o.CA == nil || o.AnyNode) {
+		return nil, errors.New("ignoring the validity needs the CA and the node's name")
+	}
 	if o.AnyNode && (o.CA == nil || o.ServerName != "") {
 		return nil, errors.New("accepting any node needs the CA and no node's name")
 	}
@@ -103,8 +109,13 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 			for _, cert := range cs.PeerCertificates[1:] {
 				intermediates.AddCert(cert)
 			}
-			chains, err := leaf.Verify(x509.VerifyOptions{Roots: o.CA, Intermediates: intermediates, DNSName: o.ServerName,
-				KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+			verify := x509.VerifyOptions{Roots: o.CA, Intermediates: intermediates, DNSName: o.ServerName,
+				KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+			if o.IgnoreValidity {
+				// Each CA's validity covers the start of what it issued.
+				verify.CurrentTime = leaf.NotBefore
+			}
+			chains, err := leaf.Verify(verify)
 			if err != nil {
 				return err
 			}

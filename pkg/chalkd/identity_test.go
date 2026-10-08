@@ -8,10 +8,12 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -589,5 +591,64 @@ func TestPasswordSlots(t *testing.T) {
 	}
 	if _, err := passwordSlots([]byte(`{"keyslots": {"0; rm": {}}}`)); err == nil {
 		t.Error("accepted a keyslot that is not a number")
+	}
+}
+
+// withNodeCertificate gives s a node certificate for n1 from a node CA of the test OS CA, and
+// returns that node CA.
+func withNodeCertificate(t *testing.T, s *Server) pki.CertKey {
+	t.Helper()
+	nodeCA := testNodeCA(t)
+	cert, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(s.Paths.StateDir, "chalkd")
+	write(t, filepath.Join(dir, NodeCertificateFile), cert.Certificate+cert.Key)
+	if s.Certificate, err = LoadNodeCertificate(dir); err != nil {
+		t.Fatal(err)
+	}
+	return nodeCA
+}
+
+func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	nodeCA := withNodeCertificate(t, s)
+	idPath := filepath.Join(s.Paths.StateDir, "identity.json")
+	recorded, _ := os.ReadFile(idPath)
+	before := s.Certificate.Fingerprint()
+	renewed, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _ := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n2"}, time.Now())
+	for name, req := range map[string]*nodev1.ApplyIdentityRequest{
+		"nothing":                    {},
+		"another node's certificate": {NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)},
+		"another key":                {NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(other.Key)},
+		// Refused before the identity is applied.
+		"another node's with an identity": {Identity: identityWith("rack-b", section("", "")), NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)},
+	} {
+		_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(req))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("%s: %v, want invalid_argument", name, err)
+		} else if strings.Contains(err.Error(), "PRIVATE KEY") {
+			t.Errorf("%s: the error holds a key", name)
+		}
+	}
+	if s.Certificate.Fingerprint() != before || len(r.calls) != 0 {
+		t.Fatalf("a refused request changed the certificate or ran %v", r.calls)
+	}
+
+	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
+		NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key),
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if s.Certificate.Fingerprint() == before {
+		t.Error("the delivered certificate is not served")
+	}
+	if got, _ := os.ReadFile(idPath); string(got) != string(recorded) || len(r.calls) != 0 {
+		t.Errorf("delivering a certificate alone changed the identity or ran %v", r.calls)
 	}
 }

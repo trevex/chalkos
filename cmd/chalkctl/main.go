@@ -28,6 +28,7 @@ commands:
   status <node>                                 show an installed node's status
   logs <node> [-f] [--unit U]                   show a node's journal
   reboot <node>                                 reboot a node
+  node renew <node>                             issue a node a new node certificate, also once its own expired
   bootstrap <node>                              initialise the cluster on a control-plane node
   kubeconfig [--ttl 8760h] [--out FILE]         write an admin kubeconfig
   etcd members [--via NODE]                     list etcd's members and their health
@@ -118,6 +119,8 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.logs(ctx, rest)
 	case cmd == "reboot":
 		return a.reboot(ctx, rest)
+	case cmd == "node" && len(rest) > 0 && rest[0] == "renew":
+		return a.nodeRenew(ctx, rest[1:])
 	case cmd == "sign":
 		return runSign(rest)
 	}

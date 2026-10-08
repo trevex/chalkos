@@ -87,18 +87,32 @@ func (n *NodeCertificate) GetClientCertificate(*tls.CertificateRequestInfo) (*tl
 func (n *NodeCertificate) Replace(chain, key string, now time.Time) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	cred, err := pki.VerifyNode(chain, key, n.osCA, now)
+	cred, err := n.check(chain, key, now)
 	if err != nil {
 		return err
-	}
-	if name, want := cred.Leaf.Subject.CommonName, n.Current().Leaf.Subject.CommonName; name != want {
-		return fmt.Errorf("the new node certificate is for %q, not for this node, %q", name, want)
 	}
 	if err := install.WriteFile(n.path, []byte(chain+key), 0o600); err != nil {
 		return fmt.Errorf("record the node certificate: %w", err)
 	}
 	n.current.Store(&cred)
 	return nil
+}
+
+// Check checks a new certificate as Replace does, without switching to it.
+func (n *NodeCertificate) Check(chain, key string, now time.Time) error {
+	_, err := n.check(chain, key, now)
+	return err
+}
+
+func (n *NodeCertificate) check(chain, key string, now time.Time) (pki.NodeCredential, error) {
+	cred, err := pki.VerifyNode(chain, key, n.osCA, now)
+	if err != nil {
+		return pki.NodeCredential{}, err
+	}
+	if name, want := cred.Leaf.Subject.CommonName, n.Current().Leaf.Subject.CommonName; name != want {
+		return pki.NodeCredential{}, fmt.Errorf("the new node certificate is for %q, not for this node, %q", name, want)
+	}
+	return cred, nil
 }
 
 // errNoCertificate is returned by a static certificate source without a certificate.
