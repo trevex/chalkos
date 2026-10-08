@@ -1,6 +1,8 @@
 package node
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -130,7 +133,7 @@ func TestRenewControlPlane(t *testing.T) {
 		t.Errorf("renewal at %v for a certificate of %v to %v", renewAt, first.NotBefore, first.NotAfter)
 	}
 
-	if err := RenewControlPlane(p, time.Now()); err != nil {
+	if err := RenewControlPlane(context.Background(), p, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	after := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
@@ -171,15 +174,16 @@ func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RenewControlPlane(p, time.Now()); !errors.Is(err, ErrPKIBusy) {
+	if err := RenewControlPlane(context.Background(), p, time.Now()); !errors.Is(err, ErrPKIBusy) {
 		t.Errorf("while a preparation runs: %v, want ErrPKIBusy", err)
 	}
 	unlock()
 	if err := os.Remove(p.Prepared()); err != nil {
 		t.Fatal(err)
 	}
-	if err := RenewControlPlane(p, time.Now()); !errors.Is(err, ErrPKIBusy) {
-		t.Errorf("before the preparation finished: %v, want ErrPKIBusy", err)
+	// Status shows the error: a node whose preparation failed is not being prepared.
+	if err := RenewControlPlane(context.Background(), p, time.Now()); !errors.Is(err, ErrNotPrepared) || errors.Is(err, ErrPKIBusy) {
+		t.Errorf("before the preparation finished: %v, want ErrNotPrepared", err)
 	}
 	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != before {
 		t.Error("a refused renewal changed the certificates")
@@ -188,17 +192,109 @@ func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
 
 func TestPrepareFailureRemovesOldCertificates(t *testing.T) {
 	p := bootstrappedControlPlane(t)
-	if err := RenewControlPlane(p, time.Now()); err != nil {
+	if err := RenewControlPlane(context.Background(), p, time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	// A preparation that failed while it wrote the certificates left their sibling directory.
+	write(t, filepath.Join(p.PKI+".new", kpki.FileAPIServer), "partial")
 	if err := Prepare(p, time.Now(), func(sel nodeip.Selector, _ time.Duration) ([]nodeip.Address, error) {
 		return nil, errors.New("no address")
 	}, nil); err == nil {
 		t.Fatal("prepared without an address")
 	}
-	for _, dir := range []string{p.PKI, p.OldPKI()} {
+	for _, dir := range []string{p.PKI, p.OldPKI(), p.PKI + ".new"} {
 		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s remained after a failed preparation: %v", dir, err)
 		}
+	}
+}
+
+// certificatesAnnotation returns the certificate hash of the static pod in the file.
+func certificatesAnnotation(t *testing.T, p Paths, file string) string {
+	t.Helper()
+	var pod struct {
+		Metadata struct {
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(p.Manifests(), file))), &pod); err != nil {
+		t.Fatal(err)
+	}
+	return pod.Metadata.Annotations[manifests.CertificatesAnnotation]
+}
+
+// A renewal interrupted between replacing the certificates and rendering the static pods leaves
+// the pods on the certificates before; the next renewal renders them for the current ones, and
+// issues none, as the pods still run on the previous set it would remove.
+func TestRenewControlPlaneRendersAfterAnInterruptedSwap(t *testing.T) {
+	p := bootstrappedControlPlane(t)
+	pod := certificatesAnnotation(t, p, "kube-apiserver.json")
+	share, c, n, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.IPs, err = ReadNodeIPs(p); err != nil {
+		t.Fatal(err)
+	}
+	files, err := kpki.ControlPlane(share, c, n, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceDir(p.PKI, files); err != nil {
+		t.Fatal(err)
+	}
+	if stale, err := StaticPodsStale(p); err != nil || !stale {
+		t.Fatalf("stale = %v, %v after a swap without rendering", stale, err)
+	}
+	swapped := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
+	if err := RenewControlPlane(context.Background(), p, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if certificatesAnnotation(t, p, "kube-apiserver.json") == pod {
+		t.Error("the static pods still run on the replaced certificates")
+	}
+	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != swapped {
+		t.Error("the certificates were issued again while the pods ran on the previous set")
+	}
+	if stale, err := StaticPodsStale(p); err != nil || stale {
+		t.Errorf("stale = %v, %v after rendering", stale, err)
+	}
+
+	// The control-plane loop renders them as it starts; unchanged, the manifests stay as they are.
+	if files, err = kpki.ControlPlane(share, c, n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceDir(p.PKI, files); err != nil {
+		t.Fatal(err)
+	}
+	before := certificatesAnnotation(t, p, "kube-apiserver.json")
+	if err := RefreshStaticPods(p); err != nil {
+		t.Fatal(err)
+	}
+	refreshed := certificatesAnnotation(t, p, "kube-apiserver.json")
+	if refreshed == before {
+		t.Error("RefreshStaticPods left the pods on the replaced certificates")
+	}
+	info, err := os.Stat(filepath.Join(p.Manifests(), "kube-apiserver.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RefreshStaticPods(p); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := os.Stat(filepath.Join(p.Manifests(), "kube-apiserver.json")); err != nil || !again.ModTime().Equal(info.ModTime()) || !os.SameFile(info, again) {
+		t.Error("RefreshStaticPods wrote manifests that had not changed")
+	}
+}
+
+// A node that left etcd renders no static pods, whatever its certificates.
+func TestStaticPodsNotStaleOnceLeft(t *testing.T) {
+	p := bootstrappedControlPlane(t)
+	if err := MarkLeft(p, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(p.PKI, kpki.FileAPIServer), "replaced")
+	if stale, err := StaticPodsStale(p); err != nil || stale {
+		t.Errorf("stale = %v, %v on a node that left", stale, err)
 	}
 }

@@ -1,9 +1,12 @@
 package node
 
 import (
+	"context"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -12,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -23,6 +27,14 @@ func (p Paths) OldPKI() string { return p.PKI + ".old" }
 // pkiLock serialises the writers of the control plane's certificates: the preparation, a
 // separate process, and chalkd's renewal.
 func (p Paths) pkiLock() string { return filepath.Join(p.Run, ".pki.lock") }
+
+// ErrNotPrepared means the node's Kubernetes files were not prepared since the preparation last
+// started.
+var ErrNotPrepared = errors.New("the node's Kubernetes files are not prepared")
+
+// LockPKI waits for the lock on the control plane's certificates. A node leaving etcd holds it
+// while it removes the static pods, so no renewal renders them again.
+func LockPKI(p Paths) (unlock func(), err error) { return lockPKI(p, true) }
 
 // ErrPKIBusy means another process writes the control plane's certificates.
 var ErrPKIBusy = errors.New("the node's Kubernetes files are being prepared")
@@ -121,7 +133,11 @@ func ControlPlaneRenewAt(p Paths) (time.Time, *x509.Certificate, error) {
 // static pods again, whose certificate hash makes the kubelet start each one again. It fails
 // with ErrPKIBusy while a preparation runs, which writes them itself, and leaves the current
 // ones on any failure.
-func RenewControlPlane(p Paths, now time.Time) error {
+//
+// Static pods that still run on the certificates before the current ones, as after a renewal
+// interrupted before it rendered them, are only rendered: issuing again would remove the
+// certificates they run on.
+func RenewControlPlane(ctx context.Context, p Paths, now time.Time) error {
 	unlock, err := lockPKI(p, false)
 	if err != nil {
 		return err
@@ -130,7 +146,15 @@ func RenewControlPlane(p Paths, now time.Time) error {
 	if prepared, err := Prepared(p); err != nil {
 		return err
 	} else if !prepared {
-		return ErrPKIBusy
+		return ErrNotPrepared
+	}
+	if stale, err := StaticPodsStale(p); err != nil {
+		return err
+	} else if stale {
+		return RenderStaticPods(p)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	share, c, n, err := Load(p)
 	if err != nil {
@@ -146,12 +170,85 @@ func RenewControlPlane(p Paths, now time.Time) error {
 	if err := replaceDir(p.PKI, files); err != nil {
 		return err
 	}
-	bootstrapped, err := Bootstrapped(p)
-	if err != nil || !bootstrapped {
-		return err
-	}
-	if left, err := Left(p); err != nil || left {
+	if renders, err := rendersStaticPods(p); err != nil || !renders {
 		return err
 	}
 	return RenderStaticPods(p)
+}
+
+// RefreshStaticPods renders the static pods again when they run on other certificates than the
+// current ones, as chalkd's control-plane loop does when it starts. Manifests that would not
+// change are not written, so no pod starts again. A preparation that runs renders them itself.
+func RefreshStaticPods(p Paths) error {
+	unlock, err := lockPKI(p, false)
+	if errors.Is(err, ErrPKIBusy) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if prepared, err := Prepared(p); err != nil || !prepared {
+		return err
+	}
+	if stale, err := StaticPodsStale(p); err != nil || !stale {
+		return err
+	}
+	return RenderStaticPods(p)
+}
+
+// StaticPodsStale reports whether a static pod of a node that renders them names other
+// certificates, by their hash, than the control plane's current ones.
+func StaticPodsStale(p Paths) (bool, error) {
+	if renders, err := rendersStaticPods(p); err != nil || !renders {
+		return false, err
+	}
+	pods, err := renderPods(p)
+	if err != nil {
+		return false, err
+	}
+	for name, data := range pods {
+		rendered, err := os.ReadFile(filepath.Join(p.Manifests(), name))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		want, err := certificatesHash(data)
+		if err != nil {
+			return false, err
+		}
+		got, err := certificatesHash(rendered)
+		if err != nil {
+			return false, fmt.Errorf("%s: %w", name, err)
+		}
+		if got != want {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// rendersStaticPods reports whether the node runs the control plane's static pods: once
+// bootstrapped, until it left etcd.
+func rendersStaticPods(p Paths) (bool, error) {
+	if bootstrapped, err := Bootstrapped(p); err != nil || !bootstrapped {
+		return false, err
+	}
+	left, err := Left(p)
+	return !left, err
+}
+
+// certificatesHash returns the hash of the certificates a static pod's manifest names.
+func certificatesHash(manifest []byte) (string, error) {
+	var pod struct {
+		Metadata struct {
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(manifest, &pod); err != nil {
+		return "", err
+	}
+	return pod.Metadata.Annotations[manifests.CertificatesAnnotation], nil
 }

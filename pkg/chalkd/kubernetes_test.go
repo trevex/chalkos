@@ -30,6 +30,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
+	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -937,5 +938,103 @@ func TestControlPlaneRenewsItsCertificates(t *testing.T) {
 	}
 	if k.LeavesProblem() != "" {
 		t.Errorf("problem = %q", k.LeavesProblem())
+	}
+}
+
+// staleStaticPod makes the API server's static pod name other certificates than the current
+// ones, as a renewal interrupted before it rendered the pods leaves it, and returns the manifest.
+func staleStaticPod(t *testing.T, p knode.Paths) string {
+	t.Helper()
+	path := filepath.Join(p.Manifests(), "kube-apiserver.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pod corev1.Pod
+	if err := json.Unmarshal(data, &pod); err != nil {
+		t.Fatal(err)
+	}
+	pod.Annotations[manifests.CertificatesAnnotation] = "the certificates before"
+	stale, err := json.MarshalIndent(&pod, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, path, string(stale))
+	return string(data)
+}
+
+func TestControlPlaneRendersStaleStaticPods(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	if _, err := bootstrap(s, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	k := s.Kubernetes
+	p := k.Paths
+	k.mu.Lock()
+	leaves := k.leaves
+	k.mu.Unlock()
+	apiServer := filepath.Join(p.PKI, kpki.FileAPIServer)
+	before, _ := os.ReadFile(apiServer)
+
+	// The renewal is due at once and renders the pods, without issuing certificates again.
+	rendered := staleStaticPod(t, p)
+	renewAt, _, err := leaves.Due()
+	if err != nil || renewAt.After(time.Now()) {
+		t.Errorf("due at %v, %v with stale static pods, want now", renewAt, err)
+	}
+	if err := leaves.Renew(context.Background(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(p.Manifests(), "kube-apiserver.json")); string(got) != rendered {
+		t.Error("the renewal did not render the stale static pod")
+	}
+	if after, _ := os.ReadFile(apiServer); !bytes.Equal(after, before) {
+		t.Error("the renewal issued certificates again while the pods ran on the previous ones")
+	}
+
+	// The control plane's loop renders them as it starts.
+	k.stopLoops()
+	staleStaticPod(t, p)
+	k.Start()
+	eventually(t, "the stale static pod to be rendered", func() bool {
+		data, _ := os.ReadFile(filepath.Join(p.Manifests(), "kube-apiserver.json"))
+		return string(data) == rendered
+	})
+}
+
+// Stopping the loops, as before the node leaves etcd, waits for a renewal of the control plane's
+// certificates that runs, which would render static pods.
+func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	entered, release := make(chan struct{}), make(chan struct{})
+	k.leaves = newRenewal("test", func() (time.Time, time.Time, error) {
+		return time.Time{}, time.Time{}, nil
+	}, func(context.Context, time.Time) error {
+		close(entered)
+		<-release
+		return nil
+	})
+	write(t, k.Paths.Bootstrapped(), "")
+	write(t, k.Paths.Pin(), "192.168.100.11\n")
+	k.Start()
+	k.leaves.Force()
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the renewal did not run")
+	}
+	stopped := make(chan struct{})
+	go func() { k.stopLoops(); close(stopped) }()
+	select {
+	case <-stopped:
+		t.Error("the loops stopped while a renewal still ran")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Error("the loops did not stop once the renewal ended")
 	}
 }

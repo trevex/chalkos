@@ -353,3 +353,47 @@ func TestEtcdNeedsMember(t *testing.T) {
 		}
 	}
 }
+
+// Leaving waits for the lock on the control plane's certificates, which a renewal holds while it
+// renders the static pods, so no renewal renders them once the node removed them.
+func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
+	s, _, members := memberServer(t, "cp2")
+	p := s.Kubernetes.Paths
+	share, err := knode.ReadShare(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp2, err := etcd.Dial([]string{members["cp2"].ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cp2.Close()
+	unlock, err := knode.LockPKI(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := make(chan error, 1)
+	go func() { left <- leave(s, false) }()
+	// Once etcd removed the member, the leave goes on to stop the control plane.
+	eventually(t, "the member's removal", func() bool {
+		list, err := etcd.Members(context.Background(), cp2)
+		return err == nil && len(list) == 1
+	})
+	time.Sleep(time.Second)
+	if exists(p.Left()) {
+		t.Error("the node left while a renewal held the certificates' lock")
+	}
+	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 4 {
+		t.Errorf("static pods %v while a renewal held the certificates' lock", pods)
+	}
+	unlock()
+	select {
+	case err := <-left:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Minute):
+		t.Fatal("the leave did not end once the lock was released")
+	}
+	checkLeft(t, s)
+}

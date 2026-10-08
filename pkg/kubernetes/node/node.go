@@ -515,7 +515,7 @@ func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error 
 	}
 	// The kubelet must not start with what an earlier attempt wrote, nor the control plane with
 	// certificates naming the address picked then, nor VXLAN reach that address.
-	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.OldPKI(), p.NodeIP(), p.VXLAN()} {
+	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.OldPKI(), p.PKI + ".new", p.NodeIP(), p.VXLAN()} {
 		if rerr := os.RemoveAll(path); rerr != nil {
 			log.Print(rerr)
 		}
@@ -791,26 +791,7 @@ func render(p Paths, only string) error {
 	if err := CheckEtcdData(p); err != nil {
 		return err
 	}
-	c, err := kubernetes.ReadCluster(p.Cluster)
-	if err != nil {
-		return err
-	}
-	n, err := kubernetes.ReadNode(p.NodeFile)
-	if err != nil {
-		return err
-	}
-	if n.IPs, err = ReadNodeIPs(p); err != nil {
-		return fmt.Errorf("the node's addresses: %w", err)
-	}
-	files, err := readDir(p.PKI)
-	if err != nil {
-		return fmt.Errorf("read the control plane's certificates: %w", err)
-	}
-	initialCluster, err := readInitialCluster(p)
-	if err != nil {
-		return err
-	}
-	pods, err := manifests.StaticPods(c, n, files, initialCluster)
+	pods, err := renderPods(p)
 	if err != nil {
 		return err
 	}
@@ -826,6 +807,30 @@ func render(p Paths, only string) error {
 		}
 	}
 	return nil
+}
+
+// renderPods renders the static pods from the certificates in PKI, by file name.
+func renderPods(p Paths) (map[string][]byte, error) {
+	c, err := kubernetes.ReadCluster(p.Cluster)
+	if err != nil {
+		return nil, err
+	}
+	n, err := kubernetes.ReadNode(p.NodeFile)
+	if err != nil {
+		return nil, err
+	}
+	if n.IPs, err = ReadNodeIPs(p); err != nil {
+		return nil, fmt.Errorf("the node's addresses: %w", err)
+	}
+	files, err := readDir(p.PKI)
+	if err != nil {
+		return nil, fmt.Errorf("read the control plane's certificates: %w", err)
+	}
+	initialCluster, err := readInitialCluster(p)
+	if err != nil {
+		return nil, err
+	}
+	return manifests.StaticPods(c, n, files, initialCluster)
 }
 
 // EtcdHasData reports whether etcd's data directory holds anything.

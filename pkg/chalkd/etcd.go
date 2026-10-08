@@ -315,6 +315,13 @@ func (s *Server) EtcdLeave(ctx context.Context, req *connect.Request[nodev1.Etcd
 	}
 	restart = false
 
+	// A renewal of the control plane's certificates renders the static pods while it holds this
+	// lock: it ends first, and none renders them once the node is marked as left.
+	unlock, err := knode.LockPKI(p)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
+	}
+	defer unlock()
 	// The marker comes first: from here on the node is no member, whatever it still holds.
 	if err := knode.MarkLeft(p, time.Now()); err != nil {
 		return nil, failed(connect.CodeInternal, "the node left etcd, but recording it failed: %v", err)

@@ -85,11 +85,13 @@ type Kubernetes struct {
 
 	mu sync.Mutex
 	// ctx ends the loops; cancel ends it when chalkd stops. vipDone is closed once the VIP
-	// election ended and released the VIPs, and joinDone once the join's loop ended.
-	ctx      context.Context
-	cancel   context.CancelFunc
-	vipDone  chan struct{}
-	joinDone chan struct{}
+	// election ended and released the VIPs, joinDone once the join's loop ended and leavesDone
+	// once the renewal of the control plane's certificates ended.
+	ctx        context.Context
+	cancel     context.CancelFunc
+	vipDone    chan struct{}
+	joinDone   chan struct{}
+	leavesDone chan struct{}
 	// joining is set while the join's loop runs; joinStep is what it does or why it failed last,
 	// and joinWaiting is set while it finds no cluster.
 	joining     bool
@@ -154,11 +156,12 @@ func (k *Kubernetes) Stop() {
 }
 
 // stopLoops ends the loops and waits until the node released the VIPs, so they never stay on a
-// node that no longer holds their lease, and until the join stopped. Start starts them again.
+// node that no longer holds their lease, until the join stopped, and until a renewal of the
+// control plane's certificates, which renders the static pods, ended. Start starts them again.
 func (k *Kubernetes) stopLoops() {
 	k.mu.Lock()
-	cancel, vipDone, joinDone := k.cancel, k.vipDone, k.joinDone
-	k.ctx, k.cancel, k.vipDone, k.joinDone = nil, nil, nil, nil
+	cancel, vipDone, joinDone, leavesDone := k.cancel, k.vipDone, k.joinDone, k.leavesDone
+	k.ctx, k.cancel, k.vipDone, k.joinDone, k.leavesDone = nil, nil, nil, nil, nil
 	// The next start runs the loops afresh and closes a channel of its own once they applied the
 	// manifests.
 	k.started, k.joining, k.done = false, false, nil
@@ -166,7 +169,7 @@ func (k *Kubernetes) stopLoops() {
 	if cancel != nil {
 		cancel()
 	}
-	for what, done := range map[string]chan struct{}{"the VIP election": vipDone, "the join": joinDone} {
+	for what, done := range map[string]chan struct{}{"the VIP election": vipDone, "the join": joinDone, "the certificate renewal": leavesDone} {
 		if done == nil {
 			continue
 		}
@@ -241,12 +244,22 @@ func (k *Kubernetes) startLocked() chan struct{} {
 			if err != nil {
 				return time.Time{}, time.Time{}, err
 			}
+			// Static pods left on the certificates before the current ones are rendered at once.
+			if stale, err := knode.StaticPodsStale(k.Paths); err != nil {
+				return time.Time{}, time.Time{}, err
+			} else if stale {
+				return time.Time{}, first.NotAfter, nil
+			}
 			return renewAt, first.NotAfter, nil
-		}, func(_ context.Context, now time.Time) error {
-			return knode.RenewControlPlane(k.Paths, now)
+		}, func(ctx context.Context, now time.Time) error {
+			return knode.RenewControlPlane(ctx, k.Paths, now)
 		})
 	}
-	go k.leaves.Run(ctx)
+	k.leavesDone = make(chan struct{})
+	go func(leaves *Renewal, done chan struct{}) {
+		leaves.Run(ctx)
+		close(done)
+	}(k.leaves, k.leavesDone)
 	var once sync.Once
 	go k.superviseControlPlane(ctx, func(n int) {
 		once.Do(func() {
@@ -340,6 +353,11 @@ func (k *Kubernetes) runControlPlaneOnce(ctx context.Context, applied func(n int
 		return err
 	} else if !prepared {
 		return errNotPrepared
+	}
+	// A renewal interrupted after it replaced the certificates left the static pods on the ones
+	// before; unchanged manifests are not written, so nothing starts again.
+	if err := knode.RefreshStaticPods(k.Paths); err != nil {
+		log.Printf("kubernetes: render the static pods: %v", err)
 	}
 	share, err := knode.ReadShare(k.Paths)
 	if err != nil {
