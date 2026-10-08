@@ -545,7 +545,8 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	picked, err := resolve(sel, timeout)
 	if err != nil {
 		// Units that add the node's addresses, such as a routing daemon's, order themselves before
-		// the target, which the preparation runs after.
+		// the target, which the preparation runs after. The resolver returns an error only once
+		// its deadline passed (nodeip.Waiter.Wait), so the whole timeout went by.
 		err = fmt.Errorf("%w, %v after %s", err, timeout, AddressesTarget)
 	}
 	if pinned := (*nodeip.PinnedError)(nil); errors.As(err, &pinned) {
