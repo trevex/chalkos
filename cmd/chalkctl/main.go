@@ -29,7 +29,7 @@ commands:
   logs <node> [-f] [--unit U]                   show a node's journal
   reboot <node>                                 reboot a node
   node renew <node>                             issue a node a new node certificate, also once its own expired
-  node-ca rotate --out FILE                     issue a new node CA and deliver it to the control-plane nodes
+  node-ca rotate                                issue a new node CA and deliver it to the control-plane nodes
   config new --name N --role R [--out FILE]     write a client file, which operates the cluster without the secrets file
   bootstrap <node>                              initialise the cluster on a control-plane node
   kubeconfig [--ttl 8760h] [--out FILE]         write an admin kubeconfig

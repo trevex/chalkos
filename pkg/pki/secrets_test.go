@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -349,5 +350,46 @@ func TestSecretsValidateRejectsNodeCA(t *testing.T) {
 		if strings.Contains(err.Error(), "PRIVATE KEY") {
 			t.Errorf("%s: the error holds a key", name)
 		}
+	}
+}
+
+// TestEncodeAs checks that each format reads back as the secrets it was made from.
+func TestEncodeAs(t *testing.T) {
+	s := generate(t)
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []Format{FormatJSON, FormatAge, FormatArmoredAge} {
+		data, err := s.EncodeAs(format, id.Recipient())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := DetectFormat(data); err != nil || got != format {
+			t.Errorf("format %d encodes as %d, %v", format, got, err)
+		}
+		read, err := ReadSecrets(data, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
+		if err != nil || read.OSCA != s.OSCA {
+			t.Errorf("format %d does not read back: %v", format, err)
+		}
+	}
+	if _, err := s.EncodeAs(FormatAge); err == nil {
+		t.Error("encrypted to no recipient")
+	}
+}
+
+func TestReadPublic(t *testing.T) {
+	s := generate(t)
+	pub := s.Public()
+	pub.Recipients = []string{"age1example"}
+	data, _ := json.Marshal(pub)
+	got, err := ReadPublic(data)
+	if err != nil || got.OSCA.Certificate != s.OSCA.Certificate || len(got.Recipients) != 1 {
+		t.Errorf("ReadPublic = %+v, %v", got, err)
+	}
+	pub.Version = 2
+	data, _ = json.Marshal(pub)
+	if _, err := ReadPublic(data); err == nil {
+		t.Error("read a public file of version 2")
 	}
 }

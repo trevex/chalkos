@@ -43,6 +43,24 @@ type Public struct {
 	OSCA       CertKey          `json:"osCA"`
 	NodeCA     CertKey          `json:"nodeCA"`
 	Kubernetes KubernetesPublic `json:"kubernetes"`
+	// Recipients are the age recipients the secrets file is encrypted to, so a command that
+	// changes it encrypts it to them again; none for a plaintext file.
+	Recipients []string `json:"recipients,omitempty"`
+}
+
+// ReadPublic decodes secrets.pub.json.
+func ReadPublic(data []byte) (Public, error) {
+	var p Public
+	if err := json.Unmarshal(data, &p); err != nil {
+		return Public{}, fmt.Errorf("parse the public secrets file: %w", err)
+	}
+	if p.Version != SecretsVersion {
+		return Public{}, fmt.Errorf("the public secrets file is version %d; chalkos reads version %d only", p.Version, SecretsVersion)
+	}
+	if _, err := ParseCertificate([]byte(p.OSCA.Certificate)); err != nil {
+		return Public{}, fmt.Errorf("the public secrets file's OS CA: %w", err)
+	}
+	return p, nil
 }
 
 // GenerateSecrets creates the OS CA, the node CA, the recovery secret and the Kubernetes
@@ -174,6 +192,32 @@ func (s Secrets) Encode() ([]byte, error) {
 		return nil, err
 	}
 	return append(data, '\n'), nil
+}
+
+// EncodeAs encodes the secrets in the format given: plaintext, or encrypted to the recipients,
+// armored or not.
+func (s Secrets) EncodeAs(format Format, recipients ...age.Recipient) ([]byte, error) {
+	switch format {
+	case FormatJSON:
+		return s.Encode()
+	case FormatAge:
+		return s.Encrypt(recipients...)
+	case FormatArmoredAge:
+		encrypted, err := s.Encrypt(recipients...)
+		if err != nil {
+			return nil, err
+		}
+		var out bytes.Buffer
+		w := armor.NewWriter(&out)
+		if _, err := w.Write(encrypted); err != nil {
+			return nil, err
+		}
+		if err := w.Close(); err != nil {
+			return nil, err
+		}
+		return append(out.Bytes(), '\n'), nil
+	}
+	return nil, fmt.Errorf("unknown format %d", format)
 }
 
 // Encrypt encodes the secrets and encrypts them to the recipients.

@@ -75,30 +75,21 @@ func (a *app) nodeRenew(ctx context.Context, args []string) error {
 	return nil
 }
 
-// nodeCARotate issues a new node CA from the OS CA, writes the secrets with it to a new file and
-// delivers it to every control-plane node. Node certificates of the old node CA stay valid until
-// they expire: they chain to the same OS CA.
+// nodeCARotate issues a new node CA from the OS CA, writes the secrets file with it and delivers
+// it to every control-plane node. Node certificates of the old node CA stay valid until they
+// expire: they chain to the same OS CA.
 func (a *app) nodeCARotate(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("node-ca rotate", flag.ContinueOnError)
 	var n nodeCommand
 	n.register(fs)
-	var recipients stringList
-	fs.Var(&recipients, "recipient", "age recipient to encrypt the new secrets file to; may be repeated")
-	plaintext := fs.Bool("plaintext", false, "write the new secrets file unencrypted")
-	out := fs.String("out", "", "file to write the secrets with the new node CA to; it must not exist")
-	publicOut := fs.String("public-out", "", "also write the public half, like secrets.pub.json, to this file")
+	var change changeFlags
+	change.register(fs)
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 0 {
-		return errors.New("usage: chalkctl node-ca rotate --out FILE (--recipient R... | --plaintext)")
-	}
-	if *out == "" {
-		return errors.New("node-ca rotate: --out is required; the secrets file itself is never rewritten")
-	}
-	if (len(recipients) == 0) == !*plaintext {
-		return errors.New("node-ca rotate: pass --recipient (one or more) or --plaintext")
+		return errors.New("usage: chalkctl node-ca rotate [--out FILE] [--public-out FILE] [--recipient R...]")
 	}
 	c, err := a.loadCluster(ctx, n.cluster)
 	if err != nil {
@@ -117,28 +108,26 @@ func (a *app) nodeCARotate(ctx context.Context, args []string) error {
 	if n.endpoint != "" && len(controlPlanes) != 1 {
 		return errors.New("node-ca rotate: --endpoint names one node's chalkd, but the cluster has several control-plane nodes")
 	}
-	secrets, err := a.loadSecrets(ctx, n.secrets, n.cluster.flake)
+	f, err := a.openSecrets(ctx, n.secrets, n.cluster.flake, change)
 	if err != nil {
 		return err
+	}
+	secrets := f.secrets
+	// A rotation delivers its own shares, one control plane at a time.
+	if r := secrets.Rotation; r != nil {
+		return fmt.Errorf("node-ca rotate: %v", &pki.ErrRotationRuns{Kind: r.Kind, Phase: r.Phase})
 	}
 	if secrets.NodeCA, err = pki.NewNodeCA(secrets.OSCA, time.Now()); err != nil {
 		return err
 	}
-	if err := secrets.Validate(); err != nil {
-		return err
-	}
-	if err := a.writeSecrets(secrets, recipients, *plaintext, *out, *publicOut); err != nil {
+	if err := a.writeSecretsFile(f, secrets); err != nil {
 		return err
 	}
 	nodeCA, err := pki.ParseCertificate([]byte(secrets.NodeCA.Certificate))
 	if err != nil {
 		return err
 	}
-	replace := "replace the secrets file with it"
-	if *publicOut == "" {
-		replace += ", and secrets.pub.json too, which still names the old node CA (--public-out writes the new one)"
-	}
-	fmt.Fprintf(a.stdout, "wrote %s with a new node CA, which expires %s; %s\n", *out, nodeCA.NotAfter.UTC().Format(time.RFC3339), replace)
+	fmt.Fprintf(a.stdout, "%s holds a new node CA, which expires %s; %s\n", f.out, nodeCA.NotAfter.UTC().Format(time.RFC3339), f.written())
 
 	share, err := kpki.ControlPlaneShare(&secrets.Kubernetes, secrets.NodeCA).Encode()
 	if err != nil {
@@ -154,7 +143,7 @@ func (a *app) nodeCARotate(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.stdout, "%s renews node certificates with the new node CA\n", name)
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("the new node CA did not reach every control-plane node; deliver it with chalkctl apply-identity <node> --kubernetes-share --secrets %s: %s", *out, strings.Join(failed, "; "))
+		return fmt.Errorf("the new node CA did not reach every control-plane node; deliver it with chalkctl apply-identity <node> --kubernetes-share --secrets %s: %s", f.out, strings.Join(failed, "; "))
 	}
 	return nil
 }

@@ -109,11 +109,20 @@ func TestNodeCARotate(t *testing.T) {
 	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", chalkd.CAFile), ta.secrets.OSCA.Certificate)
 	addr := ta.startNode(t, s)
 
-	out := filepath.Join(ta.dir, "secrets.rotated.json")
-	pub := filepath.Join(ta.dir, "secrets.rotated.pub.json")
-	args := ta.args([]string{"node-ca", "rotate", "--plaintext", "--out", out, "--public-out", pub}, addr)
+	// The secrets file is updated in place, its previous version kept beside it, and
+	// secrets.pub.json written beside it.
+	out := filepath.Join(ta.dir, "secrets.json")
+	pub := filepath.Join(ta.dir, "secrets.pub.json")
+	before, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := ta.args([]string{"node-ca", "rotate"}, addr)
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
+	}
+	if prev, err := os.ReadFile(out + ".prev"); err != nil || string(prev) != string(before) {
+		t.Errorf("secrets.json.prev is not the previous secrets file: %v", err)
 	}
 	data, err := os.ReadFile(out)
 	if err != nil {
@@ -150,12 +159,28 @@ func TestNodeCARotate(t *testing.T) {
 		}
 	}
 
-	// The secrets file is never overwritten.
-	if err := ta.run(context.Background(), args); err == nil || !strings.Contains(err.Error(), "exists") {
-		t.Errorf("err = %v, want a refusal to overwrite", err)
+	// --out and --public-out write new files and leave the secrets file alone.
+	newOut, newPub := filepath.Join(ta.dir, "secrets.next.json"), filepath.Join(ta.dir, "secrets.next.pub.json")
+	outArgs := ta.args([]string{"node-ca", "rotate", "--out", newOut, "--public-out", newPub}, addr)
+	if err := ta.run(context.Background(), outArgs); err != nil {
+		t.Fatal(err)
 	}
-	if err := ta.run(context.Background(), ta.args([]string{"node-ca", "rotate", "--plaintext"}, addr)); err == nil || !strings.Contains(err.Error(), "--out") {
-		t.Errorf("err = %v, want --out required", err)
+	if after, _ := os.ReadFile(out); string(after) != string(data) {
+		t.Error("--out changed the secrets file")
+	}
+	next, err := os.ReadFile(newOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, err := pki.ReadSecrets(next, nil); err != nil || s.NodeCA == rotated.NodeCA {
+		t.Errorf("--out did not get another node CA: %v", err)
+	}
+	if _, err := os.Stat(newPub); err != nil {
+		t.Error(err)
+	}
+	// They are new files: an existing one is never overwritten.
+	if err := ta.run(context.Background(), outArgs); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("err = %v, want a refusal to overwrite", err)
 	}
 }
 
@@ -228,10 +253,10 @@ func TestNodeCARotateNamesThePublicFile(t *testing.T) {
 	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", chalkd.CAFile), ta.secrets.OSCA.Certificate)
 	addr := ta.startNode(t, s)
 	out := filepath.Join(ta.dir, "secrets.rotated.json")
-	if err := ta.run(context.Background(), ta.args([]string{"node-ca", "rotate", "--plaintext", "--out", out}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"node-ca", "rotate", "--out", out}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "secrets.pub.json") {
+	if !strings.Contains(ta.stdout.String(), "secrets.pub.json still holds the previous public half") {
 		t.Errorf("stdout = %q, want secrets.pub.json named", ta.stdout)
 	}
 }
@@ -239,7 +264,7 @@ func TestNodeCARotateNamesThePublicFile(t *testing.T) {
 func TestNodeCARotateNeedsAControlPlane(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "secrets.rotated.json")
-	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--plaintext", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir})
+	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir})
 	if err == nil || !strings.Contains(err.Error(), "control-plane") {
 		t.Errorf("err = %v, want a refusal naming the missing control-plane node", err)
 	}

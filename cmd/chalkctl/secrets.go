@@ -330,9 +330,287 @@ func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext b
 	if publicPath == "" {
 		return nil
 	}
-	public, err := json.MarshalIndent(secrets.Public(), "", "  ")
+	public, err := encodePublic(secrets, recipients)
 	if err != nil {
 		return err
 	}
-	return writeNew(publicPath, append(public, '\n'), 0o644)
+	return writeNew(publicPath, public, 0o644)
+}
+
+// encodePublic encodes the public half of the secrets with the recipients the secrets file is
+// encrypted to.
+func encodePublic(secrets pki.Secrets, recipients []string) ([]byte, error) {
+	public := secrets.Public()
+	public.Recipients = recipients
+	data, err := json.MarshalIndent(public, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+// changeFlags are the flags of commands that change the secrets file.
+type changeFlags struct {
+	out, publicOut string
+	recipients     stringList
+}
+
+func (c *changeFlags) register(fs *flag.FlagSet) {
+	fs.StringVar(&c.out, "out", "", "write the changed secrets file to this new file instead of updating the secrets file in place")
+	fs.StringVar(&c.publicOut, "public-out", "", "write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place")
+	fs.Var(&c.recipients, "recipient", "age recipient to encrypt the changed secrets file to instead of those secrets.pub.json records; may be repeated")
+}
+
+// secretsFile is a secrets file a command changes, with where and how the changes are written:
+// back to the file in place, keeping its previous version as <file>.prev, or to new files; in the
+// format the file had, an encrypted file to the recipients secrets.pub.json records.
+type secretsFile struct {
+	secrets pki.Secrets
+	// path is the file the secrets were read from, out the one they are written to.
+	path, out string
+	// publicOut receives the public half; empty leaves it alone.
+	publicOut  string
+	format     pki.Format
+	recipients []string
+	// outNew and publicNew are set while out and publicOut are new files that were not written
+	// yet; once written, later writes replace them in place.
+	outNew, publicNew bool
+}
+
+// inPlace reports whether the changes go back to the file they were read from.
+func (f *secretsFile) inPlace() bool { return f.out == f.path }
+
+// openSecrets reads the secrets file for a command that changes it, and works out where and how
+// the changes are written before anything is changed.
+func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c changeFlags) (*secretsFile, error) {
+	path, _, err := secretsPath(s, flake)
+	if err != nil {
+		return nil, err
+	}
+	if path == "-" && c.out == "" {
+		return nil, errors.New("the secrets file from standard input cannot be updated in place; pass --out")
+	}
+	var data []byte
+	if path == "-" {
+		data, err = io.ReadAll(a.stdin)
+	} else {
+		data, err = os.ReadFile(path)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the secrets file: %w", err)
+	}
+	format, err := pki.DetectFormat(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	secrets, err := pki.ReadSecrets(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: c.recipients}
+	public := ""
+	if path != "-" {
+		public = filepath.Join(filepath.Dir(path), "secrets.pub.json")
+	}
+	switch {
+	case c.publicOut != "":
+		f.publicOut, f.publicNew = c.publicOut, true
+		if err := mustNotExist(c.publicOut); err != nil {
+			return nil, err
+		}
+	case c.out == "":
+		f.publicOut = public
+	}
+	if c.out != "" {
+		f.out, f.outNew = c.out, true
+		if err := mustNotExist(c.out); err != nil {
+			return nil, err
+		}
+	}
+	if format != pki.FormatJSON && len(f.recipients) == 0 {
+		recorded, err := recordedRecipients(public)
+		if err != nil {
+			return nil, err
+		}
+		if len(recorded) == 0 {
+			return nil, fmt.Errorf("%s is encrypted, and no secrets.pub.json beside it records the recipients to encrypt it to again; pass --recipient", path)
+		}
+		f.recipients = recorded
+	}
+	// A recipient that does not parse fails now, before anything changed.
+	if _, err := a.ageRecipients(f.recipients); err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// written says where the changes went and what the operator does with them.
+func (f *secretsFile) written() string {
+	var what []string
+	if f.inPlace() {
+		what = append(what, "the previous version is "+f.path+".prev")
+	} else {
+		what = append(what, "replace the secrets file with it")
+	}
+	if f.publicOut == "" {
+		what = append(what, "secrets.pub.json still holds the previous public half (--public-out writes the new one)")
+	} else {
+		what = append(what, f.publicOut+" holds the new public half")
+	}
+	return strings.Join(what, "; ")
+}
+
+// mustNotExist refuses a file a command was asked to create.
+func mustNotExist(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s exists; --out and --public-out write new files", path)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// recordedRecipients reads the recipients secrets.pub.json at path records; none when there is no
+// such file.
+func recordedRecipients(path string) ([]string, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	public, err := pki.ReadPublic(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return public.Recipients, nil
+}
+
+func (a *app) ageRecipients(recipients []string) ([]age.Recipient, error) {
+	var parsed []age.Recipient
+	for _, r := range recipients {
+		rec, err := pki.ParseRecipient(r, a.pluginUI())
+		if err != nil {
+			return nil, err
+		}
+		parsed = append(parsed, rec)
+	}
+	return parsed, nil
+}
+
+// writeSecretsFile writes the secrets, and their public half, where openSecrets decided.
+func (a *app) writeSecretsFile(f *secretsFile, secrets pki.Secrets) error {
+	if err := secrets.Validate(); err != nil {
+		return err
+	}
+	recipients, err := a.ageRecipients(f.recipients)
+	if err != nil {
+		return err
+	}
+	data, err := secrets.EncodeAs(f.format, recipients...)
+	if err != nil {
+		return err
+	}
+	if err := writeOrReplace(f.out, data, 0o600, &f.outNew); err != nil {
+		return err
+	}
+	f.secrets = secrets
+	if f.publicOut == "" {
+		return nil
+	}
+	recorded := f.recipients
+	if f.format == pki.FormatJSON {
+		recorded = nil
+	}
+	public, err := encodePublic(secrets, recorded)
+	if err != nil {
+		return err
+	}
+	return writeOrReplace(f.publicOut, public, 0o644, &f.publicNew)
+}
+
+// writeOrReplace creates a file while *create is set, and clears it, or replaces the file in
+// place keeping its previous version.
+func writeOrReplace(path string, data []byte, perm fs.FileMode, create *bool) error {
+	if !*create {
+		return replaceFile(path, data, perm)
+	}
+	if err := writeNew(path, data, perm); err != nil {
+		return err
+	}
+	*create = false
+	return nil
+}
+
+// replaceFile replaces path with data in one step and keeps what it held as path.prev. The data
+// goes to a temporary file beside path and is synced; path.prev becomes a link to the current
+// file, and the temporary file is renamed over path. path exists throughout, and a crash leaves
+// one version or the other, never part of one. A file that does not exist yet is created with
+// perm; an existing one keeps its mode.
+func replaceFile(path string, data []byte, perm fs.FileMode) error {
+	info, err := os.Stat(path)
+	exists := err == nil
+	switch {
+	case exists:
+		perm = info.Mode().Perm()
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	err = tmp.Chmod(perm)
+	if err == nil {
+		_, err = tmp.Write(data)
+	}
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if exists {
+		if err := keepPrevious(path, perm); err != nil {
+			return fmt.Errorf("keep the previous version of %s: %w", path, err)
+		}
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
+
+// keepPrevious makes path.prev what path holds now, replacing an older path.prev in one step: a
+// hard link where the file system has them, a synced copy otherwise.
+func keepPrevious(path string, perm fs.FileMode) error {
+	next := path + ".prev.new"
+	os.Remove(next)
+	if err := os.Link(path, next); err != nil {
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if err := createNew(next, perm, func(w io.Writer) error {
+			_, err := w.Write(data)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	return os.Rename(next, path+".prev")
 }
