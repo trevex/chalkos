@@ -667,3 +667,55 @@ func TestForcedRenewalIsTriedAgain(t *testing.T) {
 		t.Errorf("after the forced renewal succeeded: %d renewals, problem %q", renewals, r.Problem())
 	}
 }
+
+// A certificate delivered while a renewal runs, as by chalkctl node renew, stays: the renewal
+// ends without replacing it and without failing.
+func TestRenewalKeepsACertificateDeliveredMeanwhile(t *testing.T) {
+	c := newCreds(t)
+	names := pki.NodeNames{CommonName: "w1", DNSNames: []string{"w1"}}
+	issued, err := pki.IssueNode(c.nodeCA, names, time.Now().Add(-30*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := loadedCertificate(t, c, issued)
+	delivered, err := pki.IssueNode(c.nodeCA, names, time.Now().Add(-15*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewNodeRenewal(cert, func(_ context.Context, request []byte) (string, error) {
+		if err := cert.Replace(delivered.Certificate, delivered.Key, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		return signRequest(c.nodeCA, names, request, time.Now())
+	})
+	if err := r.Renew(context.Background(), time.Now()); err != nil {
+		t.Errorf("the renewal failed: %v", err)
+	}
+	want, _ := pki.ParseCertificate([]byte(delivered.Certificate))
+	if got := cert.Fingerprint(); got != pki.Fingerprint(want.Raw) {
+		t.Error("the renewal replaced the certificate delivered while it ran")
+	}
+	reloaded, err := LoadNodeCertificate(filepath.Dir(cert.path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Fingerprint() != pki.Fingerprint(want.Raw) {
+		t.Error("STATE holds another certificate than the one delivered")
+	}
+}
+
+// A control plane that left etcd is no control plane of the cluster any more: it signs no node
+// certificate with the node CA its share still holds.
+func TestRenewNodeCertificateRefusedOnceLeft(t *testing.T) {
+	c := newCreds(t)
+	s := controlPlaneOf(t, c)
+	if err := knode.MarkLeft(s.Kubernetes.Paths, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	addr := serve(t, s, c, c.pool)
+	request, _ := certificateRequest(t, "n2")
+	_, err := dial(t, addr, c.clients[pki.RoleNode]).RenewNodeCertificate(context.Background(), connect.NewRequest(&nodev1.RenewNodeCertificateRequest{CertificateRequest: request}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
+		t.Errorf("%v, want a refusal naming that the node left etcd", err)
+	}
+}

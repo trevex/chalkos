@@ -46,20 +46,30 @@ type Options struct {
 // Conn is a client of one node.
 type Conn struct {
 	nodev1connect.NodeServiceClient
+	transport   *http.Transport
 	mu          sync.Mutex
 	fingerprint string
 	// conns are the open connections, which Close ends.
 	conns map[*trackedConn]struct{}
+	// closed is set by Close: a dial still under way then gets a connection nothing would end.
+	closed bool
+	// netDial connects to the node; tests replace it.
+	netDial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
+
+// errClosed is what calls after Close fail with.
+var errClosed = errors.New("the client of the node is closed")
 
 // Close ends every connection to the node, calls on them fail. A call that ended at its deadline
 // may leave its connection open, waiting for an answer to HTTP/2's check of the connection, as
-// long as the node keeps it open; Close ends that one too. Later calls connect again.
+// long as the node keeps it open; Close ends that one too, and one whose dial completes later.
+// Later calls fail.
 func (c *Conn) Close() {
 	c.mu.Lock()
 	conns := c.conns
-	c.conns = nil
+	c.conns, c.closed = nil, true
 	c.mu.Unlock()
+	c.transport.CloseIdleConnections()
 	for conn := range conns {
 		conn.Close()
 	}
@@ -67,13 +77,23 @@ func (c *Conn) Close() {
 
 // dial connects to the node and keeps the connection for Close.
 func (c *Conn) dial(ctx context.Context, network, addr string) (net.Conn, error) {
-	conn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, addr)
+	c.mu.Lock()
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
+		return nil, errClosed
+	}
+	conn, err := c.netDial(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
 	t := &trackedConn{Conn: conn, owner: c}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closed {
+		conn.Close()
+		return nil, errClosed
+	}
 	if c.conns == nil {
 		c.conns = map[*trackedConn]struct{}{}
 	}
@@ -126,7 +146,7 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
 		endpoint = net.JoinHostPort(endpoint, Port)
 	}
-	c := &Conn{}
+	c := &Conn{netDial: (&net.Dialer{Timeout: 10 * time.Second}).DialContext}
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		// Verification is VerifyConnection's job: by fingerprint, or by the CA for the node's
@@ -180,6 +200,7 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 		TLSHandshakeTimeout: 10 * time.Second,
 		ForceAttemptHTTP2:   true,
 	}
+	c.transport = transport
 	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(&http.Client{Transport: transport}, "https://"+endpoint)
 	return c, nil
 }

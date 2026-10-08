@@ -368,7 +368,7 @@ func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cp2.Close()
-	unlock, err := knode.LockPKI(p)
+	unlock, err := knode.LockPKI(context.Background(), p)
 	if err != nil {
 		t.Fatal(err)
 	}

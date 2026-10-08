@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -228,5 +230,46 @@ func TestIgnoreValidityAcceptsAnExpiredNode(t *testing.T) {
 	}
 	if _, err := Dial(addr, Options{Insecure: true, IgnoreValidity: true}); err == nil {
 		t.Error("ignored the validity without a CA")
+	}
+}
+
+// A connection whose dial completes after Close is closed at once: nothing outlives Close.
+func TestCloseEndsALateConnection(t *testing.T) {
+	self, _ := pki.SelfSigned("chalkd", time.Now())
+	h, addr := serve(t, self)
+	c, err := Dial(addr, Options{Insecure: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	dialed := make(chan net.Conn, 1)
+	c.netDial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		close(entered)
+		<-release
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err == nil {
+			dialed <- conn
+		}
+		return conn, err
+	}
+	result := make(chan error, 1)
+	go func() { result <- info(c) }()
+	<-entered
+	c.Close()
+	close(release)
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Error("a call whose connection was dialled after Close succeeded")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the call did not end")
+	}
+	if h.calls.Load() != 0 {
+		t.Error("a request reached the node after Close")
+	}
+	conn := <-dialed
+	if _, err := conn.Write([]byte{0}); !errors.Is(err, net.ErrClosed) {
+		t.Errorf("the connection dialled after Close is still open: %v", err)
 	}
 }

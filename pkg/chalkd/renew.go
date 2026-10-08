@@ -54,6 +54,13 @@ func (s *Server) nodeCA() (pki.CertKey, error) {
 	if c.Kind != k8s.KindControlPlane {
 		return pki.CertKey{}, notControlPlane
 	}
+	// A node that left etcd is no control plane of the cluster any more, though its share still
+	// holds the node CA until it is reinstalled.
+	if left, err := knode.Left(s.Kubernetes.Paths); err != nil {
+		return pki.CertKey{}, failed(connect.CodeInternal, "%v", err)
+	} else if left {
+		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "the node left etcd and signs no node certificates; reinstall it to join the cluster again")
+	}
 	share, err := knode.ReadShare(s.Kubernetes.Paths)
 	if err != nil {
 		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "%v", err)
@@ -280,8 +287,15 @@ func renewNodeCertificate(ctx context.Context, cert *NodeCertificate, issue func
 	if err != nil {
 		return err
 	}
-	// Replace checks that the key is the new one and that the chain leads to the OS CA.
-	return cert.Replace(chain, keyPEM, now)
+	// ReplaceFrom checks that the key is the new one and that the chain leads to the OS CA.
+	replaced, err := cert.ReplaceFrom(current, chain, keyPEM, now)
+	if err != nil {
+		return err
+	}
+	if !replaced {
+		log.Print("node certificate: another one was delivered while the renewal ran; keeping it")
+	}
+	return nil
 }
 
 // jitter returns a random duration below d, so nodes that started together spread their checks.

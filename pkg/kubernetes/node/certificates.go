@@ -32,9 +32,23 @@ func (p Paths) pkiLock() string { return filepath.Join(p.Run, ".pki.lock") }
 // started.
 var ErrNotPrepared = errors.New("the node's Kubernetes files are not prepared")
 
-// LockPKI waits for the lock on the control plane's certificates. A node leaving etcd holds it
-// while it removes the static pods, so no renewal renders them again.
-func LockPKI(p Paths) (unlock func(), err error) { return lockPKI(p, true) }
+// LockPKI waits for the lock on the control plane's certificates until ctx ends. A node leaving
+// etcd holds it while it removes the static pods, so no renewal renders them again. The wait
+// polls, as flock cannot be interrupted: a preparation waiting for the node's addresses may hold
+// the lock for long.
+func LockPKI(ctx context.Context, p Paths) (unlock func(), err error) {
+	for {
+		unlock, err := lockPKI(p, false)
+		if !errors.Is(err, ErrPKIBusy) {
+			return unlock, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("wait for the lock on the control plane's certificates, which a preparation holds: %w", context.Cause(ctx))
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
 
 // ErrPKIBusy means another process writes the control plane's certificates.
 var ErrPKIBusy = errors.New("the node's Kubernetes files are being prepared")

@@ -298,3 +298,40 @@ func TestStaticPodsNotStaleOnceLeft(t *testing.T) {
 		t.Errorf("stale = %v, %v on a node that left", stale, err)
 	}
 }
+
+// Waiting for the lock ends with the context, so a node leaving etcd is not held up for good by
+// a preparation that waits for its addresses.
+func TestLockPKIEndsWithItsContext(t *testing.T) {
+	p := bootstrappedControlPlane(t)
+	unlock, err := lockPKI(p, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		unlock, err := LockPKI(ctx, p)
+		if err == nil {
+			unlock()
+		}
+		result <- err
+	}()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want the context's", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("waiting for the lock did not end with its context")
+	}
+	unlock()
+	// Once released, the lock is taken.
+	again, err := LockPKI(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again()
+}

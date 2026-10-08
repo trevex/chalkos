@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
@@ -92,21 +93,36 @@ func (n *NodeCertificate) GetClientCertificate(*tls.CertificateRequestInfo) (*tl
 // OS CA, is valid now and names the node the current one names: a node never serves another
 // node's certificate. It is written to STATE before it is served, so a restart keeps it.
 func (n *NodeCertificate) Replace(chain, key string, now time.Time) error {
+	_, err := n.replace(nil, chain, key, now)
+	return err
+}
+
+// ReplaceFrom is Replace for a certificate obtained while from was current. It changes nothing
+// and reports false once from was replaced in the meantime, as by a certificate chalkctl
+// delivered, which is newer than what was asked for.
+func (n *NodeCertificate) ReplaceFrom(from *x509.Certificate, chain, key string, now time.Time) (bool, error) {
+	return n.replace(from, chain, key, now)
+}
+
+func (n *NodeCertificate) replace(from *x509.Certificate, chain, key string, now time.Time) (bool, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if from != nil && n.Current().Leaf != from {
+		return false, nil
+	}
 	cred, err := n.check(chain, key, now)
 	if err != nil {
-		return err
+		return false, err
 	}
 	file, err := pki.NodeFile(cred, n.osCA)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := install.WriteFile(n.path, file, 0o600); err != nil {
-		return fmt.Errorf("record the node certificate: %w", err)
+		return false, fmt.Errorf("record the node certificate: %w", err)
 	}
 	n.current.Store(&cred)
-	return nil
+	return true, nil
 }
 
 // Check checks a new certificate as Replace does, without switching to it.
