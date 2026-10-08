@@ -244,7 +244,7 @@ var deniedEverything = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
 	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied,
 	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodePermissionDenied,
-	"RenewNodeCertificate": connect.CodePermissionDenied,
+	"RenewNodeCertificate": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied,
 }
 
 // nodeRole is what a node gets in normal mode: RenewNodeCertificate alone, which a node without
@@ -252,6 +252,7 @@ var deniedEverything = map[string]connect.Code{
 var nodeRole = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
 	"ApplyIdentity": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
+	"RotationStep": connect.CodePermissionDenied,
 }
 
 // clientWithOrganization issues a client certificate with the Organization given, bypassing the
@@ -350,6 +351,8 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{}))
 	case "RenewNodeCertificate":
 		_, err = c.RenewNodeCertificate(ctx, connect.NewRequest(&nodev1.RenewNodeCertificateRequest{}))
+	case "RotationStep":
+		_, err = c.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED}))
 	case "Logs":
 		var s *connect.ServerStreamForClient[nodev1.LogsResponse]
 		if s, err = c.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{})); err == nil {
@@ -382,11 +385,12 @@ func TestAuthorisation(t *testing.T) {
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeFailedPrecondition, "EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied},
 			pki.RoleOperator: {"Reboot": 0, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodePermissionDenied,
-				"EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied},
+				"EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied},
 			// The identity "{}" lacks a storage section and the node has no Kubernetes; refusing them
 			// means the call got through.
 			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition,
-				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition, "RenewNodeCertificate": connect.CodePermissionDenied},
+				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition, "RenewNodeCertificate": connect.CodePermissionDenied,
+				"RotationStep": connect.CodeFailedPrecondition},
 			// A certificate of the OS CA without a role's Organization grants nothing.
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,

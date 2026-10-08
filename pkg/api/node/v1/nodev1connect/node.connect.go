@@ -64,6 +64,9 @@ const (
 	// NodeServiceRenewNodeCertificateProcedure is the fully-qualified name of the NodeService's
 	// RenewNodeCertificate RPC.
 	NodeServiceRenewNodeCertificateProcedure = "/chalkos.node.v1.NodeService/RenewNodeCertificate"
+	// NodeServiceRotationStepProcedure is the fully-qualified name of the NodeService's RotationStep
+	// RPC.
+	NodeServiceRotationStepProcedure = "/chalkos.node.v1.NodeService/RotationStep"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -105,6 +108,9 @@ type NodeServiceClient interface {
 	// the names of the node certificate it authenticated with. Available on control-plane nodes, to
 	// nodes only.
 	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
+	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
+	// out; chalkctl rotate calls it. Available to admins.
+	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -196,6 +202,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("RenewNodeCertificate")),
 			connect.WithClientOptions(opts...),
 		),
+		rotationStep: connect.NewClient[v1.RotationStepRequest, v1.RotationStepResponse](
+			httpClient,
+			baseURL+NodeServiceRotationStepProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("RotationStep")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -214,6 +226,7 @@ type nodeServiceClient struct {
 	etcdRemoveMember     *connect.Client[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse]
 	etcdLeave            *connect.Client[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse]
 	renewNodeCertificate *connect.Client[v1.RenewNodeCertificateRequest, v1.RenewNodeCertificateResponse]
+	rotationStep         *connect.Client[v1.RotationStepRequest, v1.RotationStepResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -281,6 +294,11 @@ func (c *nodeServiceClient) RenewNodeCertificate(ctx context.Context, req *conne
 	return c.renewNodeCertificate.CallUnary(ctx, req)
 }
 
+// RotationStep calls chalkos.node.v1.NodeService.RotationStep.
+func (c *nodeServiceClient) RotationStep(ctx context.Context, req *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error) {
+	return c.rotationStep.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in both modes to readers.
@@ -320,6 +338,9 @@ type NodeServiceHandler interface {
 	// the names of the node certificate it authenticated with. Available on control-plane nodes, to
 	// nodes only.
 	RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error)
+	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
+	// out; chalkctl rotate calls it. Available to admins.
+	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -407,6 +428,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("RenewNodeCertificate")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceRotationStepHandler := connect.NewUnaryHandler(
+		NodeServiceRotationStepProcedure,
+		svc.RotationStep,
+		connect.WithSchema(nodeServiceMethods.ByName("RotationStep")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -435,6 +462,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceEtcdLeaveHandler.ServeHTTP(w, r)
 		case NodeServiceRenewNodeCertificateProcedure:
 			nodeServiceRenewNodeCertificateHandler.ServeHTTP(w, r)
+		case NodeServiceRotationStepProcedure:
+			nodeServiceRotationStepHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -494,4 +523,8 @@ func (UnimplementedNodeServiceHandler) EtcdLeave(context.Context, *connect.Reque
 
 func (UnimplementedNodeServiceHandler) RenewNodeCertificate(context.Context, *connect.Request[v1.RenewNodeCertificateRequest]) (*connect.Response[v1.RenewNodeCertificateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RenewNodeCertificate is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RotationStep is not implemented"))
 }

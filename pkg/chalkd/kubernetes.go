@@ -83,6 +83,11 @@ type Kubernetes struct {
 	// ControlPlaneState says whether the node's API server and etcd run with the certificates the
 	// node holds now: "current", or what is not so. Tests replace it.
 	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
+	// APIClient reaches the node's own API server with chalkd's credential. Tests replace it.
+	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
+	// RotationPoll is the time between two looks at what a rotation step waits for; zero means
+	// two seconds.
+	RotationPoll time.Duration
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -143,6 +148,7 @@ func NewKubernetes() *Kubernetes {
 	k.APIServerReady = apiServerReady
 	k.EtcdStopped = etcdStopped
 	k.ControlPlaneState = k.controlPlaneState
+	k.APIClient = apiClient
 	return k
 }
 

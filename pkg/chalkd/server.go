@@ -131,6 +131,7 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceEtcdRemoveMemberProcedure:     {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceEtcdLeaveProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {[]nodev1.Mode{normal}, pki.RoleNode},
+	nodev1connect.NodeServiceRotationStepProcedure:         {[]nodev1.Mode{normal}, pki.RoleAdmin},
 }
 
 type roleKey struct{}

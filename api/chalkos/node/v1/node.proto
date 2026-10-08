@@ -46,6 +46,9 @@ service NodeService {
   // the names of the node certificate it authenticated with. Available on control-plane nodes, to
   // nodes only.
   rpc RenewNodeCertificate(RenewNodeCertificateRequest) returns (RenewNodeCertificateResponse);
+  // RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
+  // out; chalkctl rotate calls it. Available to admins.
+  rpc RotationStep(RotationStepRequest) returns (RotationStepResponse);
 }
 
 enum Mode {
@@ -386,4 +389,47 @@ message RenewNodeCertificateRequest {
 message RenewNodeCertificateResponse {
   // The new node certificate followed by the certificate of the node CA that issued it (PEM).
   bytes certificate_chain = 1;
+}
+
+enum RotationStep {
+  ROTATION_STEP_UNSPECIFIED = 0;
+  // On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of
+  // the cluster's manifests, chalkos's addons among them, once the kube-root-ca.crt ConfigMaps of
+  // their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out.
+  ROTATION_STEP_RESTART_ADDONS = 1;
+  // On a bootstrapped control-plane node: list the Secrets of type
+  // kubernetes.io/service-account-token, whose tokens nothing signs again.
+  ROTATION_STEP_LIST_TOKEN_SECRETS = 2;
+  // On a bootstrapped control-plane node: update every object of the resources the API server
+  // encrypts without changing it, so the API server encrypts it with its first key, then count
+  // the objects etcd holds under each key.
+  ROTATION_STEP_REWRITE_ENCRYPTED = 3;
+  // On a bootstrapped control-plane node: count the objects etcd holds under each key.
+  ROTATION_STEP_COUNT_ENCRYPTED = 4;
+  // On a node with Kubernetes: remove the kubelet's serving certificate and restart the kubelet,
+  // which requests a new one.
+  ROTATION_STEP_RENEW_KUBELET_SERVING = 5;
+}
+
+message RotationStepRequest {
+  RotationStep step = 1;
+}
+
+message RotationStepResponse {
+  // The workloads restarted, as namespace/kind/name.
+  repeated string restarted = 1;
+  // The Secrets of type kubernetes.io/service-account-token, as namespace/name.
+  repeated string token_secrets = 2;
+  // How many objects were updated.
+  uint64 rewritten = 3;
+  // The objects etcd holds by resource and key.
+  repeated EncryptedObjects encrypted = 4;
+}
+
+message EncryptedObjects {
+  // The resource, such as secrets.
+  string resource = 1;
+  // The name of the key the objects are encrypted with; empty for objects stored unencrypted.
+  string key = 2;
+  uint64 objects = 3;
 }
