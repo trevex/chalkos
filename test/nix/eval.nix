@@ -1709,6 +1709,31 @@ lib.runTests {
           ])
         ]);
         missingFamily = fails (clusterFile [ (sources [ "192.168.0.0/16" ]) ]);
+        # Pods could pass the source check from ranges overlapping the pod or service ranges.
+        holdsPods = fails (clusterFile [
+          (sources [
+            "10.0.0.0/8"
+            "fd00:100::/64"
+          ])
+        ]);
+        inPods = fails (clusterFile [
+          (sources [
+            "192.168.0.0/16"
+            "fd00:10:244:1::/64"
+          ])
+        ]);
+        inServices = fails (clusterFile [
+          (sources [
+            "10.100.0.0/16"
+            "fd00:100::/64"
+          ])
+        ]);
+        inServicesIPv6 = fails (clusterFile [
+          (sources [
+            "192.168.0.0/16"
+            "fd00:10:96::/120"
+          ])
+        ]);
         otherFamily = fails (clusterFile [
           {
             chalkos.cluster.kubernetes.vxlanSourceSubnets = [
@@ -1762,6 +1787,10 @@ lib.runTests {
       exclusion = true;
       tooLong = true;
       missingFamily = true;
+      holdsPods = true;
+      inPods = true;
+      inServices = true;
+      inServicesIPv6 = true;
       otherFamily = true;
       staticInside = [
         "192.168.100.5"

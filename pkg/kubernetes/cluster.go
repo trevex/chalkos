@@ -46,8 +46,8 @@ type Cluster struct {
 	NodeIP NodeIP `json:"nodeIP"`
 	// Flannel is flannel's configuration when it is the pod network; nil otherwise.
 	Flannel *Flannel `json:"flannel"`
-	// VXLANSourceSubnets are the ranges VXLAN must come from, at least one of each family; empty
-	// takes it from any source.
+	// VXLANSourceSubnets are the ranges VXLAN must come from, at least one of each family and none
+	// overlapping the pod or service ranges; empty takes it from any source.
 	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
 	VIP VIP `json:"vip"`
@@ -163,8 +163,18 @@ func (c Cluster) Validate() error {
 			return err
 		}
 	}
-	if _, err := c.VXLANSources(); err != nil {
+	sources, err := c.VXLANSources()
+	if err != nil {
 		return err
+	}
+	// Pods could pass the source check from a source range that overlaps the cluster's own.
+	for _, s := range sources {
+		f := nodeip.FamilyOf(s.Addr())
+		for _, r := range []struct{ option, cidr string }{{"podCIDRs", c.PodCIDRs.Of(f)}, {"serviceCIDRs", c.ServiceCIDRs.Of(f)}} {
+			if p, err := netip.ParsePrefix(r.cidr); err == nil && s.Overlaps(p) {
+				return fmt.Errorf("vxlanSourceSubnets: %s overlaps %s.%s %s", s, r.option, f, p)
+			}
+		}
 	}
 	vips, err := c.VIPAddresses()
 	if err != nil {

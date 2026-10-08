@@ -643,8 +643,25 @@ in
           parsed = map (parseRange "") subnets;
           # The families of the ranges, also of those with a problem of their own.
           families = lib.unique (map familyOf (lib.filter builtins.isAttrs (map parseSubnet subnets)));
+          # Pods could pass the source check from a range overlapping the cluster's own.
+          overlaps = lib.concatMap (
+            s:
+            let
+              source = parseRange "" s;
+              family = familyOf source;
+              overlap =
+                option: range:
+                lib.optional (
+                  builtins.isAttrs range && (holds source range || holds range source)
+                ) "\"${s}\" overlaps ${option}.${family} \"${k.${option}.${family}}\"";
+            in
+            lib.optionals (builtins.isAttrs source && lib.elem family ipFamilies) (
+              overlap "podCIDRs" (podRange family) ++ overlap "serviceCIDRs" (serviceRange family)
+            )
+          ) subnets;
           errors =
             lib.filter builtins.isString parsed
+            ++ overlaps
             ++ map (
               f: "an ${f} range, but chalkos.cluster.kubernetes.ipFamilies is [ ${toString ipFamilies} ]"
             ) (lib.filter (f: !lib.elem f ipFamilies) families)
@@ -663,8 +680,9 @@ in
         VXLAN only from a source in a range of its family. Every node's addresses must be in them:
         its fixed nodeIPs and the subnets it picks its addresses from are checked at evaluation,
         and a node that picks one outside them refuses to prepare. They need a range of each of
-        ipFamilies. Empty takes VXLAN from any source. A node joining changes nothing on the
-        others as long as its addresses are in these ranges.
+        ipFamilies and may not overlap podCIDRs or serviceCIDRs, from which pods could send. Empty
+        takes VXLAN from any source. A node joining changes nothing on the others as long as its
+        addresses are in these ranges.
       '';
     };
     nodeIP = {

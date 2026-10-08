@@ -390,9 +390,12 @@ func TestVXLANSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.IPFamilies = []string{"ipv4", "ipv6"}
-	c.VXLANSourceSubnets = []string{"10.0.0.0/8", "fd00::/48", "192.168.0.0/16"}
-	if sources, err := c.VXLANSources(); err != nil || fmt.Sprint(sources) != "[10.0.0.0/8 fd00::/48 192.168.0.0/16]" {
+	c.VXLANSourceSubnets = []string{"10.0.0.0/10", "fd00::/48", "192.168.0.0/16"}
+	if sources, err := c.VXLANSources(); err != nil || fmt.Sprint(sources) != "[10.0.0.0/10 fd00::/48 192.168.0.0/16]" {
 		t.Errorf("VXLANSources() = %v, %v", sources, err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() = %v", err)
 	}
 	c.VXLANSourceSubnets = nil
 	if sources, err := c.VXLANSources(); err != nil || sources != nil {
@@ -406,6 +409,12 @@ func TestVXLANSources(t *testing.T) {
 		"fd00::/48":                 "vxlanSourceSubnets: no ipv4 range, so no node would take ipv4 VXLAN",
 		"!10.0.0.0/8 fd00::/48":     `vxlanSourceSubnets: "!10.0.0.0/8" is not an address range in CIDR notation`,
 		"10.0.0.0/8 fd00::/48 10.1": `vxlanSourceSubnets: "10.1" is not an address range in CIDR notation`,
+		// Ranges pods could pass the source check from.
+		"10.0.0.0/8 fd00::/48":                   "vxlanSourceSubnets: 10.0.0.0/8 overlaps podCIDRs.ipv4 10.244.0.0/16",
+		"10.244.1.0/24 fd00::/48":                "vxlanSourceSubnets: 10.244.1.0/24 overlaps podCIDRs.ipv4 10.244.0.0/16",
+		"192.168.0.0/16 10.100.0.0/16 fd00::/48": "vxlanSourceSubnets: 10.100.0.0/16 overlaps serviceCIDRs.ipv4 10.96.0.0/12",
+		"192.168.0.0/16 fd00:10::/32":            "vxlanSourceSubnets: fd00:10::/32 overlaps podCIDRs.ipv6 fd00:10:244::/56",
+		"192.168.0.0/16 fd00:10:96::/120":        "vxlanSourceSubnets: fd00:10:96::/120 overlaps serviceCIDRs.ipv6 fd00:10:96::/112",
 	} {
 		bad := c
 		bad.VXLANSourceSubnets = strings.Fields(subnets)
