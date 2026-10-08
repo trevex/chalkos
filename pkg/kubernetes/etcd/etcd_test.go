@@ -54,6 +54,41 @@ func members(t *testing.T, cli *clientv3.Client) []Member {
 	return list
 }
 
+// A write over a connection that stays open but no longer answers fails once the client's
+// unanswered ping dropped the connection, also without a deadline of its own.
+func TestDialDropsStalledConnection(t *testing.T) {
+	ca := etcdtest.NewCA(t)
+	m := etcdtest.StartNew(t, ca, "cp0")
+	proxy := etcdtest.NewProxy(t, m.ClientURL, 0)
+	cli, err := Dial([]string{proxy.URL}, etcdtest.ClientTLS(t, ca))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	_, err = cli.Put(ctx, "/key", "before")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy.Pause()
+	failed := make(chan error, 1)
+	go func() {
+		_, err := cli.Put(context.Background(), "/key", "stalled")
+		failed <- err
+	}()
+	select {
+	case err := <-failed:
+		if err == nil {
+			t.Error("a write over a stalled connection succeeded")
+		}
+	case <-time.After(time.Minute):
+		// Unblock the write, so it does not outlive the test.
+		cli.Close()
+		t.Fatal("a write over a stalled connection did not fail")
+	}
+}
+
 // A node joins as a learner, starts its member with the initial cluster Join returns, and is
 // promoted once it caught up.
 func TestJoinAndPromote(t *testing.T) {

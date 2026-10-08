@@ -48,13 +48,19 @@ func PeerURL(ip net.IP) string { return "https://" + net.JoinHostPort(ip.String(
 // ClientURL is the URL clients reach the member on the node with the address at.
 func ClientURL(ip net.IP) string { return "https://" + net.JoinHostPort(ip.String(), "2379") }
 
-// Dial connects to etcd at the endpoints with the TLS configuration.
+// Dial connects to etcd at the endpoints with the TLS configuration. While requests or streams
+// are open, the client pings a connection that has been quiet for 10 seconds and drops it when
+// the ping goes unanswered, so a connection that stays open but no longer answers does not block
+// them until their contexts end. etcd accepts a ping every 5 seconds, and closes connections
+// pinged while nothing is open on them, so idle ones are not pinged.
 func Dial(endpoints []string, tlsConfig *tls.Config) (*clientv3.Client, error) {
 	return clientv3.New(clientv3.Config{
-		Endpoints:   endpoints,
-		TLS:         tlsConfig,
-		DialTimeout: 5 * time.Second,
-		Logger:      zap.NewNop(),
+		Endpoints:            endpoints,
+		TLS:                  tlsConfig,
+		DialTimeout:          5 * time.Second,
+		DialKeepAliveTime:    10 * time.Second,
+		DialKeepAliveTimeout: 5 * time.Second,
+		Logger:               zap.NewNop(),
 	})
 }
 
