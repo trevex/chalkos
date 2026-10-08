@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -179,9 +180,10 @@ func (c *haCluster) client(name string) kubernetes.Interface {
 	return cs
 }
 
-// TestKubernetesHA runs three control planes behind the VIP 192.168.100.10. cp1 is bootstrapped
-// and holds the VIP; cp2 and cp3 join etcd on their own. The VIP moves when its holder's link is
-// cut and stays with one holder once the link is back. A pinned node without its address runs
+// TestKubernetesHA runs three control planes of an IPv6-only cluster behind the VIP
+// fd00:100::10. cp1 is bootstrapped and holds the VIP; cp2 and cp3 join etcd on their own. Nodes,
+// etcd members and pods have IPv6 addresses alone. The VIP moves when its holder's link is cut
+// and stays with one holder once the link is back. A pinned node without its address runs
 // nothing while the cluster stays healthy. A node that left etcd and was reinstalled joins again;
 // one reinstalled without leaving refuses to bootstrap and finds its stale member until an
 // operator removes it.
@@ -227,7 +229,7 @@ func TestKubernetesHA(t *testing.T) {
 	t.Logf("installed after %v", time.Since(start).Round(time.Second))
 
 	waitFor(t, 5*time.Minute, "cp1 to wait for bootstrap or the cluster", func() error {
-		if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.100.10:6443" {
+		if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fd00:100::10]:6443" {
 			return fmt.Errorf("status %q", got)
 		}
 		return nil
@@ -259,6 +261,16 @@ func TestKubernetesHA(t *testing.T) {
 	if holders := c.holders("cp1", "cp2", "cp3"); !slices.Equal(holders, []string{"cp1"}) {
 		t.Errorf("VIP holders %v, want cp1", holders)
 	}
+	c.ipv6Only(ctx, cs)
+	p := peers{
+		nodes:    [2]string{"cp1", "cp2"},
+		nodeIPs:  [2][]string{{"fd00:100::11"}, {"fd00:100::12"}},
+		families: []corev1.IPFamily{corev1.IPv6Protocol},
+		dnsIP:    "fd00:10:96::a",
+	}
+	p.create(t, ctx, cs)
+	waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
+	p.check(t, ctx, cs)
 	logHAMemory(t, ctx, cs)
 
 	// The VIP moves when its holder's link is cut. The kubelets of the other control planes reach
@@ -318,7 +330,7 @@ func TestKubernetesHA(t *testing.T) {
 	c.stop("cp3", false)
 	c.start("cp3", "52:54:00:00:02:23", false)
 	waitFor(t, 10*time.Minute, "cp3 to fail without its pinned address", func() error {
-		want := "kubernetes controlplane: preparation failed: pinned address 192.168.100.13 is not present, 30s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node"
+		want := "kubernetes controlplane: preparation failed: pinned address fd00:100::13 is not present, 30s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node"
 		if got := c.kubernetes("cp3"); got != want {
 			return fmt.Errorf("status of cp3: %q", got)
 		}
@@ -363,7 +375,7 @@ func TestKubernetesHA(t *testing.T) {
 		if err == nil {
 			t.Fatalf("cp3 bootstrapped a second cluster:\n%s", out)
 		}
-		if !strings.Contains(out, "the cluster's API server answers at https://192.168.100.10:6443") {
+		if !strings.Contains(out, "the cluster's API server answers at https://[fd00:100::10]:6443") {
 			return fmt.Errorf("bootstrap: %v\n%s", err, out)
 		}
 		return nil
@@ -375,6 +387,42 @@ func TestKubernetesHA(t *testing.T) {
 	waitFor(t, 10*time.Minute, "the three nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "cp2", "cp3") })
 	logHAMemory(t, ctx, cs)
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
+}
+
+// ipv6Only checks that the Nodes and the etcd members have IPv6 addresses alone and that etcd
+// and the API server reach each other on IPv6's loopback address.
+func (c *haCluster) ipv6Only(ctx context.Context, cs kubernetes.Interface) {
+	c.t.Helper()
+	for _, hn := range haNodes {
+		want := "fd00:100::1" + strings.TrimPrefix(hn.name, "cp")
+		if got := internalIPs(c.t, ctx, cs, hn.name); !slices.Equal(got, []string{want}) {
+			c.t.Errorf("InternalIPs of %s = %v, want %s", hn.name, got, want)
+		}
+	}
+	out, err := c.chalkctl("cp1", "etcd", "members", "--via", "cp1")
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n")[1:] {
+		fields := strings.Fields(line)
+		if want := "https://[fd00:100::1" + strings.TrimPrefix(fields[0], "cp") + "]:2380"; fields[2] != want {
+			c.t.Errorf("etcd member %s has the peer URLs %s, want %s", fields[0], fields[2], want)
+		}
+	}
+	for pod, flags := range map[string][]string{
+		"etcd-cp1":           {"--listen-client-urls=https://[::1]:2379,https://[fd00:100::11]:2379", "--listen-metrics-urls=http://[::1]:2381"},
+		"kube-apiserver-cp1": {"--etcd-servers=https://[::1]:2379", "--advertise-address=fd00:100::11"},
+	} {
+		p, err := cs.CoreV1().Pods("kube-system").Get(ctx, pod, metav1.GetOptions{})
+		if err != nil {
+			c.t.Fatal(err)
+		}
+		for _, flag := range flags {
+			if !slices.Contains(p.Spec.Containers[0].Command, flag) {
+				c.t.Errorf("%s runs without %s: %v", pod, flag, p.Spec.Containers[0].Command)
+			}
+		}
+	}
 }
 
 // logHAMemory reports the memory each control plane uses.

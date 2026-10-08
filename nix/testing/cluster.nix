@@ -139,16 +139,18 @@ let
       ];
     };
   };
-  # Three control planes behind the VIP 192.168.100.10, connected through the switch of the HA
-  # test. The definition is a cluster of its own: the endpoint and the VIP are in the images.
+  # Three control planes of an IPv6-only cluster behind the VIP fd00:100::10, connected through
+  # the switch of the HA test. The definition is a cluster of its own: the endpoint and the VIP
+  # are in the images.
   haDefinition = {
     chalkos.cluster = {
       name = "chalklab-ha";
-      endpoint = "https://192.168.100.10:6443";
+      endpoint = "https://[fd00:100::10]:6443";
       osCA = "${secrets}/secrets.pub.json";
       kubernetes = {
         allowSchedulingOnControlPlanes = true;
-        vip.addresses = [ "192.168.100.10" ];
+        ipFamilies = [ "ipv6" ];
+        vip.addresses = [ "fd00:100::10" ];
         # The test boots a pinned node without its address; it gives up after this.
         nodeIP.timeout = 30;
       };
