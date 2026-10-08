@@ -123,6 +123,9 @@ in
       "kernel.keys.root_maxbytes" = 25000000;
     };
 
+    # containerd runs the CNI plugins, and portmap programs nftables with nft.
+    systemd.services.containerd.path = [ pkgs.nftables ];
+
     virtualisation.containerd = {
       enable = true;
       settings = lib.mkForce {

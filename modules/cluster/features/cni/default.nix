@@ -4,6 +4,33 @@
 let
   cfg = config.chalkos.cni;
   k = config.chalkos.cluster.kubernetes;
+  inUse = family: lib.elem family k.ipFamilies;
+  # VXLAN in every family of the cluster (flannel.1 and flannel-v6.1, both on UDP 8472), with the
+  # rules flannel needs in nftables tables of its own.
+  netConf = {
+    EnableNFTables = true;
+    Backend.Type = "vxlan";
+  }
+  // lib.optionalAttrs (inUse "ipv4") { Network = k.podCIDRs.ipv4; }
+  // lib.optionalAttrs (!inUse "ipv4") { EnableIPv4 = false; }
+  // lib.optionalAttrs (inUse "ipv6") {
+    EnableIPv6 = true;
+    IPv6Network = k.podCIDRs.ipv6;
+  };
+  # flanneld uses exactly the node's addresses, one per family, as the kubelet registered them and
+  # reports them as the pod's addresses: the firewall accepts VXLAN to those alone. With them as
+  # public addresses flanneld finds the interface holding them.
+  flanneld = ''
+    set -- --ip-masq --kube-subnet-mgr --healthz-port=8081
+    IFS=,
+    for ip in $POD_IPS; do
+      case $ip in
+        *:*) set -- "$@" "--public-ipv6=$ip" ;;
+        *) set -- "$@" "--public-ip=$ip" ;;
+      esac
+    done
+    exec /opt/bin/flanneld "$@"
+  '';
   labels = {
     tier = "node";
     app = "flannel";
@@ -102,14 +129,11 @@ let
             {
               type = "portmap";
               capabilities.portMappings = true;
+              backend = "nftables";
             }
           ];
         };
-        "net-conf.json" = builtins.toJSON {
-          Network = k.podCIDRs.ipv4;
-          EnableNFTables = false;
-          Backend.Type = "vxlan";
-        };
+        "net-conf.json" = builtins.toJSON netConf;
       };
     }
     {
@@ -162,14 +186,10 @@ let
               {
                 name = "kube-flannel";
                 image = cfg.flannel.image;
-                command = [ "/opt/bin/flanneld" ];
-                # The node's address, which the kubelet registered it with, rather than the
-                # address of the default route.
-                args = [
-                  "--ip-masq"
-                  "--kube-subnet-mgr"
-                  "--iface=$(POD_IP)"
-                  "--healthz-port=8081"
+                command = [
+                  "/bin/sh"
+                  "-c"
+                  flanneld
                 ];
                 ports = [
                   {
@@ -215,8 +235,9 @@ let
                     valueFrom.fieldRef.fieldPath = "metadata.namespace";
                   }
                   {
-                    name = "POD_IP";
-                    valueFrom.fieldRef.fieldPath = "status.podIP";
+                    # The node's addresses, the primary family's first, separated by commas.
+                    name = "POD_IPS";
+                    valueFrom.fieldRef.fieldPath = "status.podIPs";
                   }
                   {
                     name = "EVENT_QUEUE_DEPTH";

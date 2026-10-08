@@ -1464,6 +1464,83 @@ lib.runTests {
       dnsIP = true;
     };
   };
+  # flannel runs VXLAN in every family of the cluster on nftables, on the node's addresses the
+  # kubelet registered, one per family.
+  testFlannelFamilies = {
+    expr =
+      let
+        flannel =
+          families:
+          let
+            addons =
+              (cluster [ { chalkos.cluster.kubernetes.ipFamilies = families; } ]).cluster.kubernetes.addons;
+            named = kind: name: lib.findFirst (m: m.kind == kind && m.metadata.name == name) null addons;
+          in
+          builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."net-conf.json";
+        addons = (cluster [ ]).cluster.kubernetes.addons;
+        named = kind: name: lib.findFirst (m: m.kind == kind && m.metadata.name == name) null addons;
+        container = builtins.head (named "DaemonSet" "kube-flannel-ds").spec.template.spec.containers;
+        cniConf = builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."cni-conf.json";
+      in
+      {
+        ipv4 = flannel [ "ipv4" ];
+        dual = flannel [
+          "ipv4"
+          "ipv6"
+        ];
+        ipv6Primary = flannel [
+          "ipv6"
+          "ipv4"
+        ];
+        ipv6 = flannel [ "ipv6" ];
+        addresses = lib.findFirst (e: e.name == "POD_IPS") null container.env;
+        publicAddresses =
+          lib.hasInfix "--public-ip=$ip" (lib.last container.command)
+          && lib.hasInfix "--public-ipv6=$ip" (lib.last container.command);
+        noInterface = !lib.any (lib.hasInfix "--iface") container.command;
+        portmap = (lib.findFirst (p: p.type == "portmap") null cniConf.plugins).backend;
+        # containerd runs portmap, which needs nft.
+        portmapFindsNft =
+          lib.any (p: (p.pname or "") == "nftables")
+            (role (cluster [ ])).systemd.services.containerd.path;
+      };
+    expected = {
+      ipv4 = {
+        Network = "10.244.0.0/16";
+        EnableNFTables = true;
+        Backend.Type = "vxlan";
+      };
+      dual = {
+        Network = "10.244.0.0/16";
+        EnableIPv6 = true;
+        IPv6Network = "fd00:10:244::/56";
+        EnableNFTables = true;
+        Backend.Type = "vxlan";
+      };
+      ipv6Primary = {
+        Network = "10.244.0.0/16";
+        EnableIPv6 = true;
+        IPv6Network = "fd00:10:244::/56";
+        EnableNFTables = true;
+        Backend.Type = "vxlan";
+      };
+      ipv6 = {
+        EnableIPv4 = false;
+        EnableIPv6 = true;
+        IPv6Network = "fd00:10:244::/56";
+        EnableNFTables = true;
+        Backend.Type = "vxlan";
+      };
+      addresses = {
+        name = "POD_IPS";
+        valueFrom.fieldRef.fieldPath = "status.podIPs";
+      };
+      publicAddresses = true;
+      noInterface = true;
+      portmap = "nftables";
+      portmapFindsNft = true;
+    };
+  };
   # The VIPs reach the nodes in the cluster file; the endpoint is one of them.
   testVIP = {
     expr =
