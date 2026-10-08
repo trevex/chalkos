@@ -18,11 +18,28 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
+// nodeRenewHelp explains node renew, and what reaching a node whose certificate expired trusts.
+const nodeRenewHelp = `usage: chalkctl node renew <node> [flags]
+
+Issues the node a new node certificate and key from the node CA and delivers them, also once the
+node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
+start, so chalkctl trusts the node's old key: someone holding a leaked, expired key of the node
+and sitting in its network path could receive the new certificate in its place. That is inherent
+to recovering a node; renewing node certificates before they expire avoids it.
+
+flags:
+`
+
 // nodeRenew issues a node a new node certificate from the node CA and delivers it. The node is
 // reached even when its certificate expired: its chain is verified without dates, which only
 // this command does. The node still verifies chalkctl's certificate as usual.
 func (a *app) nodeRenew(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("node renew", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), nodeRenewHelp)
+		fs.PrintDefaults()
+	}
 	var n nodeCommand
 	n.register(fs)
 	pos, err := parse(fs, args)
@@ -93,6 +110,10 @@ func (a *app) nodeCARotate(ctx context.Context, args []string) error {
 			controlPlanes = append(controlPlanes, name)
 		}
 	}
+	// A node CA no control plane holds renews nothing.
+	if len(controlPlanes) == 0 {
+		return errors.New("node-ca rotate: the cluster has no control-plane node to renew node certificates with the new node CA")
+	}
 	if n.endpoint != "" && len(controlPlanes) != 1 {
 		return errors.New("node-ca rotate: --endpoint names one node's chalkd, but the cluster has several control-plane nodes")
 	}
@@ -113,7 +134,11 @@ func (a *app) nodeCARotate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "wrote %s with a new node CA, which expires %s; replace the secrets file with it\n", *out, nodeCA.NotAfter.UTC().Format(time.RFC3339))
+	replace := "replace the secrets file with it"
+	if *publicOut == "" {
+		replace += ", and secrets.pub.json too, which still names the old node CA (--public-out writes the new one)"
+	}
+	fmt.Fprintf(a.stdout, "wrote %s with a new node CA, which expires %s; %s\n", *out, nodeCA.NotAfter.UTC().Format(time.RFC3339), replace)
 
 	share, err := kpki.ControlPlaneShare(&secrets.Kubernetes, secrets.NodeCA).Encode()
 	if err != nil {

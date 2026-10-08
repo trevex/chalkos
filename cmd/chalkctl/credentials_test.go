@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,5 +193,51 @@ func TestClientFileWithoutClusterDefinition(t *testing.T) {
 	writeFile(t, other, string(data))
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--config", other}, addr)); err == nil || !strings.Contains(err.Error(), "client file of the cluster elsewhere") {
 		t.Errorf("another cluster's client file: %v", err)
+	}
+}
+
+// The directory of a client file holds a private key: a missing one is created for its owner
+// alone.
+func TestConfigNewCreatesItsDirectoryPrivate(t *testing.T) {
+	ta := newTestApp(t)
+	for _, force := range []bool{false, true} {
+		dir := filepath.Join(ta.dir, fmt.Sprintf("new-%v", force), "chalkos")
+		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config"), "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir}
+		if force {
+			args = append(args, "--force")
+		}
+		if err := ta.run(context.Background(), args); err != nil {
+			t.Fatalf("force %v: %v", force, err)
+		}
+		for _, d := range []string{dir, filepath.Dir(dir)} {
+			if info, err := os.Stat(d); err != nil || info.Mode().Perm() != 0o700 {
+				t.Errorf("force %v: %s: %v, %v; want mode 0700", force, d, info.Mode(), err)
+			}
+		}
+	}
+}
+
+// Without a cluster definition, a node is reached at the address its client file names.
+func TestClientFileNodes(t *testing.T) {
+	ta := newTestApp(t)
+	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	s, _ := installedNode(t, ta, current)
+	addr := ta.startNode(t, s)
+	c, err := client.NewConfig(ta.secrets.OSCA, "lab", "alice", pki.RoleReader, time.Hour, map[string]string{"n1": addr}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := c.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(ta.dir, "alice.json")
+	writeFile(t, path, string(data))
+	ta.withoutSecrets(t)
+	if err := ta.run(context.Background(), []string{"status", "n1", "--config", path, "--flake", ta.dir}); err != nil {
+		t.Fatalf("status through the client file's address: %v", err)
+	}
+	if !strings.Contains(ta.stdout.String(), "identity ") {
+		t.Errorf("stdout = %q", ta.stdout)
 	}
 }

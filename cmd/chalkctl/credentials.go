@@ -208,9 +208,10 @@ func (a *app) configNew(ctx context.Context, args []string) error {
 	path := *out
 	if path == "" {
 		path = defaultConfigPath(a.home)
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return err
-		}
+	}
+	// The file holds the user's private key: a directory created for it is its owner's alone.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
 	}
 	// The file holds the user's private key.
 	if *force {

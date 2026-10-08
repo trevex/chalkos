@@ -210,3 +210,54 @@ func TestCertificateLine(t *testing.T) {
 		}
 	}
 }
+
+// Without --public-out the public file goes stale, which the message says.
+func TestNodeCARotateNamesThePublicFile(t *testing.T) {
+	ta := newTestApp(t)
+	withKind(t, ta, manifest.KindControlPlane)
+	s, _ := kubernetesNode(t, ta)
+	p := s.Kubernetes.Paths
+	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
+	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
+	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
+	share, err := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.Share(), string(share))
+	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", chalkd.CAFile), ta.secrets.OSCA.Certificate)
+	addr := ta.startNode(t, s)
+	out := filepath.Join(ta.dir, "secrets.rotated.json")
+	if err := ta.run(context.Background(), ta.args([]string{"node-ca", "rotate", "--plaintext", "--out", out}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ta.stdout.String(), "secrets.pub.json") {
+		t.Errorf("stdout = %q, want secrets.pub.json named", ta.stdout)
+	}
+}
+
+func TestNodeCARotateNeedsAControlPlane(t *testing.T) {
+	ta := newTestApp(t)
+	out := filepath.Join(ta.dir, "secrets.rotated.json")
+	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--plaintext", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir})
+	if err == nil || !strings.Contains(err.Error(), "control-plane") {
+		t.Errorf("err = %v, want a refusal naming the missing control-plane node", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Errorf("wrote %s for a cluster no node CA reaches: %v", out, statErr)
+	}
+}
+
+// node renew trusts the expired node's old key, which its help says.
+func TestNodeRenewHelp(t *testing.T) {
+	ta := newTestApp(t)
+	if err := ta.run(context.Background(), []string{"node", "renew", "-h"}); err == nil {
+		t.Error("node renew -h ran")
+	}
+	help := ta.stderr.String()
+	for _, want := range []string{"usage: chalkctl node renew <node>", "old key", "-endpoint"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help lacks %q:\n%s", want, help)
+		}
+	}
+}
