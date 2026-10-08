@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -63,9 +64,58 @@ type Identity struct {
 	Labels       map[string]string `json:"labels"`
 	Taints       []Taint           `json:"taints"`
 	// Storage is how the node partitions, encrypts and mounts its disks.
-	Storage    storage.Section            `json:"storage"`
-	Kubernetes *KubernetesIdentity        `json:"kubernetes"`
+	Storage    storage.Section     `json:"storage"`
+	Kubernetes *KubernetesIdentity `json:"kubernetes"`
+	// Time is how the node keeps its clock.
+	Time       Time                       `json:"time"`
 	Extensions map[string]json.RawMessage `json:"extensions"`
+}
+
+// Time names the servers the node keeps its clock with.
+type Time struct {
+	Servers []TimeServer `json:"servers"`
+}
+
+// TimeServer is a time server; Port zero means NTP's.
+type TimeServer struct {
+	Host string `json:"host"`
+	NTS  bool   `json:"nts"`
+	Port int    `json:"port,omitempty"`
+}
+
+// timeHost is what a time server's host may be: a host name or an address.
+var timeHost = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:-]*$`)
+
+// Check checks that each server has a host name or address and a port, if any, that is one.
+func (t Time) Check() error {
+	for _, s := range t.Servers {
+		if !timeHost.MatchString(s.Host) {
+			return fmt.Errorf("time server %q is not a host name or address", s.Host)
+		}
+		if s.Port < 0 || s.Port > 65535 {
+			return fmt.Errorf("time server %s: port %d is out of range", s.Host, s.Port)
+		}
+	}
+	return nil
+}
+
+// ChronySources are the servers as chrony's sources file lists them.
+func (t Time) ChronySources() (string, error) {
+	if err := t.Check(); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, s := range t.Servers {
+		b.WriteString("server " + s.Host + " iburst")
+		if s.NTS {
+			b.WriteString(" nts")
+		}
+		if s.Port != 0 {
+			fmt.Fprintf(&b, " port %d", s.Port)
+		}
+		b.WriteString("\n")
+	}
+	return b.String(), nil
 }
 
 // KubernetesIdentity is what the node is in Kubernetes; nil on nodes of a role without
@@ -157,6 +207,9 @@ func Decode(r io.Reader) (*Manifest, error) {
 			if keys := d.Ref.UnknownKeys(); len(keys) > 0 {
 				return nil, fmt.Errorf("parse manifest: node %s, disk %s: unknown selector keys %s", name, disk, strings.Join(keys, ", "))
 			}
+		}
+		if err := n.Identity.Time.Check(); err != nil {
+			return nil, fmt.Errorf("parse manifest: node %s: %w", name, err)
 		}
 		// The node would refuse them at every boot and run no kubelet.
 		if k := n.Identity.Kubernetes; k != nil {

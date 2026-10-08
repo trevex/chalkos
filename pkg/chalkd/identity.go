@@ -52,6 +52,10 @@ func parseIdentity(data string) (delivered, error) {
 	if err := id.Storage.Validate(); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
 	}
+	// The identity loader would refuse it at every boot.
+	if err := id.Time.Check(); err != nil {
+		return delivered{}, failed(connect.CodeInvalidArgument, "the identity's %v", err)
+	}
 	// A node that cannot read how to pick its address would run no kubelet.
 	if k := id.Kubernetes; k != nil {
 		if err := k.CheckNodeIPs(); err != nil {
@@ -443,6 +447,13 @@ func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]string, []by
 	}
 	if _, err := s.Run.Run(ctx, "networkctl", "reload"); err != nil {
 		return nil, nil, failed(connect.CodeInternal, "%v", err)
+	}
+	if identity.TimeChanged(old, data) {
+		// chrony reads the sources file again when it starts, so a chrony that is down misses
+		// nothing.
+		if _, err := s.Run.Run(ctx, "chronyc", "reload", "sources"); err != nil {
+			log.Printf("time servers: %v", err)
+		}
 	}
 	consumers, err := identity.ReadConsumers(s.Identity.Consumers)
 	if err != nil {

@@ -22,6 +22,11 @@ let
     };
   role = c: c.roles.worker.nixos.config;
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
+  defaultTimeServers = [
+    "ptbtime1.ptb.de"
+    "ptbtime2.ptb.de"
+    "ptbtime3.ptb.de"
+  ];
 
   demoExtension =
     { config, lib, ... }:
@@ -238,6 +243,131 @@ lib.runTests {
       false
     ];
   };
+  testTimeServers = {
+    expr =
+      let
+        timeOf =
+          modules:
+          lib.mapAttrs (_: n: n.identity.time.servers)
+            (cluster (
+              [
+                {
+                  chalkos.nodes.n1 = {
+                    role = "worker";
+                    storage.system.disk = "/dev/vda";
+                  };
+                  chalkos.nodes.n2 = {
+                    role = "worker";
+                    storage.system.disk = "/dev/vda";
+                    time.servers = [
+                      {
+                        host = "10.0.2.2";
+                        nts = false;
+                        port = 12300;
+                      }
+                    ];
+                  };
+                }
+              ]
+              ++ modules
+            )).manifest.nodes;
+      in
+      {
+        default = timeOf [ ];
+        cluster = timeOf [ { chalkos.time.servers = [ { host = "time.example.org"; } ]; } ];
+        invalidHost = fails (timeOf [ { chalkos.time.servers = [ { host = "a b"; } ]; } ]);
+      };
+    expected = {
+      default = {
+        n1 = map (host: {
+          inherit host;
+          nts = true;
+          port = null;
+        }) defaultTimeServers;
+        n2 = [
+          {
+            host = "10.0.2.2";
+            nts = false;
+            port = 12300;
+          }
+        ];
+      };
+      cluster = {
+        n1 = [
+          {
+            host = "time.example.org";
+            nts = true;
+            port = null;
+          }
+        ];
+        n2 = [
+          {
+            host = "10.0.2.2";
+            nts = false;
+            port = 12300;
+          }
+        ];
+      };
+      invalidHost = true;
+    };
+  };
+  testChrony = {
+    expr =
+      let
+        image = modules: role (cluster modules);
+        summary = c: {
+          chrony = c.services.chrony.enable;
+          timesyncd = c.services.timesyncd.enable;
+          servers = c.services.chrony.servers;
+          makestep = with c.services.chrony.makestep; [
+            enable
+            threshold
+            limit
+          ];
+          sourcedirs = lib.filter (lib.hasPrefix "sourcedir") (
+            lib.splitString "\n" c.services.chrony.extraConfig
+          );
+          certTimeCheck = lib.hasInfix "nocerttimecheck 1" c.services.chrony.extraConfig;
+          ntsDump = lib.hasInfix "ntsdumpdir /var/lib/chrony" c.services.chrony.extraConfig;
+          dhcpPath = c.systemd.paths ? chalkos-chrony-dhcp;
+          chalkdHasChronyc = lib.elem c.services.chrony.package c.systemd.services.chalkd.path;
+          chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
+        };
+      in
+      {
+        default = summary (image [ ]);
+        dhcp = summary (image [ { chalkos.time.dhcpServers = true; } ]);
+      };
+    expected =
+      let
+        base = {
+          chrony = true;
+          timesyncd = false;
+          servers = [ ];
+          makestep = [
+            true
+            1
+            3
+          ];
+          sourcedirs = [ "sourcedir /run/chalkos/chrony" ];
+          certTimeCheck = true;
+          ntsDump = true;
+          dhcpPath = false;
+          chalkdHasChronyc = true;
+          chalkdProtectsClock = true;
+        };
+      in
+      {
+        default = base;
+        dhcp = base // {
+          sourcedirs = [
+            "sourcedir /run/chalkos/chrony"
+            "sourcedir /run/chalkos/chrony-dhcp"
+          ];
+          dhcpPath = true;
+        };
+      };
+  };
   testClusterBuildsInstaller = {
     expr =
       let
@@ -315,6 +445,11 @@ lib.runTests {
       extensions = {
         rack.location = "a1";
       };
+      time.servers = map (host: {
+        inherit host;
+        nts = true;
+        port = null;
+      }) defaultTimeServers;
     };
   };
   testNetworkUnits = {

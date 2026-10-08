@@ -1,6 +1,6 @@
 // Package identity applies a node's identity on the node: it writes /run/chalkos/node.json, one
-// credential file per identity key that a unit reads, and the networkd units, and sets the
-// hostname. It also tells which units read keys that changed.
+// credential file per identity key that a unit reads, the networkd units and chrony's time
+// servers, and sets the hostname. It also tells which units read keys that changed.
 package identity
 
 import (
@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+
+	"github.com/trevex/chalkos/pkg/manifest"
 )
 
 // Header marks the networkd units the loader writes, so it removes only its own.
@@ -43,18 +45,21 @@ type Loader struct {
 	// NetworkDir receives networkd units; units there take precedence over the image's.
 	NetworkDir string
 	// Consumers is the image's map of units to the keys they read.
-	Consumers   string
-	SetHostname func(string) error
+	Consumers string
+	// ChronySources receives the time servers as chrony's sources file; empty writes none.
+	ChronySources string
+	SetHostname   func(string) error
 }
 
 // Default applies the identity on the running node.
 func Default() Loader {
 	return Loader{
-		Identity:    "/state/identity.json",
-		RunDir:      "/run/chalkos",
-		NetworkDir:  "/run/systemd/network",
-		Consumers:   "/etc/chalkos/consumers.json",
-		SetHostname: func(name string) error { return syscall.Sethostname([]byte(name)) },
+		Identity:      "/state/identity.json",
+		RunDir:        "/run/chalkos",
+		NetworkDir:    "/run/systemd/network",
+		Consumers:     "/etc/chalkos/consumers.json",
+		ChronySources: "/run/chalkos/chrony/identity.sources",
+		SetHostname:   func(name string) error { return syscall.Sethostname([]byte(name)) },
 	}
 }
 
@@ -63,6 +68,7 @@ type identity struct {
 	Hostname     string                     `json:"hostname"`
 	NetworkUnits map[string]string          `json:"networkUnits"`
 	Extensions   map[string]json.RawMessage `json:"extensions"`
+	Time         manifest.Time              `json:"time"`
 }
 
 // Load applies the identity recorded on STATE. A node without one is not installed, and nothing
@@ -96,6 +102,15 @@ func (l Loader) Apply(data []byte) error {
 	}
 	if err := l.writeNetworkUnits(id.NetworkUnits); err != nil {
 		return err
+	}
+	if l.ChronySources != "" {
+		sources, err := id.Time.ChronySources()
+		if err != nil {
+			return err
+		}
+		if err := writeFile(l.ChronySources, []byte(sources), 0o644); err != nil {
+			return err
+		}
 	}
 	if id.Hostname != "" {
 		if err := l.SetHostname(id.Hostname); err != nil {
@@ -271,4 +286,16 @@ func writeFile(path string, data []byte, perm fs.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// TimeChanged reports whether the time servers of two identities differ; an identity that does
+// not parse counts as changed.
+func TimeChanged(old, new []byte) bool {
+	var a, b identity
+	if json.Unmarshal(old, &a) != nil || json.Unmarshal(new, &b) != nil {
+		return true
+	}
+	sa, errA := a.Time.ChronySources()
+	sb, errB := b.Time.ChronySources()
+	return errA != nil || errB != nil || sa != sb
 }

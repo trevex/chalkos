@@ -652,3 +652,35 @@ func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
 		t.Errorf("delivering a certificate alone changed the identity or ran %v", r.calls)
 	}
 }
+
+func TestApplyIdentityReloadsTimeServers(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	withTime := func(host string) string {
+		return `{"hostname": "n1", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "` + host + `", "nts": true}]}}`
+	}
+	count := func() int {
+		n := 0
+		for _, c := range r.calls {
+			if c == "chronyc reload sources" {
+				n++
+			}
+		}
+		return n
+	}
+	apply := func(id string) error {
+		_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: id}))
+		return err
+	}
+	if err := apply(withTime("ptbtime1.ptb.de")); err != nil {
+		t.Fatal(err)
+	}
+	if err := apply(withTime("ptbtime1.ptb.de")); err != nil {
+		t.Fatal(err)
+	}
+	if count() != 1 {
+		t.Errorf("chrony reloaded its sources %d times, want once for one change: %v", count(), r.calls)
+	}
+	if err := apply(withTime("a b")); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("a time server that is no host: %v", err)
+	}
+}

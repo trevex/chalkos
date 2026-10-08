@@ -5,6 +5,7 @@
     ./base
     ./runtime
     ./chalkd.nix
+    ./time.nix
     ./kubernetes.nix
   ];
 }

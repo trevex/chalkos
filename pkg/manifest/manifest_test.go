@@ -169,3 +169,12 @@ func TestDecodeRejectsInvalidSubnets(t *testing.T) {
 		t.Errorf("nodeIPs: err = %v", err)
 	}
 }
+
+func TestDecodeRefusesTimeServers(t *testing.T) {
+	for _, host := range []string{"a b", "x\\nserver y"} {
+		m := `{"schemaVersion": 0, "cluster": {"name": "lab"}, "roles": {}, "nodes": {"n1": {"role": "r", "identity": {"time": {"servers": [{"host": "` + host + `"}]}}}}}`
+		if _, err := Decode(strings.NewReader(m)); err == nil || !strings.Contains(err.Error(), "time server") {
+			t.Errorf("host %q: %v", host, err)
+		}
+	}
+}

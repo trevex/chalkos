@@ -11,6 +11,7 @@ let
     "labels"
     "taints"
     "kubernetes"
+    "time"
     "_module"
   ];
   strip = attrs: removeAttrs attrs [ "_module" ];
@@ -155,6 +156,8 @@ let
             # cluster's subnets are in the image, a node's own ones here.
             inherit (n.kubernetes) nodeIPs validSubnets;
           };
+      # A node's own servers replace the cluster's.
+      time.servers = map strip (if n.time.servers != null then n.time.servers else cfg.time.servers);
       extensions = removeAttrs n coreNodeOptions;
     };
   };

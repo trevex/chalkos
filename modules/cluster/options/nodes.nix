@@ -54,6 +54,11 @@ let
           default = [ ];
           description = "Kubernetes taints applied to the node.";
         };
+        time.servers = lib.mkOption {
+          type = lib.types.nullOr (lib.types.listOf (import ../time.nix { inherit lib; }));
+          default = null;
+          description = "Time servers of this node, replacing `chalkos.time.servers`; null uses those.";
+        };
       };
     };
 in

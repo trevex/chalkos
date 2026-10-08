@@ -9,6 +9,7 @@
     ./options/kubernetes.nix
     ./options/warnings.nix
     ./options/installer.nix
+    ./options/time.nix
     ./options/manifest.nix
     ./kubernetes
     ./features/cni

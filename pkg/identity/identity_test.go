@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -153,5 +154,46 @@ func TestRestarts(t *testing.T) {
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: restarts = %v, want %v", name, got, c.want)
 		}
+	}
+}
+
+func TestApplyWritesTimeServers(t *testing.T) {
+	l, _ := newTestLoader(t)
+	l.ChronySources = filepath.Join(l.RunDir, "chrony", "identity.sources")
+	id := `{"hostname": "n1", "time": {"servers": [{"host": "ptbtime1.ptb.de", "nts": true}, {"host": "10.0.2.2", "nts": false, "port": 12300}]}}`
+	if err := l.Apply([]byte(id)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(l.ChronySources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "server ptbtime1.ptb.de iburst nts\nserver 10.0.2.2 iburst port 12300\n"; string(got) != want {
+		t.Errorf("sources = %q, want %q", got, want)
+	}
+	// An identity without servers leaves chrony none.
+	if err := l.Apply([]byte(`{"hostname": "n1"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(l.ChronySources); len(got) != 0 {
+		t.Errorf("sources = %q, want none", got)
+	}
+	for _, host := range []string{"a b", "x\nserver evil.example iburst", "-x", ""} {
+		bad, _ := json.Marshal(map[string]any{"time": map[string]any{"servers": []any{map[string]any{"host": host}}}})
+		if err := l.Apply(bad); err == nil {
+			t.Errorf("host %q: applied", host)
+		}
+	}
+}
+
+func TestTimeChanged(t *testing.T) {
+	a := []byte(`{"time": {"servers": [{"host": "a", "nts": true}]}}`)
+	b := []byte(`{"hostname": "other", "time": {"servers": [{"host": "a", "nts": true}]}}`)
+	c := []byte(`{"time": {"servers": [{"host": "a", "nts": false}]}}`)
+	if TimeChanged(a, b) {
+		t.Error("the same servers changed")
+	}
+	if !TimeChanged(a, c) || !TimeChanged(nil, a) {
+		t.Error("other servers did not change")
 	}
 }
