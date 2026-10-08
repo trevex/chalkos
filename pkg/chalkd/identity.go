@@ -211,7 +211,9 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 		}
 		restarted = append(restarted, units...)
 	}
-	if s.RenewOnApplyIdentity {
+	// Deliveries without an identity, as a rotation's, renew nothing: forced renewals would
+	// restart the control plane's pods on top of the restarts the rotation waits for.
+	if s.RenewOnApplyIdentity && !keep {
 		s.forceRenewals()
 	}
 	resp := &nodev1.ApplyIdentityResponse{RestartedUnits: restarted}

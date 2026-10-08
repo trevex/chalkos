@@ -101,7 +101,8 @@ type Server struct {
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *Renewal
 	// RenewOnApplyIdentity renews the node certificate and the control plane's certificates after
-	// each ApplyIdentity, due or not. Only test images set it, to renew within a test's time.
+	// each ApplyIdentity that delivers an identity, due or not. Only test images set it, to renew
+	// within a test's time.
 	RenewOnApplyIdentity bool
 
 	// mu serialises calls that change the node.

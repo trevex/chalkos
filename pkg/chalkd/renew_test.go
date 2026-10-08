@@ -363,6 +363,15 @@ func TestRenewOnApplyIdentity(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		go func() { s.Renewal.Run(ctx); close(done) }()
+		// OS CAs alone, as a rotation delivers them, renew nothing.
+		if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-issued:
+			t.Error("delivering OS CAs alone renewed the node certificate")
+		case <-time.After(100 * time.Millisecond):
+		}
 		recorded, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 		if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: string(recorded)})); err != nil {
 			t.Fatal(err)
