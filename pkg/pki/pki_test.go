@@ -51,7 +51,7 @@ func TestNewCA(t *testing.T) {
 
 func TestIssueClient(t *testing.T) {
 	ca := newTestCA(t)
-	client, err := IssueClient(ca, "admin", RoleAdmin, now)
+	client, err := IssueClient(ca, "admin", RoleAdmin, LeafValidity, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,34 +68,113 @@ func TestIssueClient(t *testing.T) {
 	if got := cert.NotAfter.Sub(now); got != LeafValidity {
 		t.Errorf("client valid for %v after now, want %v", got, LeafValidity)
 	}
-	if _, err := IssueClient(ca, "x", "root", now); err == nil {
+	if _, err := IssueClient(ca, "x", "root", LeafValidity, now); err == nil {
 		t.Error("issued a certificate for an unknown role")
+	}
+	if _, err := IssueClient(ca, "x", RoleReader, 0, now); err == nil {
+		t.Error("issued a client certificate without a validity")
+	}
+	short, err := IssueClient(ca, "chalkctl", RoleAdmin, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert, _, _ := short.Parse(); cert.NotAfter.Sub(now) != time.Hour {
+		t.Errorf("an hour's certificate ends %v after now", cert.NotAfter.Sub(now))
 	}
 }
 
 func TestIssueNode(t *testing.T) {
-	ca := newTestCA(t)
-	node, err := IssueNode(ca, "w1", []string{"w1", "w1.lan"}, []net.IP{net.ParseIP("10.0.0.21")}, now)
+	osCA, nodeCA := newTestNodeCA(t)
+	names := NodeNames{CommonName: "w1", DNSNames: []string{"w1", "w1.lan"}, IPs: []net.IP{net.ParseIP("10.0.0.21")}}
+	node, err := IssueNode(nodeCA, names, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert, _, err := node.Parse()
+	cred, err := VerifyNode(node.Certificate, node.Key, osCA.Certificate, now)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cert := cred.Leaf
 	for _, name := range []string{"w1", "w1.lan", "10.0.0.21"} {
 		if err := cert.VerifyHostname(name); err != nil {
 			t.Errorf("node certificate not valid for %s: %v", name, err)
 		}
 	}
-	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: now, DNSName: "w1"}); err != nil {
-		t.Errorf("node certificate does not verify as a server: %v", err)
+	if !NamesOf(cert).Equal(names) || cert.Subject.CommonName != "w1" {
+		t.Errorf("names = %+v, want %+v", NamesOf(cert), names)
 	}
-	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, ca), CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err == nil {
-		t.Error("node certificate verifies as a client; node certificates are server certificates only")
+	if got := cert.NotAfter.Sub(now); got != LeafValidity {
+		t.Errorf("node certificate valid for %v after now, want %v", got, LeafValidity)
 	}
-	if _, ok := Role(cert); ok {
-		t.Error("a node certificate grants a client role")
+	if role, ok := Role(cert); ok {
+		t.Errorf("a node certificate grants the client role %s through its Organization", role)
+	}
+	// The chain is what chalkd presents: without the node CA's certificate the root alone does
+	// not verify it.
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool(t, osCA), CurrentTime: now}); err == nil {
+		t.Error("the node certificate verifies against the OS CA without the node CA")
+	}
+
+	if _, err := IssueNode(osCA, names, now); err == nil {
+		t.Error("the OS CA issued a node certificate")
+	}
+	if _, err := IssueNode(nodeCA, NodeNames{DNSNames: []string{"w1"}}, now); err == nil {
+		t.Error("issued a node certificate without a name")
+	}
+
+	// The node CA's end caps the node certificate.
+	late := now.Add(NodeCAValidity - 24*time.Hour)
+	capped, err := IssueNode(nodeCA, names, late)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cappedCert, _, _ := capped.Parse()
+	caCert, _ := ParseCertificate([]byte(nodeCA.Certificate))
+	if !cappedCert.NotAfter.Equal(caCert.NotAfter) {
+		t.Errorf("node certificate ends %v, after the node CA's %v", cappedCert.NotAfter, caCert.NotAfter)
+	}
+}
+
+func TestVerifyNode(t *testing.T) {
+	osCA, nodeCA := newTestNodeCA(t)
+	node, err := IssueNode(nodeCA, NodeNames{CommonName: "w1"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := IssueNode(nodeCA, NodeNames{CommonName: "w2"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherOS, _ := newTestNodeCA(t)
+	leafOnly, _, _ := strings.Cut(node.Certificate, "-----END CERTIFICATE-----\n")
+	leafOnly += "-----END CERTIFICATE-----\n"
+	expired := now.Add(2 * LeafValidity)
+	for name, tc := range map[string]struct {
+		chain, key, root string
+		at               time.Time
+	}{
+		"another node's key":   {node.Certificate, other.Key, osCA.Certificate, now},
+		"another OS CA":        {node.Certificate, node.Key, otherOS.Certificate, now},
+		"without the node CA":  {leafOnly, node.Key, osCA.Certificate, now},
+		"expired at that time": {node.Certificate, node.Key, osCA.Certificate, expired},
+	} {
+		_, err := VerifyNode(tc.chain, tc.key, tc.root, tc.at)
+		if err == nil {
+			t.Errorf("%s: accepted", name)
+		} else if strings.Contains(err.Error(), "PRIVATE KEY") {
+			t.Errorf("%s: the error holds the key", name)
+		}
+	}
+	// Without a time the dates are not checked.
+	if _, err := VerifyNode(node.Certificate, node.Key, osCA.Certificate, time.Time{}); err != nil {
+		t.Errorf("without a time: %v", err)
+	}
+}
+
+func TestRenewAt(t *testing.T) {
+	cert := &x509.Certificate{NotBefore: now, NotAfter: now.Add(300 * 24 * time.Hour)}
+	if got, want := RenewAt(cert), now.Add(200*24*time.Hour); !got.Equal(want) {
+		t.Errorf("RenewAt = %v, want %v", got, want)
 	}
 }
 

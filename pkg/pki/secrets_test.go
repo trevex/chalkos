@@ -36,15 +36,15 @@ func TestGenerateSecrets(t *testing.T) {
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	admin, _, err := s.Admin.Parse()
+	nodeCA, _, err := s.NodeCA.Parse()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if role, _ := Role(admin); role != RoleAdmin {
-		t.Errorf("admin certificate grants %q", role)
+	if !IsNodeCA(nodeCA) {
+		t.Error("the node CA is no node CA")
 	}
 	pub := s.Public()
-	if pub.OSCA.Key != "" || pub.OSCA.Certificate != s.OSCA.Certificate {
+	if pub.OSCA.Key != "" || pub.OSCA.Certificate != s.OSCA.Certificate || pub.NodeCA.Key != "" || pub.NodeCA.Certificate != s.NodeCA.Certificate {
 		t.Errorf("public part = %+v, want the CA certificate only", pub)
 	}
 }
@@ -59,7 +59,7 @@ func TestReadSecretsPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.OSCA != s.OSCA || got.Admin != s.Admin || !bytes.Equal(got.RecoverySecret, s.RecoverySecret) {
+	if got.OSCA != s.OSCA || got.NodeCA != s.NodeCA || !bytes.Equal(got.RecoverySecret, s.RecoverySecret) {
 		t.Error("plaintext round trip changed the secrets")
 	}
 }
@@ -155,9 +155,9 @@ func TestReadSecretsRejects(t *testing.T) {
 	broken.RecoverySecret = broken.RecoverySecret[:8]
 	short, _ := broken.Encode()
 	for name, data := range map[string][]byte{
-		"garbage":       []byte("not secrets"),
-		"short secret":  short,
-		"other version": []byte(`{"version": 3}`),
+		"garbage":         []byte("not secrets"),
+		"short secret":    short,
+		"empty version 3": []byte(`{"version": 3}`),
 	} {
 		if _, err := ReadSecrets(data, noIdentities); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -280,30 +280,9 @@ func TestSecretsValidateRejectsNonCAOSCA(t *testing.T) {
 func TestSecretsValidateRequiresCertSignOnOSCA(t *testing.T) {
 	s := generate(t)
 	s.OSCA = caWithoutCertSign(t)
-	admin, err := IssueClient(s.OSCA, "admin", RoleAdmin, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Admin = admin
-	// The admin certificate would not verify either; the error names the cause.
+	// The node CA would not verify either; the error names the cause.
 	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "osCA: the CA certificate lacks the certificate signing key usage") {
 		t.Errorf("Validate() = %v, want the osCA's missing certificate signing key usage", err)
-	}
-}
-
-func TestSecretsValidateRejectsForeignAdmin(t *testing.T) {
-	s := generate(t)
-	other, err := NewCA("other CA", now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admin, err := IssueClient(other, "admin", RoleAdmin, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Admin = admin
-	if err := s.Validate(); err == nil {
-		t.Error("accepted an admin certificate issued by a different CA")
 	}
 }
 
@@ -321,5 +300,54 @@ func TestSecretsStringRedacted(t *testing.T) {
 	}
 	if strings.Contains(out, base64.StdEncoding.EncodeToString(s.RecoverySecret)) {
 		t.Error("formatted secrets contain the recovery secret in base64")
+	}
+}
+
+func TestReadSecretsRefusesOlderVersions(t *testing.T) {
+	s := generate(t)
+	for _, version := range []int{1, 2} {
+		old := s
+		old.Version = version
+		data, _ := old.Encode()
+		_, err := ReadSecrets(data, noIdentities)
+		if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("version %d is not supported", version)) || !strings.Contains(err.Error(), "chalkctl gen secrets") {
+			t.Errorf("version %d: %v, want a refusal naming chalkctl gen secrets", version, err)
+		}
+	}
+}
+
+func TestSecretsValidateRejectsNodeCA(t *testing.T) {
+	other, err := NewOSCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := NewNodeCA(other, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafCA := newTestCA(t)
+	rootWithoutIntermediates := generate(t)
+	rootWithoutIntermediates.OSCA = leafCA
+	if rootWithoutIntermediates.NodeCA, err = NewNodeCA(leafCA, now); err != nil {
+		t.Fatal(err)
+	}
+	for name, edit := range map[string]func(s *Secrets){
+		"from another OS CA":            func(s *Secrets) { s.NodeCA = foreign },
+		"the OS CA itself":              func(s *Secrets) { s.NodeCA = s.OSCA },
+		"a Kubernetes CA":               func(s *Secrets) { s.NodeCA = s.Kubernetes.CA },
+		"without its key":               func(s *Secrets) { s.NodeCA.Key = "" },
+		"under an OS CA of leaves only": func(s *Secrets) { *s = rootWithoutIntermediates },
+		"missing":                       func(s *Secrets) { s.NodeCA = CertKey{} },
+	} {
+		s := generate(t)
+		edit(&s)
+		err := s.Validate()
+		if err == nil {
+			t.Errorf("%s: accepted", name)
+			continue
+		}
+		if strings.Contains(err.Error(), "PRIVATE KEY") {
+			t.Errorf("%s: the error holds a key", name)
+		}
 	}
 }

@@ -3,10 +3,12 @@
 package pki
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -154,32 +156,143 @@ func IsNodeCA(cert *x509.Certificate) bool {
 		slices.Equal(cert.ExtKeyUsage, nodeCAUsages) && len(cert.UnknownExtKeyUsage) == 0
 }
 
-// IssueClient issues a client certificate whose Organization grants role.
-func IssueClient(ca CertKey, name, role string, now time.Time) (CertKey, error) {
+// IssueClient issues a client certificate of the OS CA whose Organization grants role, valid
+// for validity and never beyond the CA.
+func IssueClient(osCA CertKey, name, role string, validity time.Duration, now time.Time) (CertKey, error) {
 	if !slices.Contains([]string{RoleAdmin, RoleOperator, RoleReader}, role) {
 		return CertKey{}, fmt.Errorf("unknown role %q", role)
 	}
-	template, err := newTemplate(name, []string{role}, now, LeafValidity)
+	if validity <= 0 {
+		return CertKey{}, errors.New("a client certificate needs a validity")
+	}
+	template, err := newTemplate(name, []string{role}, now, validity)
 	if err != nil {
 		return CertKey{}, err
 	}
 	template.KeyUsage = x509.KeyUsageDigitalSignature
 	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
-	return issue(ca, template, now)
+	return issue(osCA, template, now)
 }
 
-// IssueNode issues the certificate chalkd serves on an installed node, valid for the given host
-// names and addresses.
-func IssueNode(ca CertKey, name string, dnsNames []string, ips []net.IP, now time.Time) (CertKey, error) {
-	template, err := newTemplate(name, []string{RoleNode}, now, LeafValidity)
+// NodeNames are what a node certificate is for: the node's name, which chalkctl verifies a node
+// by, and the host names and addresses it is reached at.
+type NodeNames struct {
+	CommonName string
+	DNSNames   []string
+	IPs        []net.IP
+}
+
+// NamesOf returns the names a node certificate is for.
+func NamesOf(cert *x509.Certificate) NodeNames {
+	return NodeNames{CommonName: cert.Subject.CommonName, DNSNames: cert.DNSNames, IPs: cert.IPAddresses}
+}
+
+// Equal reports whether both name the same, in the same order.
+func (n NodeNames) Equal(o NodeNames) bool {
+	return n.CommonName == o.CommonName && slices.Equal(n.DNSNames, o.DNSNames) &&
+		slices.EqualFunc(n.IPs, o.IPs, func(a, b net.IP) bool { return a.Equal(b) })
+}
+
+// IssueNode issues a node certificate with a new key from the node CA, for TLS servers and
+// clients: chalkd serves it, and presents it to renew it. Certificate holds the chain chalkd
+// presents, the node certificate followed by the node CA's.
+func IssueNode(nodeCA CertKey, names NodeNames, now time.Time) (CertKey, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return CertKey{}, err
 	}
+	chain, err := SignNode(nodeCA, names, &key.PublicKey, now)
+	if err != nil {
+		return CertKey{}, err
+	}
+	keyPEM, err := encodeKey(key)
+	if err != nil {
+		return CertKey{}, err
+	}
+	return CertKey{Certificate: chain, Key: keyPEM}, nil
+}
+
+// SignNode issues a node certificate for pub, whose key the node keeps, and returns the chain
+// IssueNode returns. It refuses a CA that is not a node CA: only a chain through the node CA
+// makes a certificate a node's.
+func SignNode(nodeCA CertKey, names NodeNames, pub crypto.PublicKey, now time.Time) (string, error) {
+	caCert, err := ParseCertificate([]byte(nodeCA.Certificate))
+	if err != nil {
+		return "", fmt.Errorf("node CA: %w", err)
+	}
+	if !IsNodeCA(caCert) {
+		return "", errors.New("node certificates are issued by the node CA only")
+	}
+	if names.CommonName == "" {
+		return "", errors.New("a node certificate needs the node's name")
+	}
+	template, err := newTemplate(names.CommonName, []string{RoleNode}, now, LeafValidity)
+	if err != nil {
+		return "", err
+	}
 	template.KeyUsage = x509.KeyUsageDigitalSignature
-	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
-	template.DNSNames = dnsNames
-	template.IPAddresses = ips
-	return issue(ca, template, now)
+	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
+	template.DNSNames = names.DNSNames
+	template.IPAddresses = names.IPs
+	der, err := issueFor(nodeCA, template, pub, now)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})) + nodeCA.Certificate, nil
+}
+
+// NodeCredential is a node certificate whose chain verified.
+type NodeCredential struct {
+	// Leaf is the node certificate and Chain its PEM chain with the node CA's certificate.
+	Leaf  *x509.Certificate
+	Chain string
+	TLS   tls.Certificate
+}
+
+// VerifyNode checks that a PEM chain and key are a node certificate with its key that chains
+// through a node CA to the OS CA for TLS servers and clients, at the time given; at zero checks
+// no dates. Errors never hold the key.
+func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
+	pair, err := tls.X509KeyPair([]byte(chain), []byte(key))
+	if err != nil {
+		return NodeCredential{}, fmt.Errorf("the node certificate and its key: %w", err)
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return NodeCredential{}, err
+	}
+	pair.Leaf = leaf
+	if len(pair.Certificate) != 2 {
+		return NodeCredential{}, fmt.Errorf("the node certificate's chain holds %d certificates, want it and the node CA's", len(pair.Certificate))
+	}
+	nodeCA, err := x509.ParseCertificate(pair.Certificate[1])
+	if err != nil {
+		return NodeCredential{}, err
+	}
+	root, err := ParseCertificate([]byte(osCA))
+	if err != nil {
+		return NodeCredential{}, fmt.Errorf("the OS CA: %w", err)
+	}
+	if !IsNodeCA(nodeCA) {
+		return NodeCredential{}, errors.New("the node certificate's issuer is not a node CA")
+	}
+	roots, intermediates := x509.NewCertPool(), x509.NewCertPool()
+	roots.AddCert(root)
+	intermediates.AddCert(nodeCA)
+	if at.IsZero() {
+		at = leaf.NotBefore
+	}
+	for _, usage := range nodeCAUsages {
+		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{usage}, CurrentTime: at}); err != nil {
+			return NodeCredential{}, fmt.Errorf("the node certificate does not verify against the OS CA: %w", err)
+		}
+	}
+	return NodeCredential{Leaf: leaf, Chain: chain, TLS: pair}, nil
+}
+
+// RenewAt is when a certificate is renewed: once two thirds of its lifetime have passed.
+func RenewAt(cert *x509.Certificate) time.Time {
+	return cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore) * 2 / 3)
 }
 
 // Leaf describes a certificate IssueLeaf issues.
@@ -308,9 +421,27 @@ func newTemplate(commonName string, organization []string, now time.Time, validi
 }
 
 func issue(ca CertKey, template *x509.Certificate, now time.Time) (CertKey, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return CertKey{}, err
+	}
+	der, err := issueFor(ca, template, &key.PublicKey, now)
+	if err != nil {
+		return CertKey{}, err
+	}
+	keyPEM, err := encodeKey(key)
+	if err != nil {
+		return CertKey{}, err
+	}
+	return CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), Key: keyPEM}, nil
+}
+
+// issueFor signs a certificate for pub with ca, never beyond the CA's validity, and returns it
+// in DER.
+func issueFor(ca CertKey, template *x509.Certificate, pub crypto.PublicKey, now time.Time) ([]byte, error) {
 	caCert, caKey, err := ca.Parse()
 	if err != nil {
-		return CertKey{}, fmt.Errorf("CA: %w", err)
+		return nil, fmt.Errorf("CA: %w", err)
 	}
 	if template.NotAfter.After(caCert.NotAfter) {
 		template.NotAfter = caCert.NotAfter
@@ -322,17 +453,13 @@ func issue(ca CertKey, template *x509.Certificate, now time.Time) (CertKey, erro
 	// Backdating would still leave a window, already past, under a CA that expired less than
 	// clockSkew ago.
 	if !caCert.NotAfter.After(now) {
-		return CertKey{}, fmt.Errorf("the CA expired %s", caCert.NotAfter.UTC().Format(time.RFC3339))
+		return nil, fmt.Errorf("the CA expired %s", caCert.NotAfter.UTC().Format(time.RFC3339))
 	}
 	if !template.NotAfter.After(template.NotBefore) {
-		return CertKey{}, fmt.Errorf("the certificate would never be valid: the CA is valid from %s until %s",
+		return nil, fmt.Errorf("the certificate would never be valid: the CA is valid from %s until %s",
 			caCert.NotBefore.UTC().Format(time.RFC3339), caCert.NotAfter.UTC().Format(time.RFC3339))
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return CertKey{}, err
-	}
-	return sign(template, caCert, key, caKey)
+	return x509.CreateCertificate(rand.Reader, template, caCert, pub, caKey)
 }
 
 func sign(template, parent *x509.Certificate, key, parentKey *ecdsa.PrivateKey) (CertKey, error) {
@@ -340,12 +467,17 @@ func sign(template, parent *x509.Certificate, key, parentKey *ecdsa.PrivateKey) 
 	if err != nil {
 		return CertKey{}, err
 	}
-	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	keyPEM, err := encodeKey(key)
 	if err != nil {
 		return CertKey{}, err
 	}
-	return CertKey{
-		Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
-		Key:         string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})),
-	}, nil
+	return CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), Key: keyPEM}, nil
+}
+
+func encodeKey(key *ecdsa.PrivateKey) (string, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})), nil
 }

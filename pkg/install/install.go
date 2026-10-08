@@ -7,7 +7,6 @@ package install
 import (
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,8 +60,9 @@ type Request struct {
 	Section storage.Section
 	// Kubernetes is the identity's Kubernetes section; nil on a node of a role without Kubernetes.
 	Kubernetes *manifest.KubernetesIdentity
-	// NodeCertificate and NodeKey are what chalkd serves once the node is installed; CA issues
-	// the client certificates it accepts. All are PEM.
+	// NodeCertificate, the node certificate followed by the node CA's, and NodeKey are what chalkd
+	// serves once the node is installed; CA, the OS CA, issues the client certificates it accepts
+	// and the node CA. All are PEM.
 	NodeCertificate, NodeKey, CA []byte
 	// FallbackSecret is enrolled as the second keyslot of every encrypted volume.
 	FallbackSecret string
@@ -89,11 +89,13 @@ func (r Request) validate() error {
 	if r.Section.Fallback != storage.FallbackNone && r.FallbackSecret == "" {
 		return fmt.Errorf("the node's fallback is %s, but no fallback secret was sent", r.Section.Fallback)
 	}
-	if _, err := tls.X509KeyPair(r.NodeCertificate, r.NodeKey); err != nil {
-		return fmt.Errorf("node certificate: %w", err)
-	}
 	if _, err := pki.ParseCertificate(r.CA); err != nil {
 		return fmt.Errorf("CA certificate: %w", err)
+	}
+	// A node whose certificate does not chain through the node CA to the OS CA could not be
+	// reached once installed. The node's clock may not be set yet, so dates are not checked.
+	if _, err := pki.VerifyNode(string(r.NodeCertificate), string(r.NodeKey), string(r.CA), time.Time{}); err != nil {
+		return err
 	}
 	if len(r.KubernetesShare) > 0 {
 		share, err := kpki.ParseShare(r.KubernetesShare)

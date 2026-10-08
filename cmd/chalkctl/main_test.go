@@ -130,7 +130,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	cert := ta.secrets.OSCA
 	var err error
 	if s.Mode == nodev1.Mode_MODE_NORMAL {
-		cert, err = pki.IssueNode(ta.secrets.OSCA, "n1", []string{"n1"}, nil, time.Now())
+		cert, err = pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
 	} else {
 		cert, err = pki.SelfSigned("chalkd", time.Now())
 	}
@@ -182,7 +182,7 @@ func TestGenSecretsPlaintext(t *testing.T) {
 	}
 	var pub pki.Public
 	pubData, _ := os.ReadFile(filepath.Join(out, "secrets.pub.json"))
-	if err := json.Unmarshal(pubData, &pub); err != nil || pub.OSCA.Certificate == "" || pub.OSCA.Key != "" || bytes.Contains(pubData, []byte("PRIVATE")) {
+	if err := json.Unmarshal(pubData, &pub); err != nil || pub.OSCA.Certificate == "" || pub.OSCA.Key != "" || pub.NodeCA.Certificate == "" || pub.NodeCA.Key != "" || bytes.Contains(pubData, []byte("PRIVATE")) {
 		t.Errorf("secrets.pub.json = %s, %v", pubData, err)
 	}
 	err = ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", out})
@@ -255,15 +255,16 @@ func TestInstallInPlace(t *testing.T) {
 	if got.FallbackSecret != key {
 		t.Errorf("fallback secret = %q, want the node's recovery key", got.FallbackSecret)
 	}
-	cert, _, err := (pki.CertKey{Certificate: string(got.NodeCertificate), Key: string(got.NodeKey)}).Parse()
+	nodeCert, err := pki.VerifyNode(string(got.NodeCertificate), string(got.NodeKey), ta.secrets.OSCA.Certificate, time.Now())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("node certificate: %v", err)
 	}
-	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
-	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool, DNSName: "n1"}); err != nil {
+	cert := nodeCert.Leaf
+	if err := cert.VerifyHostname("n1"); err != nil {
 		t.Errorf("node certificate: %v", err)
+	}
+	if issuer, _ := pki.ParseCertificate([]byte(ta.secrets.NodeCA.Certificate)); cert.CheckSignatureFrom(issuer) != nil {
+		t.Error("the node certificate is not the node CA's")
 	}
 	if len(cert.IPAddresses) != 1 || !cert.IPAddresses[0].Equal(net.ParseIP("10.0.0.11")) {
 		t.Errorf("node certificate addresses = %v, want the static address", cert.IPAddresses)
@@ -819,5 +820,41 @@ func TestCreateNewRemovesPartialFile(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != "data" {
 		t.Errorf("file = %q, want the existing file kept", got)
+	}
+}
+
+func TestAdminCertificateLastsOneRun(t *testing.T) {
+	ta := newTestApp(t)
+	pair, err := adminCertificate(ta.secrets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	chains, err := cert.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role, _ := pki.ClientRole(chains); role != pki.RoleAdmin || cert.Subject.CommonName != "chalkctl" {
+		t.Errorf("certificate %s has role %q", cert.Subject, role)
+	}
+	if got := cert.NotAfter.Sub(time.Now()); got > time.Hour || got < 59*time.Minute {
+		t.Errorf("the admin certificate lasts another %v, want an hour", got)
+	}
+}
+
+func TestOlderSecretsFilesAreRefused(t *testing.T) {
+	ta := newTestApp(t)
+	for _, version := range []string{"1", "2"} {
+		writeFile(t, filepath.Join(ta.dir, "secrets.json"), `{"version": `+version+`, "osCA": {}, "admin": {}}`)
+		err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, "127.0.0.1:1"))
+		if err == nil || !strings.Contains(err.Error(), "version "+version+" is not supported") || !strings.Contains(err.Error(), "chalkctl gen secrets") {
+			t.Errorf("version %s: %v, want a refusal naming chalkctl gen secrets", version, err)
+		}
 	}
 }

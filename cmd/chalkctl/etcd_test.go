@@ -25,7 +25,7 @@ func etcdNode(t *testing.T, ta *testApp) *chalkd.Server {
 	withKind(t, ta, manifest.KindControlPlane)
 	s, _ := kubernetesNode(t, ta)
 	k := s.Kubernetes
-	share := kpki.ControlPlaneShare(ta.secrets.Kubernetes)
+	share := kpki.ControlPlaneShare(&ta.secrets.Kubernetes)
 	data, err := share.Encode()
 	if err != nil {
 		t.Fatal(err)

@@ -23,11 +23,15 @@ func writeFile(t *testing.T, path, content string) {
 
 func TestLoadCredentials(t *testing.T) {
 	now := time.Now()
-	ca, err := pki.NewCA("chalkos OS CA", now)
+	ca, err := pki.NewOSCA(now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodeCert, err := pki.IssueNode(ca, "n1", []string{"n1"}, nil, now)
+	nodeCA, err := pki.NewNodeCA(ca, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeCert, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}

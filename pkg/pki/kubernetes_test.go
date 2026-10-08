@@ -1,7 +1,6 @@
 package pki
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -11,13 +10,10 @@ import (
 
 func TestGenerateSecretsHasKubernetes(t *testing.T) {
 	s := generate(t)
-	if s.Version != 2 {
-		t.Errorf("version = %d, want 2", s.Version)
+	if s.Version != 3 {
+		t.Errorf("version = %d, want 3", s.Version)
 	}
-	k, err := s.RequireKubernetes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	k := s.Kubernetes
 	for name, ca := range map[string]CertKey{"ca": k.CA, "frontProxyCA": k.FrontProxyCA, "etcdCA": k.EtcdCA} {
 		cert, _, err := ca.Parse()
 		if err != nil {
@@ -34,55 +30,13 @@ func TestGenerateSecretsHasKubernetes(t *testing.T) {
 		t.Errorf("encryption key has %d bytes", len(k.EncryptionKey))
 	}
 	pub := s.Public()
-	if pub.Kubernetes == nil || pub.Kubernetes.CA.Certificate != k.CA.Certificate || pub.Kubernetes.CA.Key != "" ||
+	if pub.Kubernetes.CA.Certificate != k.CA.Certificate || pub.Kubernetes.CA.Key != "" ||
 		pub.Kubernetes.EtcdCA.Key != "" || pub.Kubernetes.FrontProxyCA.Key != "" {
 		t.Errorf("public Kubernetes part = %+v, want the CA certificates only", pub.Kubernetes)
 	}
 }
 
-// versionOne is a secrets file as chalkos wrote it before the Kubernetes secrets.
-func versionOne(t *testing.T) Secrets {
-	t.Helper()
-	s := generate(t)
-	s.Version = 1
-	s.Kubernetes = nil
-	return s
-}
-
-func TestReadSecretsVersionOne(t *testing.T) {
-	v1 := versionOne(t)
-	data, _ := v1.Encode()
-	s, err := ReadSecrets(data, noIdentities)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.RequireKubernetes(); err == nil || !strings.Contains(err.Error(), "chalkctl secrets upgrade") {
-		t.Errorf("RequireKubernetes = %v, want an error naming chalkctl secrets upgrade", err)
-	}
-}
-
-func TestUpgradeKeepsSecrets(t *testing.T) {
-	v1 := versionOne(t)
-	s, err := Upgrade(v1, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if s.Version != 2 || s.OSCA != v1.OSCA || s.Admin != v1.Admin || !bytes.Equal(s.RecoverySecret, v1.RecoverySecret) {
-		t.Error("upgrade changed the OS CA, the admin certificate or the recovery secret")
-	}
-	if _, err := Upgrade(s, now); err == nil {
-		t.Error("upgraded a version 2 file")
-	}
-}
-
 func TestValidateRejectsKubernetesMismatch(t *testing.T) {
-	missing := generate(t)
-	missing.Kubernetes = nil
-	extra := versionOne(t)
-	extra.Kubernetes = generate(t).Kubernetes
 	leaf, err := SelfSigned("leaf", now)
 	if err != nil {
 		t.Fatal(err)
@@ -94,11 +48,9 @@ func TestValidateRejectsKubernetesMismatch(t *testing.T) {
 	badSA := generate(t)
 	badSA.Kubernetes.ServiceAccountKey = "not a key"
 	for name, s := range map[string]Secrets{
-		"version 2 without kubernetes": missing,
-		"version 1 with kubernetes":    extra,
-		"etcd CA not a CA":             notCA,
-		"short encryption key":         shortKey,
-		"service account key":          badSA,
+		"etcd CA not a CA":     notCA,
+		"short encryption key": shortKey,
+		"service account key":  badSA,
 	} {
 		if err := s.Validate(); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -122,6 +74,7 @@ func TestValidateRejectsSharedCAs(t *testing.T) {
 		{"etcd CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.etcdCA", func(s *Secrets) { s.Kubernetes.EtcdCA = s.Kubernetes.CA }},
 		{"front-proxy CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.frontProxyCA", func(s *Secrets) { s.Kubernetes.FrontProxyCA = s.Kubernetes.CA }},
 		{"etcd CA is the OS CA", "osCA", "kubernetes.etcdCA", func(s *Secrets) { s.Kubernetes.EtcdCA = s.OSCA }},
+		{"Kubernetes CA is the node CA", "nodeCA", "kubernetes.ca", func(s *Secrets) { s.Kubernetes.CA = s.NodeCA }},
 	} {
 		s := generate(t)
 		tc.edit(&s)

@@ -170,29 +170,3 @@ func ParseECKey(data string) (*ecdsa.PrivateKey, error) {
 	}
 	return key, nil
 }
-
-// errNoKubernetes names the command that adds the Kubernetes secrets to a version 1 file.
-var errNoKubernetes = errors.New("the secrets file has no Kubernetes secrets (version 1); add them with chalkctl secrets upgrade --out FILE")
-
-// RequireKubernetes returns the Kubernetes secrets, or an error naming chalkctl secrets
-// upgrade when the file predates them.
-func (s Secrets) RequireKubernetes() (*KubernetesSecrets, error) {
-	if s.Kubernetes == nil {
-		return nil, errNoKubernetes
-	}
-	return s.Kubernetes, nil
-}
-
-// Upgrade adds the Kubernetes secrets to a version 1 secrets file and keeps everything else.
-func Upgrade(s Secrets, now time.Time) (Secrets, error) {
-	if s.Version != 1 {
-		return Secrets{}, fmt.Errorf("the secrets file is version %d; only version 1 is upgraded", s.Version)
-	}
-	k, err := NewKubernetesSecrets(now)
-	if err != nil {
-		return Secrets{}, err
-	}
-	s.Version = SecretsVersion
-	s.Kubernetes = k
-	return s, nil
-}

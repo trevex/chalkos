@@ -205,7 +205,7 @@ lib.runTests {
   testRoleCarriesOSCA = {
     expr =
       let
-        pub = builtins.toFile "secrets.pub.json" ''{"version": 1, "osCA": {"certificate": "PEM"}}'';
+        pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
       in
       {
         withCA = (role (cluster [ { chalkos.cluster.osCA = pub; } ])).environment.etc ? "chalkos/os-ca.crt";
@@ -216,10 +216,32 @@ lib.runTests {
       withoutCA = false;
     };
   };
+  testOSCARefusesOlderSecrets = {
+    expr =
+      let
+        osCA =
+          version:
+          (role (cluster [
+            {
+              chalkos.cluster.osCA = builtins.toFile "secrets.pub.json" ''{"version": ${toString version}, "osCA": {"certificate": "PEM"}}'';
+            }
+          ])).environment.etc."chalkos/os-ca.crt".source.drvPath;
+      in
+      map (v: fails (osCA v)) [
+        1
+        2
+        3
+      ];
+    expected = [
+      true
+      true
+      false
+    ];
+  };
   testClusterBuildsInstaller = {
     expr =
       let
-        pub = builtins.toFile "secrets.pub.json" ''{"version": 1, "osCA": {"certificate": "PEM"}}'';
+        pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
         installer = (cluster [ { chalkos.cluster.osCA = pub; } ]).installer;
       in
       lib.isDerivation installer && lib.hasInfix "chalkos-installer" installer.name;

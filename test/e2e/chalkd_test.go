@@ -74,11 +74,9 @@ func issueClientCertificate(role string) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	ck := s.Admin
-	if role != pki.RoleAdmin {
-		if ck, err = pki.IssueClient(s.OSCA, role, role, time.Now()); err != nil {
-			return nil, err
-		}
+	ck, err := pki.IssueClient(s.OSCA, role, role, time.Hour, time.Now())
+	if err != nil {
+		return nil, err
 	}
 	pair, err := tls.X509KeyPair([]byte(ck.Certificate), []byte(ck.Key))
 	if err != nil {

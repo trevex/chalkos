@@ -14,41 +14,41 @@ import (
 	"filippo.io/age/armor"
 )
 
-// SecretsVersion is the version of the secrets file this package writes. It reads version 1
-// too, which lacks the Kubernetes secrets, so chalkctl secrets upgrade can add them and commands
-// that do not need them keep working.
-const SecretsVersion = 2
+// SecretsVersion is the only version of the secrets file this package reads and writes.
+const SecretsVersion = 3
 
-// Secrets is the cluster's secrets file. It is written once by chalkctl gen secrets and only read
-// afterwards, so it can live in any secret manager.
+// Secrets is the cluster's secrets file. It is written by chalkctl gen secrets and, with a new
+// node CA, by chalkctl node-ca rotate, always to a new file, so it can live in any secret manager.
 type Secrets struct {
 	Version int `json:"version"`
-	// OSCA issues node certificates and client certificates for chalkd.
+	// OSCA is the root every node and client of chalkd trusts. It issues client certificates and
+	// the node CA, and never leaves the secrets file with its key.
 	OSCA CertKey `json:"osCA"`
-	// Admin is a client certificate with the admin role.
-	Admin CertKey `json:"admin"`
+	// NodeCA issues node certificates; control-plane nodes hold it to renew them.
+	NodeCA CertKey `json:"nodeCA"`
 	// RecoverySecret is what each node's recovery key is derived from.
 	RecoverySecret []byte `json:"recoverySecret"`
-	// Kubernetes holds the secrets of the Kubernetes control plane; version 1 files lack them.
-	Kubernetes *KubernetesSecrets `json:"kubernetes,omitempty"`
+	// Kubernetes holds the secrets of the Kubernetes control plane.
+	Kubernetes KubernetesSecrets `json:"kubernetes"`
 }
 
 // Public is the public half of the secrets file, secrets.pub.json, which the cluster definition
 // references to bake the OS CA into images.
 type Public struct {
-	Version    int               `json:"version"`
-	OSCA       CertKey           `json:"osCA"`
-	Kubernetes *KubernetesPublic `json:"kubernetes,omitempty"`
+	Version    int              `json:"version"`
+	OSCA       CertKey          `json:"osCA"`
+	NodeCA     CertKey          `json:"nodeCA"`
+	Kubernetes KubernetesPublic `json:"kubernetes"`
 }
 
-// GenerateSecrets creates the OS CA, an admin client certificate, the recovery secret and the
-// Kubernetes secrets.
+// GenerateSecrets creates the OS CA, the node CA, the recovery secret and the Kubernetes
+// secrets.
 func GenerateSecrets(now time.Time) (Secrets, error) {
-	ca, err := NewCA("chalkos OS CA", now)
+	ca, err := NewOSCA(now)
 	if err != nil {
 		return Secrets{}, err
 	}
-	admin, err := IssueClient(ca, "admin", RoleAdmin, now)
+	nodeCA, err := NewNodeCA(ca, now)
 	if err != nil {
 		return Secrets{}, err
 	}
@@ -60,7 +60,7 @@ func GenerateSecrets(now time.Time) (Secrets, error) {
 	if err != nil {
 		return Secrets{}, err
 	}
-	return Secrets{Version: SecretsVersion, OSCA: ca, Admin: admin, RecoverySecret: secret, Kubernetes: k}, nil
+	return Secrets{Version: SecretsVersion, OSCA: ca, NodeCA: nodeCA, RecoverySecret: secret, Kubernetes: *k}, nil
 }
 
 // String returns a redacted summary, so logging or an error wrapping a Secrets never leaks the
@@ -81,58 +81,66 @@ func (s Secrets) GoString() string {
 
 // Public returns the parts of the secrets that may be published.
 func (s Secrets) Public() Public {
-	p := Public{Version: s.Version, OSCA: CertKey{Certificate: s.OSCA.Certificate}}
-	if s.Kubernetes != nil {
-		p.Kubernetes = s.Kubernetes.Public()
+	return Public{
+		Version:    s.Version,
+		OSCA:       CertKey{Certificate: s.OSCA.Certificate},
+		NodeCA:     CertKey{Certificate: s.NodeCA.Certificate},
+		Kubernetes: *s.Kubernetes.Public(),
 	}
-	return p
 }
 
-// Validate checks that every secret is present, that the certificates belong to their keys, that
-// osCA is a CA certificate, that admin verifies against it and grants the admin role, and that a
-// version 2 file has valid Kubernetes secrets whose CAs differ from each other and from osCA.
+// Validate checks the version, that every secret is present, that the certificates belong to
+// their keys, that osCA is a CA that may issue the node CA, that nodeCA is a node CA osCA
+// issued, that the Kubernetes secrets are valid, and that no two CAs share a key.
 func (s Secrets) Validate() error {
-	switch {
-	case s.Version != 1 && s.Version != SecretsVersion:
-		return fmt.Errorf("secrets file version %d is not supported (want 1 or %d)", s.Version, SecretsVersion)
-	case s.Version == 1 && s.Kubernetes != nil:
-		return errors.New("a version 1 secrets file has no kubernetes section")
-	case s.Version == SecretsVersion && s.Kubernetes == nil:
-		return errors.New("kubernetes: missing")
+	if s.Version != SecretsVersion {
+		return fmt.Errorf("version %d is not supported; chalkos reads version %d only, so generate new secrets with chalkctl gen secrets", s.Version, SecretsVersion)
 	}
 	if err := ValidateCA(s.OSCA); err != nil {
 		return fmt.Errorf("osCA: %w", err)
 	}
-	ca, _, err := s.OSCA.Parse()
-	if err != nil {
-		return fmt.Errorf("osCA: %w", err)
-	}
-	admin, _, err := s.Admin.Parse()
-	if err != nil {
-		return fmt.Errorf("admin: %w", err)
-	}
-	roots := x509.NewCertPool()
-	roots.AddCert(ca)
-	if _, err := admin.Verify(x509.VerifyOptions{
-		Roots:       roots,
-		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-		CurrentTime: admin.NotBefore,
-	}); err != nil {
-		return fmt.Errorf("admin: does not verify against osCA: %w", err)
-	}
-	if role, ok := Role(admin); !ok || role != RoleAdmin {
-		return errors.New("admin: certificate does not grant the admin role")
+	if err := ValidateNodeCA(s.NodeCA, s.OSCA); err != nil {
+		return fmt.Errorf("nodeCA: %w", err)
 	}
 	if len(s.RecoverySecret) != RecoverySecretSize {
 		return fmt.Errorf("recoverySecret must be %d bytes", RecoverySecretSize)
 	}
-	if s.Kubernetes != nil {
-		if err := s.Kubernetes.Validate(); err != nil {
-			return err
-		}
-		if err := RequireDistinctCAs(append([]NamedCA{{"osCA", s.OSCA}}, s.Kubernetes.cas()...)...); err != nil {
-			return err
-		}
+	if err := s.Kubernetes.Validate(); err != nil {
+		return err
+	}
+	return RequireDistinctCAs(append([]NamedCA{{"osCA", s.OSCA}, {"nodeCA", s.NodeCA}}, s.Kubernetes.cas()...)...)
+}
+
+// ValidateNodeCA checks that nodeCA, with its key, is a node CA that osCA issued, and that osCA
+// may issue it. Dates are not checked: an expired node CA is replaced, not refused.
+func ValidateNodeCA(nodeCA, osCA CertKey) error {
+	if err := ValidateCA(nodeCA); err != nil {
+		return err
+	}
+	return verifyNodeCA(nodeCA.Certificate, osCA.Certificate)
+}
+
+// verifyNodeCA checks the certificate of a node CA against the OS CA's.
+func verifyNodeCA(nodeCA, osCA string) error {
+	cert, err := ParseCertificate([]byte(nodeCA))
+	if err != nil {
+		return err
+	}
+	root, err := ParseCertificate([]byte(osCA))
+	if err != nil {
+		return fmt.Errorf("the OS CA: %w", err)
+	}
+	if !IsNodeCA(cert) {
+		return errors.New("not a node CA: it must be a CA for TLS servers and clients that issues no CA")
+	}
+	// A root that issues leaves only would refuse every node certificate's chain.
+	if root.MaxPathLenZero {
+		return errors.New("the OS CA issues no intermediate CA, so it cannot have a node CA")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(root)
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: nodeCAUsages, CurrentTime: cert.NotBefore}); err != nil {
+		return fmt.Errorf("does not verify against the OS CA: %w", err)
 	}
 	return nil
 }

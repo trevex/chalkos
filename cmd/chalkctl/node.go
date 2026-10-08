@@ -74,10 +74,19 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 	return &target{cluster: c, name: name, node: node, secrets: secrets, addr: addr}, nil
 }
 
+// adminValidity is how long the admin certificate chalkctl issues itself from the secrets file
+// lives: it serves one run and is never stored.
+const adminValidity = time.Hour
+
+// adminCertificate issues chalkctl an admin certificate from the OS CA for this run.
 func adminCertificate(s pki.Secrets) (*tls.Certificate, error) {
-	cert, err := tls.X509KeyPair([]byte(s.Admin.Certificate), []byte(s.Admin.Key))
+	ck, err := pki.IssueClient(s.OSCA, "chalkctl", pki.RoleAdmin, adminValidity, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("the admin certificate: %w", err)
+		return nil, fmt.Errorf("issue an admin certificate: %w", err)
+	}
+	cert, err := tls.X509KeyPair([]byte(ck.Certificate), []byte(ck.Key))
+	if err != nil {
+		return nil, err
 	}
 	return &cert, nil
 }
@@ -279,11 +288,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	hostnames := []string{t.name}
-	if h := t.node.Identity.Hostname; h != "" && h != t.name {
-		hostnames = append(hostnames, h)
-	}
-	nodeCert, err := pki.IssueNode(t.secrets.OSCA, t.name, hostnames, ipAddresses(t.node.Identity.StaticAddresses()), time.Now())
+	nodeCert, err := pki.IssueNode(t.secrets.NodeCA, nodeNames(t), time.Now())
 	if err != nil {
 		return err
 	}
@@ -797,6 +802,16 @@ func imageFiles(path string) (raw, definitions string, err error) {
 		raw = raws[0]
 	}
 	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
+}
+
+// nodeNames are what the node certificate of the target is for: its name, its hostname and its
+// static addresses.
+func nodeNames(t *target) pki.NodeNames {
+	hostnames := []string{t.name}
+	if h := t.node.Identity.Hostname; h != "" && h != t.name {
+		hostnames = append(hostnames, h)
+	}
+	return pki.NodeNames{CommonName: t.name, DNSNames: hostnames, IPs: ipAddresses(t.node.Identity.StaticAddresses())}
 }
 
 // ipAddresses parses the addresses that are IPs, for the node certificate.

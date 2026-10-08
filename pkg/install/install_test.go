@@ -373,11 +373,15 @@ func testSection(policy, fallback, systemRef string) storage.Section {
 func testRequest(t *testing.T, section storage.Section) Request {
 	t.Helper()
 	now := time.Now()
-	ca, err := pki.NewCA("chalkos OS CA", now)
+	ca, err := pki.NewOSCA(now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, err := pki.IssueNode(ca, "n1", []string{"n1"}, []net.IP{net.ParseIP("10.0.0.21")}, now)
+	nodeCA, err := pki.NewNodeCA(ca, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}, IPs: []net.IP{net.ParseIP("10.0.0.21")}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,6 +589,10 @@ func TestInPlaceRefusals(t *testing.T) {
 			other := testRequest(t, req.Section)
 			req.NodeKey = other.NodeKey
 		}, "node certificate"},
+		{"node certificate of another OS CA", func(t *testing.T, i *Installer, req *Request) {
+			other := testRequest(t, req.Section)
+			req.CA = other.CA
+		}, "does not verify against the OS CA"},
 		{"unknown policy", func(t *testing.T, i *Installer, req *Request) {
 			req.Section.Encryption = "kms"
 		}, "kms"},

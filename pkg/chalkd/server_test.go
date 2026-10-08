@@ -163,11 +163,12 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	return s, r
 }
 
-// creds holds the OS CA and client certificates of each role.
+// creds holds the OS CA, the node CA, client certificates of each role and the node certificate.
 type creds struct {
 	ca      pki.CertKey
 	pool    *x509.CertPool
 	clients map[string]*tls.Certificate
+	nodeCA  pki.CertKey
 	node    pki.CertKey
 }
 
@@ -182,24 +183,25 @@ func newCreds(t *testing.T) creds {
 	c := creds{ca: ca, pool: x509.NewCertPool(), clients: map[string]*tls.Certificate{}}
 	c.pool.AddCert(cert)
 	for _, role := range []string{pki.RoleAdmin, pki.RoleOperator, pki.RoleReader} {
-		ck, err := pki.IssueClient(ca, role, role, now)
+		ck, err := pki.IssueClient(ca, role, role, time.Hour, now)
 		if err != nil {
 			t.Fatal(err)
 		}
 		pair, _ := tls.X509KeyPair([]byte(ck.Certificate), []byte(ck.Key))
 		c.clients[role] = &pair
 	}
-	if c.node, err = pki.IssueNode(ca, "n1", []string{"n1"}, nil, now); err != nil {
+	nodeCA, err := pki.NewNodeCA(ca, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.nodeCA = nodeCA
+	if c.node, err = pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, now); err != nil {
 		t.Fatal(err)
 	}
 	pair, _ := tls.X509KeyPair([]byte(c.node.Certificate), []byte(c.node.Key))
 	c.clients[pki.RoleNode] = &pair
 	c.clients[unknownOrganization] = clientWithOrganization(t, ca, []string{"root"})
 	c.clients[noOrganization] = clientWithOrganization(t, ca, nil)
-	nodeCA, err := pki.NewNodeCA(ca, now)
-	if err != nil {
-		t.Fatal(err)
-	}
 	admin := clientWithOrganization(t, nodeCA, []string{pki.RoleAdmin})
 	nodeCACert, _ := pki.ParseCertificate([]byte(nodeCA.Certificate))
 	admin.Certificate = append(admin.Certificate, nodeCACert.Raw)
@@ -348,10 +350,8 @@ func TestAuthorisation(t *testing.T) {
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,
 			// Whatever its Organization says, a certificate of the node CA is a node's.
-			nodeCAAdmin: deniedEverything,
-			// A node certificate carries no ClientAuth extended key usage, so presenting it as a
-			// client certificate fails the TLS handshake itself, before authorisation runs.
-			pki.RoleNode: {"Info": connect.CodeUnavailable},
+			nodeCAAdmin:  deniedEverything,
+			pki.RoleNode: deniedEverything,
 		}},
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},

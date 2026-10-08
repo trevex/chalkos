@@ -104,9 +104,10 @@ func TestInsecureReportsFingerprint(t *testing.T) {
 
 func TestCAVerifiesNodeName(t *testing.T) {
 	now := time.Now()
-	ca, _ := pki.NewCA("chalkos OS CA", now)
-	node, _ := pki.IssueNode(ca, "n1", []string{"n1"}, nil, now)
-	admin, _ := pki.IssueClient(ca, "admin", pki.RoleAdmin, now)
+	ca, _ := pki.NewOSCA(now)
+	nodeCA, _ := pki.NewNodeCA(ca, now)
+	node, _ := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, now)
+	admin, _ := pki.IssueClient(ca, "admin", pki.RoleAdmin, time.Hour, now)
 	h, addr := serve(t, node)
 	caCert, _ := pki.ParseCertificate([]byte(ca.Certificate))
 	pool := x509.NewCertPool()
@@ -128,7 +129,7 @@ func TestCAVerifiesNodeName(t *testing.T) {
 	if err := info(wrong); err == nil {
 		t.Error("accepted a node certificate issued for another node")
 	}
-	otherCA, _ := pki.NewCA("other", now)
+	otherCA, _ := pki.NewOSCA(now)
 	otherCert, _ := pki.ParseCertificate([]byte(otherCA.Certificate))
 	otherPool := x509.NewCertPool()
 	otherPool.AddCert(otherCert)
