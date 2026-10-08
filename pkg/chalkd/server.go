@@ -80,8 +80,10 @@ type Server struct {
 	// AnyClient accepts clients without certificates, as admins. Only maintenance mode on an
 	// image without an OS CA does.
 	AnyClient bool
-	// Fingerprint is the SHA-256 of the certificate chalkd serves.
+	// Fingerprint is the SHA-256 of the certificate chalkd serves in maintenance mode.
 	Fingerprint string
+	// Certificate is the node certificate chalkd serves in normal mode.
+	Certificate *NodeCertificate
 	Paths       Paths
 	Run         node.Runner
 	Host        storage.Host
@@ -195,9 +197,10 @@ func (a authorizer) WrapStreamingHandler(next connect.StreamingHandlerFunc) conn
 	}
 }
 
-// TLSConfig serves cert and, with clientCAs, requires client certificates they issued.
-func TLSConfig(cert tls.Certificate, clientCAs *x509.CertPool) *tls.Config {
-	cfg := &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13}
+// TLSConfig serves the certificate getCertificate returns for each connection and, with
+// clientCAs, requires client certificates that verify against them.
+func TLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error), clientCAs *x509.CertPool) *tls.Config {
+	cfg := &tls.Config{GetCertificate: getCertificate, MinVersion: tls.VersionTLS13}
 	if clientCAs != nil {
 		cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		cfg.ClientCAs = clientCAs

@@ -486,8 +486,7 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 
 	for name, want := range map[string]string{
 		"identity.json":   string(req.Identity),
-		"chalkd/node.crt": string(req.NodeCertificate),
-		"chalkd/node.key": string(req.NodeKey),
+		"chalkd/node.pem": string(req.NodeCertificate) + string(req.NodeKey),
 		"chalkd/ca.crt":   string(req.CA),
 		"installed":       "2026-10-06T12:00:00Z\n",
 	} {
@@ -496,8 +495,8 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 			t.Errorf("%s = %q, %v; want %q", name, got, err, want)
 		}
 	}
-	if info, err := os.Stat(filepath.Join(i.StateDir, "chalkd/node.key")); err != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("node.key mode = %v, %v; want 0600", info.Mode(), err)
+	if info, err := os.Stat(filepath.Join(i.StateDir, "chalkd/node.pem")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("node.pem mode = %v, %v; want 0600", info.Mode(), err)
 	}
 	if info, err := os.Stat(filepath.Join(i.StateDir, "chalkd")); err != nil || info.Mode().Perm() != 0o700 {
 		t.Errorf("chalkd/ mode = %v, %v; want 0700", info.Mode(), err)

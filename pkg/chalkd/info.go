@@ -24,7 +24,7 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		ImageId:     release["IMAGE_ID"],
 		Installer:   s.Installer,
 		SecureBoot:  s.secureBoot(),
-		Fingerprint: s.Fingerprint,
+		Fingerprint: s.CurrentFingerprint(),
 	}
 	if boot, err := s.Host.ResolvePath(s.Paths.BootDisk); err == nil {
 		resp.BootDisk = boot.Device
@@ -120,4 +120,13 @@ func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksReque
 		resp.Disks = append(resp.Disks, disk)
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// CurrentFingerprint returns the SHA-256 of the certificate chalkd serves now, which changes
+// when the node certificate is renewed.
+func (s *Server) CurrentFingerprint() string {
+	if s.Certificate != nil {
+		return s.Certificate.Fingerprint()
+	}
+	return s.Fingerprint
 }

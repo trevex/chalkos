@@ -72,9 +72,32 @@ func main() {
 // credentials are what chalkd serves with in its mode.
 type credentials struct {
 	mode nodev1.Mode
-	cert tls.Certificate
+	// node is the node certificate of normal mode, maintenance the self-signed certificate of
+	// maintenance mode.
+	node        *chalkd.NodeCertificate
+	maintenance *tls.Certificate
 	// clientCAs issue the client certificates chalkd requires; nil accepts any client.
 	clientCAs *x509.CertPool
+}
+
+// getCertificate serves the certificate of the mode.
+func (c credentials) getCertificate() func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if c.node != nil {
+		return c.node.GetCertificate
+	}
+	return chalkd.StaticCertificate(c.maintenance)
+}
+
+// fingerprint is the SHA-256 of the certificate served now.
+func (c credentials) fingerprint() (string, error) {
+	if c.node != nil {
+		return c.node.Fingerprint(), nil
+	}
+	leaf, err := x509.ParseCertificate(c.maintenance.Certificate[0])
+	if err != nil {
+		return "", err
+	}
+	return pki.Fingerprint(leaf.Raw), nil
 }
 
 // loadCredentials picks the mode: an installed node serves its node certificate and requires
@@ -88,22 +111,22 @@ func loadCredentials(stateDir, imageCA, runDir string, now time.Time) (credentia
 	}
 	if installed {
 		dir := filepath.Join(stateDir, "chalkd")
-		cert, err := tls.LoadX509KeyPair(filepath.Join(dir, "node.crt"), filepath.Join(dir, "node.key"))
-		if err != nil {
-			return credentials{}, fmt.Errorf("load the node certificate: %w", err)
-		}
-		pool, err := loadPool(filepath.Join(dir, "ca.crt"))
+		node, err := chalkd.LoadNodeCertificate(dir)
 		if err != nil {
 			return credentials{}, err
 		}
-		return credentials{mode: nodev1.Mode_MODE_NORMAL, cert: cert, clientCAs: pool}, nil
+		pool, err := loadPool(filepath.Join(dir, chalkd.CAFile))
+		if err != nil {
+			return credentials{}, err
+		}
+		return credentials{mode: nodev1.Mode_MODE_NORMAL, node: node, clientCAs: pool}, nil
 	}
 
 	cert, err := maintenanceCertificate(runDir, now)
 	if err != nil {
 		return credentials{}, err
 	}
-	c := credentials{mode: nodev1.Mode_MODE_MAINTENANCE, cert: cert}
+	c := credentials{mode: nodev1.Mode_MODE_MAINTENANCE, maintenance: &cert}
 	if _, err := os.Stat(imageCA); err == nil {
 		if c.clientCAs, err = loadPool(imageCA); err != nil {
 			return credentials{}, err
@@ -169,7 +192,7 @@ func serve() error {
 	if err != nil {
 		return err
 	}
-	leaf, err := x509.ParseCertificate(creds.cert.Certificate[0])
+	fingerprint, err := creds.fingerprint()
 	if err != nil {
 		return err
 	}
@@ -177,7 +200,8 @@ func serve() error {
 		Mode:        creds.mode,
 		Installer:   os.Getenv("CHALKD_INSTALLER") == "1",
 		AnyClient:   creds.clientCAs == nil,
-		Fingerprint: pki.Fingerprint(leaf.Raw),
+		Fingerprint: fingerprint,
+		Certificate: creds.node,
 		Paths:       paths,
 		Run:         node.ExecRunner{},
 		Host:        storage.DefaultHost(),
@@ -208,7 +232,7 @@ func serve() error {
 		// no longer holds their lease, and closes its etcd clients.
 		defer srv.Kubernetes.Stop()
 	}
-	go announceAddresses(srv.Fingerprint)
+	go announceAddresses(srv.CurrentFingerprint)
 
 	ln, err := net.Listen("tcp", ":50000")
 	if err != nil {
@@ -218,7 +242,7 @@ func serve() error {
 	defer stop()
 	served := make(chan error, 1)
 	go func() {
-		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.cert, creds.clientCAs)).ServeTLS(ln, "", "")
+		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.getCertificate(), creds.clientCAs)).ServeTLS(ln, "", "")
 	}()
 	select {
 	case err := <-served:
@@ -241,14 +265,14 @@ func httpServer(h http.Handler, cfg *tls.Config) *http.Server {
 	}
 }
 
-// announceAddresses prints the node's addresses, with the fingerprint, whenever they change, so
+// announceAddresses prints the node's addresses with the fingerprint whenever either changes, so
 // an operator at the console can reach and verify the node.
-func announceAddresses(fingerprint string) {
+func announceAddresses(fingerprint func() string) {
 	var last string
 	for {
-		if addrs := addresses(); addrs != last {
-			last = addrs
-			log.Printf("addresses %s; certificate fingerprint %s", addrs, fingerprint)
+		if line := "addresses " + addresses() + "; certificate fingerprint " + fingerprint(); line != last {
+			last = line
+			log.Print(line)
 		}
 		time.Sleep(5 * time.Second)
 	}

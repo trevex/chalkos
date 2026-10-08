@@ -64,8 +64,7 @@ func TestLoadCredentials(t *testing.T) {
 		root := t.TempDir()
 		state := filepath.Join(root, "state")
 		writeFile(t, filepath.Join(state, "installed"), "")
-		writeFile(t, filepath.Join(state, "chalkd", "node.crt"), nodeCert.Certificate)
-		writeFile(t, filepath.Join(state, "chalkd", "node.key"), nodeCert.Key)
+		writeFile(t, filepath.Join(state, "chalkd", "node.pem"), nodeCert.Certificate+nodeCert.Key)
 		writeFile(t, filepath.Join(state, "chalkd", "ca.crt"), ca.Certificate)
 		c, err := loadCredentials(state, filepath.Join(root, "os-ca.crt"), filepath.Join(root, "run"), now)
 		if err != nil {
@@ -73,6 +72,9 @@ func TestLoadCredentials(t *testing.T) {
 		}
 		if c.mode != nodev1.Mode_MODE_NORMAL || c.clientCAs == nil {
 			t.Errorf("credentials = %+v, want normal mode", c)
+		}
+		if fp, err := c.fingerprint(); err != nil || fp != pki.Fingerprint(c.node.Current().Leaf.Raw) {
+			t.Errorf("fingerprint = %q, %v", fp, err)
 		}
 	})
 	t.Run("installed without its certificate", func(t *testing.T) {
@@ -121,7 +123,7 @@ func TestMaintenanceCertificateAcrossRestarts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return c.cert.Certificate[0]
+		return c.maintenance.Certificate[0]
 	}
 
 	t.Run("reused", func(t *testing.T) {

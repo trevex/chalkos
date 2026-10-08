@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http/httptest"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -143,12 +143,21 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	srv := httptest.NewUnstartedServer(s.Handler())
-	srv.EnableHTTP2 = true
-	srv.TLS = chalkd.TLSConfig(pair, pool)
-	srv.StartTLS()
-	t.Cleanup(srv.Close)
-	return srv.Listener.Addr().String()
+	return serveTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), pool))
+}
+
+// serveTLS serves h with the configuration as chalkd does, and returns the address. httptest's
+// servers would add a certificate of their own, which TLS prefers to GetCertificate.
+func serveTLS(t *testing.T, h http.Handler, cfg *tls.Config) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: h, TLSConfig: cfg}
+	go srv.ServeTLS(ln, "", "")
+	t.Cleanup(func() { srv.Close() })
+	return ln.Addr().String()
 }
 
 func maintenanceNode() *chalkd.Server {

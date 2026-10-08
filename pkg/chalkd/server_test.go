@@ -11,8 +11,8 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -174,7 +174,12 @@ type creds struct {
 
 func newCreds(t *testing.T) creds {
 	t.Helper()
-	now := time.Now()
+	return newCredsAt(t, time.Now())
+}
+
+// newCredsAt issues the credentials at now.
+func newCredsAt(t *testing.T, now time.Time) creds {
+	t.Helper()
 	ca, err := pki.NewOSCA(now)
 	if err != nil {
 		t.Fatal(err)
@@ -267,12 +272,21 @@ func serve(t *testing.T, s *Server, c creds, clientCAs *x509.CertPool) string {
 		t.Fatal(err)
 	}
 	s.AnyClient = clientCAs == nil
-	srv := httptest.NewUnstartedServer(s.Handler())
-	srv.EnableHTTP2 = true
-	srv.TLS = TLSConfig(pair, clientCAs)
-	srv.StartTLS()
-	t.Cleanup(srv.Close)
-	return srv.Listener.Addr().String()
+	return serveTLS(t, s.Handler(), TLSConfig(StaticCertificate(&pair), clientCAs))
+}
+
+// serveTLS serves h with the configuration as chalkd does, and returns the address. httptest's
+// servers would add a certificate of their own, which TLS prefers to GetCertificate.
+func serveTLS(t *testing.T, h http.Handler, cfg *tls.Config) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: h, TLSConfig: cfg}
+	go srv.ServeTLS(ln, "", "")
+	t.Cleanup(func() { srv.Close() })
+	return ln.Addr().String()
 }
 
 func dial(t *testing.T, addr string, cert *tls.Certificate) *client.Conn {

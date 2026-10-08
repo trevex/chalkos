@@ -294,8 +294,8 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		perm fs.FileMode
 	}{
 		{"identity.json", req.Identity, 0o600},
-		{"chalkd/node.crt", req.NodeCertificate, 0o644},
-		{"chalkd/node.key", req.NodeKey, 0o600},
+		// One file, so the chain and the key are only ever replaced together.
+		{"chalkd/node.pem", append(append([]byte{}, req.NodeCertificate...), req.NodeKey...), 0o600},
 		{"chalkd/ca.crt", req.CA, 0o644},
 	}
 	for _, f := range files {
