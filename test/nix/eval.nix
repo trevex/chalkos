@@ -3210,4 +3210,32 @@ lib.runTests {
       "-C65536"
     ];
   };
+  # The UKI carries the kernel and the initrd; the store holds the modules alone. nixos-init reads
+  # the bootspec in the initrd, so it is written without them.
+  testStoreLeavesOutKernelAndInitrd = {
+    expr =
+      let
+        c = role (cluster [ ]);
+        forbidden =
+          path: lib.any (r: builtins.match r "${path}" != null) c.system.forbiddenDependenciesRegexes;
+      in
+      {
+        kernel = forbidden c.boot.kernelPackages.kernel;
+        initrd = forbidden c.system.build.initialRamdisk;
+        modules = forbidden c.system.modulesTree;
+        bootspec = map (s: lib.hasInfix s c.boot.bootspec.writer) [
+          "/boot.json"
+          "del(.initrd) | .kernel = $kernel"
+        ];
+      };
+    expected = {
+      kernel = true;
+      initrd = true;
+      modules = false;
+      bootspec = [
+        true
+        true
+      ];
+    };
+  };
 }
