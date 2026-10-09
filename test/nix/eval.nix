@@ -3294,6 +3294,19 @@ lib.runTests {
       "-C65536"
     ];
   };
+  testInitrdCompression = {
+    expr = with (role (cluster [ ])).boot.initrd; [
+      compressor
+      compressorArgs
+    ];
+    expected = [
+      "zstd"
+      [
+        "-19"
+        "-T0"
+      ]
+    ];
+  };
   # The UKI carries the kernel and the initrd; the store holds the modules alone. nixos-init reads
   # the bootspec in the initrd, so it is written without them.
   testStoreLeavesOutKernelAndInitrd = {

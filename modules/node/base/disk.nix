@@ -143,6 +143,12 @@ in
     };
 
     boot.initrd = {
+      # The UKI carries the initrd to the ESP and in every upgrade: zstd 19 makes it a tenth
+      # smaller than NixOS's level 10.
+      compressorArgs = [
+        "-19"
+        "-T0"
+      ];
       # The root is tmpfs, so name the disk systemd-boot was loaded from for repart.
       services.udev.rules = bootDiskRules;
       systemd.repart = {
