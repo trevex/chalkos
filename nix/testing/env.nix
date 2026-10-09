@@ -12,6 +12,8 @@ in
     pkgs.dosfstools
     # veritysetup, which the verity tests check their trees against.
     pkgs.cryptsetup
+    # sfdisk, with which the upgrade tests partition a disk image.
+    pkgs.util-linux
     # VM-to-VM networking, and the forwards that reach registries the tests serve.
     pkgs.vde2
     pkgs.socat
