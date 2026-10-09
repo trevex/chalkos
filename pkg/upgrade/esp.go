@@ -256,3 +256,30 @@ func syncESP(esp string) error {
 	}
 	return nil
 }
+
+// RebootHelps says whether rebooting after a boot that was not found healthy leads systemd-boot
+// on, and why: to another try while the booted entry has tries left, or on its last try to an
+// entry it falls back to. Rebooting a boot the loader does not count, or one with nothing to fall
+// back to, would boot the same image again, endlessly.
+func RebootHelps(entries []Entry, efivars, cmdline string) (bool, string) {
+	running, err := uki.UsrHash(cmdline)
+	if err != nil {
+		return false, fmt.Sprintf("the running store: %v", err)
+	}
+	booted, err := Booted(entries, efivars, running)
+	if err != nil {
+		return false, err.Error()
+	}
+	switch {
+	case booted.TriesLeft < 0:
+		return false, fmt.Sprintf("the boot loader does not count the boots of %s", booted.File)
+	case booted.TriesLeft > 0:
+		return true, fmt.Sprintf("%s has %d tries left", booted.File, booted.TriesLeft)
+	}
+	for _, e := range entries {
+		if e.ID != booted.ID && !e.Bad() && e.RootHash != nil && !bytes.Equal(e.RootHash, running) {
+			return true, fmt.Sprintf("%s used up its tries, and the boot loader falls back to %s", booted.File, e.File)
+		}
+	}
+	return false, fmt.Sprintf("%s used up its tries, and there is no image to fall back to", booted.File)
+}

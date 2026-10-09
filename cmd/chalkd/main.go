@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,6 +37,9 @@ const usage = `usage: chalkd <command>
 commands:
   serve                            serve the node API
   load-identity                    apply the identity recorded on STATE
+  health [--wait SECONDS]          check whether this boot is healthy; with --wait, check until
+                                   it is, and reboot after an unhealthy boot of an image the
+                                   boot loader counts
   prepare-kubernetes [vxlan-rule]  pick the node's addresses and write its Kubernetes
                                    certificates and configuration, then run vxlan-rule with the
                                    file saying where VXLAN may arrive`
@@ -43,7 +47,7 @@ commands:
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("chalkd: ")
-	if len(os.Args) < 2 || len(os.Args) > 3 || len(os.Args) == 3 && os.Args[1] != "prepare-kubernetes" {
+	if len(os.Args) < 2 || !validArgs(os.Args[1], os.Args[2:]) {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
@@ -53,6 +57,8 @@ func main() {
 		err = serve()
 	case "load-identity":
 		err = identity.Default().Load()
+	case "health":
+		err = health(os.Args[2:])
 	case "prepare-kubernetes":
 		var firewall knode.Firewall
 		if len(os.Args) == 3 {
@@ -67,6 +73,40 @@ func main() {
 		log.Print(err)
 		os.Exit(1)
 	}
+}
+
+// validArgs reports whether a command has the arguments it takes.
+func validArgs(command string, args []string) bool {
+	switch command {
+	case "prepare-kubernetes":
+		return len(args) <= 1
+	case "health":
+		return len(args) == 0 || len(args) == 2 && args[0] == "--wait"
+	}
+	return len(args) == 0
+}
+
+// health checks this boot once, or with --wait until it is healthy or the seconds passed.
+func health(args []string) error {
+	var k *chalkd.Kubernetes
+	if _, err := os.Stat(knode.DefaultPaths().Cluster); err == nil {
+		k = chalkd.NewKubernetes()
+	}
+	h := chalkd.DefaultHealth(k)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	if len(args) == 0 {
+		if err := h.Check(ctx); err != nil {
+			return fmt.Errorf("not healthy: %w", err)
+		}
+		log.Print("healthy")
+		return nil
+	}
+	seconds, err := strconv.Atoi(args[1])
+	if err != nil || seconds <= 0 {
+		return fmt.Errorf("--wait takes a number of seconds, not %q", args[1])
+	}
+	return h.Wait(ctx, time.Duration(seconds)*time.Second)
 }
 
 // credentials are what chalkd serves with in its mode.

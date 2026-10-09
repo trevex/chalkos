@@ -60,6 +60,9 @@ type Paths struct {
 	// ESP is where the ESP is mounted, and Cmdline the kernel's command line.
 	ESP     string
 	Cmdline string
+	// FailedBoot, on VAR, keeps what chalkd and the health check logged during the last boot that
+	// was not found healthy.
+	FailedBoot string
 }
 
 // DefaultPaths are the paths on a node.
@@ -75,6 +78,7 @@ func DefaultPaths() Paths {
 		MountInfo:      "/proc/self/mountinfo",
 		ESP:            "/efi",
 		Cmdline:        "/proc/cmdline",
+		FailedBoot:     "/var/lib/chalkd/failed-boot",
 	}
 }
 

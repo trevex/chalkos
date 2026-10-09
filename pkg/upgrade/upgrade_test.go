@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -426,4 +427,41 @@ func sbsign(t *testing.T, dir string, image []byte, key, cert string) []byte {
 		t.Fatal(err)
 	}
 	return signed
+}
+
+// TestRebootHelps decides whether a reboot after an unhealthy boot leads the boot loader on.
+func TestRebootHelps(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	for _, tc := range []struct {
+		name   string
+		booted string
+		others map[string]image
+		want   bool
+	}{
+		{"a blessed boot", "chalkos_0.2.0.efi", map[string]image{"chalkos_0.1.0.efi": old}, false},
+		{"a try with tries left", "chalkos_0.2.0+1-1.efi", map[string]image{"chalkos_0.1.0.efi": old}, true},
+		{"the last try", "chalkos_0.2.0+0-2.efi", map[string]image{"chalkos_0.1.0.efi": old}, true},
+		{"the last try of a downgrade", "chalkos_0.2.0+0-2.efi", map[string]image{"chalkos_0.3.0.efi": newImage(t, "0.3.0", 3)}, true},
+		{"the last try with a bad image besides", "chalkos_0.2.0+0-2.efi", map[string]image{"chalkos_0.1.0+0-3.efi": old}, false},
+		{"the last try alone", "chalkos_0.2.0+0-2.efi", nil, false},
+		{"a boot past its tries", "chalkos_0.2.0+0-5.efi", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newLab(t, old)
+			os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_0.1.0.efi"))
+			os.WriteFile(filepath.Join(l.esp, linuxDir, tc.booted), img.uki, 0o644)
+			for name, other := range tc.others {
+				os.WriteFile(filepath.Join(l.esp, linuxDir, name), other.uki, 0o644)
+			}
+			l.setVariable("LoaderEntrySelected", "chalkos_0.2.0.efi")
+			entries, err := Entries(l.esp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, why := RebootHelps(entries, l.efivars, "usrhash="+hex.EncodeToString(img.root))
+			if got != tc.want {
+				t.Errorf("RebootHelps = %v (%s), want %v", got, why, tc.want)
+			}
+		})
+	}
 }

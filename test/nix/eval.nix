@@ -3106,6 +3106,30 @@ lib.runTests {
       };
     };
   };
+  # A boot the boot loader counts is blessed once the health check passes, within the image's
+  # timeout.
+  testHealthGate = {
+    expr =
+      let
+        config = role (cluster [
+          { chalkos.roles.worker.nixosModules = [ { chalkos.upgrade.healthTimeout = 30; } ]; }
+        ]);
+        health = config.systemd.services.chalkos-health;
+      in
+      {
+        inherit (health) requiredBy before;
+        wait = lib.hasSuffix "/bin/chalkd health --wait 30" health.serviceConfig.ExecStart;
+        timeout = health.serviceConfig.TimeoutStartSec;
+        bless = config.systemd.units ? "systemd-bless-boot.service";
+      };
+    expected = {
+      requiredBy = [ "boot-complete.target" ];
+      before = [ "boot-complete.target" ];
+      wait = true;
+      timeout = 90;
+      bless = true;
+    };
+  };
   # Versions fit the store labels and systemd-boot's entry IDs unchanged.
   testImageVersions = {
     expr =
