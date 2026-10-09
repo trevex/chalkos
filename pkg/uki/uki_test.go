@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -257,6 +258,9 @@ func TestParseDatabase(t *testing.T) {
 	}
 	if len(db.Certificates) != 2 || !db.Certificates[0].Equal(a.cert) || !db.Certificates[1].Equal(b.cert) || len(db.SHA256) != 2 || !bytes.Equal(db.SHA256[0], digest[:]) || len(db.TBSSHA256) != 1 || !bytes.Equal(db.TBSSHA256[0], digest[:]) {
 		t.Errorf("parsed %d certificates and %d digests", len(db.Certificates), len(db.SHA256))
+	}
+	if want := []string{"3c5766e8-269c-4e34-aa14-ed776e85b3b6"}; !slices.Equal(db.Unreadable, want) {
+		t.Errorf("unreadable types %v, want %v", db.Unreadable, want)
 	}
 	for name, broken := range map[string][]byte{
 		"cut short":        value[:len(value)-1],
