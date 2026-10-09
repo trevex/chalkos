@@ -2740,6 +2740,8 @@ lib.runTests {
       apiServerPort = false;
     };
   };
+  # One directory with the plugins the network runs, copied out of nixpkgs's packages: flannel's
+  # plugin only with flannel.
   testCNIPluginsFollowProvider = {
     expr =
       let
@@ -2747,17 +2749,47 @@ lib.runTests {
           provider:
           (role (cluster [ { chalkos.cni.provider = provider; } ]))
           .virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime".cni.bin_dirs;
-      in
-      {
         flannel = dirs "flannel";
         none = dirs "none";
+      in
+      {
+        dirs = map builtins.length [
+          flannel
+          none
+        ];
+        differ = flannel != none;
+        copied = lib.any (dir: lib.hasPrefix "${pkgs.cni-plugins}" dir) (flannel ++ none);
       };
     expected = {
-      flannel = [
-        "${pkgs.cni-plugins}/bin"
-        "${pkgs.cni-plugin-flannel}/bin"
+      dirs = [
+        1
+        1
       ];
-      none = [ "${pkgs.cni-plugins}/bin" ];
+      differ = true;
+      copied = false;
+    };
+  };
+  # The tools nodes run, without what they never do: xfs_scrub, ctr and containerd-stress.
+  testTrimmedTools = {
+    expr =
+      let
+        c = role (cluster [ ]);
+        named = name: lib.findFirst (p: lib.getName p == name) null;
+        xfsprogs = named "xfsprogs" c.systemd.services.chalkd.path;
+        containerd = named "containerd" c.systemd.services.containerd.path;
+      in
+      {
+        scrub = lib.elem "--enable-scrub=no" xfsprogs.configureFlags;
+        python = lib.any (p: lib.getName p == "python3") xfsprogs.buildInputs;
+        inherit (containerd) binaries;
+      };
+    expected = {
+      scrub = true;
+      python = false;
+      binaries = [
+        "containerd"
+        "containerd-shim-runc-v2"
+      ];
     };
   };
   testRegistryMirrors = {

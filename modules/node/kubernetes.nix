@@ -39,10 +39,27 @@ let
     sourceSubnets = k.vxlanSourceSubnets;
   };
 
-  cniPlugins = [
-    pkgs.cni-plugins
-  ]
-  ++ lib.optional flannel pkgs.cni-plugin-flannel;
+  # The plugins flannel's network runs: flannel delegates to bridge with host-local addresses,
+  # and portmap serves host ports; containerd sets up each pod's loopback with loopback. Copies,
+  # so the store holds these alone.
+  cniPlugins =
+    pkgs.runCommand "cni-plugins-${pkgs.cni-plugins.version}"
+      {
+        plugins =
+          map (name: "${pkgs.cni-plugins}/bin/${name}") [
+            "bridge"
+            "host-local"
+            "loopback"
+            "portmap"
+          ]
+          ++ lib.optional flannel "${pkgs.cni-plugin-flannel}/bin/flannel";
+      }
+      ''
+        mkdir -p $out/bin
+        for plugin in $plugins; do
+          cp $plugin $out/bin/
+        done
+      '';
 
   kubeletConfig = {
     apiVersion = "kubelet.config.k8s.io/v1beta1";
@@ -130,6 +147,29 @@ in
       "kernel.keys.root_maxbytes" = 25000000;
     };
 
+    # containerd and its runc shim alone: ctr and containerd-stress are half of the package. A copy,
+    # so the store holds these two alone.
+    nixpkgs.overlays = [
+      (_: prev: {
+        containerd =
+          prev.runCommand "containerd-${prev.containerd.version}"
+            {
+              pname = "containerd";
+              inherit (prev.containerd) version meta;
+              binaries = [
+                "containerd"
+                "containerd-shim-runc-v2"
+              ];
+            }
+            ''
+              mkdir -p $out/bin
+              for binary in $binaries; do
+                cp ${prev.containerd}/bin/$binary $out/bin/
+              done
+            '';
+      })
+    ];
+
     # containerd runs the CNI plugins, and portmap programs nftables with nft.
     systemd.services.containerd.path = [ pkgs.nftables ];
 
@@ -144,7 +184,7 @@ in
         plugins."io.containerd.cri.v1.runtime" = {
           # /etc is read-only, so the pod network's configuration lives on VAR.
           cni = {
-            bin_dirs = map (p: "${p}/bin") cniPlugins;
+            bin_dirs = [ "${cniPlugins}/bin" ];
             conf_dir = "/var/lib/cni/net.d";
           };
           containerd.runtimes.runc.options.SystemdCgroup = true;

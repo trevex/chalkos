@@ -48,6 +48,26 @@
     # kubelet's cgroup driver, logind and networkd reach systemd over D-Bus.
     services.dbus.packages = [ config.systemd.package ];
 
+    # xfs_scrub brings python, ICU and GLib; mkfs.xfs, xfs_growfs, xfs_repair and xfs_admin are
+    # what nodes run.
+    nixpkgs.overlays = [
+      (_: prev: {
+        xfsprogs = prev.xfsprogs.overrideAttrs (old: {
+          configureFlags = old.configureFlags ++ [
+            "--enable-scrub=no"
+            "--enable-libicu=no"
+          ];
+          buildInputs = lib.filter (
+            p:
+            !lib.elem (lib.getName p) [
+              "icu4c"
+              "python3"
+            ]
+          ) old.buildInputs;
+        });
+      })
+    ];
+
     # NixOS links both into the system's store path.
     system.systemBuilderCommands = lib.mkAfter ''
       rm $out/kernel $out/initrd
