@@ -82,27 +82,38 @@ func TestRotateKubernetesCA(t *testing.T) {
 	}
 }
 
-// TestRotateControlPlanesInTurn checks that a control plane takes a phase only once etcd is
-// healthy and the control plane before runs on its new files.
+// TestRotateControlPlanesInTurn checks, for every kind that restarts control planes, that a
+// control plane takes a phase only once etcd is healthy and the control plane before runs on its
+// new files.
 func TestRotateControlPlanesInTurn(t *testing.T) {
-	l := newRotationLab(t)
-	if err := l.rotate("encryption-key"); err != nil {
-		t.Fatal(err)
-	}
-	events := l.takeEvents()
-	// Per phase: quorum, share and quorum again on cp1, then the same on cp2.
-	var accept []string
-	for _, e := range events {
-		if strings.HasSuffix(e, " share") || strings.HasSuffix(e, " quorum") {
-			accept = append(accept, e)
-		}
-	}
-	want := []string{"cp1 quorum", "cp1 share", "cp1 quorum", "cp2 quorum", "cp2 share", "cp2 quorum"}
-	if len(accept) < 2*len(want) || !slices.Equal(accept[:len(want)], want) || !slices.Equal(accept[len(want):2*len(want)], want) {
-		t.Errorf("events %v, want %v for the accept and the switch phases", accept, want)
-	}
-	if slices.ContainsFunc(events, func(e string) bool { return strings.HasPrefix(e, "w1") || strings.HasPrefix(e, "n1") }) {
-		t.Errorf("a node without a control plane took part: %v", events)
+	for _, kind := range []string{pki.RotateKubernetesCA, pki.RotateServiceAccountKey, pki.RotateEncryptionKey} {
+		t.Run(kind, func(t *testing.T) {
+			l := newRotationLab(t)
+			if err := l.rotate(kind); err != nil {
+				t.Fatal(err)
+			}
+			if kind == pki.RotateKubernetesCA {
+				if err := l.rotate(kind, "--resume"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			events := l.takeEvents()
+			// Per phase: quorum, share and quorum again on cp1, then the same on cp2.
+			var turns []string
+			for _, e := range events {
+				if strings.HasPrefix(e, "cp") && (strings.HasSuffix(e, " share") || strings.HasSuffix(e, " quorum")) {
+					turns = append(turns, e)
+				}
+			}
+			want := []string{"cp1 quorum", "cp1 share", "cp1 quorum", "cp2 quorum", "cp2 share", "cp2 quorum"}
+			if len(turns) < 2*len(want) || !slices.Equal(turns[:len(want)], want) || !slices.Equal(turns[len(want):2*len(want)], want) {
+				t.Errorf("events %v, want %v for the accept and the switch phases", turns, want)
+			}
+			// Only the Kubernetes CAs reach other nodes, after the control planes.
+			if kind != pki.RotateKubernetesCA && slices.ContainsFunc(events, func(e string) bool { return strings.HasPrefix(e, "w1") || strings.HasPrefix(e, "n1") }) {
+				t.Errorf("a node without a control plane took part: %v", events)
+			}
+		})
 	}
 }
 
@@ -121,6 +132,10 @@ func TestRotateEncryptionKey(t *testing.T) {
 	l.encrypted[pki.DefaultEncryptionKeyName] = 1
 	if err := l.rotate("encryption-key", "--finish"); err == nil || !strings.Contains(err.Error(), "1 objects encrypted with the old key") {
 		t.Fatalf("err = %v, want the finish refused", err)
+	}
+	// --force overrides the service-account key's wait alone, never data left under the old key.
+	if err := l.rotate("encryption-key", "--finish", "--force"); err == nil || !strings.Contains(err.Error(), "1 objects encrypted with the old key") {
+		t.Fatalf("--force: err = %v, want the finish refused", err)
 	}
 	if l.phase() != "refresh applied" {
 		t.Errorf("a refused finish left %q", l.phase())
@@ -148,7 +163,7 @@ func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 	advance := func(d time.Duration) { mu.Lock(); defer mu.Unlock(); now = now.Add(d) }
 	l.ta.clock = clock
 	// Each control plane takes ten minutes to restart on its new files.
-	l.onShare = func() { advance(10 * time.Minute) }
+	l.onShare = func(string) { advance(10 * time.Minute) }
 	if err := l.rotate("service-account-key"); err != nil {
 		t.Fatal(err)
 	}

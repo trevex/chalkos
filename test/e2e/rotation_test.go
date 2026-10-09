@@ -12,12 +12,17 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
 )
 
 // rotationSecret is the Secret whose data must survive every rotation, the encryption key's
@@ -91,54 +96,76 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 	}
 
 	oldReader := filepath.Join(dir, "reader.json")
-	timed("the OS CA's rotation", func() {
-		start := time.Now()
-		rotate("os-ca")
-		rotate("os-ca", "--resume")
-		rotate("os-ca", "--finish")
-		if out, err := chalkctlWith(t, nodes["w1"], "base", oldReader, "status", "w1"); err == nil {
-			t.Errorf("a client file of the old OS CA reached w1 after the finish:\n%s", out)
-		}
-		newReader := filepath.Join(dir, "reader-after-rotation.json")
-		if _, err := chalkctl(t, nil, "base", "config", "new", "--name", "e2e-reader", "--role", "reader", "--out", newReader); err != nil {
+	newReader := func(name string) string {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if _, err := chalkctl(t, nil, "base", "config", "new", "--name", "e2e-reader", "--role", "reader", "--out", path); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := chalkctlWith(t, nodes["w1"], "base", newReader, "status", "w1"); err != nil {
-			t.Errorf("a client file of the new OS CA: %v", err)
+		return path
+	}
+	timed("the OS CA's rotation", func() {
+		rotate("os-ca")
+		// A client file issued at the pause holds both OS CAs and a certificate of the new one.
+		atPause := newReader("reader-at-pause.json")
+		rotate("os-ca", "--resume")
+		// The old client file can no longer verify w1, which serves a certificate of the new
+		// node CA, but w1 still accepts its certificate until the finish.
+		if out, err := chalkctlWith(t, nodes["w1"], "base", oldReader, "status", "w1"); err == nil {
+			t.Errorf("a client file of the old OS CA verified w1 after the refresh:\n%s", out)
 		}
-		works(cs, "the OS CA's rotation", start)
+		if err := nodeAccepts(ctx, nodes["w1"].addr, oldReader); err != nil {
+			t.Errorf("w1 refused the certificate of the old OS CA before the finish: %v", err)
+		}
+		rotate("os-ca", "--finish")
+		since := time.Now()
+		if err := nodeAccepts(ctx, nodes["w1"].addr, oldReader); err == nil {
+			t.Error("w1 accepted the certificate of the old OS CA after the finish")
+		}
+		for _, reader := range []string{atPause, newReader("reader-after-rotation.json")} {
+			if _, err := chalkctlWith(t, nodes["w1"], "base", reader, "status", "w1"); err != nil {
+				t.Errorf("%s after the finish: %v", filepath.Base(reader), err)
+			}
+		}
+		works(cs, "the OS CA's rotation", since)
 	})
 
 	timed("the Kubernetes CAs' rotation", func() {
-		start := time.Now()
 		rotate("kubernetes-ca")
+		// A kubeconfig issued at the pause holds both CAs and a certificate of the new one.
+		atPause, _ := kubeconfig("kubeconfig-at-pause")
 		rotate("kubernetes-ca", "--resume")
 		_, cs = kubeconfig("kubeconfig-after-rotation")
 		// The old kubeconfig cannot verify the API server any more; its certificate still
 		// authenticates until the finish.
+		if err := verifies(ctx, oldKubeconfig); err == nil {
+			t.Error("the old kubeconfig verified the API server after the switch")
+		}
 		if err := authenticates(ctx, oldKubeconfig); err != nil {
 			t.Errorf("the certificate of the old kubeconfig before the finish: %v", err)
 		}
 		rotate("kubernetes-ca", "--finish")
+		since := time.Now()
 		if err := authenticates(ctx, oldKubeconfig); !apierrors.IsUnauthorized(err) {
-			t.Errorf("the certificate of the old kubeconfig after the finish: %v, want unauthorized", err)
+			t.Errorf("the certificate of the old kubeconfig after the finish: %s, want unauthorized", describe(err))
 		}
-		works(cs, "the Kubernetes CAs' rotation", start)
+		if err := verifies(ctx, atPause); err != nil {
+			t.Errorf("the kubeconfig issued at the pause after the finish: %v", err)
+		}
+		works(cs, "the Kubernetes CAs' rotation", since)
 	})
 
 	timed("the service-account key's rotation", func() {
-		start := time.Now()
 		rotate("service-account-key")
 		// The test does not wait the hour in which kubelets renew the tokens of other pods.
 		rotate("service-account-key", "--finish", "--force")
-		works(cs, "the service-account key's rotation", start)
+		works(cs, "the service-account key's rotation", time.Now())
 	})
 
 	timed("the encryption key's rotation", func() {
-		start := time.Now()
 		rotate("encryption-key")
 		rotate("encryption-key", "--finish")
-		works(cs, "the encryption key's rotation", start)
+		works(cs, "the encryption key's rotation", time.Now())
 	})
 	logMemory(t, ctx, cs)
 }
@@ -216,4 +243,50 @@ func authenticates(ctx context.Context, kubeconfig string) error {
 		return err
 	}
 	return fmt.Errorf("no answer from the API server: %w", err)
+}
+
+// verifies asks the API server for its version with a kubeconfig as it is, verifying the server
+// by the kubeconfig's CAs.
+func verifies(ctx context.Context, kubeconfig string) error {
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		return err
+	}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	_, err = cs.Discovery().RESTClient().Get().AbsPath("/version").DoRaw(ctx)
+	return err
+}
+
+// describe says what an error means for a request that was to be refused.
+func describe(err error) string {
+	if err == nil {
+		return "accepted"
+	}
+	return err.Error()
+}
+
+// nodeAccepts calls Info on a node's chalkd with the certificate of a client file, without
+// verifying the node by the client file's OS CAs, which may no longer verify it: it tells
+// whether the node accepts the certificate.
+func nodeAccepts(ctx context.Context, addr, clientFile string) error {
+	c, err := client.ReadConfig(clientFile)
+	if err != nil {
+		return err
+	}
+	cert, err := c.TLSCertificate()
+	if err != nil {
+		return err
+	}
+	conn, err := client.Dial(addr, client.Options{Insecure: true, Certificate: cert})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	_, err = conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	return err
 }

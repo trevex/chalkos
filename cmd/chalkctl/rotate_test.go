@@ -60,8 +60,9 @@ type fakeNode struct {
 
 func (n *fakeNode) refuse() error {
 	n.mu.Lock()
-	defer n.mu.Unlock()
-	if n.down {
+	down := n.down
+	n.mu.Unlock()
+	if down || n.lab.failing(n.name) {
 		return connect.NewError(connect.CodeUnavailable, errors.New("the node is down"))
 	}
 	return nil
@@ -88,7 +89,7 @@ func (n *fakeNode) ApplyIdentity(ctx context.Context, req *connect.Request[nodev
 	case len(m.KubernetesShare) > 0:
 		n.lab.record(n.name + " share")
 		if n.lab.onShare != nil {
-			n.lab.onShare()
+			n.lab.onShare(n.name)
 		}
 		share, err := kpki.ParseShare(m.KubernetesShare)
 		if err != nil {
@@ -150,7 +151,11 @@ func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusR
 			enc.Issuing = enc.Fingerprints[0]
 			st.Trust = append(st.Trust, sa, enc)
 			st.Certificates = append(st.Certificates, &nodev1.CertificateStatus{Name: "node CA", Fingerprint: fingerprint(t, s.NodeCA.Certificate)})
-			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", ControlPlane: "current"}
+			state := "current"
+			if n.lab.held("stale", n.name) {
+				state = "stale"
+			}
+			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", ControlPlane: state}
 		} else {
 			st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined"}
 		}
@@ -169,7 +174,14 @@ func (n *fakeNode) EtcdMembers(ctx context.Context, _ *connect.Request[nodev1.Et
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is a worker; ask a control-plane node"))
 	}
 	n.lab.record(n.name + " quorum")
-	return connect.NewResponse(&nodev1.EtcdMembersResponse{Members: []*nodev1.EtcdMember{{Name: "cp1"}, {Name: "cp2"}}}), nil
+	members := []*nodev1.EtcdMember{{Name: "cp1"}, {Name: "cp2"}}
+	switch {
+	case n.lab.held("learner", ""):
+		members[1].Learner = true
+	case n.lab.held("unhealthy", ""):
+		members[1].Unhealthy = "no answer"
+	}
+	return connect.NewResponse(&nodev1.EtcdMembersResponse{Members: members}), nil
 }
 
 func (n *fakeNode) RotationStep(ctx context.Context, req *connect.Request[nodev1.RotationStepRequest]) (*connect.Response[nodev1.RotationStepResponse], error) {
@@ -241,7 +253,17 @@ type rotationLab struct {
 	// events records what the nodes were asked, in order.
 	events []string
 	// onShare, when set, runs as a node receives a share.
-	onShare func()
+	onShare func(node string)
+	// hold makes the nodes report what holds a control plane back, a learner, an unhealthy
+	// member or a stale control plane, for its polls; node limits a stale one to that node.
+	hold struct {
+		what, node string
+		polls      int
+	}
+	// failIn makes the failNodes refuse every call while the secrets file records that phase
+	// not yet applied.
+	failIn    string
+	failNodes []string
 	// encrypted counts the objects etcd holds by key name.
 	encrypted map[string]uint64
 }
@@ -250,6 +272,44 @@ func (l *rotationLab) record(event string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.events = append(l.events, event)
+}
+
+// holdFor makes the nodes report what for the next polls.
+func (l *rotationLab) holdFor(what, node string, polls int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.hold.what, l.hold.node, l.hold.polls = what, node, polls
+}
+
+// held reports whether the node is to report what now, counting the poll; the last one records
+// that the hold cleared.
+func (l *rotationLab) held(what, node string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	h := &l.hold
+	if h.what != what || h.polls == 0 || node != "" && h.node != node {
+		return false
+	}
+	if h.polls--; h.polls == 0 {
+		l.events = append(l.events, what+" cleared")
+	}
+	return true
+}
+
+// failing reports whether the node is to refuse calls now.
+func (l *rotationLab) failing(node string) bool {
+	l.mu.Lock()
+	phase, nodes := l.failIn, l.failNodes
+	l.mu.Unlock()
+	if phase == "" || !slices.Contains(nodes, node) {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(l.ta.dir, "secrets.json"))
+	if err != nil {
+		return false
+	}
+	s, err := pki.ReadSecrets(data, nil)
+	return err == nil && s.Rotation != nil && s.Rotation.Phase == phase && !s.Rotation.Applied
 }
 
 func (l *rotationLab) takeEvents() []string {
@@ -395,6 +455,12 @@ func TestRotateOSCA(t *testing.T) {
 	}
 	// Before the finish the old client file still authenticates; it cannot verify the nodes'
 	// new certificates any more.
+	if _, err := l.statusWith(oldConfig, "w1"); err == nil {
+		t.Error("a client file of the old OS CA verified a node serving a certificate of the new node CA")
+	}
+	if err := l.authenticatesWith(oldConfig, "w1"); err != nil {
+		t.Errorf("before the finish, a node refused the certificate of a client file of the old OS CA: %v", err)
+	}
 	if err := l.rotate("os-ca", "--finish"); err != nil {
 		t.Fatal(err)
 	}
@@ -414,6 +480,9 @@ func TestRotateOSCA(t *testing.T) {
 	// A client file of the old OS CA is refused; one issued at the pause or now works.
 	if err := l.ta.run(context.Background(), []string{"status", "w1", "--config", oldConfig, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir, "--endpoint", l.addrs["w1"]}); err == nil {
 		t.Error("a client file of the old OS CA reached a node after the finish")
+	}
+	if err := l.authenticatesWith(oldConfig, "w1"); err == nil {
+		t.Error("after the finish, a node accepted the certificate of a client file of the old OS CA")
 	}
 	if _, err := l.statusWith(carol, "w1"); err != nil {
 		t.Errorf("after the finish, a client file issued at the pause: %v", err)
@@ -495,4 +564,134 @@ func TestRotateResumesAfterAnUnreachableNode(t *testing.T) {
 // dialWith reaches a node with a client file's credentials.
 func dialWith(addr, node string, roots *x509.CertPool, creds *credentials) (*client.Conn, error) {
 	return client.Dial(addr, client.Options{CA: roots, ServerName: node, Certificate: creds.cert})
+}
+
+// authenticatesWith reads a node's status with a client file's certificate without verifying
+// the node, so it tells whether the node accepts the certificate.
+func (l *rotationLab) authenticatesWith(config, node string) error {
+	creds, err := l.ta.configCredentials(config)
+	if err != nil {
+		return err
+	}
+	conn, err := client.Dial(l.addrs[node], client.Options{Insecure: true, Certificate: creds.cert})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	return err
+}
+
+// TestRotateControlPlanesWaitForEachOther checks, for every kind that restarts control planes,
+// that cp2 takes a phase only once cp1 runs on its new files again and etcd has every member a
+// healthy voter: it gets no share while cp1 reports a learner, an unhealthy member or a stale
+// control plane.
+func TestRotateControlPlanesWaitForEachOther(t *testing.T) {
+	for _, kind := range []string{pki.RotateKubernetesCA, pki.RotateServiceAccountKey, pki.RotateEncryptionKey} {
+		for _, hold := range []string{"learner", "unhealthy", "stale"} {
+			t.Run(kind+"/"+hold, func(t *testing.T) {
+				l := newRotationLab(t)
+				var once sync.Once
+				l.onShare = func(node string) {
+					if node == "cp1" {
+						once.Do(func() { l.holdFor(hold, "cp1", 5) })
+					}
+				}
+				if err := l.rotate(kind); err != nil {
+					t.Fatal(err)
+				}
+				events := l.takeEvents()
+				cp1, cleared, cp2 := slices.Index(events, "cp1 share"), slices.Index(events, hold+" cleared"), slices.Index(events, "cp2 share")
+				if cp1 < 0 || cleared < cp1 || cp2 < cleared {
+					t.Errorf("events %v: want cp1's share, cp1 held back for five polls, and only then cp2's share", events)
+				}
+			})
+		}
+	}
+}
+
+// TestRotateTimeoutNamesTheNode checks that a node that does not confirm a phase within the
+// timeout stops it, naming the node and what it waited for.
+func TestRotateTimeoutNamesTheNode(t *testing.T) {
+	l := newRotationLab(t)
+	l.onShare = func(node string) {
+		if node == "cp2" {
+			l.holdFor("stale", "cp2", 1<<30)
+		}
+	}
+	err := l.rotate("encryption-key", "--timeout", "200ms")
+	if err == nil || !strings.Contains(err.Error(), "cp2") || !strings.Contains(err.Error(), "waiting for") || !strings.Contains(err.Error(), "stale") {
+		t.Errorf("err = %v, want the phase stopped naming cp2 and its stale control plane", err)
+	}
+	if l.phase() != pki.PhaseAccept {
+		t.Errorf("the secrets file records %q, want the accept phase not applied", l.phase())
+	}
+}
+
+// TestRotateResumesEveryPhase interrupts each phase of each kind at a node that stops answering,
+// and checks that the phase stays unapplied and that --resume completes the rotation once the
+// node answers again.
+func TestRotateResumesEveryPhase(t *testing.T) {
+	for _, kind := range pki.RotationKinds {
+		for _, phase := range []string{pki.PhaseAccept, pki.PhaseSwitch, pki.PhaseRefresh, pki.PhaseFinish} {
+			t.Run(kind+"/"+phase, func(t *testing.T) {
+				l := newRotationLab(t)
+				failing := []string{"cp2"}
+				// The refresh of these kinds runs through whichever control plane answers.
+				if phase == pki.PhaseRefresh && (kind == pki.RotateServiceAccountKey || kind == pki.RotateEncryptionKey) {
+					failing = []string{"cp1", "cp2"}
+				}
+				l.mu.Lock()
+				l.failIn, l.failNodes = phase, failing
+				l.mu.Unlock()
+				// next runs what continues the rotation from where the secrets file is.
+				next := func() error {
+					args := []string{kind, "--timeout", "1s"}
+					switch r := l.secrets().Rotation; {
+					case r == nil:
+					case r.Phase == pki.PhaseRefresh && r.Applied:
+						args = append(args, "--finish", "--force")
+					default:
+						args = append(args, "--resume")
+					}
+					return l.rotate(args...)
+				}
+				var err error
+				for range 5 {
+					if err = next(); err != nil {
+						break
+					}
+				}
+				if err == nil || !strings.Contains(err.Error(), "--resume") {
+					t.Fatalf("err = %v, want the %s phase stopped naming --resume", err, phase)
+				}
+				if l.phase() != phase {
+					t.Fatalf("the secrets file records %q, want the %s phase not applied", l.phase(), phase)
+				}
+				l.mu.Lock()
+				l.failIn = ""
+				l.mu.Unlock()
+				for i := 0; l.phase() != "" || i == 0; i++ {
+					if i == 5 {
+						t.Fatalf("the rotation did not end; the secrets file records %q", l.phase())
+					}
+					if err := next(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				s := l.secrets()
+				for name, n := range l.nodes {
+					if fps, _ := pki.Fingerprints(n.cert.OSCA()); kind == pki.RotateOSCA && len(fps) != 1 {
+						t.Errorf("%s trusts %d OS CAs after the rotation", name, len(fps))
+					}
+					if n.share != nil && n.share.Accepted != nil {
+						t.Errorf("%s still accepts %v", name, n.share.Accepted)
+					}
+				}
+				if s.Rotation != nil || s.Accepted.OSCA != nil {
+					t.Errorf("the secrets file still records the rotation: %v", s)
+				}
+			})
+		}
+	}
 }
