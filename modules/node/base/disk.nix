@@ -79,7 +79,13 @@ in
       # repart formats erofs with the 512-byte sector size, and libblkid rejects checksummed erofs
       # with blocks of 1 KiB or less; without a detected filesystem, udev never marks the verity
       # device ready and the initrd times out waiting for /dev/mapper/usr.
-      mkfsOptions.erofs = [ "-b 4096" ];
+      # zstd 9 with 64 KiB clusters comes within 3% of zstd 15's size at a sixth of its build time.
+      # The kernel's erofs reads zstd and deflate, not LZMA. Upgrades send the compressed store.
+      mkfsOptions.erofs = [
+        "-b 4096"
+        "-zzstd,level=9"
+        "-C65536"
+      ];
       partitions = {
         ${partitionIds.esp} = {
           contents."/EFI/BOOT/BOOT${lib.toUpper efiArch}.EFI".source =

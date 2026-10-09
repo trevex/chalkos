@@ -3202,4 +3202,12 @@ lib.runTests {
       bless = "/efi";
     };
   };
+  testStoreCompression = {
+    expr = (role (cluster [ ])).image.repart.mkfsOptions.erofs;
+    expected = [
+      "-b 4096"
+      "-zzstd,level=9"
+      "-C65536"
+    ];
+  };
 }
