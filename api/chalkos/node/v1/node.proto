@@ -49,6 +49,11 @@ service NodeService {
   // RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
   // out; chalkctl rotate calls it. Available to admins.
   rpc RotationStep(RotationStepRequest) returns (RotationStepResponse);
+  // Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
+  // the image's boot tries until a boot is found healthy, and reboots the node when asked to.
+  // The first message carries the header; the store, its hash tree and the UKI follow as
+  // chunks. Available to operators.
+  rpc Upgrade(stream UpgradeRequest) returns (UpgradeResponse);
 }
 
 enum Mode {
@@ -84,6 +89,9 @@ message InfoResponse {
   // SHA-256 of the certificate chalkd serves, in lower-case hex.
   string fingerprint = 8;
   string hostname = 9;
+  // The cluster and role the running image was built for; empty on the installer.
+  string cluster = 10;
+  string role = 11;
 }
 
 message DisksRequest {}
@@ -436,4 +444,41 @@ message EncryptedObjects {
   // The name of the key the objects are encrypted with; empty for objects stored unencrypted.
   string key = 2;
   uint64 objects = 3;
+}
+
+message UpgradeRequest {
+  oneof message {
+    UpgradeHeader header = 1;
+    ImageChunk chunk = 2;
+  }
+}
+
+message UpgradeHeader {
+  // The image's version, ID, cluster and role, as its os-release names them. The node refuses
+  // another ID, cluster or role than its own.
+  string version = 1;
+  string image_id = 2;
+  string cluster = 3;
+  string role = 4;
+  // The verity root hash of the image's store.
+  bytes root_hash = 5;
+  // Sizes and SHA-256 sums of the store data the root hash covers, its hash tree and the signed
+  // UKI, which follow in this order.
+  uint64 store_size = 6;
+  bytes store_sha256 = 7;
+  uint64 verity_size = 8;
+  bytes verity_sha256 = 9;
+  uint64 uki_size = 10;
+  bytes uki_sha256 = 11;
+  // Reboot the node into the image once it is installed.
+  bool reboot = 12;
+}
+
+message UpgradeResponse {
+  // The node runs the image already; nothing changed.
+  bool already_installed = 1;
+  // The file name of the UKI that boots the image next, with its tries.
+  string entry = 2;
+  // The node reboots into the image.
+  bool rebooting = 3;
 }

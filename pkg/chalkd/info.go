@@ -1,16 +1,15 @@
 package chalkd
 
 import (
-	"bufio"
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // globalVariable is the EFI vendor GUID of SecureBoot and SetupMode.
@@ -25,6 +24,8 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Installer:   s.Installer,
 		SecureBoot:  s.secureBoot(),
 		Fingerprint: s.CurrentFingerprint(),
+		Cluster:     release["CHALKOS_CLUSTER"],
+		Role:        release["CHALKOS_ROLE"],
 	}
 	if boot, err := s.Host.ResolvePath(s.Paths.BootDisk); err == nil {
 		resp.BootDisk = boot.Device
@@ -55,19 +56,11 @@ func (s *Server) secureBoot() nodev1.SecureBoot {
 }
 
 func readOSRelease(path string) map[string]string {
-	values := map[string]string{}
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return values
+		return map[string]string{}
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		if k, v, ok := strings.Cut(sc.Text(), "="); ok {
-			values[k] = strings.Trim(v, `"`)
-		}
-	}
-	return values
+	return uki.ParseOSRelease(string(data))
 }
 
 func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksRequest]) (*connect.Response[nodev1.DisksResponse], error) {

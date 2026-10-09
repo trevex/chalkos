@@ -64,9 +64,14 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}
 		log.Printf("installing onto %s", ref)
 		err = s.FromMedia(ctx, install.MediaRequest{
-			Request:           req,
-			Target:            ref,
-			Image:             &chunkReader{stream: stream},
+			Request: req,
+			Target:  ref,
+			Image: &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
+				if !stream.Receive() {
+					return nil, false
+				}
+				return stream.Msg().GetChunk(), true
+			}, err: stream.Err},
 			ImageSize:         int64(h.ImageSize),
 			ImageSHA256:       h.ImageSha256,
 			SystemDefinitions: h.SystemDefinitions,
@@ -85,21 +90,23 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	return connect.NewResponse(&nodev1.InstallResponse{}), nil
 }
 
-// chunkReader reads the image from the chunks that follow the header.
+// chunkReader reads an image from the chunks that follow a header: next returns the next message's
+// chunk, nil when the message is no chunk, and false at the stream's end, when err says why.
 type chunkReader struct {
-	stream *connect.ClientStream[nodev1.InstallRequest]
-	buf    []byte
+	next func() (*nodev1.ImageChunk, bool)
+	err  func() error
+	buf  []byte
 }
 
 func (r *chunkReader) Read(p []byte) (int, error) {
 	for len(r.buf) == 0 {
-		if !r.stream.Receive() {
-			if err := r.stream.Err(); err != nil {
+		chunk, ok := r.next()
+		if !ok {
+			if err := r.err(); err != nil {
 				return 0, err
 			}
 			return 0, io.EOF
 		}
-		chunk := r.stream.Msg().GetChunk()
 		if chunk == nil {
 			return 0, errors.New("a second header follows the image")
 		}

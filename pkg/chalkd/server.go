@@ -26,6 +26,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 const (
@@ -56,6 +57,9 @@ type Paths struct {
 	TPM           string
 	StorageStatus string
 	MountInfo     string
+	// ESP is where the ESP is mounted, and Cmdline the kernel's command line.
+	ESP     string
+	Cmdline string
 }
 
 // DefaultPaths are the paths on a node.
@@ -69,6 +73,8 @@ func DefaultPaths() Paths {
 		TPM:            "/sys/class/tpm",
 		StorageStatus:  "/run/chalkos/storage-status.json",
 		MountInfo:      "/proc/self/mountinfo",
+		ESP:            "/efi",
+		Cmdline:        "/proc/cmdline",
 	}
 }
 
@@ -95,6 +101,8 @@ type Server struct {
 	// InPlace and FromMedia install the node; tests replace them.
 	InPlace   func(context.Context, install.Request) error
 	FromMedia func(context.Context, install.MediaRequest) error
+	// InstallImage installs an upgrade's image; nil installs it on the boot disk. Tests replace it.
+	InstallImage func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error)
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
@@ -114,6 +122,8 @@ type Server struct {
 	// mu serialises calls that change the node.
 	mu        sync.Mutex
 	installed bool
+	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
+	upgrading sync.Mutex
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 }
@@ -139,6 +149,7 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceEtcdLeaveProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {[]nodev1.Mode{normal}, pki.RoleNode},
 	nodev1connect.NodeServiceRotationStepProcedure:         {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceUpgradeProcedure:              {[]nodev1.Mode{normal}, pki.RoleOperator},
 }
 
 type roleKey struct{}

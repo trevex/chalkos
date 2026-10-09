@@ -67,6 +67,8 @@ const (
 	// NodeServiceRotationStepProcedure is the fully-qualified name of the NodeService's RotationStep
 	// RPC.
 	NodeServiceRotationStepProcedure = "/chalkos.node.v1.NodeService/RotationStep"
+	// NodeServiceUpgradeProcedure is the fully-qualified name of the NodeService's Upgrade RPC.
+	NodeServiceUpgradeProcedure = "/chalkos.node.v1.NodeService/Upgrade"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -111,6 +113,11 @@ type NodeServiceClient interface {
 	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
 	// out; chalkctl rotate calls it. Available to admins.
 	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
+	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
+	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
+	// The first message carries the header; the store, its hash tree and the UKI follow as
+	// chunks. Available to operators.
+	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -208,6 +215,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("RotationStep")),
 			connect.WithClientOptions(opts...),
 		),
+		upgrade: connect.NewClient[v1.UpgradeRequest, v1.UpgradeResponse](
+			httpClient,
+			baseURL+NodeServiceUpgradeProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -227,6 +240,7 @@ type nodeServiceClient struct {
 	etcdLeave            *connect.Client[v1.EtcdLeaveRequest, v1.EtcdLeaveResponse]
 	renewNodeCertificate *connect.Client[v1.RenewNodeCertificateRequest, v1.RenewNodeCertificateResponse]
 	rotationStep         *connect.Client[v1.RotationStepRequest, v1.RotationStepResponse]
+	upgrade              *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -299,6 +313,11 @@ func (c *nodeServiceClient) RotationStep(ctx context.Context, req *connect.Reque
 	return c.rotationStep.CallUnary(ctx, req)
 }
 
+// Upgrade calls chalkos.node.v1.NodeService.Upgrade.
+func (c *nodeServiceClient) Upgrade(ctx context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse] {
+	return c.upgrade.CallClientStream(ctx)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in both modes to readers.
@@ -341,6 +360,11 @@ type NodeServiceHandler interface {
 	// RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
 	// out; chalkctl rotate calls it. Available to admins.
 	RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error)
+	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
+	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
+	// The first message carries the header; the store, its hash tree and the UKI follow as
+	// chunks. Available to operators.
+	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -434,6 +458,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("RotationStep")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceUpgradeHandler := connect.NewClientStreamHandler(
+		NodeServiceUpgradeProcedure,
+		svc.Upgrade,
+		connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -464,6 +494,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRenewNodeCertificateHandler.ServeHTTP(w, r)
 		case NodeServiceRotationStepProcedure:
 			nodeServiceRotationStepHandler.ServeHTTP(w, r)
+		case NodeServiceUpgradeProcedure:
+			nodeServiceUpgradeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -527,4 +559,8 @@ func (UnimplementedNodeServiceHandler) RenewNodeCertificate(context.Context, *co
 
 func (UnimplementedNodeServiceHandler) RotationStep(context.Context, *connect.Request[v1.RotationStepRequest]) (*connect.Response[v1.RotationStepResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RotationStep is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Upgrade is not implemented"))
 }

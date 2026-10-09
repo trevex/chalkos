@@ -3142,4 +3142,29 @@ lib.runTests {
       "1.0.0-abcdefghijklmnopq" = true;
     };
   };
+  # The ESP is mounted at /efi when used: upgrades write UKIs there, systemd-bless-boot renames
+  # them, and systemd-boot-random-seed.service refreshes the boot loader's seed.
+  testESPMount = {
+    expr =
+      let
+        c = role (cluster [ ]);
+      in
+      {
+        inherit (c.fileSystems."/efi") device fsType options;
+        seed = c.systemd.services.systemd-boot-random-seed.environment.SYSTEMD_ESP_PATH;
+        bless = c.systemd.services.systemd-bless-boot.environment.SYSTEMD_ESP_PATH;
+      };
+    expected = {
+      device = "/dev/disk/chalk-boot/esp";
+      fsType = "vfat";
+      options = [
+        "umask=0077"
+        "nofail"
+        "x-systemd.automount"
+        "x-systemd.idle-timeout=1min"
+      ];
+      seed = "/efi";
+      bless = "/efi";
+    };
+  };
 }

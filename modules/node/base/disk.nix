@@ -147,6 +147,23 @@ in
     };
     services.udev.extraRules = bootDiskRules;
 
+    # The ESP, where upgrades write UKIs and systemd-bless-boot marks a boot good. It is mounted
+    # when used and unmounted again once idle, so a power cut rarely finds its FAT in use.
+    fileSystems."/efi" = {
+      device = "/dev/disk/chalk-boot/esp";
+      fsType = "vfat";
+      options = [
+        "umask=0077"
+        "nofail"
+        "x-systemd.automount"
+        "x-systemd.idle-timeout=1min"
+      ];
+    };
+    # systemd-boot-random-seed.service refreshes the boot loader's random seed there, and
+    # systemd-bless-boot.service marks a boot good there rather than searching for it.
+    boot.loader.efi.efiSysMountPoint = "/efi";
+    systemd.services.systemd-bless-boot.environment.SYSTEMD_ESP_PATH = "/efi";
+
     # Install recreates STATE from these definitions, and the installer writes a role image's
     # system region with them, so they travel with the image.
     environment.etc."chalkos/repart.d".source = systemDefinitions;

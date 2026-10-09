@@ -14,6 +14,9 @@ callPackage ./go-module.nix { } {
     ../pkg/manifest
     ../pkg/pki
     ../pkg/storage
+    ../pkg/uki
+    ../pkg/upgrade
+    ../pkg/verity
   ];
   subPackages = [ "cmd/chalkd" ];
   ldflags = [
