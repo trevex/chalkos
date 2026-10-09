@@ -659,7 +659,7 @@ func (s *Server) deleteVolume(ctx context.Context, name string, v storage.Volume
 	if _, err := s.Run.Run(ctx, "wipefs", "--all", part.Device); err != nil {
 		return failed(connect.CodeInternal, "wipe volume %s: %v", name, err)
 	}
-	if _, err := s.Run.Run(ctx, "sfdisk", "--delete", "/dev/"+disk, strconv.Itoa(part.Number)); err != nil {
+	if _, err := s.Run.Run(ctx, "sfdisk", "--lock", "--delete", "/dev/"+disk, strconv.Itoa(part.Number)); err != nil {
 		return failed(connect.CodeInternal, "delete the partition of volume %s: %v", name, err)
 	}
 	delete(pin.Partitions, name)

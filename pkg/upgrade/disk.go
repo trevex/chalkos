@@ -76,9 +76,10 @@ func randomUUID() string {
 	return formatUUID(b)
 }
 
-// readTable reads the boot disk's GPT with sfdisk.
+// readTable reads the boot disk's GPT with sfdisk. Like each change, it takes the disk's BSD
+// lock, as systemd-repart does, and udev waits for it before it probes the disk.
 func (n *Node) readTable(ctx context.Context) ([]Partition, error) {
-	out, err := n.Run.Run(ctx, "sfdisk", "--json", n.Disk)
+	out, err := n.Run.Run(ctx, "sfdisk", "--lock", "--json", n.Disk)
 	if err != nil {
 		return nil, fmt.Errorf("read the partition table of %s: %w", n.Disk, err)
 	}
@@ -123,10 +124,22 @@ func slots(parts []Partition, running []byte) (booted, inactive Slot, err error)
 		return Slot{}, Slot{}, fmt.Errorf("the boot disk has %d store and %d verity partitions; an upgrade needs two slots of each", len(data), len(verity))
 	}
 	pairs := []Slot{{verity[0], data[0]}, {verity[1], data[1]}}
+	// The node found its store by these UUIDs; on two slots, which one it runs is unknown.
+	if pairs[0].Holds(running) && pairs[1].Holds(running) {
+		return Slot{}, Slot{}, errors.New("both slots carry the running store's partition UUIDs; which one the node runs is unknown")
+	}
+	dataUUID, verityUUID := PartitionUUIDs(running)
 	for i, s := range pairs {
-		if s.Holds(running) {
-			return s, pairs[1-i], nil
+		if !s.Holds(running) {
+			continue
 		}
+		other := pairs[1-i]
+		for _, uuid := range []string{other.Data.UUID, other.Verity.UUID} {
+			if uuid == dataUUID || uuid == verityUUID {
+				return Slot{}, Slot{}, fmt.Errorf("the inactive slot carries the running store's partition UUID %s; which partition the node runs is unknown", uuid)
+			}
+		}
+		return s, other, nil
 	}
 	return Slot{}, Slot{}, errors.New("no slot of the boot disk holds the running image's store")
 }
@@ -137,7 +150,7 @@ func (n *Node) setPartition(ctx context.Context, p Partition, uuid, label string
 		if err := n.change(fmt.Sprintf("set the UUID of partition %d", p.Number)); err != nil {
 			return err
 		}
-		if _, err := n.Run.Run(ctx, "sfdisk", "--no-tell-kernel", "--part-uuid", n.Disk, strconv.Itoa(p.Number), uuid); err != nil {
+		if _, err := n.Run.Run(ctx, "sfdisk", "--lock", "--no-tell-kernel", "--part-uuid", n.Disk, strconv.Itoa(p.Number), uuid); err != nil {
 			return fmt.Errorf("set the UUID of partition %d: %w", p.Number, err)
 		}
 	}
@@ -145,7 +158,7 @@ func (n *Node) setPartition(ctx context.Context, p Partition, uuid, label string
 		if err := n.change(fmt.Sprintf("label partition %d", p.Number)); err != nil {
 			return err
 		}
-		if _, err := n.Run.Run(ctx, "sfdisk", "--no-tell-kernel", "--part-label", n.Disk, strconv.Itoa(p.Number), label); err != nil {
+		if _, err := n.Run.Run(ctx, "sfdisk", "--lock", "--no-tell-kernel", "--part-label", n.Disk, strconv.Itoa(p.Number), label); err != nil {
 			return fmt.Errorf("label partition %d: %w", p.Number, err)
 		}
 	}

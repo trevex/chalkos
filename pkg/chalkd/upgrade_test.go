@@ -131,3 +131,46 @@ func TestOneUpgradeAtATime(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// lockWatcher runs commands as the fake runner, showing each sfdisk call to check first.
+type lockWatcher struct {
+	*fakeRunner
+	check func(args []string)
+}
+
+func (w lockWatcher) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "sfdisk" {
+		w.check(args)
+	}
+	return w.fakeRunner.Run(ctx, name, args...)
+}
+
+// TestUpgradeSharesTheStorageLock reads the boot disk's partition table only while holding the
+// lock ApplyIdentity and ResetVolume change the node's storage under.
+func TestUpgradeSharesTheStorageLock(t *testing.T) {
+	s, r := newTestServer(t, normal, vda)
+	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=worker\n")
+	write(t, s.Paths.Cmdline, "usrhash="+strings.Repeat("ab", 32)+"\n")
+	calls := 0
+	s.Run = lockWatcher{r, func(args []string) {
+		calls++
+		if s.mu.TryLock() {
+			s.mu.Unlock()
+			t.Errorf("sfdisk %v ran without the storage lock", args)
+		}
+	}}
+	sum := bytes.Repeat([]byte{1}, 32)
+	h := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", Cluster: "lab", Role: "worker", RootHash: bytes.Repeat([]byte{2}, 32),
+		StoreSize: 1, VeritySize: 1, UKISize: 1, StoreSHA256: sum, VeritySHA256: sum, UKISHA256: sum}
+	// The fake sfdisk prints no table, which ends the upgrade.
+	if _, err := s.installImage(context.Background(), h, bytes.NewReader(nil)); err == nil {
+		t.Fatal("the upgrade went on without a partition table")
+	}
+	if calls == 0 {
+		t.Error("the upgrade did not read the partition table")
+	}
+	if !s.mu.TryLock() {
+		t.Fatal("the upgrade kept the storage lock")
+	}
+	s.mu.Unlock()
+}

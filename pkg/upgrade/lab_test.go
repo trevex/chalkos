@@ -176,7 +176,7 @@ func (l *lab) runFrom(img image, verityPart, dataPart int) {
 
 func (l *lab) setVariable(name, value string) {
 	l.t.Helper()
-	if err := setLoaderString(l.efivars, name, value); err != nil {
+	if err := setLoaderString(l.efivars, name, value, nil); err != nil {
 		l.t.Fatal(err)
 	}
 }
@@ -276,7 +276,7 @@ func (l *lab) boot() (Entry, string) {
 	if len(entries) == 0 {
 		l.t.Fatal("no UKI on the ESP")
 	}
-	// Bad entries last, then by image ID, which names the UKIs here, then the newest version first,
+	// Bad entries last, then by the image ID their os-release names, then the newest version first,
 	// then by ID.
 	slices.SortStableFunc(entries, func(a, b Entry) int {
 		if a.Bad() != b.Bad() {
@@ -285,9 +285,7 @@ func (l *lab) boot() (Entry, string) {
 			}
 			return -1
 		}
-		aID, _, _ := strings.Cut(a.ID, "_")
-		bID, _, _ := strings.Cut(b.ID, "_")
-		if c := strings.Compare(aID, bID); c != 0 {
+		if c := strings.Compare(a.ImageID, b.ImageID); c != 0 {
 			return c
 		}
 		if c := compareVersions(b.Version, a.Version); c != 0 {
@@ -400,4 +398,12 @@ func (l *lab) file(name string) []byte {
 		return nil
 	}
 	return b
+}
+
+// setUUID gives a partition of the disk image a UUID, as another tool might.
+func (l *lab) setUUID(part int, uuid string) {
+	l.t.Helper()
+	if out, err := exec.Command("sfdisk", "--part-uuid", l.disk, strconv.Itoa(part), uuid).CombinedOutput(); err != nil {
+		l.t.Fatalf("sfdisk: %v: %s", err, out)
+	}
 }

@@ -32,7 +32,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		StoreSize: int64(h.StoreSize), VeritySize: int64(h.VeritySize), UKISize: int64(h.UkiSize),
 		StoreSHA256: h.StoreSha256, VeritySHA256: h.VeritySha256, UKISHA256: h.UkiSha256,
 	}
-	log.Printf("upgrading to %s %s with the root hash %x", h.ImageId, h.Version, h.RootHash)
+	log.Printf("upgrading to %q %q with the root hash %x", h.ImageId, h.Version, h.RootHash)
 	res, err := s.installImage(ctx, header, &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
 		if !stream.Receive() {
 			return nil, false
@@ -40,7 +40,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return stream.Msg().GetChunk(), true
 	}, err: stream.Err})
 	if err != nil {
-		log.Printf("upgrade to %s failed: %v", h.Version, err)
+		log.Printf("upgrade to %q failed: %v", h.Version, err)
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
 	}
 	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, Entry: res.Entry}
@@ -73,6 +73,8 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, image io.Re
 		Cmdline:       s.Paths.Cmdline,
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
 		OpenPartition: upgrade.OpenPartition,
+		// ApplyIdentity and ResetVolume change the boot disk's partitions under the same lock.
+		TableLock: &s.mu,
 	}
 	return n.Install(ctx, h, image)
 }

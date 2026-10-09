@@ -34,6 +34,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -53,6 +54,9 @@ type Node struct {
 	OSRelease map[string]string
 	// OpenPartition opens a partition of the boot disk.
 	OpenPartition func(p Partition, write bool) (PartitionFile, error)
+	// TableLock, when set, is held while the boot disk's partition table is read or changed:
+	// chalkd's storage changes take it too.
+	TableLock sync.Locker
 	// Change, when set, is called before each change to the disk, the ESP or the firmware's
 	// variables; tests make it fail to stop an upgrade at each of them.
 	Change func(what string) error
@@ -137,24 +141,39 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		}
 		return Result{}, fmt.Errorf("the node runs version %s with another root hash; build the image with a new version", version)
 	}
+	// Its partitions would be the running ones, by the UUIDs derived from the root hash.
+	if bytes.Equal(h.RootHash, running) {
+		return Result{}, fmt.Errorf("the node runs this store as version %s, not %s", version, h.Version)
+	}
+	unlock := n.lockTable()
 	parts, err := n.readTable(ctx)
 	if err != nil {
+		unlock()
 		return Result{}, err
 	}
 	_, inactive, err := slots(parts, running)
+	unlock()
 	if err != nil {
 		return Result{}, err
 	}
-	entries, err := Entries(n.ESP)
+	all, err := Entries(n.ESP)
 	if err != nil {
 		return Result{}, err
 	}
-	booted, err := Booted(entries, n.EFIVars, running)
+	booted, err := Booted(all, n.EFIVars, running)
 	if err != nil {
 		return Result{}, err
 	}
-	// UKIs of other images on the ESP, such as a rescue system's, are left alone.
-	entries = slices.DeleteFunc(entries, func(e Entry) bool { return !strings.HasPrefix(e.ID, strings.ToLower(h.ImageID)+"_") })
+	// UKIs of other images on the ESP, such as a rescue system's, are left alone; a UKI is of the
+	// image its os-release names.
+	entries := slices.DeleteFunc(slices.Clone(all), func(e Entry) bool { return e.ImageID != h.ImageID })
+	// The UKI is renamed last; it must not replace a UKI that stays or share its entry ID.
+	id := entryID(h.ImageID, h.Version)
+	for _, e := range all {
+		if e.ID == id && !retired(e, h.ImageID, booted, running) {
+			return Result{}, fmt.Errorf("%s on the ESP has the entry ID %s, which the image needs; remove it, or build the image with a new version", e.File, id)
+		}
+	}
 	for _, e := range entries {
 		if e.Version == h.Version && !bytes.Equal(e.RootHash, h.RootHash) {
 			return Result{}, fmt.Errorf("the ESP holds version %s with another root hash in %s; build the image with a new version", h.Version, e.File)
@@ -172,7 +191,10 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		return Result{}, fmt.Errorf("the image's store of %d bytes and hash tree of %d bytes do not fit the slot's partitions of %d and %d bytes", h.StoreSize, h.VeritySize, inactive.Data.Bytes(), inactive.Verity.Bytes())
 	}
 
-	if err := n.retire(ctx, entries, booted, running, inactive); err != nil {
+	// From here on the steps change the disk: a client that goes away must not kill sfdisk while it
+	// writes the partition table. Its stream ends, which stops the upgrade between steps.
+	ctx = context.WithoutCancel(ctx)
+	if err := n.retire(ctx, all, h.ImageID, booted, running, inactive); err != nil {
 		return Result{}, err
 	}
 	wrote, err := n.write(h, inactive, stream)
@@ -204,9 +226,24 @@ func (n *Node) running() ([]byte, error) {
 	return hash, nil
 }
 
-// retire removes every UKI but those booting the running store, along with UKIs an upgrade
-// left half written, and then makes the inactive slot one nothing finds.
-func (n *Node) retire(ctx context.Context, entries []Entry, booted Entry, running []byte, slot Slot) error {
+// lockTable takes the partition table's lock, when there is one, and returns its release.
+func (n *Node) lockTable() func() {
+	if n.TableLock == nil {
+		return func() {}
+	}
+	n.TableLock.Lock()
+	return n.TableLock.Unlock
+}
+
+// retired reports whether the retirement removes the UKI: one of the image that neither the node
+// booted nor boots the running store.
+func retired(e Entry, imageID string, booted Entry, running []byte) bool {
+	return e.ImageID == imageID && e.ID != booted.ID && !bytes.Equal(e.RootHash, running)
+}
+
+// retire removes every UKI of the image but those booting the running store, along with UKIs an
+// upgrade left half written, and then makes the inactive slot one nothing finds.
+func (n *Node) retire(ctx context.Context, entries []Entry, imageID string, booted Entry, running []byte, slot Slot) error {
 	dir := filepath.Join(n.ESP, linuxDir)
 	var remove []string
 	files, err := os.ReadDir(dir)
@@ -219,7 +256,7 @@ func (n *Node) retire(ctx context.Context, entries []Entry, booted Entry, runnin
 		}
 	}
 	for _, e := range entries {
-		if e.ID != booted.ID && !bytes.Equal(e.RootHash, running) {
+		if retired(e, imageID, booted, running) {
 			remove = append(remove, e.File)
 		}
 	}
@@ -236,10 +273,8 @@ func (n *Node) retire(ctx context.Context, entries []Entry, booted Entry, runnin
 			return err
 		}
 	}
-	for _, p := range []Partition{slot.Verity, slot.Data} {
-		if err := n.setPartition(ctx, p, randomUUID(), emptyLabel); err != nil {
-			return err
-		}
+	if err := n.setSlot(ctx, slot, randomUUID(), emptyLabel, randomUUID(), emptyLabel); err != nil {
+		return err
 	}
 	log.Printf("retired the slot of partitions %d and %d", slot.Verity.Number, slot.Data.Number)
 	return nil
@@ -409,33 +444,19 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 // activate makes the slot hold the image as systemd finds it, prefers its entry in systemd-boot,
 // and gives the UKI its name. Until the rename, nothing boots the slot.
 func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, tries int) (string, error) {
-	parts, err := n.readTable(ctx)
-	if err != nil {
-		return "", err
-	}
-	current := map[int]Partition{}
-	for _, p := range parts {
-		current[p.Number] = p
-	}
 	dataUUID, verityUUID := PartitionUUIDs(h.RootHash)
-	for _, set := range []struct {
-		p           Partition
-		uuid, label string
-	}{
-		{current[slot.Verity.Number], verityUUID, "store-verity_" + h.Version},
-		{current[slot.Data.Number], dataUUID, "store_" + h.Version},
-	} {
-		if err := n.setPartition(ctx, set.p, set.uuid, set.label); err != nil {
-			return "", err
-		}
+	if err := n.setSlot(ctx, slot, verityUUID, "store-verity_"+h.Version, dataUUID, "store_"+h.Version); err != nil {
+		return "", err
 	}
 	// systemd-boot boots the newest version first; preferring the entry boots an older one, and
 	// skips it once its tries are used up.
-	id := strings.ToLower(h.ImageID + "_" + h.Version + ".efi")
+	id := entryID(h.ImageID, h.Version)
 	if err := n.change("prefer " + id); err != nil {
 		return "", err
 	}
-	if err := setLoaderString(n.EFIVars, "LoaderEntryPreferred", id); err != nil {
+	if err := setLoaderString(n.EFIVars, "LoaderEntryPreferred", id, func() error {
+		return n.change("write LoaderEntryPreferred")
+	}); err != nil {
 		return "", err
 	}
 	name := entryName(h.ImageID, h.Version, tries)
@@ -449,4 +470,35 @@ func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, tr
 		return "", err
 	}
 	return name, nil
+}
+
+// setSlot gives the slot's verity and data partitions UUIDs and labels. It reads the partition
+// table again under its lock, and refuses partitions that moved since the slot was found.
+func (n *Node) setSlot(ctx context.Context, slot Slot, verityUUID, verityLabel, dataUUID, dataLabel string) error {
+	unlock := n.lockTable()
+	defer unlock()
+	parts, err := n.readTable(ctx)
+	if err != nil {
+		return err
+	}
+	current := map[int]Partition{}
+	for _, p := range parts {
+		current[p.Number] = p
+	}
+	for _, set := range []struct {
+		p           Partition
+		uuid, label string
+	}{
+		{slot.Verity, verityUUID, verityLabel},
+		{slot.Data, dataUUID, dataLabel},
+	} {
+		p, ok := current[set.p.Number]
+		if !ok || p.Start != set.p.Start || p.Size != set.p.Size || p.Type != set.p.Type {
+			return fmt.Errorf("partition %d of the inactive slot changed during the upgrade", set.p.Number)
+		}
+		if err := n.setPartition(ctx, p, set.uuid, set.label); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -215,7 +215,7 @@ func TestResetVolume(t *testing.T) {
 		testState,
 		"systemctl stop srv-extra.mount systemd-cryptsetup@extra.service",
 		"wipefs --all /dev/vdb1",
-		"sfdisk --delete /dev/vdb 1",
+		"sfdisk --lock --delete /dev/vdb 1",
 		"blkid -p -o export /dev/vdb",
 		"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system") + " --seed=2869f04c-5655-50f4-28b9-6b2eb9700a02 /dev/disk/chalk-boot-disk",
 		"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra") + " --seed=088717f0-ffd4-dba5-a524-7d3d44310d1e --empty=allow /dev/vdb",
@@ -374,7 +374,7 @@ func TestResetVolumeOnSystemDisk(t *testing.T) {
 		testState,
 		"systemctl stop srv-data.mount systemd-cryptsetup@data.service",
 		"wipefs --all /dev/vda9",
-		"sfdisk --delete /dev/vda 9",
+		"sfdisk --lock --delete /dev/vda 9",
 	} {
 		if i >= len(r.calls) || r.calls[i] != want {
 			t.Fatalf("command %d: want %q (all: %v)", i, want, r.calls)

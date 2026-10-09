@@ -32,10 +32,10 @@ type Entry struct {
 	// TriesLeft and TriesDone are the counter in the name; -1 without one, which marks an entry
 	// whose boot was found good, or which was never counted.
 	TriesLeft, TriesDone int
-	// Version is the image version its os-release names, and RootHash the root hash of the store
-	// it boots; both are empty when the UKI cannot be read.
-	Version  string
-	RootHash []byte
+	// ImageID and Version are the image ID and version its os-release names, and RootHash the root
+	// hash of the store it boots; all are empty when the UKI cannot be read.
+	ImageID, Version string
+	RootHash         []byte
 }
 
 // Bad reports whether systemd-boot used up the entry's tries.
@@ -69,6 +69,11 @@ func parseEntryName(file string) (id string, left, done int) {
 	return strings.ToLower(file[:plus] + suffix), left, done
 }
 
+// entryID is the boot loader entry ID of an image's UKI of the version.
+func entryID(imageID, version string) string {
+	return strings.ToLower(imageID + "_" + version + ".efi")
+}
+
 // entryName is a UKI's file name with a tries counter, as an upgrade installs it.
 func entryName(id, version string, tries int) string {
 	return fmt.Sprintf("%s_%s+%d.efi", id, version, tries)
@@ -94,7 +99,7 @@ func Entries(esp string) ([]Entry, error) {
 		e := Entry{File: name}
 		e.ID, e.TriesLeft, e.TriesDone = parseEntryName(name)
 		if img, err := readUKI(filepath.Join(dir, name)); err == nil {
-			e.Version = img.Version()
+			e.ImageID, e.Version = img.ID(), img.Version()
 			e.RootHash, _ = img.UsrHash()
 		}
 		entries = append(entries, e)
@@ -180,8 +185,8 @@ const fsImmutable = 0x10
 
 // setLoaderString sets a non-volatile string variable of systemd-boot. efivarfs makes a
 // variable's file immutable and takes a new value in one write, so the old one is cleared and
-// removed first.
-func setLoaderString(efivars, name, value string) error {
+// removed first; cleared, when set, runs in between.
+func setLoaderString(efivars, name, value string, cleared func() error) error {
 	path := filepath.Join(efivars, name+"-"+loaderVendor)
 	if f, err := os.Open(path); err == nil {
 		// A file system without the flag, such as a test's, has nothing to clear.
@@ -195,6 +200,11 @@ func setLoaderString(efivars, name, value string) error {
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove the EFI variable %s: %w", name, err)
+	}
+	if cleared != nil {
+		if err := cleared(); err != nil {
+			return err
+		}
 	}
 	// Non-volatile, and available to the boot loader and the OS.
 	data := binary.LittleEndian.AppendUint32(nil, 0x7)

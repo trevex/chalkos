@@ -16,9 +16,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
 // TestUpgradeAndFallBack installs a newer image, boots it until its tries are used up, and
@@ -29,6 +34,9 @@ func TestUpgradeAndFallBack(t *testing.T) {
 	oldUKI := l.file("chalkos_0.1.0.efi")
 	rescue := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root)
 	os.WriteFile(filepath.Join(l.esp, linuxDir, "rescue_1.efi"), rescue, 0o644)
+	// A UKI is of the image its os-release names, whatever its file is called.
+	other := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "2"}, newImage(t, "2", 3).root)
+	os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_rescue.efi"), other, 0o644)
 	res, err := l.install(img)
 	if err != nil {
 		t.Fatal(err)
@@ -44,8 +52,8 @@ func TestUpgradeAndFallBack(t *testing.T) {
 		t.Error("the running UKI changed")
 	}
 	l.boots(img, 2)
-	if !bytes.Equal(l.file("rescue_1.efi"), rescue) {
-		t.Error("the UKI of another image changed")
+	if !bytes.Equal(l.file("rescue_1.efi"), rescue) || !bytes.Equal(l.file("chalkos_rescue.efi"), other) {
+		t.Error("a UKI of another image changed")
 	}
 
 	// Two boots that are never found healthy use the tries up.
@@ -151,6 +159,17 @@ func TestInterruptedUpgrade(t *testing.T) {
 			l.runFrom(b, 4, 5)
 			return l
 		}, c},
+		// The retirement of a run again removes the image it staged and a UKI left half written.
+		{"again, with the image staged and a temporary file", func(t *testing.T) *lab {
+			l := newLab(t, a)
+			if _, err := l.install(b); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(l.esp, linuxDir, tempPrefix+"0.2.0.efi"), b.uki[:100], 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return l
+		}, b},
 	} {
 		t.Run(start.name, func(t *testing.T) {
 			var changes []string
@@ -159,11 +178,14 @@ func TestInterruptedUpgrade(t *testing.T) {
 				changes = append(changes, what)
 				return nil
 			}
-			if _, err := l.install(start.img); err != nil {
+			full, err := l.install(start.img)
+			if err != nil {
 				t.Fatal(err)
 			}
 			t.Logf("changes: %q", changes)
-			written := false
+			// A slot that held the image before is never written; one that did not is written until
+			// the hash tree was.
+			written := !full.Wrote
 			for i, change := range changes {
 				written = written || i > 0 && changes[i-1] == "write the hash tree"
 				t.Run(change, func(t *testing.T) {
@@ -243,6 +265,19 @@ func TestRefusesBeforeChanging(t *testing.T) {
 				t.Fatalf("%v: %s", err, out)
 			}
 		}, "needs two slots"},
+		{"the running store under another version", func(h *Header) { h.RootHash = old.root }, nil, "the node runs this store"},
+		{"both slots carrying the running store's UUIDs", nil, func(l *lab) {
+			data, verity := PartitionUUIDs(old.root)
+			l.setUUID(4, verity)
+			l.setUUID(5, data)
+		}, "both slots"},
+		{"the inactive slot carrying a UUID of the running store", nil, func(l *lab) {
+			data, _ := PartitionUUIDs(old.root)
+			l.setUUID(5, data)
+		}, "the inactive slot carries"},
+		{"a UKI of another image under the new entry's name", nil, func(l *lab) {
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_0.2.0.efi"), newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root), 0o644)
+		}, "chalkos_0.2.0.efi"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
@@ -250,6 +285,7 @@ func TestRefusesBeforeChanging(t *testing.T) {
 				tc.setup(l)
 			}
 			before := l.table()
+			esp, _ := os.ReadDir(filepath.Join(l.esp, linuxDir))
 			l.node.Change = func(what string) error {
 				t.Errorf("changed: %s", what)
 				return errCrash
@@ -266,6 +302,9 @@ func TestRefusesBeforeChanging(t *testing.T) {
 				if before[n] != p {
 					t.Errorf("partition %d changed", n)
 				}
+			}
+			if after, _ := os.ReadDir(filepath.Join(l.esp, linuxDir)); len(after) != len(esp) {
+				t.Errorf("the ESP holds %d files, %d before", len(after), len(esp))
 			}
 		})
 	}
@@ -299,8 +338,9 @@ func TestRefusesBeforeActivating(t *testing.T) {
 	otherRole.uki = newUKI(osRelease, img.root)
 	noTries := img
 	noTries.uki = newUKI(img.osRelease(0), img.root)
+	// Another store than the running one: an upgrade carrying that is refused before it starts.
 	wrongRoot := img
-	wrongRoot.root = old.root
+	wrongRoot.root = newImage(t, "0.3.0", 3).root
 	for _, tc := range []struct {
 		name string
 		img  image
@@ -464,4 +504,77 @@ func TestRebootHelps(t *testing.T) {
 			}
 		})
 	}
+}
+
+// tableLock is a lock that knows whether it is held.
+type tableLock struct {
+	mu   sync.Mutex
+	held atomic.Bool
+}
+
+func (l *tableLock) Lock()   { l.mu.Lock(); l.held.Store(true) }
+func (l *tableLock) Unlock() { l.held.Store(false); l.mu.Unlock() }
+
+// watchedRunner runs commands as the runner it wraps, after showing each to check.
+type watchedRunner struct {
+	node.Runner
+	check func(ctx context.Context, name string, args []string)
+}
+
+func (r watchedRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	r.check(ctx, name, args)
+	return r.Runner.Run(ctx, name, args...)
+}
+
+// TestPartitionTableLocks checks that every read and change of the partition table runs while
+// the node holds the lock it shares with chalkd's storage changes, and takes the disk's lock
+// against other tools.
+func TestPartitionTableLocks(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	l := newLab(t, old)
+	lock := &tableLock{}
+	l.node.TableLock = lock
+	calls := 0
+	l.node.Run = watchedRunner{Runner: l.node.Run, check: func(_ context.Context, name string, args []string) {
+		if name != "sfdisk" {
+			return
+		}
+		calls++
+		if !lock.held.Load() {
+			t.Errorf("sfdisk %v ran without the partition table's lock", args)
+		}
+		if !slices.Contains(args, "--lock") {
+			t.Errorf("sfdisk %v ran without locking the disk", args)
+		}
+	}}
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	if calls == 0 {
+		t.Error("no sfdisk call")
+	}
+	if lock.held.Load() {
+		t.Error("the upgrade kept the partition table's lock")
+	}
+}
+
+// TestChangesOutliveTheCaller cancels the upgrade's context as it changes the partition table: a
+// client that goes away must not kill sfdisk while it writes.
+func TestChangesOutliveTheCaller(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	l := newLab(t, old)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l.node.Change = func(what string) error {
+		if strings.HasPrefix(what, "set the UUID") || strings.HasPrefix(what, "label") {
+			cancel()
+		}
+		return nil
+	}
+	l.node.Run = watchedRunner{Runner: l.node.Run, check: func(ctx context.Context, name string, args []string) {
+		if name == "sfdisk" && slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "--part-") }) && ctx.Err() != nil {
+			t.Errorf("sfdisk %v ran with a cancelled context", args)
+		}
+	}}
+	l.node.Install(ctx, img.header, img.stream())
 }
