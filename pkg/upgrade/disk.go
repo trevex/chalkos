@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -76,10 +77,39 @@ func randomUUID() string {
 	return formatUUID(b)
 }
 
-// readTable reads the boot disk's GPT with sfdisk. Like each change, it takes the disk's BSD
-// lock, as systemd-repart does, and udev waits for it before it probes the disk.
+// defaultLockWait is how long sfdisk waits for the disk's lock by default.
+const defaultLockWait = 30 * time.Second
+
+// sfdisk runs sfdisk on the boot disk with its BSD lock, as systemd-repart takes it, and which
+// udev waits for before it probes the disk. sfdisk takes the lock before it reads or writes
+// anything; while another program holds it, sfdisk is run again for a bounded time, so the
+// partition table's lock, which chalkd's other requests wait for, is not held as long as another
+// program holds the disk's.
+func (n *Node) sfdisk(ctx context.Context, args ...string) ([]byte, error) {
+	wait := n.LockWait
+	if wait == 0 {
+		wait = defaultLockWait
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		out, err := n.Run.Run(ctx, "sfdisk", append([]string{"--lock=nonblock"}, args...)...)
+		if err == nil || !strings.Contains(err.Error(), "already locked") {
+			return out, err
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("another program kept %s locked for %v: %w", n.Disk, wait, err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(min(250*time.Millisecond, time.Until(deadline))):
+		}
+	}
+}
+
+// readTable reads the boot disk's GPT with sfdisk.
 func (n *Node) readTable(ctx context.Context) ([]Partition, error) {
-	out, err := n.Run.Run(ctx, "sfdisk", "--lock", "--json", n.Disk)
+	out, err := n.sfdisk(ctx, "--json", n.Disk)
 	if err != nil {
 		return nil, fmt.Errorf("read the partition table of %s: %w", n.Disk, err)
 	}
@@ -150,7 +180,7 @@ func (n *Node) setPartition(ctx context.Context, p Partition, uuid, label string
 		if err := n.change(fmt.Sprintf("set the UUID of partition %d", p.Number)); err != nil {
 			return err
 		}
-		if _, err := n.Run.Run(ctx, "sfdisk", "--lock", "--no-tell-kernel", "--part-uuid", n.Disk, strconv.Itoa(p.Number), uuid); err != nil {
+		if _, err := n.sfdisk(ctx, "--no-tell-kernel", "--part-uuid", n.Disk, strconv.Itoa(p.Number), uuid); err != nil {
 			return fmt.Errorf("set the UUID of partition %d: %w", p.Number, err)
 		}
 	}
@@ -158,7 +188,7 @@ func (n *Node) setPartition(ctx context.Context, p Partition, uuid, label string
 		if err := n.change(fmt.Sprintf("label partition %d", p.Number)); err != nil {
 			return err
 		}
-		if _, err := n.Run.Run(ctx, "sfdisk", "--lock", "--no-tell-kernel", "--part-label", n.Disk, strconv.Itoa(p.Number), label); err != nil {
+		if _, err := n.sfdisk(ctx, "--no-tell-kernel", "--part-label", n.Disk, strconv.Itoa(p.Number), label); err != nil {
 			return fmt.Errorf("label partition %d: %w", p.Number, err)
 		}
 	}

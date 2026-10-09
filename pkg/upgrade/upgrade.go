@@ -36,6 +36,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -57,6 +58,9 @@ type Node struct {
 	// TableLock, when set, is held while the boot disk's partition table is read or changed:
 	// chalkd's storage changes take it too.
 	TableLock sync.Locker
+	// LockWait is how long a read or change of the partition table waits for the disk's lock
+	// while another program holds it; 30 seconds when zero.
+	LockWait time.Duration
 	// Change, when set, is called before each change to the disk, the ESP or the firmware's
 	// variables; tests make it fail to stop an upgrade at each of them.
 	Change func(what string) error
@@ -202,11 +206,18 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		return Result{}, err
 	}
 	tmp, tries, err := n.receiveUKI(h, stream)
-	if err != nil {
-		return Result{}, err
+	var entry string
+	if err == nil {
+		entry, err = n.activate(ctx, h, inactive, tmp, tries)
 	}
-	entry, err := n.activate(ctx, h, inactive, tmp, tries)
 	if err != nil {
+		// A UKI under its temporary name boots nothing, but takes space on the ESP that the next
+		// upgrade needs; should this fail, the next retirement removes it.
+		if tmp != "" {
+			if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+				log.Printf("remove %s: %v", tmp, rerr)
+			}
+		}
 		return Result{}, err
 	}
 	log.Printf("installed %s %s into partitions %d and %d; it boots next as %s", h.ImageID, h.Version, inactive.Verity.Number, inactive.Data.Number, entry)
@@ -383,7 +394,7 @@ func (n *Node) copyInto(p Partition, stream io.Reader, size int64, sum []byte, w
 }
 
 // receiveUKI writes the UKI to the ESP under a name systemd-boot ignores and checks it. It
-// returns the file and the tries the image asks for.
+// returns the file, also when it fails once the file may exist, and the tries the image asks for.
 func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 	if err := n.change("write the UKI"); err != nil {
 		return "", 0, err
@@ -395,22 +406,22 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 	tmp := filepath.Join(dir, tempPrefix+h.Version+".efi")
 	f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return "", 0, fmt.Errorf("write the UKI to the ESP: %w", err)
+		return tmp, 0, fmt.Errorf("write the UKI to the ESP: %w", err)
 	}
 	defer f.Close()
 	sum := sha256.New()
 	if _, err := io.CopyN(io.MultiWriter(f, sum), stream, h.UKISize); err != nil {
-		return "", 0, fmt.Errorf("receive the UKI: %w", err)
+		return tmp, 0, fmt.Errorf("receive the UKI: %w", err)
 	}
 	if err := f.Sync(); err != nil {
-		return "", 0, fmt.Errorf("write the UKI to the ESP: %w", err)
+		return tmp, 0, fmt.Errorf("write the UKI to the ESP: %w", err)
 	}
 	if got := sum.Sum(nil); !bytes.Equal(got, h.UKISHA256) {
-		return "", 0, fmt.Errorf("the UKI's SHA-256 is %x, want %x", got, h.UKISHA256)
+		return tmp, 0, fmt.Errorf("the UKI's SHA-256 is %x, want %x", got, h.UKISHA256)
 	}
 	img, err := uki.Read(f)
 	if err != nil {
-		return "", 0, err
+		return tmp, 0, err
 	}
 	for _, field := range []struct{ name, uki, header string }{
 		{"image ID", img.ID(), h.ImageID},
@@ -419,23 +430,23 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 		{"role", img.Role(), h.Role},
 	} {
 		if field.uki != field.header {
-			return "", 0, fmt.Errorf("the UKI's %s is %q, but the upgrade names %q", field.name, field.uki, field.header)
+			return tmp, 0, fmt.Errorf("the UKI's %s is %q, but the upgrade names %q", field.name, field.uki, field.header)
 		}
 	}
 	if hash, err := img.UsrHash(); err != nil || !bytes.Equal(hash, h.RootHash) {
-		return "", 0, errors.New("the UKI boots another store than the upgrade carries")
+		return tmp, 0, errors.New("the UKI boots another store than the upgrade carries")
 	}
 	tries, err := strconv.Atoi(img.BootTries())
 	if err != nil || tries < 1 {
-		return "", 0, fmt.Errorf("the UKI's boot tries %q are not a positive number", img.BootTries())
+		return tmp, 0, fmt.Errorf("the UKI's boot tries %q are not a positive number", img.BootTries())
 	}
 	db, dbx, enforced, err := secureBootDatabases(n.EFIVars)
 	if err != nil {
-		return "", 0, err
+		return tmp, 0, err
 	}
 	if enforced {
 		if err := uki.VerifySignature(f, h.UKISize, db, dbx); err != nil {
-			return "", 0, fmt.Errorf("Secure Boot would refuse the UKI: %w", err)
+			return tmp, 0, fmt.Errorf("Secure Boot would refuse the UKI: %w", err)
 		}
 	}
 	return tmp, tries, f.Close()

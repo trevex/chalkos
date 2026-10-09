@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -543,8 +544,8 @@ func TestPartitionTableLocks(t *testing.T) {
 		if !lock.held.Load() {
 			t.Errorf("sfdisk %v ran without the partition table's lock", args)
 		}
-		if !slices.Contains(args, "--lock") {
-			t.Errorf("sfdisk %v ran without locking the disk", args)
+		if !slices.Contains(args, "--lock=nonblock") {
+			t.Errorf("sfdisk %v ran without locking the disk, or waits for its lock unbounded", args)
 		}
 	}}
 	if _, err := l.install(img); err != nil {
@@ -603,5 +604,129 @@ func TestEntriesWhileBlessed(t *testing.T) {
 	})
 	if err != nil || len(list) != 1 || list[0].File != "chalkos_0.2.0.efi" || list[0].Version != "0.2.0" || list[0].TriesLeft != -1 {
 		t.Errorf("entries = %+v, %v", list, err)
+	}
+}
+
+// holdDisk takes the disk's BSD lock, as another program changing its partitions would, until
+// the returned release.
+func (l *lab) holdDisk() func() {
+	l.t.Helper()
+	f, err := os.Open(l.disk)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		l.t.Fatal(err)
+	}
+	var once sync.Once
+	release := func() { once.Do(func() { f.Close() }) }
+	l.t.Cleanup(release)
+	return release
+}
+
+// TestDiskLockedElsewhere waits a bounded time for the disk's lock that another program holds,
+// and fails the upgrade with why, instead of holding the partition table's lock, which chalkd's
+// other requests wait for, as long as the other program holds the disk's.
+func TestDiskLockedElsewhere(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	l := newLab(t, old)
+	lock := &tableLock{}
+	l.node.TableLock = lock
+	l.node.LockWait = 500 * time.Millisecond
+	release := l.holdDisk()
+	// A program that holds the lock for good, which the test ends after a while.
+	go func() {
+		time.Sleep(5 * time.Second)
+		release()
+	}()
+	start := time.Now()
+	_, err := l.install(img)
+	if err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Errorf("install = %v, want the disk locked", err)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("the upgrade waited %v for the disk's lock", d)
+	}
+	if lock.held.Load() {
+		t.Error("the upgrade kept the partition table's lock")
+	}
+	if e, version := l.boot(); version != "0.1.0" {
+		t.Errorf("the disk boots %s from %s", version, e.File)
+	}
+
+	// A lock released within the wait is taken.
+	l = newLab(t, old)
+	l.node.LockWait = 10 * time.Second
+	release = l.holdDisk()
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		release()
+	}()
+	if _, err := l.install(img); err != nil {
+		t.Errorf("install once the disk's lock was released = %v", err)
+	}
+}
+
+// tempUKIs are the UKIs on the ESP written under the temporary name.
+func (l *lab) tempUKIs() []string {
+	l.t.Helper()
+	files, err := os.ReadDir(filepath.Join(l.esp, linuxDir))
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	var temp []string
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), tempPrefix) {
+			temp = append(temp, f.Name())
+		}
+	}
+	return temp
+}
+
+// TestRemovesTheTemporaryUKI removes the UKI written under its temporary name when the upgrade
+// fails after it was written, so it does not fill the ESP.
+func TestRemovesTheTemporaryUKI(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	var changes []string
+	l := newLab(t, old)
+	l.node.Change = func(what string) error {
+		changes = append(changes, what)
+		return nil
+	}
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	written := slices.Index(changes, "write the UKI")
+	if written < 0 {
+		t.Fatalf("no change writes the UKI: %q", changes)
+	}
+	for _, failing := range changes[written+1:] {
+		t.Run(failing, func(t *testing.T) {
+			l := newLab(t, old)
+			l.node.Change = func(what string) error {
+				if what == failing {
+					return errCrash
+				}
+				return nil
+			}
+			if _, err := l.install(img); !errors.Is(err, errCrash) {
+				t.Fatalf("install = %v, want the failure", err)
+			}
+			if temp := l.tempUKIs(); len(temp) != 0 {
+				t.Errorf("the ESP keeps %q", temp)
+			}
+		})
+	}
+	// A UKI refused once written.
+	otherRole := img
+	osRelease := img.osRelease(3)
+	osRelease["CHALKOS_ROLE"] = "controlplane"
+	otherRole.uki = newUKI(osRelease, img.root)
+	l = newLab(t, old)
+	if _, err := l.install(withHeader(otherRole)); err == nil {
+		t.Fatal("installed a UKI of another role")
+	}
+	if temp := l.tempUKIs(); len(temp) != 0 {
+		t.Errorf("the ESP keeps %q", temp)
 	}
 }
