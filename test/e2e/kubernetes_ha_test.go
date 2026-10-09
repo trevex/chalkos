@@ -1,8 +1,10 @@
 package e2e
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -163,13 +165,15 @@ func (c *haCluster) members(via string, voters ...string) error {
 	return nil
 }
 
-// client reaches the API server on the node.
+// client reaches the API server on the node. Its kubeconfig names the port the node's VM forwards
+// to the API server, so one written for the VM before serves again.
 func (c *haCluster) client(name string) kubernetes.Interface {
 	c.t.Helper()
-	kubeconfig := filepath.Join(c.dir, "kubeconfig-"+name)
-	os.Remove(kubeconfig)
-	if _, err := chalkctl(c.t, nil, "ha", "kubeconfig", "--out", kubeconfig, "--server", fmt.Sprintf("https://127.0.0.1:%d", c.nodes[name].apiPort)); err != nil {
-		c.t.Fatal(err)
+	kubeconfig := filepath.Join(c.dir, fmt.Sprintf("kubeconfig-%s-%d", name, c.nodes[name].apiPort))
+	if _, err := os.Stat(kubeconfig); err != nil {
+		if _, err := chalkctl(c.t, nil, "ha", "kubeconfig", "--out", kubeconfig, "--server", fmt.Sprintf("https://127.0.0.1:%d", c.nodes[name].apiPort)); err != nil {
+			c.t.Fatal(err)
+		}
 	}
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -188,8 +192,8 @@ func (c *haCluster) client(name string) kubernetes.Interface {
 // and stays with one holder once the link is back. A pinned node without its address runs
 // nothing while the cluster stays healthy. A node that left etcd and was reinstalled joins again;
 // one reinstalled without leaving refuses to bootstrap and finds its stale member until an
-// operator removes it. A rolling upgrade with an operator's client file takes the control planes
-// to a new image one at a time while the cluster keeps answering.
+// operator removes it. A rolling upgrade with an operator's client file takes two control planes,
+// the VIP's holder among them, to a new image one at a time while the cluster keeps answering.
 func TestKubernetesHA(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_HA_IMAGE_DIR", "CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
 	ctx := context.Background()
@@ -450,23 +454,53 @@ func logHAMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	}
 }
 
-// rollingUpgrade upgrades the three control planes to the image's 0.2.0 with an operator's
-// client file: one at a time, while the other two keep the cluster answering and their kubelets
-// renew their leases through the VIP.
+// rollingUpgrade upgrades two control planes to the image's 0.2.0 with an operator's client file:
+// the VIP's holder, so the VIP moves, and one other, one at a time. Meanwhile an API server
+// answers every five seconds, and no Node is other than Ready but the one chalkctl reboots, from
+// "rebooting into" until it found it healthy again.
 func (c *haCluster) rollingUpgrade(ctx context.Context) {
 	t := c.t
 	t.Helper()
+	all := []string{"cp1", "cp2", "cp3"}
+	holders := c.holders(all...)
+	if len(holders) != 1 {
+		t.Fatalf("VIP holders %v before the upgrade, want one", holders)
+	}
+	upgraded := []string{holders[0]}
+	var kept string
+	for _, name := range all {
+		switch {
+		case name == holders[0]:
+		case len(upgraded) == 1:
+			upgraded = append(upgraded, name)
+		default:
+			kept = name
+		}
+	}
+	slices.Sort(upgraded)
+	t.Logf("upgrading %v; %s holds the VIP", upgraded, holders[0])
 	config := filepath.Join(c.dir, "operator.json")
 	if _, err := chalkctl(t, nil, "ha", "config", "new", "--name", "ops", "--role", "operator", "--out", config); err != nil {
 		t.Fatal(err)
 	}
 	clients := map[string]kubernetes.Interface{}
-	for _, hn := range haNodes {
-		clients[hn.name] = c.client(hn.name)
+	for _, name := range all {
+		clients[name] = c.client(name)
 	}
-	// Every five seconds, from any API server that answers: at most one node, the one that
-	// reboots, may be other than Ready, which the others stay only while their kubelets renew their
-	// leases through the VIP. The longest each lease went unrenewed is logged.
+
+	// reboots holds, by node, when chalkctl said it reboots it and when it found it healthy again.
+	type window struct{ from, to time.Time }
+	var mu sync.Mutex
+	reboots := map[string]*window{}
+	rebooting := func(name string, at time.Time) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		w := reboots[name]
+		return w != nil && !at.Before(w.from) && (w.to.IsZero() || !at.After(w.to))
+	}
+
+	// Every five seconds, from any API server that answers: no Node but a rebooting one may be
+	// other than Ready. The longest each other node's lease went unrenewed is logged.
 	stop := make(chan struct{})
 	var problems []string
 	longest := map[string]time.Duration{}
@@ -482,12 +516,13 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 			}
 			var notReady []string
 			answered := false
-			for _, hn := range haNodes {
+			for _, name := range all {
+				sampled := time.Now()
 				lctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-				nodes, err := clients[hn.name].CoreV1().Nodes().List(lctx, metav1.ListOptions{})
+				nodes, err := clients[name].CoreV1().Nodes().List(lctx, metav1.ListOptions{})
 				var leases *coordinationv1.LeaseList
 				if err == nil {
-					leases, err = clients[hn.name].CoordinationV1().Leases("kube-node-lease").List(lctx, metav1.ListOptions{})
+					leases, err = clients[name].CoordinationV1().Leases("kube-node-lease").List(lctx, metav1.ListOptions{})
 				}
 				cancel()
 				if err != nil {
@@ -496,16 +531,16 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 				answered = true
 				for _, n := range nodes.Items {
 					ready := false
-					for _, c := range n.Status.Conditions {
-						ready = ready || c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
+					for _, cond := range n.Status.Conditions {
+						ready = ready || cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue
 					}
-					if !ready {
+					if !ready && !rebooting(n.Name, sampled) {
 						notReady = append(notReady, n.Name)
 					}
 				}
 				for _, l := range leases.Items {
-					if l.Spec.RenewTime != nil {
-						longest[l.Name] = max(longest[l.Name], time.Since(l.Spec.RenewTime.Time).Round(time.Second))
+					if l.Spec.RenewTime != nil && !rebooting(l.Name, sampled) {
+						longest[l.Name] = max(longest[l.Name], sampled.Sub(l.Spec.RenewTime.Time).Round(time.Second))
 					}
 				}
 				break
@@ -517,23 +552,53 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 				problems = append(problems, fmt.Sprintf("no API server answered for %v", time.Since(silentSince).Round(time.Second)))
 			case answered:
 				silentSince = time.Time{}
-				if len(notReady) > 1 {
-					problems = append(problems, fmt.Sprintf("the nodes %v are not Ready", notReady))
+				if len(notReady) > 0 {
+					problems = append(problems, fmt.Sprintf("the nodes %v, which were not rebooting, are not Ready", notReady))
 				}
 			}
 		}
 	}()
-	args := []string{"upgrade", "--image", os.Getenv("CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR"), "--config", config,
+	args := []string{"upgrade", "--image", os.Getenv("CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR"), "--config", config, "--nodes", strings.Join(upgraded, ","),
 		"--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), "ha.json"), "--flake", c.dir, "--timeout", "15m"}
-	for _, hn := range haNodes {
-		args = append(args, "--endpoint", hn.name+"="+c.nodes[hn.name].addr)
+	for _, name := range all {
+		args = append(args, "--endpoint", name+"="+c.nodes[name].addr)
 	}
 	started := time.Now()
-	out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
-	t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
+	runCtx, cancel := context.WithTimeout(ctx, 25*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, os.Getenv("CHALKLAB_CHALKCTL"), args...)
+	pr, pw := io.Pipe()
+	cmd.Stdout, cmd.Stderr = pw, pw
+	var out strings.Builder
+	var order []string
+	read := make(chan struct{})
+	go func() {
+		defer close(read)
+		sc := bufio.NewScanner(pr)
+		sc.Buffer(make([]byte, 64<<10), 1<<20)
+		for sc.Scan() {
+			line := sc.Text()
+			out.WriteString(line + "\n")
+			now := time.Now()
+			mu.Lock()
+			if name, ok := strings.CutSuffix(line, ": rebooting into 0.2.0"); ok {
+				reboots[name] = &window{from: now}
+				order = append(order, name)
+			}
+			if name, ok := strings.CutSuffix(line, ": runs 0.2.0, found healthy"); ok && reboots[name] != nil {
+				reboots[name].to = now
+			}
+			mu.Unlock()
+		}
+		io.Copy(io.Discard, pr)
+	}()
+	err := cmd.Run()
+	pw.Close()
+	<-read
+	t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out.String())
 	close(stop)
 	<-watched
-	t.Logf("the longest the kubelets' leases went unrenewed: %v", longest)
+	t.Logf("the longest the leases of nodes not rebooting went unrenewed: %v", longest)
 	if err != nil {
 		t.Fatalf("the rolling upgrade: %v", err)
 	}
@@ -542,24 +607,21 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 		t.Errorf("during the rolling upgrade %s", p)
 	}
 	// The control planes went one at a time, in name order.
-	var order []string
-	for _, line := range strings.Split(string(out), "\n") {
-		if name, ok := strings.CutSuffix(line, ": rebooting into 0.2.0"); ok {
-			order = append(order, name)
-		}
+	if !slices.Equal(order, upgraded) {
+		t.Errorf("the control planes rebooted in the order %v, want %v", order, upgraded)
 	}
-	if !slices.Equal(order, []string{"cp1", "cp2", "cp3"}) {
-		t.Errorf("the control planes rebooted in the order %v", order)
-	}
-	if err := c.members("cp1", "cp1", "cp2", "cp3"); err != nil {
+	if err := c.members(upgraded[0], all...); err != nil {
 		t.Error(err)
 	}
-	for _, hn := range haNodes {
-		if out, err := c.chalkctl(hn.name, "status", hn.name); err != nil || !strings.Contains(out, "image 0.2.0, booted from chalkos_0.2.0.efi\n") {
-			t.Errorf("status of %s after the upgrade: %v", hn.name, err)
+	for _, name := range upgraded {
+		if out, err := c.chalkctl(name, "status", name); err != nil || !strings.Contains(out, "image 0.2.0, booted from chalkos_0.2.0.efi\n") {
+			t.Errorf("status of %s after the upgrade: %v", name, err)
 		}
 	}
-	if holders := c.holders("cp1", "cp2", "cp3"); len(holders) != 1 {
+	if out, err := c.chalkctl(kept, "status", kept); err != nil || !strings.Contains(out, "image 0.1.0, booted from chalkos_0.1.0.efi\n") {
+		t.Errorf("status of %s, which the upgrade left out: %v", kept, err)
+	}
+	if holders := c.holders(all...); len(holders) != 1 {
 		t.Errorf("VIP holders %v after the upgrade, want one", holders)
 	}
 }

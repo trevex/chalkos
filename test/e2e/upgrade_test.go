@@ -22,10 +22,11 @@ func TestUpgrade(t *testing.T) {
 	readFacts(t, n.vm, 5*time.Minute)
 	installInPlace(t, n, "chalklab")
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{
-		"secureboot":  "1",
-		"store_label": "store_0.1.0",
-		"state_boots": "2",
-		"var_boots":   "1",
+		"secureboot":      "1",
+		"store_label":     "store_0.1.0",
+		"store_partition": "3",
+		"state_boots":     "2",
+		"var_boots":       "1",
 	})
 	waitForNode(t, n, "chalklab")
 	t.Logf("installed after %v", time.Since(start).Round(time.Second))
@@ -42,13 +43,15 @@ func TestUpgrade(t *testing.T) {
 	t.Logf("upgraded to 0.2.0 in %v", time.Since(upgraded).Round(time.Second))
 	// Slot B, under Secure Boot, with the TPM unsealing STATE and VAR as before.
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{
-		"secureboot":  "1",
-		"usr_verity":  "verified",
-		"store_label": "store_0.2.0",
-		"state_tpm2":  "1",
-		"var_tpm2":    "1",
-		"state_boots": "3",
-		"var_boots":   "2",
+		"secureboot":      "1",
+		"usr_verity":      "verified",
+		"store_label":     "store_0.2.0",
+		"store_partition": "5",
+		"slot_b_empty":    "0",
+		"state_tpm2":      "1",
+		"var_tpm2":        "1",
+		"state_boots":     "3",
+		"var_boots":       "2",
 	})
 	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || !strings.Contains(out, "image 0.2.0, booted from chalkos_0.2.0.efi\n") {
 		t.Errorf("status after the upgrade: %v", err)
@@ -61,10 +64,11 @@ func TestUpgrade(t *testing.T) {
 	}
 	t.Logf("fell back from 0.3.0 in %v", time.Since(failed).Round(time.Second))
 	// One boot of 0.3.0 from slot A, then 0.2.0 again.
-	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_0.3.0", "state_boots": "4"})
-	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_0.2.0", "state_boots": "5", "var_boots": "4"})
+	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_0.3.0", "store_partition": "3", "state_boots": "4"})
+	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_0.2.0", "store_partition": "5", "state_boots": "5", "var_boots": "4"})
 	out, err = chalkctl(t, n, "base", "status", "chalklab")
-	if err != nil || !strings.Contains(out, "image 0.2.0, booted from chalkos_0.2.0.efi\n") || !strings.Contains(out, "upgrade to 0.3.0 failed: rolled back to 0.2.0") {
+	if err != nil || !strings.Contains(out, "image 0.2.0, booted from chalkos_0.2.0.efi\n") || !strings.Contains(out, "upgrade to 0.3.0 failed: rolled back to 0.2.0") ||
+		!strings.Contains(out, "units failed: chalktest-broken.service") {
 		t.Errorf("status after the rollback: %v", err)
 	}
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))

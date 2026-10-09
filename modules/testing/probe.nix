@@ -58,6 +58,8 @@ let
       # The label of the store's partition names the version of the slot the node booted.
       store=$(veritysetup status usr 2>/dev/null | awk '$1 == "data" && $2 == "device:" {print $3}' || true)
       fact store_label "$(if [[ -n $store ]]; then lsblk -no PARTLABEL "$store"; fi)"
+      # Its partition number tells the slot: 3 is slot A's store, 5 slot B's.
+      fact store_partition "$(if [[ -n $store ]]; then lsblk -no PARTN "$store"; fi)"
       sb=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
       fact secureboot "$(od -An -t u1 -j4 -N1 "$sb" 2>/dev/null | tr -d ' ' || true)"
       fact slot_b_empty "$(lsblk -rno PARTLABEL | grep -c '^_empty$' || true)"
