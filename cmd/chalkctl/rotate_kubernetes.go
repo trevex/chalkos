@@ -174,24 +174,39 @@ func (r *rotation) controlPlanesInTurn(ctx context.Context, kind string) error {
 }
 
 // waitQuorum waits until every etcd member the node sees is a healthy voter. A node that is no
-// etcd member yet has no members to wait for.
+// etcd member yet has no members to wait for. etcd may take the whole timeout to become healthy,
+// but a node whose chalkd does not answer at all is named after a few polls: it is down or
+// addressed wrongly, which waiting does not fix.
 func (r *rotation) waitQuorum(ctx context.Context, name string) error {
+	window := min(10*r.poll, r.timeout)
+	var silent time.Time
 	return r.waitFor(ctx, "etcd's members to be healthy", func() error {
 		var members []*nodev1.EtcdMember
+		var answer error
 		err := r.call(name, func(conn *client.Conn, _ *target) error {
 			resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
 			if err == nil {
 				members = resp.Msg.Members
 			}
+			answer = err
 			return err
 		})
 		var ce *connect.Error
-		if errors.As(err, &ce) && ce.Code() == connect.CodeFailedPrecondition && strings.Contains(ce.Message(), "is not an etcd member") {
+		switch {
+		case errors.As(answer, &ce) && connect.IsWireError(ce) && ce.Code() == connect.CodeFailedPrecondition && strings.Contains(ce.Message(), "is not an etcd member"):
 			return nil
-		}
-		if err != nil {
+		case err != nil && (answer == nil || !connect.IsWireError(answer)):
+			if silent.IsZero() {
+				silent = time.Now()
+			} else if time.Since(silent) >= window {
+				return stopWaiting{fmt.Errorf("%s does not answer: %w", name, err)}
+			}
+			return err
+		case err != nil:
+			silent = time.Time{}
 			return err
 		}
+		silent = time.Time{}
 		for _, m := range members {
 			switch {
 			case m.Unhealthy != "":
@@ -283,21 +298,15 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 	return nil
 }
 
-// pausesAfter reports whether the rotation stops after the phase for the operator: the Kubernetes
-// CAs after their accept phase, so workloads restart to trust the new CA before it issues the API
-// server's certificate.
-func pausesAfter(kind, phase string) bool {
-	return kind == pki.RotateKubernetesCA && phase == pki.PhaseAccept
-}
-
-// finishGuardKubernetes refuses to remove an old service-account key within the hour after the
-// switch, unless forced, and an old encryption key while etcd holds objects encrypted with it.
+// finishGuardKubernetes refuses to remove an old service-account key within the hour after every
+// control plane applied the switch, unless forced, and an old encryption key while etcd holds
+// objects encrypted with it.
 func (r *rotation) finishGuardKubernetes(ctx context.Context, kind string, force bool) error {
 	switch kind {
 	case pki.RotateServiceAccountKey:
 		at := r.file.secrets.Rotation.Switched.Add(tokenRefresh)
 		if r.a.now().Before(at) && !force {
-			return fmt.Errorf("tokens signed with the old service-account key are renewed until %s, an hour after the switch; finish then, or pass --force to refuse the tokens not renewed yet", at.Local().Format(time.RFC3339))
+			return fmt.Errorf("tokens signed with the old service-account key are renewed until %s, an hour after every control plane applied the switch; finish then, or pass --force to refuse the tokens not renewed yet", at.Local().Format(time.RFC3339))
 		}
 	case pki.RotateEncryptionKey:
 		old := r.file.secrets.Kubernetes.Accepted.EncryptionKeys
@@ -321,13 +330,13 @@ func (r *rotation) pausedKubernetes(ctx context.Context, rot pki.Rotation) error
 	kind := rot.Kind
 	switch {
 	case kind == pki.RotateKubernetesCA && rot.Phase == pki.PhaseAccept:
-		r.say("Every node trusts the old and the new Kubernetes CAs, and chalkos's addons restarted. Restart your workloads that talk to the API server, so they trust both CAs too; pods started from now on do. Then continue with chalkctl rotate %s --resume, which makes the new CAs issue.", kind)
+		r.say("Every node trusts the old and the new Kubernetes CAs, and chalkos's addons restarted. Restart your workloads that talk to the API server, so they trust both CAs too; pods started from now on do. Issue new kubeconfigs now with chalkctl kubeconfig: they carry both CAs and work throughout the rotation and after it; kubeconfigs from before the rotation stop verifying the API server at the switch. Then continue with chalkctl rotate %s --resume, which makes the new CAs issue.", kind)
 		return nil
 	case kind == pki.RotateKubernetesCA:
-		r.say("The new Kubernetes CAs issue every certificate of the cluster, and the kubelets requested new serving certificates. Kubeconfigs from chalkctl kubeconfig before the rotation are refused after the finish: issue them again with chalkctl kubeconfig. Then remove the old CAs with chalkctl rotate %s --finish.", kind)
+		r.say("The new Kubernetes CAs issue every certificate of the cluster, and the kubelets requested new serving certificates. Kubeconfigs from before the rotation cannot verify the API server any more and are refused after the finish: issue them again with chalkctl kubeconfig. Then remove the old CAs with chalkctl rotate %s --finish.", kind)
 	case kind == pki.RotateServiceAccountKey:
 		at := rot.Switched.Add(tokenRefresh)
-		r.say("The API server signs tokens with the new service-account key, and chalkos's addons restarted with new tokens. Kubelets renew the tokens of other pods within the hour after the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
+		r.say("The API server signs tokens with the new service-account key, and chalkos's addons restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
 		var secrets []string
 		err := r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
 			resp, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS}))

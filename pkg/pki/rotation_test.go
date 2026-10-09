@@ -97,12 +97,13 @@ func TestRotationPhases(t *testing.T) {
 			if !slices.Equal(firstOfEach(accepting, kind), firstOfEach(before, kind)) {
 				t.Errorf("the accept phase changed the issuing value")
 			}
-			if err := s.SwitchRotation(now); err == nil {
+			if err := s.SwitchRotation(); err == nil {
 				t.Fatal("switched before every node applied the accept phase")
 			}
-			s.Rotation.Applied = true
-			later := now.Add(time.Minute)
-			if err := s.SwitchRotation(later); err != nil {
+			if err := s.RecordApplied(now); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.SwitchRotation(); err != nil {
 				t.Fatal(err)
 			}
 			s = roundTrip(t, s)
@@ -110,20 +111,32 @@ func TestRotationPhases(t *testing.T) {
 			if !sameSet(switched, accepting) || slices.Equal(firstOfEach(switched, kind), firstOfEach(before, kind)) {
 				t.Errorf("trusted after the switch: %v, want the same values as %v with the new one issuing", switched, accepting)
 			}
-			if !s.Rotation.Switched.Equal(later) || s.Rotation.New != nil {
+			if !s.Rotation.Switched.IsZero() || s.Rotation.New != nil {
 				t.Errorf("rotation after the switch: switched %v, new values %v", s.Rotation.Switched, s.Rotation.New)
 			}
 			if err := s.FinishRotation(); err == nil {
 				t.Fatal("finished before the refresh")
 			}
-			s.Rotation.Applied = true
+			// The switch counts from when every node applied it.
+			later := now.Add(time.Minute)
+			if err := s.RecordApplied(later); err != nil {
+				t.Fatal(err)
+			}
+			if !s.Rotation.Switched.Equal(later) {
+				t.Errorf("the switch applied at %v is recorded at %v", later, s.Rotation.Switched)
+			}
 			if err := s.RefreshRotation(); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.FinishRotation(); err == nil {
 				t.Fatal("finished before every node applied the refresh")
 			}
-			s.Rotation.Applied = true
+			if err := s.RecordApplied(later.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			if !s.Rotation.Switched.Equal(later) {
+				t.Errorf("the refresh applied moved the switch to %v", s.Rotation.Switched)
+			}
 			if err := s.FinishRotation(); err != nil {
 				t.Fatal(err)
 			}
@@ -179,7 +192,7 @@ func TestOSCARotationIssuesFromTheNewRoot(t *testing.T) {
 	}
 	newRoot := s.Rotation.New.OSCA.Certificate
 	s.Rotation.Applied = true
-	if err := s.SwitchRotation(now); err != nil {
+	if err := s.SwitchRotation(); err != nil {
 		t.Fatal(err)
 	}
 	if s.OSCA.Certificate != newRoot || !slices.Equal(s.Accepted.OSCA, []string{oldRoot}) {
@@ -213,7 +226,7 @@ func TestEncryptionKeyNames(t *testing.T) {
 		t.Fatalf("keys while accepting: %v", keys)
 	}
 	s.Rotation.Applied = true
-	if err := s.SwitchRotation(now); err != nil {
+	if err := s.SwitchRotation(); err != nil {
 		t.Fatal(err)
 	}
 	if s.Kubernetes.KeyName() != keys[1].Name || string(s.Kubernetes.EncryptionKey) != string(keys[1].Key) {
@@ -304,7 +317,12 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 		"a switch without its time": func(s *Secrets) {
 			pub, _ := ServiceAccountPublicKey(other.Kubernetes.ServiceAccountKey)
 			s.Kubernetes.Accepted.ServiceAccountKeys = []string{pub}
-			s.Rotation = &Rotation{Kind: RotateServiceAccountKey, Phase: PhaseSwitch}
+			s.Rotation = &Rotation{Kind: RotateServiceAccountKey, Phase: PhaseSwitch, Applied: true}
+		},
+		"a refresh without the switch's time": func(s *Secrets) {
+			pub, _ := ServiceAccountPublicKey(other.Kubernetes.ServiceAccountKey)
+			s.Kubernetes.Accepted.ServiceAccountKeys = []string{pub}
+			s.Rotation = &Rotation{Kind: RotateServiceAccountKey, Phase: PhaseRefresh}
 		},
 		"new values after the switch": func(s *Secrets) {
 			s.Accepted.OSCA = []string{other.OSCA.Certificate}
@@ -414,5 +432,44 @@ func TestEncryptionKeyFingerprint(t *testing.T) {
 	}
 	if strings.Contains(key.Fingerprint(), fmt.Sprintf("%x", key.Key)) {
 		t.Error("the fingerprint holds the key")
+	}
+}
+
+// TestClientsIssueFromTheNewCAOnceAccepted checks that client files and kubeconfigs come from
+// the new CA once every node accepts it, so the finish keeps them working, and from the issuing
+// one otherwise.
+func TestClientsIssueFromTheNewCAOnceAccepted(t *testing.T) {
+	s := generate(t)
+	if s.ClientCA() != s.OSCA || s.KubeconfigCA() != s.Kubernetes.CA {
+		t.Error("without a rotation, clients are not issued from the issuing CAs")
+	}
+	if err := s.BeginRotation(RotateOSCA, now); err != nil {
+		t.Fatal(err)
+	}
+	if s.ClientCA() != s.OSCA {
+		t.Error("client files come from the new OS CA before every node accepts it")
+	}
+	if err := s.RecordApplied(now); err != nil {
+		t.Fatal(err)
+	}
+	if s.ClientCA() != *s.Rotation.New.OSCA {
+		t.Error("client files do not come from the new OS CA once every node accepts it")
+	}
+	if s.KubeconfigCA() != s.Kubernetes.CA {
+		t.Error("a rotation of the OS CA changes what kubeconfigs come from")
+	}
+
+	k := generate(t)
+	if err := k.BeginRotation(RotateKubernetesCA, now); err != nil {
+		t.Fatal(err)
+	}
+	if k.KubeconfigCA() != k.Kubernetes.CA {
+		t.Error("kubeconfigs come from the new CA before every node accepts it")
+	}
+	if err := k.RecordApplied(now); err != nil {
+		t.Fatal(err)
+	}
+	if k.KubeconfigCA() != *k.Rotation.New.CA || k.ClientCA() != k.OSCA {
+		t.Error("once every node accepts the new Kubernetes CA, kubeconfigs do not come from it alone")
 	}
 }

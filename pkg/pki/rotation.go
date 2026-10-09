@@ -113,8 +113,8 @@ type Rotation struct {
 	Phase string `json:"phase"`
 	// Applied is set once every node confirmed the phase.
 	Applied bool `json:"applied,omitempty"`
-	// Switched is when the switch was recorded: tokens signed before it are renewed within an
-	// hour of it.
+	// Switched is when every node applied the switch: tokens signed with the old key until then
+	// are renewed within an hour of it.
 	Switched time.Time `json:"switched,omitzero"`
 	// New holds the new CAs with their keys and the new service-account key during the accept
 	// phase; their certificates and public keys are among the accepted values meanwhile. A new
@@ -398,7 +398,7 @@ func (s Secrets) validateRotation() error {
 		return fmt.Errorf("rotation: the new values hold values of another kind than the %s", RotationName(r.Kind))
 	}
 
-	if r.Phase != PhaseAccept && r.Phase != PhaseFinish && r.Switched.IsZero() {
+	if (r.Phase == PhaseSwitch && r.Applied || r.Phase == PhaseRefresh) && r.Switched.IsZero() {
 		return errors.New("rotation: the switch has no time")
 	}
 	accepted := s.acceptedOf(r.Kind)
@@ -594,9 +594,42 @@ func (s *Secrets) requirePhase(phase string) error {
 	return nil
 }
 
+// RecordApplied records that every node applied the phase the rotation is in, at now. The switch
+// keeps the time: tokens signed with the old service-account key are renewed within an hour of
+// it, and some control planes signed with the old key until every node applied it.
+func (s *Secrets) RecordApplied(now time.Time) error {
+	r := s.Rotation
+	if r == nil {
+		return errors.New("no rotation runs")
+	}
+	r.Applied = true
+	if r.Phase == PhaseSwitch {
+		r.Switched = now.UTC()
+	}
+	return s.Validate()
+}
+
+// ClientCA is the OS CA client files are issued from: the new one once every node accepts it, so
+// a client file issued during the rotation keeps working after its finish, else the issuing one.
+func (s Secrets) ClientCA() CertKey {
+	if r := s.Rotation; r != nil && r.Kind == RotateOSCA && r.Phase == PhaseAccept && r.Applied && r.New != nil && r.New.OSCA != nil {
+		return *r.New.OSCA
+	}
+	return s.OSCA
+}
+
+// KubeconfigCA is the Kubernetes CA kubeconfigs' client certificates are issued from, chosen as
+// ClientCA chooses the OS CA.
+func (s Secrets) KubeconfigCA() CertKey {
+	if r := s.Rotation; r != nil && r.Kind == RotateKubernetesCA && r.Phase == PhaseAccept && r.Applied && r.New != nil && r.New.CA != nil {
+		return *r.New.CA
+	}
+	return s.Kubernetes.CA
+}
+
 // SwitchRotation makes the new value the one that issues or signs and accepts the old one in its
 // place.
-func (s *Secrets) SwitchRotation(now time.Time) error {
+func (s *Secrets) SwitchRotation() error {
 	if err := s.requirePhase(PhaseAccept); err != nil {
 		return err
 	}
@@ -623,7 +656,7 @@ func (s *Secrets) SwitchRotation(now time.Time) error {
 		k.Accepted.EncryptionKeys = []EncryptionKey{{Name: k.KeyName(), Key: k.EncryptionKey}}
 		k.EncryptionKey, k.EncryptionKeyName = next.Key, next.Name
 	}
-	s.Rotation = &Rotation{Kind: r.Kind, Phase: PhaseSwitch, Switched: now.UTC()}
+	s.Rotation = &Rotation{Kind: r.Kind, Phase: PhaseSwitch}
 	return s.Validate()
 }
 

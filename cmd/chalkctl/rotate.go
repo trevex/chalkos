@@ -211,18 +211,18 @@ func (r *rotation) run(ctx context.Context) error {
 			if err := r.apply(ctx, rot.Kind, rot.Phase); err != nil {
 				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, pki.RotationName(rot.Kind), err, rot.Kind)
 			}
-			if err := r.save(func(s *pki.Secrets) error { s.Rotation.Applied = true; return nil }); err != nil {
+			if err := r.save(func(s *pki.Secrets) error { return s.RecordApplied(r.a.now()) }); err != nil {
 				return err
 			}
 			r.say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
-			if rot.Phase != pki.PhaseFinish && pausesAfter(rot.Kind, rot.Phase) {
+			if pausesAfter(rot.Kind, rot.Phase) {
 				return r.paused(ctx, rot)
 			}
 		}
 		var err error
 		switch rot.Phase {
 		case pki.PhaseAccept:
-			err = r.save(func(s *pki.Secrets) error { return s.SwitchRotation(r.a.now()) })
+			err = r.save(func(s *pki.Secrets) error { return s.SwitchRotation() })
 		case pki.PhaseSwitch:
 			err = r.save(func(s *pki.Secrets) error { return s.RefreshRotation() })
 		case pki.PhaseRefresh:
@@ -324,13 +324,22 @@ func (r *rotation) status(ctx context.Context, name string) (*nodev1.StatusRespo
 	return st, err
 }
 
-// waitFor checks until check passes, up to the timeout.
+// stopWaiting is a check's error that waiting does not fix: waitFor returns it at once.
+type stopWaiting struct{ error }
+
+func (s stopWaiting) Unwrap() error { return s.error }
+
+// waitFor checks until check passes, up to the timeout, or until it fails with stopWaiting.
 func (r *rotation) waitFor(ctx context.Context, what string, check func() error) error {
 	deadline := time.Now().Add(r.timeout)
 	for {
 		err := check()
 		if err == nil {
 			return nil
+		}
+		var stop stopWaiting
+		if errors.As(err, &stop) {
+			return stop.error
 		}
 		if !time.Now().Before(deadline) {
 			return fmt.Errorf("waiting for %s: %w", what, err)
@@ -503,12 +512,23 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 	return nil
 }
 
+// pausesAfter reports whether the rotation stops after the phase for the operator, besides after
+// the refresh: the OS CA and the Kubernetes CAs after their accept phase, so client files,
+// kubeconfigs and workloads trust the new CA before it issues the servers' certificates.
+func pausesAfter(kind, phase string) bool {
+	return phase == pki.PhaseAccept && (kind == pki.RotateOSCA || kind == pki.RotateKubernetesCA)
+}
+
 // paused says what the operator does before the rotation continues.
 func (r *rotation) paused(ctx context.Context, rot pki.Rotation) error {
-	if rot.Kind != pki.RotateOSCA {
+	switch {
+	case rot.Kind != pki.RotateOSCA:
 		return r.pausedKubernetes(ctx, rot)
+	case rot.Phase == pki.PhaseAccept:
+		r.say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
+	default:
+		r.say("Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
 	}
-	r.say("Every node serves a certificate of the new OS CA and trusts the old and the new one. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
 	return nil
 }
 

@@ -247,26 +247,55 @@ func TestBootstrapNeedsControlPlane(t *testing.T) {
 }
 
 // TestKubeconfigTrustsBothCAs checks that a kubeconfig issued while the Kubernetes CAs rotate
-// trusts both, so it keeps working once the new CA issues the API server's certificate.
+// trusts both, so it keeps verifying the API server once the new CA issues its certificate, and
+// that its client certificate comes from the new CA once every node accepts it, so the finish
+// does not refuse it.
 func TestKubeconfigTrustsBothCAs(t *testing.T) {
 	ta := newTestApp(t)
 	ta.beginRotation(t, pki.RotateKubernetesCA)
-	out := filepath.Join(ta.dir, "kubeconfig")
-	if err := ta.run(context.Background(), []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir, "--out", out}); err != nil {
-		t.Fatal(err)
+	issue := func() (ca []byte, client *x509.Certificate) {
+		t.Helper()
+		out := filepath.Join(t.TempDir(), "kubeconfig")
+		if err := ta.run(context.Background(), []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir, "--out", out}); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := os.ReadFile(out)
+		var kc struct {
+			Clusters []struct {
+				Cluster struct {
+					CA []byte `json:"certificate-authority-data"`
+				} `json:"cluster"`
+			} `json:"clusters"`
+			Users []struct {
+				User struct {
+					Certificate []byte `json:"client-certificate-data"`
+				} `json:"user"`
+			} `json:"users"`
+		}
+		if err := json.Unmarshal(data, &kc); err != nil {
+			t.Fatal(err)
+		}
+		cert, err := pki.ParseCertificate(kc.Users[0].User.Certificate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return kc.Clusters[0].Cluster.CA, cert
 	}
-	data, _ := os.ReadFile(out)
-	var kc struct {
-		Clusters []struct {
-			Cluster struct {
-				CA []byte `json:"certificate-authority-data"`
-			} `json:"cluster"`
-		} `json:"clusters"`
-	}
-	if err := json.Unmarshal(data, &kc); err != nil {
-		t.Fatal(err)
-	}
-	if string(kc.Clusters[0].Cluster.CA) != ta.secrets.Kubernetes.CABundle() || strings.Count(string(kc.Clusters[0].Cluster.CA), "BEGIN") != 2 {
+	old, _ := pki.ParseCertificate([]byte(ta.secrets.Kubernetes.CA.Certificate))
+	next, _ := pki.ParseCertificate([]byte(ta.secrets.Rotation.New.CA.Certificate))
+
+	ca, cert := issue()
+	if string(ca) != ta.secrets.Kubernetes.CABundle() || strings.Count(string(ca), "BEGIN") != 2 {
 		t.Error("the kubeconfig does not trust both Kubernetes CAs")
+	}
+	// Until every node accepts the new CA, the API server may not trust it yet.
+	if cert.CheckSignatureFrom(old) != nil {
+		t.Error("before the accept phase is applied, the client certificate is not of the issuing CA")
+	}
+	ta.secrets.Rotation.Applied = true
+	data, _ := ta.secrets.Encode()
+	writeFile(t, filepath.Join(ta.dir, "secrets.json"), string(data))
+	if _, cert := issue(); cert.CheckSignatureFrom(next) != nil {
+		t.Error("once the accept phase is applied, the client certificate is not of the new CA")
 	}
 }

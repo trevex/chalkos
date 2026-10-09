@@ -1199,7 +1199,7 @@ func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Rotation.Applied = true
-	if err := s.SwitchRotation(now); err != nil {
+	if err := s.SwitchRotation(); err != nil {
 		t.Fatal(err)
 	}
 	share, err := kpki.ShareFor(&s, kubernetes.KindWorker, "w1", now)

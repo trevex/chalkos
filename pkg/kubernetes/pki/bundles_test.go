@@ -25,7 +25,7 @@ func rotating(t *testing.T, kind string) (accepting, switched *pki.Secrets) {
 	r := *s.Rotation
 	r.Applied = true
 	after.Rotation = &r
-	if err := after.SwitchRotation(now); err != nil {
+	if err := after.SwitchRotation(); err != nil {
 		t.Fatal(err)
 	}
 	return &s, &after

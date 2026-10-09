@@ -87,6 +87,9 @@ func (n *fakeNode) ApplyIdentity(ctx context.Context, req *connect.Request[nodev
 		}
 	case len(m.KubernetesShare) > 0:
 		n.lab.record(n.name + " share")
+		if n.lab.onShare != nil {
+			n.lab.onShare()
+		}
 		share, err := kpki.ParseShare(m.KubernetesShare)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -236,6 +239,8 @@ type rotationLab struct {
 	mu sync.Mutex
 	// events records what the nodes were asked, in order.
 	events []string
+	// onShare, when set, runs as a node receives a share.
+	onShare func()
 	// encrypted counts the objects etcd holds by key name.
 	encrypted map[string]uint64
 }
@@ -328,13 +333,38 @@ func (l *rotationLab) phase() string {
 	return r.Phase + " applied"
 }
 
-// TestRotateOSCA runs the OS CA's rotation: every node trusts both OS CAs, control planes get the
-// new node CA, every node a certificate of it, and the finish leaves the new OS CA alone, after
-// which a client file of the old one is refused.
+// TestRotateOSCA runs the OS CA's rotation: every node trusts both OS CAs and the rotation pauses
+// for new client files, control planes get the new node CA, every node a certificate of it, and
+// the finish leaves the new OS CA alone, after which a client file of the old one is refused and
+// one issued at the pause still works.
 func TestRotateOSCA(t *testing.T) {
 	l := newRotationLab(t)
 	oldConfig := l.ta.writeConfig(t, "alice", pki.RoleReader, time.Hour, time.Now())
 	if err := l.rotate("os-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "accept applied" {
+		t.Fatalf("the secrets file records %q, want the accept phase applied and the rotation paused", l.phase())
+	}
+	for _, want := range []string{"Issue new client files now", "chalkctl config new", "--resume"} {
+		if !strings.Contains(l.ta.stdout.String(), want) {
+			t.Errorf("the pause after the accept phase does not say %q: %s", want, l.ta.stdout)
+		}
+	}
+	// A client file issued at the pause carries both roots and works throughout.
+	carol := filepath.Join(l.ta.dir, "carol.json")
+	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir}); err != nil {
+		t.Fatal(err)
+	}
+	if creds, err := l.ta.configCredentials(carol); err != nil || strings.Count(creds.osCA, "BEGIN CERTIFICATE") != 2 {
+		t.Fatalf("the client file issued at the pause: %v, want both OS CAs", err)
+	}
+	if _, err := l.statusWith(carol, "w1"); err != nil {
+		t.Errorf("a client file issued at the pause: %v", err)
+	}
+
+	l.ta.stdout.Reset()
+	if err := l.rotate("os-ca", "--resume"); err != nil {
 		t.Fatal(err)
 	}
 	s := l.secrets()
@@ -354,8 +384,13 @@ func TestRotateOSCA(t *testing.T) {
 			t.Errorf("%s does not hold the new node CA", name)
 		}
 	}
-	if !strings.Contains(l.ta.stdout.String(), "chalkctl config new") {
-		t.Errorf("the pause does not name chalkctl config new: %s", l.ta.stdout)
+	for _, want := range []string{"serves a certificate of the new node CA", "chalkctl config new", "--finish"} {
+		if !strings.Contains(l.ta.stdout.String(), want) {
+			t.Errorf("the pause after the refresh does not say %q: %s", want, l.ta.stdout)
+		}
+	}
+	if _, err := l.statusWith(carol, "w1"); err != nil {
+		t.Errorf("after the refresh, a client file issued at the pause: %v", err)
 	}
 	// Before the finish the old client file still authenticates; it cannot verify the nodes'
 	// new certificates any more.
@@ -375,9 +410,12 @@ func TestRotateOSCA(t *testing.T) {
 			t.Errorf("%s still trusts %d OS CAs", name, len(fps))
 		}
 	}
-	// A client file of the old OS CA is refused; one issued now works.
+	// A client file of the old OS CA is refused; one issued at the pause or now works.
 	if err := l.ta.run(context.Background(), []string{"status", "w1", "--config", oldConfig, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir, "--endpoint", l.addrs["w1"]}); err == nil {
 		t.Error("a client file of the old OS CA reached a node after the finish")
+	}
+	if _, err := l.statusWith(carol, "w1"); err != nil {
+		t.Errorf("after the finish, a client file issued at the pause: %v", err)
 	}
 	l.ta.secrets = s
 	newConfig := l.ta.writeConfig(t, "bob", pki.RoleReader, time.Hour, time.Now())
@@ -434,8 +472,14 @@ func TestRotateResumesAfterAnUnreachableNode(t *testing.T) {
 	if err := l.rotate("os-ca", "--resume"); err != nil {
 		t.Fatal(err)
 	}
-	if l.phase() != "refresh applied" {
+	if l.phase() != "accept applied" {
 		t.Errorf("after --resume the secrets file records %q", l.phase())
+	}
+	if err := l.rotate("os-ca", "--resume"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "refresh applied" {
+		t.Errorf("after the second --resume the secrets file records %q", l.phase())
 	}
 	// Resuming once more repeats nothing that changed a node.
 	l.takeEvents()

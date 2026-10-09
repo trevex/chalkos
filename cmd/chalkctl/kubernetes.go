@@ -94,7 +94,7 @@ func (a *app) kubeconfig(ctx context.Context, args []string) error {
 		return err
 	}
 	k := secrets.Kubernetes
-	admin, err := kpki.IssueAdmin(k.CA, *name, *ttl, time.Now())
+	admin, err := kpki.IssueAdmin(secrets.KubeconfigCA(), *name, *ttl, time.Now())
 	if err != nil {
 		return err
 	}

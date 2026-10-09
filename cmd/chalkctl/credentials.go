@@ -195,7 +195,7 @@ func (a *app) configNew(ctx context.Context, args []string) error {
 			nodes[node] = addrs[0]
 		}
 	}
-	config, err := client.NewConfig(secrets.OSCA, secrets.OSCABundle(), c.manifest.Cluster.Name, *name, *role, *ttl, nodes, time.Now())
+	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.manifest.Cluster.Name, *name, *role, *ttl, nodes, time.Now())
 	if err != nil {
 		return err
 	}

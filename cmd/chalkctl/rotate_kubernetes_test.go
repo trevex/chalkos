@@ -1,8 +1,10 @@
 package main
 
 import (
+	"net"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,11 +45,19 @@ func TestRotateKubernetesCA(t *testing.T) {
 	if i, j := slices.Index(events, "cp2 share"), slices.Index(events, "w1 share"); i < 0 || j < i {
 		t.Errorf("events %v: want the control planes' shares before the worker's", events)
 	}
-	if !strings.Contains(l.ta.stdout.String(), "--resume") {
-		t.Errorf("the pause does not say how to continue: %s", l.ta.stdout)
+	for _, want := range []string{"--resume", "chalkctl kubeconfig", "carry both CAs", "stop verifying the API server at the switch"} {
+		if !strings.Contains(l.ta.stdout.String(), want) {
+			t.Errorf("the pause after the accept phase does not say %q: %s", want, l.ta.stdout)
+		}
 	}
+	l.ta.stdout.Reset()
 	if err := l.rotate("kubernetes-ca", "--resume"); err != nil {
 		t.Fatal(err)
+	}
+	for _, want := range []string{"cannot verify the API server any more", "refused after the finish", "--finish"} {
+		if !strings.Contains(l.ta.stdout.String(), want) {
+			t.Errorf("the pause after the refresh does not say %q: %s", want, l.ta.stdout)
+		}
 	}
 	s := l.secrets()
 	ca := fingerprint(t, s.Kubernetes.CA.Certificate)
@@ -127,21 +137,38 @@ func TestRotateEncryptionKey(t *testing.T) {
 }
 
 // TestRotateServiceAccountKeyWaitsAnHour checks that the service-account key's finish waits an
-// hour after the switch unless forced, and that the pause lists the Secrets of legacy tokens.
+// hour after every control plane applied the switch, unless forced, and that the pause lists the
+// Secrets of legacy tokens and says when the finish may follow.
 func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 	l := newRotationLab(t)
-	now := time.Now()
-	l.ta.clock = func() time.Time { return now }
+	var mu sync.Mutex
+	now := time.Now().Truncate(time.Second)
+	start := now
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	advance := func(d time.Duration) { mu.Lock(); defer mu.Unlock(); now = now.Add(d) }
+	l.ta.clock = clock
+	// Each control plane takes ten minutes to restart on its new files.
+	l.onShare = func() { advance(10 * time.Minute) }
 	if err := l.rotate("service-account-key"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(l.ta.stdout.String(), "default/legacy") {
-		t.Errorf("the pause does not list the Secrets of legacy tokens: %s", l.ta.stdout)
+	l.onShare = nil
+	// The accept and the switch phases each restarted both control planes.
+	switched := l.secrets().Rotation.Switched
+	if want := start.Add(40 * time.Minute); !switched.Equal(want) {
+		t.Errorf("the switch is recorded at %v, want %v, once every control plane applied it", switched, want)
+	}
+	stdout := l.ta.stdout.String()
+	if !strings.Contains(stdout, "default/legacy") {
+		t.Errorf("the pause does not list the Secrets of legacy tokens: %s", stdout)
+	}
+	if at := switched.Add(time.Hour).Local().Format(time.RFC3339); !strings.Contains(stdout, at) {
+		t.Errorf("the pause does not name %s, an hour after the switch was applied: %s", at, stdout)
 	}
 	if events := l.takeEvents(); !slices.Contains(events, "cp1 RESTART_ADDONS") {
 		t.Errorf("the addons did not restart with tokens of the new key: %v", events)
 	}
-	now = now.Add(30 * time.Minute)
+	advance(switched.Add(59 * time.Minute).Sub(clock()))
 	if err := l.rotate("service-account-key", "--finish"); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("err = %v, want a refusal within the hour naming --force", err)
 	}
@@ -157,5 +184,25 @@ func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 		if got, _ := l.nodes[name].share.ServiceAccountPublicKeys(); !slices.Equal(got, pubs) || len(got) != 1 {
 			t.Errorf("%s accepts %d service-account keys after the finish", name, len(got))
 		}
+	}
+}
+
+// TestRotateNamesAnUnreachableControlPlane checks that a control plane whose chalkd does not
+// answer stops the phase promptly, naming it, rather than after the whole timeout.
+func TestRotateNamesAnUnreachableControlPlane(t *testing.T) {
+	l := newRotationLab(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.addrs["cp2"] = ln.Addr().String()
+	ln.Close()
+	began := time.Now()
+	err = l.rotate("encryption-key", "--timeout", "30s")
+	if err == nil || !strings.Contains(err.Error(), "cp2") || !strings.Contains(err.Error(), "does not answer") {
+		t.Fatalf("err = %v, want the phase stopped naming cp2", err)
+	}
+	if took := time.Since(began); took > 10*time.Second {
+		t.Errorf("naming the unreachable node took %v", took)
 	}
 }

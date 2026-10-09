@@ -245,7 +245,7 @@ func TestSecretsRefuseAnotherPublicFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	rotated.Rotation.Applied = true
-	if err := rotated.SwitchRotation(time.Now()); err != nil {
+	if err := rotated.SwitchRotation(); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := rotated.Encode()

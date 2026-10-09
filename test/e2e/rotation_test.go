@@ -94,6 +94,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 	timed("the OS CA's rotation", func() {
 		start := time.Now()
 		rotate("os-ca")
+		rotate("os-ca", "--resume")
 		rotate("os-ca", "--finish")
 		if out, err := chalkctlWith(t, nodes["w1"], "base", oldReader, "status", "w1"); err == nil {
 			t.Errorf("a client file of the old OS CA reached w1 after the finish:\n%s", out)
