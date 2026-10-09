@@ -112,6 +112,7 @@ func (a *app) nodeCARotate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	secrets := f.secrets
 	// A rotation delivers its own shares, one control plane at a time.
 	if r := secrets.Rotation; r != nil {

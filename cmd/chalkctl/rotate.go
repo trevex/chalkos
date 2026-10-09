@@ -29,7 +29,7 @@ The secrets file records the phase reached and is updated in place, keeping its 
 as <file>.prev, unless --out names a new file; an encrypted file is encrypted again to the
 recipients it records inside, which --recipient replaces. A rotation that stopped, as at an
 unreachable node, or paused for the operator, continues with --resume. One rotation runs at a
-time.
+time, and one chalkctl command at a time changes the secrets file, holding <file>.lock.
 
 flags:
 `
@@ -91,6 +91,7 @@ func (a *app) rotate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	r := &rotation{a: a, cluster: c, file: f, endpoints: endpoints, timeout: *timeout, poll: a.poll()}
 	switch {
 	case *finish:

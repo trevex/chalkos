@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -693,5 +694,72 @@ func TestRotateResumesEveryPhase(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestSecretsLockedWhileChanged checks that while a rotation changes the secrets file, another
+// rotation and node-ca rotate are refused at once, and that the lock is released at the end.
+func TestSecretsLockedWhileChanged(t *testing.T) {
+	l := newRotationLab(t)
+	path := filepath.Join(l.ta.dir, "secrets.json")
+	var refused []error
+	l.onShare = func(string) {
+		if refused != nil {
+			return
+		}
+		// A second chalkctl with its own output, as another process would be.
+		second := *l.ta.app
+		second.stdout, second.stderr = &bytes.Buffer{}, &bytes.Buffer{}
+		base := []string{"--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir}
+		for _, args := range [][]string{{"rotate", "kubernetes-ca", "--resume"}, {"rotate", "os-ca", "--finish"}, {"node-ca", "rotate"}} {
+			refused = append(refused, second.run(context.Background(), append(args, base...)))
+		}
+	}
+	if err := l.rotate("kubernetes-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if len(refused) == 0 {
+		t.Fatal("no share was delivered")
+	}
+	for _, err := range refused {
+		if err == nil || !strings.Contains(err.Error(), "another chalkctl command is changing "+path) {
+			t.Errorf("err = %v, want a refusal naming the command changing %s", err, path)
+		}
+	}
+	if info, err := os.Stat(path + ".lock"); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("%s.lock: %v, want mode 0600", path, err)
+	}
+	l.onShare = nil
+	if err := l.rotate("kubernetes-ca", "--resume"); err != nil {
+		t.Errorf("the lock outlived the rotation that held it: %v", err)
+	}
+}
+
+// TestSecretsChangedMeanwhileNotOverwritten checks that a secrets file changed by something else
+// while a rotation runs is not replaced, and keeps what it was changed to.
+func TestSecretsChangedMeanwhileNotOverwritten(t *testing.T) {
+	l := newRotationLab(t)
+	path := filepath.Join(l.ta.dir, "secrets.json")
+	var changed []byte
+	l.onShare = func(string) {
+		if changed != nil {
+			return
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		changed = append(data, '\n')
+		if err := os.WriteFile(path, changed, 0o600); err != nil {
+			t.Error(err)
+		}
+	}
+	err := l.rotate("kubernetes-ca")
+	if err == nil || !strings.Contains(err.Error(), path+" changed since chalkctl read it") {
+		t.Errorf("err = %v, want a refusal saying %s changed", err, path)
+	}
+	if data, _ := os.ReadFile(path); !bytes.Equal(data, changed) {
+		t.Errorf("%s was overwritten after it changed", path)
 	}
 }

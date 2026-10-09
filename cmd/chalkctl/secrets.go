@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,6 +17,7 @@ import (
 
 	"filippo.io/age"
 	"filippo.io/age/plugin"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
 	"github.com/trevex/chalkos/pkg/pki"
@@ -380,6 +382,21 @@ type secretsFile struct {
 	// outNew and publicNew are set while out and publicOut are new files that were not written
 	// yet; once written, later writes replace them in place.
 	outNew, publicNew bool
+	// lock holds the secrets file's lock until Close; nil for standard input.
+	lock *os.File
+	// sum is the SHA-256 of what the file held when it was read or last written, so a change by
+	// anything but this command is noticed before it is overwritten.
+	sum [sha256.Size]byte
+}
+
+// Close releases the secrets file's lock.
+func (f *secretsFile) Close() error {
+	if f.lock == nil {
+		return nil
+	}
+	err := f.lock.Close()
+	f.lock = nil
+	return err
 }
 
 // inPlace reports whether the changes go back to the file they were read from.
@@ -397,7 +414,52 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c ch
 	if path == "-" && c.out == "" {
 		return nil, errors.New("the secrets file from standard input cannot be updated in place; pass --out")
 	}
+	var lock *os.File
+	// The lock is taken before the file is read, also with --out: a second command would read a
+	// rotation's state while the first one moves it on, and drive the nodes from it.
+	if path != "-" {
+		if lock, err = lockSecrets(path); err != nil {
+			return nil, err
+		}
+	}
+	f, err := a.readSecretsFile(ctx, s, path, c)
+	if err != nil {
+		if lock != nil {
+			lock.Close()
+		}
+		return nil, err
+	}
+	f.lock = lock
+	return f, nil
+}
+
+// lockSecrets takes an exclusive lock on <file>.lock beside the file a link points to, held
+// until the returned file is closed or the process ends. The lock file is never removed: a
+// command that removed it could leave the next two to lock different files.
+func lockSecrets(path string) (*os.File, error) {
+	name := path
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		name = real
+	}
+	name += ".lock"
+	lock, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("lock the secrets file: %w", err)
+	}
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		lock.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return nil, fmt.Errorf("another chalkctl command is changing %s; wait for it to end, then run this one again", path)
+		}
+		return nil, fmt.Errorf("lock the secrets file with %s: %w", name, err)
+	}
+	return lock, nil
+}
+
+// readSecretsFile is openSecrets once the file is locked.
+func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, c changeFlags) (*secretsFile, error) {
 	var data []byte
+	var err error
 	if path == "-" {
 		data, err = io.ReadAll(a.stdin)
 	} else {
@@ -414,7 +476,7 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c ch
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: secrets.Recipients}
+	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: secrets.Recipients, sum: sha256.Sum256(data)}
 	public := ""
 	if path != "-" {
 		public = filepath.Join(filepath.Dir(path), "secrets.pub.json")
@@ -560,8 +622,16 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets pki.Secrets) error {
 	if err != nil {
 		return err
 	}
+	if f.inPlace() {
+		if err := f.unchanged(); err != nil {
+			return err
+		}
+	}
 	if err := a.writeOrReplace(f.out, data, 0o600, &f.outNew); err != nil {
 		return err
+	}
+	if f.inPlace() {
+		f.sum = sha256.Sum256(data)
 	}
 	if f.format != pki.FormatJSON {
 		a.sayRecipients(f.out, f.recipients)
@@ -575,6 +645,20 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets pki.Secrets) error {
 		return err
 	}
 	return a.writeOrReplace(f.publicOut, public, 0o644, &f.publicNew)
+}
+
+// unchanged refuses to replace a secrets file that changed since this command read or wrote it:
+// the lock keeps other chalkctl commands out, but not an editor or a checkout, whose change would
+// be lost.
+func (f *secretsFile) unchanged() error {
+	data, err := os.ReadFile(f.path)
+	if err != nil {
+		return fmt.Errorf("read the secrets file again before replacing it: %w", err)
+	}
+	if sha256.Sum256(data) != f.sum {
+		return fmt.Errorf("%s changed since chalkctl read it and was left as it is; look at what changed it, then run the command again", f.path)
+	}
+	return nil
 }
 
 // writeOrReplace creates a file while *create is set, and clears it, or replaces the file in
