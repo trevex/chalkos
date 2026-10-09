@@ -74,6 +74,13 @@ in
   e2e-storage = e2e "storage" "^TestStorage" {
     CHALKLAB_STORAGE_IMAGE_DIR = "${chalkPkgs.test-storage-image}";
   };
+  e2e-upgrade = e2e "upgrade" "^TestUpgrade$" (
+    testImage
+    // {
+      CHALKLAB_UPGRADE_IMAGE_DIR = "${chalkPkgs.test-upgrade-image}";
+      CHALKLAB_UNHEALTHY_IMAGE_DIR = "${chalkPkgs.test-unhealthy-image}";
+    }
+  );
   e2e-kubernetes = e2e "kubernetes" "^TestKubernetesCluster$" {
     CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR = "${chalkPkgs.test-kubernetes-controlplane-image}";
     CHALKLAB_K8S_WORKER_IMAGE_DIR = "${chalkPkgs.test-kubernetes-worker-image}";

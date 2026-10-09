@@ -44,6 +44,8 @@ in
   test-kubernetes-controlplane-image = testing.cluster.roles.k8s-controlplane.image;
   test-kubernetes-worker-image = testing.cluster.roles.k8s-worker.image;
   test-kubernetes-ha-image = testing.haCluster.roles.k8s-ha.image;
+  test-upgrade-image = testing.upgradeImage;
+  test-unhealthy-image = testing.unhealthyImage;
   test-kubernetes-images = testing.kubernetesImages;
 
   # The installer of a cluster without an OS CA: it accepts any client until it installs a node.

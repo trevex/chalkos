@@ -208,9 +208,46 @@ let
       mirrored
     ];
   };
+  # The images of a role again, at another version and with the modules given.
+  imageAt =
+    modules: role: version: extra:
+    (self.lib.mkCluster {
+      modules = modules ++ [
+        { chalkos.roles.${role}.nixosModules = [ ({ system.image.version = version; } // extra) ]; }
+      ];
+    }).roles.${role}.image;
 in
 {
   inherit cluster haCluster;
+  # The test image at the versions e2e-upgrade installs: 0.2.0, and 0.3.0, which never becomes
+  # healthy, as a unit fails at every boot the way a broken service would, and falls back after
+  # one try of 30 seconds.
+  upgradeImage = imageAt [
+    definition
+    mirrored
+  ] "test" "0.2.0" { };
+  unhealthyImage =
+    imageAt
+      [
+        definition
+        mirrored
+      ]
+      "test"
+      "0.3.0"
+      {
+        chalkos.upgrade = {
+          bootTries = 1;
+          healthTimeout = 30;
+        };
+        systemd.services.chalktest-broken = {
+          description = "Fail, as a broken service does";
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${pkgs.coreutils}/bin/false";
+          };
+        };
+      };
   kubernetesImages = import ./kubernetes-images.nix {
     inherit pkgs;
     kubernetesVersion = cluster.cluster.kubernetes.package.version;
