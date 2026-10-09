@@ -224,3 +224,57 @@ func TestRotateNamesAnUnreachableControlPlane(t *testing.T) {
 		t.Errorf("naming the unreachable node took %v", took)
 	}
 }
+
+// TestRotateRewriteTimeoutSuggestsMoreTime checks that a rewrite of the encrypted objects that
+// outlasts --timeout says to resume with a larger one, and that resuming repeats it safely.
+func TestRotateRewriteTimeoutSuggestsMoreTime(t *testing.T) {
+	l := newRotationLab(t)
+	l.mu.Lock()
+	l.slowRewrite = true
+	l.mu.Unlock()
+	err := l.rotate("encryption-key", "--timeout", "1s")
+	for _, want := range []string{"longer than --timeout 1s", "--resume --timeout 2s", "repeats the rewrite safely"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to say %q", err, want)
+		}
+	}
+	if l.phase() != pki.PhaseRefresh {
+		t.Fatalf("the secrets file records %q, want the refresh phase not applied", l.phase())
+	}
+	l.mu.Lock()
+	l.slowRewrite = false
+	l.mu.Unlock()
+	if err := l.rotate("encryption-key", "--resume", "--timeout", "2s"); err != nil {
+		t.Fatal(err)
+	}
+	if l.phase() != "refresh applied" {
+		t.Errorf("the secrets file records %q after the resumed rewrite", l.phase())
+	}
+}
+
+// TestRotateFinishSaysWhatToReissue checks that the finish of a CA's rotation says that client
+// files or kubeconfigs issued during it still trust the old CA until they are issued again.
+func TestRotateFinishSaysWhatToReissue(t *testing.T) {
+	for kind, want := range map[string][]string{
+		pki.RotateOSCA:         {"Client files issued during the rotation still trust the old OS CA", "chalkctl config new"},
+		pki.RotateKubernetesCA: {"Kubeconfigs issued during the rotation still trust the old Kubernetes CA", "chalkctl kubeconfig"},
+	} {
+		t.Run(kind, func(t *testing.T) {
+			l := newRotationLab(t)
+			for _, args := range [][]string{{kind}, {kind, "--resume"}} {
+				if err := l.rotate(args...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			l.ta.stdout.Reset()
+			if err := l.rotate(kind, "--finish"); err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range want {
+				if !strings.Contains(l.ta.stdout.String(), w) {
+					t.Errorf("the finish does not say %q: %s", w, l.ta.stdout)
+				}
+			}
+		})
+	}
+}

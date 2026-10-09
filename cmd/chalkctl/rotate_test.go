@@ -189,6 +189,13 @@ func (n *fakeNode) RotationStep(ctx context.Context, req *connect.Request[nodev1
 	if err := n.refuse(); err != nil {
 		return nil, err
 	}
+	n.lab.mu.Lock()
+	slow := n.lab.slowRewrite
+	n.lab.mu.Unlock()
+	if slow && req.Msg.Step == nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.lab.record(fmt.Sprintf("%s %s", n.name, strings.TrimPrefix(req.Msg.Step.String(), "ROTATION_STEP_")))
@@ -267,6 +274,8 @@ type rotationLab struct {
 	failNodes []string
 	// encrypted counts the objects etcd holds by key name.
 	encrypted map[string]uint64
+	// slowRewrite makes the rewrite of encrypted objects last until the call times out.
+	slowRewrite bool
 }
 
 func (l *rotationLab) record(event string) {

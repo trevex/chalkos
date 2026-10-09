@@ -291,7 +291,13 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 	if len(old) != 1 {
 		return errors.New("the secrets file accepts no single old encryption key")
 	}
+	deadline := time.Now().Add(r.timeout)
 	counts, err := r.encryptedCounts(ctx, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	// A cluster with many Secrets takes longer to rewrite than the default allows. Whatever
+	// stopped once the time was up, the node's error or the call's own, the time is the cause.
+	if err != nil && (connect.CodeOf(err) == connect.CodeDeadlineExceeded || !time.Now().Before(deadline)) {
+		return fmt.Errorf("%w; the rewrite of the encrypted objects took longer than --timeout %v, so give it more time, as with chalkctl rotate %s --resume --timeout %v. --resume repeats the rewrite safely: it writes every object back unchanged, those rewritten already included", err, r.timeout, pki.RotateEncryptionKey, 2*r.timeout)
+	}
 	if err != nil {
 		return err
 	}

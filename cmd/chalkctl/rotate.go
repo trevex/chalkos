@@ -233,6 +233,13 @@ func (r *rotation) run(ctx context.Context) error {
 				return err
 			}
 			r.say("the rotation of the %s is finished: every node trusts the new value alone; %s", pki.RotationName(rot.Kind), r.file.written())
+			// What a client trusts is in its file, which the finish cannot reach.
+			switch rot.Kind {
+			case pki.RotateOSCA:
+				r.say("Client files issued during the rotation still trust the old OS CA besides the new one when they verify the nodes, so whoever holds the old OS CA's key could pose as a node to them; issue them again with chalkctl config new.")
+			case pki.RotateKubernetesCA:
+				r.say("Kubeconfigs issued during the rotation still trust the old Kubernetes CA besides the new one when they verify the API server, so whoever holds the old CA's key could pose as the API server to them; issue them again with chalkctl kubeconfig.")
+			}
 			return nil
 		}
 		if err != nil {
