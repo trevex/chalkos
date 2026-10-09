@@ -61,10 +61,13 @@ func ParseSuperblock(b []byte) (Superblock, error) {
 	return sb, sb.validate()
 }
 
+// maxBlockSize is the largest block the kernel's dm-verity takes: one no larger than a page.
+const maxBlockSize = 4096
+
 func (sb Superblock) validate() error {
 	for _, size := range []uint32{sb.DataBlockSize, sb.HashBlockSize} {
-		if size < 512 || size > 1<<20 || size&(size-1) != 0 {
-			return fmt.Errorf("verity block size %d is not a power of two from 512 to 1 MiB", size)
+		if size < 512 || size > maxBlockSize || size&(size-1) != 0 {
+			return fmt.Errorf("verity block size %d is not a power of two from 512 to %d", size, maxBlockSize)
 		}
 	}
 	if sb.DataBlocks == 0 || sb.DataBlocks > 1<<40 {
@@ -154,7 +157,8 @@ func (sb Superblock) hashLevel(src io.ReaderAt, off, n int64, bs int, emit func(
 	perBlock := int64(1) << sb.perBlockBits()
 	hashBlock := make([]byte, sb.HashBlockSize)
 	groups := max(readChunk/(int64(bs)*perBlock), 1)
-	buf := make([]byte, groups*perBlock*int64(bs))
+	// A level smaller than a read takes a buffer of its own size.
+	buf := make([]byte, min(n, groups*perBlock)*int64(bs))
 	for first := int64(0); first < n; first += groups * perBlock {
 		count := min(groups*perBlock, n-first)
 		chunk := buf[:count*int64(bs)]

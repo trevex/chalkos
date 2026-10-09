@@ -2,12 +2,14 @@ package verity
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -158,6 +160,9 @@ func TestParseSuperblockRefuses(t *testing.T) {
 		{"hash type 0", func(b []byte) { b[12] = 0 }},
 		{"sha1", func(b []byte) { copy(b[32:], "sha1\x00\x00") }},
 		{"block size 1000", func(b []byte) { b[64], b[65] = 0xe8, 0x03 }},
+		{"data blocks of 8 KiB", func(b []byte) { binary.LittleEndian.PutUint32(b[64:], 8192) }},
+		{"hash blocks of 1 MiB", func(b []byte) { binary.LittleEndian.PutUint32(b[68:], 1<<20) }},
+		{"hash blocks of 256 bytes", func(b []byte) { binary.LittleEndian.PutUint32(b[68:], 256) }},
 		{"no data blocks", func(b []byte) { b[72] = 0 }},
 		{"long salt", func(b []byte) { b[81] = 2 }},
 	} {
@@ -171,5 +176,36 @@ func TestParseSuperblockRefuses(t *testing.T) {
 	}
 	if _, err := ParseSuperblock(good); err != nil {
 		t.Error(err)
+	}
+}
+
+// allocated is how many bytes fn allocates.
+func allocated(fn func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	fn()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// TestBoundedMemory checks that what a check allocates follows the devices' sizes, not what a
+// superblock claims: a tree of large hash blocks is refused before anything is read, and a small
+// store is checked with buffers its size.
+func TestBoundedMemory(t *testing.T) {
+	data := randomData(9, 300*512)
+	sb := Superblock{DataBlockSize: 512, HashBlockSize: 512, DataBlocks: 300, Salt: randomData(10, 32)}
+	hash, root, err := Tree(bytes.NewReader(data), sb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	huge := bytes.Clone(hash)
+	binary.LittleEndian.PutUint32(huge[68:], 1<<20)
+	var verr error
+	if n := allocated(func() { _, verr = Verify(bytes.NewReader(data), bytes.NewReader(huge), root) }); verr == nil || n > 64<<10 {
+		t.Errorf("Verify of a tree of 1 MiB hash blocks: %v, after allocating %d bytes", verr, n)
+	}
+	if n := allocated(func() { _, verr = Verify(bytes.NewReader(data), bytes.NewReader(hash), root) }); verr != nil || n > 256<<10 {
+		t.Errorf("Verify of a %d-byte store: %v, after allocating %d bytes", len(data), verr, n)
 	}
 }
