@@ -120,9 +120,14 @@ in
     SUBSYSTEM=="block", KERNEL=="sr[0-9]*", ACTION=="add", RUN+="${losetup} --find --partscan --read-only $devnode"
   '';
 
-  system.build.chalkosInstaller = pkgs.runCommand "chalkos-installer" { } ''
-    mkdir $out
-    ln -s ${image}/* $out/
-    ln -s ${iso}/* $out/
-  '';
+  system.build.chalkosInstaller =
+    pkgs.runCommand "chalkos-installer"
+      {
+        fits = config.system.build.chalkosImageFits;
+      }
+      ''
+        mkdir $out
+        ln -s ${image}/* $out/
+        ln -s ${iso}/* $out/
+      '';
 }

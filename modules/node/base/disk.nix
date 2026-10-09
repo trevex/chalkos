@@ -37,6 +37,26 @@ let
     SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", SYMLINK+="disk/chalk-boot-disk"
     SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", ENV{ID_PART_ENTRY_NAME}=="?*", SYMLINK+="disk/chalk-boot/$env{ID_PART_ENTRY_NAME}"
   '';
+  # An image leaves room for the next one: the build fails when the store's data takes more than
+  # 80% of a slot, or the UKIs the ESP holds more than 80% of it. That is three UKIs on an image
+  # that is upgraded, both slots' and an upgrade's temporary file, and one otherwise.
+  fits =
+    let
+      name = lib.defaultTo config.image.repart.name config.chalkos.role.name;
+      image = config.system.build.image;
+    in
+    pkgs.runCommand "${name}-fits"
+      {
+        nativeBuildInputs = [ (pkgs.callPackage ../../../nix/image-size.nix { }) ];
+        ukis = if cfg.storeSize == null then 1 else 3;
+        storeSize = lib.defaultTo "-" cfg.storeSize;
+        inherit (cfg) espSize;
+      }
+      ''
+        chalkos-image-size fits ${name} ${image}/${config.image.fileName} ${image}/repart-output.json \
+          ${config.system.build.uki}/${config.system.boot.loader.ukiFile} "$ukis" "$storeSize" "$espSize"
+        touch $out
+      '';
 in
 {
   imports = [ "${modulesPath}/image/repart.nix" ];
@@ -179,7 +199,8 @@ in
     # Install recreates STATE from these definitions, and the installer writes a role image's
     # system region with them, so they travel with the image.
     environment.etc."chalkos/repart.d".source = systemDefinitions;
-    system.build.chalkosImage = pkgs.runCommand "${config.image.repart.name}-image" { } ''
+    system.build.chalkosImageFits = fits;
+    system.build.chalkosImage = pkgs.runCommand "${config.image.repart.name}-image" { inherit fits; } ''
       mkdir $out
       ln -s ${config.system.build.image}/* $out/
       ln -s ${systemDefinitions} $out/repart.d

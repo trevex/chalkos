@@ -3294,6 +3294,31 @@ lib.runTests {
       "-C65536"
     ];
   };
+  # Building an image checks that it leaves room for the next: its store in a slot, and on the ESP
+  # the UKIs of both slots and an upgrade's; the installer, never upgraded, holds one UKI.
+  testImageFitCheck = {
+    expr =
+      let
+        c = cluster [ ];
+        summary = fits: { inherit (fits) ukis storeSize espSize; };
+      in
+      {
+        role = summary (role c).system.build.chalkosImage.fits;
+        installer = summary c.installer.fits;
+      };
+    expected = {
+      role = {
+        ukis = 3;
+        storeSize = "3G";
+        espSize = "1G";
+      };
+      installer = {
+        ukis = 1;
+        storeSize = "-";
+        espSize = "256M";
+      };
+    };
+  };
   testInitrdCompression = {
     expr = with (role (cluster [ ])).boot.initrd; [
       compressor

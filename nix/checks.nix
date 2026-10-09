@@ -472,6 +472,87 @@ in
       touch $out
     '';
 
+  # The test cluster's role images within their ceilings (testing/image-sizes.nix). An image over
+  # one fails the check with the largest paths of its system's closure, read from closureInfo, as
+  # the build has no Nix daemon to ask. The images' own fit check is tried on the test image too.
+  image-size =
+    let
+      testing = import ./testing/cluster.nix { inherit self pkgs; };
+      ceilings = import ./testing/image-sizes.nix;
+      measure =
+        name:
+        let
+          inherit (testing.cluster.roles.${name}.nixos) config;
+          image = config.system.build.image;
+          ceiling = ceilings.${name};
+        in
+        lib.escapeShellArgs [
+          name
+          "${image}/${config.image.fileName}"
+          "${image}/repart-output.json"
+          "${config.system.build.uki}/${config.system.boot.loader.ukiFile}"
+          (pkgs.closureInfo { rootPaths = [ config.system.build.toplevel ]; })
+          ceiling.storeData
+          ceiling.hashTree
+          ceiling.uki
+        ];
+      test = testing.cluster.roles.test.nixos.config;
+      testImage = "${test.system.build.image}/${test.image.fileName}";
+      testPartitions = "${test.system.build.image}/repart-output.json";
+      testUKI = "${test.system.build.uki}/${test.system.boot.loader.ukiFile}";
+    in
+    pkgs.runCommand "chalkos-image-size"
+      {
+        nativeBuildInputs = [ (pkgs.callPackage ./image-size.nix { }) ];
+      }
+      ''
+        mib() { awk -v b="$1" 'BEGIN { printf "%.1f MiB", b / 1048576 }'; }
+        failed=0
+        check() {
+          local name=$1 raw=$2 partitions=$3 uki=$4 closure=$5 sizes data hash over=()
+          local -A ceiling=([storeData]=$6 [hashTree]=$7 [uki]=$8)
+          sizes=$(chalkos-image-size measure "$raw" "$partitions")
+          read -r data hash <<<"$sizes"
+          local -A size=([storeData]=$data [hashTree]=$hash [uki]=$(stat -L -c %s "$uki"))
+          for part in storeData hashTree uki; do
+            echo "$name: $part $(mib "''${size[$part]}") of at most ''${ceiling[$part]} MiB"
+            if ((size[$part] > ceiling[$part] * 1048576)); then over+=("$part"); fi
+          done
+          if [[ ''${#over[@]} != 0 ]]; then
+            echo "error: $name is over its ceiling in ''${over[*]}; the largest paths of its closure:" >&2
+            # closureInfo's registration: a path, its hash, its size, its deriver, its number of
+            # references and the references.
+            awk 'step == 0 { path = $0; step = 1; next }
+              step == 1 { step = 2; next }
+              step == 2 { size = $0; step = 3; next }
+              step == 3 { step = 4; next }
+              step == 4 { refs = $0; print size, path; step = refs > 0 ? 5 : 0; next }
+              step == 5 { if (--refs == 0) step = 0 }' "$closure/registration" |
+              sort -rn | awk 'NR <= 20' | while read -r bytes path; do echo "  $(mib "$bytes") $path"; done >&2
+            failed=1
+          fi
+        }
+        check ${measure "k8s-controlplane"}
+        check ${measure "k8s-worker"}
+        check ${measure "test"}
+
+        # The fit check every image build runs refuses a store or UKIs that leave no room.
+        if chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 64M 256M 2>errors; then
+          echo "error: the fit check passed a store larger than its slot" >&2
+          failed=1
+        fi
+        grep -q "the store's data takes" errors || { cat errors >&2; failed=1; }
+        if chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 2G 100M 2>errors; then
+          echo "error: the fit check passed UKIs larger than the ESP" >&2
+          failed=1
+        fi
+        grep -q "3 UKIs of" errors || { cat errors >&2; failed=1; }
+        chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 2G 256M
+
+        if [[ $failed != 0 ]]; then exit 1; fi
+        touch $out
+      '';
+
   # The generated API code is committed; it must match what buf generates from the proto files.
   api-generated =
     pkgs.runCommand "chalkos-api-generated"
