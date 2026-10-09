@@ -81,3 +81,36 @@ func mtools(ctx context.Context, name string, args ...string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// ExtractUKI copies the one UKI on the image's ESP into dir and returns the copy's path, for an
+// upgrade, which installs the UKI by itself.
+func ExtractUKI(ctx context.Context, image string, espOffset int64, dir string) (string, error) {
+	fat := fmt.Sprintf("%s@@%d", image, espOffset)
+	out, err := mtools(ctx, "mdir", "-b", "-i", fat, "::/EFI/Linux")
+	if err != nil {
+		return "", err
+	}
+	var ukis []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); strings.HasSuffix(strings.ToUpper(line), ".EFI") {
+			ukis = append(ukis, line)
+		}
+	}
+	if len(ukis) != 1 {
+		return "", fmt.Errorf("the ESP of %s holds %d UKIs, want one", image, len(ukis))
+	}
+	dst := filepath.Join(dir, path.Base(ukis[0]))
+	if _, err := mtools(ctx, "mcopy", "-n", "-i", fat, ukis[0], dst); err != nil {
+		return "", err
+	}
+	return dst, nil
+}
+
+// SignFile signs an EFI binary in place with sbsign.
+func SignFile(ctx context.Context, file, key, cert string) error {
+	signed := file + ".signed"
+	if out, err := exec.CommandContext(ctx, "sbsign", "--key", key, "--cert", cert, "--output", signed, file).CombinedOutput(); err != nil {
+		return fmt.Errorf("sbsign %s: %w: %s", file, err, out)
+	}
+	return os.Rename(signed, file)
+}

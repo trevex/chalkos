@@ -39,6 +39,7 @@ commands:
   etcd remove-member <node|id> [--via NODE] [--force]
                                                 remove a node's etcd member, such as a stale one
   etcd leave <node> [--force]                   take a control-plane node out of etcd
+  upgrade --image PATH [--nodes N,...]          install an image on the nodes of its role, one control plane at a time
   sign                                          sign the boot loader and UKIs of a disk image
 
 Run chalkctl <command> -h for the flags of a command.`
@@ -135,6 +136,8 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.configNew(ctx, rest[1:])
 	case cmd == "rotate":
 		return a.rotate(ctx, rest)
+	case cmd == "upgrade":
+		return a.upgrade(ctx, rest)
 	case cmd == "sign":
 		return runSign(rest)
 	}

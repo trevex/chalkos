@@ -13,6 +13,8 @@ type Partition struct {
 	Label   string `json:"label"`
 	Offset  int64  `json:"offset"`
 	RawSize int64  `json:"raw_size"`
+	// RootHash is the verity root hash of a store and its hash partition, in hex.
+	RootHash string `json:"roothash"`
 }
 
 // ReadPartitions parses a repart-output.json file.
