@@ -3059,4 +3059,87 @@ lib.runTests {
       extensionBefore = true;
     };
   };
+  # An image describes itself in os-release and names its store partitions by its version.
+  testImageDescribesItself = {
+    expr =
+      let
+        image = modules: role (cluster [ { chalkos.roles.worker.nixosModules = modules; } ]);
+        summary = c: {
+          osRelease = lib.filterAttrs (k: _: lib.hasPrefix "CHALKOS_" k) c.system.nixos.extraOSReleaseArgs;
+          labels = map (p: p.repartConfig.Label) [
+            c.image.repart.partitions."10-store-verity"
+            c.image.repart.partitions."20-store"
+          ];
+        };
+      in
+      {
+        default = summary (image [ ]);
+        upgraded = summary (image [
+          {
+            system.image.version = "0.2.0";
+            chalkos.upgrade.bootTries = 1;
+          }
+        ]);
+      };
+    expected = {
+      default = {
+        osRelease = {
+          CHALKOS_CLUSTER = "t";
+          CHALKOS_ROLE = "worker";
+          CHALKOS_BOOT_TRIES = "3";
+        };
+        labels = [
+          "store-verity_0.1.0"
+          "store_0.1.0"
+        ];
+      };
+      upgraded = {
+        osRelease = {
+          CHALKOS_CLUSTER = "t";
+          CHALKOS_ROLE = "worker";
+          CHALKOS_BOOT_TRIES = "1";
+        };
+        labels = [
+          "store-verity_0.2.0"
+          "store_0.2.0"
+        ];
+      };
+    };
+  };
+  # Versions fit the store labels and systemd-boot's entry IDs unchanged.
+  testImageVersions = {
+    expr =
+      lib.genAttrs
+        [
+          "0.2.0"
+          "1.0~rc1"
+          "2026.10.9-1"
+          "0.2.0+3"
+          "0.2.0_1"
+          "V1"
+          ""
+          ".1"
+          "1.0.0-abcdefghijklmnopqr"
+          "1.0.0-abcdefghijklmnopq"
+        ]
+        (
+          version:
+          lib.all (a: a.assertion)
+            (role (cluster [
+              { chalkos.roles.worker.nixosModules = [ { system.image.version = version; } ]; }
+            ])).assertions
+        );
+    expected = {
+      "0.2.0" = true;
+      "1.0~rc1" = true;
+      "2026.10.9-1" = true;
+      "0.2.0+3" = false;
+      "0.2.0_1" = false;
+      "V1" = false;
+      "" = false;
+      ".1" = false;
+      "1.0.0-abcdefghijklmnopqr" = false;
+      "1.0.0-abcdefghijklmnopq" = true;
+    };
+  };
 }

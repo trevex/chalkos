@@ -17,6 +17,15 @@
         defaultText = lib.literalMD "unavailable in role images";
         description = "Node definitions; available only in the cluster definition.";
       };
+      options.role.name = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = ''
+          The role's name in the cluster definition, set by the role builder; null on the
+          installer, which belongs to no role. A node refuses to upgrade to an image of another
+          role.
+        '';
+      };
       options.role.kubernetes.kind = lib.mkOption {
         type = lib.types.nullOr (
           lib.types.enum [

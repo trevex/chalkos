@@ -90,8 +90,14 @@ in
           }
           // fixed cfg.espSize;
         };
-        ${partitionIds.store-verity}.repartConfig = storePartition cfg.storeVeritySize;
-        ${partitionIds.store}.repartConfig = storePartition cfg.storeSize;
+        # A slot's labels name the version it holds; an upgrade labels the slot it writes the
+        # same way. The boot finds the store by partition UUID, never by label.
+        ${partitionIds.store-verity}.repartConfig = storePartition cfg.storeVeritySize // {
+          Label = "store-verity_${config.system.image.version}";
+        };
+        ${partitionIds.store}.repartConfig = storePartition cfg.storeSize // {
+          Label = "store_${config.system.image.version}";
+        };
       };
     };
 
