@@ -130,25 +130,31 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	checkHealth(t, &Health{Run: r, Kubernetes: s2.Kubernetes, Chalkd: addr, Kubelet: "http://127.0.0.1:1/healthz"}, "")
 }
 
-// espWith writes UKIs to an ESP, each booting the store whose root hash is its version's, and
-// marks the named one as the entry the node booted.
+// espWith is a health check of a node whose ESP holds the UKIs; see writeESP.
 func espWith(t *testing.T, booted string, files ...string) *Health {
 	t.Helper()
 	root := t.TempDir()
 	h := &Health{ESP: filepath.Join(root, "esp"), EFIVars: filepath.Join(root, "efivars"), Cmdline: filepath.Join(root, "cmdline"),
 		Version: "0.2.0", Record: filepath.Join(root, "var", "failed-boot")}
+	writeESP(t, h.ESP, h.EFIVars, h.Cmdline, booted, files...)
+	return h
+}
+
+// writeESP writes UKIs to an ESP, each booting the store whose root hash is its version's, and
+// marks the named one as the entry the node booted from that store.
+func writeESP(t *testing.T, esp, efivars, cmdline, booted string, files ...string) {
+	t.Helper()
 	hash := func(version string) string { return strings.Repeat(fmt.Sprintf("%02x", version[2]), 32) }
 	for _, f := range files {
 		version := strings.TrimPrefix(f, "chalkos_")[:5]
-		write(t, filepath.Join(h.ESP, "EFI", "Linux", f), string(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": version}, "usrhash="+hash(version))))
+		write(t, filepath.Join(esp, "EFI", "Linux", f), string(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": version}, "usrhash="+hash(version))))
 	}
 	value := []byte{7, 0, 0, 0}
 	for _, u := range utf16.Encode([]rune(booted + "\x00")) {
 		value = binary.LittleEndian.AppendUint16(value, u)
 	}
-	write(t, filepath.Join(h.EFIVars, "LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"), string(value))
-	write(t, h.Cmdline, "init=/x usrhash="+hash(strings.TrimPrefix(booted, "chalkos_")[:5])+"\n")
-	return h
+	write(t, filepath.Join(efivars, "LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"), string(value))
+	write(t, cmdline, "init=/x usrhash="+hash(strings.TrimPrefix(booted, "chalkos_")[:5])+"\n")
 }
 
 // TestHealthWaitReboots waits for a boot that never becomes healthy, records its journal on VAR, and

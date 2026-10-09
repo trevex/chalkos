@@ -706,6 +706,9 @@ func (a *app) status(ctx context.Context, args []string) error {
 		}
 	}
 	fmt.Fprintf(a.stdout, "identity %s (%s)\n", s.IdentityVersion, state)
+	for _, line := range bootLines(s.Boot) {
+		fmt.Fprintln(a.stdout, line)
+	}
 	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "VOLUME\tDISK\tMOUNT POINT\tSTATE")
 	for _, v := range s.Volumes {
@@ -758,6 +761,32 @@ func (a *app) status(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
 	}
 	return nil
+}
+
+// bootLines are the status lines of the node's boot: the image it runs, an upgrade it boots next,
+// and one it fell back from, with the lines that version logged last.
+func bootLines(b *nodev1.BootStatus) []string {
+	if b == nil {
+		return nil
+	}
+	if b.Error != "" {
+		return []string{fmt.Sprintf("image %s; its boot is unknown: %s", b.Version, b.Error)}
+	}
+	line := fmt.Sprintf("image %s, booted from %s", b.Version, b.Entry)
+	if !b.Blessed {
+		line += ", not found healthy yet"
+	}
+	lines := []string{line}
+	if b.Staged != "" {
+		lines = append(lines, fmt.Sprintf("upgrade to %s installed; it boots next", b.Staged))
+	}
+	if b.Failed != "" {
+		lines = append(lines, fmt.Sprintf("upgrade to %s failed: rolled back to %s", b.Failed, b.Version))
+		for _, l := range b.Journal {
+			lines = append(lines, "  "+l)
+		}
+	}
+	return lines
 }
 
 // certificateLine is a certificate's line of the status, with tabs between its columns.

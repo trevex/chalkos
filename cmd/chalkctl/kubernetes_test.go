@@ -299,3 +299,23 @@ func TestKubeconfigTrustsBothCAs(t *testing.T) {
 		t.Error("once the accept phase is applied, the client certificate is not of the new CA")
 	}
 }
+
+func TestBootLines(t *testing.T) {
+	for _, tc := range []struct {
+		boot *nodev1.BootStatus
+		want []string
+	}{
+		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0.efi", Blessed: true}, []string{"image 0.2.0, booted from chalkos_0.2.0.efi"}},
+		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0+2-1.efi"}, []string{"image 0.2.0, booted from chalkos_0.2.0+2-1.efi, not found healthy yet"}},
+		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0.efi", Blessed: true, Staged: "0.3.0"},
+			[]string{"image 0.2.0, booted from chalkos_0.2.0.efi", "upgrade to 0.3.0 installed; it boots next"}},
+		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0.efi", Blessed: true, Failed: "0.3.0", Journal: []string{"a", "b"}},
+			[]string{"image 0.2.0, booted from chalkos_0.2.0.efi", "upgrade to 0.3.0 failed: rolled back to 0.2.0", "  a", "  b"}},
+		{&nodev1.BootStatus{Version: "0.2.0", Error: "no UKI on the ESP boots the running store"}, []string{"image 0.2.0; its boot is unknown: no UKI on the ESP boots the running store"}},
+		{nil, nil},
+	} {
+		if got := bootLines(tc.boot); !slices.Equal(got, tc.want) {
+			t.Errorf("bootLines(%v) = %q, want %q", tc.boot, got, tc.want)
+		}
+	}
+}

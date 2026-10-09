@@ -245,6 +245,27 @@ message StatusResponse {
   TimeStatus time = 7;
   // What the node trusts and issues with, by fingerprint.
   repeated TrustStatus trust = 8;
+  // The image the node booted, and what upgrades installed beside it.
+  BootStatus boot = 9;
+}
+
+message BootStatus {
+  // The version of the image the node runs, and the file of the UKI it booted.
+  string version = 1;
+  string entry = 2;
+  // Whether the boot was found healthy and marked good, or not counted by the boot loader at
+  // all; false while the boot loader counts the boot's tries.
+  bool blessed = 3;
+  // The version an upgrade installed to boot next; empty without one.
+  string staged = 4;
+  // The version whose boots used up their tries without being found healthy, from which the node
+  // fell back; empty without one. The failed UKI stays until the next upgrade.
+  string failed = 5;
+  // The last lines chalkd and the health check logged during the failed version's last boot, as
+  // the check recorded them on VAR; empty without that record.
+  repeated string journal = 6;
+  // Why the boot could not be read; empty when it was.
+  string error = 7;
 }
 
 message TrustStatus {
