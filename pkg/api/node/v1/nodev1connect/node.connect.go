@@ -69,6 +69,11 @@ const (
 	NodeServiceRotationStepProcedure = "/chalkos.node.v1.NodeService/RotationStep"
 	// NodeServiceUpgradeProcedure is the fully-qualified name of the NodeService's Upgrade RPC.
 	NodeServiceUpgradeProcedure = "/chalkos.node.v1.NodeService/Upgrade"
+	// NodeServiceDrainNodeProcedure is the fully-qualified name of the NodeService's DrainNode RPC.
+	NodeServiceDrainNodeProcedure = "/chalkos.node.v1.NodeService/DrainNode"
+	// NodeServiceUncordonNodeProcedure is the fully-qualified name of the NodeService's UncordonNode
+	// RPC.
+	NodeServiceUncordonNodeProcedure = "/chalkos.node.v1.NodeService/UncordonNode"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -118,6 +123,15 @@ type NodeServiceClient interface {
 	// The first message carries the header; the store, its hash tree and the UKI follow as
 	// chunks. Available to operators.
 	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
+	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
+	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
+	// and pods without a controller stay; they run again on the node once it is back. A node that
+	// was cordoned already stays cordoned and unmarked; one this call cordons is marked
+	// chalkos.dev/upgrade-cordon. Available on bootstrapped control-plane nodes, to operators.
+	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
+	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
+	// a node cordoned otherwise as it is.
+	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -221,6 +235,18 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
 			connect.WithClientOptions(opts...),
 		),
+		drainNode: connect.NewClient[v1.DrainNodeRequest, v1.DrainNodeResponse](
+			httpClient,
+			baseURL+NodeServiceDrainNodeProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("DrainNode")),
+			connect.WithClientOptions(opts...),
+		),
+		uncordonNode: connect.NewClient[v1.UncordonNodeRequest, v1.UncordonNodeResponse](
+			httpClient,
+			baseURL+NodeServiceUncordonNodeProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("UncordonNode")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -241,6 +267,8 @@ type nodeServiceClient struct {
 	renewNodeCertificate *connect.Client[v1.RenewNodeCertificateRequest, v1.RenewNodeCertificateResponse]
 	rotationStep         *connect.Client[v1.RotationStepRequest, v1.RotationStepResponse]
 	upgrade              *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
+	drainNode            *connect.Client[v1.DrainNodeRequest, v1.DrainNodeResponse]
+	uncordonNode         *connect.Client[v1.UncordonNodeRequest, v1.UncordonNodeResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -318,6 +346,16 @@ func (c *nodeServiceClient) Upgrade(ctx context.Context) *connect.ClientStreamFo
 	return c.upgrade.CallClientStream(ctx)
 }
 
+// DrainNode calls chalkos.node.v1.NodeService.DrainNode.
+func (c *nodeServiceClient) DrainNode(ctx context.Context, req *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error) {
+	return c.drainNode.CallUnary(ctx, req)
+}
+
+// UncordonNode calls chalkos.node.v1.NodeService.UncordonNode.
+func (c *nodeServiceClient) UncordonNode(ctx context.Context, req *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error) {
+	return c.uncordonNode.CallUnary(ctx, req)
+}
+
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in both modes to readers.
@@ -365,6 +403,15 @@ type NodeServiceHandler interface {
 	// The first message carries the header; the store, its hash tree and the UKI follow as
 	// chunks. Available to operators.
 	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
+	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
+	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
+	// and pods without a controller stay; they run again on the node once it is back. A node that
+	// was cordoned already stays cordoned and unmarked; one this call cordons is marked
+	// chalkos.dev/upgrade-cordon. Available on bootstrapped control-plane nodes, to operators.
+	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
+	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
+	// a node cordoned otherwise as it is.
+	UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -464,6 +511,18 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceDrainNodeHandler := connect.NewUnaryHandler(
+		NodeServiceDrainNodeProcedure,
+		svc.DrainNode,
+		connect.WithSchema(nodeServiceMethods.ByName("DrainNode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nodeServiceUncordonNodeHandler := connect.NewUnaryHandler(
+		NodeServiceUncordonNodeProcedure,
+		svc.UncordonNode,
+		connect.WithSchema(nodeServiceMethods.ByName("UncordonNode")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -496,6 +555,10 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRotationStepHandler.ServeHTTP(w, r)
 		case NodeServiceUpgradeProcedure:
 			nodeServiceUpgradeHandler.ServeHTTP(w, r)
+		case NodeServiceDrainNodeProcedure:
+			nodeServiceDrainNodeHandler.ServeHTTP(w, r)
+		case NodeServiceUncordonNodeProcedure:
+			nodeServiceUncordonNodeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -563,4 +626,12 @@ func (UnimplementedNodeServiceHandler) RotationStep(context.Context, *connect.Re
 
 func (UnimplementedNodeServiceHandler) Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Upgrade is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.DrainNode is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) UncordonNode(context.Context, *connect.Request[v1.UncordonNodeRequest]) (*connect.Response[v1.UncordonNodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.UncordonNode is not implemented"))
 }

@@ -154,6 +154,8 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceRenewNodeCertificateProcedure: {[]nodev1.Mode{normal}, pki.RoleNode},
 	nodev1connect.NodeServiceRotationStepProcedure:         {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceUpgradeProcedure:              {[]nodev1.Mode{normal}, pki.RoleOperator},
+	nodev1connect.NodeServiceDrainNodeProcedure:            {[]nodev1.Mode{normal}, pki.RoleOperator},
+	nodev1connect.NodeServiceUncordonNodeProcedure:         {[]nodev1.Mode{normal}, pki.RoleOperator},
 }
 
 type roleKey struct{}

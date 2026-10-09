@@ -54,6 +54,15 @@ service NodeService {
   // The first message carries the header; the store, its hash tree and the UKI follow as
   // chunks. Available to operators.
   rpc Upgrade(stream UpgradeRequest) returns (UpgradeResponse);
+  // DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
+  // eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
+  // and pods without a controller stay; they run again on the node once it is back. A node that
+  // was cordoned already stays cordoned and unmarked; one this call cordons is marked
+  // chalkos.dev/upgrade-cordon. Available on bootstrapped control-plane nodes, to operators.
+  rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
+  // UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
+  // a node cordoned otherwise as it is.
+  rpc UncordonNode(UncordonNodeRequest) returns (UncordonNodeResponse);
 }
 
 enum Mode {
@@ -502,4 +511,29 @@ message UpgradeResponse {
   string entry = 2;
   // The node reboots into the image.
   bool rebooting = 3;
+}
+
+message DrainNodeRequest {
+  // The node's name in Kubernetes.
+  string node = 1;
+  // How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes.
+  uint32 timeout_seconds = 2;
+}
+
+message DrainNodeResponse {
+  // Whether the node is marked as cordoned for an upgrade, by this call or an earlier one.
+  bool marked = 1;
+  // The pods evicted, and those that stay, as namespace/name.
+  repeated string evicted = 2;
+  repeated string kept = 3;
+}
+
+message UncordonNodeRequest {
+  // The node's name in Kubernetes.
+  string node = 1;
+}
+
+message UncordonNodeResponse {
+  // Whether the node was cordoned for an upgrade and is schedulable again.
+  bool uncordoned = 1;
 }
