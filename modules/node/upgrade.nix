@@ -60,7 +60,10 @@ in
     ];
     # boot-complete.target is pulled in on boots the boot loader counts, by
     # systemd-bless-boot.service, which marks the boot good once the target is reached: only once
-    # the node is healthy.
+    # the node is healthy. A counted boot that hangs before this unit starts, as at a prompt in the
+    # initrd to unlock a disk or in chalkos-identity, is never decided by the check: the node stays
+    # in that boot until it is reset, and only then does the boot loader try the entry again or
+    # fall back.
     systemd.services.chalkos-health = {
       description = "Decide whether this boot is healthy";
       requiredBy = [ "boot-complete.target" ];
