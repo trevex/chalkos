@@ -30,6 +30,7 @@ const (
 type Manifest struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Cluster       Cluster         `json:"cluster"`
+	SecureBoot    SecureBoot      `json:"secureBoot"`
 	Roles         map[string]Role `json:"roles"`
 	Nodes         map[string]Node `json:"nodes"`
 }
@@ -38,6 +39,13 @@ type Manifest struct {
 type Cluster struct {
 	Name     string `json:"name"`
 	Endpoint string `json:"endpoint"`
+}
+
+// SecureBoot is how the cluster's images are signed.
+type SecureBoot struct {
+	// SignerCertificate is the PEM certificate of the db key that signs the images' UKIs; empty
+	// when the cluster definition names none.
+	SignerCertificate string `json:"signerCertificate"`
 }
 
 // Role is a node role; all nodes of a role run the same image.

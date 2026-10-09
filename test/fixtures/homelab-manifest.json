@@ -4,6 +4,9 @@
     "name": "homelab",
     "endpoint": "https://10.0.0.11:6443"
   },
+  "secureBoot": {
+    "signerCertificate": null
+  },
   "roles": {
     "controlplane": { "image": "roles.controlplane.image", "kind": "controlplane" },
     "worker": { "image": "roles.worker.image", "kind": "worker" }

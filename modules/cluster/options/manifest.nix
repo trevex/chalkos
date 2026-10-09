@@ -172,6 +172,11 @@ in
   config.chalkos.manifest = lib.showWarnings cfg.warnings {
     schemaVersion = 0;
     cluster = { inherit (cfg.cluster) name endpoint; };
+    secureBoot.signerCertificate =
+      if cfg.secureBoot.signerCertificate == null then
+        null
+      else
+        builtins.readFile cfg.secureBoot.signerCertificate;
     # Relative to the cluster's attribute, which only the evaluating CLI knows; the flake may
     # expose the cluster under any name.
     roles = lib.mapAttrs (role: r: {

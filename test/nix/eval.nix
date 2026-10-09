@@ -3130,6 +3130,17 @@ lib.runTests {
       bless = true;
     };
   };
+  # The manifest carries the db certificate that signs the images, for chalkctl upgrade.
+  testManifestNamesTheImageSigner = {
+    expr = map (c: c.manifest.secureBoot.signerCertificate) [
+      (cluster [ ])
+      (cluster [ { chalkos.secureBoot.signerCertificate = builtins.toFile "db.crt" "PEM"; } ])
+    ];
+    expected = [
+      null
+      "PEM"
+    ];
+  };
   # Versions fit the store labels and systemd-boot's entry IDs unchanged.
   testImageVersions = {
     expr =

@@ -23,7 +23,10 @@
     signerCertificate = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
-      description = "PEM certificate of the db signing key (public); used by the install preflight.";
+      description = ''
+        PEM certificate of the db signing key (public). chalkctl upgrade refuses an image whose UKI
+        it did not sign.
+      '';
     };
   };
 }
