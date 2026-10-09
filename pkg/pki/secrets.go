@@ -34,6 +34,10 @@ type Secrets struct {
 	Accepted Accepted `json:"accepted,omitzero"`
 	// Rotation records the rotation that runs, if one does.
 	Rotation *Rotation `json:"rotation,omitempty"`
+	// Recipients are the age recipients an encrypted secrets file is encrypted to. They are kept
+	// inside it, where nobody without its key can change them, so a command that changes the
+	// file encrypts it to them again.
+	Recipients []string `json:"recipients,omitempty"`
 }
 
 // Public is the public half of the secrets file, secrets.pub.json, which the cluster definition
@@ -43,9 +47,6 @@ type Public struct {
 	OSCA       CertKey          `json:"osCA"`
 	NodeCA     CertKey          `json:"nodeCA"`
 	Kubernetes KubernetesPublic `json:"kubernetes"`
-	// Recipients are the age recipients the secrets file is encrypted to, so a command that
-	// changes it encrypts it to them again; none for a plaintext file.
-	Recipients []string `json:"recipients,omitempty"`
 }
 
 // ReadPublic decodes secrets.pub.json.

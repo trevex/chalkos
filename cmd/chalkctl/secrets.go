@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -295,8 +296,9 @@ func createNew(path string, perm fs.FileMode, write func(w io.Writer) error) err
 	return nil
 }
 
-// writeSecrets writes the secrets file, encrypted to the recipients unless plaintext, and its
-// public half when publicPath is set. Neither may exist: a secrets file is never overwritten.
+// writeSecrets writes the secrets file, encrypted to the recipients, which it records inside it,
+// unless plaintext, and its public half when publicPath is set. Neither may exist: a secrets file
+// is never overwritten.
 func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext bool, path, publicPath string) error {
 	for _, p := range []string{path, publicPath} {
 		if p == "" {
@@ -312,13 +314,10 @@ func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext b
 		data, err = secrets.Encode()
 	} else {
 		var parsed []age.Recipient
-		for _, r := range recipients {
-			rec, err := pki.ParseRecipient(r, a.pluginUI())
-			if err != nil {
-				return err
-			}
-			parsed = append(parsed, rec)
+		if parsed, err = a.ageRecipients(recipients); err != nil {
+			return err
 		}
+		secrets.Recipients = recipients
 		data, err = secrets.Encrypt(parsed...)
 	}
 	if err != nil {
@@ -327,22 +326,28 @@ func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext b
 	if err := writeNew(path, data, 0o600); err != nil {
 		return err
 	}
+	if !plaintext {
+		a.sayRecipients(path, recipients)
+	}
 	if publicPath == "" {
 		return nil
 	}
-	public, err := encodePublic(secrets, recipients)
+	public, err := encodePublic(secrets)
 	if err != nil {
 		return err
 	}
 	return writeNew(publicPath, public, 0o644)
 }
 
-// encodePublic encodes the public half of the secrets with the recipients the secrets file is
-// encrypted to.
-func encodePublic(secrets pki.Secrets, recipients []string) ([]byte, error) {
-	public := secrets.Public()
-	public.Recipients = recipients
-	data, err := json.MarshalIndent(public, "", "  ")
+// sayRecipients names whom an encrypted secrets file was encrypted to, so an operator notices a
+// recipient that does not belong.
+func (a *app) sayRecipients(path string, recipients []string) {
+	fmt.Fprintf(a.stdout, "encrypted %s to %s\n", path, strings.Join(recipients, ", "))
+}
+
+// encodePublic encodes the public half of the secrets.
+func encodePublic(secrets pki.Secrets) ([]byte, error) {
+	data, err := json.MarshalIndent(secrets.Public(), "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -358,12 +363,12 @@ type changeFlags struct {
 func (c *changeFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&c.out, "out", "", "write the changed secrets file to this new file instead of updating the secrets file in place")
 	fs.StringVar(&c.publicOut, "public-out", "", "write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place")
-	fs.Var(&c.recipients, "recipient", "age recipient to encrypt the changed secrets file to instead of those secrets.pub.json records; may be repeated")
+	fs.Var(&c.recipients, "recipient", "age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out")
 }
 
 // secretsFile is a secrets file a command changes, with where and how the changes are written:
 // back to the file in place, keeping its previous version as <file>.prev, or to new files; in the
-// format the file had, an encrypted file to the recipients secrets.pub.json records.
+// format the file had, an encrypted file to the recipients it records.
 type secretsFile struct {
 	secrets pki.Secrets
 	// path is the file the secrets were read from, out the one they are written to.
@@ -381,7 +386,9 @@ type secretsFile struct {
 func (f *secretsFile) inPlace() bool { return f.out == f.path }
 
 // openSecrets reads the secrets file for a command that changes it, and works out where and how
-// the changes are written before anything is changed.
+// the changes are written before anything is changed. The recipients come from inside the
+// encrypted file, or from --recipient, never from secrets.pub.json, which anyone who can write
+// beside the secrets file could change.
 func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c changeFlags) (*secretsFile, error) {
 	path, _, err := secretsPath(s, flake)
 	if err != nil {
@@ -407,7 +414,7 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c ch
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: c.recipients}
+	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: secrets.Recipients}
 	public := ""
 	if path != "-" {
 		public = filepath.Join(filepath.Dir(path), "secrets.pub.json")
@@ -420,6 +427,9 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c ch
 		}
 	case c.out == "":
 		f.publicOut = public
+		if err := matchesPublic(public, secrets); err != nil {
+			return nil, err
+		}
 	}
 	if c.out != "" {
 		f.out, f.outNew = c.out, true
@@ -427,15 +437,23 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c ch
 			return nil, err
 		}
 	}
-	if format != pki.FormatJSON && len(f.recipients) == 0 {
-		recorded, err := recordedRecipients(public)
-		if err != nil {
-			return nil, err
+	toAge := strings.HasSuffix(c.out, ".age")
+	if format == pki.FormatJSON {
+		switch {
+		case len(c.recipients) > 0 && !toAge:
+			return nil, fmt.Errorf("%s is plaintext; --recipient encrypts it only to a new .age file given with --out", path)
+		case len(c.recipients) == 0 && toAge:
+			return nil, fmt.Errorf("%s is plaintext; pass --recipient to encrypt it to %s", path, c.out)
+		case toAge:
+			f.format = pki.FormatAge
+			fmt.Fprintf(a.stdout, "%s is plaintext; %s is age-encrypted to %s\n", path, c.out, strings.Join(c.recipients, ", "))
 		}
-		if len(recorded) == 0 {
-			return nil, fmt.Errorf("%s is encrypted, and no secrets.pub.json beside it records the recipients to encrypt it to again; pass --recipient", path)
-		}
-		f.recipients = recorded
+	}
+	if len(c.recipients) > 0 {
+		f.recipients = c.recipients
+	}
+	if f.format != pki.FormatJSON && len(f.recipients) == 0 {
+		return nil, fmt.Errorf("%s is encrypted and records no recipients to encrypt it to again; pass --recipient", path)
 	}
 	// A recipient that does not parse fails now, before anything changed.
 	if _, err := a.ageRecipients(f.recipients); err != nil {
@@ -444,11 +462,45 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c ch
 	return f, nil
 }
 
+// matchesPublic refuses to update a secrets.pub.json in place that belongs to other secrets: its
+// OS CA must be the secrets' or one they accept, as after a rotation's switch written with --out.
+// None is fine; it is created.
+func matchesPublic(path string, secrets pki.Secrets) error {
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	public, err := pki.ReadPublic(data)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	have, err := pki.Fingerprints(public.OSCA.Certificate)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	known, err := pki.Fingerprints(secrets.OSCABundle())
+	if err != nil {
+		return err
+	}
+	for _, fp := range have {
+		if !slices.Contains(known, fp) {
+			return fmt.Errorf("%s holds an OS CA the secrets file neither holds nor accepts; it belongs to other secrets. Write the public half to a new file with --public-out", path)
+		}
+	}
+	return nil
+}
+
 // written says where the changes went and what the operator does with them.
 func (f *secretsFile) written() string {
 	var what []string
 	if f.inPlace() {
-		what = append(what, "the previous version is "+f.path+".prev")
+		what = append(what, "the previous version is "+previousOf(f.path))
 	} else {
 		what = append(what, "replace the secrets file with it")
 	}
@@ -460,34 +512,23 @@ func (f *secretsFile) written() string {
 	return strings.Join(what, "; ")
 }
 
+// previousOf is where replaceFile keeps the previous version of path: beside the file a link
+// points to.
+func previousOf(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	return path + ".prev"
+}
+
 // mustNotExist refuses a file a command was asked to create.
 func mustNotExist(path string) error {
-	if _, err := os.Stat(path); err == nil {
+	if _, err := os.Lstat(path); err == nil {
 		return fmt.Errorf("%s exists; --out and --public-out write new files", path)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
-}
-
-// recordedRecipients reads the recipients secrets.pub.json at path records; none when there is no
-// such file.
-func recordedRecipients(path string) ([]string, error) {
-	if path == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	public, err := pki.ReadPublic(data)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	return public.Recipients, nil
 }
 
 func (a *app) ageRecipients(recipients []string) ([]age.Recipient, error) {
@@ -502,8 +543,12 @@ func (a *app) ageRecipients(recipients []string) ([]age.Recipient, error) {
 	return parsed, nil
 }
 
-// writeSecretsFile writes the secrets, and their public half, where openSecrets decided.
+// writeSecretsFile writes the secrets, and their public half, where openSecrets decided. An
+// encrypted file records its recipients inside and names them.
 func (a *app) writeSecretsFile(f *secretsFile, secrets pki.Secrets) error {
+	if f.format != pki.FormatJSON {
+		secrets.Recipients = f.recipients
+	}
 	if err := secrets.Validate(); err != nil {
 		return err
 	}
@@ -515,43 +560,79 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets pki.Secrets) error {
 	if err != nil {
 		return err
 	}
-	if err := writeOrReplace(f.out, data, 0o600, &f.outNew); err != nil {
+	if err := a.writeOrReplace(f.out, data, 0o600, &f.outNew); err != nil {
 		return err
+	}
+	if f.format != pki.FormatJSON {
+		a.sayRecipients(f.out, f.recipients)
 	}
 	f.secrets = secrets
 	if f.publicOut == "" {
 		return nil
 	}
-	recorded := f.recipients
-	if f.format == pki.FormatJSON {
-		recorded = nil
-	}
-	public, err := encodePublic(secrets, recorded)
+	public, err := encodePublic(secrets)
 	if err != nil {
 		return err
 	}
-	return writeOrReplace(f.publicOut, public, 0o644, &f.publicNew)
+	return a.writeOrReplace(f.publicOut, public, 0o644, &f.publicNew)
 }
 
 // writeOrReplace creates a file while *create is set, and clears it, or replaces the file in
-// place keeping its previous version.
-func writeOrReplace(path string, data []byte, perm fs.FileMode, create *bool) error {
-	if !*create {
-		return replaceFile(path, data, perm)
+// place keeping its previous version. Either way the directory is synced afterwards; once the
+// file is in place, a failed sync is a warning: the command did what it was asked, and the next
+// write retries it.
+func (a *app) writeOrReplace(path string, data []byte, perm fs.FileMode, create *bool) error {
+	var err error
+	if *create {
+		if err = writeNew(path, data, perm); err != nil {
+			return err
+		}
+		*create = false
+		if serr := syncDir(filepath.Dir(path)); serr != nil {
+			err = &unsyncedError{path, serr}
+		}
+	} else {
+		err = replaceFile(path, data, perm)
 	}
-	if err := writeNew(path, data, perm); err != nil {
-		return err
+	var unsynced *unsyncedError
+	if errors.As(err, &unsynced) {
+		fmt.Fprintf(a.stderr, "chalkctl: warning: %v\n", err)
+		return nil
 	}
-	*create = false
-	return nil
+	return err
 }
+
+// unsyncedError is a file written in place whose directory could not be synced, so a crash may
+// still bring back what the directory held before.
+type unsyncedError struct {
+	path string
+	err  error
+}
+
+func (e *unsyncedError) Error() string {
+	return fmt.Sprintf("%s is written, but its directory was not synced, so a crash may undo that: %v", e.path, e.err)
+}
+
+func (e *unsyncedError) Unwrap() error { return e.err }
 
 // replaceFile replaces path with data in one step and keeps what it held as path.prev. The data
 // goes to a temporary file beside path and is synced; path.prev becomes a link to the current
 // file, and the temporary file is renamed over path. path exists throughout, and a crash leaves
 // one version or the other, never part of one. A file that does not exist yet is created with
-// perm; an existing one keeps its mode.
+// perm; an existing one keeps its mode. A symbolic link is followed: the file it points to is
+// replaced and the link kept. A directory that cannot be synced after the rename is an
+// *unsyncedError.
 func replaceFile(path string, data []byte, perm fs.FileMode) error {
+	switch real, err := filepath.EvalSymlinks(path); {
+	case err == nil:
+		path = real
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
+	default:
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("%s is a link to a file that does not exist", path)
+		}
+	}
 	info, err := os.Stat(path)
 	exists := err == nil
 	switch {
@@ -587,12 +668,10 @@ func replaceFile(path string, data []byte, perm fs.FileMode) error {
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return err
 	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
+	if err := syncDir(dir); err != nil {
+		return &unsyncedError{path, err}
 	}
-	defer d.Close()
-	return d.Sync()
+	return nil
 }
 
 // keepPrevious makes path.prev what path holds now, replacing an older path.prev in one step: a
@@ -613,4 +692,14 @@ func keepPrevious(path string, perm fs.FileMode) error {
 		}
 	}
 	return os.Rename(next, path+".prev")
+}
+
+// syncDir syncs a directory, so the names of the files written into it last; tests replace it.
+var syncDir = func(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }

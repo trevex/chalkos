@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // What chalkctl rotate rotates.
@@ -145,6 +146,21 @@ func (n NewValues) String() string { return "pki.NewValues{redacted}" }
 // GoString redacts like String.
 func (n NewValues) GoString() string { return n.String() }
 
+// onlyOf reports whether the new values hold nothing but values of kind.
+func (n NewValues) onlyOf(kind string) bool {
+	of := map[string]bool{
+		RotateOSCA:              n.OSCA != nil || n.NodeCA != nil,
+		RotateKubernetesCA:      n.CA != nil || n.FrontProxyCA != nil || n.EtcdCA != nil,
+		RotateServiceAccountKey: n.ServiceAccountKey != "",
+	}
+	for k, set := range of {
+		if set && k != kind {
+			return false
+		}
+	}
+	return true
+}
+
 // OSCABundle is the OS CAs nodes and chalkctl trust: the one that issues, then those accepted.
 func (s Secrets) OSCABundle() string {
 	return Bundle(append([]string{s.OSCA.Certificate}, s.Accepted.OSCA...)...)
@@ -251,7 +267,7 @@ func (k KubernetesSecrets) ValidateAccepted() error {
 		certs []string
 	}{{"kubernetes.accepted.ca", k.Accepted.CA}, {"kubernetes.accepted.frontProxyCA", k.Accepted.FrontProxyCA}, {"kubernetes.accepted.etcdCA", k.Accepted.EtcdCA}} {
 		for i, c := range list.certs {
-			if err := validateCACertificate(c); err != nil {
+			if err := validateRoot(c); err != nil {
 				return fmt.Errorf("%s[%d]: %w", list.name, i, err)
 			}
 		}
@@ -293,10 +309,11 @@ func (k KubernetesSecrets) ValidateAccepted() error {
 	return nil
 }
 
-// validKeyName checks a name the API server prefixes ciphertexts with, k8s:enc:secretbox:v1:<name>:.
+// validKeyName checks a name the API server prefixes ciphertexts with, k8s:enc:secretbox:v1:<name>:,
+// and that chalkctl prints: no colon, space or control character.
 func validKeyName(name string) error {
-	if name == "" || strings.ContainsAny(name, ": \t\n") {
-		return fmt.Errorf("the name %q is empty or holds a colon or space", name)
+	if name == "" || strings.ContainsFunc(name, func(r rune) bool { return r == ':' || unicode.IsSpace(r) || unicode.IsControl(r) }) {
+		return fmt.Errorf("the name %q is empty or holds a colon, space or control character", name)
 	}
 	return nil
 }
@@ -377,6 +394,8 @@ func (s Secrets) validateRotation() error {
 		return errors.New("rotation: a new encryption key is accepted, not held apart")
 	case r.Kind != RotateEncryptionKey && (r.Phase == PhaseAccept) != (r.New != nil):
 		return errors.New("rotation: new values belong to the accept phase only")
+	case r.New != nil && !r.New.onlyOf(r.Kind):
+		return fmt.Errorf("rotation: the new values hold values of another kind than the %s", RotationName(r.Kind))
 	}
 
 	if r.Phase != PhaseAccept && r.Phase != PhaseFinish && r.Switched.IsZero() {
@@ -389,8 +408,12 @@ func (s Secrets) validateRotation() error {
 		}
 		return nil
 	}
-	if accepted == 0 {
-		return fmt.Errorf("rotation: the %s phase accepts no other value", r.Phase)
+	// chalkctl accepts exactly one value besides each issuing one: the new value before the
+	// switch, the old one after it.
+	for _, n := range s.acceptedCounts(r.Kind) {
+		if n != 1 {
+			return fmt.Errorf("rotation: the %s phase accepts %d values besides one that issues; a rotation accepts exactly one", r.Phase, n)
+		}
 	}
 	if r.Phase != PhaseAccept {
 		return nil
@@ -444,18 +467,28 @@ func requireAccepted(name, value string, accepted []string) error {
 
 // acceptedOf counts the values accepted besides the issuing one for a kind.
 func (s Secrets) acceptedOf(kind string) int {
+	total := 0
+	for _, n := range s.acceptedCounts(kind) {
+		total += n
+	}
+	return total
+}
+
+// acceptedCounts counts the values accepted besides each issuing one of a kind: one count per CA
+// or key that rotates.
+func (s Secrets) acceptedCounts(kind string) []int {
 	a := s.Kubernetes.Accepted
 	switch kind {
 	case RotateOSCA:
-		return len(s.Accepted.OSCA)
+		return []int{len(s.Accepted.OSCA)}
 	case RotateKubernetesCA:
-		return len(a.CA) + len(a.FrontProxyCA) + len(a.EtcdCA)
+		return []int{len(a.CA), len(a.FrontProxyCA), len(a.EtcdCA)}
 	case RotateServiceAccountKey:
-		return len(a.ServiceAccountKeys)
+		return []int{len(a.ServiceAccountKeys)}
 	case RotateEncryptionKey:
-		return len(a.EncryptionKeys)
+		return []int{len(a.EncryptionKeys)}
 	}
-	return 0
+	return nil
 }
 
 // accepting names a kind with accepted values, "" when there is none.

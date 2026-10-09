@@ -27,8 +27,9 @@ switch (the new value issues or signs), refresh (what the old value issued is is
 with --finish, finish (the old value is removed, and whatever it issued is refused from then on).
 The secrets file records the phase reached and is updated in place, keeping its previous version
 as <file>.prev, unless --out names a new file; an encrypted file is encrypted again to the
-recipients secrets.pub.json records. A rotation that stopped, as at an unreachable node, or
-paused for the operator, continues with --resume. One rotation runs at a time.
+recipients it records inside, which --recipient replaces. A rotation that stopped, as at an
+unreachable node, or paused for the operator, continues with --resume. One rotation runs at a
+time.
 
 flags:
 `

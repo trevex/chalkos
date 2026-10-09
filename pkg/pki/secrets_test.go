@@ -378,13 +378,19 @@ func TestEncodeAs(t *testing.T) {
 	}
 }
 
+// TestReadPublic checks that the public half reads back, never carries the recipients the
+// secrets file records, and that recipients an older public file records are ignored.
 func TestReadPublic(t *testing.T) {
 	s := generate(t)
+	s.Recipients = []string{"age1example"}
 	pub := s.Public()
-	pub.Recipients = []string{"age1example"}
 	data, _ := json.Marshal(pub)
-	got, err := ReadPublic(data)
-	if err != nil || got.OSCA.Certificate != s.OSCA.Certificate || len(got.Recipients) != 1 {
+	if strings.Contains(string(data), "age1example") {
+		t.Errorf("the public half holds the recipients: %s", data)
+	}
+	older := strings.Replace(string(data), "{", `{"recipients": ["age1example"],`, 1)
+	got, err := ReadPublic([]byte(older))
+	if err != nil || got.OSCA.Certificate != s.OSCA.Certificate {
 		t.Errorf("ReadPublic = %+v, %v", got, err)
 	}
 	pub.Version = 2

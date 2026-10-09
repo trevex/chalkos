@@ -319,6 +319,43 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 			s.Accepted.OSCA = []string{third.OSCA.Certificate}
 			s.Rotation = &Rotation{Kind: RotateOSCA, Phase: PhaseAccept, New: &NewValues{OSCA: &other.OSCA, NodeCA: &other.NodeCA}}
 		},
+		"new values of another kind": func(s *Secrets) {
+			s.Accepted.OSCA = []string{other.OSCA.Certificate}
+			s.Rotation = &Rotation{Kind: RotateOSCA, Phase: PhaseAccept, New: &NewValues{OSCA: &other.OSCA, NodeCA: &other.NodeCA, ServiceAccountKey: other.Kubernetes.ServiceAccountKey}}
+		},
+		"a new OS CA in a rotation of the Kubernetes CAs": func(s *Secrets) {
+			k := other.Kubernetes
+			s.Kubernetes.Accepted.CA, s.Kubernetes.Accepted.FrontProxyCA, s.Kubernetes.Accepted.EtcdCA = []string{k.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
+			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseAccept, New: &NewValues{CA: &k.CA, FrontProxyCA: &k.FrontProxyCA, EtcdCA: &k.EtcdCA, OSCA: &other.OSCA}}
+		},
+		"two accepted OS CAs": func(s *Secrets) {
+			s.Accepted.OSCA = []string{other.OSCA.Certificate, generate(t).OSCA.Certificate}
+			s.Rotation = &Rotation{Kind: RotateOSCA, Phase: PhaseRefresh, Switched: now}
+		},
+		"two accepted Kubernetes CAs": func(s *Secrets) {
+			k := other.Kubernetes
+			s.Kubernetes.Accepted.CA, s.Kubernetes.Accepted.FrontProxyCA, s.Kubernetes.Accepted.EtcdCA = []string{k.CA.Certificate, generate(t).Kubernetes.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
+			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseRefresh, Switched: now}
+		},
+		"the Kubernetes CA accepted without the front-proxy and etcd CAs": func(s *Secrets) {
+			s.Kubernetes.Accepted.CA = []string{other.Kubernetes.CA.Certificate}
+			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseRefresh, Switched: now}
+		},
+		"two accepted encryption keys": func(s *Secrets) {
+			s.Kubernetes.Accepted.EncryptionKeys = []EncryptionKey{{Name: "a", Key: make([]byte, EncryptionKeySize)}, {Name: "b", Key: make([]byte, EncryptionKeySize)}}
+			s.Rotation = &Rotation{Kind: RotateEncryptionKey, Phase: PhaseRefresh, Switched: now}
+		},
+		"an accepted Kubernetes CA that is no root": func(s *Secrets) {
+			k := other.Kubernetes
+			s.Kubernetes.Accepted.CA, s.Kubernetes.Accepted.FrontProxyCA, s.Kubernetes.Accepted.EtcdCA = []string{other.NodeCA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
+			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseRefresh, Switched: now}
+		},
+		"an encryption key name with a control character": func(s *Secrets) {
+			s.Kubernetes.EncryptionKeyName = "a\x01b"
+		},
+		"an encryption key name with a delete character": func(s *Secrets) {
+			s.Kubernetes.EncryptionKeyName = "a\x7fb"
+		},
 		"a finish that accepts old values": func(s *Secrets) {
 			s.Accepted.OSCA = []string{other.OSCA.Certificate}
 			s.Rotation = &Rotation{Kind: RotateOSCA, Phase: PhaseFinish, Switched: now}
