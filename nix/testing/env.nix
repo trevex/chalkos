@@ -10,6 +10,8 @@ in
     pkgs.mtools
     pkgs.sbsigntool
     pkgs.dosfstools
+    # veritysetup, which the verity tests check their trees against.
+    pkgs.cryptsetup
     # VM-to-VM networking, and the forwards that reach registries the tests serve.
     pkgs.vde2
     pkgs.socat
