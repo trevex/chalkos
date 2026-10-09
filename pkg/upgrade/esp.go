@@ -82,6 +82,21 @@ func entryName(id, version string, tries int) string {
 // Entries lists the UKIs on the ESP mounted at esp, in name order, leaving out the
 // files systemd-boot ignores.
 func Entries(esp string) ([]Entry, error) {
+	return entries(esp, os.Open)
+}
+
+// entries lists the UKIs, opening each with open. systemd-bless-boot renames the booted UKI once
+// its boot was found healthy; a UKI gone between listing and reading is found under its new name
+// by listing again.
+func entries(esp string, open func(string) (*os.File, error)) ([]Entry, error) {
+	list, err := listEntries(esp, open)
+	if errors.Is(err, fs.ErrNotExist) {
+		list, err = listEntries(esp, open)
+	}
+	return list, err
+}
+
+func listEntries(esp string, open func(string) (*os.File, error)) ([]Entry, error) {
 	dir := filepath.Join(esp, linuxDir)
 	files, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -98,7 +113,11 @@ func Entries(esp string) ([]Entry, error) {
 		}
 		e := Entry{File: name}
 		e.ID, e.TriesLeft, e.TriesDone = parseEntryName(name)
-		if img, err := readUKI(filepath.Join(dir, name)); err == nil {
+		img, err := readUKI(filepath.Join(dir, name), open)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return nil, fmt.Errorf("read %s on the ESP: %w", name, err)
+		case err == nil:
 			e.ImageID, e.Version = img.ID(), img.Version()
 			e.RootHash, _ = img.UsrHash()
 		}
@@ -107,8 +126,8 @@ func Entries(esp string) ([]Entry, error) {
 	return entries, nil
 }
 
-func readUKI(path string) (uki.Image, error) {
-	f, err := os.Open(path)
+func readUKI(path string, open func(string) (*os.File, error)) (uki.Image, error) {
+	f, err := open(path)
 	if err != nil {
 		return uki.Image{}, err
 	}

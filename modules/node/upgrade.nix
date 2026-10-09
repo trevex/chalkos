@@ -37,6 +37,16 @@ in
             chalkd reboots the node, so the boot loader tries again or falls back.
           '';
         };
+        healthIgnoreUnits = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ ];
+          example = [ "example-sync.service" ];
+          description = ''
+            Units of the boot whose failure leaves a node without Kubernetes healthy. Only units
+            multi-user.target and sysinit.target pull in count; jobs that timers and sockets start
+            never do.
+          '';
+        };
       };
     };
   };
@@ -60,8 +70,15 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${lib.getExe chalkd} health --wait ${toString cfg.healthTimeout}";
+        ExecStart = "${lib.getExe chalkd} health --wait ${toString cfg.healthTimeout}${
+          lib.concatMapStrings (unit: " --ignore-unit ${lib.escapeShellArg unit}") cfg.healthIgnoreUnits
+        }";
         TimeoutStartSec = cfg.healthTimeout + 60;
+        # A check that ended before it decided, stopped by the timeout above or crashed, is handled
+        # as an unhealthy boot: rebooted only when that leads the boot loader on. FailureAction=reboot would also
+        # reboot a used-up entry booted for lack of another, which systemd-boot counts and boots
+        # again, in a loop.
+        ExecStopPost = "${lib.getExe chalkd} health --stopped";
       };
     };
 

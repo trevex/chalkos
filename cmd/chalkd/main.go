@@ -7,7 +7,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -37,9 +39,12 @@ const usage = `usage: chalkd <command>
 commands:
   serve                            serve the node API
   load-identity                    apply the identity recorded on STATE
-  health [--wait SECONDS]          check whether this boot is healthy; with --wait, check until
+  health [--wait SECONDS] [--ignore-unit UNIT]...
+                                   check whether this boot is healthy; with --wait, check until
                                    it is, and reboot after an unhealthy boot of an image the
-                                   boot loader counts
+                                   boot loader counts; failed units ignored do not count
+  health --stopped                 after a wait ended before it decided, as it would have:
+                                   record the boot and reboot when that leads on
   prepare-kubernetes [vxlan-rule]  pick the node's addresses and write its Kubernetes
                                    certificates and configuration, then run vxlan-rule with the
                                    file saying where VXLAN may arrive`
@@ -81,32 +86,76 @@ func validArgs(command string, args []string) bool {
 	case "prepare-kubernetes":
 		return len(args) <= 1
 	case "health":
-		return len(args) == 0 || len(args) == 2 && args[0] == "--wait"
+		_, err := parseHealthArgs(args)
+		return err == nil
 	}
 	return len(args) == 0
 }
 
-// health checks this boot once, or with --wait until it is healthy or the seconds passed.
+// healthArgs are what chalkd health takes: how long to wait for the boot to become healthy, or
+// whether systemd stopped such a wait, and the units whose failure does not count.
+type healthArgs struct {
+	wait    time.Duration
+	stopped bool
+	ignore  []string
+}
+
+func parseHealthArgs(args []string) (healthArgs, error) {
+	var a healthArgs
+	fs := flag.NewFlagSet("health", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	wait := fs.String("wait", "", "")
+	fs.BoolVar(&a.stopped, "stopped", false, "")
+	fs.Func("ignore-unit", "", func(unit string) error {
+		a.ignore = append(a.ignore, unit)
+		return nil
+	})
+	if err := fs.Parse(args); err != nil {
+		return healthArgs{}, err
+	}
+	if fs.NArg() > 0 {
+		return healthArgs{}, fmt.Errorf("health takes no argument %q", fs.Arg(0))
+	}
+	if *wait != "" {
+		seconds, err := strconv.Atoi(*wait)
+		if err != nil || seconds <= 0 {
+			return healthArgs{}, fmt.Errorf("--wait takes a number of seconds, not %q", *wait)
+		}
+		a.wait = time.Duration(seconds) * time.Second
+	}
+	if a.stopped && a.wait > 0 {
+		return healthArgs{}, errors.New("--stopped and --wait exclude each other")
+	}
+	return a, nil
+}
+
+// health checks this boot once, or with --wait until it is healthy or the seconds passed. With
+// --stopped it handles the end of a wait that did not decide, which systemd describes in
+// $SERVICE_RESULT and $EXIT_STATUS.
 func health(args []string) error {
+	a, err := parseHealthArgs(args)
+	if err != nil {
+		return err
+	}
 	var k *chalkd.Kubernetes
 	if _, err := os.Stat(knode.DefaultPaths().Cluster); err == nil {
 		k = chalkd.NewKubernetes()
 	}
 	h := chalkd.DefaultHealth(k)
+	h.IgnoreUnits = a.ignore
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	if len(args) == 0 {
-		if err := h.Check(ctx); err != nil {
-			return fmt.Errorf("not healthy: %w", err)
-		}
-		log.Print("healthy")
-		return nil
+	switch {
+	case a.stopped:
+		return h.Stopped(ctx, os.Getenv("SERVICE_RESULT"), os.Getenv("EXIT_STATUS"))
+	case a.wait > 0:
+		return h.Wait(ctx, a.wait)
 	}
-	seconds, err := strconv.Atoi(args[1])
-	if err != nil || seconds <= 0 {
-		return fmt.Errorf("--wait takes a number of seconds, not %q", args[1])
+	if err := h.Check(ctx); err != nil {
+		return fmt.Errorf("not healthy: %w", err)
 	}
-	return h.Wait(ctx, time.Duration(seconds)*time.Second)
+	log.Print("healthy")
+	return nil
 }
 
 // credentials are what chalkd serves with in its mode.

@@ -578,3 +578,30 @@ func TestChangesOutliveTheCaller(t *testing.T) {
 	}}
 	l.node.Install(ctx, img.header, img.stream())
 }
+
+// TestEntriesWhileBlessed lists the UKIs again when one is renamed while they are read, as
+// systemd-bless-boot renames the booted one once the boot was found healthy.
+func TestEntriesWhileBlessed(t *testing.T) {
+	img := newImage(t, "0.2.0", 3)
+	esp := t.TempDir()
+	dir := filepath.Join(esp, linuxDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "chalkos_0.2.0+2-1.efi"), img.uki, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blessed := false
+	list, err := entries(esp, func(path string) (*os.File, error) {
+		if !blessed {
+			blessed = true
+			if err := os.Rename(path, filepath.Join(dir, "chalkos_0.2.0.efi")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return os.Open(path)
+	})
+	if err != nil || len(list) != 1 || list[0].File != "chalkos_0.2.0.efi" || list[0].Version != "0.2.0" || list[0].TriesLeft != -1 {
+		t.Errorf("entries = %+v, %v", list, err)
+	}
+}

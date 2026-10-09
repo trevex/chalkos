@@ -7,6 +7,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,12 +27,25 @@ import (
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
-// chalkdServing stands for chalkd: a TLS server that completes handshakes.
-func chalkdServing(t *testing.T) string {
+// chalkdServing stands for chalkd: a TLS server that completes handshakes with the node's
+// certificate, whose file it returns with its address.
+func chalkdServing(t *testing.T) (addr, cert string) {
 	t.Helper()
-	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	self, err := pki.SelfSigned("n1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert = filepath.Join(t.TempDir(), "node.pem")
+	write(t, cert, self.Certificate+self.Key)
+	pair, err := tls.X509KeyPair([]byte(self.Certificate), []byte(self.Key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(http.NotFoundHandler())
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{pair}}
+	srv.StartTLS()
 	t.Cleanup(srv.Close)
-	return srv.Listener.Addr().String()
+	return srv.Listener.Addr().String(), cert
 }
 
 // kubelet stands for the kubelet's health endpoint, healthy or not.
@@ -45,21 +60,39 @@ func kubelet(t *testing.T, healthy *bool) string {
 	return srv.URL + "/healthz"
 }
 
+// bootUnits is what systemctl lists of the units multi-user.target and sysinit.target pull in.
+const bootUnits = "multi-user.target\n  chalkd.service\n  broken.service\n  timers.target\n  cleanup.timer\nsysinit.target\n  systemd-journald.service\n"
+
 func TestHealthWithoutKubernetes(t *testing.T) {
-	addr := chalkdServing(t)
+	addr, cert := chalkdServing(t)
+	other, _ := chalkdServing(t)
+	units := rule{prefix: "systemctl list-dependencies --all --plain --no-legend --no-pager multi-user.target sysinit.target", out: bootUnits}
+	failed := func(names ...string) rule {
+		var out string
+		for _, n := range names {
+			out += n + " loaded failed failed Something\n"
+		}
+		return rule{prefix: "systemctl list-units --state=failed", out: out}
+	}
 	for _, tc := range []struct {
 		name   string
 		chalkd string
 		rules  []rule
+		ignore []string
 		want   string
 	}{
-		{"healthy", addr, nil, ""},
-		{"chalkd not serving", "127.0.0.1:1", nil, "chalkd does not serve"},
-		{"identity not applied", addr, []rule{{prefix: "systemctl is-active --quiet chalkos-identity.service", err: errors.New("inactive")}}, "identity was not applied"},
-		{"a failed unit", addr, []rule{{prefix: "systemctl list-units", out: "broken.service loaded failed failed Broken\n"}}, "units failed: broken.service"},
+		{"healthy", addr, []rule{units}, nil, ""},
+		{"chalkd not serving", "127.0.0.1:1", []rule{units}, nil, "chalkd does not serve"},
+		{"another server than chalkd", other, []rule{units}, nil, "does not present the node's certificate"},
+		{"identity not applied", addr, []rule{{prefix: "systemctl is-active --quiet chalkos-identity.service", err: errors.New("inactive")}, units}, nil, "identity was not applied"},
+		{"a failed unit of the boot", addr, []rule{units, failed("broken.service", "cleanup.service")}, nil, "units failed: broken.service"},
+		// A job a timer or a socket started is not part of the boot.
+		{"a failed timer job", addr, []rule{units, failed("cleanup.service")}, nil, ""},
+		{"a failed unit ignored", addr, []rule{units, failed("broken.service")}, []string{"broken.service"}, ""},
+		{"the boot's units unknown", addr, []rule{{prefix: "systemctl list-dependencies", err: errors.New("exit status 1")}, failed("broken.service")}, nil, "the units of the boot"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := &Health{Run: &fakeRunner{rules: tc.rules}, Chalkd: tc.chalkd}
+			h := &Health{Run: &fakeRunner{rules: tc.rules}, Chalkd: tc.chalkd, NodeCertificate: cert, IgnoreUnits: tc.ignore}
 			checkHealth(t, h, tc.want)
 		})
 	}
@@ -77,7 +110,7 @@ func checkHealth(t *testing.T, h *Health, want string) {
 }
 
 func TestHealthOfAWorker(t *testing.T) {
-	addr := chalkdServing(t)
+	addr, cert := chalkdServing(t)
 	for _, tc := range []struct {
 		name    string
 		share   bool
@@ -95,23 +128,23 @@ func TestHealthOfAWorker(t *testing.T) {
 			s, r := kubernetesServer(t, k8s.KindWorker, tc.share)
 			s.Kubernetes.Node = func(context.Context) (*corev1.Node, error) { return readyNode(), tc.node }
 			healthy := tc.kubelet
-			h := &Health{Run: r, Kubernetes: s.Kubernetes, Chalkd: addr, Kubelet: kubelet(t, &healthy)}
+			h := &Health{Run: r, Kubernetes: s.Kubernetes, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
 			checkHealth(t, h, tc.want)
 		})
 	}
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	withoutAddress(t, s, "no ipv4 node address matches validSubnets 10.0.0.0/8")
 	healthy := true
-	checkHealth(t, &Health{Run: r, Kubernetes: s.Kubernetes, Chalkd: addr, Kubelet: kubelet(t, &healthy)}, "preparation failed: no ipv4 node address")
+	checkHealth(t, &Health{Run: r, Kubernetes: s.Kubernetes, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}, "preparation failed: no ipv4 node address")
 }
 
 func TestHealthOfAControlPlane(t *testing.T) {
-	addr := chalkdServing(t)
+	addr, cert := chalkdServing(t)
 	s, _, members := memberServer(t)
 	k := s.Kubernetes
 	ready, healthy := true, true
 	k.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return ready }
-	h := &Health{Run: &fakeRunner{}, Kubernetes: k, Chalkd: addr, Kubelet: kubelet(t, &healthy)}
+	h := &Health{Run: &fakeRunner{}, Kubernetes: k, Chalkd: addr, NodeCertificate: cert, Kubelet: kubelet(t, &healthy)}
 	checkHealth(t, h, "")
 	ready = false
 	checkHealth(t, h, "the API server is not ready")
@@ -127,7 +160,7 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	if bootstrapped, _ := knode.Bootstrapped(s2.Kubernetes.Paths); bootstrapped {
 		t.Fatal("bootstrapped")
 	}
-	checkHealth(t, &Health{Run: r, Kubernetes: s2.Kubernetes, Chalkd: addr, Kubelet: "http://127.0.0.1:1/healthz"}, "")
+	checkHealth(t, &Health{Run: r, Kubernetes: s2.Kubernetes, Chalkd: addr, NodeCertificate: cert, Kubelet: "http://127.0.0.1:1/healthz"}, "")
 }
 
 // espWith is a health check of a node whose ESP holds the UKIs; see writeESP.
@@ -157,9 +190,16 @@ func writeESP(t *testing.T, esp, efivars, cmdline, booted string, files ...strin
 	write(t, cmdline, "init=/x usrhash="+hash(strings.TrimPrefix(booted, "chalkos_")[:5])+"\n")
 }
 
+// journalRule is the journal of a boot that never became healthy.
+var journalRule = rule{prefix: "journalctl --boot --no-pager --output=short-iso --lines=30 --unit=chalkd.service --unit=chalkos-health.service", out: "chalkd[1]: not healthy yet: chalkd does not serve\n"}
+
+// failedHeader is the first line of a record of a failed boot of 0.2.0, as writeESP builds it.
+var failedHeader = "version 0.2.0 usrhash=" + strings.Repeat("32", 32)
+
 // TestHealthWaitReboots waits for a boot that never becomes healthy, records its journal on VAR, and
 // reboots only while the boot loader counts it and has somewhere to go.
 func TestHealthWaitReboots(t *testing.T) {
+	_, cert := chalkdServing(t)
 	for _, tc := range []struct {
 		name   string
 		h      *Health
@@ -171,8 +211,8 @@ func TestHealthWaitReboots(t *testing.T) {
 		{"nothing to fall back to", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.2.0+0-4.efi"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &fakeRunner{rules: []rule{{prefix: "journalctl --boot --no-pager --output=short-iso --lines=30 --unit=chalkd.service --unit=chalkos-health.service", out: "chalkd[1]: not healthy yet: chalkd does not serve\n"}}}
-			tc.h.Run, tc.h.Chalkd, tc.h.Interval = r, "127.0.0.1:1", 10*time.Millisecond
+			r := &fakeRunner{rules: []rule{journalRule}}
+			tc.h.Run, tc.h.Chalkd, tc.h.NodeCertificate, tc.h.Interval = r, "127.0.0.1:1", cert, 10*time.Millisecond
 			err := tc.h.Wait(context.Background(), 50*time.Millisecond)
 			if err == nil || !strings.Contains(err.Error(), "did not become healthy") {
 				t.Errorf("wait = %v", err)
@@ -182,19 +222,108 @@ func TestHealthWaitReboots(t *testing.T) {
 				t.Errorf("rebooted: %v, want %v", rebooted, tc.reboot)
 			}
 			record, _ := os.ReadFile(tc.h.Record)
-			if lines := strings.Split(string(record), "\n"); len(lines) != 4 || lines[0] != "version 0.2.0" || lines[1] != "chalkd[1]: not healthy yet: chalkd does not serve" || !strings.HasPrefix(lines[2], "the node did not become healthy within 50ms: chalkd does not serve") {
+			if lines := strings.Split(string(record), "\n"); len(lines) != 4 || lines[0] != failedHeader || lines[1] != "chalkd[1]: not healthy yet: chalkd does not serve" || !strings.HasPrefix(lines[2], "the node did not become healthy within 50ms: chalkd does not serve") {
 				t.Errorf("record:\n%s", record)
 			}
 		})
 	}
-	r := &fakeRunner{}
-	h := espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi")
-	h.Run, h.Chalkd = r, chalkdServing(t)
-	if err := h.Wait(context.Background(), time.Minute); err != nil || len(r.calls) == 0 || strings.Contains(strings.Join(r.calls, "\n"), "reboot") {
-		t.Errorf("a healthy boot: %v, %q", err, r.calls)
+}
+
+// TestHealthWaitHealthy finds a boot healthy without rebooting, and forgets the record of a
+// failed boot once a boot the loader counts was found healthy: that image boots for good now.
+func TestHealthWaitHealthy(t *testing.T) {
+	addr, cert := chalkdServing(t)
+	for _, tc := range []struct {
+		name   string
+		h      *Health
+		forget bool
+	}{
+		{"a counted boot", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), true},
+		{"a blessed boot", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi", "chalkos_0.2.0.efi"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &fakeRunner{}
+			tc.h.Run, tc.h.Chalkd, tc.h.NodeCertificate = r, addr, cert
+			write(t, tc.h.Record, "version 0.3.0 usrhash="+strings.Repeat("33", 32)+"\nchalkd[1]: not healthy yet\n")
+			if err := tc.h.Wait(context.Background(), time.Minute); err != nil || len(r.calls) == 0 || strings.Contains(strings.Join(r.calls, "\n"), "reboot") {
+				t.Errorf("a healthy boot: %v, %q", err, r.calls)
+			}
+			if _, err := os.Stat(tc.h.Record); errors.Is(err, fs.ErrNotExist) != tc.forget {
+				t.Errorf("the record of the failed boot: %v, want it forgotten: %v", err, tc.forget)
+			}
+		})
 	}
-	if _, err := os.Stat(h.Record); err == nil {
-		t.Error("a healthy boot was recorded as failed")
+}
+
+// TestHealthWaitEndsAtTheDeadline gives up once the timeout passed, also while a check hangs:
+// systemd's own timeout must not stop the health check before it decided.
+func TestHealthWaitEndsAtTheDeadline(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	// A server that accepts connections and never answers a handshake.
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { conn.Close() })
+		}
+	}()
+	h := espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi")
+	r := &fakeRunner{rules: []rule{journalRule}}
+	_, cert := chalkdServing(t)
+	h.Run, h.Chalkd, h.NodeCertificate = r, ln.Addr().String(), cert
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() { done <- h.Wait(context.Background(), 300*time.Millisecond) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "did not become healthy") {
+			t.Errorf("wait = %v", err)
+		}
+		if took := time.Since(start); took > 2*time.Second {
+			t.Errorf("the wait of 300ms took %v", took)
+		}
+		if !strings.Contains(strings.Join(r.calls, "\n"), "systemctl reboot --no-block") {
+			t.Error("the node was not rebooted")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the wait of 300ms still runs after 10s")
+	}
+}
+
+// TestHealthStopped reboots a counted boot whose health check ended before it decided, stopped by
+// systemd or crashed, as Wait would have, and nothing after a check that decided.
+func TestHealthStopped(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		h              *Health
+		result, status string
+		reboot         bool
+	}{
+		{"a check that decided", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "exit-code", "1", false},
+		{"a healthy boot", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "success", "0", false},
+		{"a check timed out", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "timeout", "1", true},
+		{"a check killed", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+0-3.efi"), "signal", "KILL", true},
+		{"a check that crashed", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "exit-code", "2", true},
+		{"a check timed out with nothing to fall back to", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.2.0+0-4.efi"), "timeout", "1", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &fakeRunner{rules: []rule{journalRule}}
+			tc.h.Run = r
+			tc.h.Stopped(context.Background(), tc.result, tc.status)
+			if rebooted := strings.Contains(strings.Join(r.calls, "\n"), "systemctl reboot --no-block"); rebooted != tc.reboot {
+				t.Errorf("rebooted: %v, want %v", rebooted, tc.reboot)
+			}
+			record, _ := os.ReadFile(tc.h.Record)
+			if decided := tc.status == "1" && tc.result == "exit-code" || tc.result == "success"; decided != (len(record) == 0) {
+				t.Errorf("record:\n%s", record)
+			}
+		})
 	}
 }
 
@@ -207,9 +336,13 @@ func TestHealthPresentsTheNodeCertificate(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "node.pem")
 	write(t, path, self.Certificate+self.Key)
+	pair, err := tls.X509KeyPair([]byte(self.Certificate), []byte(self.Key))
+	if err != nil {
+		t.Fatal(err)
+	}
 	presented := make(chan int, 1)
 	srv := httptest.NewUnstartedServer(http.NotFoundHandler())
-	srv.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert, VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequireAnyClientCert, VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
 		presented <- len(raw)
 		return nil
 	}}

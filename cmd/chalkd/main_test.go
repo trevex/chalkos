@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -193,6 +194,28 @@ func TestRenewalHookIsLogged(t *testing.T) {
 		}
 		if lines := strings.Count(logged.String(), "\n"); lines != map[bool]int{true: 1, false: 0}[on] {
 			t.Errorf("%q: logged %q", value, logged.String())
+		}
+	}
+}
+
+func TestHealthArgs(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want healthArgs
+		ok   bool
+	}{
+		{nil, healthArgs{}, true},
+		{[]string{"--wait", "300"}, healthArgs{wait: 300 * time.Second}, true},
+		{[]string{"--wait", "300", "--ignore-unit", "a.service", "--ignore-unit", "b.timer"}, healthArgs{wait: 300 * time.Second, ignore: []string{"a.service", "b.timer"}}, true},
+		{[]string{"--stopped"}, healthArgs{stopped: true}, true},
+		{[]string{"--wait", "0"}, healthArgs{}, false},
+		{[]string{"--wait", "x"}, healthArgs{}, false},
+		{[]string{"--wait", "300", "--stopped"}, healthArgs{}, false},
+		{[]string{"now"}, healthArgs{}, false},
+	} {
+		got, err := parseHealthArgs(tc.args)
+		if (err == nil) != tc.ok || tc.ok && (got.wait != tc.want.wait || got.stopped != tc.want.stopped || !slices.Equal(got.ignore, tc.want.ignore)) {
+			t.Errorf("parseHealthArgs(%q) = %+v, %v", tc.args, got, err)
 		}
 	}
 }
