@@ -430,7 +430,7 @@ type finalError struct{ error }
 
 func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
 	var members []*nodev1.EtcdMember
-	err := r.viaControlPlanes(name, func(conn *client.Conn) error {
+	err := r.viaControlPlanes(name, tryNextControlPlane, func(conn *client.Conn) error {
 		resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
 		if err == nil {
 			members = resp.Msg.Members
@@ -468,8 +468,8 @@ func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
 }
 
 // viaControlPlanes calls fn on a control plane: the node itself first when it is one, then the
-// others, moving on past those that are down or no etcd member.
-func (r *upgradeRun) viaControlPlanes(prefer string, fn func(conn *client.Conn) error) error {
+// others, moving on past those whose error next accepts.
+func (r *upgradeRun) viaControlPlanes(prefer string, next func(error) bool, fn func(conn *client.Conn) error) error {
 	names := slices.Clone(r.controlPlanes)
 	if i := slices.Index(names, prefer); i > 0 {
 		names = append([]string{prefer}, slices.Delete(names, i, i+1)...)
@@ -480,12 +480,19 @@ func (r *upgradeRun) viaControlPlanes(prefer string, fn func(conn *client.Conn) 
 	var last error
 	for _, name := range names {
 		err := r.call(name, fn)
-		if err == nil || !tryNextControlPlane(err) {
+		if err == nil || !next(err) {
 			return err
 		}
 		last = err
 	}
 	return fmt.Errorf("no control-plane node answered: %w", last)
+}
+
+// drainElsewhere reports whether a drain that failed so may be run on another control plane: not
+// after it timed out, when the node's pods may still be stopping and another drain would only
+// wait as long again.
+func drainElsewhere(err error) bool {
+	return connect.CodeOf(err) != connect.CodeDeadlineExceeded && tryNextControlPlane(err)
 }
 
 // drain cordons a node of the cluster and evicts its pods.
@@ -494,7 +501,7 @@ func (r *upgradeRun) drain(ctx context.Context, n *upgradeNode) error {
 		return nil
 	}
 	var resp *nodev1.DrainNodeResponse
-	err := r.viaControlPlanes(n.name, func(conn *client.Conn) error {
+	err := r.viaControlPlanes(n.name, drainElsewhere, func(conn *client.Conn) error {
 		res, err := conn.DrainNode(ctx, connect.NewRequest(&nodev1.DrainNodeRequest{Node: n.name, TimeoutSeconds: uint32(r.drainTimeout / time.Second), DeleteEmptydirData: r.deleteEmptyDir}))
 		if err == nil {
 			resp = res.Msg
@@ -521,7 +528,7 @@ func (r *upgradeRun) uncordon(ctx context.Context, n *upgradeNode) error {
 		return nil
 	}
 	var uncordoned bool
-	err := r.viaControlPlanes(n.name, func(conn *client.Conn) error {
+	err := r.viaControlPlanes(n.name, tryNextControlPlane, func(conn *client.Conn) error {
 		resp, err := conn.UncordonNode(ctx, connect.NewRequest(&nodev1.UncordonNodeRequest{Node: n.name}))
 		if err == nil {
 			uncordoned = resp.Msg.Uncordoned

@@ -141,6 +141,8 @@ type upgradeLab struct {
 	refuseUpgrade string
 	// emptyDir holds the nodes drained deleting emptyDir data.
 	emptyDir map[string]bool
+	// stopping holds the nodes whose drains time out while their pods stop.
+	stopping map[string]bool
 }
 
 func (l *upgradeLab) record(format string, args ...any) {
@@ -287,6 +289,10 @@ func (n *upgradeFake) DrainNode(_ context.Context, req *connect.Request[nodev1.D
 	n.lab.record("%s drain", req.Msg.Node)
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
+	if n.lab.stopping[req.Msg.Node] {
+		n.lab.cordoned[req.Msg.Node] = true
+		return nil, connect.NewError(connect.CodeDeadlineExceeded, fmt.Errorf("drain %s: pods default/web still run: they did not stop; it stays cordoned", req.Msg.Node))
+	}
 	if req.Msg.DeleteEmptydirData {
 		n.lab.emptyDir[req.Msg.Node] = true
 	}
@@ -318,7 +324,7 @@ func newUpgradeLab(t *testing.T, controlPlanes int) *upgradeLab {
 	m := upgradeManifest(controlPlanes)
 	writeFile(t, filepath.Join(ta.dir, "manifest.json"), m)
 	ta.manifest, _ = manifest.Decode(strings.NewReader(m))
-	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}}
+	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}}
 	for name, node := range ta.manifest.Nodes {
 		n := &upgradeFake{lab: l, name: name, role: node.Role, kind: ta.manifest.Roles[node.Role].Kind, version: "0.1.0"}
 		dir := filepath.Join(t.TempDir(), "chalkd")
@@ -649,5 +655,19 @@ func TestUpgradeDrainsAsAsked(t *testing.T) {
 	}
 	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: keeps pods without a controller: default/bare") || !strings.Contains(out, "tolerations") {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+// TestUpgradeStopsAtADrainTimeout stops the run when a drain times out while pods still stop,
+// naming them, instead of draining the node again through another control plane.
+func TestUpgradeStopsAtADrainTimeout(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	l.stopping["w1"] = true
+	err := l.upgrade(testUpgradeImage(t, "lab", "w", "0.2.0"))
+	if err == nil || !strings.Contains(err.Error(), "pods default/web still run: they did not stop") {
+		t.Fatalf("upgrade = %v", err)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain"}) {
+		t.Errorf("events %q", got)
 	}
 }

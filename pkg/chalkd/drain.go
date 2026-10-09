@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -134,11 +135,12 @@ type drainError struct {
 func (e *drainError) Error() string { return e.err.Error() }
 
 // evictPods evicts the node's pods of controllers but DaemonSets, again while an eviction would
-// break a PodDisruptionBudget, and waits until they are gone. It keeps DaemonSet pods, which
-// would run again on the node at once, static pods' mirrors, finished pods, and pods without a
-// controller, which would be gone for good and run again once the node is back. Pods that
-// terminate already are left to it. Pods with emptyDir volumes are evicted only when their data
-// may be lost; otherwise nothing is evicted.
+// break a PodDisruptionBudget or the API server fails it, and waits until they are gone. It keeps
+// DaemonSet pods, which would run again on the node at once, static pods' mirrors, finished pods,
+// and pods without a controller, which would be gone for good and run again once the node is
+// back. Pods that terminate already, as those an earlier drain evicted, are not evicted again but
+// waited for too: the node is drained only once they have stopped. Pods with emptyDir volumes
+// are evicted only when their data may be lost; otherwise nothing is evicted.
 func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, node string, deleteEmptyDir bool) (drained, error) {
 	pods, err := cs.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{FieldSelector: fields.OneTermEqualSelector("spec.nodeName", node).String()})
 	if err != nil {
@@ -147,8 +149,13 @@ func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, nod
 	var d drained
 	var emptyDir []string
 	pending := map[types.UID]corev1.Pod{}
+	asked := map[types.UID]bool{}
 	for _, p := range pods.Items {
-		if p.Spec.NodeName != node || p.DeletionTimestamp != nil {
+		if p.Spec.NodeName != node {
+			continue
+		}
+		if p.DeletionTimestamp != nil {
+			pending[p.UID], asked[p.UID] = p, true
 			continue
 		}
 		name := p.Namespace + "/" + p.Name
@@ -173,30 +180,33 @@ func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, nod
 	if len(emptyDir) > 0 && !deleteEmptyDir {
 		return drained{}, &drainError{connect.CodeFailedPrecondition, fmt.Errorf("pods %s have emptyDir volumes, whose data an eviction deletes; pass --delete-emptydir-data to evict them", strings.Join(emptyDir, ", "))}
 	}
-	asked := map[types.UID]bool{}
-	var blocked []string
+	// failing holds why the last eviction of a pod not evicted yet failed, and budget whether a
+	// PodDisruptionBudget refused it.
+	failing := map[types.UID]string{}
+	budget := map[types.UID]bool{}
 	for len(pending) > 0 {
 		var refused []string
-		blocked = nil
 		for uid, p := range pending {
 			if asked[uid] {
 				continue
 			}
 			err := cs.PolicyV1().Evictions(p.Namespace).Evict(ctx, &policyv1.Eviction{ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: p.Namespace}})
-			var status apierrors.APIStatus
+			code, refusal := evictionRefusal(err)
 			switch {
 			case err == nil:
 				asked[uid] = true
+				delete(failing, uid)
 			case apierrors.IsNotFound(err):
 				delete(pending, uid)
 			case ctx.Err() != nil:
 				// The timeout passed during the request; it is handled below.
-			case apierrors.IsTooManyRequests(err):
-				// A PodDisruptionBudget allows no disruption now; another pod may become ready.
-				blocked = append(blocked, fmt.Sprintf("%s/%s: %v", p.Namespace, p.Name, err))
-			case errors.As(err, &status):
-				// Refused for good, as for a pod of several PodDisruptionBudgets.
+			case refusal:
+				// Refused for good: asking again or elsewhere gets the same answer.
 				refused = append(refused, fmt.Sprintf("%s/%s: %v", p.Namespace, p.Name, err))
+			case code != 0 || isTimeout(err):
+				// A PodDisruptionBudget allows no disruption now, and another pod may become
+				// ready, or the API server failed the request or did not answer in time.
+				failing[uid], budget[uid] = fmt.Sprintf("%s/%s: %v", p.Namespace, p.Name, err), apierrors.IsTooManyRequests(err)
 			default:
 				return drained{}, fmt.Errorf("evict %s/%s: %w", p.Namespace, p.Name, err)
 			}
@@ -216,19 +226,50 @@ func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, nod
 		}
 		select {
 		case <-ctx.Done():
-			var left []string
-			for _, p := range pending {
+			var left, why []string
+			blocked := false
+			for uid, p := range pending {
 				left = append(left, p.Namespace+"/"+p.Name)
+				if f, ok := failing[uid]; ok {
+					why = append(why, f)
+					blocked = blocked || budget[uid]
+				}
 			}
 			slices.Sort(left)
-			// A budget that never allowed an eviction holds the pods wherever the drain runs.
-			if len(blocked) > 0 {
-				slices.Sort(blocked)
-				return drained{}, &drainError{connect.CodeFailedPrecondition, fmt.Errorf("pods %s still run: %s", strings.Join(left, ", "), strings.Join(blocked, "; "))}
+			slices.Sort(why)
+			msg := "they did not stop"
+			switch {
+			case len(why) == len(left):
+				msg = strings.Join(why, "; ")
+			case len(why) > 0:
+				msg = strings.Join(why, "; ") + "; the others did not stop"
 			}
-			return drained{}, &drainError{connect.CodeDeadlineExceeded, fmt.Errorf("pods %s still run: they did not stop", strings.Join(left, ", "))}
+			// A budget that never allowed an eviction holds the pods wherever the drain runs.
+			code := connect.CodeDeadlineExceeded
+			if blocked {
+				code = connect.CodeFailedPrecondition
+			}
+			return drained{}, &drainError{code, fmt.Errorf("pods %s still run: %s", strings.Join(left, ", "), msg)}
 		case <-time.After(k.poll()):
 		}
 	}
 	return d, nil
+}
+
+// evictionRefusal returns the HTTP status of an eviction the API server answered, and whether
+// it refused it for good: a client error but too many requests, which a PodDisruptionBudget
+// answers while it allows no disruption.
+func evictionRefusal(err error) (int32, bool) {
+	var status apierrors.APIStatus
+	if !errors.As(err, &status) {
+		return 0, false
+	}
+	code := status.Status().Code
+	return code, code >= 400 && code < 500 && code != http.StatusTooManyRequests
+}
+
+// isTimeout reports whether a request was not answered in time.
+func isTimeout(err error) bool {
+	var t interface{ Timeout() bool }
+	return errors.As(err, &t) && t.Timeout()
 }

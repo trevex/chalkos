@@ -57,12 +57,14 @@ service NodeService {
   // DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
   // eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
   // and pods without a controller stay; they run again on the node once it is back. Pods with
-  // emptyDir volumes are evicted only when the request accepts losing that data, and pods that
-  // terminate already are left to it. A node that was cordoned already stays cordoned and
-  // unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. Available on
-  // bootstrapped control-plane nodes, to operators. An eviction refused, or one a
-  // PodDisruptionBudget holds back until the timeout, fails the call with FAILED_PRECONDITION;
-  // pods evicted that did not stop in time with DEADLINE_EXCEEDED.
+  // emptyDir volumes are evicted only when the request accepts losing that data. Pods that
+  // terminate already, as those an earlier drain evicted, are not evicted again, but the call
+  // returns only once they and the pods it evicted have stopped. A node that was cordoned already
+  // stays cordoned and unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon.
+  // Available on bootstrapped control-plane nodes, to operators. An eviction refused for good, or
+  // one a PodDisruptionBudget holds back until the timeout, fails the call with
+  // FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API server kept
+  // failing, with DEADLINE_EXCEEDED.
   rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
   // UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
   // a node cordoned otherwise as it is.

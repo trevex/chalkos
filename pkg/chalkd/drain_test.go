@@ -210,8 +210,8 @@ func TestDrainRefusals(t *testing.T) {
 	}
 }
 
-// TestDrainRefused stops at evictions the API server refuses for good, naming each pod and why,
-// and leaves the node cordoned; another control plane would be refused the same.
+// TestDrainRefused stops at once at evictions the API server refuses for good, naming each pod
+// and why, and leaves the node cordoned; another control plane would be refused the same.
 func TestDrainRefused(t *testing.T) {
 	l := newDrainLab(t, 0, w1(false))
 	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
@@ -222,17 +222,54 @@ func TestDrainRefused(t *testing.T) {
 		case "web-1":
 			return true, nil, apierrors.NewForbidden(policyv1.Resource("evictions"), "web-1", errors.New("not allowed"))
 		case "guarded":
-			return true, nil, apierrors.NewInternalError(errors.New("This pod has more than one PodDisruptionBudget, which the eviction subresource does not support."))
+			return true, nil, apierrors.NewBadRequest("the eviction is malformed")
 		}
 		return false, nil, nil
 	})
-	_, err := l.drain(5)
+	start := time.Now()
+	_, err := l.drain(30)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "default/web-1: ") || !strings.Contains(err.Error(), "not allowed") ||
-		!strings.Contains(err.Error(), "default/guarded: ") || !strings.Contains(err.Error(), "more than one PodDisruptionBudget") || !strings.Contains(err.Error(), "stays cordoned") {
+		!strings.Contains(err.Error(), "default/guarded: ") || !strings.Contains(err.Error(), "malformed") || !strings.Contains(err.Error(), "stays cordoned") {
 		t.Errorf("drain = %v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("the refusal took %v", d)
 	}
 	if !l.node(t).Spec.Unschedulable {
 		t.Error("w1 is not cordoned")
+	}
+}
+
+// TestDrainRetriesServerErrors asks again after an error of the API server, which may pass.
+func TestDrainRetriesServerErrors(t *testing.T) {
+	l := newDrainLab(t, 0, w1(false))
+	failures := 1
+	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "eviction" || action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction).Name != "web-1" || failures == 0 {
+			return false, nil, nil
+		}
+		failures--
+		return true, nil, apierrors.NewServiceUnavailable("the API server is busy")
+	})
+	got, err := l.drain(30)
+	if err != nil || !slices.Equal(got.Evicted, []string{"default/guarded", "default/web-1"}) || !slices.Contains(l.evicted, "default/web-1") {
+		t.Errorf("drain = %+v, %v; evicted %v", got, err, l.evicted)
+	}
+}
+
+// TestDrainServerErrorsTimeOut gives up on an eviction the API server keeps failing, as for a pod
+// of several PodDisruptionBudgets, once the drain's time is up, naming the pod and why.
+func TestDrainServerErrorsTimeOut(t *testing.T) {
+	l := newDrainLab(t, 0, w1(false))
+	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "eviction" || action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction).Name != "guarded" {
+			return false, nil, nil
+		}
+		return true, nil, apierrors.NewInternalError(errors.New("This pod has more than one PodDisruptionBudget, which the eviction subresource does not support."))
+	})
+	_, err := l.drain(1)
+	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "more than one PodDisruptionBudget") {
+		t.Errorf("drain = %v", err)
 	}
 }
 
@@ -299,18 +336,60 @@ func TestDrainEmptyDir(t *testing.T) {
 	}
 }
 
-// TestDrainLeavesTerminatingPods neither evicts nor waits for pods that terminate already.
-func TestDrainLeavesTerminatingPods(t *testing.T) {
-	leaving := pod("default", "leaving", "w1", "ReplicaSet", func(p *corev1.Pod) {
+// TestDrainWaitsForStoppingPods finishes a drain only once the node's pods have stopped: run
+// again after it timed out, it waits for the pods it evicted before, without evicting them again,
+// as for any pod that terminates already.
+func TestDrainWaitsForStoppingPods(t *testing.T) {
+	podsResource := corev1.SchemeGroupVersion.WithResource("pods")
+	l := newDrainLab(t, 0, w1(false))
+	leaving := pod("kube-flannel", "leaving", "w1", "DaemonSet", func(p *corev1.Pod) {
 		now := metav1.Now()
 		p.DeletionTimestamp = &now
 	})
-	l := newDrainLab(t, 0, w1(false))
 	if err := l.cs.Tracker().Add(leaving); err != nil {
 		t.Fatal(err)
 	}
-	got, err := l.drain(1)
-	if err != nil || slices.Contains(got.Evicted, "default/leaving") || slices.Contains(l.evicted, "default/leaving") {
-		t.Errorf("drain = %+v, %v; evicted %v", got, err, l.evicted)
+	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "eviction" {
+			return false, nil, nil
+		}
+		// Accepted, and the pod starts to stop, slowly.
+		ev := action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction)
+		l.mu.Lock()
+		l.evicted = append(l.evicted, ev.Namespace+"/"+ev.Name)
+		l.mu.Unlock()
+		obj, err := l.cs.Tracker().Get(podsResource, ev.Namespace, ev.Name)
+		if err != nil {
+			return true, nil, err
+		}
+		p := obj.(*corev1.Pod).DeepCopy()
+		now := metav1.Now()
+		p.DeletionTimestamp = &now
+		return true, nil, l.cs.Tracker().Update(podsResource, p, ev.Namespace)
+	})
+	stopping := "pods default/guarded, default/web-1, kube-flannel/leaving still run"
+	for i := range 2 {
+		if _, err := l.drain(1); connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), stopping) {
+			t.Fatalf("drain %d = %v", i, err)
+		}
+	}
+	if want := []string{"default/guarded", "default/web-1"}; !slices.Equal(slices.Sorted(slices.Values(l.evicted)), want) {
+		t.Errorf("evicted %v, want each of %v once", l.evicted, want)
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		for _, p := range []string{"default/guarded", "default/web-1", "kube-flannel/leaving"} {
+			ns, name, _ := strings.Cut(p, "/")
+			if err := l.cs.Tracker().Delete(podsResource, ns, name); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	start := time.Now()
+	if _, err := l.drain(10); err != nil {
+		t.Fatalf("drain once the pods stopped = %v", err)
+	}
+	if d := time.Since(start); d < 300*time.Millisecond {
+		t.Errorf("the drain finished after %v, before the pods stopped", d)
 	}
 }
