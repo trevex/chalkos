@@ -436,6 +436,42 @@ in
         touch $out
       '';
 
+  # The worker's kernel module tree, and one with the gpu group: a module outside a role's groups
+  # is not in its tree, and neither a name the kernel does not know nor a module the image loads
+  # but its tree lacks gets past the build.
+  kernel-modules =
+    let
+      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos;
+      treeOf = nixos: nixos.config.system.build.chalkosKernelModules;
+      tree = treeOf worker;
+      gpu = treeOf (worker.extendModules { modules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ]; });
+      tool = lib.getExe (pkgs.callPackage ./kernel-modules.nix { });
+      full = lib.getOutput "modules" worker.config.boot.kernelPackages.kernel;
+    in
+    pkgs.runCommand "chalkos-kernel-modules" { nativeBuildInputs = [ pkgs.kmod ]; } ''
+      fail() {
+        echo "error: $*" >&2
+        exit 1
+      }
+      has() {
+        modprobe --config no-config -d "$1" -S ${worker.config.boot.kernelPackages.kernel.modDirVersion} \
+          --show-depends "$2" >/dev/null 2>&1
+      }
+      has ${tree} virtio_net || fail "the worker's tree lacks virtio_net"
+      if has ${tree} amdgpu; then fail "the worker's tree holds amdgpu"; fi
+      has ${gpu} amdgpu || fail "the gpu group's tree lacks amdgpu"
+
+      echo drivers/nvme >directories
+      echo chalkos_no_such_module >names
+      if ${tool} filter ${full} unknown directories names 2>errors; then fail "an unknown module was taken"; fi
+      grep -q 'unknown kernel module chalkos_no_such_module' errors || fail "the error names no module: $(cat errors)"
+
+      echo amdgpu >loaded
+      if ${tool} check ${tree} loaded 2>errors; then fail "a module outside the tree passed the check"; fi
+      grep -q 'does not hold: amdgpu' errors || fail "the error names no module: $(cat errors)"
+      touch $out
+    '';
+
   # The generated API code is committed; it must match what buf generates from the proto files.
   api-generated =
     pkgs.runCommand "chalkos-api-generated"

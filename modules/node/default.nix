@@ -4,6 +4,7 @@
     ./settings.nix
     ./base
     ./runtime
+    ./kernel.nix
     ./chalkd.nix
     ./time.nix
     ./kubernetes.nix

@@ -2769,6 +2769,58 @@ lib.runTests {
       copied = false;
     };
   };
+  # A role carries the base groups of kernel modules plus what it adds; the initrd takes its
+  # modules from the same tree, and a module the image loads must be in it. The build check
+  # kernel-modules runs the filter and the check.
+  testKernelModules = {
+    expr =
+      let
+        image = modules: role (cluster [ { chalkos.roles.worker.nixosModules = modules; } ]);
+        c = image [ ];
+        gpu = image [
+          {
+            chalkos.kernel.moduleGroups = [ "gpu" ];
+            chalkos.kernel.extraModules = [ "kvm_amd" ];
+          }
+        ];
+        all = image [ { chalkos.kernel.allModules = true; } ];
+        tree = c: c.system.build.chalkosKernelModules;
+        kernelModules = c: "${lib.getOutput "modules" c.boot.kernelPackages.kernel}";
+        check = lib.findFirst (d: d.name == "kernel-modules-check") null c.system.checks;
+        loaded = lib.splitString "\n" check.loaded;
+      in
+      {
+        groups = c.chalkos.kernel.moduleGroups;
+        gpuDirectory = map (c: lib.elem "drivers/gpu" (tree c).directories) [
+          c
+          gpu
+        ];
+        extra = lib.elem "kvm_amd" (tree gpu).names;
+        filtered = "${tree c}" != kernelModules c;
+        all = "${tree all}" == kernelModules all;
+        loadsChecked = lib.all (m: lib.elem m loaded) (
+          c.boot.kernelModules ++ c.boot.initrd.kernelModules ++ c.boot.initrd.availableKernelModules
+        );
+      };
+    expected = {
+      groups = [
+        "storage"
+        "network"
+        "virtualisation"
+        "filesystems"
+        "kubernetes"
+        "platform"
+      ];
+      gpuDirectory = [
+        false
+        true
+      ];
+      extra = true;
+      filtered = true;
+      all = true;
+      loadsChecked = true;
+    };
+  };
   # The tools nodes run, without what they never do: xfs_scrub, ctr and containerd-stress.
   testTrimmedTools = {
     expr =
