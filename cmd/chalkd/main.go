@@ -209,6 +209,7 @@ func serve() error {
 		Mode:        creds.mode,
 		Installer:   os.Getenv("CHALKD_INSTALLER") == "1",
 		AnyClient:   creds.clientCAs == nil,
+		ClientCAs:   creds.clientCAs,
 		Fingerprint: fingerprint,
 		Certificate: creds.node,
 		Paths:       paths,

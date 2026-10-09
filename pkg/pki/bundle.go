@@ -12,17 +12,13 @@ import (
 // A bundle is one or more PEM certificates in one file, as nodes trust them while a CA rotates:
 // the CA that issues now first, then those still trusted.
 
-// ParseBundle decodes every certificate of a bundle. Anything but certificates between them is
-// refused, so a key that ended up in a bundle by mistake is never passed on as trust.
+// ParseBundle decodes every certificate of a bundle. Anything but certificates and the whitespace
+// around them is refused, so a key that ended up in a bundle by mistake is never passed on as
+// trust.
 func ParseBundle(bundle string) ([]*x509.Certificate, error) {
+	blocks, ok := pemBlocks([]byte(bundle))
 	var certs []*x509.Certificate
-	rest := []byte(bundle)
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
+	for _, block := range blocks {
 		if block.Type != "CERTIFICATE" {
 			// The block is not echoed: it may be a key.
 			return nil, fmt.Errorf("the bundle holds a %s block where certificates are expected", blockType(block.Type))
@@ -33,13 +29,35 @@ func ParseBundle(bundle string) ([]*x509.Certificate, error) {
 		}
 		certs = append(certs, cert)
 	}
-	if len(bytes.TrimSpace(rest)) > 0 {
+	if !ok {
 		return nil, errors.New("the bundle holds data that is not PEM")
 	}
 	if len(certs) == 0 {
 		return nil, errors.New("no PEM certificate")
 	}
 	return certs, nil
+}
+
+// pemBlocks decodes the PEM blocks of data in order. ok is false when data holds anything else
+// than blocks and whitespace: pem.Decode alone skips text before a block, and a block it cannot
+// decode, without a trace.
+func pemBlocks(data []byte) (blocks []*pem.Block, ok bool) {
+	rest := data
+	for {
+		rest = bytes.TrimLeft(rest, " \t\r\n")
+		if len(rest) == 0 {
+			return blocks, true
+		}
+		if !bytes.HasPrefix(rest, []byte("-----BEGIN ")) {
+			return blocks, false
+		}
+		block, r := pem.Decode(rest)
+		if block == nil || bytes.Count(rest[:len(rest)-len(r)], []byte("-----BEGIN ")) != 1 {
+			return blocks, false
+		}
+		blocks = append(blocks, block)
+		rest = r
+	}
 }
 
 // blockType names a PEM block's type without echoing anything that may be secret.
@@ -64,27 +82,23 @@ func BundlePool(bundle string) (*x509.CertPool, error) {
 }
 
 // Bundle joins PEM certificates and bundles into one bundle, in the order given, leaving out
-// repeated certificates. What follows the last PEM block of an argument is kept, so ParseBundle
-// still refuses it.
+// repeated certificates. An argument holding anything but PEM blocks is kept as it is, so
+// ParseBundle still refuses the result.
 func Bundle(certs ...string) string {
 	var b strings.Builder
 	seen := map[string]bool{}
 	for _, c := range certs {
-		rest := []byte(c)
-		for {
-			block, r := pem.Decode(rest)
-			if block == nil {
-				break
-			}
-			rest = r
+		blocks, ok := pemBlocks([]byte(c))
+		if !ok {
+			b.WriteString(strings.TrimSpace(c) + "\n")
+			continue
+		}
+		for _, block := range blocks {
 			encoded := string(pem.EncodeToMemory(block))
 			if !seen[encoded] {
 				seen[encoded] = true
 				b.WriteString(encoded)
 			}
-		}
-		if trailing := bytes.TrimSpace(rest); len(trailing) > 0 {
-			b.Write(append(trailing, '\n'))
 		}
 	}
 	return b.String()

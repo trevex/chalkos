@@ -86,7 +86,8 @@ func TestInstallFromAnImageOfAnotherOSCA(t *testing.T) {
 	self, _ := pki.SelfSigned("chalkd", time.Now())
 	pair, _ := tls.X509KeyPair([]byte(self.Certificate), []byte(self.Key))
 	pool, _ := pki.BundlePool(other.Certificate)
-	addr := serveTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), chalkd.StaticCAs(pool)))
+	s.ClientCAs = chalkd.StaticCAs(pool)
+	addr := serveTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), s.ClientCAs))
 	for _, pin := range [][]string{{"--insecure"}, {"--fingerprint", pki.Fingerprint(pair.Certificate[0])}} {
 		err := ta.run(context.Background(), ta.args(append([]string{"install", "n1"}, pin...), addr))
 		if err == nil || !strings.Contains(err.Error(), "the maintenance image trusts another OS CA") {

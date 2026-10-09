@@ -164,7 +164,10 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 			}
 		}
 		if err := s.Certificate.ReplaceTrust(osCA, peerOf(ctx)...); err != nil {
-			return nil, failed(connect.CodeInvalidArgument, "%v", err)
+			if isRefusedTrust(err) {
+				return nil, failed(connect.CodeInvalidArgument, "%v", err)
+			}
+			return nil, failed(connect.CodeInternal, "%v", err)
 		}
 		log.Printf("trusting %d OS CAs from now on", strings.Count(osCA, "-----BEGIN CERTIFICATE-----"))
 	}

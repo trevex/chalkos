@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -256,5 +258,123 @@ func TestServesFile(t *testing.T) {
 	}
 	if err := servesFile(context.Background(), "127.0.0.1:1", filepath.Join(dir, "served.crt")); err == nil || !strings.Contains(err.Error(), "does not answer") {
 		t.Errorf("nothing listening: %v", err)
+	}
+}
+
+// TestCallsVerifyAgainstTheCurrentOSCAs checks that every call is authorised by the OS CAs the
+// node trusts when the call arrives, not when its connection was made: a client of a root the
+// node stopped trusting, or whose certificate expired, is refused on a connection it kept open.
+func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
+	var skew atomic.Int64
+	s.clock = func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
+	osCA, _ := testOSCA()
+	next, _ := pki.NewOSCA(time.Now())
+	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
+	oldClient, oldAdmin := adminOf(t, osCA)
+	nextClient, nextAdmin := adminOf(t, next)
+	both := pki.Bundle(osCA.Certificate, next.Certificate)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conns atomic.Int32
+	srv := &http.Server{
+		Handler:   s.Handler(),
+		TLSConfig: TLSConfig(s.Certificate.GetCertificate, s.Certificate.ClientCAs),
+		ConnState: func(_ net.Conn, state http.ConnState) {
+			if state == http.StateNew {
+				conns.Add(1)
+			}
+		},
+	}
+	go srv.ServeTLS(ln, "", "")
+	t.Cleanup(func() { srv.Close() })
+	roots, _ := pki.BundlePool(both)
+	open := func(cert *tls.Certificate) *client.Conn {
+		c, err := client.Dial(ln.Addr().String(), client.Options{CA: roots, ServerName: "n1", Certificate: cert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(c.Close)
+		return c
+	}
+	info := func(c *client.Conn) error {
+		_, err := c.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+		return err
+	}
+	// Two connections of the old root's admin, each kept open.
+	forInfo, forApply := open(oldClient), open(oldClient)
+	for _, c := range []*client.Conn{forInfo, forApply} {
+		if err := info(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The node moves to the new root alone, as the finish of a rotation does.
+	if err := s.Certificate.ReplaceTrust(both, oldAdmin); err != nil {
+		t.Fatal(err)
+	}
+	renewed, _ := pki.IssueNode(nextNodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
+	if err := s.Certificate.Replace(renewed.Certificate, renewed.Key, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Certificate.ReplaceTrust(next.Certificate, nextAdmin); err != nil {
+		t.Fatal(err)
+	}
+	opened := conns.Load()
+
+	if err := info(forInfo); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Errorf("Info on a connection of the old root: %v, want unauthenticated", err)
+	}
+	_, err = forApply.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(both)}))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Errorf("ApplyIdentity on a connection of the old root: %v, want unauthenticated", err)
+	}
+	if got := s.Certificate.OSCA(); got != next.Certificate {
+		t.Error("a client of the old root brought it back")
+	}
+	if got := conns.Load(); got != opened {
+		t.Fatalf("the calls opened %d new connections; they were to reuse the old ones", got-opened)
+	}
+	if err := info(open(oldClient)); err == nil {
+		t.Error("a new connection of the old root is served")
+	}
+
+	// A certificate that expires while its connection stays open is refused from then on.
+	current := open(nextClient)
+	if err := info(current); err != nil {
+		t.Fatal(err)
+	}
+	skew.Store(int64(2 * time.Hour))
+	if err := info(current); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Errorf("Info with an expired certificate: %v, want unauthenticated", err)
+	}
+}
+
+// TestTrustNotRecordedIsAnInternalError checks that OS CAs the node cannot write to STATE are
+// reported as the node's failure, not as a bad request.
+func TestTrustNotRecordedIsAnInternalError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s, _ := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
+	osCA, _ := testOSCA()
+	next, _ := pki.NewOSCA(time.Now())
+	_, admin := adminOf(t, osCA)
+	dir := filepath.Join(s.Paths.StateDir, "chalkd")
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	_, err := s.ApplyIdentity(asCaller(admin), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}))
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Errorf("%v, want internal", err)
+	}
+	if s.Certificate.OSCA() != osCA.Certificate {
+		t.Error("the node trusts OS CAs it did not record")
 	}
 }

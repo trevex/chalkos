@@ -83,6 +83,9 @@ type Server struct {
 	// Fingerprint is the SHA-256 of the certificate chalkd served when it started, in either
 	// mode; CurrentFingerprint follows renewals of the node certificate.
 	Fingerprint string
+	// ClientCAs returns the OS CAs every call is verified by, as TLSConfig is given; nil uses
+	// those of Certificate.
+	ClientCAs func() *x509.CertPool
 	// Certificate is the node certificate chalkd serves in normal mode.
 	Certificate *NodeCertificate
 	Paths       Paths
@@ -104,6 +107,9 @@ type Server struct {
 	// each ApplyIdentity that delivers an identity, due or not. Only test images set it, to renew
 	// within a test's time.
 	RenewOnApplyIdentity bool
+
+	// clock is the time client certificates are verified at; nil is the system clock.
+	clock func() time.Time
 
 	// mu serialises calls that change the node.
 	mu        sync.Mutex
@@ -140,8 +146,13 @@ type roleKey struct{}
 // peerKey holds the verified client certificate.
 type peerKey struct{}
 
-// Handler serves the API. Roles come from the verified client certificate's chains: see
-// pki.ClientRole.
+// unverifiedKey holds why a client certificate no longer verifies.
+type unverifiedKey struct{}
+
+// Handler serves the API. Roles come from the client certificate's chains, verified for every
+// request against the OS CAs the node trusts then: see pki.ClientRole. The chains TLS verified
+// when the connection was made would keep a client of a root the node stopped trusting, or one
+// whose certificate expired, authorised for as long as it keeps the connection open.
 func (s *Server) Handler() http.Handler {
 	_, h := nodev1connect.NewNodeServiceHandler(s,
 		connect.WithInterceptors(authorizer{s}),
@@ -154,13 +165,50 @@ func (s *Server) Handler() http.Handler {
 		role := ""
 		ctx := r.Context()
 		switch {
-		case r.TLS != nil && len(r.TLS.VerifiedChains) > 0:
-			role, _ = pki.ClientRole(r.TLS.VerifiedChains)
-			ctx = context.WithValue(ctx, peerKey{}, r.TLS.VerifiedChains[0][0])
+		case r.TLS != nil && len(r.TLS.PeerCertificates) > 0:
+			chains, err := s.verifyClient(r.TLS.PeerCertificates)
+			if err != nil {
+				// The certificate will not verify again on this connection; the client is to
+				// make a new one, whose handshake the current OS CAs decide.
+				w.Header().Set("Connection", "close")
+				ctx = context.WithValue(ctx, unverifiedKey{}, err)
+				break
+			}
+			role, _ = pki.ClientRole(chains)
+			ctx = context.WithValue(ctx, peerKey{}, chains[0][0])
 		case s.AnyClient:
 			role = pki.RoleAdmin
 		}
 		h.ServeHTTP(w, r.WithContext(context.WithValue(ctx, roleKey{}, role)))
+	})
+}
+
+// verifyClient verifies a client's certificate, with the certificates it presented after it as
+// intermediates, against the OS CAs the node trusts now.
+func (s *Server) verifyClient(presented []*x509.Certificate) ([][]*x509.Certificate, error) {
+	var roots *x509.CertPool
+	switch {
+	case s.ClientCAs != nil:
+		roots = s.ClientCAs()
+	case s.Certificate != nil:
+		roots = s.Certificate.ClientCAs()
+	}
+	if roots == nil {
+		return nil, errors.New("the node trusts no OS CA")
+	}
+	intermediates := x509.NewCertPool()
+	for _, cert := range presented[1:] {
+		intermediates.AddCert(cert)
+	}
+	now := time.Now()
+	if s.clock != nil {
+		now = s.clock()
+	}
+	return presented[0].Verify(x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+		CurrentTime:   now,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	})
 }
 
@@ -181,6 +229,9 @@ func (a authorizer) check(ctx context.Context, procedure string) error {
 			return connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is in maintenance mode; install it first"))
 		}
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is installed"))
+	}
+	if err, ok := ctx.Value(unverifiedKey{}).(error); ok {
+		return connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("the client certificate does not verify against the OS CAs the node trusts: %w", err))
 	}
 	role, _ := ctx.Value(roleKey{}).(string)
 	if !pki.Allows(role, r.role) {

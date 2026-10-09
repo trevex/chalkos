@@ -26,11 +26,14 @@ func TestParseBundle(t *testing.T) {
 		t.Errorf("fingerprints %v are not b's and a's", fps)
 	}
 	for name, bundle := range map[string]string{
-		"empty":           "",
-		"a key":           a.Certificate + a.Key,
-		"text after":      a.Certificate + "garbage",
-		"a broken block":  "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
-		"whitespace only": "\n \n",
+		"empty":                         "",
+		"a key":                         a.Certificate + a.Key,
+		"text after":                    a.Certificate + "garbage",
+		"text before":                   "garbage\n" + a.Certificate,
+		"text between":                  a.Certificate + "garbage\n" + b.Certificate,
+		"a broken block before another": "-----BEGIN CERTIFICATE-----\n" + a.Certificate,
+		"a broken block":                "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
+		"whitespace only":               "\n \n",
 	} {
 		_, err := ParseBundle(bundle)
 		if err == nil {
@@ -83,8 +86,14 @@ func TestBundleLeavesOutRepeats(t *testing.T) {
 	if want := a.Certificate + b.Certificate + c.Certificate; got != want {
 		t.Errorf("bundle of a, a and b, and c, b holds %d certificates, want a, b and c", strings.Count(got, "BEGIN"))
 	}
-	if _, err := ParseBundle(Bundle(a.Certificate, "garbage")); err == nil {
-		t.Error("a bundle keeps no trace of what followed the certificates")
+	for name, bundle := range map[string]string{
+		"after":   Bundle(a.Certificate, "garbage"),
+		"before":  Bundle("garbage\n" + a.Certificate),
+		"between": Bundle(a.Certificate+"garbage\n"+b.Certificate, c.Certificate),
+	} {
+		if _, err := ParseBundle(bundle); err == nil {
+			t.Errorf("text %s the certificates: the bundle keeps no trace of it", name)
+		}
 	}
 }
 

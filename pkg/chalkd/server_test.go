@@ -298,6 +298,7 @@ func serve(t *testing.T, s *Server, c creds, clientCAs *x509.CertPool) string {
 		t.Fatal(err)
 	}
 	s.AnyClient = clientCAs == nil
+	s.ClientCAs = StaticCAs(clientCAs)
 	return serveTLS(t, s.Handler(), TLSConfig(StaticCertificate(&pair), StaticCAs(clientCAs)))
 }
 

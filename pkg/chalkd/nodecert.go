@@ -47,7 +47,7 @@ func newTrust(bundle string) (*trust, error) {
 }
 
 // NodeCertificateFile is the file below STATE's chalkd directory that holds the node's chain and
-// key; CAFile holds the OS CA's certificate.
+// key; CAFile holds the certificates of the OS CAs the node trusts, a bundle.
 const (
 	NodeCertificateFile = "node.pem"
 	CAFile              = "ca.crt"
@@ -129,7 +129,26 @@ func (n *NodeCertificate) CheckTrust(bundle string, keep ...*x509.Certificate) e
 	return err
 }
 
+// refusedTrust is OS CAs that checkTrust refused, as opposed to a failure to record them.
+type refusedTrust struct{ error }
+
+func (r refusedTrust) Unwrap() error { return r.error }
+
+// isRefusedTrust reports whether ReplaceTrust or CheckTrust refused the OS CAs themselves.
+func isRefusedTrust(err error) bool {
+	var r refusedTrust
+	return errors.As(err, &r)
+}
+
 func (n *NodeCertificate) checkTrust(bundle string, keep ...*x509.Certificate) (*trust, error) {
+	t, err := n.verifyTrust(bundle, keep...)
+	if err != nil {
+		return nil, refusedTrust{err}
+	}
+	return t, nil
+}
+
+func (n *NodeCertificate) verifyTrust(bundle string, keep ...*x509.Certificate) (*trust, error) {
 	t, err := newTrust(pki.Bundle(bundle))
 	if err != nil {
 		return nil, err
