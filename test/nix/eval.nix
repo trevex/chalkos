@@ -3238,4 +3238,50 @@ lib.runTests {
       ];
     };
   };
+  # The system path is empty unless the debug tools are asked for; units name their own tools.
+  testSystemPath = {
+    expr =
+      let
+        image = modules: role (cluster [ { chalkos.roles.worker.nixosModules = modules; } ]);
+        names = c: map lib.getName c.environment.systemPackages;
+        c = image [ ];
+      in
+      {
+        default = names c;
+        debug = names (image [ { chalkos.debug.tools = true; } ]);
+        locales = c.i18n.supportedLocales;
+        dbus = lib.elem c.systemd.package c.services.dbus.packages;
+        chalkd = lib.sort lib.lessThan (map lib.getName c.systemd.services.chalkd.path);
+      };
+    expected = {
+      default = [ ];
+      debug = [
+        "bash-interactive"
+        "coreutils"
+        "util-linux"
+        "iproute2"
+        "procps"
+        "less"
+        "nftables"
+        "kmod"
+      ];
+      locales = [ "C.UTF-8/UTF-8" ];
+      dbus = true;
+      chalkd = [
+        "btrfs-progs"
+        "chrony"
+        "coreutils"
+        "cryptsetup"
+        "e2fsprogs"
+        "efibootmgr"
+        "findutils"
+        "gnugrep"
+        "gnused"
+        "systemd"
+        "systemd"
+        "util-linux"
+        "xfsprogs"
+      ];
+    };
+  };
 }
