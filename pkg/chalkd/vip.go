@@ -321,6 +321,10 @@ func (k *Kubernetes) superviseVIP(ctx context.Context, done chan struct{}) {
 		if ctx.Err() != nil {
 			return
 		}
+		if errors.Is(err, errEtcdTrustChanged) {
+			log.Print("kubernetes: the node's share changed the etcd CAs; starting the VIP election again")
+			continue
+		}
 		log.Printf("kubernetes: the VIP election stopped: %v; starting it again", err)
 		select {
 		case <-ctx.Done():
@@ -384,7 +388,50 @@ func (k *Kubernetes) runVIP(ctx context.Context) error {
 		holder:   &k.vipHolder,
 	}
 	defer election.closeClient()
-	return election.run(ctx)
+	// The client verifies etcd with the CAs of the share it was dialled with and renews its
+	// credential from that share's etcd CA, so a rotation of the etcd CA would leave it verifying
+	// etcd's new certificate against the old CA, and authenticating with a CA etcd stops trusting
+	// at the finish. On such a change the election ends as when chalkd stops, releasing the VIPs
+	// and resigning, and starts again with the new share.
+	ectx, restart := context.WithCancelCause(ctx)
+	defer restart(nil)
+	go watchEtcdTrust(ectx, k.Paths, share, interval, restart)
+	err = election.run(ectx)
+	if ctx.Err() == nil && errors.Is(context.Cause(ectx), errEtcdTrustChanged) {
+		return errEtcdTrustChanged
+	}
+	return err
+}
+
+// errEtcdTrustChanged means the node's share changed the etcd CAs it trusts or the one that
+// issues its credential.
+var errEtcdTrustChanged = errors.New("the node's share changed the etcd CAs")
+
+// watchEtcdTrust calls restart with errEtcdTrustChanged once the share in STATE differs from
+// started in its etcd CAs or the issuing one, looking every interval until ctx ends. A share that
+// cannot be read changes nothing: the election keeps what it has.
+func watchEtcdTrust(ctx context.Context, p knode.Paths, started kpki.Share, interval time.Duration, restart context.CancelCauseFunc) {
+	want := etcdTrust(started)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+		if current, err := knode.ReadShare(p); err == nil && etcdTrust(current) != want {
+			restart(errEtcdTrustChanged)
+			return
+		}
+	}
+}
+
+// etcdTrust is what chalkd's etcd client takes from the share: the issuing etcd CA and the
+// bundle it verifies etcd with.
+func etcdTrust(s kpki.Share) string {
+	if s.EtcdCA == nil {
+		return ""
+	}
+	return s.EtcdCA.Certificate + "\n" + s.EtcdCABundle()
 }
 
 // vipAddresses are the cluster's VIPs on this node: each on the interface the cluster names, or

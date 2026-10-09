@@ -15,6 +15,8 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
+	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/vip"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -564,5 +566,73 @@ func TestVIPAnnouncesAddedAddressesOnly(t *testing.T) {
 	time.Sleep(400 * time.Millisecond)
 	if count(missing) != 4 || count(present) != 0 {
 		t.Errorf("announced %d and %d times after the release, want 4 and 0", count(missing), count(present))
+	}
+}
+
+// vipControlPlane runs the VIP election of the bootstrapped control plane n1 on its own etcd
+// member, with addrs standing for its VIPs and an API server that is always ready.
+func vipControlPlane(t *testing.T) (*Kubernetes, *fakeAddresses) {
+	t.Helper()
+	s, _, _ := memberServer(t)
+	k := s.Kubernetes
+	data, err := os.ReadFile(k.Paths.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, k.Paths.Cluster, strings.Replace(string(data), `"extraArgs"`, `"vip": {"addresses": ["192.168.100.11"], "mode": "l2"}, "extraArgs"`, 1))
+	addrs := &fakeAddresses{holders: &holders{}}
+	k.VIPAddresses = func(k8s.Cluster, knode.Paths) (AddressManager, error) { return addrs, nil }
+	k.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
+	k.VIPTTL, k.VIPInterval = electionTTL, 50*time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go k.superviseVIP(ctx, done)
+	t.Cleanup(func() { cancel(); <-done })
+	return k, addrs
+}
+
+// changeShare writes the node's share as change leaves it.
+func changeShare(t *testing.T, p knode.Paths, change func(*kpki.Share)) {
+	t.Helper()
+	share, err := knode.ReadShare(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	change(&share)
+	data, err := share.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Share(), string(data))
+}
+
+// A share that changes the etcd CAs the node trusts, or the one that issues its credential,
+// restarts the VIP election, which dialled etcd with the share it started with: the holder
+// releases the VIPs, and takes them again on a connection of the new share. Other changes leave
+// the election alone.
+func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
+	k, addrs := vipControlPlane(t)
+	held := func() bool { return addrs.held.Load() && k.vipHolder.Load() }
+	eventually(t, "the node holds the VIPs", held)
+	released := addrs.released.Load()
+
+	kubernetesCA, err := pki.NewCA("new Kubernetes CA", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeShare(t, k.Paths, func(s *kpki.Share) { s.Accepted = &pki.KubernetesAccepted{CA: []string{kubernetesCA.Certificate}} })
+	time.Sleep(20 * k.VIPInterval)
+	if got := addrs.released.Load(); got != released || !held() {
+		t.Fatalf("a share that leaves etcd's trust alone released the VIPs %d times", got-released)
+	}
+
+	etcdCA, err := pki.NewCA("new etcd CA", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeShare(t, k.Paths, func(s *kpki.Share) { s.Accepted.EtcdCA = []string{etcdCA.Certificate} })
+	eventually(t, "the VIPs released and held again", func() bool { return addrs.released.Load() > released && held() })
+	if _, most := addrs.holders.count(); most != 1 {
+		t.Errorf("the VIPs were held %d times at once", most)
 	}
 }
