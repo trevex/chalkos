@@ -9,7 +9,7 @@
       "tier": "control-plane"
     },
     "annotations": {
-      "chalkos.dev/certificates": "738f93fba1b607b07c65461ff441b74946cef5472bf59d454de26aaded6956d6"
+      "chalkos.dev/certificates": "5bc65c12513ceb15441a08fe379f0519037bc46597e5e8b2b2e414b7ec333ef2"
     }
   },
   "spec": {

@@ -246,19 +246,23 @@ func (s Share) Validate() error {
 	return nil
 }
 
-// validateAccepted checks what the share accepts besides the values that issue, and that no CA
-// it accepts is one that issues.
+// validateAccepted checks what the share accepts besides the values that issue, the name of the
+// key that encrypts, accepted or not, and that no CA it accepts shares a key with one that issues
+// or with the node CA.
 func (s Share) validateAccepted() error {
-	if s.Accepted == nil {
-		return nil
-	}
 	k := s.secrets()
 	if err := k.ValidateAccepted(); err != nil {
 		return fmt.Errorf("Kubernetes share: %w", err)
 	}
+	if s.Accepted == nil {
+		return nil
+	}
 	cas := []pki.NamedCA{{Name: "ca", CA: s.CA}}
 	if s.FrontProxyCA != nil {
 		cas = append(cas, pki.NamedCA{Name: "frontProxyCA", CA: *s.FrontProxyCA}, pki.NamedCA{Name: "etcdCA", CA: *s.EtcdCA})
+	}
+	if s.NodeCA != nil {
+		cas = append(cas, pki.NamedCA{Name: "nodeCA", CA: *s.NodeCA})
 	}
 	for _, list := range []struct {
 		name  string

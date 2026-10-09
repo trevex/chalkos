@@ -46,7 +46,7 @@ var testNode = kubernetes.Node{Name: "cp1", IPs: []net.IP{net.ParseIP("10.0.0.11
 func testFiles() map[string][]byte {
 	files := map[string][]byte{}
 	for _, name := range []string{
-		kpki.FileCA, kpki.FileCAKey, kpki.FileFrontProxyCA, kpki.FileFrontProxyClient, kpki.FileFrontProxyClientKey,
+		kpki.FileCA, kpki.FileCASigning, kpki.FileCAKey, kpki.FileFrontProxyCA, kpki.FileFrontProxyClient, kpki.FileFrontProxyClientKey,
 		kpki.FileAPIServer, kpki.FileAPIServerKey, kpki.FileAPIServerKubeletClient, kpki.FileAPIServerKubeletKey,
 		kpki.FileAPIServerEtcdClient, kpki.FileAPIServerEtcdClientKey, kpki.FileServiceAccountKey, kpki.FileServiceAccountPub,
 		kpki.FileEncryptionConfig, kpki.FileAuthenticationConfig, kpki.FileControllerManagerConfig, kpki.FileSchedulerConfig,
@@ -303,5 +303,31 @@ func TestCertificatesHashFollowsMountedFiles(t *testing.T) {
 func TestStaticPodsNeedNodeIP(t *testing.T) {
 	if _, err := StaticPods(testCluster(), kubernetes.Node{Name: "cp1"}, testFiles(), ""); err == nil {
 		t.Error("rendered static pods without the node's address")
+	}
+}
+
+// TestCertificatesHashFollowsBundles checks that a bundle that changes alone, as when a CA is
+// accepted or no longer is, changes the hash of the pods that trust it, so they restart on it.
+func TestCertificatesHashFollowsBundles(t *testing.T) {
+	before, err := StaticPods(testCluster(), testNode, testFiles(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, pods := range map[string][]string{
+		kpki.FileCA:           {"kube-apiserver.json", "kube-controller-manager.json"},
+		kpki.FileFrontProxyCA: {"kube-apiserver.json"},
+		kpki.FileEtcdCA:       {"etcd.json", "kube-apiserver.json"},
+	} {
+		files := testFiles()
+		files[file] = append(files[file], []byte("\nanother CA")...)
+		after, err := StaticPods(testCluster(), testNode, files, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range pods {
+			if decode(t, before[name]).Annotations[CertificatesAnnotation] == decode(t, after[name]).Annotations[CertificatesAnnotation] {
+				t.Errorf("%s changed alone; the hash of %s did not", file, name)
+			}
+		}
 	}
 }

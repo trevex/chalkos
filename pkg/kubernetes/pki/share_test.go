@@ -1,9 +1,13 @@
 package pki
 
 import (
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -111,14 +115,27 @@ func TestShareValidateRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, edit := range map[string]func() Share{
-		"unknown kind":             func() Share { s := cp; s.Kind = "etcd"; return s },
-		"control plane, no etcd":   func() Share { s := cp; s.EtcdCA = nil; return s },
-		"control plane, short key": func() Share { s := cp; s.EncryptionKey = []byte("short"); return s },
-		"worker with the CA key":   func() Share { s := w; s.CA = k.CA; return s },
-		"worker, no kubelet":       func() Share { s := w; s.Kubelet = nil; return s },
-		"worker, foreign kubelet":  func() Share { s := w; s.Kubelet = foreign.Kubelet; return s },
-		"worker, admin as kubelet": func() Share { s := w; s.Kubelet = &admin; return s },
-		"worker with an SA key":    func() Share { s := w; s.ServiceAccountKey = k.ServiceAccountKey; return s },
+		"unknown kind":                                       func() Share { s := cp; s.Kind = "etcd"; return s },
+		"control plane, no etcd":                             func() Share { s := cp; s.EtcdCA = nil; return s },
+		"control plane, short key":                           func() Share { s := cp; s.EncryptionKey = []byte("short"); return s },
+		"worker with the CA key":                             func() Share { s := w; s.CA = k.CA; return s },
+		"worker, no kubelet":                                 func() Share { s := w; s.Kubelet = nil; return s },
+		"worker, foreign kubelet":                            func() Share { s := w; s.Kubelet = foreign.Kubelet; return s },
+		"worker, admin as kubelet":                           func() Share { s := w; s.Kubelet = &admin; return s },
+		"worker with an SA key":                              func() Share { s := w; s.ServiceAccountKey = k.ServiceAccountKey; return s },
+		"control plane, a key name with a colon":             func() Share { s := cp; s.EncryptionKeyName = "a:b"; return s },
+		"control plane, a key name with a control character": func() Share { s := cp; s.EncryptionKeyName = "a\x1bb"; return s },
+		"worker accepting a service-account key": func() Share {
+			s := w
+			pub, _ := pki.ServiceAccountPublicKey(other.ServiceAccountKey)
+			s.Accepted = &pki.KubernetesAccepted{ServiceAccountKeys: []string{pub}}
+			return s
+		},
+		"worker accepting an encryption key": func() Share {
+			s := w
+			s.Accepted = &pki.KubernetesAccepted{EncryptionKeys: []pki.EncryptionKey{{Name: "old", Key: other.EncryptionKey}}}
+			return s
+		},
 	} {
 		if err := edit().Validate(); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -351,5 +368,35 @@ func TestShareNodeCA(t *testing.T) {
 		if err := s.Validate(); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// TestControlPlaneShareAcceptsNoCAOfTheNodeCAsKey checks that a CA a control plane accepts never
+// shares the node CA's key: certificates the node CA issued would verify as that CA's.
+func TestControlPlaneShareAcceptsNoCAOfTheNodeCAsKey(t *testing.T) {
+	k := secrets(t)
+	nodeCA := testNodeCA(t)
+	_, key, err := nodeCA.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "copy"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := pki.NewCA("next front-proxy CA", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	etcd, err := pki.NewCA("next etcd CA", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := ControlPlaneShare(k, nodeCA)
+	s.Accepted = &pki.KubernetesAccepted{CA: []string{string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))}, FrontProxyCA: []string{next.Certificate}, EtcdCA: []string{etcd.Certificate}}
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "nodeCA") {
+		t.Errorf("err = %v, want a refusal naming the node CA", err)
 	}
 }
