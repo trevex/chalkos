@@ -3291,8 +3291,10 @@ type DrainNodeRequest struct {
 	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
 	// How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes.
 	TimeoutSeconds uint32 `protobuf:"varint,2,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Evict pods with emptyDir volumes too, whose data is lost.
+	DeleteEmptydirData bool `protobuf:"varint,3,opt,name=delete_emptydir_data,json=deleteEmptydirData,proto3" json:"delete_emptydir_data,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DrainNodeRequest) Reset() {
@@ -3339,13 +3341,24 @@ func (x *DrainNodeRequest) GetTimeoutSeconds() uint32 {
 	return 0
 }
 
+func (x *DrainNodeRequest) GetDeleteEmptydirData() bool {
+	if x != nil {
+		return x.DeleteEmptydirData
+	}
+	return false
+}
+
 type DrainNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Whether the node is marked as cordoned for an upgrade, by this call or an earlier one.
 	Marked bool `protobuf:"varint,1,opt,name=marked,proto3" json:"marked,omitempty"`
-	// The pods evicted, and those that stay, as namespace/name.
+	// The pods evicted, and those that stay, as namespace/name: DaemonSet, static and finished pods
+	// in kept, and pods without a controller in unmanaged, which nothing starts again elsewhere. The
+	// node lifecycle controller deletes those for good when the node stays down longer than their
+	// tolerations allow.
 	Evicted       []string `protobuf:"bytes,2,rep,name=evicted,proto3" json:"evicted,omitempty"`
 	Kept          []string `protobuf:"bytes,3,rep,name=kept,proto3" json:"kept,omitempty"`
+	Unmanaged     []string `protobuf:"bytes,4,rep,name=unmanaged,proto3" json:"unmanaged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3397,6 +3410,13 @@ func (x *DrainNodeResponse) GetEvicted() []string {
 func (x *DrainNodeResponse) GetKept() []string {
 	if x != nil {
 		return x.Kept
+	}
+	return nil
+}
+
+func (x *DrainNodeResponse) GetUnmanaged() []string {
+	if x != nil {
+		return x.Unmanaged
 	}
 	return nil
 }
@@ -3716,14 +3736,16 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0fUpgradeResponse\x12+\n" +
 	"\x11already_installed\x18\x01 \x01(\bR\x10alreadyInstalled\x12\x14\n" +
 	"\x05entry\x18\x02 \x01(\tR\x05entry\x12\x1c\n" +
-	"\trebooting\x18\x03 \x01(\bR\trebooting\"O\n" +
+	"\trebooting\x18\x03 \x01(\bR\trebooting\"\x81\x01\n" +
 	"\x10DrainNodeRequest\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12'\n" +
-	"\x0ftimeout_seconds\x18\x02 \x01(\rR\x0etimeoutSeconds\"Y\n" +
+	"\x0ftimeout_seconds\x18\x02 \x01(\rR\x0etimeoutSeconds\x120\n" +
+	"\x14delete_emptydir_data\x18\x03 \x01(\bR\x12deleteEmptydirData\"w\n" +
 	"\x11DrainNodeResponse\x12\x16\n" +
 	"\x06marked\x18\x01 \x01(\bR\x06marked\x12\x18\n" +
 	"\aevicted\x18\x02 \x03(\tR\aevicted\x12\x12\n" +
-	"\x04kept\x18\x03 \x03(\tR\x04kept\")\n" +
+	"\x04kept\x18\x03 \x03(\tR\x04kept\x12\x1c\n" +
+	"\tunmanaged\x18\x04 \x03(\tR\tunmanaged\")\n" +
 	"\x13UncordonNodeRequest\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\"6\n" +
 	"\x14UncordonNodeResponse\x12\x1e\n" +

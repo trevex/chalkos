@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -141,7 +142,7 @@ func TestDrainNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !got.Marked || !slices.Equal(got.Evicted, []string{"default/guarded", "default/web-1"}) ||
-		!slices.Equal(got.Kept, []string{"default/bare", "default/done", "kube-flannel/flannel", "kube-system/static-w1"}) {
+		!slices.Equal(got.Kept, []string{"default/done", "kube-flannel/flannel", "kube-system/static-w1"}) || !slices.Equal(got.Unmanaged, []string{"default/bare"}) {
 		t.Errorf("drain = %+v", got)
 	}
 	if n := l.node(t); !n.Spec.Unschedulable || n.Annotations[UpgradeCordon] != "true" {
@@ -180,11 +181,12 @@ func TestDrainKeepsAnOperatorsCordon(t *testing.T) {
 }
 
 // TestDrainWaitsForTheBudget gives up when a PodDisruptionBudget never allows the eviction,
-// naming the pod and why, and leaves the node cordoned.
+// naming the pod and why, and leaves the node cordoned. Another control plane would not do
+// better, so this is no timeout.
 func TestDrainWaitsForTheBudget(t *testing.T) {
 	l := newDrainLab(t, 1000, w1(false))
 	_, err := l.drain(1)
-	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "disruption budget") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "disruption budget") {
 		t.Errorf("drain = %v", err)
 	}
 	if !l.node(t).Spec.Unschedulable {
@@ -205,5 +207,110 @@ func TestDrainRefusals(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindWorker, true)
 	if _, err := s.DrainNode(context.Background(), connect.NewRequest(&nodev1.DrainNodeRequest{Node: "w1"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("draining through a worker: %v", err)
+	}
+}
+
+// TestDrainRefused stops at evictions the API server refuses for good, naming each pod and why,
+// and leaves the node cordoned; another control plane would be refused the same.
+func TestDrainRefused(t *testing.T) {
+	l := newDrainLab(t, 0, w1(false))
+	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "eviction" {
+			return false, nil, nil
+		}
+		switch action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction).Name {
+		case "web-1":
+			return true, nil, apierrors.NewForbidden(policyv1.Resource("evictions"), "web-1", errors.New("not allowed"))
+		case "guarded":
+			return true, nil, apierrors.NewInternalError(errors.New("This pod has more than one PodDisruptionBudget, which the eviction subresource does not support."))
+		}
+		return false, nil, nil
+	})
+	_, err := l.drain(5)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "default/web-1: ") || !strings.Contains(err.Error(), "not allowed") ||
+		!strings.Contains(err.Error(), "default/guarded: ") || !strings.Contains(err.Error(), "more than one PodDisruptionBudget") || !strings.Contains(err.Error(), "stays cordoned") {
+		t.Errorf("drain = %v", err)
+	}
+	if !l.node(t).Spec.Unschedulable {
+		t.Error("w1 is not cordoned")
+	}
+}
+
+// TestDrainTimesOut gives up on pods that were evicted but never stopped: the one case of a
+// timeout.
+func TestDrainTimesOut(t *testing.T) {
+	l := newDrainLab(t, 0, w1(false))
+	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		// Accepted, but the pod keeps running.
+		return action.GetSubresource() == "eviction", nil, nil
+	})
+	_, err := l.drain(1)
+	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded, default/web-1 still run: they did not stop") {
+		t.Errorf("drain = %v", err)
+	}
+}
+
+// TestDrainCordonsAMarkedNode cordons a node that carries the upgrade's mark but was made
+// schedulable by hand, before it evicts anything.
+func TestDrainCordonsAMarkedNode(t *testing.T) {
+	marked := w1(false)
+	marked.Annotations = map[string]string{UpgradeCordon: "true"}
+	l := newDrainLab(t, 0, marked)
+	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "eviction" {
+			return false, nil, nil
+		}
+		// The clientset is locked while its reactors run; its tracker is not.
+		n, err := l.cs.Tracker().Get(corev1.SchemeGroupVersion.WithResource("nodes"), "", "w1")
+		if err != nil || !n.(*corev1.Node).Spec.Unschedulable {
+			t.Errorf("a pod was evicted from a schedulable node: %v", err)
+		}
+		return false, nil, nil
+	})
+	got, err := l.drain(0)
+	if err != nil || !got.Marked {
+		t.Fatalf("drain = %+v, %v", got, err)
+	}
+	if n := l.node(t); !n.Spec.Unschedulable || n.Annotations[UpgradeCordon] != "true" {
+		t.Errorf("w1 is not cordoned and marked: %+v", n)
+	}
+}
+
+// TestDrainEmptyDir evicts pods with emptyDir volumes only when their data may be lost, and
+// names them otherwise before evicting anything.
+func TestDrainEmptyDir(t *testing.T) {
+	cache := pod("default", "cache", "w1", "ReplicaSet", func(p *corev1.Pod) {
+		p.Spec.Volumes = []corev1.Volume{{Name: "scratch", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
+	})
+	l := newDrainLab(t, 0, w1(false))
+	if err := l.cs.Tracker().Add(cache); err != nil {
+		t.Fatal(err)
+	}
+	_, err := l.drain(0)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "default/cache") || !strings.Contains(err.Error(), "--delete-emptydir-data") {
+		t.Errorf("drain = %v", err)
+	}
+	if len(l.evicted) != 0 || !l.node(t).Spec.Unschedulable {
+		t.Errorf("evicted %v, cordoned %v", l.evicted, l.node(t).Spec.Unschedulable)
+	}
+	resp, err := l.s.DrainNode(context.Background(), connect.NewRequest(&nodev1.DrainNodeRequest{Node: "w1", DeleteEmptydirData: true}))
+	if err != nil || !slices.Contains(resp.Msg.Evicted, "default/cache") {
+		t.Errorf("drain deleting emptyDir data = %v, %v", resp, err)
+	}
+}
+
+// TestDrainLeavesTerminatingPods neither evicts nor waits for pods that terminate already.
+func TestDrainLeavesTerminatingPods(t *testing.T) {
+	leaving := pod("default", "leaving", "w1", "ReplicaSet", func(p *corev1.Pod) {
+		now := metav1.Now()
+		p.DeletionTimestamp = &now
+	})
+	l := newDrainLab(t, 0, w1(false))
+	if err := l.cs.Tracker().Add(leaving); err != nil {
+		t.Fatal(err)
+	}
+	got, err := l.drain(1)
+	if err != nil || slices.Contains(got.Evicted, "default/leaving") || slices.Contains(l.evicted, "default/leaving") {
+		t.Errorf("drain = %+v, %v; evicted %v", got, err, l.evicted)
 	}
 }

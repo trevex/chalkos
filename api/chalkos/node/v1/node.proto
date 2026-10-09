@@ -56,9 +56,13 @@ service NodeService {
   rpc Upgrade(stream UpgradeRequest) returns (UpgradeResponse);
   // DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
   // eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
-  // and pods without a controller stay; they run again on the node once it is back. A node that
-  // was cordoned already stays cordoned and unmarked; one this call cordons is marked
-  // chalkos.dev/upgrade-cordon. Available on bootstrapped control-plane nodes, to operators.
+  // and pods without a controller stay; they run again on the node once it is back. Pods with
+  // emptyDir volumes are evicted only when the request accepts losing that data, and pods that
+  // terminate already are left to it. A node that was cordoned already stays cordoned and
+  // unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. Available on
+  // bootstrapped control-plane nodes, to operators. An eviction refused, or one a
+  // PodDisruptionBudget holds back until the timeout, fails the call with FAILED_PRECONDITION;
+  // pods evicted that did not stop in time with DEADLINE_EXCEEDED.
   rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
   // UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
   // a node cordoned otherwise as it is.
@@ -518,14 +522,20 @@ message DrainNodeRequest {
   string node = 1;
   // How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes.
   uint32 timeout_seconds = 2;
+  // Evict pods with emptyDir volumes too, whose data is lost.
+  bool delete_emptydir_data = 3;
 }
 
 message DrainNodeResponse {
   // Whether the node is marked as cordoned for an upgrade, by this call or an earlier one.
   bool marked = 1;
-  // The pods evicted, and those that stay, as namespace/name.
+  // The pods evicted, and those that stay, as namespace/name: DaemonSet, static and finished pods
+  // in kept, and pods without a controller in unmanaged, which nothing starts again elsewhere. The
+  // node lifecycle controller deletes those for good when the node stays down longer than their
+  // tolerations allow.
   repeated string evicted = 2;
   repeated string kept = 3;
+  repeated string unmanaged = 4;
 }
 
 message UncordonNodeRequest {

@@ -20,18 +20,20 @@ import (
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
-const upgradeHelp = `usage: chalkctl upgrade --image PATH [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [flags]
+const upgradeHelp = `usage: chalkctl upgrade --image PATH [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data] [flags]
 
 Installs an image on the nodes of its role: control planes one at a time, each only while etcd
 keeps its quorum without it, then workers and nodes without Kubernetes in batches of
 --max-unavailable. A node gets the image in its inactive slot, is cordoned and drained within
 its pods' PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found
 healthy and the node is Ready. A node whose image never becomes healthy falls back to the image
-before, and the run stops there, showing what that boot logged.
+before, and the run stops there, showing what that boot logged; with --retry-failed a node that
+fell back from the image before gets it once more.
 
 Run again, the command skips nodes that run the image and continues one it stopped at; it
-uncordons only nodes it cordoned itself. A single control plane leaves the API server down while
-it reboots, which --allow-downtime accepts. An operator client file is enough to run it.
+uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
+one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
+volumes are evicted only with --delete-emptydir-data. An operator client file is enough to run it.
 
 flags:
 `
@@ -47,8 +49,11 @@ type upgradeRun struct {
 	// nodes are the nodes to upgrade, as they were when the run started.
 	nodes map[string]*upgradeNode
 	// controlPlanes are the cluster's control-plane nodes, which drain and uncordon nodes.
-	controlPlanes                           []string
-	allowDowntime, noReboot                 bool
+	controlPlanes           []string
+	allowDowntime, noReboot bool
+	// retryFailed installs the image again on nodes that fell back from it; each node is upgraded
+	// once per run, so a second fall back stops the run.
+	retryFailed, deleteEmptyDir             bool
 	maxUnavailable                          int
 	timeout, drainTimeout, poll, quorumWait time.Duration
 	out                                     sync.Mutex
@@ -80,15 +85,17 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")
 	nodesFlag := fs.String("nodes", "", "comma-separated nodes to upgrade (default every node of the image's role)")
 	maxUnavailable := fs.Int("max-unavailable", 1, "how many workers and nodes without Kubernetes upgrade at once")
-	allowDowntime := fs.Bool("allow-downtime", false, "upgrade a single control plane, whose API server is down while it reboots")
+	allowDowntime := fs.Bool("allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
 	noReboot := fs.Bool("no-reboot", false, "install the image on the nodes without draining or rebooting them; it boots with their next reboot")
+	retryFailed := fs.Bool("retry-failed", false, "install the image again, once, on nodes that fell back from it")
+	deleteEmptyDir := fs.Bool("delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
 	timeout := fs.Duration("timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 0 || *imagePath == "" || *maxUnavailable < 1 {
-		return errors.New("usage: chalkctl upgrade --image PATH [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot]")
+		return errors.New("usage: chalkctl upgrade --image PATH [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data]")
 	}
 	creds, err := a.loadCredentials(ctx, sf, *config, cf.flake)
 	if err != nil {
@@ -114,6 +121,7 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 	r := &upgradeRun{
 		a: a, cluster: c, creds: creds, image: img, endpoints: endpoints,
 		allowDowntime: *allowDowntime, noReboot: *noReboot, maxUnavailable: *maxUnavailable,
+		retryFailed: *retryFailed, deleteEmptyDir: *deleteEmptyDir,
 		timeout: *timeout, drainTimeout: *timeout, poll: a.poll(), quorumWait: min(*timeout, time.Minute),
 	}
 	var named []string
@@ -295,8 +303,8 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	switch {
 	case boot.GetError() != "":
 		return fmt.Errorf("%s: its boot is unknown: %s", n.name, boot.GetError())
-	case boot.GetFailed() == version:
-		return r.rolledBack(n.name, boot)
+	case boot.GetFailed() == version && !r.retryFailed:
+		return r.rolledBack(n, boot)
 	case info.Version == version && boot.GetBlessed():
 		if r.noReboot {
 			r.say("%s: runs %s", n.name, version)
@@ -307,6 +315,9 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	case info.Version == version:
 		r.say("%s: booted %s; waiting for it to be found healthy", n.name, version)
 	default:
+		if boot.GetFailed() == version {
+			r.say("%s: fell back from %s before; trying it again", n.name, version)
+		}
 		if n.kind == manifest.KindControlPlane && !r.noReboot {
 			if err := r.quorum(ctx, n.name); err != nil {
 				return err
@@ -395,9 +406,9 @@ func (r *upgradeRun) install(ctx context.Context, name string) error {
 }
 
 // quorum checks that etcd keeps its quorum while the control plane reboots: its other voters
-// must be healthy and enough for a quorum. A single control plane takes the API server down
-// while it reboots, which only --allow-downtime accepts. etcd may need a moment after the control
-// plane before came back, so the check is tried for a while.
+// must be healthy and enough for a quorum. With one or two voters the others can never be enough,
+// and the API server is down while it reboots, which only --allow-downtime accepts. etcd may need
+// a moment after the control plane before came back, so the check is tried for a while.
 func (r *upgradeRun) quorum(ctx context.Context, name string) error {
 	deadline := time.Now().Add(r.quorumWait)
 	for {
@@ -441,16 +452,17 @@ func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
 		}
 		voters++
 	}
+	quorum := voters/2 + 1
 	switch {
 	case !own:
 		// A control plane that is no etcd member takes nothing of etcd down.
 		return nil
-	case voters == 1 && !r.allowDowntime:
-		return finalError{fmt.Errorf("%s is the only control plane: the API server is down while it reboots; pass --allow-downtime to accept that", name)}
-	case voters == 1:
+	case voters-1 < quorum && !r.allowDowntime:
+		return finalError{fmt.Errorf("etcd has %d voters, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", voters, name, quorum, name)}
+	case voters-1 < quorum:
 		return nil
-	case healthy < voters/2+1:
-		return fmt.Errorf("without %s etcd has %d healthy voters of %d, fewer than the %d its quorum needs", name, healthy, voters, voters/2+1)
+	case healthy < quorum:
+		return fmt.Errorf("without %s etcd has %d healthy voters of %d, fewer than the %d its quorum needs", name, healthy, voters, quorum)
 	}
 	return nil
 }
@@ -483,7 +495,7 @@ func (r *upgradeRun) drain(ctx context.Context, n *upgradeNode) error {
 	}
 	var resp *nodev1.DrainNodeResponse
 	err := r.viaControlPlanes(n.name, func(conn *client.Conn) error {
-		res, err := conn.DrainNode(ctx, connect.NewRequest(&nodev1.DrainNodeRequest{Node: n.name, TimeoutSeconds: uint32(r.drainTimeout / time.Second)}))
+		res, err := conn.DrainNode(ctx, connect.NewRequest(&nodev1.DrainNodeRequest{Node: n.name, TimeoutSeconds: uint32(r.drainTimeout / time.Second), DeleteEmptydirData: r.deleteEmptyDir}))
 		if err == nil {
 			resp = res.Msg
 		}
@@ -496,7 +508,10 @@ func (r *upgradeRun) drain(ctx context.Context, n *upgradeNode) error {
 	if !resp.Marked {
 		cordon = "was cordoned before and stays so"
 	}
-	r.say("%s: %s, evicted %d pods, kept %d", n.name, cordon, len(resp.Evicted), len(resp.Kept))
+	r.say("%s: %s, evicted %d pods, kept %d", n.name, cordon, len(resp.Evicted), len(resp.Kept)+len(resp.Unmanaged))
+	if len(resp.Unmanaged) > 0 {
+		r.say("%s: keeps pods without a controller: %s; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow", n.name, strings.Join(resp.Unmanaged, ", "))
+	}
 	return nil
 }
 
@@ -534,7 +549,7 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 		case err != nil:
 			last = err
 		case st.GetBoot().GetFailed() == version:
-			return r.rolledBack(n.name, st.GetBoot())
+			return r.rolledBack(n, st.GetBoot())
 		case info.Version != version:
 			last = fmt.Errorf("it runs %s", info.Version)
 		case !st.GetBoot().GetBlessed():
@@ -561,9 +576,13 @@ func inCluster(k *nodev1.KubernetesStatus) bool {
 	return k != nil && (strings.HasPrefix(k.State, "bootstrapped") || strings.HasPrefix(k.State, "joined"))
 }
 
-// rolledBack is the error of a node that fell back from the image, with what its boots logged.
-func (r *upgradeRun) rolledBack(name string, boot *nodev1.BootStatus) error {
-	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", name, boot.Failed, boot.Version)
+// rolledBack is the error of a node that fell back from the image, with what its boots logged. A
+// node of the cluster stays cordoned, for an operator to look at.
+func (r *upgradeRun) rolledBack(n *upgradeNode, boot *nodev1.BootStatus) error {
+	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, boot.Failed, boot.Version)
+	if n.inCluster && !r.noReboot {
+		msg += "; it stays cordoned"
+	}
 	if len(boot.Journal) > 0 {
 		msg += "; its boots logged:\n  " + strings.Join(boot.Journal, "\n  ")
 	}

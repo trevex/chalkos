@@ -257,6 +257,7 @@ var nodeRole = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
 	"ApplyIdentity": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
 	"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
+	"UncordonNode": connect.CodePermissionDenied,
 }
 
 // clientWithOrganization issues a client certificate with the Organization given, bypassing the
@@ -418,7 +419,8 @@ func TestAuthorisation(t *testing.T) {
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},
 			// A header without a target is refused after authorisation.
-			pki.RoleAdmin:       {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeFailedPrecondition},
+			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeFailedPrecondition,
+				"UncordonNode": connect.CodeFailedPrecondition},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[string]map[string]connect.Code{

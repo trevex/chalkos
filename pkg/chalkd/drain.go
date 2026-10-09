@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -43,11 +44,15 @@ func (s *Server) DrainNode(ctx context.Context, req *connect.Request[nodev1.Drai
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	evicted, kept, err := s.Kubernetes.evictPods(ctx, cs, name)
+	d, err := s.Kubernetes.evictPods(ctx, cs, name, req.Msg.DeleteEmptydirData)
 	if err != nil {
-		return nil, failed(connect.CodeDeadlineExceeded, "drain %s: %v; it stays cordoned", name, err)
+		var de *drainError
+		if errors.As(err, &de) {
+			return nil, failed(de.code, "drain %s: %v; it stays cordoned", name, de.err)
+		}
+		return nil, failed(connect.CodeUnavailable, "drain %s: %v; it stays cordoned", name, err)
 	}
-	return connect.NewResponse(&nodev1.DrainNodeResponse{Marked: marked, Evicted: evicted, Kept: kept}), nil
+	return connect.NewResponse(&nodev1.DrainNodeResponse{Marked: marked, Evicted: d.evicted, Kept: d.kept, Unmanaged: d.unmanaged}), nil
 }
 
 func (s *Server) UncordonNode(ctx context.Context, req *connect.Request[nodev1.UncordonNodeRequest]) (*connect.Response[nodev1.UncordonNodeResponse], error) {
@@ -76,8 +81,8 @@ func (k *Kubernetes) upgradeClient() (kubernetes.Interface, error) {
 }
 
 // setCordon cordons a node and marks it, unless it was cordoned unmarked, or uncordons a node
-// marked so and removes the mark. It reports whether the node is marked (cordon) or was
-// (uncordon).
+// marked so and removes the mark. A marked node is cordoned again when it was made schedulable
+// since. It reports whether the node is marked (cordon) or was (uncordon).
 func setCordon(ctx context.Context, cs kubernetes.Interface, name string, cordon bool) (bool, error) {
 	var marked bool
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -87,7 +92,7 @@ func setCordon(ctx context.Context, cs kubernetes.Interface, name string, cordon
 		}
 		_, marked = node.Annotations[UpgradeCordon]
 		switch {
-		case cordon && marked, cordon && node.Spec.Unschedulable:
+		case cordon && node.Spec.Unschedulable:
 			return nil
 		case cordon:
 			if node.Annotations == nil {
@@ -114,61 +119,91 @@ func setCordon(ctx context.Context, cs kubernetes.Interface, name string, cordon
 	return marked, nil
 }
 
-// evictable reports whether a drain evicts the pod: one of a controller, but not of a
-// DaemonSet, which would run it again on the node at once, and not a static pod's mirror. A pod
-// without a controller would be gone for good; it stays, and runs again once the node is back.
-func evictable(p corev1.Pod) bool {
-	if p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed {
-		return false
-	}
-	if _, mirror := p.Annotations[corev1.MirrorPodAnnotationKey]; mirror {
-		return false
-	}
-	owner := metav1.GetControllerOf(&p)
-	return owner != nil && owner.Kind != "DaemonSet"
+// drained is what a drain did with the node's pods, as namespace/name.
+type drained struct {
+	evicted, kept, unmanaged []string
 }
 
-// evictPods evicts the node's evictable pods, again while an eviction would break a
-// PodDisruptionBudget, and waits until they are gone.
-func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, node string) (evicted, kept []string, err error) {
+// drainError is why a drain failed, with the code that tells a client whether another control
+// plane might do better.
+type drainError struct {
+	code connect.Code
+	err  error
+}
+
+func (e *drainError) Error() string { return e.err.Error() }
+
+// evictPods evicts the node's pods of controllers but DaemonSets, again while an eviction would
+// break a PodDisruptionBudget, and waits until they are gone. It keeps DaemonSet pods, which
+// would run again on the node at once, static pods' mirrors, finished pods, and pods without a
+// controller, which would be gone for good and run again once the node is back. Pods that
+// terminate already are left to it. Pods with emptyDir volumes are evicted only when their data
+// may be lost; otherwise nothing is evicted.
+func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, node string, deleteEmptyDir bool) (drained, error) {
 	pods, err := cs.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{FieldSelector: fields.OneTermEqualSelector("spec.nodeName", node).String()})
 	if err != nil {
-		return nil, nil, err
+		return drained{}, err
 	}
+	var d drained
+	var emptyDir []string
 	pending := map[types.UID]corev1.Pod{}
 	for _, p := range pods.Items {
-		if p.Spec.NodeName != node {
+		if p.Spec.NodeName != node || p.DeletionTimestamp != nil {
 			continue
 		}
 		name := p.Namespace + "/" + p.Name
-		if !evictable(p) {
-			kept = append(kept, name)
-			continue
+		owner := metav1.GetControllerOf(&p)
+		_, mirror := p.Annotations[corev1.MirrorPodAnnotationKey]
+		switch {
+		case p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed, mirror, owner != nil && owner.Kind == "DaemonSet":
+			d.kept = append(d.kept, name)
+		case owner == nil:
+			d.unmanaged = append(d.unmanaged, name)
+		default:
+			if slices.ContainsFunc(p.Spec.Volumes, func(v corev1.Volume) bool { return v.EmptyDir != nil }) {
+				emptyDir = append(emptyDir, name)
+			}
+			d.evicted = append(d.evicted, name)
+			pending[p.UID] = p
 		}
-		evicted = append(evicted, name)
-		pending[p.UID] = p
 	}
-	slices.Sort(evicted)
-	slices.Sort(kept)
+	for _, names := range [][]string{d.evicted, d.kept, d.unmanaged, emptyDir} {
+		slices.Sort(names)
+	}
+	if len(emptyDir) > 0 && !deleteEmptyDir {
+		return drained{}, &drainError{connect.CodeFailedPrecondition, fmt.Errorf("pods %s have emptyDir volumes, whose data an eviction deletes; pass --delete-emptydir-data to evict them", strings.Join(emptyDir, ", "))}
+	}
 	asked := map[types.UID]bool{}
+	var blocked []string
 	for len(pending) > 0 {
-		var blocked []string
+		var refused []string
+		blocked = nil
 		for uid, p := range pending {
 			if asked[uid] {
 				continue
 			}
 			err := cs.PolicyV1().Evictions(p.Namespace).Evict(ctx, &policyv1.Eviction{ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: p.Namespace}})
+			var status apierrors.APIStatus
 			switch {
 			case err == nil:
 				asked[uid] = true
 			case apierrors.IsNotFound(err):
 				delete(pending, uid)
+			case ctx.Err() != nil:
+				// The timeout passed during the request; it is handled below.
 			case apierrors.IsTooManyRequests(err):
 				// A PodDisruptionBudget allows no disruption now; another pod may become ready.
 				blocked = append(blocked, fmt.Sprintf("%s/%s: %v", p.Namespace, p.Name, err))
+			case errors.As(err, &status):
+				// Refused for good, as for a pod of several PodDisruptionBudgets.
+				refused = append(refused, fmt.Sprintf("%s/%s: %v", p.Namespace, p.Name, err))
 			default:
-				return nil, nil, fmt.Errorf("evict %s/%s: %w", p.Namespace, p.Name, err)
+				return drained{}, fmt.Errorf("evict %s/%s: %w", p.Namespace, p.Name, err)
 			}
+		}
+		if len(refused) > 0 {
+			slices.Sort(refused)
+			return drained{}, &drainError{connect.CodeFailedPrecondition, fmt.Errorf("evictions refused: %s", strings.Join(refused, "; "))}
 		}
 		for uid, p := range pending {
 			current, err := cs.CoreV1().Pods(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
@@ -186,14 +221,14 @@ func (k *Kubernetes) evictPods(ctx context.Context, cs kubernetes.Interface, nod
 				left = append(left, p.Namespace+"/"+p.Name)
 			}
 			slices.Sort(left)
-			slices.Sort(blocked)
-			why := "they did not stop"
+			// A budget that never allowed an eviction holds the pods wherever the drain runs.
 			if len(blocked) > 0 {
-				why = strings.Join(blocked, "; ")
+				slices.Sort(blocked)
+				return drained{}, &drainError{connect.CodeFailedPrecondition, fmt.Errorf("pods %s still run: %s", strings.Join(left, ", "), strings.Join(blocked, "; "))}
 			}
-			return nil, nil, fmt.Errorf("pods %s still run: %s", strings.Join(left, ", "), why)
+			return drained{}, &drainError{connect.CodeDeadlineExceeded, fmt.Errorf("pods %s still run: they did not stop", strings.Join(left, ", "))}
 		case <-time.After(k.poll()):
 		}
 	}
-	return evicted, kept, nil
+	return d, nil
 }

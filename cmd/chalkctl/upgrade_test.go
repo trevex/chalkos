@@ -139,6 +139,8 @@ type upgradeLab struct {
 	cordoned map[string]bool
 	// refuseUpgrade makes the node refuse its next upgrade, as if the transfer broke.
 	refuseUpgrade string
+	// emptyDir holds the nodes drained deleting emptyDir data.
+	emptyDir map[string]bool
 }
 
 func (l *upgradeLab) record(format string, args ...any) {
@@ -285,11 +287,14 @@ func (n *upgradeFake) DrainNode(_ context.Context, req *connect.Request[nodev1.D
 	n.lab.record("%s drain", req.Msg.Node)
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
+	if req.Msg.DeleteEmptydirData {
+		n.lab.emptyDir[req.Msg.Node] = true
+	}
 	marked, cordoned := n.lab.cordoned[req.Msg.Node]
 	if !cordoned {
 		n.lab.cordoned[req.Msg.Node], marked = true, true
 	}
-	return connect.NewResponse(&nodev1.DrainNodeResponse{Marked: marked, Evicted: []string{"default/web"}}), nil
+	return connect.NewResponse(&nodev1.DrainNodeResponse{Marked: marked, Evicted: []string{"default/web"}, Unmanaged: []string{"default/bare"}}), nil
 }
 
 func (n *upgradeFake) UncordonNode(_ context.Context, req *connect.Request[nodev1.UncordonNodeRequest]) (*connect.Response[nodev1.UncordonNodeResponse], error) {
@@ -313,7 +318,7 @@ func newUpgradeLab(t *testing.T, controlPlanes int) *upgradeLab {
 	m := upgradeManifest(controlPlanes)
 	writeFile(t, filepath.Join(ta.dir, "manifest.json"), m)
 	ta.manifest, _ = manifest.Decode(strings.NewReader(m))
-	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}}
+	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}}
 	for name, node := range ta.manifest.Nodes {
 		n := &upgradeFake{lab: l, name: name, role: node.Role, kind: ta.manifest.Roles[node.Role].Kind, version: "0.1.0"}
 		dir := filepath.Join(t.TempDir(), "chalkd")
@@ -387,7 +392,8 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 }
 
 // TestUpgradeKeepsQuorum refuses a control plane whose reboot would leave etcd without its
-// quorum, and a single control plane without --allow-downtime.
+// quorum, and one or two control planes, which lose it while one reboots, without
+// --allow-downtime.
 func TestUpgradeKeepsQuorum(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthyMembers = []string{"cp2"}
@@ -411,6 +417,18 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 	}
 	if v := single.versions()["cp1"]; v != "0.2.0" {
 		t.Errorf("cp1 runs %s", v)
+	}
+
+	// Two control planes lose their quorum while either reboots.
+	two := newUpgradeLab(t, 2)
+	if err := two.upgrade(img); err == nil || !strings.Contains(err.Error(), "--allow-downtime") {
+		t.Errorf("upgrade of two control planes = %v", err)
+	}
+	if err := two.upgrade(img, "--allow-downtime"); err != nil {
+		t.Fatal(err)
+	}
+	if v := two.versions(); v["cp1"] != "0.2.0" || v["cp2"] != "0.2.0" {
+		t.Errorf("the control planes run %v", v)
 	}
 }
 
@@ -454,7 +472,7 @@ func TestUpgradeStopsAtARollback(t *testing.T) {
 	l.unhealthy["0.3.0"] = true
 	img := testUpgradeImage(t, "lab", "w", "0.3.0")
 	err := l.upgrade(img)
-	if err == nil || !strings.Contains(err.Error(), "w1: upgrade to 0.3.0 failed: rolled back to 0.1.0") || !strings.Contains(err.Error(), "units failed: broken.service") {
+	if err == nil || !strings.Contains(err.Error(), "w1: upgrade to 0.3.0 failed: rolled back to 0.1.0; it stays cordoned") || !strings.Contains(err.Error(), "units failed: broken.service") {
 		t.Fatalf("upgrade = %v", err)
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain", "w1 upgrade", "w1 reboot"}) {
@@ -584,5 +602,52 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 	}
 	if err := l.upgrade(img, "--sign-key", dbKey, "--sign-cert", dbCert); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestUpgradeRetriesAFailedImage installs an image a node fell back from again with
+// --retry-failed, once per run: a second fall back stops the run.
+func TestUpgradeRetriesAFailedImage(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	l.unhealthy["0.3.0"] = true
+	img := testUpgradeImage(t, "lab", "w", "0.3.0")
+	if err := l.upgrade(img); err == nil || !strings.Contains(err.Error(), "rolled back to 0.1.0") {
+		t.Fatalf("upgrade = %v", err)
+	}
+	l.takeEvents()
+	// Still unhealthy: tried once more, then the run stops.
+	if err := l.upgrade(img, "--retry-failed"); err == nil || !strings.Contains(err.Error(), "w1: upgrade to 0.3.0 failed: rolled back to 0.1.0") {
+		t.Fatalf("a retry of an image that stays unhealthy = %v", err)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain", "w1 upgrade", "w1 reboot"}) {
+		t.Errorf("events %q", got)
+	}
+	// Healthy now, as after a transient failure outside the image.
+	l.unhealthy["0.3.0"] = false
+	if err := l.upgrade(img, "--retry-failed"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if !strings.Contains(l.ta.stdout.String(), "w1: fell back from 0.3.0 before; trying it again") {
+		t.Errorf("output:\n%s", l.ta.stdout)
+	}
+	for _, w := range []string{"w1", "w2", "w3"} {
+		if v := l.versions()[w]; v != "0.3.0" {
+			t.Errorf("%s runs %s", w, v)
+		}
+	}
+}
+
+// TestUpgradeDrainsAsAsked passes --delete-emptydir-data on to the drains and names the pods
+// without a controller that stay on the node.
+func TestUpgradeDrainsAsAsked(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.upgrade(testUpgradeImage(t, "lab", "w", "0.2.0"), "--nodes", "w1", "--delete-emptydir-data"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if !l.emptyDir["w1"] {
+		t.Error("w1 was drained keeping emptyDir data")
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: keeps pods without a controller: default/bare") || !strings.Contains(out, "tolerations") {
+		t.Errorf("output:\n%s", out)
 	}
 }

@@ -125,9 +125,13 @@ type NodeServiceClient interface {
 	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
 	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
 	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
-	// and pods without a controller stay; they run again on the node once it is back. A node that
-	// was cordoned already stays cordoned and unmarked; one this call cordons is marked
-	// chalkos.dev/upgrade-cordon. Available on bootstrapped control-plane nodes, to operators.
+	// and pods without a controller stay; they run again on the node once it is back. Pods with
+	// emptyDir volumes are evicted only when the request accepts losing that data, and pods that
+	// terminate already are left to it. A node that was cordoned already stays cordoned and
+	// unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. Available on
+	// bootstrapped control-plane nodes, to operators. An eviction refused, or one a
+	// PodDisruptionBudget holds back until the timeout, fails the call with FAILED_PRECONDITION;
+	// pods evicted that did not stop in time with DEADLINE_EXCEEDED.
 	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 	// a node cordoned otherwise as it is.
@@ -405,9 +409,13 @@ type NodeServiceHandler interface {
 	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
 	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
 	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
-	// and pods without a controller stay; they run again on the node once it is back. A node that
-	// was cordoned already stays cordoned and unmarked; one this call cordons is marked
-	// chalkos.dev/upgrade-cordon. Available on bootstrapped control-plane nodes, to operators.
+	// and pods without a controller stay; they run again on the node once it is back. Pods with
+	// emptyDir volumes are evicted only when the request accepts losing that data, and pods that
+	// terminate already are left to it. A node that was cordoned already stays cordoned and
+	// unmarked; one this call cordons is marked chalkos.dev/upgrade-cordon. Available on
+	// bootstrapped control-plane nodes, to operators. An eviction refused, or one a
+	// PodDisruptionBudget holds back until the timeout, fails the call with FAILED_PRECONDITION;
+	// pods evicted that did not stop in time with DEADLINE_EXCEEDED.
 	DrainNode(context.Context, *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error)
 	// UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 	// a node cordoned otherwise as it is.

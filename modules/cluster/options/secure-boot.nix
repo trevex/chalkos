@@ -25,7 +25,7 @@
       default = null;
       description = ''
         PEM certificate of the db signing key (public). chalkctl upgrade refuses an image whose UKI
-        it did not sign.
+        this certificate's key did not sign.
       '';
     };
   };
