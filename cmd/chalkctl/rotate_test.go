@@ -185,7 +185,8 @@ func (n *fakeNode) RotationStep(ctx context.Context, req *connect.Request[nodev1
 	case nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING:
 		n.kubeletServing = fingerprint(l.t, n.share.CA.Certificate)
 	case nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
-		resp.Restarted = []string{"kube-system/Deployment/coredns"}
+		resp.Restarted = []string{"kube-system/Deployment/coredns", "apps/DaemonSet/on-delete"}
+		resp.NotWaited = []string{"apps/DaemonSet/on-delete"}
 	case nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS:
 		resp.TokenSecrets = []string{"default/legacy"}
 	case nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:

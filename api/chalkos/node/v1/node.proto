@@ -424,6 +424,10 @@ message RotationStepResponse {
   uint64 rewritten = 3;
   // The objects etcd holds by resource and key.
   repeated EncryptedObjects encrypted = 4;
+  // The workloads restarted but not waited for, as namespace/kind/name: their rollout does not
+  // complete by itself (an OnDelete update strategy, a StatefulSet's partition, a paused
+  // Deployment).
+  repeated string not_waited = 5;
 }
 
 message EncryptedObjects {

@@ -2739,7 +2739,11 @@ type RotationStepResponse struct {
 	// How many objects were updated.
 	Rewritten uint64 `protobuf:"varint,3,opt,name=rewritten,proto3" json:"rewritten,omitempty"`
 	// The objects etcd holds by resource and key.
-	Encrypted     []*EncryptedObjects `protobuf:"bytes,4,rep,name=encrypted,proto3" json:"encrypted,omitempty"`
+	Encrypted []*EncryptedObjects `protobuf:"bytes,4,rep,name=encrypted,proto3" json:"encrypted,omitempty"`
+	// The workloads restarted but not waited for, as namespace/kind/name: their rollout does not
+	// complete by itself (an OnDelete update strategy, a StatefulSet's partition, a paused
+	// Deployment).
+	NotWaited     []string `protobuf:"bytes,5,rep,name=not_waited,json=notWaited,proto3" json:"not_waited,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2798,6 +2802,13 @@ func (x *RotationStepResponse) GetRewritten() uint64 {
 func (x *RotationStepResponse) GetEncrypted() []*EncryptedObjects {
 	if x != nil {
 		return x.Encrypted
+	}
+	return nil
+}
+
+func (x *RotationStepResponse) GetNotWaited() []string {
+	if x != nil {
+		return x.NotWaited
 	}
 	return nil
 }
@@ -3040,12 +3051,14 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x1cRenewNodeCertificateResponse\x12+\n" +
 	"\x11certificate_chain\x18\x01 \x01(\fR\x10certificateChain\"H\n" +
 	"\x13RotationStepRequest\x121\n" +
-	"\x04step\x18\x01 \x01(\x0e2\x1d.chalkos.node.v1.RotationStepR\x04step\"\xb8\x01\n" +
+	"\x04step\x18\x01 \x01(\x0e2\x1d.chalkos.node.v1.RotationStepR\x04step\"\xd7\x01\n" +
 	"\x14RotationStepResponse\x12\x1c\n" +
 	"\trestarted\x18\x01 \x03(\tR\trestarted\x12#\n" +
 	"\rtoken_secrets\x18\x02 \x03(\tR\ftokenSecrets\x12\x1c\n" +
 	"\trewritten\x18\x03 \x01(\x04R\trewritten\x12?\n" +
-	"\tencrypted\x18\x04 \x03(\v2!.chalkos.node.v1.EncryptedObjectsR\tencrypted\"Z\n" +
+	"\tencrypted\x18\x04 \x03(\v2!.chalkos.node.v1.EncryptedObjectsR\tencrypted\x12\x1d\n" +
+	"\n" +
+	"not_waited\x18\x05 \x03(\tR\tnotWaited\"Z\n" +
 	"\x10EncryptedObjects\x12\x1a\n" +
 	"\bresource\x18\x01 \x01(\tR\bresource\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x18\n" +

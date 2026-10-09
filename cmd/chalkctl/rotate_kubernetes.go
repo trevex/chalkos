@@ -133,6 +133,9 @@ func (r *rotation) restartAddons(ctx context.Context) error {
 		resp, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS}))
 		if err == nil {
 			r.say("  restarted %s", strings.Join(resp.Msg.Restarted, ", "))
+			if len(resp.Msg.NotWaited) > 0 {
+				r.say("  their rollout does not complete by itself (OnDelete, a partition, paused), so it was not waited for: %s", strings.Join(resp.Msg.NotWaited, ", "))
+			}
 		}
 		return err
 	})
@@ -330,13 +333,13 @@ func (r *rotation) pausedKubernetes(ctx context.Context, rot pki.Rotation) error
 	kind := rot.Kind
 	switch {
 	case kind == pki.RotateKubernetesCA && rot.Phase == pki.PhaseAccept:
-		r.say("Every node trusts the old and the new Kubernetes CAs, and chalkos's addons restarted. Restart your workloads that talk to the API server, so they trust both CAs too; pods started from now on do. Issue new kubeconfigs now with chalkctl kubeconfig: they carry both CAs and work throughout the rotation and after it; kubeconfigs from before the rotation stop verifying the API server at the switch. Then continue with chalkctl rotate %s --resume, which makes the new CAs issue.", kind)
+		r.say("Every node trusts the old and the new Kubernetes CAs, and chalkos's addons and the workloads of chalkos.cluster.manifests, StatefulSets included, restarted. Restart your other workloads that talk to the API server, so they trust both CAs too; pods started from now on do. Issue new kubeconfigs now with chalkctl kubeconfig: they carry both CAs and work throughout the rotation and after it; kubeconfigs from before the rotation stop verifying the API server at the switch. Then continue with chalkctl rotate %s --resume, which makes the new CAs issue.", kind)
 		return nil
 	case kind == pki.RotateKubernetesCA:
 		r.say("The new Kubernetes CAs issue every certificate of the cluster, and the kubelets requested new serving certificates. Kubeconfigs from before the rotation cannot verify the API server any more and are refused after the finish: issue them again with chalkctl kubeconfig. Then remove the old CAs with chalkctl rotate %s --finish.", kind)
 	case kind == pki.RotateServiceAccountKey:
 		at := rot.Switched.Add(tokenRefresh)
-		r.say("The API server signs tokens with the new service-account key, and chalkos's addons restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
+		r.say("The API server signs tokens with the new service-account key, and chalkos's addons and the workloads of chalkos.cluster.manifests, StatefulSets included, restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
 		var secrets []string
 		err := r.throughControlPlane(ctx, func(ctx context.Context, conn *client.Conn) error {
 			resp, err := conn.RotationStep(ctx, connect.NewRequest(&nodev1.RotationStepRequest{Step: nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS}))

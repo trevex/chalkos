@@ -45,7 +45,7 @@ func TestRotateKubernetesCA(t *testing.T) {
 	if i, j := slices.Index(events, "cp2 share"), slices.Index(events, "w1 share"); i < 0 || j < i {
 		t.Errorf("events %v: want the control planes' shares before the worker's", events)
 	}
-	for _, want := range []string{"--resume", "chalkctl kubeconfig", "carry both CAs", "stop verifying the API server at the switch"} {
+	for _, want := range []string{"--resume", "chalkctl kubeconfig", "carry both CAs", "stop verifying the API server at the switch", "chalkos.cluster.manifests, StatefulSets included", "not waited for: apps/DaemonSet/on-delete"} {
 		if !strings.Contains(l.ta.stdout.String(), want) {
 			t.Errorf("the pause after the accept phase does not say %q: %s", want, l.ta.stdout)
 		}
@@ -159,6 +159,9 @@ func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 		t.Errorf("the switch is recorded at %v, want %v, once every control plane applied it", switched, want)
 	}
 	stdout := l.ta.stdout.String()
+	if !strings.Contains(stdout, "chalkos.cluster.manifests, StatefulSets included") {
+		t.Errorf("the pause does not say which workloads restarted: %s", stdout)
+	}
 	if !strings.Contains(stdout, "default/legacy") {
 		t.Errorf("the pause does not list the Secrets of legacy tokens: %s", stdout)
 	}

@@ -2,21 +2,26 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -257,3 +262,220 @@ func TestRenewKubeletServing(t *testing.T) {
 
 // runtimeObject is an object the fake API server holds.
 type runtimeObject = runtime.Object
+
+// TestRewriteEncryptedRetriesAndSkips checks that a Secret changed since it was listed is read
+// again and rewritten, and that one deleted since is skipped.
+func TestRewriteEncryptedRetriesAndSkips(t *testing.T) {
+	s, _, _ := memberServer(t)
+	var objects []runtimeObject
+	for i := range 3 {
+		objects = append(objects, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: fmt.Sprintf("s%d", i)}, Data: map[string][]byte{"k": []byte("v")}})
+	}
+	client := withAPI(s, objects...)
+	conflicted := false
+	client.PrependReactor("update", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		secret := action.(k8stesting.UpdateAction).GetObject().(*corev1.Secret)
+		switch {
+		case secret.Name == "s1" && !conflicted:
+			conflicted = true
+			return true, nil, apierrors.NewConflict(corev1.Resource("secrets"), "s1", errors.New("the object has been modified"))
+		case secret.Name == "s2":
+			return true, nil, apierrors.NewNotFound(corev1.Resource("secrets"), "s2")
+		}
+		return false, nil, nil
+	})
+	resp, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !conflicted || resp.Rewritten != 2 {
+		t.Errorf("rewrote %d secrets after a conflict on s1 and s2 deleted, want 2", resp.Rewritten)
+	}
+	gets := 0
+	for _, a := range client.Actions() {
+		if a.GetVerb() == "get" && a.GetResource().Resource == "secrets" {
+			gets++
+		}
+	}
+	if gets != 1 {
+		t.Errorf("%d reads of a Secret, want s1 read again after its conflict", gets)
+	}
+}
+
+// TestRewriteEncryptedPages checks that the rewrite lists Secrets in pages, and starts over when
+// the list it pages through expired, rewriting each Secret once.
+func TestRewriteEncryptedPages(t *testing.T) {
+	s, _, _ := memberServer(t)
+	var objects []runtimeObject
+	var all []corev1.Secret
+	for i := range 5 {
+		secret := corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: fmt.Sprintf("s%d", i)}}
+		all = append(all, secret)
+		objects = append(objects, &secret)
+	}
+	client := withAPI(s, objects...)
+	expired, lists := false, 0
+	client.PrependReactor("list", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		lists++
+		opts := action.(k8stesting.ListActionImpl).ListOptions
+		if opts.Limit <= 0 {
+			t.Errorf("listed without a limit")
+		}
+		from, _ := strconv.Atoi(opts.Continue)
+		if from > 0 && !expired {
+			expired = true
+			return true, nil, apierrors.NewResourceExpired("the list expired")
+		}
+		to := min(from+2, len(all))
+		list := &corev1.SecretList{Items: slices.Clone(all[from:to])}
+		if to < len(all) {
+			list.Continue = strconv.Itoa(to)
+		}
+		return true, list, nil
+	})
+	resp, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !expired || lists != 5 {
+		t.Errorf("%d lists, want the first page, an expired second, and the three pages again", lists)
+	}
+	updated := map[string]int{}
+	for _, a := range client.Actions() {
+		if a.GetVerb() == "update" && a.GetResource().Resource == "secrets" {
+			updated[a.(k8stesting.UpdateAction).GetObject().(*corev1.Secret).Name]++
+		}
+	}
+	if resp.Rewritten != 5 || len(updated) != 5 {
+		t.Errorf("rewrote %d secrets, updated %v, want each of the 5 once", resp.Rewritten, updated)
+	}
+	for name, n := range updated {
+		if n != 1 {
+			t.Errorf("%s updated %d times", name, n)
+		}
+	}
+}
+
+// TestRewriteEncryptedErrorsHoldNoData checks that a failed rewrite names the Secret and why,
+// never what the API server echoed of it.
+func TestRewriteEncryptedErrorsHoldNoData(t *testing.T) {
+	s, _, _ := memberServer(t)
+	client := withAPI(s, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "s0"}, Data: map[string][]byte{"k": []byte("hunter2")}})
+	fail := apierrors.NewGenericServerResponse(500, "update", corev1.Resource("secrets"), "s0", "data.k: hunter2", 0, true)
+	fail.ErrStatus.Reason = ""
+	client.PrependReactor("update", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) { return true, nil, fail })
+	_, err := rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	if err == nil || !strings.Contains(err.Error(), "ns/s0") || !strings.Contains(err.Error(), "500") || strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("err = %v, want one naming ns/s0 and the HTTP status alone", err)
+	}
+	client.PrependReactor("update", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("connection reset by peer")
+	})
+	_, err = rotationStep(context.Background(), s, nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
+	if err == nil || !strings.Contains(err.Error(), "connection reset by peer") {
+		t.Errorf("err = %v, want one saying why", err)
+	}
+}
+
+// TestUnknownRotationStepMintsNothing checks that an unknown step is refused before chalkd
+// creates a credential for the API server.
+func TestUnknownRotationStepMintsNothing(t *testing.T) {
+	s, _, _ := memberServer(t)
+	minted := false
+	s.Kubernetes.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+		minted = true
+		return fake.NewClientset(), nil
+	}
+	if _, err := rotationStep(context.Background(), s, nodev1.RotationStep(99)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("err = %v, want invalid_argument", err)
+	}
+	if minted {
+		t.Error("an unknown step got a credential for the API server")
+	}
+}
+
+// pagedKV puts a key between the first and the second page of a read.
+type pagedKV struct {
+	clientv3.KV
+	gets  int
+	later func()
+}
+
+func (p *pagedKV) Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+	if p.gets++; p.gets == 2 {
+		p.later()
+	}
+	return p.KV.Get(ctx, key, opts...)
+}
+
+// TestCountByKeyReadsOneRevision checks that a count spanning pages reads them all at the
+// revision of the first, so a key written meanwhile neither adds to it nor shifts it.
+func TestCountByKeyReadsOneRevision(t *testing.T) {
+	_, cli, _ := memberServer(t)
+	ctx := context.Background()
+	for i := range 250 {
+		if _, err := cli.Put(ctx, fmt.Sprintf("/registry/secrets/default/s-%03d", i), "k8s:enc:secretbox:v1:old:x"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kv := &pagedKV{KV: cli.KV, later: func() {
+		if _, err := cli.Put(ctx, "/registry/secrets/default/zz-later", "k8s:enc:secretbox:v1:old:x"); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	counts, err := countByKey(ctx, kv, "/registry/secrets/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kv.gets < 2 || counts["old"] != 250 {
+		t.Errorf("%d reads counted %v, want the 250 keys of the first read's revision", kv.gets, counts)
+	}
+}
+
+// TestRestartAddonsDoesNotWaitForWhatNeverRollsOut checks that workloads whose pods a restart does
+// not replace are restarted and reported, but not waited for.
+func TestRestartAddonsDoesNotWaitForWhatNeverRollsOut(t *testing.T) {
+	s, _, _ := memberServer(t)
+	share, err := knode.ReadShare(s.Kubernetes.Paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, s.Kubernetes.Manifests, `[
+	  {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "on-delete", "namespace": "apps"}},
+	  {"apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": {"name": "on-delete", "namespace": "apps"}},
+	  {"apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": {"name": "partitioned", "namespace": "apps"}},
+	  {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "paused", "namespace": "apps"}},
+	  {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "rolls", "namespace": "apps"}}
+	]`)
+	one, two := int32(1), int32(2)
+	withAPI(s,
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "kube-root-ca.crt"}, Data: map[string]string{"ca.crt": share.CABundle()}},
+		&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "on-delete"},
+			Spec:   appsv1.DaemonSetSpec{UpdateStrategy: appsv1.DaemonSetUpdateStrategy{Type: appsv1.OnDeleteDaemonSetStrategyType}},
+			Status: appsv1.DaemonSetStatus{DesiredNumberScheduled: 2, NumberAvailable: 2}},
+		&appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "on-delete"},
+			Spec:   appsv1.StatefulSetSpec{Replicas: &two, UpdateStrategy: appsv1.StatefulSetUpdateStrategy{Type: appsv1.OnDeleteStatefulSetStrategyType}},
+			Status: appsv1.StatefulSetStatus{ReadyReplicas: 2}},
+		&appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "partitioned"},
+			Spec: appsv1.StatefulSetSpec{Replicas: &two, UpdateStrategy: appsv1.StatefulSetUpdateStrategy{Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{Partition: &one}}},
+			Status: appsv1.StatefulSetStatus{ReadyReplicas: 2}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "paused"}, Spec: appsv1.DeploymentSpec{Replicas: &two, Paused: true},
+			Status: appsv1.DeploymentStatus{Replicas: 2, AvailableReplicas: 2}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "rolls"}, Spec: appsv1.DeploymentSpec{Replicas: &two},
+			Status: appsv1.DeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2}},
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := rotationStep(ctx, s, nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS)
+	if err != nil {
+		t.Fatalf("the step waited for workloads that never roll out on a restart: %v", err)
+	}
+	if len(resp.Restarted) != 5 {
+		t.Errorf("restarted %v, want every workload", resp.Restarted)
+	}
+	want := []string{"apps/DaemonSet/on-delete", "apps/StatefulSet/on-delete", "apps/StatefulSet/partitioned", "apps/Deployment/paused"}
+	if !slices.Equal(resp.NotWaited, want) {
+		t.Errorf("not waited for %v, want %v", resp.NotWaited, want)
+	}
+}

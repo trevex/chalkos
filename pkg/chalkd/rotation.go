@@ -38,8 +38,16 @@ func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.R
 	if k == nil {
 		return nil, failed(connect.CodeFailedPrecondition, "the node's role has no Kubernetes")
 	}
-	resp := &nodev1.RotationStepResponse{}
 	step := req.Msg.Step
+	// Checked before anything else: an unknown step gets no credential for the API server.
+	switch step {
+	case nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING, nodev1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED,
+		nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS, nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS,
+		nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
+	default:
+		return nil, failed(connect.CodeInvalidArgument, "unknown rotation step %v", step)
+	}
+	resp := &nodev1.RotationStepResponse{}
 	if step == nodev1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -68,15 +76,13 @@ func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.R
 	}
 	switch step {
 	case nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
-		resp.Restarted, err = k.restartAddons(ctx, client, share.CABundle())
+		resp.Restarted, resp.NotWaited, err = k.restartAddons(ctx, client, share.CABundle())
 	case nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS:
 		resp.TokenSecrets, err = tokenSecrets(ctx, client)
 	case nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
 		if resp.Rewritten, err = rewriteEncrypted(ctx, client); err == nil {
 			resp.Encrypted, err = k.countEncrypted(ctx, c, share)
 		}
-	default:
-		return nil, failed(connect.CodeInvalidArgument, "unknown rotation step %v", step)
 	}
 	if err != nil {
 		var ce *connect.Error
@@ -115,11 +121,13 @@ func (w workload) String() string { return w.namespace + "/" + w.kind + "/" + w.
 // restartAddons restarts the workloads of the cluster's manifests, chalkos's addons among them,
 // so their pods trust the Kubernetes CAs of bundle: a pod reads its service account's CA
 // certificates when it starts. They restart only once kube-root-ca.crt holds all of them in
-// their namespaces, and the step ends once they rolled out.
-func (k *Kubernetes) restartAddons(ctx context.Context, client kubernetes.Interface, bundle string) ([]string, error) {
+// their namespaces, and the step ends once they rolled out. A workload whose rollout does not
+// complete by itself, such as one that updates its pods only when they are deleted, is restarted
+// and returned in notWaited instead of being waited for.
+func (k *Kubernetes) restartAddons(ctx context.Context, client kubernetes.Interface, bundle string) (restarted, notWaited []string, err error) {
 	objects, err := kapply.ReadManifests(k.Manifests)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var workloads []workload
 	for _, o := range objects {
@@ -137,7 +145,7 @@ func (k *Kubernetes) restartAddons(ctx context.Context, client kubernetes.Interf
 	}
 	want, err := pki.Fingerprints(bundle)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	slices.Sort(want)
 	waited := map[string]bool{}
@@ -149,34 +157,50 @@ func (k *Kubernetes) restartAddons(ctx context.Context, client kubernetes.Interf
 		if err := k.waitFor(ctx, "kube-root-ca.crt of "+w.namespace+" to hold the Kubernetes CAs", func() error {
 			return rootCAHolds(ctx, client, w.namespace, want)
 		}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	patch := fmt.Appendf(nil, `{"spec":{"template":{"metadata":{"annotations":{%q:%q}}}}}`, RestartedAnnotation, time.Now().UTC().Format(time.RFC3339))
-	var restarted []string
+	var rollouts []workload
 	for _, w := range workloads {
 		apps := client.AppsV1()
+		var rollsOut bool
 		var err error
 		switch w.kind {
 		case "Deployment":
-			_, err = apps.Deployments(w.namespace).Patch(ctx, w.name, types.StrategicMergePatchType, patch, metav1.PatchOptions{})
+			var d *appsv1.Deployment
+			if d, err = apps.Deployments(w.namespace).Patch(ctx, w.name, types.StrategicMergePatchType, patch, metav1.PatchOptions{}); err == nil {
+				rollsOut = !d.Spec.Paused
+			}
 		case "DaemonSet":
-			_, err = apps.DaemonSets(w.namespace).Patch(ctx, w.name, types.StrategicMergePatchType, patch, metav1.PatchOptions{})
+			var d *appsv1.DaemonSet
+			if d, err = apps.DaemonSets(w.namespace).Patch(ctx, w.name, types.StrategicMergePatchType, patch, metav1.PatchOptions{}); err == nil {
+				rollsOut = d.Spec.UpdateStrategy.Type != appsv1.OnDeleteDaemonSetStrategyType
+			}
 		case "StatefulSet":
-			_, err = apps.StatefulSets(w.namespace).Patch(ctx, w.name, types.StrategicMergePatchType, patch, metav1.PatchOptions{})
+			var s *appsv1.StatefulSet
+			if s, err = apps.StatefulSets(w.namespace).Patch(ctx, w.name, types.StrategicMergePatchType, patch, metav1.PatchOptions{}); err == nil {
+				u := s.Spec.UpdateStrategy
+				rollsOut = u.Type != appsv1.OnDeleteStatefulSetStrategyType && (u.RollingUpdate == nil || u.RollingUpdate.Partition == nil || *u.RollingUpdate.Partition == 0)
+			}
 		}
 		if err != nil {
-			return restarted, fmt.Errorf("restart %s: %w", w, err)
+			return restarted, notWaited, fmt.Errorf("restart %s: %w", w, err)
 		}
 		log.Printf("rotation: restarted %s", w)
 		restarted = append(restarted, w.String())
-	}
-	for _, w := range workloads {
-		if err := k.waitFor(ctx, w.String()+" to roll out", func() error { return rolledOut(ctx, client, w) }); err != nil {
-			return restarted, err
+		if rollsOut {
+			rollouts = append(rollouts, w)
+		} else {
+			notWaited = append(notWaited, w.String())
 		}
 	}
-	return restarted, nil
+	for _, w := range rollouts {
+		if err := k.waitFor(ctx, w.String()+" to roll out", func() error { return rolledOut(ctx, client, w) }); err != nil {
+			return restarted, notWaited, err
+		}
+	}
+	return restarted, notWaited, nil
 }
 
 // waitFor checks until check passes or ctx ends, and then says what it waited for and why.
@@ -284,6 +308,10 @@ func tokenSecrets(ctx context.Context, client kubernetes.Interface) ([]string, e
 	return names, nil
 }
 
+// rewriteRestarts bounds how often the rewrite starts over when the list it pages through
+// expired, as one does once etcd compacted the revision the list began at.
+const rewriteRestarts = 3
+
 // rewriteEncrypted updates every object of the resources the API server encrypts without
 // changing it. The API server writes an object it read with another key than its first, or
 // unencrypted, even when nothing changed, so it ends up encrypted with the first key.
@@ -293,14 +321,27 @@ func rewriteEncrypted(ctx context.Context, client kubernetes.Interface) (uint64,
 		if resource != "secrets" {
 			return rewritten, fmt.Errorf("chalkd rewrites secrets alone, not %s", resource)
 		}
+		// done holds the Secrets rewritten or gone, which a list that starts over skips.
+		done := map[string]bool{}
+		restarts := 0
 		opts := metav1.ListOptions{Limit: 250}
 		for {
 			list, err := client.CoreV1().Secrets(metav1.NamespaceAll).List(ctx, opts)
+			if opts.Continue != "" && (apierrors.IsResourceExpired(err) || apierrors.IsGone(err)) && restarts < rewriteRestarts {
+				restarts++
+				log.Printf("rotation: the list of secrets expired; listing them again, skipping the %d done", len(done))
+				opts.Continue = ""
+				continue
+			}
 			if err != nil {
 				return rewritten, err
 			}
 			for i := range list.Items {
 				secret := &list.Items[i]
+				id := secret.Namespace + "/" + secret.Name
+				if done[id] {
+					continue
+				}
 				err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 					_, err := client.CoreV1().Secrets(secret.Namespace).Update(ctx, secret, metav1.UpdateOptions{})
 					if apierrors.IsConflict(err) {
@@ -315,10 +356,11 @@ func rewriteEncrypted(ctx context.Context, client kubernetes.Interface) (uint64,
 				switch {
 				case apierrors.IsNotFound(err):
 					// Deleted since it was listed: nothing of it is left to rewrite.
+					done[id] = true
 				case err != nil:
-					// The error names the Secret alone: its data stays out of it.
-					return rewritten, fmt.Errorf("rewrite the secret %s/%s: %s", secret.Namespace, secret.Name, apierrors.ReasonForError(err))
+					return rewritten, fmt.Errorf("rewrite the secret %s: %s", id, whyNot(err))
 				default:
+					done[id] = true
 					rewritten++
 				}
 			}
@@ -330,6 +372,19 @@ func rewriteEncrypted(ctx context.Context, client kubernetes.Interface) (uint64,
 	}
 	log.Printf("rotation: rewrote %d encrypted objects", rewritten)
 	return rewritten, nil
+}
+
+// whyNot says why the API server refused a request about a Secret: the reason of its status,
+// else its HTTP status, without its message, which may echo the Secret's data; or the error of a
+// request that never got an answer, which holds no data.
+func whyNot(err error) string {
+	if reason := apierrors.ReasonForError(err); reason != metav1.StatusReasonUnknown {
+		return string(reason)
+	}
+	if status, ok := err.(apierrors.APIStatus); ok || errors.As(err, &status) {
+		return fmt.Sprintf("HTTP %d", status.Status().Code)
+	}
+	return err.Error()
 }
 
 // countEncrypted counts the objects of the encrypted resources the node's etcd member holds,
@@ -355,15 +410,25 @@ func (k *Kubernetes) countEncrypted(ctx context.Context, c k8s.Cluster, share kp
 }
 
 // countByKey counts the values below prefix by the key they are encrypted with, "" for those
-// stored unencrypted. It reads them in pages, so no response holds them all.
-func countByKey(ctx context.Context, cli *clientv3.Client, prefix string) (map[string]uint64, error) {
+// stored unencrypted. It reads them in pages, so no response holds them all, every page at the
+// revision of the first, so writes meanwhile neither add to the count nor move a value past the
+// next page's start.
+func countByKey(ctx context.Context, kv clientv3.KV, prefix string) (map[string]uint64, error) {
 	counts := map[string]uint64{}
 	end := clientv3.GetPrefixRangeEnd(prefix)
 	from := prefix
+	var rev int64
 	for {
-		resp, err := cli.Get(ctx, from, clientv3.WithRange(end), clientv3.WithLimit(200))
+		opts := []clientv3.OpOption{clientv3.WithRange(end), clientv3.WithLimit(200)}
+		if rev > 0 {
+			opts = append(opts, clientv3.WithRev(rev))
+		}
+		resp, err := kv.Get(ctx, from, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("read %s from etcd: %w", prefix, err)
+		}
+		if rev == 0 {
+			rev = resp.Header.Revision
 		}
 		for _, kv := range resp.Kvs {
 			counts[EncryptionKeyOf(kv.Value)]++
