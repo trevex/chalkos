@@ -2,6 +2,7 @@ package uki
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -17,17 +18,19 @@ import (
 	"slices"
 )
 
-// Database is a Secure Boot signature database, db or dbx: certificates and SHA-256 digests of
-// images.
+// Database is a Secure Boot signature database, db or dbx: certificates, SHA-256 digests of
+// images, and SHA-256 digests of certificates' TBSCertificate, by which dbx revokes certificates.
 type Database struct {
 	Certificates []*x509.Certificate
 	SHA256       [][]byte
+	TBSSHA256    [][]byte
 }
 
-// EFI_CERT_X509_GUID and EFI_CERT_SHA256_GUID, as they are stored.
+// EFI_CERT_X509_GUID, EFI_CERT_SHA256_GUID and EFI_CERT_X509_SHA256_GUID, as they are stored.
 var (
-	certX509   = guid(0xa5c059a1, 0x94e4, 0x4aa7, [8]byte{0x87, 0xb5, 0xab, 0x15, 0x5c, 0x2b, 0xf0, 0x72})
-	certSHA256 = guid(0xc1c41626, 0x504c, 0x4092, [8]byte{0xac, 0xa9, 0x41, 0xf9, 0x36, 0x93, 0x43, 0x28})
+	certX509       = guid(0xa5c059a1, 0x94e4, 0x4aa7, [8]byte{0x87, 0xb5, 0xab, 0x15, 0x5c, 0x2b, 0xf0, 0x72})
+	certSHA256     = guid(0xc1c41626, 0x504c, 0x4092, [8]byte{0xac, 0xa9, 0x41, 0xf9, 0x36, 0x93, 0x43, 0x28})
+	certX509SHA256 = guid(0x3bd2a492, 0x96c0, 0x4079, [8]byte{0xb4, 0x20, 0xfc, 0xf9, 0x8e, 0xf1, 0x03, 0xed})
 )
 
 // guid encodes an EFI GUID: its first three fields little-endian.
@@ -41,7 +44,7 @@ func guid(a uint32, b, c uint16, d [8]byte) [16]byte {
 }
 
 // ParseDatabase reads the EFI signature lists of a db or dbx variable's value. Entries of types
-// other than X.509 certificates and SHA-256 digests are skipped.
+// other than X.509 certificates and SHA-256 digests of images and certificates are skipped.
 func ParseDatabase(b []byte) (Database, error) {
 	var db Database
 	for len(b) > 0 {
@@ -75,6 +78,13 @@ func ParseDatabase(b []byte) (Database, error) {
 					return Database{}, errors.New("a SHA-256 entry of another size")
 				}
 				db.SHA256 = append(db.SHA256, bytes.Clone(data))
+			case certX509SHA256:
+				// The time of the revocation follows the digest. Firmware revokes only signatures
+				// timestamped after it; timestamps are not checked here, so every signature is.
+				if len(data) != sha256.Size+16 {
+					return Database{}, errors.New("an X.509 SHA-256 entry of another size")
+				}
+				db.TBSSHA256 = append(db.TBSSHA256, bytes.Clone(data[:sha256.Size]))
 			}
 		}
 		b = b[listSize:]
@@ -83,9 +93,10 @@ func ParseDatabase(b []byte) (Database, error) {
 }
 
 // VerifySignature checks the Secure Boot signature of the PE image as firmware would: one of
-// its signatures must come from a certificate in db, or one that a certificate in db signed, while
-// dbx must list neither the image's digest nor a certificate of a signature. Times are not
-// checked, as firmware does not check them.
+// its signatures must come from a certificate in db, or one that a certificate in db signed, with
+// no certificate of that chain signed with SHA-1 or MD5, while dbx must list neither the image's
+// digest nor a certificate of the chain. Times are not checked, as firmware does not check them.
+// The signature must cover the section table, and the certificate table must end the image.
 func VerifySignature(r io.ReaderAt, size int64, db, dbx Database) error {
 	layout, err := readLayout(r, size)
 	if err != nil {
@@ -125,13 +136,21 @@ func VerifySignature(r io.ReaderAt, size int64, db, dbx Database) error {
 				problems = append(problems, err)
 			default:
 				for _, signer := range signers {
-					if listed(dbx.Certificates, signer) {
-						return fmt.Errorf("dbx revokes the certificate %q that signed the image", signer.Subject)
+					// The chain is the signer and the db certificates it is or that signed it; dbx
+					// revokes any certificate in it.
+					chain := append([]*x509.Certificate{signer}, issuers(signer, db.Certificates)...)
+					for _, c := range chain {
+						if revoked(dbx, c) {
+							return fmt.Errorf("dbx revokes the certificate %q, which the image's signature of %q chains to", c.Subject, signer.Subject)
+						}
 					}
-					if signedBy(signer, db.Certificates) {
-						trusted = true
-					} else {
+					switch {
+					case len(chain) == 1:
 						problems = append(problems, fmt.Errorf("the certificate %q that signed the image is not in db and no certificate in db signed it", signer.Subject))
+					case slices.ContainsFunc(chain, func(c *x509.Certificate) bool { return insecure[c.SignatureAlgorithm] }):
+						problems = append(problems, fmt.Errorf("the chain of the certificate %q that signed the image has a certificate signed with SHA-1 or MD5", signer.Subject))
+					default:
+						trusted = true
 					}
 				}
 			}
@@ -152,19 +171,29 @@ func VerifySignature(r io.ReaderAt, size int64, db, dbx Database) error {
 	return errors.Join(problems...)
 }
 
-func listed(certs []*x509.Certificate, cert *x509.Certificate) bool {
-	return slices.ContainsFunc(certs, cert.Equal)
+// revoked reports whether dbx lists the certificate, itself or by the SHA-256 of its
+// TBSCertificate.
+func revoked(dbx Database, cert *x509.Certificate) bool {
+	tbs := sha256.Sum256(cert.RawTBSCertificate)
+	return slices.ContainsFunc(dbx.Certificates, cert.Equal) || slices.ContainsFunc(dbx.TBSSHA256, func(d []byte) bool { return bytes.Equal(d, tbs[:]) })
 }
 
-// signedBy reports whether cert is one of roots or was signed by one. Constraints on the signing
+// insecure are the signature algorithms a chain must not use. x509.Certificate.CheckSignature
+// accepts SHA-1.
+var insecure = map[x509.SignatureAlgorithm]bool{
+	x509.MD2WithRSA: true, x509.MD5WithRSA: true, x509.SHA1WithRSA: true, x509.DSAWithSHA1: true, x509.ECDSAWithSHA1: true,
+}
+
+// issuers returns the roots that cert is or that signed it. Constraints on the signing
 // certificate are not checked, as firmware does not check them.
-func signedBy(cert *x509.Certificate, roots []*x509.Certificate) bool {
+func issuers(cert *x509.Certificate, roots []*x509.Certificate) []*x509.Certificate {
+	var found []*x509.Certificate
 	for _, root := range roots {
 		if cert.Equal(root) || root.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil {
-			return true
+			found = append(found, root)
 		}
 	}
-	return false
+	return found
 }
 
 // layout is where a PE image keeps what Authenticode hashes and skips.
@@ -192,20 +221,23 @@ func readLayout(r io.ReaderAt, size int64) (layout, error) {
 	optSize := int64(binary.LittleEndian.Uint16(coff[20:]))
 	opt := peOff + 24
 	optHeader := make([]byte, optSize)
-	if _, err := r.ReadAt(optHeader, opt); err != nil || optSize < 96 {
+	if _, err := r.ReadAt(optHeader, opt); err != nil || optSize < 2 {
 		return layout{}, errors.New("the image's optional header is cut short")
 	}
-	var dirs, count int64
+	var dirs int64
 	switch binary.LittleEndian.Uint16(optHeader) {
 	case 0x10b:
-		dirs, count = 96, int64(binary.LittleEndian.Uint32(optHeader[92:]))
+		dirs = 96
 	case 0x20b:
-		dirs, count = 112, int64(binary.LittleEndian.Uint32(optHeader[108:]))
+		dirs = 112
 	default:
 		return layout{}, errors.New("the image has an unknown optional header")
 	}
-	// The certificate table is the fifth data directory.
-	if count < 5 || dirs+5*8 > optSize {
+	// The certificate table is the fifth data directory; their count precedes them.
+	if optSize < dirs+5*8 {
+		return layout{}, errors.New("the image's optional header is cut short")
+	}
+	if count := binary.LittleEndian.Uint32(optHeader[dirs-4:]); count < 5 {
 		return layout{}, errors.New("the image has no certificate table entry")
 	}
 	l := layout{
@@ -216,13 +248,19 @@ func readLayout(r io.ReaderAt, size int64) (layout, error) {
 		certOffset:  int64(binary.LittleEndian.Uint32(optHeader[dirs+32:])),
 		certSize:    int64(binary.LittleEndian.Uint32(optHeader[dirs+36:])),
 	}
-	if l.headers < l.securityDir+8 || l.headers > size || l.certOffset+l.certSize > size || l.certSize > 0 && l.certOffset < l.headers {
+	if l.headers < l.securityDir+8 || l.headers > size {
 		return layout{}, errors.New("the image's headers are inconsistent")
+	}
+	// The signature covers the headers up to SizeOfHeaders: section headers beyond it could be
+	// changed without breaking it.
+	if opt+optSize+40*int64(sections) > l.headers {
+		return layout{}, errors.New("the image's section table lies beyond its headers, which its signature covers")
 	}
 	table := make([]byte, 40*sections)
 	if _, err := r.ReadAt(table, opt+optSize); err != nil {
 		return layout{}, errors.New("the image's section table is cut short")
 	}
+	hashed := l.headers
 	for i := range sections {
 		s := table[40*i:]
 		rawSize := int64(binary.LittleEndian.Uint32(s[16:]))
@@ -234,13 +272,19 @@ func readLayout(r io.ReaderAt, size int64) (layout, error) {
 			return layout{}, errors.New("a section of the image lies beyond its end")
 		}
 		l.sections = append(l.sections, [2]int64{rawOff, rawSize})
+		hashed += rawSize
 	}
-	slices.SortFunc(l.sections, func(a, b [2]int64) int { return int(a[0] - b[0]) })
+	slices.SortStableFunc(l.sections, func(a, b [2]int64) int { return cmp.Compare(a[0], b[0]) })
+	// The certificate table, which the signature leaves out, must be the image's end and lie past
+	// all it covers: anything after it would not be covered.
+	if l.certSize > 0 && (l.certOffset < hashed || l.certOffset+l.certSize != size) {
+		return layout{}, errors.New("the image's certificate table does not follow its headers and sections at its end")
+	}
 	return l, nil
 }
 
 // digest computes the Authenticode digest: the headers without the checksum and the certificate
-// table entry, the sections in file order, then what follows them but the certificate table.
+// table entry, the sections in file order, then what follows them up to the certificate table.
 func (l layout) digest(r io.ReaderAt, h hash.Hash) ([]byte, error) {
 	add := func(from, to int64) error {
 		if to <= from {
@@ -256,7 +300,7 @@ func (l layout) digest(r io.ReaderAt, h hash.Hash) ([]byte, error) {
 		hashed += s[1]
 	}
 	end := l.size
-	if l.certSize > 0 && l.certOffset+l.certSize == l.size {
+	if l.certSize > 0 {
 		end = l.certOffset
 	}
 	regions = append(regions, [2]int64{hashed, end})

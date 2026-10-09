@@ -249,19 +249,21 @@ func TestParseDatabase(t *testing.T) {
 		signatureList(unknown, []byte("rsa2048 key")),
 		signatureList(certSHA256, digest[:], digest[:]),
 		signatureList(certX509, b.cert.Raw),
+		signatureList(certX509SHA256, append(digest[:], make([]byte, 16)...)),
 	}, nil)
 	db, err := ParseDatabase(value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(db.Certificates) != 2 || !db.Certificates[0].Equal(a.cert) || !db.Certificates[1].Equal(b.cert) || len(db.SHA256) != 2 || !bytes.Equal(db.SHA256[0], digest[:]) {
+	if len(db.Certificates) != 2 || !db.Certificates[0].Equal(a.cert) || !db.Certificates[1].Equal(b.cert) || len(db.SHA256) != 2 || !bytes.Equal(db.SHA256[0], digest[:]) || len(db.TBSSHA256) != 1 || !bytes.Equal(db.TBSSHA256[0], digest[:]) {
 		t.Errorf("parsed %d certificates and %d digests", len(db.Certificates), len(db.SHA256))
 	}
 	for name, broken := range map[string][]byte{
-		"cut short":       value[:len(value)-1],
-		"short header":    value[:20],
-		"short digest":    signatureList(certSHA256, digest[:31]),
-		"bad certificate": signatureList(certX509, []byte("not DER")),
+		"cut short":        value[:len(value)-1],
+		"short header":     value[:20],
+		"short digest":     signatureList(certSHA256, digest[:31]),
+		"short TBS digest": signatureList(certX509SHA256, digest[:]),
+		"bad certificate":  signatureList(certX509, []byte("not DER")),
 	} {
 		if _, err := ParseDatabase(broken); err == nil {
 			t.Errorf("%s: accepted", name)
