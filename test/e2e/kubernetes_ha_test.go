@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -186,9 +188,10 @@ func (c *haCluster) client(name string) kubernetes.Interface {
 // and stays with one holder once the link is back. A pinned node without its address runs
 // nothing while the cluster stays healthy. A node that left etcd and was reinstalled joins again;
 // one reinstalled without leaving refuses to bootstrap and finds its stale member until an
-// operator removes it.
+// operator removes it. A rolling upgrade with an operator's client file takes the control planes
+// to a new image one at a time while the cluster keeps answering.
 func TestKubernetesHA(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_HA_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
+	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_HA_IMAGE_DIR", "CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
 	ctx := context.Background()
 	start := time.Now()
 	c := &haCluster{t: t, dir: vmDir(t), nodes: map[string]*haNode{}, boots: map[string]int{}}
@@ -386,6 +389,8 @@ func TestKubernetesHA(t *testing.T) {
 	}
 	waitFor(t, 20*time.Minute, "cp3 to join after its stale member was removed", func() error { return c.members("cp1", "cp1", "cp2", "cp3") })
 	waitFor(t, 10*time.Minute, "the three nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "cp2", "cp3") })
+
+	c.rollingUpgrade(ctx)
 	logHAMemory(t, ctx, cs)
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
 }
@@ -442,5 +447,119 @@ func logHAMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
 	for _, hn := range haNodes {
 		logNodeMemory(t, ctx, cs, hn.name, haMemoryMB)
+	}
+}
+
+// rollingUpgrade upgrades the three control planes to the image's 0.2.0 with an operator's
+// client file: one at a time, while the other two keep the cluster answering and their kubelets
+// renew their leases through the VIP.
+func (c *haCluster) rollingUpgrade(ctx context.Context) {
+	t := c.t
+	t.Helper()
+	config := filepath.Join(c.dir, "operator.json")
+	if _, err := chalkctl(t, nil, "ha", "config", "new", "--name", "ops", "--role", "operator", "--out", config); err != nil {
+		t.Fatal(err)
+	}
+	clients := map[string]kubernetes.Interface{}
+	for _, hn := range haNodes {
+		clients[hn.name] = c.client(hn.name)
+	}
+	// Every five seconds, from any API server that answers: at most one node, the one that
+	// reboots, may be other than Ready, which the others stay only while their kubelets renew their
+	// leases through the VIP. The longest each lease went unrenewed is logged.
+	stop := make(chan struct{})
+	var problems []string
+	longest := map[string]time.Duration{}
+	watched := make(chan struct{})
+	go func() {
+		defer close(watched)
+		silentSince := time.Time{}
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Second):
+			}
+			var notReady []string
+			answered := false
+			for _, hn := range haNodes {
+				lctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+				nodes, err := clients[hn.name].CoreV1().Nodes().List(lctx, metav1.ListOptions{})
+				var leases *coordinationv1.LeaseList
+				if err == nil {
+					leases, err = clients[hn.name].CoordinationV1().Leases("kube-node-lease").List(lctx, metav1.ListOptions{})
+				}
+				cancel()
+				if err != nil {
+					continue
+				}
+				answered = true
+				for _, n := range nodes.Items {
+					ready := false
+					for _, c := range n.Status.Conditions {
+						ready = ready || c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
+					}
+					if !ready {
+						notReady = append(notReady, n.Name)
+					}
+				}
+				for _, l := range leases.Items {
+					if l.Spec.RenewTime != nil {
+						longest[l.Name] = max(longest[l.Name], time.Since(l.Spec.RenewTime.Time).Round(time.Second))
+					}
+				}
+				break
+			}
+			switch {
+			case !answered && silentSince.IsZero():
+				silentSince = time.Now()
+			case !answered && time.Since(silentSince) > 30*time.Second:
+				problems = append(problems, fmt.Sprintf("no API server answered for %v", time.Since(silentSince).Round(time.Second)))
+			case answered:
+				silentSince = time.Time{}
+				if len(notReady) > 1 {
+					problems = append(problems, fmt.Sprintf("the nodes %v are not Ready", notReady))
+				}
+			}
+		}
+	}()
+	args := []string{"upgrade", "--image", os.Getenv("CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR"), "--config", config,
+		"--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), "ha.json"), "--flake", c.dir, "--timeout", "15m"}
+	for _, hn := range haNodes {
+		args = append(args, "--endpoint", hn.name+"="+c.nodes[hn.name].addr)
+	}
+	started := time.Now()
+	out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
+	t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
+	close(stop)
+	<-watched
+	t.Logf("the longest the kubelets' leases went unrenewed: %v", longest)
+	if err != nil {
+		t.Fatalf("the rolling upgrade: %v", err)
+	}
+	t.Logf("the rolling upgrade took %v", time.Since(started).Round(time.Second))
+	for _, p := range problems {
+		t.Errorf("during the rolling upgrade %s", p)
+	}
+	// The control planes went one at a time, in name order.
+	var order []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if name, ok := strings.CutSuffix(line, ": rebooting into 0.2.0"); ok {
+			order = append(order, name)
+		}
+	}
+	if !slices.Equal(order, []string{"cp1", "cp2", "cp3"}) {
+		t.Errorf("the control planes rebooted in the order %v", order)
+	}
+	if err := c.members("cp1", "cp1", "cp2", "cp3"); err != nil {
+		t.Error(err)
+	}
+	for _, hn := range haNodes {
+		if out, err := c.chalkctl(hn.name, "status", hn.name); err != nil || !strings.Contains(out, "image 0.2.0, booted from chalkos_0.2.0.efi\n") {
+			t.Errorf("status of %s after the upgrade: %v", hn.name, err)
+		}
+	}
+	if holders := c.holders("cp1", "cp2", "cp3"); len(holders) != 1 {
+		t.Errorf("VIP holders %v after the upgrade, want one", holders)
 	}
 }

@@ -248,6 +248,11 @@ in
           };
         };
       };
+  # The HA test's image at the version its rolling upgrade installs.
+  haUpgradeImage = imageAt [
+    haDefinition
+    mirrored
+  ] "k8s-ha" "0.2.0" { };
   kubernetesImages = import ./kubernetes-images.nix {
     inherit pkgs;
     kubernetesVersion = cluster.cluster.kubernetes.package.version;

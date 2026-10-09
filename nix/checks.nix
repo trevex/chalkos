@@ -88,6 +88,7 @@ in
   };
   e2e-kubernetes-ha = e2e "kubernetes-ha" "^TestKubernetesHA$" {
     CHALKLAB_K8S_HA_IMAGE_DIR = "${chalkPkgs.test-kubernetes-ha-image}";
+    CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR = "${chalkPkgs.test-kubernetes-ha-upgrade-image}";
     CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";
   };
 

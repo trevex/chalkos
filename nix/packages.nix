@@ -46,6 +46,7 @@ in
   test-kubernetes-ha-image = testing.haCluster.roles.k8s-ha.image;
   test-upgrade-image = testing.upgradeImage;
   test-unhealthy-image = testing.unhealthyImage;
+  test-kubernetes-ha-upgrade-image = testing.haUpgradeImage;
   test-kubernetes-images = testing.kubernetesImages;
 
   # The installer of a cluster without an OS CA: it accepts any client until it installs a node.
