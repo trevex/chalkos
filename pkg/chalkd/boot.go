@@ -26,6 +26,7 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 		st.Error = "the running store: " + err.Error()
 		return st
 	}
+	st.RootHash = running
 	entries, err := upgrade.Entries(s.Paths.ESP)
 	if err != nil {
 		st.Error = err.Error()

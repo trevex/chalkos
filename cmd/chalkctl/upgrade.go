@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -291,8 +292,8 @@ func (r *upgradeRun) run(ctx context.Context) error {
 }
 
 // node upgrades one node, continuing where an earlier run stopped: a node that runs the image
-// and was found healthy is only uncordoned, one that booted it is waited for, and the image
-// installed already is not sent again.
+// and was found healthy is uncordoned once its Node is Ready, one that booted it is waited for,
+// and the image installed already is not sent again.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	version := r.image.info.Version()
 	info, st, err := r.probe(ctx, n.name)
@@ -300,19 +301,22 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		return err
 	}
 	boot := st.GetBoot()
+	runs := info.Version == version
 	switch {
 	case boot.GetError() != "":
 		return fmt.Errorf("%s: its boot is unknown: %s", n.name, boot.GetError())
 	case boot.GetFailed() == version && !r.retryFailed:
 		return r.rolledBack(n, boot)
-	case info.Version == version && boot.GetBlessed():
+	case runs && !bytes.Equal(boot.GetRootHash(), r.image.header.RootHash):
+		return r.otherBuild(n, boot)
+	case runs && boot.GetBlessed():
 		if r.noReboot {
 			r.say("%s: runs %s", n.name, version)
 			return nil
 		}
-		r.say("%s: runs %s, found healthy", n.name, version)
-		return r.uncordon(ctx, n)
-	case info.Version == version:
+		// An earlier run may have stopped while the node was not Ready; it is released only once
+		// it is.
+	case runs:
 		r.say("%s: booted %s; waiting for it to be found healthy", n.name, version)
 	default:
 		if boot.GetFailed() == version {
@@ -559,6 +563,9 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 			return r.rolledBack(n, st.GetBoot())
 		case info.Version != version:
 			last = fmt.Errorf("it runs %s", info.Version)
+		case !bytes.Equal(st.GetBoot().GetRootHash(), r.image.header.RootHash):
+			// Waiting does not change the build it booted.
+			return r.otherBuild(n, st.GetBoot())
 		case !st.GetBoot().GetBlessed():
 			last = errors.New("its boot was not found healthy yet")
 		case inCluster(st.Kubernetes) && st.Kubernetes.NodeReady != "True":
@@ -576,6 +583,15 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 		case <-time.After(r.poll):
 		}
 	}
+}
+
+// otherBuild is the error of a node that runs the image's version, but not the image's store.
+func (r *upgradeRun) otherBuild(n *upgradeNode, boot *nodev1.BootStatus) error {
+	version := r.image.info.Version()
+	if len(boot.GetRootHash()) == 0 {
+		return fmt.Errorf("%s runs %s, but does not report the root hash of its store, so whether it runs this build of it is unknown", n.name, version)
+	}
+	return fmt.Errorf("%s runs another build of %s, whose store has the root hash %x, not %x; build the image with a new version", n.name, version, boot.GetRootHash(), r.image.header.RootHash)
 }
 
 // inCluster reports whether a node is part of a cluster, so its Node exists.

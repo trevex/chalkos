@@ -1592,7 +1592,10 @@ type BootStatus struct {
 	// the check recorded them on VAR; empty without that record.
 	Journal []string `protobuf:"bytes,6,rep,name=journal,proto3" json:"journal,omitempty"`
 	// Why the boot could not be read; empty when it was.
-	Error         string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	Error string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	// The verity root hash of the store the node runs, as its kernel command line's usrhash= names
+	// it, which tells builds of one version apart; empty when it could not be read.
+	RootHash      []byte `protobuf:"bytes,8,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1674,6 +1677,13 @@ func (x *BootStatus) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *BootStatus) GetRootHash() []byte {
+	if x != nil {
+		return x.RootHash
+	}
+	return nil
 }
 
 type TrustStatus struct {
@@ -3622,7 +3632,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fcertificates\x18\x06 \x03(\v2\".chalkos.node.v1.CertificateStatusR\fcertificates\x12/\n" +
 	"\x04time\x18\a \x01(\v2\x1b.chalkos.node.v1.TimeStatusR\x04time\x122\n" +
 	"\x05trust\x18\b \x03(\v2\x1c.chalkos.node.v1.TrustStatusR\x05trust\x12/\n" +
-	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\"\xb6\x01\n" +
+	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\"\xd3\x01\n" +
 	"\n" +
 	"BootStatus\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x14\n" +
@@ -3631,7 +3641,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06staged\x18\x04 \x01(\tR\x06staged\x12\x16\n" +
 	"\x06failed\x18\x05 \x01(\tR\x06failed\x12\x18\n" +
 	"\ajournal\x18\x06 \x03(\tR\ajournal\x12\x14\n" +
-	"\x05error\x18\a \x01(\tR\x05error\"_\n" +
+	"\x05error\x18\a \x01(\tR\x05error\x12\x1b\n" +
+	"\troot_hash\x18\b \x01(\fR\brootHash\"_\n" +
 	"\vTrustStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\"\n" +
 	"\ffingerprints\x18\x02 \x03(\tR\ffingerprints\x12\x18\n" +

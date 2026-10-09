@@ -281,6 +281,9 @@ message BootStatus {
   repeated string journal = 6;
   // Why the boot could not be read; empty when it was.
   string error = 7;
+  // The verity root hash of the store the node runs, as its kernel command line's usrhash= names
+  // it, which tells builds of one version apart; empty when it could not be read.
+  bytes root_hash = 8;
 }
 
 message TrustStatus {

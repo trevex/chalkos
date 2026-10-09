@@ -117,6 +117,8 @@ type upgradeFake struct {
 
 	mu                      sync.Mutex
 	version, staged, failed string
+	// root and stagedRoot are the root hashes of the stores of version and staged.
+	root, stagedRoot []byte
 	// rebooting makes the node unreachable, as while it reboots.
 	rebooting bool
 }
@@ -141,6 +143,8 @@ type upgradeLab struct {
 	refuseUpgrade string
 	// emptyDir holds the nodes drained deleting emptyDir data.
 	emptyDir map[string]bool
+	// notReady holds the nodes whose Node is not Ready.
+	notReady map[string]bool
 	// stopping holds the nodes whose drains time out while their pods stop.
 	stopping map[string]bool
 }
@@ -183,15 +187,21 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{Version: n.version, Entry: "chalkos_" + n.version + ".efi", Blessed: true, Staged: n.staged, Failed: n.failed}}
+	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{Version: n.version, RootHash: n.root, Entry: "chalkos_" + n.version + ".efi", Blessed: true, Staged: n.staged, Failed: n.failed}}
+	n.lab.mu.Lock()
+	ready := "True"
+	if n.lab.notReady[n.name] {
+		ready = "False"
+	}
+	n.lab.mu.Unlock()
 	if n.failed != "" {
 		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
 	}
 	switch n.kind {
 	case manifest.KindControlPlane:
-		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", NodeReady: "True"}
+		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", NodeReady: ready}
 	case manifest.KindWorker:
-		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", NodeReady: "True"}
+		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", NodeReady: ready}
 	}
 	return connect.NewResponse(st), nil
 }
@@ -226,7 +236,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	if h.Version == n.version {
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true}), nil
 	}
-	n.staged, n.failed = h.Version, ""
+	n.staged, n.stagedRoot, n.failed = h.Version, h.RootHash, ""
 	return connect.NewResponse(&nodev1.UpgradeResponse{Entry: "chalkos_" + h.Version + "+3.efi"}), nil
 }
 
@@ -253,7 +263,7 @@ func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequ
 		case unhealthy:
 			n.failed, n.staged = n.staged, ""
 		default:
-			n.version, n.staged = n.staged, ""
+			n.version, n.root, n.staged = n.staged, n.stagedRoot, ""
 		}
 	}()
 	return connect.NewResponse(&nodev1.RebootResponse{}), nil
@@ -324,9 +334,9 @@ func newUpgradeLab(t *testing.T, controlPlanes int) *upgradeLab {
 	m := upgradeManifest(controlPlanes)
 	writeFile(t, filepath.Join(ta.dir, "manifest.json"), m)
 	ta.manifest, _ = manifest.Decode(strings.NewReader(m))
-	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}}
+	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
 	for name, node := range ta.manifest.Nodes {
-		n := &upgradeFake{lab: l, name: name, role: node.Role, kind: ta.manifest.Roles[node.Role].Kind, version: "0.1.0"}
+		n := &upgradeFake{lab: l, name: name, role: node.Role, kind: ta.manifest.Roles[node.Role].Kind, version: "0.1.0", root: bytes.Repeat([]byte{1}, 32)}
 		dir := filepath.Join(t.TempDir(), "chalkd")
 		cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 		if err != nil {
@@ -507,7 +517,7 @@ func TestUpgradeContinues(t *testing.T) {
 		t.Fatalf("upgrade = %v", err)
 	}
 	l.takeEvents()
-	l.nodes["w3"].staged = "0.2.0"
+	l.nodes["w3"].staged, l.nodes["w3"].stagedRoot = "0.2.0", l.nodes["w1"].root
 	l.cordoned["w3"] = false
 	if err := l.upgrade(img); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
@@ -669,5 +679,48 @@ func TestUpgradeStopsAtADrainTimeout(t *testing.T) {
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain"}) {
 		t.Errorf("events %q", got)
+	}
+}
+
+// TestUpgradeContinuesOnceReady releases a node a run stopped at after it booted the image only
+// once its Node is Ready.
+func TestUpgradeContinuesOnceReady(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	if err := l.upgrade(img, "--nodes", "w1"); err != nil {
+		t.Fatal(err)
+	}
+	// The run stopped before it uncordoned w1, whose Node is not Ready.
+	l.cordoned["w1"] = true
+	l.notReady["w1"] = true
+	l.takeEvents()
+	if err := l.upgrade(img, "--nodes", "w1", "--timeout", "200ms"); err == nil || !strings.Contains(err.Error(), "its Node is not Ready") {
+		t.Fatalf("upgrade = %v", err)
+	}
+	if got := l.takeEvents(); len(got) != 0 || !l.cordoned["w1"] {
+		t.Errorf("events %q; w1 cordoned %v", got, l.cordoned["w1"])
+	}
+	l.notReady["w1"] = false
+	if err := l.upgrade(img, "--nodes", "w1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 uncordon"}) {
+		t.Errorf("events %q", got)
+	}
+}
+
+// TestUpgradeComparesTheBuild does not take a node that runs another build of the version for
+// one that runs the image.
+func TestUpgradeComparesTheBuild(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	l.nodes["w1"].version, l.nodes["w1"].root = "0.2.0", bytes.Repeat([]byte{2}, 32)
+	l.cordoned["w1"] = true
+	err := l.upgrade(img, "--nodes", "w1")
+	if err == nil || !strings.Contains(err.Error(), "w1 runs another build of 0.2.0") {
+		t.Fatalf("upgrade = %v", err)
+	}
+	if got := l.takeEvents(); len(got) != 0 || !l.cordoned["w1"] {
+		t.Errorf("events %q; w1 cordoned %v", got, l.cordoned["w1"])
 	}
 }
