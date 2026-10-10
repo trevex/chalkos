@@ -3345,6 +3345,37 @@ lib.runTests {
       "a lot" = false;
     };
   };
+  # systemd-repart makes a new LUKS2-encrypted ext4 partition no smaller than 64 MiB, so a smaller
+  # STATE is refused.
+  testStateMinimum = {
+    expr =
+      lib.genAttrs
+        [
+          "128M"
+          "64M"
+          "65536K"
+          "1G"
+          "63M"
+          "32M"
+          "a lot"
+        ]
+        (
+          size:
+          lib.all (a: a.assertion)
+            (role (cluster [
+              { chalkos.roles.worker.nixosModules = [ { chalkos.disk.stateSize = size; } ]; }
+            ])).assertions
+        );
+    expected = {
+      "128M" = true;
+      "64M" = true;
+      "65536K" = true;
+      "1G" = true;
+      "63M" = false;
+      "32M" = false;
+      "a lot" = false;
+    };
+  };
   # The ESP is mounted at /efi when used: upgrades write UKIs there, systemd-bless-boot renames
   # them, and systemd-boot-random-seed.service refreshes the boot loader's seed.
   testESPMount = {

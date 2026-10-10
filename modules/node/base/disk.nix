@@ -44,6 +44,10 @@ let
   # systemd-repart formats a vfat ESP with no less than 260 MiB, whatever its definition says, so
   # a smaller one would not match the definitions an installed disk is compared with.
   espBytes = bytes cfg.espSize;
+  # systemd-repart makes a new ext4 partition no smaller than 32 MiB, and an encrypted one 32 MiB
+  # larger for LUKS2's metadata, so a smaller STATE would be enlarged and no longer match its
+  # definition.
+  stateBytes = bytes cfg.stateSize;
   arch =
     {
       x86_64 = "x86-64";
@@ -110,7 +114,7 @@ in
         stateSize = lib.mkOption {
           type = lib.types.str;
           default = "128M";
-          description = "Size of the STATE partition holding node identity and secrets.";
+          description = "Size of the STATE partition holding node identity and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
         };
       };
     };
@@ -121,6 +125,10 @@ in
       {
         assertion = espBytes != null && espBytes >= 260 * 1024 * 1024;
         message = "chalkos.disk.espSize must be at least 260M, the smallest ESP systemd-repart formats as vfat; it is ${builtins.toJSON cfg.espSize}";
+      }
+      {
+        assertion = stateBytes != null && stateBytes >= 64 * 1024 * 1024;
+        message = "chalkos.disk.stateSize must be at least 64M, the smallest encrypted ext4 partition systemd-repart makes; it is ${builtins.toJSON cfg.stateSize}";
       }
     ];
 
