@@ -116,15 +116,24 @@ type lab struct {
 	writes                map[int]int
 	running               image
 	runningData, runningV int
+	// sector is the disk's sector size.
+	sector int64
 }
 
 func newLab(t *testing.T, running image) *lab {
+	t.Helper()
+	return newLabOf(t, running, 512)
+}
+
+// newLabOf makes a lab whose disk has sectors of the size: sfdisk, which counts in them, treats
+// the disk image as such a disk.
+func newLabOf(t *testing.T, running image, sector int64) *lab {
 	t.Helper()
 	if _, err := exec.LookPath("sfdisk"); err != nil {
 		t.Skip("sfdisk not in PATH")
 	}
 	dir := t.TempDir()
-	l := &lab{t: t, disk: filepath.Join(dir, "disk.img"), esp: filepath.Join(dir, "esp"), efivars: filepath.Join(dir, "efivars"), cmdline: filepath.Join(dir, "cmdline"), writes: map[int]int{}}
+	l := &lab{t: t, disk: filepath.Join(dir, "disk.img"), esp: filepath.Join(dir, "esp"), efivars: filepath.Join(dir, "efivars"), cmdline: filepath.Join(dir, "cmdline"), writes: map[int]int{}, sector: sector}
 	if err := os.WriteFile(l.disk, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -140,13 +149,13 @@ size=256KiB, type=%s, name=_empty
 size=1MiB, type=%s, name=_empty
 size=1MiB, type=%s, name=state
 `, typeESP, typeVerity, running.version, verityUUID, typeData, running.version, data, typeVerity, typeData, typeState)
-	sfdisk := exec.Command("sfdisk", "--quiet", l.disk)
+	sfdisk := l.sfdisk("--quiet", l.disk)
 	sfdisk.Stdin = strings.NewReader(script)
 	if out, err := sfdisk.CombinedOutput(); err != nil {
 		t.Fatalf("sfdisk: %v: %s", err, out)
 	}
 	l.node = &Node{
-		Run:           node.ExecRunner{},
+		Run:           sectorRunner{node.ExecRunner{}, sector},
 		Disk:          l.disk,
 		ESP:           l.esp,
 		EFIVars:       l.efivars,
@@ -195,9 +204,27 @@ func (l *lab) setGlobal(name, vendor string, value []byte) {
 	}
 }
 
+// sfdisk is sfdisk on the disk image as on a disk of the lab's sector size.
+func (l *lab) sfdisk(args ...string) *exec.Cmd {
+	return exec.Command("sfdisk", append([]string{"--sector-size", strconv.FormatInt(l.sector, 10)}, args...)...)
+}
+
+// sectorRunner runs sfdisk on disk images as on disks of the sector size.
+type sectorRunner struct {
+	node.Runner
+	sector int64
+}
+
+func (r sectorRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "sfdisk" {
+		args = append([]string{"--sector-size", strconv.FormatInt(r.sector, 10)}, args...)
+	}
+	return r.Runner.Run(ctx, name, args...)
+}
+
 func (l *lab) table() map[int]Partition {
 	l.t.Helper()
-	parts, err := l.node.readTable(context.Background())
+	parts, err := l.node.slots().ReadTable(context.Background())
 	if err != nil {
 		l.t.Fatal(err)
 	}
@@ -215,7 +242,7 @@ func (l *lab) writePartition(p Partition, data []byte) {
 		l.t.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := f.WriteAt(data, p.Start*512); err != nil {
+	if _, err := f.WriteAt(data, p.Start*l.sector); err != nil {
 		l.t.Fatal(err)
 	}
 }
@@ -267,7 +294,7 @@ func (l *lab) open(p Partition, write bool) (PartitionFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return partitionFile{f: f, off: p.Start * 512, size: p.Bytes()}, nil
+	return partitionFile{f: f, off: p.Start * l.sector, size: p.Size * l.sector}, nil
 }
 
 // boot is what systemd-boot would boot: the entry it selects, and the version of the image whose
@@ -409,7 +436,7 @@ func (l *lab) file(name string) []byte {
 // setUUID gives a partition of the disk image a UUID, as another tool might.
 func (l *lab) setUUID(part int, uuid string) {
 	l.t.Helper()
-	if out, err := exec.Command("sfdisk", "--part-uuid", l.disk, strconv.Itoa(part), uuid).CombinedOutput(); err != nil {
+	if out, err := l.sfdisk("--part-uuid", l.disk, strconv.Itoa(part), uuid).CombinedOutput(); err != nil {
 		l.t.Fatalf("sfdisk: %v: %s", err, out)
 	}
 }

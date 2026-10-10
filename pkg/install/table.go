@@ -2,66 +2,33 @@ package install
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
+
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 var errNotFound = errors.New("no such partition")
 
 // partition is one entry of a GPT as sfdisk --json prints it.
-type partition struct {
-	Node string `json:"node"`
-	// Size is in the disk's sectors, as sfdisk counts; Bytes in bytes.
-	Size   int64  `json:"size"`
-	Type   string `json:"type"`
-	UUID   string `json:"uuid"`
-	Name   string `json:"name"`
-	Number int    `json:"-"`
-	Bytes  int64  `json:"-"`
-}
+type partition = upgrade.Partition
 
 type partitionTable struct {
 	device     string
-	Label      string      `json:"label"`
-	SectorSize int64       `json:"sectorsize"`
-	Partitions []partition `json:"partitions"`
+	Partitions []partition
 }
 
-// readTable reads a disk's GPT. Partition numbers come from the device names sfdisk derives:
-// /dev/vda3 or /dev/nvme0n1p3.
+// readTable reads a disk's GPT.
 func (i *Installer) readTable(ctx context.Context, dev string) (partitionTable, error) {
 	out, err := i.Run.Run(ctx, "sfdisk", "--json", dev)
 	if err != nil {
 		return partitionTable{}, fmt.Errorf("read the partition table of %s: %w", dev, err)
 	}
-	var dump struct {
-		Table partitionTable `json:"partitiontable"`
+	parts, err := upgrade.ParseTable(dev, out)
+	if err != nil {
+		return partitionTable{}, err
 	}
-	if err := json.Unmarshal(out, &dump); err != nil {
-		return partitionTable{}, fmt.Errorf("read the partition table of %s: %w", dev, err)
-	}
-	t := dump.Table
-	if t.Label != "gpt" {
-		return partitionTable{}, fmt.Errorf("%s has a %q partition table, not a GPT", dev, t.Label)
-	}
-	t.device = dev
-	if t.SectorSize == 0 {
-		t.SectorSize = 512
-	}
-	for n, p := range t.Partitions {
-		number, err := strconv.Atoi(strings.TrimPrefix(strings.TrimPrefix(p.Node, dev), "p"))
-		if err != nil {
-			return partitionTable{}, fmt.Errorf("partition %s of %s: no partition number", p.Node, dev)
-		}
-		t.Partitions[n].Number = number
-		t.Partitions[n].Bytes = p.Size * t.SectorSize
-		t.Partitions[n].Type = strings.ToLower(p.Type)
-		t.Partitions[n].UUID = strings.ToLower(p.UUID)
-	}
-	return t, nil
+	return partitionTable{device: dev, Partitions: parts}, nil
 }
 
 // find returns the one partition with the label and type.

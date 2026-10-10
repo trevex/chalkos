@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // GPT partition types of the names repart's Type= takes that the system region uses.
@@ -24,6 +25,8 @@ type definedPartition struct {
 	file, typ, label, format string
 	// size is the partition's size in bytes when the definition fixes it, and 0 otherwise.
 	size int64
+	// maxSize is the most bytes the definition gives the partition, and 0 when it sets no limit.
+	maxSize int64
 }
 
 // layout is the system region the role's definitions lay out, in their order: the ESP, store
@@ -76,6 +79,7 @@ func parseLayout(defs map[string]string) (layout, error) {
 		if d.typ == "" {
 			return nil, fmt.Errorf("%s defines no partition type", name)
 		}
+		d.maxSize = maxSize
 		if minSize > 0 && minSize == maxSize {
 			d.size = minSize
 		}
@@ -141,8 +145,8 @@ func (l layout) check(t partitionTable, section storage.Section) error {
 			return fmt.Errorf("its partition %d (%s) is not of the type %s that %s gives", p.Number, describe(p), d.typ, d.file)
 		case d.label != "" && p.Name != d.label:
 			return fmt.Errorf("its partition %d (%s) is not labelled %q as %s says", p.Number, describe(p), d.label, d.file)
-		case d.size != 0 && p.Bytes != d.size:
-			return fmt.Errorf("its partition %d (%s) has %d bytes, not the %d of %s", p.Number, describe(p), p.Bytes, d.size, d.file)
+		case d.size != 0 && p.Bytes() != d.size:
+			return fmt.Errorf("its partition %d (%s) has %d bytes, not the %d of %s", p.Number, describe(p), p.Bytes(), d.size, d.file)
 		}
 	}
 	volumes := map[string]bool{}
@@ -169,4 +173,27 @@ func describeAll(parts []partition) string {
 		all = append(all, fmt.Sprintf("partition %d (%s)", p.Number, describe(p)))
 	}
 	return strings.Join(all, ", ")
+}
+
+// fits refuses an image whose store or hash tree is larger than the definitions make slot A.
+func (l layout) fits(h upgrade.Header) error {
+	var verity, data *definedPartition
+	for n, d := range l {
+		switch {
+		case verity == nil && (d.typ == typeUsrX86Verity || d.typ == typeUsrArmVerity):
+			verity = &l[n]
+		case data == nil && (d.typ == typeUsrX86 || d.typ == typeUsrArm):
+			data = &l[n]
+		}
+	}
+	for _, part := range []struct {
+		what string
+		d    *definedPartition
+		size int64
+	}{{"store", data, h.StoreSize}, {"hash tree", verity, h.VeritySize}} {
+		if part.d.maxSize > 0 && part.size > part.d.maxSize {
+			return fmt.Errorf("the image's %s of %d bytes does not fit slot A's partition of %d bytes, which %s defines", part.what, part.size, part.d.maxSize, part.d.file)
+		}
+	}
+	return nil
 }

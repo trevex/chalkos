@@ -73,6 +73,9 @@ func (i *Installer) FromParts(ctx context.Context, req PartsRequest) error {
 	if err != nil {
 		return err
 	}
+	if err := l.fits(h); err != nil {
+		return err
+	}
 	target, err := i.Host.Resolve(req.Target)
 	if err != nil {
 		return fmt.Errorf("resolve the target disk %s: %w", req.Target, err)
@@ -308,6 +311,9 @@ func writeSlot(ctx context.Context, w *upgrade.SlotWriter, slot upgrade.Slot, h 
 			return fmt.Errorf("receive the image: %w", err)
 		}
 		return nil
+	}
+	if err := slot.Fits(h); err != nil {
+		return err
 	}
 	if err := w.Retire(ctx, slot); err != nil {
 		return err

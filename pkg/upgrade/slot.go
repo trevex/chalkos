@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -97,29 +96,7 @@ func (w *SlotWriter) readTable(ctx context.Context) ([]Partition, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read the partition table of %s: %w", w.Disk, err)
 	}
-	var dump struct {
-		Table struct {
-			Label      string      `json:"label"`
-			Partitions []Partition `json:"partitions"`
-		} `json:"partitiontable"`
-	}
-	if err := json.Unmarshal(out, &dump); err != nil {
-		return nil, fmt.Errorf("read the partition table of %s: %w", w.Disk, err)
-	}
-	if dump.Table.Label != "gpt" {
-		return nil, fmt.Errorf("%s has no GPT", w.Disk)
-	}
-	parts := dump.Table.Partitions
-	for i, p := range parts {
-		number, err := strconv.Atoi(strings.TrimPrefix(strings.TrimPrefix(p.Node, w.Disk), "p"))
-		if err != nil {
-			return nil, fmt.Errorf("partition %s of %s: no partition number", p.Node, w.Disk)
-		}
-		parts[i].Number = number
-		parts[i].Type = strings.ToLower(p.Type)
-		parts[i].UUID = strings.ToLower(p.UUID)
-	}
-	return parts, nil
+	return ParseTable(w.Disk, out)
 }
 
 // Retire gives the slot's partitions random UUIDs and the label _empty, so nothing boots it.
@@ -142,8 +119,8 @@ func (w *SlotWriter) Write(h Header, slot Slot, stream io.Reader) (bool, error) 
 		}
 		return false, nil
 	}
-	if h.StoreSize > slot.Data.Bytes() || h.VeritySize > slot.Verity.Bytes() {
-		return false, fmt.Errorf("the image's store of %d bytes and hash tree of %d bytes do not fit the slot's partitions of %d and %d bytes", h.StoreSize, h.VeritySize, slot.Data.Bytes(), slot.Verity.Bytes())
+	if err := slot.Fits(h); err != nil {
+		return false, err
 	}
 	for _, part := range []struct {
 		what string

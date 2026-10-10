@@ -2,10 +2,12 @@ package upgrade
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -22,17 +24,55 @@ const emptyLabel = "_empty"
 
 // Partition is a partition of a disk as sfdisk --json lists it.
 type Partition struct {
-	Node   string `json:"node"`
+	Node string `json:"node"`
+	// Start and Size count the disk's sectors.
 	Start  int64  `json:"start"`
 	Size   int64  `json:"size"`
 	Type   string `json:"type"`
 	UUID   string `json:"uuid"`
 	Name   string `json:"name"`
 	Number int    `json:"-"`
+	// SectorSize is the disk's sector size in bytes.
+	SectorSize int64 `json:"-"`
 }
 
-// Bytes is the partition's size; sfdisk counts 512-byte sectors.
-func (p Partition) Bytes() int64 { return p.Size * 512 }
+// Bytes is the partition's size in bytes.
+func (p Partition) Bytes() int64 { return p.Size * p.SectorSize }
+
+// ParseTable reads a disk's GPT from what sfdisk --json printed for it. Partition numbers come
+// from the device names sfdisk derives, /dev/vda3 or /dev/nvme0n1p3, and sizes count the sectors
+// of the table's sector size: 4096 bytes on a 4Kn disk, 512 when sfdisk names none.
+func ParseTable(disk string, sfdiskJSON []byte) ([]Partition, error) {
+	var dump struct {
+		Table struct {
+			Label      string      `json:"label"`
+			SectorSize int64       `json:"sectorsize"`
+			Partitions []Partition `json:"partitions"`
+		} `json:"partitiontable"`
+	}
+	if err := json.Unmarshal(sfdiskJSON, &dump); err != nil {
+		return nil, fmt.Errorf("read the partition table of %s: %w", disk, err)
+	}
+	t := dump.Table
+	if t.Label != "gpt" {
+		return nil, fmt.Errorf("%s has a %q partition table, not a GPT", disk, t.Label)
+	}
+	if t.SectorSize == 0 {
+		t.SectorSize = 512
+	}
+	parts := t.Partitions
+	for i, p := range parts {
+		number, err := strconv.Atoi(strings.TrimPrefix(strings.TrimPrefix(p.Node, disk), "p"))
+		if err != nil {
+			return nil, fmt.Errorf("partition %s of %s: no partition number", p.Node, disk)
+		}
+		parts[i].Number = number
+		parts[i].SectorSize = t.SectorSize
+		parts[i].Type = strings.ToLower(p.Type)
+		parts[i].UUID = strings.ToLower(p.UUID)
+	}
+	return parts, nil
+}
 
 // Slot is a store slot: its verity and data partitions.
 type Slot struct {
@@ -142,4 +182,12 @@ func StoreSlots(disk string, parts []Partition) ([]Slot, error) {
 		return nil, fmt.Errorf("%s has %d store and %d verity partitions; it needs two slots of each", disk, len(data), len(verity))
 	}
 	return []Slot{{verity[0], data[0]}, {verity[1], data[1]}}, nil
+}
+
+// Fits refuses an image whose store or hash tree is larger than the slot's partitions.
+func (s Slot) Fits(h Header) error {
+	if h.StoreSize > s.Data.Bytes() || h.VeritySize > s.Verity.Bytes() {
+		return fmt.Errorf("the image's store of %d bytes and hash tree of %d bytes do not fit the slot's partitions of %d and %d bytes", h.StoreSize, h.VeritySize, s.Data.Bytes(), s.Verity.Bytes())
+	}
+	return nil
 }

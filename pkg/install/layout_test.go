@@ -44,9 +44,9 @@ func TestLayoutCheck(t *testing.T) {
 			parts = edit(parts)
 		}
 		for n := range parts {
-			parts[n].Bytes = parts[n].Size * sector
+			parts[n].SectorSize = sector
 		}
-		return partitionTable{SectorSize: sector, Partitions: parts}
+		return partitionTable{Partitions: parts}
 	}
 	for _, tc := range []struct {
 		name   string

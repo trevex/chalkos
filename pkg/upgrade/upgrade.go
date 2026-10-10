@@ -158,8 +158,8 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 			}
 		}
 	}
-	if h.StoreSize > inactive.Data.Bytes() || h.VeritySize > inactive.Verity.Bytes() {
-		return Result{}, fmt.Errorf("the image's store of %d bytes and hash tree of %d bytes do not fit the slot's partitions of %d and %d bytes", h.StoreSize, h.VeritySize, inactive.Data.Bytes(), inactive.Verity.Bytes())
+	if err := inactive.Fits(h); err != nil {
+		return Result{}, err
 	}
 
 	// From here on the steps change the disk: a client that goes away must not kill sfdisk while it
@@ -207,11 +207,6 @@ func (n *Node) running() ([]byte, error) {
 // slots is the slot writer of the node's boot disk.
 func (n *Node) slots() *SlotWriter {
 	return &SlotWriter{Run: n.Run, Disk: n.Disk, OpenPartition: n.OpenPartition, TableLock: n.TableLock, LockWait: n.LockWait, Change: n.Change}
-}
-
-// readTable reads the boot disk's GPT.
-func (n *Node) readTable(ctx context.Context) ([]Partition, error) {
-	return n.slots().ReadTable(ctx)
 }
 
 // retired reports whether the retirement removes the UKI: one of the image that neither the node

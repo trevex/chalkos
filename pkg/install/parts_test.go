@@ -46,9 +46,15 @@ type partsImage struct {
 // and systemd-boot standing in as a small PE binary.
 func newPartsImage(t *testing.T, version, seed string) partsImage {
 	t.Helper()
+	return newPartsImageOfBlocks(t, version, seed, 300)
+}
+
+// newPartsImageOfBlocks makes an image whose store has the number of 4 KiB blocks.
+func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) partsImage {
+	t.Helper()
 	s := sha256.Sum256([]byte(seed))
 	r := mrand.New(mrand.NewPCG(binary.LittleEndian.Uint64(s[:]), binary.LittleEndian.Uint64(s[8:])))
-	const blockSize, blocks = 4096, 300
+	const blockSize = 4096
 	store := make([]byte, blocks*blockSize)
 	for i := range store {
 		store[i] = byte(r.Uint32())
@@ -115,11 +121,20 @@ type partsLab struct {
 	diskLog  *diskLog
 	writes   int
 	tpmFails bool
+	// sector is the disk's sector size.
+	sector int64
 }
 
 const labDev = "/dev/vdb"
 
 func newPartsLab(t *testing.T) *partsLab {
+	t.Helper()
+	return newPartsLabOf(t, 512)
+}
+
+// newPartsLabOf makes a lab whose target has sectors of the size: sfdisk and systemd-repart treat
+// the disk image as such a disk.
+func newPartsLabOf(t *testing.T, sector int64) *partsLab {
 	t.Helper()
 	for _, tool := range []string{"sfdisk", "blkid", "mkfs.vfat", "mkfs.ext4"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -138,7 +153,7 @@ func newPartsLab(t *testing.T) *partsLab {
 	}
 	r.efi = &fakeEFI{entries: []efiEntry{{"0001", "UEFI Misc Device", ""}}, next: 2}
 	dir := t.TempDir()
-	l := &partsLab{t: t, i: i, r: r, disk: filepath.Join(dir, "vdb"), fs: filepath.Join(dir, "fs"), repart: repart, efivars: filepath.Join(dir, "efivars"), diskLog: &diskLog{}}
+	l := &partsLab{t: t, i: i, r: r, disk: filepath.Join(dir, "vdb"), fs: filepath.Join(dir, "fs"), repart: repart, efivars: filepath.Join(dir, "efivars"), diskLog: &diskLog{}, sector: sector}
 	if err := os.WriteFile(l.disk, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +224,7 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 			if !ok {
 				return nil, &node.ToolError{Command: name, Code: 2, Stderr: a + ": no such partition"}
 			}
-			argv = append(argv, "-O", strconv.FormatInt(p.Start*512, 10), "-S", strconv.FormatInt(p.Size*512, 10), l.disk)
+			argv = append(argv, "-O", strconv.FormatInt(p.Start*l.sector, 10), "-S", strconv.FormatInt(p.Size*l.sector, 10), l.disk)
 		case strings.HasPrefix(a, "/dev/"):
 			l.t.Errorf("%s ran on %s", name, a)
 			return nil, errors.New("not the target disk")
@@ -217,10 +232,19 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 			argv = append(argv, a)
 		}
 	}
-	if name == "systemd-repart" {
+	switch name {
+	case "sfdisk":
+		argv = append([]string{"--sector-size", strconv.FormatInt(l.sector, 10)}, argv...)
+	case "systemd-repart":
 		name = l.repart
+		argv = append([]string{"--sector-size=" + strconv.FormatInt(l.sector, 10)}, argv...)
 	}
 	out, err := node.ExecRunner{}.RunQuiet(ctx, name, argv...)
+	if name == "blkid" && l.sector != 512 {
+		// blkid reads a file as a disk of 512-byte sectors, and so finds only a 4Kn disk's
+		// protective MBR, where it finds the GPT on the disk itself.
+		out = bytes.ReplaceAll(out, []byte("PTTYPE=PMBR"), []byte("PTTYPE=gpt"))
+	}
 	out = bytes.ReplaceAll(out, []byte(l.disk), []byte(labDev))
 	var te *node.ToolError
 	if errors.As(err, &te) {
@@ -232,7 +256,7 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 // table reads the disk image's partition table, by partition number.
 func (l *partsLab) table() map[int]upgrade.Partition {
 	l.t.Helper()
-	out, err := exec.Command("sfdisk", "--json", l.disk).Output()
+	out, err := exec.Command("sfdisk", "--sector-size", strconv.FormatInt(l.sector, 10), "--json", l.disk).Output()
 	if err != nil {
 		return nil
 	}
@@ -353,7 +377,7 @@ func (l *partsLab) openPartition(p upgrade.Partition, write bool) (upgrade.Parti
 	if err != nil {
 		return nil, err
 	}
-	return labPartition{f: f, off: p.Start * 512, size: p.Size * 512}, nil
+	return labPartition{f: f, off: p.Start * l.sector, size: p.Size * l.sector}, nil
 }
 
 // request installs img onto the lab's target, with STATE and VAR unencrypted: the image tools
@@ -481,6 +505,43 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 	}
 	if mounted, _ := isMounted(l.i.MountInfo, filepath.Join(l.i.WorkDir, "esp")); mounted {
 		t.Error("the ESP is still mounted")
+	}
+}
+
+// TestFromPartsOnFourKnDisk installs onto a disk of 4096-byte sectors, which sfdisk counts sizes
+// in: a store larger than an eighth of the 2 MiB slot fits, and one larger than the slot is
+// refused before anything changes, on an empty disk as on one an earlier attempt laid out.
+func TestFromPartsOnFourKnDisk(t *testing.T) {
+	img := newPartsImage(t, "0.1.0", "a")
+	l := newPartsLabOf(t, 4096)
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
+	l = newPartsLabOf(t, 4096)
+	l.stopAt(img, "write the store")
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
+
+	large := newPartsImageOfBlocks(t, "0.1.0", "a", 600)
+	for _, laidOut := range []bool{false, true} {
+		l := newPartsLabOf(t, 4096)
+		if laidOut {
+			l.stopAt(img, "write the store")
+		}
+		before := l.table()
+		l.i.Change = func(what string) error {
+			t.Errorf("changed: %s", what)
+			return errStop
+		}
+		if err := l.install(large); err == nil || !strings.Contains(err.Error(), "not fit") {
+			t.Errorf("install = %v, want the store refused as too large", err)
+		}
+		if after := l.table(); fmt.Sprint(after) != fmt.Sprint(before) {
+			t.Errorf("the partitions changed:\n%v\n%v", before, after)
+		}
 	}
 }
 
@@ -774,7 +835,7 @@ func (l *partsLab) luksState() {
 				l.t.Fatal(err)
 			}
 			defer f.Close()
-			if _, err := f.WriteAt(data, p.Start*512); err != nil {
+			if _, err := f.WriteAt(data, p.Start*l.sector); err != nil {
 				l.t.Fatal(err)
 			}
 			return

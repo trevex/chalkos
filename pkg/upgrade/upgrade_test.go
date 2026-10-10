@@ -110,6 +110,34 @@ func TestVerityBlockSizes(t *testing.T) {
 	}
 }
 
+// TestFourKnDisk upgrades a node whose disk has 4096-byte sectors, which sfdisk counts sizes in: a
+// store larger than an eighth of the 1 MiB slot fits, and one larger than the slot is refused
+// before anything changes.
+func TestFourKnDisk(t *testing.T) {
+	old := newImageOfBlocks(t, "0.1.0", 3, 4096, 100)
+	l := newLabOf(t, old, 4096)
+	img := newImageOfBlocks(t, "0.2.0", 2, 4096, 200)
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.boots(img, 2)
+
+	l = newLabOf(t, old, 4096)
+	before := l.table()
+	l.node.Change = func(what string) error {
+		t.Errorf("changed: %s", what)
+		return errCrash
+	}
+	if _, err := l.install(newImageOfBlocks(t, "0.2.0", 2, 4096, 300)); err == nil || !strings.Contains(err.Error(), "do not fit the slot's partitions of 1048576 and 262144 bytes") {
+		t.Errorf("install = %v, want the store refused as too large", err)
+	}
+	for n, p := range l.table() {
+		if before[n] != p {
+			t.Errorf("partition %d changed", n)
+		}
+	}
+}
+
 // TestDowngrade installs an older image: systemd-boot prefers it over the newer one it runs,
 // and falls back to that once the older one's tries are used up.
 func TestDowngrade(t *testing.T) {
@@ -289,7 +317,7 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		}, "not been found healthy"},
 		{"an entry that boots another store", nil, func(l *lab) { l.setVariable("LoaderEntrySelected", "chalkos_0.0.9.efi") }, "not on the ESP"},
 		{"no second slot", nil, func(l *lab) {
-			if out, err := exec.Command("sfdisk", "--delete", l.disk, "5").CombinedOutput(); err != nil {
+			if out, err := l.sfdisk("--delete", l.disk, "5").CombinedOutput(); err != nil {
 				t.Fatalf("%v: %s", err, out)
 			}
 		}, "needs two slots"},
@@ -789,5 +817,26 @@ func TestHeaderValidate(t *testing.T) {
 				t.Errorf("Validate = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestParseTable counts sizes in the table's sectors, which older sfdisk versions do not name:
+// they are 512 bytes then.
+func TestParseTable(t *testing.T) {
+	for _, tc := range []struct {
+		sector string
+		want   int64
+	}{{"", 2048 * 512}, {`"sectorsize": 512,`, 2048 * 512}, {`"sectorsize": 4096,`, 2048 * 4096}} {
+		out := `{"partitiontable": {"label": "gpt", ` + tc.sector + ` "partitions": [{"node": "/dev/nvme0n1p3", "start": 2048, "size": 2048, "type": "8484680C-9521-48C6-9C11-B0720656F69E", "uuid": "AB", "name": "store_0.1.0"}]}}`
+		parts, err := ParseTable("/dev/nvme0n1", []byte(out))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p := parts[0]; p.Bytes() != tc.want || p.Number != 3 || p.Type != "8484680c-9521-48c6-9c11-b0720656f69e" || p.UUID != "ab" {
+			t.Errorf("%s: %+v has %d bytes, want %d", tc.sector, p, p.Bytes(), tc.want)
+		}
+	}
+	if _, err := ParseTable("/dev/vda", []byte(`{"partitiontable": {"label": "dos"}}`)); err == nil || !strings.Contains(err.Error(), `a "dos" partition table, not a GPT`) {
+		t.Errorf("a DOS table: %v", err)
 	}
 }
