@@ -70,7 +70,7 @@ What Nix decides at build time and what reaches a node at runtime:
 | Partition sizes of the system region | Time servers |
 | Boot tries and health timeout | Values of [extensions](../reference/glossary.md#extension) |
 
-The split keeps one image per role and platform, so a cluster of fifty workers builds and signs
+The split keeps one image per role and platform, so a cluster of fifty [workers](../reference/glossary.md#worker) builds and signs
 one worker image. A change in the left column is an [upgrade](upgrades.md); a change in the right
 column is delivered with [`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md)
 and needs no reboot.
@@ -87,7 +87,7 @@ chalkctl authenticates in one of two ways:
 
 - With the [secrets file](../reference/glossary.md#secrets-file), which holds every CA key of the
   cluster. chalkctl signs itself a short-lived admin certificate from it for each run. Installs,
-  identity changes and rotations need it.
+  identity changes and [rotations](../reference/glossary.md#rotation) need it.
 - With a [client file](../reference/glossary.md#client-file), which holds one certificate of the
   [reader](../reference/glossary.md#reader), [operator](../reference/glossary.md#operator) or
   [admin](../reference/glossary.md#admin) role. Upgrades, reboots, status and logs work with one,
@@ -129,7 +129,7 @@ whenever it stops, with no limit, because it is the only way to reach the node: 
 and no login.
 
 On a [control plane](../reference/glossary.md#control-plane), chalkd also renders the static pods
-of etcd, the API server, the controller manager and the scheduler, holds the
+of etcd, the API server, the controller-manager and the scheduler, holds the
 [VIP](../reference/glossary.md#vip) when elected, renews the node certificates of the cluster and
 drains nodes for upgrades. [Kubernetes on chalkos](kubernetes.md) covers that side.
 
@@ -232,7 +232,7 @@ sequenceDiagram
 
 Before anything is written, the installer checks that the image belongs to the identity's cluster,
 role and platform and to the machine's architecture. With Secure Boot enforced, it also checks the
-UKI's and the boot loader's signatures against the firmware's
+[UKI](../reference/glossary.md#uki)'s and the boot loader's signatures against the firmware's
 [db and dbx](../reference/glossary.md#db-and-dbx), as the firmware will at the next boot. The
 installer takes a disk on which blkid finds no signature, or one holding an unfinished install of
 the node's role, which it continues; any other disk only with `--wipe-disk`. Until the boot loader

@@ -11,8 +11,7 @@ scheduler run as static pods from the upstream images, which
 [chalkd](../reference/glossary.md#chalkd) renders on every
 [control plane](../reference/glossary.md#control-plane). Certificates come from the cluster's
 [secrets file](../reference/glossary.md#secrets-file) instead of `kubeadm init`, control planes
-join etcd on their own, and chalkd applies the cluster's add-ons at every boot. This page explains
-each of these for a reader who knows Kubernetes and wants the differences.
+join etcd on their own, and chalkd applies the cluster's add-ons at every boot.
 
 ## Which Kubernetes does a node run?
 
@@ -44,7 +43,7 @@ kubelet's kubeconfig and per-node flags below `/run/chalkos/kubernetes`. A node 
 kubelet.
 
 The kubelet's configuration comes from Nix and is the same on every node of the image:
-webhook authentication and authorization, no anonymous access and no read-only port, the systemd
+webhook authentication and authorisation, no anonymous access and no read-only port, the systemd
 cgroup driver, and `rotateCertificates` with `serverTLSBootstrap`. What differs per node comes from
 the node's [identity](../reference/glossary.md#identity) as flags: the node name, its addresses,
 its labels and its taints. A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule`
@@ -68,7 +67,7 @@ again on the new files. etcd keeps its data on [VAR](../reference/glossary.md#va
 `/var/lib/etcd`.
 
 The flags are close to kubeadm's, with a few chalkos choices: the API server talks to its node's own
-etcd member only, authorizes with `Node,RBAC` and admits with `NodeRestriction`, allows anonymous
+[etcd member](../reference/glossary.md#etcd-member) only, authorises with `Node,RBAC` and admits with `NodeRestriction`, allows anonymous
 requests only to `/livez`, `/readyz` and `/healthz`, has bootstrap-token authentication off, and
 encrypts Secrets in etcd with the cluster's encryption key. The controller-manager runs without the
 bootstrap-signer and token-cleaner controllers, since nothing uses bootstrap tokens.
@@ -133,14 +132,14 @@ chalkctl etcd leave <node>
 ```
 
 `remove-member` removes another node's member and `leave` takes a node out itself, releasing its
-VIPs, stopping its control plane, deleting its etcd data and unpinning its addresses. Both refuse
+[VIPs](../reference/glossary.md#vip), stopping its control plane, deleting its etcd data and unpinning its addresses. Both refuse
 when the voters left would have fewer healthy members than their quorum; `remove-member --force`
 removes a member anyway. A node that left joins again only after a reinstall.
 
 ## How do workers join?
 
 A [worker](../reference/glossary.md#worker) receives a kubelet client certificate for its own node
-name in its share at install, and its kubelet registers at the cluster endpoint with it. There is
+name in its share at install, and its kubelet registers at the [cluster endpoint](../reference/glossary.md#cluster-endpoint) with it. There is
 no bootstrap token and no join step. The kubelet renews the certificate itself through a
 certificate request, which the controller-manager approves for nodes renewing their own.
 
@@ -227,7 +226,9 @@ Other states name what the node waits for or why it stopped:
 - [Networking](networking.md): node addresses, the VIP and the pod network.
 - [Certificates](certificates.md): the CAs and certificates the cluster runs on.
 - [Upgrades](upgrades.md): how a new Kubernetes version reaches the nodes.
-- [Run a highly available control plane](../guides/ha-control-plane.md).
+- [Install on bare metal](../guides/install-bare-metal.md#bootstrap-the-first-control-plane) for
+  the bootstrap, and [Run a highly available control plane](../guides/ha-control-plane.md) for
+  joins and membership changes.
 - [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md),
   [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md),
   [`chalkctl etcd`](../reference/cli/chalkctl_etcd.md) and

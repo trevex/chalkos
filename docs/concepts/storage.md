@@ -20,7 +20,7 @@ The system disk starts with the system region, which every node of an image shar
 - the [ESP](../reference/glossary.md#esp), which holds systemd-boot and the
   [UKIs](../reference/glossary.md#uki) of both slots, 1 GiB by default;
 - two [slots](../reference/glossary.md#slot), A and B, each a pair of partitions for an image's
-  erofs [store](../reference/glossary.md#store) and its dm-verity hash tree, 3 GiB and 128 MiB by
+  erofs [store](../reference/glossary.md#store) and its [dm-verity](../reference/glossary.md#dm-verity) hash tree, 3 GiB and 128 MiB by
   default;
 - [STATE](../reference/glossary.md#state), 128 MiB by default.
 
@@ -31,9 +31,9 @@ go on the system disk after VAR, or each on a disk of its own.
 [Image and partition layout](../reference/image-layout.md) shows the partition map.
 
 STATE is small and holds what makes the node itself: its [identity](../reference/glossary.md#identity),
-its node certificate and key, the OS CAs it trusts, its
+its [node certificate](../reference/glossary.md#node-certificate) and key, the OS CAs it trusts, its
 [Kubernetes share](../reference/glossary.md#kubernetes-share), its storage section with the disks
-it pinned, its etcd markers and pinned addresses on a control plane, and the marker that the node
+it pinned, its etcd markers and pinned addresses on a [control plane](../reference/glossary.md#control-plane), and the marker that the node
 is installed. VAR, mounted at `/var`, holds what the node writes while it runs: etcd's data,
 containerd's images, the kubelet's state and the journal. The root file system is a tmpfs, so
 nothing else survives a reboot.
@@ -46,15 +46,19 @@ without restating the role's other volumes; a disk reference is a leaf, so a nod
 replaces the role's instead of merging selector keys into it. A volume with `enable = false` on a
 node drops a volume its role defines.
 
+The homelab example gives every [worker](../reference/glossary.md#worker) a volume on a SATA SSD of its own, and w1 a VAR of
+200 GiB:
+
 ```nix
-chalkos.roles.worker.storage = {
-  var.size = "200G";
-  volumes.data = {
-    disk = { model = "Samsung SSD 990*"; type = "nvme"; };
-    mountPoint = "/var/lib/longhorn";
-  };
+chalkos.roles.worker.storage.volumes.longhorn = {
+  disk = { model = "Samsung SSD 870*"; type = "ssd"; };
+  format = "xfs";
+  mountPoint = "/var/lib/longhorn";
 };
-chalkos.nodes.w1.storage.system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001";
+chalkos.nodes.w1.storage = {
+  system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002";
+  var.size = "200G";
+};
 ```
 
 A volume is formatted `ext4` by default, or `xfs`, `btrfs` or `swap`; `format = null` leaves a
@@ -70,7 +74,7 @@ The system disk is always the disk the node booted from. udev links it as
 `/dev/disk/chalk-boot-disk` and its partitions as `/dev/disk/chalk-boot/<label>`, and only that
 disk gets the links, so a second disk carrying the same image never stands in for it. A node
 installed in place checks that its [`storage.system.disk`](../reference/options.md#chalkosnodesstoragesystemdisk)
-names the disk it booted from; the installer writes the role image to the disk it names.
+names the disk it booted from; the [installer](../reference/glossary.md#installer) writes the role image to the disk it names.
 
 Other disks are named by a `/dev/` path or by a selector of `model` (a glob), `serial`, `wwn`,
 `size` (a comparison such as `">= 1T"`) and `type` (`nvme`, `ssd` or `hdd`). A selector must match
@@ -113,11 +117,11 @@ with [`storage.encryption.fallback`](../reference/options.md#chalkosnodesstorage
 
 | Fallback | Second keyslot |
 | --- | --- |
-| `recovery-key` (default) | The node's [recovery key](../reference/glossary.md#recovery-key), derived from the secrets file; [`chalkctl recovery-key`](../reference/cli/chalkctl_recovery-key.md) prints it |
+| `recovery-key` (default) | The node's [recovery key](../reference/glossary.md#recovery-key), derived from the [secrets file](../reference/glossary.md#secrets-file); [`chalkctl recovery-key`](../reference/cli/chalkctl_recovery-key.md) prints it |
 | `password` | A password the operator gives with `--password-file` at install and with each later change that adds an encrypted volume |
 | `none` | None: a volume the TPM does not unseal can only be recreated empty |
 
-chalkd enrols the fallback with `systemd-cryptenroll` at install, unlocking each volume with the
+[chalkd](../reference/glossary.md#chalkd) enrols the fallback with `systemd-cryptenroll` at install, unlocking each volume with the
 TPM, and enrols it on every encrypted volume added later. Before it enrols a secret on a new volume
 it checks that the secret opens an existing keyslot, so a mistyped password cannot leave volumes
 with different fallbacks.
@@ -142,7 +146,7 @@ meant to be encrypted never lands on a plain file system.
 
 ## What happens when the TPM does not unseal?
 
-When PCR 7 changed, after a change of the Secure Boot keys or with Secure Boot off, the TPM
+When PCR 7 changed, after a change of the [Secure Boot](../reference/glossary.md#secure-boot) keys or with Secure Boot off, the TPM
 releases no key. The console then asks for the second keyslot: always for STATE, and for VAR and
 the volumes unless the fallback is `none`. Typing the recovery key or password boots the node as
 usual.
@@ -211,6 +215,7 @@ the volumes. Repart failures on a disk are recorded the same way.
   system region.
 - [Boot, health and rollback](boot-and-rollback.md): what the boot does before and after storage.
 - [Security model](security.md): Secure Boot, PCR 7 and the recovery key.
-- [Add storage volumes](../guides/storage-volumes.md).
+- [Add storage volumes](../guides/storage-volumes.md) and
+  [Recover a node](../guides/recover-node.md#the-console-asks-for-a-passphrase-at-boot).
 - [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) and
   [`chalkctl recovery-key`](../reference/cli/chalkctl_recovery-key.md).

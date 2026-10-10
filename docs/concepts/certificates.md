@@ -76,7 +76,7 @@ in its [Kubernetes share](../reference/glossary.md#kubernetes-share) at every bo
 server's serving certificate, its clients of the kubelets and etcd, the front-proxy client, etcd's
 server and peer certificates, and the kubeconfigs of the controller-manager and the scheduler.
 Each lives one year. They are written to `/run/chalkos/kubernetes/pki`, a tmpfs, so they never
-reach a disk. The API server's certificate names the cluster endpoint, every
+reach a disk. The API server's certificate names the [cluster endpoint](../reference/glossary.md#cluster-endpoint), every
 [VIP](../reference/glossary.md#vip), the node's addresses and the `kubernetes` service names.
 
 chalkd's own clients of the API server and of etcd are certificates it issues itself in memory,
@@ -86,7 +86,7 @@ valid for one hour and replaced at half their lifetime. The API server client is
 A kubelet authenticates with a client certificate for `system:node:<node>` in `system:nodes`. A
 [worker](../reference/glossary.md#worker) receives the first one in its share at install, issued
 for its name; a control plane issues its own at every boot. The kubelet renews it itself, once 70
-to 90 % of its lifetime have passed, through a certificate request the controller-manager
+to 90% of its lifetime have passed, through a certificate request the controller-manager
 approves. The kubelet's serving certificate, which the API server verifies when it fetches logs or
 runs `kubectl exec`, comes from a request that chalkd on a control plane approves. Both live in
 `/var/lib/kubelet/pki` on [VAR](../reference/glossary.md#var).
@@ -224,7 +224,7 @@ A client file and a kubeconfig hold the CA certificates they verify the servers 
 rotation cannot reach those files. During an `os-ca` rotation, client files from before it stop
 verifying the nodes at the switch and are refused at the finish; files issued after the accept
 phase carry both OS CAs. During a `kubernetes-ca` rotation, kubeconfigs from before it stop
-verifying the API server at the switch and are refused at the finish. Images and installer media
+verifying the API server at the switch and are refused at the finish. Images and [installer](../reference/glossary.md#installer) media
 carry the OS CA too, so after an `os-ca` rotation they are built again from the new
 `secrets.pub.json`; older ones fail to install.
 

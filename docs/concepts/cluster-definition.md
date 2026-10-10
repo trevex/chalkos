@@ -73,12 +73,12 @@ Every option of a cluster lives under `chalkos`. The
 
 | Option | What it declares |
 | --- | --- |
-| `chalkos.cluster` | Name, API endpoint, OS CA, the system images are built for and the Kubernetes settings: version, subnets, VIP, registries, extra flags, manifests |
+| `chalkos.cluster` | Name, API endpoint, OS CA, the system images are built for and the Kubernetes settings: version, subnets, [VIP](../reference/glossary.md#vip), registries, extra flags, manifests |
 | `chalkos.roles` | The kinds of node, each with its NixOS modules, Kubernetes kind and storage defaults |
 | `chalkos.nodes` | Every node by name, with its role, platform and own settings |
 | `chalkos.platforms` | The kinds of machine, each with the NixOS modules its images carry |
-| `chalkos.installer` | The installer's own NixOS modules and the installer image |
-| `chalkos.secureBoot` | The certificate of the Secure Boot signer whose signature chalkctl requires on images |
+| `chalkos.installer` | The [installer](../reference/glossary.md#installer)'s own NixOS modules and the installer image |
+| `chalkos.secureBoot` | The certificate of the [Secure Boot](../reference/glossary.md#secure-boot) signer whose signature chalkctl requires on images |
 | `chalkos.time` | The time servers every node uses |
 | `chalkos.cni` | The pod network: flannel or none, and the CNI plugins the images ship |
 | `chalkos.manifest` | The generated manifest, read-only |
@@ -151,8 +151,8 @@ A [node](../reference/glossary.md#node) is a machine of the cluster under
 | [`hostname`](../reference/options.md#chalkosnodeshostname) | the node's name | The hostname set at boot |
 | [`network`](../reference/options.md#chalkosnodesnetwork) | none | systemd-networkd networks, netdevs and links, in the shape of NixOS's `systemd.network` |
 | [`labels`](../reference/options.md#chalkosnodeslabels), [`taints`](../reference/options.md#chalkosnodestaints) | none | The Kubernetes Node's labels and taints |
-| [`storage`](../reference/options.md#chalkosnodesstoragesystemdisk) | the role's | The system disk, VAR, further volumes and encryption |
-| [`kubernetes.nodeIPs`](../reference/options.md#chalkosnodeskubernetesnodeips) | `kubernetes.nodeIP`, else the first static address of each family | The addresses the kubelet registers and a control plane advertises |
+| [`storage`](../reference/options.md#chalkosnodesstoragesystemdisk) | the role's | The system disk, [VAR](../reference/glossary.md#var), further volumes and encryption |
+| [`kubernetes.nodeIPs`](../reference/options.md#chalkosnodeskubernetesnodeips) | `kubernetes.nodeIP`, else the first static address of each family | The addresses the kubelet registers and a [control plane](../reference/glossary.md#control-plane) advertises |
 | [`time.servers`](../reference/options.md#chalkosnodestimeservers) | the cluster's | Time servers that replace the cluster's |
 
 A node's name is its name in Kubernetes too, which its kubelet certificate carries. Changing a

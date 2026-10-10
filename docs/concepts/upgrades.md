@@ -25,7 +25,7 @@ The node receives three parts of the image, in this order:
 
 - the [store](../reference/glossary.md#store)'s data, the compressed erofs file system that the
   [root hash](../reference/glossary.md#root-hash) covers, about 250 MiB for a Kubernetes role;
-- the store's dm-verity hash tree, about 2 MiB;
+- the store's [dm-verity](../reference/glossary.md#dm-verity) hash tree, about 2 MiB;
 - the [UKI](../reference/glossary.md#uki), about 44 MiB, signed for
   [Secure Boot](../reference/glossary.md#secure-boot).
 
@@ -70,7 +70,7 @@ Before it sends anything, chalkctl checks each image against the cluster:
   or, when that is not set, of the certificate chalkctl signed with.
 
 chalkctl also stops before any image is built or sent when a node runs another role or platform
-than the cluster definition declares for it, because changing either is a reinstall.
+than the [cluster definition](../reference/glossary.md#cluster-definition) declares for it, because changing either is a reinstall.
 
 ## What does the node check?
 
@@ -167,21 +167,21 @@ sequenceDiagram
     chalkctl->>chalkctl: next node
 ```
 
-Against chalkctl's test cluster of three control planes, whose roles are named `cp` and `w`, a run
-prints this, shortened:
+A run over a cluster of three control planes prints this, shortened. On cp1 a pod without a
+controller, `default/debug`, stays where it is:
 
 ```text
-upgrading cp on metal to chalkos 0.2.0: cp1, cp2, cp3
-cp1: installing 0.2.0
-cp1: installed 0.2.0, which boots next as chalkos_0.2.0+3.efi
-cp1: cordoned, evicted 1 pods, kept 1
-cp1: keeps pods without a controller: default/bare; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow
-cp1: rebooting into 0.2.0
-cp1: runs 0.2.0, found healthy
+upgrading controlplane on metal to chalkos 1.5.0: cp1, cp2, cp3
+cp1: installing 1.5.0
+cp1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
+cp1: cordoned, evicted 2 pods, kept 7
+cp1: keeps pods without a controller: default/debug; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow
+cp1: rebooting into 1.5.0
+cp1: runs 1.5.0, found healthy
 cp1: uncordoned
-cp2: installing 0.2.0
+cp2: installing 1.5.0
 ...
-upgraded 3 nodes to 0.2.0
+upgraded 3 nodes to 1.5.0
 ```
 
 ### Why must etcd keep its quorum?
@@ -219,7 +219,7 @@ error names the node and the version it runs again, and the journal lines its fa
 recorded follow it:
 
 ```text
-chalkctl: w1: upgrade to 0.3.0 failed: rolled back to 0.2.0; it stays cordoned; its boots logged:
+chalkctl: w2: upgrade to 1.5.0 failed: rolled back to 1.4.0; it stays cordoned; its boots logged:
 ```
 
 The node stays cordoned for an operator to look at.
@@ -284,7 +284,7 @@ root with [STATE](../reference/glossary.md#state) and [VAR](../reference/glossar
 unsealed, because their keys are sealed to [PCR 7](../reference/glossary.md#pcr-7) alone.
 [Security model](security.md) explains the consequences.
 
-After a rotation of the [OS CA](../reference/glossary.md#os-ca), images rebuilt from the new
+After a [rotation](../reference/glossary.md#rotation) of the [OS CA](../reference/glossary.md#os-ca), images rebuilt from the new
 `secrets.pub.json` and rolled out with `chalkctl upgrade` bring the trust of
 [maintenance mode](../reference/glossary.md#maintenance-mode) up to date, for nodes that are
 installed again later.
@@ -304,7 +304,7 @@ installed again later.
 
 ## Related pages
 
-- [Boot, health and rollback](boot-and-rollback.md) for boot counting and the health check.
+- [Boot, health and rollback](boot-and-rollback.md) for [boot counting](../reference/glossary.md#boot-counting) and the health check.
 - [The image](image.md) for what an image holds and how versions are named.
 - [Kubernetes on chalkos](kubernetes.md) for etcd membership and the control plane.
 - [Upgrade a cluster](../guides/upgrade-cluster.md) for the task, step by step.

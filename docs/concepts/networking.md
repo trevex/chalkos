@@ -7,14 +7,13 @@ description: "Node addresses, dual stack, the VIP and packet filtering with nfta
 
 A chalkos node configures its interfaces with systemd-networkd from its
 [identity](../reference/glossary.md#identity), picks one address per IP family for Kubernetes,
-and filters traffic with nftables. Control planes can share a virtual IP that one healthy node
-holds at a time, and flannel connects pods across nodes with VXLAN. This page explains how a node
-gets its addresses and keeps them, how the [VIP](../reference/glossary.md#vip) moves, and what the
-firewall lets through.
+and filters traffic with nftables. Control planes can share a virtual IP, the
+[VIP](../reference/glossary.md#vip), that one healthy control plane holds at a time, and flannel
+connects pods across nodes with VXLAN.
 
 ## How does a node configure its interfaces?
 
-A node's `network` in the cluster definition is systemd-networkd configuration in the shape of
+A node's `network` in the [cluster definition](../reference/glossary.md#cluster-definition) is systemd-networkd configuration in the shape of
 NixOS's `systemd.network` options: `networks`, `netdevs` and `links`. chalkos renders it into unit
 files with the role image's own NixOS renderer, so a unit means on the node what it means on
 NixOS, and the node's identity carries the files. At every boot `chalkos-identity.service` writes
@@ -22,8 +21,8 @@ them from the identity on [STATE](../reference/glossary.md#state) to `/run/syste
 where they take precedence over the image's.
 
 ```nix
-chalkos.nodes.cp1.network.networks."10-lan" = {
-  matchConfig.Name = "eno1";
+chalkos.nodes.cp1.network.networks."10-uplink" = {
+  matchConfig.Name = "enp1s0";
   address = [ "10.0.0.11/24" ];
   gateway = [ "10.0.0.1" ];
 };
@@ -68,14 +67,14 @@ addresses up to [`nodeIP.timeout`](../reference/options.md#chalkosclusterkuberne
 Kubernetes line of its status names the filter and the addresses the node has:
 
 ```text
-kubernetes worker: preparation failed: no ipv4 node address matches validSubnets 10.0.0.0/24 (the node has 192.168.1.20 on eno1), 5m0s after chalkos-node-addresses.target
+kubernetes worker: preparation failed: no ipv4 node address matches validSubnets 10.0.0.0/24 (the node has 192.168.1.20 on enp1s0), 5m0s after chalkos-node-addresses.target
 ```
 
 ### Why are a control plane's addresses pinned?
 
 etcd's peers know a member by the address it joined with, and the control plane's certificates
 name that address. When a control plane becomes an [etcd member](../reference/glossary.md#etcd-member),
-by bootstrap or by joining, chalkd pins the addresses it picked on STATE, and every later boot
+by bootstrap or by joining, [chalkd](../reference/glossary.md#chalkd) pins the addresses it picked on STATE, and every later boot
 waits for exactly those, whatever the subnets say. A pinned address that does not come back stops
 the preparation:
 
@@ -109,7 +108,7 @@ kubelet gives pods one name server; it still answers A and AAAA queries.
 ## How does the VIP move between control planes?
 
 A VIP is an address of the API server that no single machine owns: one healthy control plane
-holds it at a time, so the cluster endpoint stays reachable while a control plane reboots or
+holds it at a time, so the [cluster endpoint](../reference/glossary.md#cluster-endpoint) stays reachable while a control plane reboots or
 fails. [`chalkos.cluster.kubernetes.vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses)
 takes at most one address per family, and the endpoint is then one of them or a name that resolves
 to them.
@@ -144,7 +143,7 @@ seconds:
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows the role on each control plane as
 `vip holder` or `vip standby` in its Kubernetes line.
 
-The diagram shows a cluster of three control planes and two workers on one L2 network, with cp1
+The diagram shows a cluster of three control planes and two [workers](../reference/glossary.md#worker) on one L2 network, with cp1
 holding the VIP.
 
 ```mermaid
@@ -238,6 +237,8 @@ node refuses to prepare.
 - [Kubernetes on chalkos](kubernetes.md): what runs on those addresses.
 - [Run a highly available control plane](../guides/ha-control-plane.md) and
   [Plan a production cluster](../guides/production-cluster.md).
+- [Troubleshooting](../guides/troubleshooting.md#pods-on-different-nodes-cannot-reach-each-other)
+  for VXLAN and MTU problems.
 - [Ports and firewall](../reference/ports-and-firewall.md).
 - [`chalkos.cluster.kubernetes.vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses)
   and [`chalkos.cluster.kubernetes.nodeIP.validSubnets`](../reference/options.md#chalkosclusterkubernetesnodeipvalidsubnets).

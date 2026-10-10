@@ -27,7 +27,7 @@ The table names the x86-64 boot loader; an arm64 image has `BOOTAA64.EFI`.
 On its first boot, systemd-repart in the initrd adds slot B, two partitions of the same sizes
 labelled `_empty`, and [STATE](../reference/glossary.md#state), 128 MiB, encrypted and sealed to
 the [TPM](../reference/glossary.md#tpm). The [installer](../reference/glossary.md#installer) lays
-out the same partitions on its target disk in one run. VAR and further volumes come from the
+out the same partitions on its target disk in one run. [VAR](../reference/glossary.md#var) and further volumes come from the
 node's storage settings at install. The sizes are the defaults of
 [`chalkos.disk`](../reference/options.md#chalkosdiskstoresize); a slot's size is fixed at install
 and is the room every later upgrade has. [Image and partition layout](../reference/image-layout.md)
@@ -45,13 +45,13 @@ profile:
   a password or an SSH key.
 - The image avoids Perl and keeps interpreters out where it can.
 
-What a node must keep goes to two partitions: STATE for its identity, certificates and Kubernetes
+What a node must keep goes to two partitions: STATE for its [identity](../reference/glossary.md#identity), certificates and Kubernetes
 secrets, and VAR at `/var` for etcd, containerd, the kubelet and logs.
 [Storage and encryption](storage.md) describes both.
 
 ## How is the store built?
 
-The store partition is an erofs file system compressed with zstd at level 9 in 64 KiB clusters
+A slot's data partition holds the store as an erofs file system compressed with zstd at level 9 in 64 KiB clusters
 (`-zzstd,level=9 -C65536`), with 4 KiB blocks. These settings come within 3% of zstd level 15's
 size at a sixth of its build time, and the kernel's erofs reads zstd. An upgrade sends the
 compressed file system, so compression shrinks every transfer by the same factor.
@@ -239,7 +239,7 @@ slot sizes it was installed with, and refuses a store that does not fit them.
 
 ## How is an image built?
 
-`nix build` builds one role's image for one platform. In the lab template's flake, the worker's
+`nix build` builds one role's image for one platform. In the lab template's flake, the [worker](../reference/glossary.md#worker)'s
 `kvm` image:
 
 ```console
@@ -273,7 +273,7 @@ chalkctl sign --image=worker.raw --repart-json=result/repart-output.json \
 ```
 
 `<db-key>` and `<db-cert>` are the PEM key and certificate of a signer the machines' firmware
-trusts in db. [Sign images for Secure Boot](../guides/secure-boot-signing.md) covers the keys.
+trusts in [db](../reference/glossary.md#db-and-dbx). [Sign images for Secure Boot](../guides/secure-boot-signing.md) covers the keys.
 
 chalkos does not wrap image conversion. `qemu-img convert -f raw -O qcow2` makes a qcow2 disk for
 KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it on a disk.
@@ -297,5 +297,6 @@ KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it o
 - [Security model](security.md) for what Secure Boot and dm-verity protect against.
 - [Image and partition layout](../reference/image-layout.md) and
   [os-release fields](../reference/os-release.md) for the details.
-- [Support additional hardware](../guides/additional-hardware.md) and
+- [Customise a role](../guides/customise-role.md),
+  [Support additional hardware](../guides/additional-hardware.md) and
   [Sign images for Secure Boot](../guides/secure-boot-signing.md) for the tasks.

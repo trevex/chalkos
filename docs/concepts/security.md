@@ -8,7 +8,7 @@ description: "What Secure Boot, the TPM, the OS CA and client roles protect, and
 chalkos protects three things: the code a node boots, the secrets a node keeps on its disks, and
 the API through which a node is installed and operated. Secure Boot and dm-verity cover the code,
 the TPM covers the disks, and mutual TLS with the cluster's own certificate authority covers the
-API. This page explains each mechanism, what it protects against, and where it stops.
+API.
 
 ## What does a node trust?
 
@@ -18,7 +18,7 @@ A node's trust rests on four anchors:
 | --- | --- | --- |
 | The db signing certificate | The firmware's [db](../reference/glossary.md#db-and-dbx) | The boot loader and the [UKI](../reference/glossary.md#uki), and through the UKI the whole [store](../reference/glossary.md#store) |
 | The [OS CA](../reference/glossary.md#os-ca) | The [secrets file](../reference/glossary.md#secrets-file); its certificate is in every image | Every node certificate and client certificate of the node API |
-| The Kubernetes, front-proxy and etcd CAs | The secrets file; a control plane holds them in its [Kubernetes share](../reference/glossary.md#kubernetes-share) | The control plane's certificates, the kubelets' and admin kubeconfigs |
+| The Kubernetes, front-proxy and etcd CAs | The secrets file; a [control plane](../reference/glossary.md#control-plane) holds them in its [Kubernetes share](../reference/glossary.md#kubernetes-share) | The control plane's certificates, the kubelets' and admin kubeconfigs |
 | The [TPM](../reference/glossary.md#tpm) | The machine | That the node booted under the same Secure Boot state it was installed under |
 
 The db key and the OS CA's key never reach a node. Control planes hold the Kubernetes CAs' keys,
@@ -62,7 +62,7 @@ checks its signature against the firmware's db and dbx as the firmware will at t
 when Secure Boot is enforced. It refuses a binary that no db certificate signed, one whose digest
 or any certificate of its signature dbx lists, and any binary at all while dbx holds an entry it
 cannot read. A node therefore never reboots into an image its firmware would refuse. When the
-cluster definition sets
+[cluster definition](../reference/glossary.md#cluster-definition) sets
 [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate),
 chalkctl also refuses to upgrade with an image this certificate's key did not sign. The
 [signing guide](../guides/secure-boot-signing.md) creates the key and enrols it.
@@ -168,7 +168,7 @@ chalkctl config new --name=grafana --role=reader --ttl=720h --out=grafana.json
 Commands that accept both take the client file `--config` names, else the secrets file `--secrets`
 names, else the client file `$CHALKOSCONFIG` names, else a secrets file in the flake directory,
 else `~/.config/chalkos/config`. chalkctl refuses a client file whose certificate expired and
-warns during its last 30 days. Installing nodes, delivering identities, issuing kubeconfigs and
+warns during its last 30 days. Installing nodes, delivering [identities](../reference/glossary.md#identity), issuing kubeconfigs and
 rotations need the secrets file, because they issue certificates or deliver keys.
 
 ## How is a node in maintenance mode trusted?
@@ -211,7 +211,7 @@ tools to an image for that.
 ## Limits
 
 - chalkos does not enrol Secure Boot keys. The operator enrols the db certificate in each machine's
-  firmware, as the [signing guide](../guides/secure-boot-signing.md) shows; only chalklab enrols
+  firmware, as the [signing guide](../guides/secure-boot-signing.md) shows; only [chalklab](../reference/glossary.md#chalklab) enrols
   keys, its own, in its virtual machines. The options
   [`chalkos.secureBoot.enrollment`](../reference/options.md#chalkossecurebootenrollment) and
   [`chalkos.secureBoot.require`](../reference/options.md#chalkossecurebootrequire) are declared,

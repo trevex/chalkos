@@ -235,4 +235,6 @@ cover the fixes.
 - [Upgrades](upgrades.md) for how a new image is installed and rolled through a cluster.
 - [Storage and encryption](storage.md) for STATE, VAR and their keys.
 - [Security model](security.md) for what Secure Boot and PCR 7 protect.
+- [Upgrade a cluster](../guides/upgrade-cluster.md#if-a-node-rolls-back) for what to do after a
+  rollback.
 - [Recover a node](../guides/recover-node.md) and [Troubleshooting](../guides/troubleshooting.md).
