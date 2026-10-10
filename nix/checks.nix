@@ -524,17 +524,16 @@ in
       touch $out
     '';
 
-  # The test cluster's role images within their ceilings (testing/image-sizes.nix). An image over
-  # one fails the check with the largest paths of its system's closure, read from closureInfo, as
+  # The test cluster's role images on each platform and its installer within their ceilings
+  # (testing/image-sizes.nix). An image over one fails the check with the largest paths of its system's closure, read from closureInfo, as
   # the build has no Nix daemon to ask. The images' own fit check is tried on the test image too.
   image-size =
     let
       testing = import ./testing/cluster.nix { inherit self pkgs; };
       ceilings = import ./testing/image-sizes.nix;
       measure =
-        name: platform: ceiling:
+        name: config: ceiling:
         let
-          inherit (testing.cluster.roles.${name}.nixos.${platform}) config;
           image = config.system.build.image;
         in
         lib.escapeShellArgs [
@@ -547,6 +546,14 @@ in
           ceiling.hashTree
           ceiling.uki
         ];
+      roles = lib.concatLists (
+        lib.mapAttrsToList (
+          role: platforms:
+          lib.mapAttrsToList (
+            platform: measure "${role} on ${platform}" testing.cluster.roles.${role}.nixos.${platform}.config
+          ) platforms
+        ) ceilings.roles
+      );
       test = testing.cluster.roles.test.nixos.metal.config;
       testImage = "${test.system.build.image}/${test.image.fileName}";
       testPartitions = "${test.system.build.image}/repart-output.json";
@@ -587,15 +594,14 @@ in
             failed=1
           fi
         }
-        check ${measure "k8s-controlplane" "kvm" ceilings.k8s-controlplane}
-        check ${measure "k8s-worker" "kvm" ceilings.k8s-worker}
-        check ${measure "test" "metal" ceilings.test}
+        ${lib.concatMapStrings (args: "check ${args}\n") roles}
+        check ${measure "installer" testing.cluster.installer.nixos.config ceilings.installer}
 
         # An image over a ceiling fails the check and lists the largest paths of its closure.
         if (
           failed=0
           check ${
-            measure "test" "metal" {
+            measure "test" test {
               storeData = 1;
               hashTree = 1;
               uki = 1;
