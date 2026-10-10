@@ -148,9 +148,10 @@ func TestApplyIdentityWithoutStorageChanges(t *testing.T) {
 
 func TestApplyIdentityRefusesDestructiveChange(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
 	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 	_, err := apply(s, identityWith("rack-b", section("1G", "")), secret)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl storage reset <node> var") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl storage reset n1 var") {
 		t.Fatalf("err = %v, want a refusal naming the reset command", err)
 	}
 	if len(r.calls) != 0 {

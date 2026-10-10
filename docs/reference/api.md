@@ -198,7 +198,7 @@ No fields.
 | ----- | ---- | ----------- |
 | `name` | `string` | What the certificate is: "node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA", "etcd CA", "Kubernetes control plane" (the control plane's leaf certificates, by the one that expires first), "kubelet client" or "kubelet serving"; "Kubernetes share" when the node's share cannot be read, so the certificates it holds are unknown. |
 | `not_after` | `google.protobuf.Timestamp` | Unset when the expiry is unknown. |
-| `problem` | `string` | Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl node-ca rotate"; empty when there is nothing to do. <node> stands for the node's name. |
+| `problem` | `string` | Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or says <node> when the node cannot tell its name. |
 | `fingerprint` | `string` | The SHA-256 fingerprint of the certificate, and of the certificate that issued it when the node holds that one, in lower-case hex. |
 | `issuer` | `string` |  |
 

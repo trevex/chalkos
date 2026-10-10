@@ -130,7 +130,7 @@ one marked `(issues)`. A certificate line carries a note when something needs do
 
 | Note | Shown for |
 | --- | --- |
-| `less than a third of its lifetime remains` | A node or control-plane certificate whose renewal is due; on a node without Kubernetes, with `renew it with chalkctl node renew <node>` |
+| `less than a third of its lifetime remains` | A node or control-plane certificate whose renewal is due; on a node without Kubernetes, with `renew it with chalkctl node renew <node>`, which names the node |
 | `renewal failing: ...; expires ...` | A renewal that failed, with the error and the expiry |
 | `less than a tenth of its lifetime remains, though the kubelet renews it itself` | A kubelet certificate close to its end |
 | `<CA> expires <date>` | A CA in its last year, the node CA in its last 18 months with `run chalkctl node-ca rotate` |

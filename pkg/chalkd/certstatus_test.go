@@ -100,6 +100,17 @@ func TestStatusCertificatesWithoutKubernetes(t *testing.T) {
 	}
 }
 
+// A node without Kubernetes renews its node certificate only when told to, so the status names
+// the command with the node's name.
+func TestStatusNamesTheNodeToRenew(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
+	want := "less than a third of its lifetime remains; renew it with chalkctl node renew n1"
+	if got := s.certificates(time.Now().Add(pki.LeafValidity * 3 / 4))[0]; got.Name != "node" || got.Problem != want {
+		t.Errorf("%s: problem %q, want %q", got.Name, got.Problem, want)
+	}
+}
+
 func TestCertificateProblems(t *testing.T) {
 	now := time.Now()
 	cert := func(from, until time.Duration) *x509.Certificate {

@@ -563,6 +563,16 @@ func TestStatus(t *testing.T) {
 	}
 }
 
+// The initrd cannot tell the node's name, so its advice holds a placeholder the status fills.
+func TestStatusNamesTheNodeInDiskErrors(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	withNodeCertificate(t, s)
+	write(t, s.Paths.StorageStatus, `{"installed": true, "disks": {"system": {"error": "the volume must be reset with chalkctl storage reset <node> var"}}}`)
+	if got := status(t, s).Disks; len(got) != 1 || got[0].Error != "the volume must be reset with chalkctl storage reset n1 var" {
+		t.Errorf("disks = %+v", got)
+	}
+}
+
 func TestLogsStreamsJournal(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)

@@ -206,7 +206,7 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 		var destructive []string
 		for _, c := range changes {
 			if c.Class == storage.Destructive {
-				destructive = append(destructive, fmt.Sprintf("%s; reset it with chalkctl storage reset <node> %s", c, c.Volume))
+				destructive = append(destructive, fmt.Sprintf("%s; reset it with chalkctl storage reset %s %s", c, s.nodeName(), c.Volume))
 			}
 		}
 		if len(destructive) > 0 {

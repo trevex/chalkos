@@ -1124,7 +1124,7 @@ func TestVXLANRule(t *testing.T) {
 		t.Errorf("arguments %q", data)
 	}
 	err := VXLANRule(script("fails", "exit 1"))(p)
-	if err == nil || err.Error() != "accept VXLAN to the node's address: exit status 1; see chalkctl logs <node> --unit chalkos-kubernetes" {
+	if err == nil || err.Error() != "accept VXLAN to the node's address: exit status 1; see chalkctl logs w1 --unit chalkos-kubernetes" {
 		t.Errorf("err = %v", err)
 	}
 }

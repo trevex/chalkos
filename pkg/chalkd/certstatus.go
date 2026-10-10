@@ -148,6 +148,18 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 	return list
 }
 
+// nodeName is the node's name for the commands its messages advise: the subject of its node
+// certificate, which chalkctl issues to the name the cluster definition gives the node. A node
+// without one says <node>, which chalkctl replaces with the name it was called with.
+func (s *Server) nodeName() string {
+	if s.Certificate != nil {
+		if leaf := s.Certificate.Current().Leaf; leaf != nil && leaf.Subject.CommonName != "" {
+			return leaf.Subject.CommonName
+		}
+	}
+	return "<node>"
+}
+
 // certificates lists every certificate the node holds or issues with what needs doing about it.
 func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 	var list []*nodev1.CertificateStatus
@@ -162,7 +174,7 @@ func (s *Server) certificates(now time.Time) []*nodev1.CertificateStatus {
 			problem = s.Renewal.Problem()
 		case problem != "" && s.Renewal == nil:
 			// Only nodes with Kubernetes reach a control plane to renew it.
-			problem += "; renew it with chalkctl node renew <node>"
+			problem += "; renew it with chalkctl node renew " + s.nodeName()
 		}
 		var issuer *x509.Certificate
 		if chain := s.Certificate.Current().TLS.Certificate; len(chain) > 1 {

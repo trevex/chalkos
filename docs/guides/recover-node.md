@@ -117,12 +117,12 @@ year.
 A [worker](../reference/glossary.md#worker) whose [VAR](../reference/glossary.md#var) lost its data falls back to the kubelet
 certificate in its [Kubernetes share](../reference/glossary.md#kubernetes-share) on
 STATE, which it received at install. When that one expired too, the kubelet cannot join, and
-status says:
+`chalkctl status w1` says:
 
 ```text
 certificates:
   ...
-  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl apply-identity <node> --kubernetes-share
+  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl apply-identity w1 --kubernetes-share
 ```
 
 Deliver a new share with a new kubelet certificate:

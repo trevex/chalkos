@@ -663,7 +663,7 @@ func (s *Server) bootstrap(ctx context.Context, k *Kubernetes, c k8s.Cluster) (c
 	case err != nil:
 		return nil, failed(connect.CodeInternal, "%v", err)
 	case problem == preparing:
-		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs <node> --unit chalkos-kubernetes", errNotPrepared)
+		return nil, failed(connect.CodeFailedPrecondition, "%v; see chalkctl logs %s --unit chalkos-kubernetes", errNotPrepared, s.nodeName())
 	case problem != "":
 		return nil, failed(connect.CodeFailedPrecondition, "%s", problem)
 	}

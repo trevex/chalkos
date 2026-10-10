@@ -480,7 +480,11 @@ func VXLANRule(script string) Firewall {
 		cmd := exec.Command(script, p.VXLAN())
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("accept VXLAN to the node's address: %w; see chalkctl logs <node> --unit chalkos-kubernetes", err)
+			name := "<node>"
+			if n, rerr := kubernetes.ReadNode(p.NodeFile); rerr == nil {
+				name = n.Name
+			}
+			return fmt.Errorf("accept VXLAN to the node's address: %w; see chalkctl logs %s --unit chalkos-kubernetes", err, name)
 		}
 		return nil
 	}

@@ -208,6 +208,7 @@ func TestBootstrapRefusals(t *testing.T) {
 	if err := os.Remove(preparing.Kubernetes.Paths.Prepared()); err != nil {
 		t.Fatal(err)
 	}
+	withNodeCertificate(t, preparing)
 	otherKind, _ := kubernetesServer(t, k8s.KindControlPlane, false)
 	otherKindsShare(t, otherKind)
 	noFirewall, _ := kubernetesServer(t, k8s.KindControlPlane, true)
@@ -221,7 +222,7 @@ func TestBootstrapRefusals(t *testing.T) {
 		"no share":              {noShare, "no Kubernetes share"},
 		"etcd with data":        {etcdData, "holds etcd data"},
 		"no address":            {noAddress, "no node address matches validSubnets 192.168.100.0/24"},
-		"preparing":             {preparing, "the node's Kubernetes files are not prepared yet; see chalkctl logs <node> --unit chalkos-kubernetes"},
+		"preparing":             {preparing, "the node's Kubernetes files are not prepared yet; see chalkctl logs n1 --unit chalkos-kubernetes"},
 		"share of another kind": {otherKind, "preparation failed: the node's share is for a worker node, but its image is for controlplane nodes"},
 		"firewall":              {noFirewall, "preparation failed: accept VXLAN to the node's address: exit status 1"},
 	} {

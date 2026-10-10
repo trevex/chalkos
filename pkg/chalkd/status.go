@@ -36,9 +36,10 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
+	// The initrd writes the disks' errors before it can tell the node's name.
 	for _, name := range sortedNames(status.Disks) {
 		d := status.Disks[name]
-		resp.Disks = append(resp.Disks, &nodev1.DiskStatus{Name: name, Device: d.Device, Error: d.Error})
+		resp.Disks = append(resp.Disks, &nodev1.DiskStatus{Name: name, Device: d.Device, Error: strings.ReplaceAll(d.Error, "<node>", s.nodeName())})
 	}
 
 	section, pins, err := s.recorded()

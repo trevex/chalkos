@@ -1965,7 +1965,8 @@ type CertificateStatus struct {
 	NotAfter *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
 	// Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such
 	// as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl
-	// node-ca rotate"; empty when there is nothing to do. <node> stands for the node's name.
+	// node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or
+	// says <node> when the node cannot tell its name.
 	Problem string `protobuf:"bytes,3,opt,name=problem,proto3" json:"problem,omitempty"`
 	// The SHA-256 fingerprint of the certificate, and of the certificate that issued it when the
 	// node holds that one, in lower-case hex.
