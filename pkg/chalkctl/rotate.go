@@ -18,17 +18,6 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// rotateLong explains chalkctl rotate.
-const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
-status before the next one starts: accept (every node trusts the new value besides the old one),
-switch (the new value issues or signs), refresh (what the old value issued is issued again) and,
-with --finish, finish (the old value is removed, and whatever it issued is refused from then on).
-The secrets file records the phase reached and is updated in place, keeping its previous version
-as <file>.prev, unless --out names a new file; an encrypted file is encrypted again to the
-recipients it records inside, which --recipient replaces. A rotation that stopped, as at an
-unreachable node, or paused for the operator, continues with --resume. One rotation runs at a
-time, and one chalkctl command at a time changes the secrets file, holding <file>.lock.`
-
 // endpointList is --endpoint NODE=ADDR, which may be given for each node.
 type endpointList map[string]string
 
@@ -64,9 +53,10 @@ type rotateFlags struct {
 func (a *app) rotateCommand() *cobra.Command {
 	f := rotateFlags{endpoints: endpointList{}}
 	cmd := a.command(&cobra.Command{
-		Use:   "rotate <kind>",
-		Short: "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key",
-		Long:  rotateLong,
+		Use:     "rotate <kind>",
+		Short:   "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key",
+		Long:    rotateLong,
+		Example: rotateExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.rotate(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.cluster.register(fs)

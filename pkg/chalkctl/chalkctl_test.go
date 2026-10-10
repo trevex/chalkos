@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
@@ -1026,4 +1027,18 @@ func TestExecuteFlags(t *testing.T) {
 	if !strings.Contains(ta.stdout.String(), "-f, --follow") {
 		t.Errorf("logs --help lacks -f, --follow:\n%s", ta.stdout.String())
 	}
+}
+
+// Every command is described for its help and the reference pages.
+func TestCommandsDescribed(t *testing.T) {
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if cmd.Short == "" || cmd.Long == "" || cmd.Example == "" {
+			t.Errorf("%s lacks a short or long description or examples", cmd.CommandPath())
+		}
+		for _, c := range cmd.Commands() {
+			walk(c)
+		}
+	}
+	walk(newCommand(&app{}))
 }

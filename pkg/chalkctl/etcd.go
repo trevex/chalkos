@@ -97,8 +97,10 @@ type etcdFlags struct {
 func (a *app) etcdMembersCommand() *cobra.Command {
 	var f etcdFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "members",
-		Short: "List etcd's members and their health",
+		Use:     "members",
+		Short:   "List etcd's members and their health",
+		Long:    etcdMembersLong,
+		Example: etcdMembersExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdMembers(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
 	cmd.Flags().StringVar(&f.via, "via", "", "control-plane node to ask (default the first one that answers)")
@@ -141,8 +143,10 @@ func (a *app) etcdMembers(ctx context.Context, f etcdFlags, pos []string) error 
 func (a *app) etcdRemoveMemberCommand() *cobra.Command {
 	var f etcdFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "remove-member <node|id>",
-		Short: "Remove a node's etcd member, such as a stale one",
+		Use:     "remove-member <node|id>",
+		Short:   "Remove a node's etcd member, such as a stale one",
+		Long:    etcdRemoveMemberLong,
+		Example: etcdRemoveMemberExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdRemoveMember(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.registerClient(fs)
@@ -173,8 +177,10 @@ func (a *app) etcdRemoveMember(ctx context.Context, f etcdFlags, pos []string) e
 func (a *app) etcdLeaveCommand() *cobra.Command {
 	var f etcdFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "leave <node>",
-		Short: "Take a control-plane node out of etcd",
+		Use:     "leave <node>",
+		Short:   "Take a control-plane node out of etcd",
+		Long:    etcdLeaveLong,
+		Example: etcdLeaveExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdLeave(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
 	cmd.Flags().BoolVar(&f.force, "force", false, "leave through the other members also when the node's own etcd member does not answer, as when it lost its pinned address")

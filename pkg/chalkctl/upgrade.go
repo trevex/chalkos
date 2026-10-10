@@ -21,26 +21,6 @@ import (
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
-const upgradeLong = `Installs on each node the image of its role and platform: control planes one at a time, each
-only while etcd keeps its quorum without it, then workers and nodes without Kubernetes in batches
-of --max-unavailable. Without --image the nodes, every node of the cluster or those --nodes
-names, are grouped by the role and platform they run, and each group's image is built from the
-cluster definition; with --image the nodes of the image's role and platform get it, and those of
-its role on another platform are skipped and named. A node that runs on another platform than
-the cluster definition declares stops the run before any node is sent anything.
-
-A node gets the image in its inactive slot, is cordoned and drained within its pods'
-PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
-and the node is Ready. A node whose image never becomes healthy falls back to the image before,
-and the run stops there, showing what that boot logged; with --retry-failed a node that fell
-back from the image before gets it once more.
-
-Run again, the command skips nodes that run the image and continues one it stopped at; it
-uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
-one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
-volumes are evicted only with --delete-emptydir-data. An operator client file is enough to run it
-with --image.`
-
 // upgradeRun upgrades nodes to the images of their roles and platforms.
 type upgradeRun struct {
 	a       *app
@@ -92,9 +72,10 @@ type upgradeFlags struct {
 func (a *app) upgradeCommand() *cobra.Command {
 	f := upgradeFlags{endpoints: endpointList{}}
 	cmd := a.command(&cobra.Command{
-		Use:   "upgrade",
-		Short: "Install new images on the cluster's nodes, one control plane at a time",
-		Long:  upgradeLong,
+		Use:     "upgrade",
+		Short:   "Install new images on the cluster's nodes, one control plane at a time",
+		Long:    upgradeLong,
+		Example: upgradeExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.cluster.register(fs)

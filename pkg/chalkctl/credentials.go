@@ -179,8 +179,10 @@ type configNewFlags struct {
 func (a *app) configNewCommand() *cobra.Command {
 	var f configNewFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "new",
-		Short: "Write a client file, which operates the cluster without the secrets file",
+		Use:     "new",
+		Short:   "Write a client file, which operates the cluster without the secrets file",
+		Long:    configNewLong,
+		Example: configNewExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.configNew(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.cluster.register(fs)

@@ -36,8 +36,10 @@ func (a *app) bootstrapCommand() *cobra.Command {
 	var n nodeCommand
 	var timeout time.Duration
 	cmd := a.command(&cobra.Command{
-		Use:   "bootstrap <node>",
-		Short: "Initialise the cluster on a control-plane node",
+		Use:     "bootstrap <node>",
+		Short:   "Initialise the cluster on a control-plane node",
+		Long:    bootstrapLong,
+		Example: bootstrapExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.bootstrap(ctx, n, timeout, pos) })
 	n.registerClient(cmd.Flags())
 	cmd.Flags().DurationVar(&timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its manifests")
@@ -82,8 +84,10 @@ type kubeconfigFlags struct {
 func (a *app) kubeconfigCommand() *cobra.Command {
 	var f kubeconfigFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "kubeconfig",
-		Short: "Write an admin kubeconfig",
+		Use:     "kubeconfig",
+		Short:   "Write an admin kubeconfig",
+		Long:    kubeconfigLong,
+		Example: kubeconfigExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.kubeconfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.cluster.register(fs)

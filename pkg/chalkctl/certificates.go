@@ -18,22 +18,16 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// nodeRenewLong explains node renew, and what reaching a node whose certificate expired trusts.
-const nodeRenewLong = `Issues the node a new node certificate and key from the node CA and delivers them, also once the
-node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
-start, so chalkctl trusts the node's old key: someone holding a leaked, expired key of the node
-and sitting in its network path could receive the new certificate in its place. That is inherent
-to recovering a node; renewing node certificates before they expire avoids it.`
-
 // nodeRenew issues a node a new node certificate from the node CA and delivers it. The node is
 // reached even when its certificate expired: its chain is verified without dates, which only
 // this command does. The node still verifies chalkctl's certificate as usual.
 func (a *app) nodeRenewCommand() *cobra.Command {
 	var n nodeCommand
 	cmd := a.command(&cobra.Command{
-		Use:   "renew <node>",
-		Short: "Issue a node a new node certificate, also once its own expired",
-		Long:  nodeRenewLong,
+		Use:     "renew <node>",
+		Short:   "Issue a node a new node certificate, also once its own expired",
+		Long:    nodeRenewLong,
+		Example: nodeRenewExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, n, pos) })
 	n.register(cmd.Flags())
 	return cmd
@@ -76,8 +70,10 @@ func (a *app) nodeCARotateCommand() *cobra.Command {
 	var n nodeCommand
 	var change changeFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "rotate",
-		Short: "Issue a new node CA and deliver it to the control-plane nodes",
+		Use:     "rotate",
+		Short:   "Issue a new node CA and deliver it to the control-plane nodes",
+		Long:    nodeCARotateLong,
+		Example: nodeCARotateExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeCARotate(ctx, n, change, pos) })
 	n.register(cmd.Flags())
 	change.register(cmd.Flags())

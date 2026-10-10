@@ -51,11 +51,10 @@ func (a *app) with(cmd *cobra.Command) *app {
 
 func newCommand(a *app) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "chalkctl",
-		Short: "Build, sign, install and operate chalkos clusters",
-		Long: `chalkctl builds, signs, installs and operates the nodes of a chalkos cluster. It reads the
-cluster definition from a flake (or a manifest file), authenticates with the cluster's secrets
-file or a client file, and talks to chalkd on each node.`,
+		Use:           "chalkctl",
+		Short:         "Build, sign, install and operate chalkos clusters",
+		Long:          rootLong,
+		Example:       rootExample,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
@@ -64,17 +63,17 @@ file or a client file, and talks to chalkd on each node.`,
 		return fmt.Errorf("%w; %s --help lists its flags", err, cmd.CommandPath())
 	})
 
-	gen := group(&cobra.Command{Use: "gen", Short: "Generate files of a cluster"})
+	gen := group(&cobra.Command{Use: "gen", Short: "Generate files of a cluster", Long: genLong, Example: genExample})
 	gen.AddCommand(a.genSecretsCommand())
-	node := group(&cobra.Command{Use: "node", Short: "Manage a node's certificate"})
+	node := group(&cobra.Command{Use: "node", Short: "Manage a node's certificate", Long: nodeLong, Example: nodeExample})
 	node.AddCommand(a.nodeRenewCommand())
-	nodeCA := group(&cobra.Command{Use: "node-ca", Short: "Manage the node CA"})
+	nodeCA := group(&cobra.Command{Use: "node-ca", Short: "Manage the node CA", Long: nodeCALong, Example: nodeCAExample})
 	nodeCA.AddCommand(a.nodeCARotateCommand())
-	config := group(&cobra.Command{Use: "config", Short: "Manage client files"})
+	config := group(&cobra.Command{Use: "config", Short: "Manage client files", Long: configLong, Example: configExample})
 	config.AddCommand(a.configNewCommand())
-	storage := group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes"})
+	storage := group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes", Long: storageLong, Example: storageExample})
 	storage.AddCommand(a.resetVolumeCommand())
-	etcd := group(&cobra.Command{Use: "etcd", Short: "Manage the cluster's etcd members"})
+	etcd := group(&cobra.Command{Use: "etcd", Short: "Manage the cluster's etcd members", Long: etcdLong, Example: etcdExample})
 	etcd.AddCommand(a.etcdMembersCommand(), a.etcdRemoveMemberCommand(), a.etcdLeaveCommand())
 	root.AddCommand(
 		gen, node, nodeCA, config, storage, etcd,
@@ -173,8 +172,10 @@ type signFlags struct {
 func signCommand() *cobra.Command {
 	var f signFlags
 	cmd := &cobra.Command{
-		Use:   "sign",
-		Short: "Sign the boot loader and UKIs of a disk image",
+		Use:     "sign",
+		Short:   "Sign the boot loader and UKIs of a disk image",
+		Long:    signLong,
+		Example: signExample,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSign(cmd.Context(), f)
 		},

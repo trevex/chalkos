@@ -245,8 +245,10 @@ type genSecretsFlags struct {
 func (a *app) genSecretsCommand() *cobra.Command {
 	var f genSecretsFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "secrets",
-		Short: "Generate the cluster's secrets file",
+		Use:     "secrets",
+		Short:   "Generate the cluster's secrets file",
+		Long:    genSecretsLong,
+		Example: genSecretsExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.genSecrets(f) })
 	fs := cmd.Flags()
 	fs.Var(&f.recipients, "recipient", "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
