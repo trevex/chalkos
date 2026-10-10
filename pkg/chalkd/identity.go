@@ -192,7 +192,7 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 			}
 			return nil, failed(connect.CodeInternal, "%v", err)
 		}
-		log.Printf("trusting %d OS CAs from now on", strings.Count(osCA, "-----BEGIN CERTIFICATE-----"))
+		log.Printf("trusting %s from now on", count(strings.Count(osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
 	}
 	var changes []storage.Change
 	var restarted []string

@@ -254,7 +254,11 @@ type QuorumError struct {
 }
 
 func (e *QuorumError) Error() string {
-	return fmt.Sprintf("without %s etcd has %d voters of which %d are healthy, fewer than the %d a quorum needs", e.Member, e.Voters, e.Healthy, e.Quorum)
+	voters := "voters"
+	if e.Voters == 1 {
+		voters = "voter"
+	}
+	return fmt.Sprintf("without %s etcd has %d %s, %d healthy, fewer than the %d a quorum needs", e.Member, e.Voters, voters, e.Healthy, e.Quorum)
 }
 
 // Remove removes the member with the ID, unless the voters left would lose their quorum and

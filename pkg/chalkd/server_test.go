@@ -776,3 +776,18 @@ func TestLogsLimitsStreams(t *testing.T) {
 		}
 	}
 }
+
+func TestCount(t *testing.T) {
+	for _, tc := range []struct {
+		got, want string
+	}{
+		{count(0, "object"), "0 objects"},
+		{count(1, "object"), "1 object"},
+		{count(uint64(1), "encrypted object"), "1 encrypted object"},
+		{count(2, "OS CA"), "2 OS CAs"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%q, want %q", tc.got, tc.want)
+		}
+	}
+}

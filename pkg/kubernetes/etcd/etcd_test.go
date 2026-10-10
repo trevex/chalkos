@@ -245,8 +245,11 @@ func TestCheckQuorum(t *testing.T) {
 	}
 	err := CheckQuorum(voters, down(3), 2)
 	var quorum *QuorumError
-	if !errors.As(err, &quorum) || err.Error() != "without cp2 etcd has 2 voters of which 1 are healthy, fewer than the 2 a quorum needs" {
+	if !errors.As(err, &quorum) || err.Error() != "without cp2 etcd has 2 voters, 1 healthy, fewer than the 2 a quorum needs" {
 		t.Errorf("err = %v", err)
+	}
+	if got := (&QuorumError{Member: Member{Name: "cp2"}, Voters: 1, Quorum: 1}).Error(); got != "without cp2 etcd has 1 voter, 0 healthy, fewer than the 1 a quorum needs" {
+		t.Errorf("one voter: %s", got)
 	}
 }
 

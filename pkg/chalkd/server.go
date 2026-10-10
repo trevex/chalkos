@@ -350,3 +350,11 @@ func sortedNames[V any](m map[string]V) []string {
 	sort.Strings(names)
 	return names
 }
+
+// count is n and the noun, in the plural unless n is one.
+func count[N ~int | ~uint64](n N, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}

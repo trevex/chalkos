@@ -231,7 +231,7 @@ func rootCAHolds(ctx context.Context, client kubernetes.Interface, namespace str
 	}
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
-		return fmt.Errorf("it holds %d CA certificates, not the %d the control plane trusts", len(got), len(want))
+		return fmt.Errorf("it holds %s, not the %d the control plane trusts", count(len(got), "CA certificate"), len(want))
 	}
 	return nil
 }
@@ -370,7 +370,7 @@ func rewriteEncrypted(ctx context.Context, client kubernetes.Interface) (uint64,
 			opts.Continue = list.Continue
 		}
 	}
-	log.Printf("rotation: rewrote %d encrypted objects", rewritten)
+	log.Printf("rotation: rewrote %s", count(rewritten, "encrypted object"))
 	return rewritten, nil
 }
 

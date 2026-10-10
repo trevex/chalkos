@@ -174,7 +174,7 @@ cp3 left etcd; reinstall it to join the cluster again
 
 The removal is refused when the voters left would have fewer healthy members than their quorum
 needs, because etcd would then stop accepting writes. The message names the counts:
-`without cp3 etcd has 2 voters of which 1 are healthy, fewer than the 2 a quorum needs`. Bring
+`without cp3 etcd has 2 voters, 1 healthy, fewer than the 2 a quorum needs`. Bring
 the unhealthy members back first.
 
 The node now reports `left etcd; reinstall the node to join the cluster again` and does not

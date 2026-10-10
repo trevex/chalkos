@@ -503,7 +503,7 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 	for {
 		n, err := k.applyOnce(ctx, cfg)
 		if err == nil {
-			log.Printf("kubernetes: applied %d objects", n)
+			log.Printf("kubernetes: applied %s", count(n, "object"))
 			applied(n)
 			break
 		}
