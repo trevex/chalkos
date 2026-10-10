@@ -207,6 +207,28 @@ lib.runTests {
       ];
     };
   };
+  # Nodes and the installer resolve names through DNS alone: systemd-resolved answers no LLMNR or
+  # multicast DNS queries on their links.
+  testNodesResolveNoLinkLocalNames = {
+    expr =
+      let
+        c = cluster [ ];
+        conf = config: lib.splitString "\n" config.environment.etc."systemd/resolved.conf".text;
+      in
+      map
+        (lines: {
+          llmnr = lib.elem "LLMNR=false" lines;
+          mdns = lib.elem "MulticastDNS=false" lines;
+        })
+        [
+          (conf (role c))
+          (conf c.installer.nixos.config)
+        ];
+    expected = lib.replicate 2 {
+      llmnr = true;
+      mdns = true;
+    };
+  };
   testRoleCarriesOSCA = {
     expr =
       let

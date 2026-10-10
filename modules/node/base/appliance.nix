@@ -29,6 +29,13 @@
     flushRuleset = false;
   };
 
+  # Nodes resolve names through DNS alone. LLMNR, on by default, has systemd-resolved answer
+  # queries for the node's name on every link on port 5355; multicast DNS stays off as well.
+  services.resolved.settings.Resolve = {
+    LLMNR = false;
+    MulticastDNS = false;
+  };
+
   # A read-only /usr leaves nowhere to create /usr/bin/env.
   system.activationScripts.usrbinenv = lib.mkForce "";
 }
