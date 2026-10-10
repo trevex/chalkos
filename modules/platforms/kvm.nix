@@ -8,6 +8,13 @@
   services.qemuGuest.enable = true;
   systemd.services.qemu-guest-agent = {
     unitConfig.ConditionVirtualization = "kvm";
+    # It shuts the node down with /sbin/poweroff, halt, reboot or shutdown, which systemd gives.
+    serviceConfig.BindReadOnlyPaths = map (b: "${config.systemd.package}/bin/${b}:/sbin/${b}") [
+      "poweroff"
+      "halt"
+      "reboot"
+      "shutdown"
+    ];
     # The host may ask the agent about the node and shut it down; it never runs commands or reads
     # and writes files on the node, which the agent would otherwise allow.
     serviceConfig.ExecStart = lib.mkForce "${config.services.qemuGuest.package}/bin/qemu-ga --statedir /run/qemu-ga --allow-rpcs=${

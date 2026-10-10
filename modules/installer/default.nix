@@ -95,6 +95,22 @@ in
 
   systemd.services.chalkd.environment.CHALKD_INSTALLER = "1";
 
+  # What makes the image the installer, which chalkos.installer.nixosModules must keep.
+  assertions = [
+    {
+      assertion = config.systemd.services.chalkd.enable;
+      message = "the installer runs chalkd, which installs the nodes; chalkos.installer.nixosModules must not disable systemd.services.chalkd";
+    }
+    {
+      assertion = config.systemd.services.chalkd.environment.CHALKD_INSTALLER or null == "1";
+      message = "chalkd runs as the installer with CHALKD_INSTALLER=1; chalkos.installer.nixosModules must not change systemd.services.chalkd.environment.CHALKD_INSTALLER";
+    }
+    {
+      assertion = config.chalkos.platform.name == null;
+      message = "the installer installs images of every platform and belongs to none; chalkos.installer.nixosModules must not set chalkos.platform.name";
+    }
+  ];
+
   # Common disk and CD-ROM controllers, so the installer boots and finds target disks on most
   # machines and VMs.
   boot.initrd.availableKernelModules = [

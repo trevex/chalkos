@@ -536,37 +536,62 @@ lib.runTests {
       };
     };
   };
-  # The guest agent answers what the host asks about the node; it runs no commands and touches no
-  # files.
-  testGuestAgentRestricted = {
-    expr =
-      let
-        exec =
-          (cluster [ ])
-          .roles.worker.nixos.kvm.config.systemd.services.qemu-guest-agent.serviceConfig.ExecStart;
-      in
-      {
-        ping = lib.hasInfix "guest-ping" exec;
-        exec = lib.hasInfix "guest-exec" exec;
-        files = lib.hasInfix "guest-file" exec;
+  # The guest agent answers what the host asks about the node and shuts it down; it runs no
+  # commands and touches no files. It shuts the node down with systemd's commands, which it runs
+  # from /sbin.
+  testGuestAgentRestricted =
+    let
+      config = (cluster [ ]).roles.worker.nixos.kvm.config;
+      service = config.systemd.services.qemu-guest-agent.serviceConfig;
+    in
+    {
+      expr = {
+        rpcs = lib.splitString "," (lib.head (builtins.match ".*--allow-rpcs=([^ ]*).*" service.ExecStart));
+        sbin = service.BindReadOnlyPaths or [ ];
       };
-    expected = {
-      ping = true;
-      exec = false;
-      files = false;
+      expected = {
+        rpcs = [
+          "guest-sync-delimited"
+          "guest-sync"
+          "guest-ping"
+          "guest-info"
+          "guest-get-osinfo"
+          "guest-get-host-name"
+          "guest-get-time"
+          "guest-get-timezone"
+          "guest-network-get-interfaces"
+          "guest-shutdown"
+        ];
+        sbin = map (b: "${config.systemd.package}/bin/${b}:/sbin/${b}") [
+          "poweroff"
+          "halt"
+          "reboot"
+          "shutdown"
+        ];
+      };
     };
-  };
-  # A definition adds a platform of its own, or modules to one of chalkos's; a role's modules
-  # come after the platform's.
+  # A definition adds a platform of its own, or modules to one of chalkos's. A role overrides a
+  # value its platform sets by priority, as module order does not: lib.mkForce for a value the
+  # platform defines plainly, lib.mkOverride below 50 for the guest agent's ExecStart, which kvm
+  # forces. Both add to a list.
   testCustomPlatform = {
     expr =
       let
         c = cluster [
           {
-            chalkos.platforms.esxi.nixosModules = [ { services.openssh.enable = true; } ];
+            chalkos.platforms.esxi.nixosModules = [
+              {
+                services.openssh.enable = true;
+                environment.variables.PLATFORM_TEST = "esxi";
+              }
+            ];
             chalkos.platforms.metal.nixosModules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ];
             chalkos.roles.worker.nixosModules = [
-              { boot.kernelParams = lib.mkAfter [ "role" ]; }
+              {
+                boot.kernelParams = [ "role" ];
+                environment.variables.PLATFORM_TEST = lib.mkForce "role";
+                systemd.services.qemu-guest-agent.serviceConfig.ExecStart = lib.mkOverride 49 "role-agent";
+              }
             ];
           }
         ];
@@ -579,7 +604,11 @@ lib.runTests {
         kvm = nixos.kvm.config.services.openssh.enable;
         metalGPU = lib.elem "gpu" nixos.metal.config.chalkos.kernel.moduleGroups;
         kvmGPU = lib.elem "gpu" nixos.kvm.config.chalkos.kernel.moduleGroups;
-        last = lib.last nixos.kvm.config.boot.kernelParams;
+        kernelParams = lib.sort lib.lessThan (
+          lib.filter (p: p == "role" || p == "console=ttyS0,115200") nixos.kvm.config.boot.kernelParams
+        );
+        overridden = nixos.esxi.config.environment.variables.PLATFORM_TEST;
+        agent = nixos.kvm.config.systemd.services.qemu-guest-agent.serviceConfig.ExecStart;
       };
     expected = {
       images = [
@@ -592,7 +621,12 @@ lib.runTests {
       kvm = false;
       metalGPU = true;
       kvmGPU = false;
-      last = "role";
+      kernelParams = [
+        "console=ttyS0,115200"
+        "role"
+      ];
+      overridden = "role";
+      agent = "role-agent";
     };
   };
   # A node runs on metal unless it names a defined platform, which its identity carries.
@@ -631,6 +665,40 @@ lib.runTests {
       defined = "esxi";
     };
   };
+  # A platform's name becomes CHALKOS_PLATFORM in its images's os-release.
+  testPlatformNames = {
+    expr = {
+      bad = fails (cluster [ { chalkos.platforms.Bad = { }; } ]).manifest;
+      dotted = fails (cluster [ { chalkos.platforms."x.y" = { }; } ]).manifest;
+      good = (cluster [ { chalkos.platforms.esxi-8 = { }; } ]).manifest.roles.worker.images.esxi-8;
+    };
+    expected = {
+      bad = true;
+      dotted = true;
+      good = "roles.worker.images.esxi-8";
+    };
+  };
+  # The installer runs chalkd in installer mode and belongs to no platform, whatever its modules
+  # say.
+  testInstallerEssentials =
+    let
+      installer =
+        modules: (cluster [ { chalkos.installer.nixosModules = modules; } ]).installer.image.drvPath;
+    in
+    {
+      expr = {
+        chalkd = fails (installer [ { systemd.services.chalkd.enable = false; } ]);
+        mode = fails (installer [
+          { systemd.services.chalkd.environment.CHALKD_INSTALLER = lib.mkForce "0"; }
+        ]);
+        platform = fails (installer [ { chalkos.platform.name = "kvm"; } ]);
+      };
+      expected = {
+        chalkd = true;
+        mode = true;
+        platform = true;
+      };
+    };
   testManifestVersion = {
     expr = twoNodes.manifest.schemaVersion;
     expected = 0;

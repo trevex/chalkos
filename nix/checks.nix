@@ -525,8 +525,9 @@ in
     '';
 
   # The test cluster's role images on each platform and its installer within their ceilings
-  # (testing/image-sizes.nix). An image over one fails the check with the largest paths of its system's closure, read from closureInfo, as
-  # the build has no Nix daemon to ask. The images' own fit check is tried on the test image too.
+  # (testing/image-sizes.nix). An image over one fails the check with the largest paths of its
+  # system's closure, read from closureInfo, as the build has no Nix daemon to ask. The images' own
+  # fit check is tried on the test image too.
   image-size =
     let
       testing = import ./testing/cluster.nix { inherit self pkgs; };

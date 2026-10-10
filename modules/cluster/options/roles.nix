@@ -43,7 +43,10 @@ let
         };
       };
       config = {
-        # The platform's modules come before the role's, which may override them.
+        # The platform's modules come before the role's, but a NixOS value merges by priority, not
+        # by module order: a role overrides a value its platform defines plainly with lib.mkForce,
+        # and one the platform forces, such as kvm's ExecStart of the guest agent, with
+        # lib.mkOverride below 50; lib.mkBefore and lib.mkAfter order a list's entries.
         nixos = lib.mapAttrs (
           platform: p:
           nixpkgs.lib.nixosSystem {
