@@ -2834,6 +2834,9 @@ lib.runTests {
         scrub = lib.elem "--enable-scrub=no" xfsprogs.configureFlags;
         python = lib.any (p: lib.getName p == "python3") xfsprogs.buildInputs;
         inherit (containerd) binaries;
+        containerdOutputs = containerd.meta.outputsToInstall;
+        # NixOS would generate xfs_scrub_all with a PATH alone.
+        scrubUnit = lib.elem "xfs_scrub_all.service" c.systemd.suppressedSystemUnits;
       };
     expected = {
       scrub = true;
@@ -2842,6 +2845,8 @@ lib.runTests {
         "containerd"
         "containerd-shim-runc-v2"
       ];
+      containerdOutputs = [ "out" ];
+      scrubUnit = true;
     };
   };
   testRegistryMirrors = {
@@ -3360,32 +3365,74 @@ lib.runTests {
       ];
     };
   };
-  # The system path is empty unless the debug tools are asked for; units name their own tools.
+  # The system path holds what the image's modules and the role put there, such as the mount
+  # helpers util-linux looks up there, and none of NixOS's default packages. The debug tools add a
+  # shell's tools, and crictl where the role runs Kubernetes. Units name their own tools.
   testSystemPath = {
     expr =
       let
-        image = modules: role (cluster [ { chalkos.roles.worker.nixosModules = modules; } ]);
+        image =
+          roleConfig: modules:
+          role (cluster [
+            {
+              chalkos.roles.worker = roleConfig // {
+                nixosModules = modules;
+              };
+            }
+          ]);
         names = c: map lib.getName c.environment.systemPackages;
-        c = image [ ];
+        # What modules add to a role's system path.
+        added =
+          roleConfig: modules:
+          lib.sort lib.lessThan (
+            lib.subtractLists (names (image roleConfig [ ])) (names (image roleConfig modules))
+          );
+        debug = [ { chalkos.debug.tools = true; } ];
+        c = image { } [ ];
       in
       {
-        default = names c;
-        debug = names (image [ { chalkos.debug.tools = true; } ]);
+        roleAdds = added { } [ ({ pkgs, ... }: { environment.systemPackages = [ pkgs.hello ]; }) ];
+        nixosDefaults = lib.intersectLists [
+          "nano"
+          "sudo"
+          "openssh"
+          "coreutils-full"
+          "bind"
+          "host"
+          "perl"
+          "rsync"
+          "strace"
+        ] (names c);
+        nfs = lib.elem "nfs-utils" (names (image { } [ { boot.supportedFilesystems.nfs = true; } ]));
+        debug = added { } debug;
+        debugWithoutKubernetes = added { kubernetes.kind = null; } debug;
+        # D-Bus finds systemd's services and policies through the system path.
+        dbus = lib.elem c.system.path c.services.dbus.packages && lib.elem "systemd" (names c);
         locales = c.i18n.supportedLocales;
-        dbus = lib.elem c.systemd.package c.services.dbus.packages;
         chalkd = lib.sort lib.lessThan (map lib.getName c.systemd.services.chalkd.path);
       };
     expected = {
-      default = [ ];
+      roleAdds = [ "hello" ];
+      nixosDefaults = [ ];
+      nfs = true;
       debug = [
-        "bash-interactive"
         "coreutils"
-        "util-linux"
+        "cri-tools"
+        "findutils"
+        "gnugrep"
+        "gnused"
         "iproute2"
         "procps"
-        "less"
-        "nftables"
-        "kmod"
+        "util-linux"
+      ];
+      debugWithoutKubernetes = [
+        "coreutils"
+        "findutils"
+        "gnugrep"
+        "gnused"
+        "iproute2"
+        "procps"
+        "util-linux"
       ];
       locales = [ "C.UTF-8/UTF-8" ];
       dbus = true;

@@ -155,7 +155,11 @@ in
           prev.runCommand "containerd-${prev.containerd.version}"
             {
               pname = "containerd";
-              inherit (prev.containerd) version meta;
+              inherit (prev.containerd) version;
+              # The copy has out alone; containerd's meta names man too, for the system path.
+              meta = prev.containerd.meta // {
+                outputsToInstall = [ "out" ];
+              };
               binaries = [
                 "containerd"
                 "containerd-shim-runc-v2"
@@ -172,6 +176,8 @@ in
 
     # containerd runs the CNI plugins, and portmap programs nftables with nft.
     systemd.services.containerd.path = [ pkgs.nftables ];
+
+    environment.systemPackages = lib.mkIf config.chalkos.debug.tools [ pkgs.cri-tools ];
 
     virtualisation.containerd = {
       enable = true;
