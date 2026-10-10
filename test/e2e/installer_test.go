@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,20 +27,21 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 	return m[1]
 }
 
-// TestInstallerInstallsOntoBlankDisk boots the test cluster's installer next to a blank disk,
-// installs a node onto that disk with the role image streamed from the host, and checks the
-// node boots from it installed: VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.
+// TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
+// next to a blank disk, installs a node onto that disk from the role image's parts, which chalkctl
+// signs and sends from the host, and checks the node boots from it installed: slot A holding the
+// image, slot B empty, VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.
 func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
+	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
-	installer := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_INSTALLER_DIR"})
+	installer := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_INSTALLER_DIR", sign: true})
 	targetPath := filepath.Join(dir, "target.qcow2")
 	if err := lab.CreateDisk(context.Background(), targetPath, "16G"); err != nil {
 		t.Fatal(err)
 	}
 	n := startNode(t, lab.VMConfig{
 		Dir:          dir,
-		FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"),
+		FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"),
 		Disks:        []lab.Disk{installer, {Path: targetPath, Serial: "chalk-target"}},
 	})
 
@@ -47,20 +49,36 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	if info := waitForChalkd(t, n, 5*time.Minute); !info.Installer || info.ImageId != "chalkos-installer" {
 		t.Fatalf("info = %+v, want the installer", info)
 	}
-	if _, err := chalkctl(t, n, "base", "install", "chalklab-target", "--fingerprint", fingerprint, "--image", os.Getenv("CHALKLAB_IMAGE_DIR")); err != nil {
+	keys := os.Getenv("CHALKLAB_SB_KEYS")
+	out, err := chalkctl(t, n, "base", "install", "chalklab-target", "--fingerprint", fingerprint, "--image", os.Getenv("CHALKLAB_IMAGE_DIR"),
+		"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt"))
+	if err != nil {
 		t.Fatalf("install: %v", err)
+	}
+	// The store data, hash tree, UKI and boot loader, not the whole raw image.
+	m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(out)
+	if m == nil {
+		t.Fatal("chalkctl did not say how many bytes it sends")
+	}
+	if sent, _ := strconv.ParseInt(m[1], 10, 64); sent >= 400<<20 {
+		t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
 	}
 
 	// The boot entry the installer added makes the VM boot the target.
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{
-		"var_fstype":     "ext4",
-		"var_disk":       "vdb",
-		"var_tpm2":       "1",
-		"state_tpm2":     "1",
-		"state_keyslots": "2",
-		"var_keyslots":   "2",
-		"state_boots":    "1",
-		"var_boots":      "1",
+		"secureboot":      "1",
+		"store_label":     "store_0.1.0",
+		"store_partition": "3",
+		"slot_b_empty":    "2",
+		"state_fstype":    "ext4",
+		"var_fstype":      "ext4",
+		"var_disk":        "vdb",
+		"var_tpm2":        "1",
+		"state_tpm2":      "1",
+		"state_keyslots":  "2",
+		"var_keyslots":    "2",
+		"state_boots":     "1",
+		"var_boots":       "1",
 	})
 	waitForNode(t, n, "chalklab-target")
 	if out, err := chalkctl(t, n, "base", "status", "chalklab-target"); err != nil || !strings.Contains(out, "(the cluster definition's)") {
