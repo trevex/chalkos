@@ -41,6 +41,8 @@ type Options struct {
 	// replaces it.
 	Certificate          *tls.Certificate
 	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+	// Source says where the address came from, such as --endpoint; an error reaching it names it.
+	Source string
 }
 
 // Conn is a client of one node.
@@ -55,6 +57,8 @@ type Conn struct {
 	closed bool
 	// netDial connects to the node; tests replace it.
 	netDial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// source says where the address came from.
+	source string
 }
 
 // errClosed is what calls after Close fail with.
@@ -85,6 +89,9 @@ func (c *Conn) dial(ctx context.Context, network, addr string) (net.Conn, error)
 	}
 	conn, err := c.netDial(ctx, network, addr)
 	if err != nil {
+		if c.source != "" {
+			return nil, fmt.Errorf("reach %s (from %s): %w", addr, c.source, err)
+		}
 		return nil, err
 	}
 	t := &trackedConn{Conn: conn, owner: c}
@@ -146,7 +153,7 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
 		endpoint = net.JoinHostPort(endpoint, Port)
 	}
-	c := &Conn{netDial: (&net.Dialer{Timeout: 10 * time.Second}).DialContext}
+	c := &Conn{netDial: (&net.Dialer{Timeout: 10 * time.Second}).DialContext, source: o.Source}
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		// Verification is VerifyConnection's job: by fingerprint, or by the CA for the node's

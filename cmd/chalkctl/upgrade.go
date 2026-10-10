@@ -94,9 +94,9 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 	var sf secretFlags
 	cf.register(fs)
 	sf.register(fs)
-	config := fs.String("config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, when there is no secrets file)")
+	config := fs.String("config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)")
 	endpoints := endpointList{}
-	fs.Var(endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default the address a client file names, else each node's first static address)")
+	fs.Var(endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address, or the address a client file that prefers its addresses names)")
 	imagePath := fs.String("image", "", "image to install on the nodes of its role and platform: a raw image with repart-output.json next to it, or the directory nix build produces (default: build each node's image from the cluster definition)")
 	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
 	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")

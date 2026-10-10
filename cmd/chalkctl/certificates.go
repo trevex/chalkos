@@ -155,7 +155,7 @@ func (a *app) deliverNodeCA(ctx context.Context, c *cluster, endpointFlag, name 
 	if err != nil {
 		return err
 	}
-	addr, err := endpoint(endpointFlag, name, node.Identity)
+	addr, source, err := c.endpoint(endpointFlag, nil, name, node.Identity)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (a *app) deliverNodeCA(ctx context.Context, c *cluster, endpointFlag, name 
 	if err != nil {
 		return err
 	}
-	conn, err := dialInstalled(&target{cluster: c, name: name, node: node, creds: creds, secrets: secrets, addr: addr})
+	conn, err := dialInstalled(&target{cluster: c, name: name, node: node, creds: creds, secrets: secrets, addr: addr, source: source})
 	if err != nil {
 		return err
 	}

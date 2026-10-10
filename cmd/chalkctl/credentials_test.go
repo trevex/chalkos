@@ -112,16 +112,26 @@ func TestCredentialChoice(t *testing.T) {
 	t.Setenv("CHALKOSCONFIG", reader)
 	reboot := ta.args([]string{"reboot", "n1"}, addr)
 
-	// The secrets file wins over a client file found by lookup.
-	if err := ta.run(context.Background(), reboot); err != nil {
-		t.Errorf("with the secrets file: %v", err)
+	// $CHALKOSCONFIG wins over the secrets file found in the flake directory.
+	if err := ta.run(context.Background(), reboot); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("with $CHALKOSCONFIG and secrets.json in the directory: %v, want the reader refused", err)
 	}
-	// --config wins over the secrets file.
-	if err := ta.run(context.Background(), append(reboot, "--config", reader)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	// --secrets wins over $CHALKOSCONFIG.
+	if err := ta.run(context.Background(), append(reboot, "--secrets", filepath.Join(ta.dir, "secrets.json"))); err != nil {
+		t.Errorf("with --secrets: %v", err)
+	}
+	// --config wins over --secrets.
+	if err := ta.run(context.Background(), append(reboot, "--config", reader, "--secrets", filepath.Join(ta.dir, "secrets.json"))); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("with --config: %v, want the reader refused", err)
+	}
+	// Without $CHALKOSCONFIG, the secrets file found in the directory.
+	t.Setenv("CHALKOSCONFIG", "")
+	if err := ta.run(context.Background(), reboot); err != nil {
+		t.Errorf("with secrets.json in the directory: %v", err)
 	}
 	// Without a secrets file, $CHALKOSCONFIG, else ~/.config/chalkos/config.
 	ta.withoutSecrets(t)
+	t.Setenv("CHALKOSCONFIG", reader)
 	if err := ta.run(context.Background(), reboot); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("with $CHALKOSCONFIG: %v, want the reader refused", err)
 	}
@@ -242,23 +252,79 @@ func TestClientFileNodes(t *testing.T) {
 	}
 }
 
-// TestClientFileAddresses reaches a node at the address its client file names, such as a
-// forwarded port, before the static address of the cluster definition.
-func TestClientFileAddresses(t *testing.T) {
-	ta := newTestApp(t)
-	s, _ := installedNode(t, ta, []byte(`{}`))
-	addr := ta.startNode(t, s)
-	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", pki.RoleReader, time.Hour, map[string]string{"n1": addr}, time.Now())
+// writeAddressConfig writes a client file naming the nodes' addresses, which it prefers to the
+// cluster definition's when prefer is set, and returns its path.
+func (ta *testApp) writeAddressConfig(t *testing.T, nodes map[string]string, prefer bool) string {
+	t.Helper()
+	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", pki.RoleReader, time.Hour, nodes, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.PreferNodeAddresses = prefer
 	data, err := c.Encode()
 	if err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(ta.dir, "alice.json")
 	writeFile(t, path, string(data))
-	if err := ta.run(context.Background(), []string{"status", "n1", "--config", path, "--manifest", filepath.Join(ta.dir, "manifest.json")}); err != nil {
+	return path
+}
+
+// TestClientFileAddresses reaches a node at the address a client file that prefers its addresses
+// names, such as a forwarded port, before the static address of the cluster definition, and
+// --endpoint before both. An address that cannot be reached is named with where it came from.
+func TestClientFileAddresses(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	manifest := filepath.Join(ta.dir, "manifest.json")
+	status := func(config string, extra ...string) error {
+		return ta.run(context.Background(), append([]string{"status", "n1", "--config", config, "--manifest", manifest}, extra...))
+	}
+	if err := status(ta.writeAddressConfig(t, map[string]string{"n1": addr}, true)); err != nil {
 		t.Fatalf("status at the client file's address: %v", err)
+	}
+	// Port 1 refuses the connection at once.
+	closed := ta.writeAddressConfig(t, map[string]string{"n1": "127.0.0.1:1"}, true)
+	if err := status(closed, "--endpoint", addr); err != nil {
+		t.Errorf("--endpoint after a client file naming another address: %v", err)
+	}
+	err := status(closed)
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from the client file "+closed+")") {
+		t.Errorf("an unreachable address of the client file: %v, want it named with the client file", err)
+	}
+	if err := status(closed, "--endpoint", "127.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --endpoint)") {
+		t.Errorf("an unreachable --endpoint: %v, want it named with --endpoint", err)
+	}
+}
+
+// TestEndpointPrecedence picks --endpoint, then a client file's address when the file prefers
+// its addresses and names the node, then the cluster definition's first static address.
+func TestEndpointPrecedence(t *testing.T) {
+	ta := newTestApp(t)
+	def := &cluster{manifest: ta.manifest}
+	file := func(nodes map[string]string, prefer bool) *credentials {
+		return &credentials{config: &client.Config{Nodes: nodes, PreferNodeAddresses: prefer}, configPath: "lab.json"}
+	}
+	for _, tc := range []struct {
+		name         string
+		c            *cluster
+		flag         string
+		creds        *credentials
+		addr, source string
+	}{
+		{"--endpoint beats the client file", def, "10.9.9.9", file(map[string]string{"n1": "127.0.0.1:15001"}, true), "10.9.9.9", "--endpoint"},
+		{"the client file when it prefers its addresses", def, "", file(map[string]string{"n1": "127.0.0.1:15001"}, true), "127.0.0.1:15001", "the client file lab.json"},
+		{"a node the client file does not name", def, "", file(map[string]string{"n2": "127.0.0.1:15002"}, true), "10.0.0.11", "the cluster definition"},
+		{"the definition without the opt-in", def, "", file(map[string]string{"n1": "127.0.0.1:15001"}, false), "10.0.0.11", "the cluster definition"},
+		{"the secrets file", def, "", &credentials{}, "10.0.0.11", "the cluster definition"},
+		{"no cluster definition", clusterOfConfig(client.Config{Cluster: "lab", Nodes: map[string]string{"n1": "10.0.0.20"}}, clusterFlags{}), "", file(map[string]string{"n1": "10.0.0.20"}, false), "10.0.0.20", "the client file lab.json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, source, err := tc.c.endpoint(tc.flag, tc.creds, "n1", tc.c.manifest.Nodes["n1"].Identity)
+			if err != nil || addr != tc.addr || source != tc.source {
+				t.Errorf("endpoint = %q, %q, %v; want %q, %q", addr, source, err, tc.addr, tc.source)
+			}
+		})
 	}
 }

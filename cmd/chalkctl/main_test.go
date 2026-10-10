@@ -583,10 +583,10 @@ func TestApplyIdentityNamesResetCommand(t *testing.T) {
 }
 
 func TestEndpointNeedsAnAddress(t *testing.T) {
-	if _, err := endpoint("", "n2", manifest.Identity{}); err == nil || !strings.Contains(err.Error(), "--endpoint") {
+	if _, _, err := (&cluster{}).endpoint("", nil, "n2", manifest.Identity{}); err == nil || !strings.Contains(err.Error(), "--endpoint") {
 		t.Errorf("err = %v", err)
 	}
-	if got, _ := endpoint("", "n1", manifest.Identity{Network: map[string]any{"networks": map[string]any{
+	if got, _, _ := (&cluster{}).endpoint("", nil, "n1", manifest.Identity{Network: map[string]any{"networks": map[string]any{
 		"20-b": map[string]any{"address": []any{"10.0.1.5/24"}},
 		"10-a": map[string]any{"address": []any{"10.0.0.11/24"}},
 	}}}); got != "10.0.0.11" {

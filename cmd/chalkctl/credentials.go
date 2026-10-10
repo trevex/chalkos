@@ -80,23 +80,27 @@ func (a *app) loadSecretCredentials(ctx context.Context, s secretFlags, flake st
 const configExpiryWarning = 30 * 24 * time.Hour
 
 // loadCredentials picks the credentials of commands a client file may run: the client file
-// --config names; else the secrets file, when one is given or found; else the client file
-// $CHALKOSCONFIG names, or ~/.config/chalkos/config.
+// --config names, else the secrets file --secrets names; else the client file $CHALKOSCONFIG
+// names, so a lab's client file works in the lab's flake directory; else the secrets file found
+// in the flake directory; else ~/.config/chalkos/config.
 func (a *app) loadCredentials(ctx context.Context, s secretFlags, config, flake string) (*credentials, error) {
 	if config != "" {
 		return a.configCredentials(config)
+	}
+	if s.path != "" {
+		return a.loadSecretCredentials(ctx, s, flake)
+	}
+	if path := os.Getenv("CHALKOSCONFIG"); path != "" {
+		return a.configCredentials(path)
 	}
 	if _, found, err := secretsPath(s, flake); err != nil {
 		return nil, err
 	} else if found {
 		return a.loadSecretCredentials(ctx, s, flake)
 	}
-	path := os.Getenv("CHALKOSCONFIG")
-	if path == "" {
-		path = defaultConfigPath(a.home)
-		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("there is no secrets file in %s and no client file at %s; pass --secrets or --config", flake, path)
-		}
+	path := defaultConfigPath(a.home)
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("there is no secrets file in %s and no client file at %s; pass --secrets or --config", flake, path)
 	}
 	return a.configCredentials(path)
 }

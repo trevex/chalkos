@@ -42,13 +42,13 @@ type nodeCommand struct {
 func (n *nodeCommand) register(fs *flag.FlagSet) {
 	n.cluster.register(fs)
 	n.secrets.register(fs)
-	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the address a client file names, else the node's first static address)")
+	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the node's first static address, or the address a client file that prefers its addresses names)")
 }
 
 // registerClient registers the flags of a command that a client file may run.
 func (n *nodeCommand) registerClient(fs *flag.FlagSet) {
 	n.register(fs)
-	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, when there is no secrets file)")
+	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)")
 }
 
 // target is a node of the cluster with the credentials chalkctl reaches it with. secrets holds
@@ -60,6 +60,8 @@ type target struct {
 	creds   *credentials
 	secrets pki.Secrets
 	addr    string
+	// source says where addr comes from, for errors reaching it.
+	source string
 }
 
 // target addresses a node with the secrets file.
@@ -93,16 +95,11 @@ func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*targ
 	if err != nil {
 		return nil, err
 	}
-	// A client file names how its holder reaches the nodes, such as through forwarded ports.
-	addr := n.endpoint
-	if addr == "" && creds.config != nil {
-		addr = creds.config.Nodes[name]
-	}
-	addr, err = endpoint(addr, name, node.Identity)
+	addr, source, err := c.endpoint(n.endpoint, creds, name, node.Identity)
 	if err != nil {
 		return nil, err
 	}
-	t := &target{cluster: c, name: name, node: node, creds: creds, addr: addr}
+	t := &target{cluster: c, name: name, node: node, creds: creds, addr: addr, source: source}
 	if creds.secrets != nil {
 		t.secrets = *creds.secrets
 	}
@@ -121,7 +118,7 @@ func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.Dial(t.addr, client.Options{CA: roots, ServerName: t.name, Certificate: t.creds.cert, IgnoreValidity: ignoreValidity})
+	return client.Dial(t.addr, client.Options{CA: roots, ServerName: t.name, Certificate: t.creds.cert, IgnoreValidity: ignoreValidity, Source: t.source})
 }
 
 // pinning verifies a node in maintenance mode, which serves a self-signed certificate.
@@ -137,14 +134,14 @@ func (p *pinning) register(fs *flag.FlagSet) {
 
 func (p pinning) set() bool { return p.fingerprint != "" || p.insecure }
 
-func (p pinning) dial(addr string, cert *tls.Certificate) (*client.Conn, error) {
+func (p pinning) dial(addr, source string, cert *tls.Certificate) (*client.Conn, error) {
 	if p.fingerprint != "" && p.insecure {
 		return nil, errors.New("pass either --fingerprint or --insecure")
 	}
 	if !p.set() {
 		return nil, errors.New("a node in maintenance mode is verified by its certificate's fingerprint; pass --fingerprint FP, or --insecure to accept any certificate")
 	}
-	return client.Dial(addr, client.Options{Fingerprint: p.fingerprint, Insecure: p.insecure, Certificate: cert})
+	return client.Dial(addr, client.Options{Fingerprint: p.fingerprint, Insecure: p.insecure, Certificate: cert, Source: source})
 }
 
 // fallbackSecret returns the secret enrolled as the second keyslot of the node's encrypted
@@ -278,7 +275,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		return err
 	}
 	cert := t.creds.cert
-	conn, err := p.dial(t.addr, cert)
+	conn, err := p.dial(t.addr, t.source, cert)
 	if err != nil {
 		return err
 	}
@@ -290,7 +287,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		}
 		fp := conn.Fingerprint()
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", fp)
-		if conn, err = client.Dial(t.addr, client.Options{Fingerprint: fp, Certificate: cert}); err != nil {
+		if conn, err = client.Dial(t.addr, client.Options{Fingerprint: fp, Certificate: cert, Source: t.source}); err != nil {
 			return err
 		}
 	}
@@ -457,7 +454,7 @@ func (a *app) disks(ctx context.Context, args []string) error {
 			return err
 		}
 		if p.set() {
-			conn, err = p.dial(t.addr, t.creds.cert)
+			conn, err = p.dial(t.addr, t.source, t.creds.cert)
 		} else {
 			conn, err = dialInstalled(t)
 		}
@@ -475,7 +472,7 @@ func (a *app) disks(ctx context.Context, args []string) error {
 			}
 			cert = creds.cert
 		}
-		if conn, err = p.dial(n.endpoint, cert); err != nil {
+		if conn, err = p.dial(n.endpoint, "--endpoint", cert); err != nil {
 			return err
 		}
 	default:
@@ -845,7 +842,7 @@ func (a *app) reboot(ctx context.Context, args []string) error {
 // and to an installed node otherwise.
 func (a *app) dialEither(t *target, p pinning) (*client.Conn, error) {
 	if p.set() {
-		return p.dial(t.addr, t.creds.cert)
+		return p.dial(t.addr, t.source, t.creds.cert)
 	}
 	return dialInstalled(t)
 }

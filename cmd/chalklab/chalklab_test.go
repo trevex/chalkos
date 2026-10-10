@@ -200,6 +200,9 @@ func TestForwardedClientFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !got.PreferNodeAddresses {
+		t.Error("the client file does not prefer its addresses to the cluster definition's")
+	}
 	if len(got.Nodes) != 2 || got.Nodes["cp1"] != "127.0.0.1:15001" || got.Nodes["w1"] != "127.0.0.1:15002" {
 		t.Errorf("nodes = %v", got.Nodes)
 	}

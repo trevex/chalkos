@@ -176,14 +176,25 @@ func attrName(name string) (string, error) {
 	return b.String(), nil
 }
 
-// endpoint returns where the node's chalkd is reached: --endpoint, or its first static address.
-func endpoint(flagValue, node string, id manifest.Identity) (string, error) {
+// endpoint returns where the node's chalkd is reached and where that address comes from:
+// --endpoint; else the address a client file names for the node when the file prefers its
+// addresses, as chalklab's does; else the node's first static address in the cluster definition,
+// which without a definition is the client file's.
+func (c *cluster) endpoint(flagValue string, creds *credentials, node string, id manifest.Identity) (addr, source string, err error) {
 	if flagValue != "" {
-		return flagValue, nil
+		return flagValue, "--endpoint", nil
+	}
+	if creds != nil && creds.config != nil && creds.config.PreferNodeAddresses {
+		if addr := creds.config.Nodes[node]; addr != "" {
+			return addr, "the client file " + creds.configPath, nil
+		}
 	}
 	addrs := id.StaticAddresses()
 	if len(addrs) == 0 {
-		return "", fmt.Errorf("node %s has no static address; pass --endpoint", node)
+		return "", "", fmt.Errorf("node %s has no static address; pass --endpoint", node)
 	}
-	return addrs[0], nil
+	if c.partial {
+		return addrs[0], "the client file " + creds.configPath, nil
+	}
+	return addrs[0], "the cluster definition", nil
 }

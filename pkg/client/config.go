@@ -33,9 +33,13 @@ type Config struct {
 	// issued the certificate, and while it rotates the other one.
 	OSCA string `json:"osCA"`
 	// Nodes are the nodes' addresses by name, as the cluster definition had them when the file
-	// was issued, or as its holder reaches them otherwise, such as through forwarded ports; they
-	// come before the cluster definition's static addresses.
+	// was issued, or as its holder reaches them otherwise, such as through forwarded ports. They
+	// are used without a cluster definition, and before its static addresses when
+	// PreferNodeAddresses is set.
 	Nodes map[string]string `json:"nodes"`
+	// PreferNodeAddresses has Nodes come before the cluster definition's static addresses, for a
+	// holder that reaches the nodes otherwise, as chalklab's client file does with forwarded ports.
+	PreferNodeAddresses bool `json:"preferNodeAddresses,omitempty"`
 }
 
 // NewConfig issues a client certificate of the role from the OS CA for a new key, valid for

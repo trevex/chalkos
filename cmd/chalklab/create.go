@@ -560,13 +560,15 @@ func (a *app) waitBootstrap(ctx context.Context, name, addr string, cluster []st
 	}
 }
 
-// forwardedClientFile makes the client file name the lab's nodes at their forwarded ports.
+// forwardedClientFile makes the client file name the lab's nodes at their forwarded ports, which
+// it prefers to the cluster definition's addresses on the lab network.
 func forwardedClientFile(path string, l *lab.Lab) error {
 	c, err := client.ReadConfig(path)
 	if err != nil {
 		return err
 	}
 	c.Nodes = map[string]string{}
+	c.PreferNodeAddresses = true
 	for _, n := range l.Nodes {
 		c.Nodes[n.Name] = "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
 	}
