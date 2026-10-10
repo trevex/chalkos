@@ -67,6 +67,8 @@ func newCommand(a *app) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "chalklab",
 		Short:         "Run a chalkos cluster's nodes as QEMU virtual machines on this machine",
+		Long:          rootLong,
+		Example:       rootExample,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(cmd *cobra.Command, args []string) error {

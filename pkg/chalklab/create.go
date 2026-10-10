@@ -58,8 +58,10 @@ type createFlags struct {
 func (a *app) createCommand() *cobra.Command {
 	var f createFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "create",
-		Short: "Create a lab of the cluster's nodes, install them and bootstrap the cluster",
+		Use:     "create",
+		Short:   "Create a lab of the cluster's nodes, install them and bootstrap the cluster",
+		Long:    createLong,
+		Example: createExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.create(ctx, f, pos) })
 	fs := cmd.Flags()
 	fs.StringVar(&f.flake, "flake", ".", "directory of the flake that defines the cluster")

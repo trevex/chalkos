@@ -66,8 +66,10 @@ func labDir(cluster string) (string, *lab.Lab, error) {
 func (a *app) statusCommand() *cobra.Command {
 	var cluster string
 	cmd := a.command(&cobra.Command{
-		Use:   "status",
-		Short: "Show the lab's VMs, ports and files",
+		Use:     "status",
+		Short:   "Show the lab's VMs, ports and files",
+		Long:    statusLong,
+		Example: statusExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.status(cluster, pos) })
 	registerCluster(cmd, &cluster, "cluster whose lab to show (default the only lab)")
 	return cmd
@@ -135,8 +137,10 @@ func (a *app) consoleCommand() *cobra.Command {
 	var cluster string
 	var follow bool
 	cmd := a.command(&cobra.Command{
-		Use:   "console <node>",
-		Short: "Follow a node's serial console",
+		Use:     "console <node>",
+		Short:   "Follow a node's serial console",
+		Long:    consoleLong,
+		Example: consoleExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.console(ctx, cluster, follow, pos) })
 	registerCluster(cmd, &cluster, "cluster of the node's lab (default the only lab)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", true, "keep printing what the node writes")
@@ -183,8 +187,10 @@ func (a *app) console(ctx context.Context, cluster string, follow bool, pos []st
 func (a *app) signCommand() *cobra.Command {
 	var cluster, out string
 	cmd := a.command(&cobra.Command{
-		Use:   "sign <image>",
-		Short: "Sign an image with the lab's Secure Boot keys, for upgrades",
+		Use:     "sign <image>",
+		Short:   "Sign an image with the lab's Secure Boot keys, for upgrades",
+		Long:    signLong,
+		Example: signExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.sign(ctx, cluster, out, pos) })
 	registerCluster(cmd, &cluster, "cluster whose lab's keys to sign with (default the only lab)")
 	cmd.Flags().StringVar(&out, "out", "", "directory to copy the image to, made when missing, and sign there, as for an image in the Nix store, which cannot be signed in place")
@@ -265,8 +271,10 @@ func copyDir(src, dst string) error {
 func (a *app) destroyCommand() *cobra.Command {
 	var cluster string
 	cmd := a.command(&cobra.Command{
-		Use:   "destroy",
-		Short: "Stop the lab and remove its state",
+		Use:     "destroy",
+		Short:   "Stop the lab and remove its state",
+		Long:    destroyLong,
+		Example: destroyExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.destroy(ctx, cluster, pos) })
 	registerCluster(cmd, &cluster, "cluster whose lab to remove (default the only lab)")
 	return cmd
@@ -310,8 +318,10 @@ func joinNames(names []string) string {
 func (a *app) startCommand() *cobra.Command {
 	var cluster string
 	cmd := a.command(&cobra.Command{
-		Use:   "start",
-		Short: "Start a stopped lab, or the VMs of a running lab that stopped",
+		Use:     "start",
+		Short:   "Start a stopped lab, or the VMs of a running lab that stopped",
+		Long:    startLong,
+		Example: startExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.start(ctx, cluster, pos) })
 	registerCluster(cmd, &cluster, "cluster whose lab to start (default the only lab)")
 	return cmd

@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/manifest"
@@ -481,4 +483,19 @@ func TestSuperviseIsHidden(t *testing.T) {
 	if err != nil || cmd.Name() != "supervise" || !cmd.Hidden {
 		t.Errorf("supervise = %v, %v; want the hidden supervise command", cmd, err)
 	}
+}
+
+// Every command but the supervisor's is described for its help and the reference pages.
+func TestCommandsDescribed(t *testing.T) {
+	a, _ := testApp()
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if !cmd.Hidden && (cmd.Short == "" || cmd.Long == "" || cmd.Example == "") {
+			t.Errorf("%s lacks a short or long description or examples", cmd.CommandPath())
+		}
+		for _, c := range cmd.Commands() {
+			walk(c)
+		}
+	}
+	walk(newCommand(a))
 }
