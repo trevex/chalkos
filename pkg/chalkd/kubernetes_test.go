@@ -293,7 +293,7 @@ func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 
 // kubernetesIdentity is identityWith for the Kubernetes node nodeName.
 func kubernetesIdentity(nodeName string) string {
-	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "networkUnits": {}, "extensions": {"rack": {"location": "rack-a"}}, "kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}, "storage": ` + section("", "") + `}`
+	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "extensions": {"rack": {"location": "rack-a"}}, "kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}, "storage": ` + section("", "") + `}`
 }
 
 func TestApplyIdentityDeliversShare(t *testing.T) {

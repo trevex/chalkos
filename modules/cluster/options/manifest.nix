@@ -135,8 +135,8 @@ let
     inherit (n) role platform;
     identity = {
       inherit (n) hostname network labels;
-      # The cluster and the role the node's image is built for: the installer refuses an image of
-      # others. The platform names which of the role's images the node runs.
+      # The cluster, the role and the platform the node's image is built for: the installer refuses
+      # an image of others, and an installed node an identity of others.
       cluster = cfg.cluster.name;
       inherit (n) role platform;
       networkUnits = renderNetwork name n;

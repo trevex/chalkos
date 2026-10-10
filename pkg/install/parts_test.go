@@ -67,7 +67,7 @@ func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) pa
 	}
 	img := partsImage{version: version, store: store, hash: hash, root: root}
 	img.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
 	img.loader = ukitest.Build(map[string][]byte{".text": []byte("systemd-boot " + seed)})
 	img.header = img.headerFor()
@@ -77,7 +77,7 @@ func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) pa
 // headerFor describes the image as it is.
 func (img partsImage) headerFor() upgrade.Header {
 	return upgrade.Header{
-		ImageID: "chalkos", Version: img.version, Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: img.root,
+		ImageID: "chalkos", Version: img.version, Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: img.root,
 		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(img.uki)), BootLoaderSize: int64(len(img.loader)),
 		StoreSHA256: sha(img.store), VeritySHA256: sha(img.hash), UKISHA256: sha(img.uki), BootLoaderSHA256: sha(img.loader),
 	}
@@ -737,12 +737,12 @@ func TestFromPartsRefuses(t *testing.T) {
 	revokedLoader.header = revokedLoader.headerFor()
 	noTries := img
 	noTries.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_BOOT_TRIES": "0",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "0",
 	}, fmt.Sprintf("usrhash=%x", img.root))
 	noTries.header = noTries.headerFor()
 	otherStore := img
 	otherStore.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("usrhash=%x", sha([]byte("another store"))))
 	otherStore.header = otherStore.headerFor()
 	armLoader := img
@@ -779,6 +779,7 @@ func TestFromPartsRefuses(t *testing.T) {
 		{"slot A holding another store", func(l *partsLab) { l.stopAt(img, "write the UKI") }, newPartsImage(t, "0.2.0", "b"), nil, "slot A of the target disk"},
 		{"another cluster", nil, img, func(r *PartsRequest) { r.Image.Cluster = "prod" }, "the UKI's cluster is \"lab\""},
 		{"another role", nil, img, func(r *PartsRequest) { r.Image.Role = "controlplane" }, "the UKI's role is \"worker\""},
+		{"another platform", nil, img, func(r *PartsRequest) { r.Image.Platform = "kvm" }, "the UKI's platform is \"metal\""},
 		{"a corrupt store", nil, img, func(r *PartsRequest) {
 			corrupt := bytes.Clone(img.store)
 			corrupt[100]++

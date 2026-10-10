@@ -104,6 +104,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		{"image ID", h.ImageID, n.OSRelease["IMAGE_ID"]},
 		{"cluster", h.Cluster, n.OSRelease["CHALKOS_CLUSTER"]},
 		{"role", h.Role, n.OSRelease["CHALKOS_ROLE"]},
+		{"platform", h.Platform, n.OSRelease["CHALKOS_PLATFORM"]},
 	} {
 		if field.node == "" {
 			return Result{}, fmt.Errorf("the running image names no %s", field.name)

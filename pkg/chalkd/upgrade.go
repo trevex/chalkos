@@ -15,8 +15,8 @@ import (
 )
 
 // Upgrade installs the image an operator streams. It checks that the image is of the node's
-// cluster and role and boots the store it carries, but cannot tell an image to trust from
-// another: without Secure Boot, an operator can run any image as root, with STATE and VAR
+// cluster, role and platform and boots the store it carries, but cannot tell an image to trust
+// from another: without Secure Boot, an operator can run any image as root, with STATE and VAR
 // unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to
 // images signed for db.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
@@ -69,7 +69,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 // imageHeader is the image an install or upgrade header describes.
 func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	return upgrade.Header{
-		ImageID: h.GetImageId(), Version: h.GetVersion(), Cluster: h.GetCluster(), Role: h.GetRole(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
+		ImageID: h.GetImageId(), Version: h.GetVersion(), Cluster: h.GetCluster(), Role: h.GetRole(), Platform: h.GetPlatform(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
 		StoreSize: int64(h.GetStore().GetSize()), VeritySize: int64(h.GetHashTree().GetSize()), UKISize: int64(h.GetUki().GetSize()),
 		StoreSHA256: h.GetStore().GetSha256(), VeritySHA256: h.GetHashTree().GetSha256(), UKISHA256: h.GetUki().GetSha256(),
 		BootLoaderSize: int64(h.GetBootLoader().GetSize()), BootLoaderSHA256: h.GetBootLoader().GetSha256(),

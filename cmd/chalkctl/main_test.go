@@ -156,7 +156,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	// The node runs the image of the test node's role.
 	if s.Paths.OSRelease == "" {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=test\n")
+		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=test\nCHALKOS_PLATFORM=metal\n")
 	}
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
@@ -343,7 +343,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := got.Image
-	if h.ImageID != "chalkos" || h.Version != "0.1.0" || h.Cluster != "lab" || h.Role != "test" || h.BootLoaderSize == 0 {
+	if h.ImageID != "chalkos" || h.Version != "0.1.0" || h.Cluster != "lab" || h.Role != "test" || h.Platform != "metal" || h.BootLoaderSize == 0 {
 		t.Errorf("image = %+v", h)
 	}
 	size := h.StoreSize + h.VeritySize + h.UKISize + h.BootLoaderSize

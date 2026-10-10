@@ -81,7 +81,7 @@ func testUpgradeImageOfBlocks(t *testing.T, cluster, role, version string, block
 	loader := filepath.Join(dir, "systemd-boot.efi")
 	writeFile(t, loader, string(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")})))
 	writeFile(t, uki, string(ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_CLUSTER": cluster, "CHALKOS_ROLE": role, "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_CLUSTER": cluster, "CHALKOS_ROLE": role, "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/x usrhash=%x", root))))
 	for _, args := range [][]string{
 		{"mkfs.vfat", "-C", esp, "4096"},

@@ -304,6 +304,8 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		{"another image ID", func(h *Header) { h.ImageID = "other" }, nil, "image ID is other"},
 		{"another cluster", func(h *Header) { h.Cluster = "prod" }, nil, "cluster is prod"},
 		{"another role", func(h *Header) { h.Role = "controlplane" }, nil, "role is controlplane"},
+		{"another platform", func(h *Header) { h.Platform = "kvm" }, nil, "platform is kvm, the node's metal"},
+		{"no platform", func(h *Header) { h.Platform = "" }, nil, "platform are required"},
 		{"another architecture", func(h *Header) { h.Architecture = "arm64" }, nil, "the image is built for arm64, this machine for x86-64"},
 		{"a version with a counter", func(h *Header) { h.Version = "0.2.0+1" }, nil, "version"},
 		{"an upper-case version", func(h *Header) { h.Version = "0.2.0-RC1" }, nil, "version"},
@@ -394,6 +396,10 @@ func TestRefusesBeforeActivating(t *testing.T) {
 	osRelease["CHALKOS_ROLE"] = "controlplane"
 	otherRole.uki = newUKI(osRelease, img.root)
 	noTries := img
+	otherPlatform := img
+	osRelease = img.osRelease(3)
+	osRelease["CHALKOS_PLATFORM"] = "kvm"
+	otherPlatform.uki = newUKI(osRelease, img.root)
 	noTries.uki = newUKI(img.osRelease(0), img.root)
 	otherArch := img
 	otherArch.uki = ukitest.WithMachine(img.uki, 0xaa64)
@@ -411,6 +417,7 @@ func TestRefusesBeforeActivating(t *testing.T) {
 		{"a corrupted UKI", func() image { c := img; c.uki = flip(img.uki, 700); return c }(), "UKI's SHA-256"},
 		{"a UKI of another version", withHeader(otherVersion), "version is \"0.3.0\""},
 		{"a UKI of another role", withHeader(otherRole), "role is \"controlplane\""},
+		{"a UKI of another platform", withHeader(otherPlatform), "platform is \"kvm\""},
 		{"a UKI booting another store", withHeader(otherStore), "boots another store"},
 		{"a UKI without boot tries", withHeader(noTries), "boot tries"},
 		{"a UKI of another architecture", withHeader(otherArch), "the UKI is built for arm64, but the image names x86-64"},

@@ -251,8 +251,11 @@ type InfoResponse struct {
 	Fingerprint string `protobuf:"bytes,8,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
 	Hostname    string `protobuf:"bytes,9,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	// The cluster and role the running image was built for; empty on the installer.
-	Cluster       string `protobuf:"bytes,10,opt,name=cluster,proto3" json:"cluster,omitempty"`
-	Role          string `protobuf:"bytes,11,opt,name=role,proto3" json:"role,omitempty"`
+	Cluster string `protobuf:"bytes,10,opt,name=cluster,proto3" json:"cluster,omitempty"`
+	Role    string `protobuf:"bytes,11,opt,name=role,proto3" json:"role,omitempty"`
+	// The platform the running image was built for, such as metal or kvm; empty on the installer,
+	// which installs images of every platform.
+	Platform      string `protobuf:"bytes,12,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -360,6 +363,13 @@ func (x *InfoResponse) GetCluster() string {
 func (x *InfoResponse) GetRole() string {
 	if x != nil {
 		return x.Role
+	}
+	return ""
+}
+
+func (x *InfoResponse) GetPlatform() string {
+	if x != nil {
+		return x.Platform
 	}
 	return ""
 }
@@ -1052,7 +1062,10 @@ type ImageHeader struct {
 	BootLoader *ImagePart `protobuf:"bytes,9,opt,name=boot_loader,json=bootLoader,proto3" json:"boot_loader,omitempty"`
 	// The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A
 	// node refuses an image of another architecture than its own.
-	Architecture  string `protobuf:"bytes,10,opt,name=architecture,proto3" json:"architecture,omitempty"`
+	Architecture string `protobuf:"bytes,10,opt,name=architecture,proto3" json:"architecture,omitempty"`
+	// The platform the image is built for, as its os-release names it, such as metal or kvm. A node
+	// refuses an image of another platform than its own, or than its identity names.
+	Platform      string `protobuf:"bytes,11,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1153,6 +1166,13 @@ func (x *ImageHeader) GetBootLoader() *ImagePart {
 func (x *ImageHeader) GetArchitecture() string {
 	if x != nil {
 		return x.Architecture
+	}
+	return ""
+}
+
+func (x *ImageHeader) GetPlatform() string {
+	if x != nil {
+		return x.Platform
 	}
 	return ""
 }
@@ -1648,7 +1668,9 @@ type StatusResponse struct {
 	// What the node trusts and issues with, by fingerprint.
 	Trust []*TrustStatus `protobuf:"bytes,8,rep,name=trust,proto3" json:"trust,omitempty"`
 	// The image the node booted, and what upgrades installed beside it.
-	Boot          *BootStatus `protobuf:"bytes,9,opt,name=boot,proto3" json:"boot,omitempty"`
+	Boot *BootStatus `protobuf:"bytes,9,opt,name=boot,proto3" json:"boot,omitempty"`
+	// The platform the running image was built for.
+	Platform      string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1744,6 +1766,13 @@ func (x *StatusResponse) GetBoot() *BootStatus {
 		return x.Boot
 	}
 	return nil
+}
+
+func (x *StatusResponse) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
 }
 
 type BootStatus struct {
@@ -3614,7 +3643,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\r\n" +
-	"\vInfoRequest\"\xe5\x02\n" +
+	"\vInfoRequest\"\x81\x03\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x19\n" +
@@ -3628,7 +3657,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\bhostname\x18\t \x01(\tR\bhostname\x12\x18\n" +
 	"\acluster\x18\n" +
 	" \x01(\tR\acluster\x12\x12\n" +
-	"\x04role\x18\v \x01(\tR\x04role\"\x0e\n" +
+	"\x04role\x18\v \x01(\tR\x04role\x12\x1a\n" +
+	"\bplatform\x18\f \x01(\tR\bplatform\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +
@@ -3682,7 +3712,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06serial\x18\x03 \x01(\tR\x06serial\x12\x10\n" +
 	"\x03wwn\x18\x04 \x01(\tR\x03wwn\x12\x12\n" +
 	"\x04size\x18\x05 \x01(\tR\x04size\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\"\x87\x03\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\"\xa3\x03\n" +
 	"\vImageHeader\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x18\n" +
@@ -3695,7 +3725,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\vboot_loader\x18\t \x01(\v2\x1a.chalkos.node.v1.ImagePartR\n" +
 	"bootLoader\x12\"\n" +
 	"\farchitecture\x18\n" +
-	" \x01(\tR\farchitecture\"7\n" +
+	" \x01(\tR\farchitecture\x12\x1a\n" +
+	"\bplatform\x18\v \x01(\tR\bplatform\"7\n" +
 	"\tImagePart\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\fR\x06sha256\" \n" +
@@ -3722,7 +3753,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\bidentity\x18\x02 \x01(\tR\bidentity\x12'\n" +
 	"\x0ffallback_secret\x18\x03 \x01(\tR\x0efallbackSecret\"\x15\n" +
 	"\x13ResetVolumeResponse\"\x0f\n" +
-	"\rStatusRequest\"\xeb\x03\n" +
+	"\rStatusRequest\"\x87\x04\n" +
 	"\x0eStatusResponse\x12)\n" +
 	"\x10identity_version\x18\x01 \x01(\tR\x0fidentityVersion\x121\n" +
 	"\x05disks\x18\x02 \x03(\v2\x1b.chalkos.node.v1.DiskStatusR\x05disks\x127\n" +
@@ -3734,7 +3765,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fcertificates\x18\x06 \x03(\v2\".chalkos.node.v1.CertificateStatusR\fcertificates\x12/\n" +
 	"\x04time\x18\a \x01(\v2\x1b.chalkos.node.v1.TimeStatusR\x04time\x122\n" +
 	"\x05trust\x18\b \x03(\v2\x1c.chalkos.node.v1.TrustStatusR\x05trust\x12/\n" +
-	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\"\xd3\x01\n" +
+	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\x12\x1a\n" +
+	"\bplatform\x18\n" +
+	" \x01(\tR\bplatform\"\xd3\x01\n" +
 	"\n" +
 	"BootStatus\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x14\n" +

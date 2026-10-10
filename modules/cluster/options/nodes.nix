@@ -36,7 +36,8 @@ let
           default = "metal";
           description = ''
             Platform the node runs on, which must name an entry of `chalkos.platforms`: the node
-            runs its role's image for it. Changing it is a reinstall.
+            runs its role's image for it, and refuses images and identities of another platform.
+            Changing it is a reinstall.
           '';
         };
         hostname = lib.mkOption {

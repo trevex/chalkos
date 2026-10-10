@@ -26,6 +26,7 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Fingerprint: s.CurrentFingerprint(),
 		Cluster:     release["CHALKOS_CLUSTER"],
 		Role:        release["CHALKOS_ROLE"],
+		Platform:    release["CHALKOS_PLATFORM"],
 	}
 	if boot, err := s.Host.ResolvePath(s.Paths.BootDisk); err == nil {
 		resp.BootDisk = boot.Device

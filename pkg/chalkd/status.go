@@ -21,7 +21,7 @@ import (
 )
 
 func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
-	resp := &nodev1.StatusResponse{}
+	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
 	data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "read the identity: %v", err)

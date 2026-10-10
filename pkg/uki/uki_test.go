@@ -32,6 +32,7 @@ func TestRead(t *testing.T) {
 		"IMAGE_VERSION":      "0.2.0",
 		"CHALKOS_CLUSTER":    "lab",
 		"CHALKOS_ROLE":       "worker",
+		"CHALKOS_PLATFORM":   "metal",
 		"CHALKOS_BOOT_TRIES": "3",
 		"PRETTY_NAME":        `NixOS "26.05"`,
 	}, "init=/nix/store/x/init console=ttyS0 usrhash="+rootHash+"\n")

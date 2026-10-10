@@ -69,11 +69,10 @@ type Node struct {
 // Identity is the node's identity without secrets, as delivered to the node.
 type Identity struct {
 	Hostname string `json:"hostname"`
-	// Cluster and Role are the cluster and the role the node's image is built for; the installer
-	// refuses an image of others.
-	Cluster string `json:"cluster"`
-	Role    string `json:"role"`
-	// Platform is the platform the node's image is built for.
+	// Cluster, Role and Platform are the cluster, the role and the platform the node's image is
+	// built for; the installer refuses an image of others, an installed node an identity of others.
+	Cluster  string         `json:"cluster"`
+	Role     string         `json:"role"`
 	Platform string         `json:"platform"`
 	Network  map[string]any `json:"network"`
 	// NetworkUnits are the systemd-networkd unit files rendered from Network, by file name.

@@ -112,6 +112,9 @@ message InfoResponse {
   // The cluster and role the running image was built for; empty on the installer.
   string cluster = 10;
   string role = 11;
+  // The platform the running image was built for, such as metal or kvm; empty on the installer,
+  // which installs images of every platform.
+  string platform = 12;
 }
 
 message DisksRequest {}
@@ -221,6 +224,9 @@ message ImageHeader {
   // The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A
   // node refuses an image of another architecture than its own.
   string architecture = 10;
+  // The platform the image is built for, as its os-release names it, such as metal or kvm. A node
+  // refuses an image of another platform than its own, or than its identity names.
+  string platform = 11;
 }
 
 // The size and SHA-256 of a part of an image.
@@ -295,6 +301,8 @@ message StatusResponse {
   repeated TrustStatus trust = 8;
   // The image the node booted, and what upgrades installed beside it.
   BootStatus boot = 9;
+  // The platform the running image was built for.
+  string platform = 10;
 }
 
 message BootStatus {

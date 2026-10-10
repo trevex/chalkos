@@ -19,7 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-const installIdentity = `{"hostname": "n1", "cluster": "lab", "role": "worker", "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "s", "repart": {}}}, "volumes": {}, "fallback": "recovery-key", "encryption": "tpm2"}}`
+const installIdentity = `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "s", "repart": {}}}, "volumes": {}, "fallback": "recovery-key", "encryption": "tpm2"}}`
 
 func header(target any) *nodev1.InstallHeader {
 	h := &nodev1.InstallHeader{
@@ -97,7 +97,7 @@ func TestInstallFromParts(t *testing.T) {
 	}
 	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{
-		Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: []byte{1},
+		Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
 		Uki: &nodev1.ImagePart{Size: 5, Sha256: []byte{6}}, BootLoader: &nodev1.ImagePart{Size: 7, Sha256: []byte{8}},
 	}
@@ -111,7 +111,7 @@ func TestInstallFromParts(t *testing.T) {
 		t.Errorf("streamed %d bytes, want the %d of the image's parts", len(streamed), len(parts))
 	}
 	want := upgrade.Header{
-		ImageID: "chalkos", Version: "0.1.0", Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: []byte{1},
+		ImageID: "chalkos", Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
 		StoreSize: 1, StoreSHA256: []byte{2}, VeritySize: 3, VeritySHA256: []byte{4},
 		UKISize: 5, UKISHA256: []byte{6}, BootLoaderSize: 7, BootLoaderSHA256: []byte{8},
 	}
@@ -144,13 +144,15 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 	}
 }
 
-// TestInstallImageOfTheIdentity refuses an image of another cluster or role than the identity's.
+// TestInstallImageOfTheIdentity refuses an image of another cluster, role or platform than the
+// identity's.
 func TestInstallImageOfTheIdentity(t *testing.T) {
 	for _, tc := range []struct {
-		cluster, role, want string
+		cluster, role, platform, want string
 	}{
-		{"prod", "worker", `the image is of the cluster "prod" and the role "worker", but the identity names "lab" and "worker"`},
-		{"lab", "controlplane", `the image is of the cluster "lab" and the role "controlplane", but the identity names "lab" and "worker"`},
+		{"prod", "worker", "metal", `the image is of the cluster "prod" and the role "worker", but the identity names "lab" and "worker"`},
+		{"lab", "controlplane", "metal", `the image is of the cluster "lab" and the role "controlplane", but the identity names "lab" and "worker"`},
+		{"lab", "worker", "kvm", `the image is built for the platform "kvm", but the identity names "metal"`},
 	} {
 		s, _ := newTestServer(t, maintenance, vda)
 		s.Installer = true
@@ -159,19 +161,20 @@ func TestInstallImageOfTheIdentity(t *testing.T) {
 			return nil
 		}
 		h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}})
-		h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: tc.cluster, Role: tc.role}
+		h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: tc.cluster, Role: tc.role, Platform: tc.platform}
 		if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("an image of %s and %s: %v, want %q", tc.cluster, tc.role, err, tc.want)
+			t.Errorf("an image of %s, %s and %s: %v, want %q", tc.cluster, tc.role, tc.platform, err, tc.want)
 		}
 	}
 }
 
-// TestInstallInPlaceOfTheImage refuses to install in place an identity of another cluster or role
-// than the running image's.
+// TestInstallInPlaceOfTheImage refuses to install in place an identity of another cluster, role or
+// platform than the running image's.
 func TestInstallInPlaceOfTheImage(t *testing.T) {
-	for _, tc := range []struct{ cluster, role, want string }{
-		{"prod", "worker", `the identity is of the cluster "prod" and the role "worker", but the node's image is of "lab" and "worker"`},
-		{"lab", "controlplane", `the identity is of the cluster "lab" and the role "controlplane", but the node's image is of "lab" and "worker"`},
+	for _, tc := range []struct{ cluster, role, platform, want string }{
+		{"prod", "worker", "metal", `the identity is of the cluster "prod" and the role "worker", but the node's image is of "lab" and "worker"`},
+		{"lab", "controlplane", "metal", `the identity is of the cluster "lab" and the role "controlplane", but the node's image is of "lab" and "worker"`},
+		{"lab", "worker", "kvm", `the identity names the platform "kvm", but the node's image is built for "metal"; changing a node's platform is a reinstall`},
 	} {
 		s, _ := newTestServer(t, maintenance, vda)
 		s.InPlace = func(context.Context, install.Request) error {
@@ -179,9 +182,9 @@ func TestInstallInPlaceOfTheImage(t *testing.T) {
 			return nil
 		}
 		h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
-		h.Identity = strings.NewReplacer(`"cluster": "lab"`, `"cluster": "`+tc.cluster+`"`, `"role": "worker"`, `"role": "`+tc.role+`"`).Replace(installIdentity)
+		h.Identity = strings.NewReplacer(`"cluster": "lab"`, `"cluster": "`+tc.cluster+`"`, `"role": "worker"`, `"role": "`+tc.role+`"`, `"platform": "metal"`, `"platform": "`+tc.platform+`"`).Replace(installIdentity)
 		if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("an identity of %s and %s: %v, want %q", tc.cluster, tc.role, err, tc.want)
+			t.Errorf("an identity of %s, %s and %s: %v, want %q", tc.cluster, tc.role, tc.platform, err, tc.want)
 		}
 	}
 }

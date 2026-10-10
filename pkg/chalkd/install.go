@@ -57,7 +57,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		if h.Image != nil {
 			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its role image already")
 		}
-		if err := s.checkImageOf(id.Cluster, id.Role); err != nil {
+		if err := s.checkImageOf(id.Cluster, id.Role, id.Platform); err != nil {
 			return nil, err
 		}
 		log.Print("installing in place")
@@ -74,6 +74,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		img := imageHeader(h.Image)
 		if img.Cluster != id.Cluster || img.Role != id.Role {
 			return nil, failed(connect.CodeInvalidArgument, "the image is of the cluster %q and the role %q, but the identity names %q and %q", img.Cluster, img.Role, id.Cluster, id.Role)
+		}
+		if img.Platform != id.Platform {
+			return nil, failed(connect.CodeInvalidArgument, "the image is built for the platform %q, but the identity names %q", img.Platform, id.Platform)
 		}
 		log.Printf("installing %q %q with the root hash %x onto %s", img.ImageID, img.Version, img.RootHash, ref)
 		err = s.FromParts(ctx, install.PartsRequest{

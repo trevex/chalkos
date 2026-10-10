@@ -40,6 +40,7 @@ type delivered struct {
 	data       []byte
 	cluster    string
 	role       string
+	platform   string
 	section    storage.Section
 	kubernetes *manifest.KubernetesIdentity
 }
@@ -68,15 +69,19 @@ func parseIdentity(data string) (delivered, error) {
 			return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
 		}
 	}
-	return delivered{data: []byte(data), cluster: id.Cluster, role: id.Role, section: id.Storage, kubernetes: id.Kubernetes}, nil
+	return delivered{data: []byte(data), cluster: id.Cluster, role: id.Role, platform: id.Platform, section: id.Storage, kubernetes: id.Kubernetes}, nil
 }
 
 // checkImageOf refuses an identity of another cluster or role than the running image's, which a
-// node would run under the wrong cluster definition.
-func (s *Server) checkImageOf(cluster, role string) error {
+// node would run under the wrong cluster definition, and one of another platform, which declares
+// the node a machine its image was not built for: changing a node's platform is a reinstall.
+func (s *Server) checkImageOf(cluster, role, platform string) error {
 	release := readOSRelease(s.Paths.OSRelease)
 	if cluster != release["CHALKOS_CLUSTER"] || role != release["CHALKOS_ROLE"] {
 		return failed(connect.CodeInvalidArgument, "the identity is of the cluster %q and the role %q, but the node's image is of %q and %q", cluster, role, release["CHALKOS_CLUSTER"], release["CHALKOS_ROLE"])
+	}
+	if platform != release["CHALKOS_PLATFORM"] {
+		return failed(connect.CodeInvalidArgument, "the identity names the platform %q, but the node's image is built for %q; changing a node's platform is a reinstall", platform, release["CHALKOS_PLATFORM"])
 	}
 	return nil
 }
@@ -163,7 +168,7 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	}
 	// The node keeps its own identity, which may predate the fields.
 	if !keep {
-		if err := s.checkImageOf(d.cluster, d.role); err != nil {
+		if err := s.checkImageOf(d.cluster, d.role, d.platform); err != nil {
 			return nil, err
 		}
 	}

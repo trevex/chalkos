@@ -180,7 +180,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	}
 	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
-	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=worker\n")
+	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=worker\nCHALKOS_PLATFORM=metal\n")
 	return s, r
 }
 
@@ -484,8 +484,23 @@ func TestInfo(t *testing.T) {
 	}
 	got := resp.Msg
 	if got.Mode != maintenance || got.ImageId != "chalkos-installer" || got.Version != "0.1.0" || !got.Installer ||
-		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Cluster != "lab" || got.Role != "worker" {
+		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Cluster != "lab" || got.Role != "worker" || got.Platform != "" {
 		t.Errorf("info = %+v", got)
+	}
+}
+
+// TestPlatform reports the platform the running image was built for in Info and Status.
+func TestPlatform(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	info, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Msg.Platform; got != "metal" {
+		t.Errorf("Info names the platform %q, want metal", got)
+	}
+	if got := status(t, s).Platform; got != "metal" {
+		t.Errorf("Status names the platform %q, want metal", got)
 	}
 }
 
