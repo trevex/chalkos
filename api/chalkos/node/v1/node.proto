@@ -8,6 +8,10 @@ option go_package = "github.com/trevex/chalkos/pkg/api/node/v1;nodev1";
 
 import "google/protobuf/timestamp.proto";
 
+// NodeService is the API chalkd serves on each node. Each method's comment names the modes it is
+// available in (maintenance, normal or both) and the least role a client certificate needs to call
+// it: reader, operator or admin, where each role may call what the roles before it may. Only
+// nodes call RenewNodeCertificate, with the node role.
 service NodeService {
   // Info describes the node and the agent. Available in both modes to readers.
   rpc Info(InfoRequest) returns (InfoResponse);

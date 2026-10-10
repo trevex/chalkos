@@ -33,7 +33,9 @@ let
       declarations = map (
         d:
         let
-          path = lib.removePrefix "${root}/" (toString d);
+          relative = lib.removePrefix "${root}/" (toString d);
+          # A module imported as a directory is its default.nix.
+          path = if lib.pathIsDirectory d then "${relative}/default.nix" else relative;
         in
         {
           name = path;
@@ -216,7 +218,9 @@ rec {
         exit 1
       fi
       work=$(mktemp -d)
-      trap 'kill "$syncer" 2>/dev/null; rm -rf "$work"' EXIT
+      syncer=
+      # The copying loop ends before its copy is removed.
+      trap 'if [ -n "$syncer" ]; then kill "$syncer" 2>/dev/null || true; wait "$syncer" 2>/dev/null || true; fi; rm -rf "$work"' EXIT
       copy() {
         rsync -a --delete --exclude /superpowers/ docs/ "$work/docs/"
         rsync -a zensical.toml "$work/zensical.toml"

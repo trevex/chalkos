@@ -13,99 +13,102 @@ The definition is `api/chalkos/node/v1/node.proto`, package `chalkos.node.v1`.
 
 ## NodeService
 
-
+NodeService is the API chalkd serves on each node. Each method's comment names the modes it is
+available in (maintenance, normal or both) and the least role a client certificate needs to call
+it: reader, operator or admin, where each role may call what the roles before it may. Only
+nodes call RenewNodeCertificate, with the node role.
 
 | Method | Request | Response |
 | ------ | ------- | -------- |
-| [Info](#info) | [InfoRequest](#inforequest) | [InfoResponse](#inforesponse) |
-| [Disks](#disks) | [DisksRequest](#disksrequest) | [DisksResponse](#disksresponse) |
-| [Install](#install) | [stream InstallRequest](#installrequest) | [InstallResponse](#installresponse) |
-| [ApplyIdentity](#applyidentity) | [ApplyIdentityRequest](#applyidentityrequest) | [ApplyIdentityResponse](#applyidentityresponse) |
-| [ResetVolume](#resetvolume) | [ResetVolumeRequest](#resetvolumerequest) | [ResetVolumeResponse](#resetvolumeresponse) |
-| [Status](#status) | [StatusRequest](#statusrequest) | [StatusResponse](#statusresponse) |
-| [Logs](#logs) | [LogsRequest](#logsrequest) | [stream LogsResponse](#logsresponse) |
-| [Reboot](#reboot) | [RebootRequest](#rebootrequest) | [RebootResponse](#rebootresponse) |
-| [Bootstrap](#bootstrap) | [BootstrapRequest](#bootstraprequest) | [BootstrapResponse](#bootstrapresponse) |
-| [EtcdMembers](#etcdmembers) | [EtcdMembersRequest](#etcdmembersrequest) | [EtcdMembersResponse](#etcdmembersresponse) |
-| [EtcdRemoveMember](#etcdremovemember) | [EtcdRemoveMemberRequest](#etcdremovememberrequest) | [EtcdRemoveMemberResponse](#etcdremovememberresponse) |
-| [EtcdLeave](#etcdleave) | [EtcdLeaveRequest](#etcdleaverequest) | [EtcdLeaveResponse](#etcdleaveresponse) |
-| [RenewNodeCertificate](#renewnodecertificate) | [RenewNodeCertificateRequest](#renewnodecertificaterequest) | [RenewNodeCertificateResponse](#renewnodecertificateresponse) |
-| [RotationStep](#rotationstep) | [RotationStepRequest](#rotationsteprequest) | [RotationStepResponse](#rotationstepresponse) |
-| [Upgrade](#upgrade) | [stream UpgradeRequest](#upgraderequest) | [UpgradeResponse](#upgraderesponse) |
-| [DrainNode](#drainnode) | [DrainNodeRequest](#drainnoderequest) | [DrainNodeResponse](#drainnoderesponse) |
-| [UncordonNode](#uncordonnode) | [UncordonNodeRequest](#uncordonnoderequest) | [UncordonNodeResponse](#uncordonnoderesponse) |
+| [Info](#method-info) | [InfoRequest](#message-inforequest) | [InfoResponse](#message-inforesponse) |
+| [Disks](#method-disks) | [DisksRequest](#message-disksrequest) | [DisksResponse](#message-disksresponse) |
+| [Install](#method-install) | [stream InstallRequest](#message-installrequest) | [InstallResponse](#message-installresponse) |
+| [ApplyIdentity](#method-applyidentity) | [ApplyIdentityRequest](#message-applyidentityrequest) | [ApplyIdentityResponse](#message-applyidentityresponse) |
+| [ResetVolume](#method-resetvolume) | [ResetVolumeRequest](#message-resetvolumerequest) | [ResetVolumeResponse](#message-resetvolumeresponse) |
+| [Status](#method-status) | [StatusRequest](#message-statusrequest) | [StatusResponse](#message-statusresponse) |
+| [Logs](#method-logs) | [LogsRequest](#message-logsrequest) | [stream LogsResponse](#message-logsresponse) |
+| [Reboot](#method-reboot) | [RebootRequest](#message-rebootrequest) | [RebootResponse](#message-rebootresponse) |
+| [Bootstrap](#method-bootstrap) | [BootstrapRequest](#message-bootstraprequest) | [BootstrapResponse](#message-bootstrapresponse) |
+| [EtcdMembers](#method-etcdmembers) | [EtcdMembersRequest](#message-etcdmembersrequest) | [EtcdMembersResponse](#message-etcdmembersresponse) |
+| [EtcdRemoveMember](#method-etcdremovemember) | [EtcdRemoveMemberRequest](#message-etcdremovememberrequest) | [EtcdRemoveMemberResponse](#message-etcdremovememberresponse) |
+| [EtcdLeave](#method-etcdleave) | [EtcdLeaveRequest](#message-etcdleaverequest) | [EtcdLeaveResponse](#message-etcdleaveresponse) |
+| [RenewNodeCertificate](#method-renewnodecertificate) | [RenewNodeCertificateRequest](#message-renewnodecertificaterequest) | [RenewNodeCertificateResponse](#message-renewnodecertificateresponse) |
+| [RotationStep](#method-rotationstep) | [RotationStepRequest](#message-rotationsteprequest) | [RotationStepResponse](#message-rotationstepresponse) |
+| [Upgrade](#method-upgrade) | [stream UpgradeRequest](#message-upgraderequest) | [UpgradeResponse](#message-upgraderesponse) |
+| [DrainNode](#method-drainnode) | [DrainNodeRequest](#message-drainnoderequest) | [DrainNodeResponse](#message-drainnoderesponse) |
+| [UncordonNode](#method-uncordonnode) | [UncordonNodeRequest](#message-uncordonnoderequest) | [UncordonNodeResponse](#message-uncordonnoderesponse) |
 
-### Info
+### Info { #method-info }
 
 Info describes the node and the agent. Available in both modes to readers.
 
-### Disks
+### Disks { #method-disks }
 
 Disks lists the node's disks and their partitions. Available in both modes to readers.
 
-### Install
+### Install { #method-install }
 
 Install turns a node in maintenance mode into an installed node and reboots it. The first
 message carries the header; when the node is the installer, the image's store data, hash
 tree, UKI and boot loader follow as chunks. An install the installer did not finish
 continues when run again.
 
-### ApplyIdentity
+### ApplyIdentity { #method-applyidentity }
 
 ApplyIdentity replaces the identity of an installed node. Destructive storage changes are
 refused; additive ones are applied live.
 
-### ResetVolume
+### ResetVolume { #method-resetvolume }
 
 ResetVolume wipes one volume and creates it again as the delivered identity defines it.
 
-### Status
+### Status { #method-status }
 
 Status reports the identity version, the storage, and failed units of an installed node.
 
-### Logs
+### Logs { #method-logs }
 
 Logs streams the journal of the current boot, or of one unit in it.
 
-### Reboot
+### Reboot { #method-reboot }
 
 Reboot reboots the node once the response is sent.
 
-### Bootstrap
+### Bootstrap { #method-bootstrap }
 
 Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
 so no second cluster is ever initialised.
 
-### EtcdMembers
+### EtcdMembers { #method-etcdmembers }
 
 EtcdMembers lists etcd's members as the node's own member sees them, with their health.
 Available on control-plane nodes that are etcd members.
 
-### EtcdRemoveMember
+### EtcdRemoveMember { #method-etcdremovemember }
 
 EtcdRemoveMember removes another node's etcd member. It is refused when the voters left would
 have fewer healthy members than their quorum, unless forced.
 
-### EtcdLeave
+### EtcdLeave { #method-etcdleave }
 
 EtcdLeave takes the node out of etcd: it releases the VIPs, removes its own member, if etcd
 still has it, with the same quorum guard, stops its control plane, deletes its etcd data and
 unpins its addresses. The node joins the cluster again only once it is reinstalled. A
 bootstrapped node whose own member does not answer leaves only when forced.
 
-### RenewNodeCertificate
+### RenewNodeCertificate { #method-renewnodecertificate }
 
 RenewNodeCertificate issues the calling node a node certificate from the node CA, for exactly
 the names of the node certificate it authenticated with. Available on control-plane nodes, to
 nodes only.
 
-### RotationStep
+### RotationStep { #method-rotationstep }
 
 RotationStep runs a step of a CA or key rotation that the node's Kubernetes side carries
 out; chalkctl rotate calls it. Available to admins.
 
-### Upgrade
+### Upgrade { #method-upgrade }
 
 Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 the image's boot tries until a boot is found healthy, and reboots the node when asked to.
@@ -115,7 +118,7 @@ not that it is one to trust: without Secure Boot, an operator can run any image 
 with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what
 limits upgrades to images signed for db.
 
-### DrainNode
+### DrainNode { #method-drainnode }
 
 DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
 eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
@@ -129,14 +132,14 @@ one a PodDisruptionBudget holds back until the timeout, fails the call with
 FAILED_PRECONDITION; pods that did not stop in time, or whose evictions the API server kept
 failing, with DEADLINE_EXCEEDED.
 
-### UncordonNode
+### UncordonNode { #method-uncordonnode }
 
 UncordonNode makes a node DrainNode cordoned schedulable again and removes the mark; it leaves
 a node cordoned otherwise as it is.
 
 ## Messages
 
-### ApplyIdentityRequest
+### ApplyIdentityRequest { #message-applyidentityrequest }
 
 
 
@@ -149,7 +152,7 @@ a node cordoned otherwise as it is.
 | `node_key` | `bytes` |  |
 | `trust` | `bytes` | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
 
-### ApplyIdentityResponse
+### ApplyIdentityResponse { #message-applyidentityresponse }
 
 
 
@@ -158,7 +161,7 @@ a node cordoned otherwise as it is.
 | `changes` | repeated `StorageChange` | Storage changes that were applied. |
 | `restarted_units` | repeated `string` | Units restarted because identity keys they read changed. |
 
-### BootStatus
+### BootStatus { #message-bootstatus }
 
 
 
@@ -173,11 +176,11 @@ a node cordoned otherwise as it is.
 | `error` | `string` | Why the boot could not be read; empty when it was. |
 | `root_hash` | `bytes` | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which tells builds of one version apart; empty when it could not be read. |
 
-### BootstrapRequest
+### BootstrapRequest { #message-bootstraprequest }
 
 
 
-### BootstrapResponse
+### BootstrapResponse { #message-bootstrapresponse }
 
 
 
@@ -185,7 +188,7 @@ a node cordoned otherwise as it is.
 | ----- | ---- | ----------- |
 | `applied` | `uint32` | Objects applied from the cluster's manifests. |
 
-### CertificateStatus
+### CertificateStatus { #message-certificatestatus }
 
 
 
@@ -197,7 +200,7 @@ a node cordoned otherwise as it is.
 | `fingerprint` | `string` | The SHA-256 fingerprint of the certificate, and of the certificate that issued it when the node holds that one, in lower-case hex. |
 | `issuer` | `string` |  |
 
-### Disk
+### Disk { #message-disk }
 
 
 
@@ -214,7 +217,7 @@ a node cordoned otherwise as it is.
 | `partitions` | repeated `Partition` |  |
 | `usage` | `string` | How chalkos uses the disk: "boot" for the boot disk, "disk <name>" for a pinned disk of the node's storage, empty when chalkos does not use it. |
 
-### DiskReference
+### DiskReference { #message-diskreference }
 
 A disk by /dev path, or by a selector whose set fields must all match.
 
@@ -227,7 +230,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | `size` | `string` |  |
 | `type` | `string` |  |
 
-### DiskStatus
+### DiskStatus { #message-diskstatus }
 
 
 
@@ -237,11 +240,11 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | `device` | `string` |  |
 | `error` | `string` | Why the disk's volumes could not be created or opened at boot; empty when they were. |
 
-### DisksRequest
+### DisksRequest { #message-disksrequest }
 
 
 
-### DisksResponse
+### DisksResponse { #message-disksresponse }
 
 
 
@@ -249,7 +252,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | ----- | ---- | ----------- |
 | `disks` | repeated `Disk` |  |
 
-### DrainNodeRequest
+### DrainNodeRequest { #message-drainnoderequest }
 
 
 
@@ -259,7 +262,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | `timeout_seconds` | `uint32` | How long to wait for the pods to be evicted and gone, in seconds; zero waits five minutes. |
 | `delete_emptydir_data` | `bool` | Evict pods with emptyDir volumes too, whose data is lost. |
 
-### DrainNodeResponse
+### DrainNodeResponse { #message-drainnoderesponse }
 
 
 
@@ -270,7 +273,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | `kept` | repeated `string` |  |
 | `unmanaged` | repeated `string` |  |
 
-### EncryptedObjects
+### EncryptedObjects { #message-encryptedobjects }
 
 
 
@@ -280,7 +283,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | `key` | `string` | The name of the key the objects are encrypted with; empty for objects stored unencrypted. |
 | `objects` | `uint64` |  |
 
-### EtcdLeaveRequest
+### EtcdLeaveRequest { #message-etcdleaverequest }
 
 
 
@@ -288,11 +291,11 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | ----- | ---- | ----------- |
 | `force` | `bool` | Leave through the other members also when the node's own etcd member does not answer, as on a node that lost its pinned address. |
 
-### EtcdLeaveResponse
+### EtcdLeaveResponse { #message-etcdleaveresponse }
 
 
 
-### EtcdMember
+### EtcdMember { #message-etcdmember }
 
 
 
@@ -304,11 +307,11 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | `learner` | `bool` |  |
 | `unhealthy` | `string` | Why the member did not answer; empty when it is healthy. |
 
-### EtcdMembersRequest
+### EtcdMembersRequest { #message-etcdmembersrequest }
 
 
 
-### EtcdMembersResponse
+### EtcdMembersResponse { #message-etcdmembersresponse }
 
 
 
@@ -316,7 +319,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | ----- | ---- | ----------- |
 | `members` | repeated `EtcdMember` |  |
 
-### EtcdRemoveMemberRequest
+### EtcdRemoveMemberRequest { #message-etcdremovememberrequest }
 
 
 
@@ -325,7 +328,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | `member` | `string` | The member's name or its ID in hex. |
 | `force` | `bool` | Remove the member even when the voters left would have no healthy quorum. |
 
-### EtcdRemoveMemberResponse
+### EtcdRemoveMemberResponse { #message-etcdremovememberresponse }
 
 
 
@@ -333,7 +336,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | ----- | ---- | ----------- |
 | `removed` | `EtcdMember` |  |
 
-### ImageChunk
+### ImageChunk { #message-imagechunk }
 
 
 
@@ -341,7 +344,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 | ----- | ---- | ----------- |
 | `data` | `bytes` |  |
 
-### ImageHeader
+### ImageHeader { #message-imageheader }
 
 An image as install and upgrade send it. Its parts follow the header as chunks, in this order:
 the store data, the hash tree, the UKI and, when the header names one, the boot loader.
@@ -360,7 +363,7 @@ the store data, the hash tree, the UKI and, when the header names one, the boot 
 | `architecture` | `string` | The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A node refuses an image of another architecture than its own. |
 | `platform` | `string` | The platform the image is built for, as its os-release names it, such as metal or kvm. A node refuses an image of another platform than its own, or than its identity names. |
 
-### ImagePart
+### ImagePart { #message-imagepart }
 
 The size and SHA-256 of a part of an image.
 
@@ -369,15 +372,15 @@ The size and SHA-256 of a part of an image.
 | `size` | `uint64` |  |
 | `sha256` | `bytes` |  |
 
-### InPlace
+### InPlace { #message-inplace }
 
 
 
-### InfoRequest
+### InfoRequest { #message-inforequest }
 
 
 
-### InfoResponse
+### InfoResponse { #message-inforesponse }
 
 
 
@@ -396,7 +399,7 @@ The size and SHA-256 of a part of an image.
 | `role` | `string` |  |
 | `platform` | `string` | The platform the running image was built for, such as metal or kvm; empty on the installer, which installs images of every platform. |
 
-### InstallHeader
+### InstallHeader { #message-installheader }
 
 
 
@@ -414,7 +417,7 @@ The size and SHA-256 of a part of an image.
 | `system_definitions` | repeated `InstallHeader.SystemDefinitionsEntry` | The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each role chooses its partition sizes, so the installer's own may not fit. |
 | `kubernetes_share` | `bytes` | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for a role without Kubernetes. |
 
-### InstallHeader.SystemDefinitionsEntry
+### InstallHeader.SystemDefinitionsEntry { #message-installheadersystemdefinitionsentry }
 
 
 
@@ -423,7 +426,7 @@ The size and SHA-256 of a part of an image.
 | `key` | `string` |  |
 | `value` | `string` |  |
 
-### InstallRequest
+### InstallRequest { #message-installrequest }
 
 
 
@@ -432,11 +435,11 @@ The size and SHA-256 of a part of an image.
 | `header` | `InstallHeader` |  |
 | `chunk` | `ImageChunk` |  |
 
-### InstallResponse
+### InstallResponse { #message-installresponse }
 
 
 
-### KubernetesStatus
+### KubernetesStatus { #message-kubernetesstatus }
 
 
 
@@ -448,7 +451,7 @@ The size and SHA-256 of a part of an image.
 | `vip` | `string` | On a bootstrapped control-plane node of a cluster with VIPs: "holder" while the node holds them, "standby" otherwise. Empty on other nodes. |
 | `control_plane` | `string` | On a bootstrapped control-plane node: "current" once its API server and etcd serve the certificates the node holds now and the API server answers ready, otherwise what is not so, such as "the API server serves certificates the node replaced". Empty on other nodes. |
 
-### LogsRequest
+### LogsRequest { #message-logsrequest }
 
 
 
@@ -457,7 +460,7 @@ The size and SHA-256 of a part of an image.
 | `unit` | `string` | Unit whose journal to stream; empty streams the whole boot. |
 | `follow` | `bool` | Keep streaming new entries until the client cancels. |
 
-### LogsResponse
+### LogsResponse { #message-logsresponse }
 
 
 
@@ -465,7 +468,7 @@ The size and SHA-256 of a part of an image.
 | ----- | ---- | ----------- |
 | `line` | `string` |  |
 
-### Partition
+### Partition { #message-partition }
 
 
 
@@ -479,15 +482,15 @@ The size and SHA-256 of a part of an image.
 | `uuid` | `string` |  |
 | `content` | `string` | File system or other content blkid found, such as ext4 or crypto_LUKS. |
 
-### RebootRequest
+### RebootRequest { #message-rebootrequest }
 
 
 
-### RebootResponse
+### RebootResponse { #message-rebootresponse }
 
 
 
-### RenewNodeCertificateRequest
+### RenewNodeCertificateRequest { #message-renewnodecertificaterequest }
 
 
 
@@ -495,7 +498,7 @@ The size and SHA-256 of a part of an image.
 | ----- | ---- | ----------- |
 | `certificate_request` | `bytes` | PKCS #10 certificate request (DER) signed with the node's new key, which never leaves the node. Only its key is used; the names come from the caller's certificate. |
 
-### RenewNodeCertificateResponse
+### RenewNodeCertificateResponse { #message-renewnodecertificateresponse }
 
 
 
@@ -503,7 +506,7 @@ The size and SHA-256 of a part of an image.
 | ----- | ---- | ----------- |
 | `certificate_chain` | `bytes` | The new node certificate followed by the certificate of the node CA that issued it (PEM). |
 
-### ResetVolumeRequest
+### ResetVolumeRequest { #message-resetvolumerequest }
 
 
 
@@ -513,11 +516,11 @@ The size and SHA-256 of a part of an image.
 | `identity` | `string` | The node's identity as the manifest renders it (JSON); the volume is created as it defines. |
 | `fallback_secret` | `string` |  |
 
-### ResetVolumeResponse
+### ResetVolumeResponse { #message-resetvolumeresponse }
 
 
 
-### RotationStepRequest
+### RotationStepRequest { #message-rotationsteprequest }
 
 
 
@@ -525,7 +528,7 @@ The size and SHA-256 of a part of an image.
 | ----- | ---- | ----------- |
 | `step` | `RotationStep` |  |
 
-### RotationStepResponse
+### RotationStepResponse { #message-rotationstepresponse }
 
 
 
@@ -537,11 +540,11 @@ The size and SHA-256 of a part of an image.
 | `encrypted` | repeated `EncryptedObjects` | The objects etcd holds by resource and key. |
 | `not_waited` | repeated `string` | The workloads restarted but not waited for, as namespace/kind/name: their rollout does not complete by itself (an OnDelete update strategy, a StatefulSet's partition, a paused Deployment). |
 
-### StatusRequest
+### StatusRequest { #message-statusrequest }
 
 
 
-### StatusResponse
+### StatusResponse { #message-statusresponse }
 
 
 
@@ -558,7 +561,7 @@ The size and SHA-256 of a part of an image.
 | `boot` | `BootStatus` | The image the node booted, and what upgrades installed beside it. |
 | `platform` | `string` | The platform the running image was built for. |
 
-### StorageChange
+### StorageChange { #message-storagechange }
 
 
 
@@ -568,7 +571,7 @@ The size and SHA-256 of a part of an image.
 | `reason` | `string` |  |
 | `destructive` | `bool` |  |
 
-### TimeStatus
+### TimeStatus { #message-timestatus }
 
 
 
@@ -579,7 +582,7 @@ The size and SHA-256 of a part of an image.
 | `offset_seconds` | `double` | How far the clock is from the server's time, in seconds; positive when it is ahead. |
 | `error` | `string` | Why chrony's state could not be read; empty when it was. |
 
-### TrustStatus
+### TrustStatus { #message-truststatus }
 
 
 
@@ -589,7 +592,7 @@ The size and SHA-256 of a part of an image.
 | `fingerprints` | repeated `string` | The SHA-256 fingerprints of what is trusted, in lower-case hex: of certificates and of public keys in DER, and of encryption keys hashed apart from both. The one that issues or signs comes first. |
 | `issuing` | `string` | The fingerprint of the value the node issues, signs or encrypts with; empty where it does none of these. |
 
-### UncordonNodeRequest
+### UncordonNodeRequest { #message-uncordonnoderequest }
 
 
 
@@ -597,7 +600,7 @@ The size and SHA-256 of a part of an image.
 | ----- | ---- | ----------- |
 | `node` | `string` | The node's name in Kubernetes. |
 
-### UncordonNodeResponse
+### UncordonNodeResponse { #message-uncordonnoderesponse }
 
 
 
@@ -605,7 +608,7 @@ The size and SHA-256 of a part of an image.
 | ----- | ---- | ----------- |
 | `uncordoned` | `bool` | Whether the node was cordoned for an upgrade and is schedulable again. |
 
-### UpgradeHeader
+### UpgradeHeader { #message-upgradeheader }
 
 
 
@@ -614,7 +617,7 @@ The size and SHA-256 of a part of an image.
 | `image` | `ImageHeader` | The image to install. The node refuses another ID, cluster or role than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
 
-### UpgradeRequest
+### UpgradeRequest { #message-upgraderequest }
 
 
 
@@ -623,7 +626,7 @@ The size and SHA-256 of a part of an image.
 | `header` | `UpgradeHeader` |  |
 | `chunk` | `ImageChunk` |  |
 
-### UpgradeResponse
+### UpgradeResponse { #message-upgraderesponse }
 
 
 
@@ -633,7 +636,7 @@ The size and SHA-256 of a part of an image.
 | `entry` | `string` | The file name of the UKI that boots the image next, with its tries. |
 | `rebooting` | `bool` | The node reboots into the image. |
 
-### VolumeStatus
+### VolumeStatus { #message-volumestatus }
 
 
 
@@ -647,7 +650,7 @@ The size and SHA-256 of a part of an image.
 
 ## Enums
 
-### Mode
+### Mode { #enum-mode }
 
 
 
@@ -657,7 +660,7 @@ The size and SHA-256 of a part of an image.
 | `MODE_MAINTENANCE` | 1 | The node is not installed: chalkd serves a self-signed certificate. |
 | `MODE_NORMAL` | 2 | The node is installed: chalkd serves its node certificate and requires client certificates. |
 
-### RotationStep
+### RotationStep { #enum-rotationstep }
 
 
 
@@ -670,7 +673,7 @@ The size and SHA-256 of a part of an image.
 | `ROTATION_STEP_COUNT_ENCRYPTED` | 4 | On a bootstrapped control-plane node: count the objects etcd holds under each key. |
 | `ROTATION_STEP_RENEW_KUBELET_SERVING` | 5 | On a node with Kubernetes: remove the kubelet's serving certificate and restart the kubelet, which requests a new one. |
 
-### SecureBoot
+### SecureBoot { #enum-secureboot }
 
 
 

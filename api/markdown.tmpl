@@ -17,15 +17,15 @@ The definition is `api/{{.Name}}`, package `{{.Package}}`.
 
 | Method | Request | Response |
 | ------ | ------- | -------- |
-{{range .Methods}}| [{{.Name}}](#{{.Name | lower}}) | [{{if .RequestStreaming}}stream {{end}}{{.RequestLongType}}](#{{.RequestLongType | lower | replace "." ""}}) | [{{if .ResponseStreaming}}stream {{end}}{{.ResponseLongType}}](#{{.ResponseLongType | lower | replace "." ""}}) |
+{{range .Methods}}| [{{.Name}}](#method-{{.Name | lower}}) | [{{if .RequestStreaming}}stream {{end}}{{.RequestLongType}}](#message-{{.RequestLongType | lower | replace "." ""}}) | [{{if .ResponseStreaming}}stream {{end}}{{.ResponseLongType}}](#message-{{.ResponseLongType | lower | replace "." ""}}) |
 {{end}}{{range .Methods}}
-### {{.Name}}
+### {{.Name}} { #method-{{.Name | lower}} }
 
 {{.Description}}
 {{end}}{{end}}
 ## Messages
 {{range .Messages}}
-### {{.LongName}}
+### {{.LongName}} { #message-{{.LongName | lower | replace "." ""}} }
 
 {{.Description}}
 {{if .HasFields}}
@@ -35,7 +35,7 @@ The definition is `api/{{.Name}}`, package `{{.Package}}`.
 {{end}}{{end}}{{end}}
 ## Enums
 {{range .Enums}}
-### {{.LongName}}
+### {{.LongName}} { #enum-{{.LongName | lower | replace "." ""}} }
 
 {{.Description}}
 

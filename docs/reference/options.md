@@ -917,7 +917,7 @@ string
 ```
 
 *Declared by:*
- - [modules/cluster/features/cni](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni)
+ - [modules/cluster/features/cni/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni/default.nix)
 
 
 
@@ -956,7 +956,7 @@ null
 ```
 
 *Declared by:*
- - [modules/cluster/features/cni](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni)
+ - [modules/cluster/features/cni/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni/default.nix)
 
 
 
@@ -993,7 +993,7 @@ list of string
 ```
 
 *Declared by:*
- - [modules/cluster/features/cni](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni)
+ - [modules/cluster/features/cni/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni/default.nix)
 
 
 
@@ -1019,7 +1019,7 @@ one of “flannel”, “none”
 ```
 
 *Declared by:*
- - [modules/cluster/features/cni](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni)
+ - [modules/cluster/features/cni/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/features/cni/default.nix)
 
 
 
@@ -2769,7 +2769,7 @@ attribute set of (submodule)
 ```
 
 *Declared by:*
- - [modules/node/runtime](https://github.com/trevex/chalkos/blob/main/modules/node/runtime)
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
 
 
 
@@ -2803,7 +2803,7 @@ list of string
 ```
 
 *Declared by:*
- - [modules/node/runtime](https://github.com/trevex/chalkos/blob/main/modules/node/runtime)
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
 
 
 
@@ -2827,7 +2827,7 @@ true
 ```
 
 *Declared by:*
- - [modules/node/runtime](https://github.com/trevex/chalkos/blob/main/modules/node/runtime)
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
 
 
 
@@ -2851,7 +2851,7 @@ string *(read only)*
 ```
 
 *Declared by:*
- - [modules/node/runtime](https://github.com/trevex/chalkos/blob/main/modules/node/runtime)
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
 
 
 

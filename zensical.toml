@@ -7,7 +7,6 @@ site_description = "An image-based NixOS for Kubernetes nodes, with Secure Boot,
 site_url = "https://trevex.github.io/chalkos/"
 repo_url = "https://github.com/trevex/chalkos"
 repo_name = "trevex/chalkos"
-edit_uri = "edit/main/docs/"
 docs_dir = "docs"
 site_dir = "site"
 extra_css = ["stylesheets/chalkos.css"]
