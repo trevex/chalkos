@@ -20,7 +20,9 @@ func DenyIOURing() error {
 		return errors.New("a lab runs on x86-64 alone")
 	}
 	filter := []unix.SockFilter{
-		// Other architectures' system calls, as of x32, keep their numbers.
+		// x86-64's io_uring_setup alone is denied. 32-bit compat calls report another architecture,
+		// whose numbers differ, and pass unfiltered; x32 calls report x86-64 with the x32 bit set in
+		// their number, so they pass too. QEMU, a 64-bit program, makes neither.
 		{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: 4},
 		{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, Jt: 0, Jf: 3, K: unix.AUDIT_ARCH_X86_64},
 		{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: 0},
@@ -29,6 +31,9 @@ func DenyIOURing() error {
 		{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ALLOW},
 	}
 	prog := unix.SockFprog{Len: uint16(len(filter)), Filter: &filter[0]}
+	// no_new_privs is a thread's, and seccomp needs it on the thread that installs the filter.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
 		return fmt.Errorf("set no_new_privs: %w", err)
 	}
