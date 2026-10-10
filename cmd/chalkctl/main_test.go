@@ -559,7 +559,7 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "(the cluster definition's)") || !strings.Contains(ta.stdout.String(), "platform metal (the cluster definition's)") {
+	if !strings.Contains(ta.stdout.String(), "platform metal (the cluster definition's)") {
 		t.Errorf("status after = %q", ta.stdout)
 	}
 }

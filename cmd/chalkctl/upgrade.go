@@ -242,8 +242,9 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 // find picks the nodes to upgrade, those named or else every node of the cluster, with an image
 // every node of its role, and groups them by the role and platform they run. Every node is asked
 // what it runs before any is sent anything: one that runs another role or platform than the
-// cluster definition declares stops the run. With an image, a node of its role on another platform
-// is skipped and named; a named one stops the run. A client file without a cluster definition
+// cluster definition declares stops the run, with an image too. With an image, a node of its role
+// that runs another platform is skipped and named with the platform it runs; a named one stops the
+// run. A client file without a cluster definition
 // knows no roles or platforms, so its nodes are asked alone.
 func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
 	m := r.cluster.manifest
@@ -272,16 +273,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if err != nil {
 			return err
 		}
-		if !r.cluster.partial && img != nil {
-			if node.Role != img.info.Role() {
-				return fmt.Errorf("%s is a node of the role %s; the image is of %s", name, node.Role, img.info.Role())
-			}
-			if node.Platform != img.info.Platform() {
-				if err := skip(name, node.Platform); err != nil {
-					return err
-				}
-				continue
-			}
+		if !r.cluster.partial && img != nil && node.Role != img.info.Role() {
+			return fmt.Errorf("%s is a node of the role %s; the image is of %s", name, node.Role, img.info.Role())
 		}
 		info, st, err := r.probe(ctx, name)
 		if err != nil {
@@ -292,7 +285,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			return fmt.Errorf("%s runs an image of the cluster %q, not %s", name, info.Cluster, m.Cluster.Name)
 		case !r.cluster.partial && info.Platform != node.Platform:
 			return fmt.Errorf("%s runs an image built for %s, but the cluster definition declares it on %s; changing a node's platform is a reinstall", name, info.Platform, node.Platform)
-		case !r.cluster.partial && img == nil && info.Role != node.Role:
+		case !r.cluster.partial && info.Role != node.Role:
 			return fmt.Errorf("%s runs an image of the role %q, but the cluster definition declares %s", name, info.Role, node.Role)
 		case img != nil && info.Role != img.info.Role() && len(named) > 0:
 			return fmt.Errorf("%s runs an image of the role %q; the image is of %s", name, info.Role, img.info.Role())

@@ -29,6 +29,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -875,5 +876,84 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 	}
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Errorf("asked %q", got)
+	}
+}
+
+// TestUpgradeWithAnImageChecksEveryNodeOfItsRole asks every node of the image's role what it runs
+// before any is sent anything, and stops at one that runs another platform or role than the
+// cluster definition declares, as without --image, also when it is declared on another platform
+// than the image's.
+func TestUpgradeWithAnImageChecksEveryNodeOfItsRole(t *testing.T) {
+	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	for _, tc := range []struct {
+		name   string
+		change func(l *upgradeLab)
+		want   string
+	}{
+		{"a node declared on kvm that runs metal", func(l *upgradeLab) {
+			l.onPlatform(t, "w3", "kvm")
+			l.nodes["w3"].platform = "metal"
+		}, "w3 runs an image built for metal, but the cluster definition declares it on kvm"},
+		{"a node declared on kvm that runs another role", func(l *upgradeLab) {
+			l.onPlatform(t, "w3", "kvm")
+			l.nodes["w3"].role = "plain"
+		}, `w3 runs an image of the role "plain", but the cluster definition declares w`},
+		{"a node on metal that runs another role", func(l *upgradeLab) {
+			l.nodes["w2"].role = "plain"
+		}, `w2 runs an image of the role "plain", but the cluster definition declares w`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newUpgradeLab(t, 3)
+			tc.change(l)
+			if err := l.upgrade(img); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("upgrade = %v, want %q", err, tc.want)
+			}
+			if got := l.takeEvents(); len(got) != 0 {
+				t.Errorf("asked %q", got)
+			}
+		})
+	}
+}
+
+// TestUpgradeWithAClientFileAlone installs an image on the nodes a client file names that run its
+// role and platform, after asking each what it runs, and names those of its role on another
+// platform; without --image it is refused, as there is nothing to build images from. A run
+// without --image from the cluster definition upgrades the node skipped, and does not send the
+// others their image again.
+func TestUpgradeWithAClientFileAlone(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	l.onPlatform(t, "w3", "kvm")
+	c, err := client.NewConfig(l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), "lab", "ops", pki.RoleAdmin, time.Hour, l.addrs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := c.Encode()
+	config := filepath.Join(t.TempDir(), "ops.json")
+	writeFile(t, config, string(data))
+	// No flake.nix and no --manifest: the client file names the nodes.
+	noFlake := t.TempDir()
+	if err := l.ta.run(context.Background(), []string{"upgrade", "--config", config, "--flake", noFlake}); err == nil || !strings.Contains(err.Error(), "pass --image") {
+		t.Errorf("upgrade with a client file alone, without --image = %v", err)
+	}
+	if err := l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "lab", "w", "0.2.0"), "--config", config, "--flake", noFlake}); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if v := l.versions(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.1.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
+		t.Errorf("the nodes run %v", v)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "skipping w3 (kvm): the image is built for metal") {
+		t.Errorf("output:\n%s", out)
+	}
+	l.takeEvents()
+
+	images := map[string]string{`roles."w".images."metal"`: testUpgradeImage(t, "lab", "w", "0.2.0"), `roles."w".images."kvm"`: testUpgradeImageOfBlocks(t, "lab", "w", "kvm", "0.2.0", 512)}
+	if _, err := l.upgradeBuilding(images, "--nodes", "w1,w2,w3"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if v := l.versions()["w3"]; v != "0.2.0" {
+		t.Errorf("w3 runs %s", v)
+	}
+	if events := l.takeEvents(); slices.Contains(events, "w1 upgrade") || slices.Contains(events, "w2 upgrade") || !slices.Contains(events, "w3 upgrade") {
+		t.Errorf("events %q, want w3 alone sent its image", events)
 	}
 }
