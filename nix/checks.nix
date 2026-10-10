@@ -530,11 +530,10 @@ in
       testing = import ./testing/cluster.nix { inherit self pkgs; };
       ceilings = import ./testing/image-sizes.nix;
       measure =
-        name:
+        name: ceiling:
         let
           inherit (testing.cluster.roles.${name}.nixos) config;
           image = config.system.build.image;
-          ceiling = ceilings.${name};
         in
         lib.escapeShellArgs [
           name
@@ -586,9 +585,29 @@ in
             failed=1
           fi
         }
-        check ${measure "k8s-controlplane"}
-        check ${measure "k8s-worker"}
-        check ${measure "test"}
+        check ${measure "k8s-controlplane" ceilings.k8s-controlplane}
+        check ${measure "k8s-worker" ceilings.k8s-worker}
+        check ${measure "test" ceilings.test}
+
+        # An image over a ceiling fails the check and lists the largest paths of its closure.
+        if (
+          failed=0
+          check ${
+            measure "test" {
+              storeData = 1;
+              hashTree = 1;
+              uki = 1;
+            }
+          }
+          exit "$failed"
+        ) >/dev/null 2>errors; then
+          echo "error: the test image passed ceilings of 1 MiB" >&2
+          failed=1
+        fi
+        grep -q "the largest paths of its closure" errors && grep -q "MiB /nix/store/" errors || {
+          cat errors >&2
+          failed=1
+        }
 
         # The fit check every image build runs refuses a store, a hash tree or UKIs that leave no
         # room.
@@ -612,6 +631,23 @@ in
         if [[ $failed != 0 ]]; then exit 1; fi
         touch $out
       '';
+
+  # A role's bootspec, which nixos-init reads in the initrd to find /etc, names no initrd and, as
+  # its kernel, the UKI on the ESP: the store holds neither the kernel nor the initrd.
+  bootspec =
+    let
+      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos;
+      bootJSON = "${worker.config.system.build.toplevel}/boot.json";
+    in
+    pkgs.runCommand "chalkos-bootspec" { nativeBuildInputs = [ pkgs.jq ]; } ''
+      jq -e '."org.nixos.bootspec.v1" | (has("initrd") | not) and (.kernel | startswith("/efi/"))' \
+        ${bootJSON} >/dev/null || {
+        echo "error: the bootspec names an initrd or a kernel off the ESP:" >&2
+        cat ${bootJSON} >&2
+        exit 1
+      }
+      touch $out
+    '';
 
   # The generated API code is committed; it must match what buf generates from the proto files.
   api-generated =

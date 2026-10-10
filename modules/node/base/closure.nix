@@ -74,7 +74,9 @@
       rm $out/kernel $out/initrd
     '';
     # nixos-init reads the system's bootspec in the initrd, so it stays, without the initrd and
-    # with the UKI's path on the ESP as the kernel, which a bootspec must name.
+    # with the UKI's path on the ESP as the kernel, which a bootspec must name. Nothing boots from
+    # that path: only nixos-init's find-etc reads boot.json, for /etc, and the path goes stale once
+    # boot counting renames the UKI.
     boot.bootspec.writer = lib.mkForce ''
       ${options.boot.bootspec.writer.default}
       ${lib.getExe pkgs.buildPackages.jq} --sort-keys --arg kernel /efi${config.image.repart.verityStore.ukiPath} \
