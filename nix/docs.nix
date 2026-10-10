@@ -165,6 +165,14 @@ rec {
         cp proto/docs/reference/api.md $out/docs/reference/api.md
       '';
 
+  # The site builds strictly, and the chalkctl and chalklab commands its pages show exist.
+  check = pkgs.runCommand "chalkos-docs-check" { nativeBuildInputs = [ docgen ]; } ''
+    cd ${src}
+    docgen check docs
+    test -d ${site}
+    touch $out
+  '';
+
   # Fails when the generated pages in the repository differ from what the code generates.
   generated = pkgs.runCommand "chalkos-docs-generated" { } ''
     status=0

@@ -3,6 +3,7 @@ let
   inherit (pkgs) lib;
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   testEnv = import ./testing/env.nix { inherit pkgs self; };
+  docs = import ./docs.nix { inherit pkgs self; };
 
   # Tests skip when a tool or variable is missing, so a check must not pass on skipped or zero tests.
   runTests = command: ''
@@ -734,10 +735,10 @@ in
       touch $out
     '';
 
-  # The documentation site builds strictly.
-  docs = chalkPkgs.docs;
+  # The documentation site builds strictly and shows only commands that exist.
+  docs = docs.check;
   # The pages generated from the code are those in the repository.
-  docs-generated = (import ./docs.nix { inherit pkgs self; }).generated;
+  docs-generated = docs.generated;
 
   eval =
     let
