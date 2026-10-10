@@ -54,7 +54,7 @@ func (a *app) loadCluster(ctx context.Context, f clusterFlags) (*cluster, error)
 	}
 	name := f.cluster
 	if name == "" {
-		out, err := a.nix(ctx, "eval", "--json", f.flake+"#chalkos", "--apply", "builtins.attrNames")
+		out, err := a.nix(ctx, a.stderr, "eval", "--json", f.flake+"#chalkos", "--apply", "builtins.attrNames")
 		if err != nil {
 			return nil, err
 		}
@@ -76,7 +76,7 @@ func (a *app) loadCluster(ctx context.Context, f clusterFlags) (*cluster, error)
 		return nil, err
 	}
 	attr := "chalkos." + quoted
-	out, err := a.nix(ctx, "eval", "--json", f.flake+"#"+attr+".manifest")
+	out, err := a.nix(ctx, a.stderr, "eval", "--json", f.flake+"#"+attr+".manifest")
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (a *app) buildImage(ctx context.Context, c *cluster, role, platform string)
 		}
 		image = "roles." + quotedRole + ".images." + quotedPlatform
 	}
-	out, err := a.nix(ctx, "build", "--no-link", "--print-out-paths", c.flags.flake+"#"+c.attr+"."+image+"^out")
+	out, err := a.nix(ctx, a.stderr, "build", "--no-link", "--print-out-paths", c.flags.flake+"#"+c.attr+"."+image+"^out")
 	if err != nil {
 		return "", err
 	}

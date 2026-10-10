@@ -17,6 +17,10 @@ admin, operator or reader role. Commands that accept both take --config, else --
 the client file $CHALKOSCONFIG names, else a secrets file in the flake directory, else
 ~/.config/chalkos/config.
 
+Flags may go anywhere among a command's arguments, and -- ends them: every argument after it is
+read as a positional argument. A flag of a subcommand may come before the subcommand's name when
+it is written as --flag=value (chalkctl etcd --via=cp2 members).
+
 ## Examples
 
 ```

@@ -23,8 +23,8 @@ import (
 type app struct {
 	stdin          io.Reader
 	stdout, stderr io.Writer
-	// nix runs nix and returns its standard output.
-	nix func(ctx context.Context, args ...string) ([]byte, error)
+	// nix runs nix, writing its errors to stderr, and returns its standard output.
+	nix func(ctx context.Context, stderr io.Writer, args ...string) ([]byte, error)
 	// home is the user's home directory, where age and SSH keys are looked up.
 	home string
 	// readSecret asks for a secret on the terminal without echoing it.
@@ -60,6 +60,10 @@ func newCommand(a *app) *cobra.Command {
 	}
 	group(root)
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		// On the root or a group, the flag may as well be a misplaced subcommand's: a usage error.
+		if cmd.HasSubCommands() {
+			return fmt.Errorf("%w: %w", errUsage, err)
+		}
 		return fmt.Errorf("%w; %s --help lists its flags", err, cmd.CommandPath())
 	})
 
@@ -154,10 +158,11 @@ func exitStatus(err error) int {
 	return 1
 }
 
-// runNix runs nix with its errors on the terminal, where evaluation errors are most readable.
-func runNix(ctx context.Context, args ...string) ([]byte, error) {
+// runNix runs nix with its errors on the command's standard error, where evaluation errors are
+// most readable.
+func runNix(ctx context.Context, stderr io.Writer, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "nix", args...)
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = stderr
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("nix %s: %w", strings.Join(args, " "), err)

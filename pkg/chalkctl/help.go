@@ -9,7 +9,11 @@ each node over mutual TLS. Commands authenticate with the cluster's secrets file
 every CA key, or with a client file (chalkctl config new), which holds a certificate of the
 admin, operator or reader role. Commands that accept both take --config, else --secrets, else
 the client file $CHALKOSCONFIG names, else a secrets file in the flake directory, else
-~/.config/chalkos/config.`
+~/.config/chalkos/config.
+
+Flags may go anywhere among a command's arguments, and -- ends them: every argument after it is
+read as a positional argument. A flag of a subcommand may come before the subcommand's name when
+it is written as --flag=value (chalkctl etcd --via=cp2 members).`
 
 const rootExample = `  # Generate the cluster's secrets, install and bootstrap a control plane, write a kubeconfig.
   chalkctl gen secrets --recipient age1...
@@ -140,7 +144,8 @@ const upgradeExample = `  # Build each node's image from the flake and upgrade t
 
 const signLong = `Signs the boot loader and the UKIs on the EFI system partition of a raw disk image, in place,
 with a Secure Boot db key, so firmware that trusts its certificate boots the image.
---repart-json is the repart-output.json that describes the image's partitions.`
+--repart-json is the repart-output.json that describes the image's partitions. Ctrl-C stops the
+signing and can leave the image partly signed.`
 
 const signExample = `  chalkctl sign --image chalkos.raw --repart-json repart-output.json --key db.key --cert db.crt`
 

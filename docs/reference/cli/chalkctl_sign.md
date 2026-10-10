@@ -11,7 +11,8 @@ Sign the boot loader and UKIs of a disk image
 
 Signs the boot loader and the UKIs on the EFI system partition of a raw disk image, in place,
 with a Secure Boot db key, so firmware that trusts its certificate boots the image.
---repart-json is the repart-output.json that describes the image's partitions.
+--repart-json is the repart-output.json that describes the image's partitions. Ctrl-C stops the
+signing and can leave the image partly signed.
 
 ```
 chalkctl sign [flags]

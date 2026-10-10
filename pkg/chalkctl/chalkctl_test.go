@@ -107,8 +107,10 @@ func newTestAppAt(t *testing.T, now time.Time) *testApp {
 		stdin:  strings.NewReader(""),
 		stdout: ta.stdout,
 		stderr: ta.stderr,
-		nix:    func(context.Context, ...string) ([]byte, error) { return nil, errors.New("nix is not available") },
-		home:   dir,
+		nix: func(context.Context, io.Writer, ...string) ([]byte, error) {
+			return nil, errors.New("nix is not available")
+		},
+		home: dir,
 	}
 	ta.readSecret = func(_ context.Context, prompt string) ([]byte, error) {
 		ta.prompts = append(ta.prompts, prompt)
@@ -647,7 +649,7 @@ func TestLoadClusterEvaluatesFlake(t *testing.T) {
 	manifestJSON, _ := json.Marshal(ta.manifest)
 	imageDir := t.TempDir()
 	var calls []string
-	ta.nix = func(_ context.Context, args ...string) ([]byte, error) {
+	ta.nix = func(_ context.Context, _ io.Writer, args ...string) ([]byte, error) {
 		calls = append(calls, strings.Join(args, " "))
 		switch {
 		case strings.HasSuffix(args[2], "#chalkos"):
@@ -703,7 +705,7 @@ func TestBuildImageChecksOutputPath(t *testing.T) {
 		"a missing path": filepath.Join(ta.dir, "missing") + "\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			ta.nix = func(context.Context, ...string) ([]byte, error) { return []byte(out), nil }
+			ta.nix = func(context.Context, io.Writer, ...string) ([]byte, error) { return []byte(out), nil }
 			if dir, err := ta.buildImage(context.Background(), c, "test", "metal"); err == nil {
 				t.Errorf("image = %q, want an error", dir)
 			}
@@ -977,6 +979,50 @@ func TestExecuteUsageErrors(t *testing.T) {
 		if len(args) > 0 && args[len(args)-1] == "bogus" && !strings.Contains(ta.stderr.String(), `unknown command "bogus"`) {
 			t.Errorf("chalkctl %v does not name the unknown command:\n%s", args, ta.stderr.String())
 		}
+	}
+}
+
+// A flag error on the root or on a command with subcommands is a usage error, as an unknown
+// command is.
+func TestExecuteFlagUsageErrors(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		flag string
+	}{
+		{[]string{"--bogus"}, "--bogus"},
+		{[]string{"etcd", "--bogus"}, "--bogus"},
+		{[]string{"etcd", "--force", "leave", "n1"}, "--force"},
+	} {
+		args, flag := c.args, c.flag
+		ta := newTestApp(t)
+		if got := ta.execute(context.Background(), args...); got != 2 {
+			t.Errorf("chalkctl %v exits with %d, want 2", args, got)
+		}
+		if stderr := ta.stderr.String(); !strings.Contains(stderr, "unknown flag: "+flag) || !strings.Contains(stderr, "Usage:") {
+			t.Errorf("chalkctl %v does not name %s and print the usage:\n%s", args, flag, stderr)
+		}
+	}
+}
+
+// A program running chalkctl's tree gets nix's errors on the command's standard error.
+func TestNixErrorsGoToTheCommand(t *testing.T) {
+	bin := t.TempDir()
+	writeFile(t, filepath.Join(bin, "nix"), "#!/bin/sh\necho 'error: the flake is broken' >&2\nexit 1\n")
+	if err := os.Chmod(filepath.Join(bin, "nix"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ta := newTestApp(t)
+	root := NewCommand()
+	var stderr bytes.Buffer
+	root.SetArgs([]string{"status", "n1", "--flake", ta.dir})
+	root.SetOut(io.Discard)
+	root.SetErr(&stderr)
+	if err := root.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("status succeeded with a failing nix")
+	}
+	if !strings.Contains(stderr.String(), "error: the flake is broken") {
+		t.Errorf("the command's stderr = %q, want nix's error", stderr.String())
 	}
 }
 

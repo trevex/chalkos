@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"math/big"
 	"net/http"
@@ -772,7 +773,7 @@ func (l *upgradeLab) onPlatform(t *testing.T, name, platform string) {
 // whose image attributes build the directories given; it returns the attributes built.
 func (l *upgradeLab) upgradeBuilding(images map[string]string, args ...string) ([]string, error) {
 	var built []string
-	l.ta.nix = func(_ context.Context, a ...string) ([]byte, error) {
+	l.ta.nix = func(_ context.Context, _ io.Writer, a ...string) ([]byte, error) {
 		const cluster = `#chalkos."lab".`
 		switch {
 		case a[0] == "eval" && strings.HasSuffix(a[2], "#chalkos"):
