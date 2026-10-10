@@ -25,6 +25,25 @@ let
     };
   # A store partition of the image; null sizes it to its contents.
   storePartition = size: { Minimize = if size == null then "best" else "off"; } // fixed size;
+  # A size as chalkos.disk takes it, in bytes: a number, with a fraction or not, and a unit of
+  # powers of 1024 or none; null for anything else.
+  bytes =
+    size:
+    let
+      m = builtins.match "([0-9]+(\\.[0-9]+)?) *([BKMGT]?)" size;
+      units = {
+        "" = 1;
+        B = 1;
+        K = 1024;
+        M = 1024 * 1024;
+        G = 1024 * 1024 * 1024;
+        T = 1024 * 1024 * 1024 * 1024;
+      };
+    in
+    if m == null then null else builtins.fromJSON (builtins.elemAt m 0) * units.${builtins.elemAt m 2};
+  # systemd-repart formats a vfat ESP with no less than 260 MiB, whatever its definition says, so
+  # a smaller one would not match the definitions an installed disk is compared with.
+  espBytes = bytes cfg.espSize;
   arch =
     {
       x86_64 = "x86-64";
@@ -69,7 +88,7 @@ in
         espSize = lib.mkOption {
           type = lib.types.str;
           default = "1G";
-          description = "Size of the EFI system partition, which holds the UKIs of both slots.";
+          description = "Size of the EFI system partition, which holds the UKIs of both slots; at least 260M, the smallest systemd-repart formats as vfat.";
         };
         storeSize = lib.mkOption {
           type = lib.types.nullOr lib.types.str;
@@ -98,6 +117,13 @@ in
   };
 
   config = {
+    assertions = [
+      {
+        assertion = espBytes != null && espBytes >= 260 * 1024 * 1024;
+        message = "chalkos.disk.espSize must be at least 260M, the smallest ESP systemd-repart formats as vfat; it is ${builtins.toJSON cfg.espSize}";
+      }
+    ];
+
     image.repart = {
       enable = true;
       name = lib.mkDefault "chalkos";

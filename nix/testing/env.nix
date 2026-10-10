@@ -1,7 +1,8 @@
 # Tools and variables the Go tests need, shared by the dev shell and the flake checks.
 { pkgs, self }:
 let
-  secureboot = self.packages.${pkgs.stdenv.hostPlatform.system}.test-secureboot;
+  chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
+  secureboot = chalkPkgs.test-secureboot;
 in
 {
   tools = [
@@ -33,5 +34,7 @@ in
     # The install tests lay out disk images with the systemd-repart the images run; systemd itself
     # stays off the PATH.
     CHALKOS_TEST_REPART = "${pkgs.systemd}/bin/systemd-repart";
+    # The install tests also lay out a disk as the test role's image would be installed.
+    CHALKOS_TEST_ROLE_DEFINITIONS = "${chalkPkgs.test-repart-definitions}";
   };
 }

@@ -125,18 +125,20 @@ type partsLab struct {
 	tpmFails bool
 	// sector is the disk's sector size.
 	sector int64
+	// defs are the role's definitions of the system region.
+	defs map[string]string
 }
 
 const labDev = "/dev/vdb"
 
 func newPartsLab(t *testing.T) *partsLab {
 	t.Helper()
-	return newPartsLabOf(t, 512)
+	return newPartsLabOf(t, 512, labTarget.size)
 }
 
-// newPartsLabOf makes a lab whose target has sectors of the size: sfdisk and systemd-repart treat
-// the disk image as such a disk.
-func newPartsLabOf(t *testing.T, sector int64) *partsLab {
+// newPartsLabOf makes a lab whose target has sectors of the size, sfdisk and systemd-repart
+// treating the disk image as such a disk, and holds the bytes.
+func newPartsLabOf(t *testing.T, sector int64, size uint64) *partsLab {
 	t.Helper()
 	for _, tool := range []string{"sfdisk", "blkid", "mkfs.vfat", "mkfs.ext4"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -148,18 +150,20 @@ func newPartsLabOf(t *testing.T, sector int64) *partsLab {
 		t.Skip("CHALKOS_TEST_REPART not set")
 	}
 	r := &fakeRunner{}
-	i := newTestInstaller(t, r, vda, labTarget)
+	target := labTarget
+	target.size = size
+	i := newTestInstaller(t, r, vda, target)
 	write(t, i.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
 	if err := os.Remove(filepath.Join(i.Host.DevRoot, "mapper", "state")); err != nil {
 		t.Fatal(err)
 	}
 	r.efi = &fakeEFI{entries: []efiEntry{{"0001", "UEFI Misc Device", ""}}, next: 2}
 	dir := t.TempDir()
-	l := &partsLab{t: t, i: i, r: r, disk: filepath.Join(dir, "vdb"), fs: filepath.Join(dir, "fs"), repart: repart, efivars: filepath.Join(dir, "efivars"), diskLog: &diskLog{}, sector: sector}
+	l := &partsLab{t: t, i: i, r: r, disk: filepath.Join(dir, "vdb"), fs: filepath.Join(dir, "fs"), repart: repart, efivars: filepath.Join(dir, "efivars"), diskLog: &diskLog{}, sector: sector, defs: labDefinitions}
 	if err := os.WriteFile(l.disk, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Truncate(l.disk, int64(labTarget.size)); err != nil {
+	if err := os.Truncate(l.disk, int64(size)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(l.efivars, 0o755); err != nil {
@@ -247,7 +251,10 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 		argv = append([]string{"--sector-size", strconv.FormatInt(l.sector, 10)}, argv...)
 	case "systemd-repart":
 		name = l.repart
-		argv = append([]string{"--sector-size=" + strconv.FormatInt(l.sector, 10)}, argv...)
+		// repart reads the sector size off a disk; on a file it takes its own.
+		if l.sector != 512 {
+			argv = append([]string{"--sector-size=" + strconv.FormatInt(l.sector, 10)}, argv...)
+		}
 	}
 	out, err := node.ExecRunner{}.RunQuiet(ctx, name, argv...)
 	if name == "blkid" && l.sector != 512 {
@@ -401,7 +408,7 @@ func (l *partsLab) request(img partsImage) PartsRequest {
 		Target:            storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}},
 		Image:             img.header,
 		Parts:             img.parts(),
-		SystemDefinitions: labDefinitions,
+		SystemDefinitions: l.defs,
 	}
 }
 
@@ -523,12 +530,12 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 // refused before anything changes, on an empty disk as on one an earlier attempt laid out.
 func TestFromPartsOnFourKnDisk(t *testing.T) {
 	img := newPartsImage(t, "0.1.0", "a")
-	l := newPartsLabOf(t, 4096)
+	l := newPartsLabOf(t, 4096, labTarget.size)
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
-	l = newPartsLabOf(t, 4096)
+	l = newPartsLabOf(t, 4096, labTarget.size)
 	l.stopAt(img, "write the store")
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
@@ -537,7 +544,7 @@ func TestFromPartsOnFourKnDisk(t *testing.T) {
 
 	large := newPartsImageOfBlocks(t, "0.1.0", "a", 600)
 	for _, laidOut := range []bool{false, true} {
-		l := newPartsLabOf(t, 4096)
+		l := newPartsLabOf(t, 4096, labTarget.size)
 		if laidOut {
 			l.stopAt(img, "write the store")
 		}
@@ -1177,4 +1184,46 @@ func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
 	if mounted, _ := isMounted(l.i.MountInfo, esp); mounted {
 		t.Error("the ESP is still mounted")
 	}
+}
+
+// TestFromPartsWithTheRoleDefinitions installs with the definitions the test role's image ships,
+// on a disk that holds its system region, and continues an install stopped once the disk is laid
+// out: the partitions repart creates are the ones the definitions describe.
+func TestFromPartsWithTheRoleDefinitions(t *testing.T) {
+	dir := os.Getenv("CHALKOS_TEST_ROLE_DEFINITIONS")
+	if dir == "" {
+		t.Skip("CHALKOS_TEST_ROLE_DEFINITIONS not set")
+	}
+	defs, err := readDefinitions(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) == 0 {
+		t.Fatalf("no definitions in %s", dir)
+	}
+	for name, text := range defs {
+		// As in labDefinitions: the build sandbox's file systems take no user extended attributes.
+		if strings.Contains(text, "Format=ext4") {
+			defs[name] = text + "AddValidateFS=no\n"
+		}
+	}
+	img := newPartsImage(t, "0.1.0", "a")
+	l := newPartsLabOf(t, 512, 5<<30)
+	l.defs = defs
+	laidOut := false
+	l.i.Change = func(what string) error {
+		if laidOut {
+			return errStop
+		}
+		laidOut = what == "lay out the target disk"
+		return nil
+	}
+	if err := l.install(img); !errors.Is(err, errStop) {
+		t.Fatalf("install = %v, want the stop after the layout", err)
+	}
+	l.i.Change = nil
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
 }

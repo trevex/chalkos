@@ -39,6 +39,9 @@ in
   chalkd = pkgs.callPackage ./chalkd.nix { };
 
   test-image = testing.cluster.roles.test.image;
+  # The repart definitions of the test role's system region, which its image ships.
+  test-repart-definitions =
+    testing.cluster.roles.test.nixos.config.environment.etc."chalkos/repart.d".source;
   test-storage-image = testing.cluster.roles.storage.image;
   test-installer = testing.cluster.installer;
   test-kubernetes-controlplane-image = testing.cluster.roles.k8s-controlplane.image;

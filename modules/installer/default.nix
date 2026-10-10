@@ -82,7 +82,7 @@ in
 
   chalkos.disk = {
     # One UKI and a store that is never upgraded.
-    espSize = lib.mkDefault "256M";
+    espSize = lib.mkDefault "260M";
     storeSize = null;
     storeVeritySize = null;
   };

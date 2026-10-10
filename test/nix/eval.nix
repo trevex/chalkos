@@ -3311,6 +3311,38 @@ lib.runTests {
       "1.0.0-abcdefghijklmnopq" = true;
     };
   };
+  # systemd-repart formats a vfat ESP with no less than 260 MiB, so a smaller one is refused.
+  testESPMinimum = {
+    expr =
+      lib.genAttrs
+        [
+          "1G"
+          "260M"
+          "1.5G"
+          "266240K"
+          "256M"
+          "0.25G"
+          "100M"
+          "a lot"
+        ]
+        (
+          size:
+          lib.all (a: a.assertion)
+            (role (cluster [
+              { chalkos.roles.worker.nixosModules = [ { chalkos.disk.espSize = size; } ]; }
+            ])).assertions
+        );
+    expected = {
+      "1G" = true;
+      "260M" = true;
+      "1.5G" = true;
+      "266240K" = true;
+      "256M" = false;
+      "0.25G" = false;
+      "100M" = false;
+      "a lot" = false;
+    };
+  };
   # The ESP is mounted at /efi when used: upgrades write UKIs there, systemd-bless-boot renames
   # them, and systemd-boot-random-seed.service refreshes the boot loader's seed.
   testESPMount = {
@@ -3392,7 +3424,7 @@ lib.runTests {
         ukis = 1;
         storeSize = "-";
         storeVeritySize = "-";
-        espSize = "256M";
+        espSize = "260M";
       };
     };
   };

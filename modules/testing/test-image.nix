@@ -3,7 +3,7 @@
   imports = [ ./probe.nix ];
 
   chalkos.disk = {
-    espSize = "256M";
+    espSize = "260M";
     storeSize = "2G";
     storeVeritySize = "64M";
     stateSize = "64M";
