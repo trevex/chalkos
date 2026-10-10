@@ -8,8 +8,10 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -292,9 +294,11 @@ func TestStatusOfAStoppedLab(t *testing.T) {
 	}
 }
 
-// TestStartRefusesARunningLab refuses to start a lab a supervisor runs, and a lab that is not.
-func TestStartRefusesARunningLab(t *testing.T) {
+// TestStartSignalsTheSupervisor asks the supervisor that runs the lab to start its VMs that do
+// not run, and refuses a lab that is not and a machine without KVM.
+func TestStartSignalsTheSupervisor(t *testing.T) {
 	dir := writeLab(t)
+	fakeKVM(t)
 	lock, err := os.OpenFile(filepath.Join(dir, "supervisor.pid"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -303,13 +307,35 @@ func TestStartRefusesARunningLab(t *testing.T) {
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}
-	lock.WriteString("4242\n")
-	a, _ := testApp()
-	if err := a.run(context.Background(), []string{"start"}); err == nil || !strings.Contains(err.Error(), "runs the lab") {
-		t.Errorf("start of a running lab = %v", err)
+	// The supervisor is this process.
+	lock.WriteString(strconv.Itoa(os.Getpid()) + "\n")
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGUSR1)
+	defer signal.Stop(sig)
+	a, out := testApp()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.run(ctx, []string{"start"}) }()
+	select {
+	case <-sig:
+	case err := <-done:
+		t.Fatalf("start of a running lab = %v, want the supervisor signalled", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("start did not signal the supervisor")
 	}
+	cancel()
+	<-done
+	if !strings.Contains(out.String(), "starting cp1 and w1") {
+		t.Errorf("start printed %q, want the VMs that do not run", out)
+	}
+
 	if err := a.run(context.Background(), []string{"start", "--cluster", "other"}); err == nil || !strings.Contains(err.Error(), "chalklab create") {
 		t.Errorf("start of no lab = %v, want chalklab create named", err)
+	}
+	missing := filepath.Join(t.TempDir(), "kvm")
+	kvmDevice = missing
+	if err := a.run(context.Background(), []string{"start"}); err == nil || !strings.Contains(err.Error(), missing) {
+		t.Errorf("start without KVM = %v, want %s named", err, missing)
 	}
 }
 

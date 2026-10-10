@@ -104,7 +104,7 @@ func (a *app) status(args []string) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	if len(stopped) > 0 && !running {
+	if len(stopped) > 0 {
 		verb := "does"
 		if len(stopped) > 1 {
 			verb = "do"
@@ -276,9 +276,9 @@ func joinNames(names []string) string {
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
-// start starts a lab that no supervisor runs again from its state, as after a host's reboot, a
-// supervisor that was killed or a VM that exited: with its disks, firmware variables, TPM state
-// and ports.
+// start starts the VMs of a lab again from its state, with their disks, firmware variables, TPM
+// state and ports: through its supervisor the VMs that exited, or a lab that no supervisor runs,
+// as after a host's reboot or a supervisor that was killed.
 func (a *app) start(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
@@ -292,6 +292,31 @@ func (a *app) start(ctx context.Context, args []string) error {
 	}
 	if l == nil {
 		return fmt.Errorf("%s holds no lab; chalklab destroy removes it", dir)
+	}
+	if err := checkKVM(); err != nil {
+		return err
+	}
+	if _, running, err := lab.Supervisor(dir); err != nil {
+		return err
+	} else if running {
+		var stopped []string
+		for _, n := range l.Nodes {
+			if !lab.Running(l.VMConfig(dir, n)) {
+				stopped = append(stopped, n.Name)
+			}
+		}
+		if len(stopped) == 0 {
+			fmt.Fprintf(a.stdout, "the lab of %s runs %s already\n", l.Cluster, joinNames(nodeNames(l)))
+			return nil
+		}
+		fmt.Fprintf(a.stdout, "starting %s\n", joinNames(stopped))
+		startCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		if err := lab.StartStopped(startCtx, dir); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "the lab of %s runs %s\n", l.Cluster, joinNames(nodeNames(l)))
+		return nil
 	}
 	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

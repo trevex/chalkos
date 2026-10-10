@@ -1,9 +1,11 @@
 package lab
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -45,13 +47,31 @@ func testLab(t *testing.T) (string, *Lab) {
 	return dir, l
 }
 
-// supervise runs the lab's supervisor until the test ends or the returned stop is called, and
-// waits until it marked the lab ready.
-func supervise(t *testing.T, dir string) (stop func() error) {
+// syncBuffer is a buffer the supervisor logs to while the test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// supervise runs the lab's supervisor, logging to log, until the test ends or the returned stop
+// is called, and waits until it marked the lab ready.
+func supervise(t *testing.T, dir string, log io.Writer) (stop func() error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Supervise(ctx, dir) }()
+	go func() { done <- Supervise(ctx, dir, log) }()
 	stop = sync.OnceValue(func() error {
 		cancel()
 		return <-done
@@ -76,12 +96,12 @@ func supervise(t *testing.T, dir string) (stop func() error) {
 // everything when it ends.
 func TestSupervisorRunsTheLab(t *testing.T) {
 	dir, l := testLab(t)
-	stop := supervise(t, dir)
+	stop := supervise(t, dir, io.Discard)
 
 	if pid, running, err := Supervisor(dir); err != nil || !running || pid != os.Getpid() {
 		t.Errorf("Supervisor = %d, %v, %v; want this process", pid, running, err)
 	}
-	if err := Supervise(context.Background(), dir); err == nil || !strings.Contains(err.Error(), "a supervisor runs the lab") {
+	if err := Supervise(context.Background(), dir, io.Discard); err == nil || !strings.Contains(err.Error(), "a supervisor runs the lab") {
 		t.Errorf("a second supervisor = %v", err)
 	}
 	for _, n := range l.Nodes {
@@ -189,7 +209,7 @@ func TestStopLabStopsTheSupervisor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- Supervise(ctx, dir) }()
+	go func() { done <- Supervise(ctx, dir, io.Discard) }()
 	for !Ready(dir) {
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -305,43 +325,80 @@ func TestPingGuestAgent(t *testing.T) {
 	}
 }
 
-// TestStartAgain stops the lab when one of its VMs exits, as when its guest powers off, refuses
-// to start a lab a supervisor runs, and starts a stopped lab again from its state, over the stale
-// sockets a host's reboot leaves.
-func TestStartAgain(t *testing.T) {
+// TestVMExitKeepsTheLab keeps the lab's other VMs running when one exits, as when its guest
+// powers off, and starts it again when asked, with its ports.
+func TestVMExitKeepsTheLab(t *testing.T) {
 	dir, l := testLab(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	var log syncBuffer
+	supervise(t, dir, &log)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- Supervise(ctx, dir) }()
-	for !Ready(dir) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if err := PrepareStart(ctx, dir); err == nil || !strings.Contains(err.Error(), "runs the lab") {
-		t.Errorf("PrepareStart of a supervised lab = %v, want a refusal", err)
-	}
 
-	w1 := l.VMConfig(dir, l.Nodes[1])
+	cp1, w1 := l.VMConfig(dir, l.Nodes[0]), l.VMConfig(dir, l.Nodes[1])
+	cp1PID, _ := runningPID(cp1.pidPath(), cp1.Dir)
 	pid, ok := runningPID(w1.pidPath(), w1.Dir)
 	if !ok {
 		t.Fatal("w1 does not run")
 	}
 	syscall.Kill(pid, syscall.SIGTERM)
-	select {
-	case err := <-done:
-		if err == nil || !strings.Contains(err.Error(), "w1") {
-			t.Errorf("the supervisor ended with %v, want w1 named", err)
+	for Ready(dir) || Running(w1) {
+		select {
+		case <-ctx.Done():
+			t.Fatal("the lab is ready after w1 exited")
+		case <-time.After(20 * time.Millisecond):
 		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("the supervisor runs on after w1 exited")
 	}
-	if Ready(dir) {
-		t.Error("the lab is ready after w1 exited")
+	if _, running, err := Supervisor(dir); err != nil || !running {
+		t.Fatalf("the supervisor ended after w1 exited: %v", err)
 	}
-	for _, n := range l.Nodes {
-		if Running(l.VMConfig(dir, n)) {
-			t.Errorf("%s runs on after w1 exited", n.Name)
-		}
+	if pid, ok := runningPID(cp1.pidPath(), cp1.Dir); !ok || pid != cp1PID {
+		t.Error("cp1 does not run on after w1 exited")
+	}
+	if !strings.Contains(log.String(), "the VM of w1 exited") {
+		t.Errorf("the supervisor logged %q, want w1's exit", log.String())
+	}
+	if _, ok := runningPID(filepath.Join(w1.tpmDir(), "swtpm.pid"), w1.tpmDir()); ok {
+		t.Error("the TPM of w1 runs on after its VM exited")
+	}
+
+	if err := StartStopped(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	if !Ready(dir) {
+		t.Error("the lab is not ready once w1 started again")
+	}
+	pid, ok = runningPID(w1.pidPath(), w1.Dir)
+	if !ok {
+		t.Fatal("w1 does not run after the start")
+	}
+	cmdline, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if want := fmt.Sprintf("hostfwd=tcp:127.0.0.1:%d-:50000", l.Nodes[1].ChalkdPort); !strings.Contains(string(cmdline), want) {
+		t.Errorf("w1 runs without its port: %q", cmdline)
+	}
+	if pid, ok := runningPID(cp1.pidPath(), cp1.Dir); !ok || pid != cp1PID {
+		t.Error("the start restarted cp1, which ran")
+	}
+	// A lab whose VMs all run has nothing to start.
+	if err := StartStopped(ctx, dir); err != nil {
+		t.Errorf("StartStopped of a running lab = %v", err)
+	}
+}
+
+// TestStartAgain refuses to start a lab a supervisor runs, and starts a lab no supervisor runs
+// again from its state, over the stale sockets a host's reboot leaves.
+func TestStartAgain(t *testing.T) {
+	dir, l := testLab(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop := supervise(t, dir, io.Discard)
+	if err := PrepareStart(ctx, dir); err == nil || !strings.Contains(err.Error(), "runs the lab") {
+		t.Errorf("PrepareStart of a supervised lab = %v, want a refusal", err)
+	}
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := StartStopped(ctx, dir); err == nil || !strings.Contains(err.Error(), "no supervisor") {
+		t.Errorf("StartStopped without a supervisor = %v", err)
 	}
 
 	// A host's reboot leaves the switch's socket behind.
@@ -355,7 +412,7 @@ func TestStartAgain(t *testing.T) {
 	if err := PrepareStart(ctx, dir); err != nil {
 		t.Fatal(err)
 	}
-	supervise(t, dir)
+	supervise(t, dir, io.Discard)
 	for _, n := range l.Nodes {
 		c := l.VMConfig(dir, n)
 		pid, ok := runningPID(c.pidPath(), c.Dir)

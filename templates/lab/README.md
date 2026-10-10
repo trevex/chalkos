@@ -24,7 +24,8 @@ chalklab create
 `chalklab create` prints the next commands: the kubeconfig to use, `chalkctl status` with the
 lab's client file, `chalklab status` and `chalklab destroy`. `chalklab status` names the lab's
 files: the kubeconfig, the client file and the Secure Boot db key and certificate the lab's
-firmware trusts. After a reboot of this machine, `chalklab start` starts the lab again.
+firmware trusts. After a reboot of this machine, `chalklab start` starts the lab again; a node
+that powered off stops alone, and `chalklab start` starts it again.
 
 To upgrade, edit `cluster.nix` and let chalkctl build each node's image, sign it with the lab's
 db key and install it, with the files `chalklab status` names:

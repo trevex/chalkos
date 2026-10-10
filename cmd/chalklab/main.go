@@ -24,7 +24,8 @@ commands:
                                           the lab's Secure Boot keys, boot them, install them in place
                                           and bootstrap the first control plane
   status [--cluster NAME]                 show the lab's VMs, ports and console logs
-  start [--cluster NAME]                  start a stopped lab again, as after a reboot, from its state
+  start [--cluster NAME]                  start a stopped lab again from its state, as after a reboot,
+                                          or the VMs of a running lab that stopped
   console <node> [--cluster NAME]         follow a node's serial console
   sign <image> [--out DIR] [--cluster NAME]
                                           sign an image with the lab's Secure Boot keys, for upgrades
@@ -110,7 +111,7 @@ func (a *app) run(ctx context.Context, args []string) error {
 		if err := lab.DenyIOURing(); err != nil {
 			return err
 		}
-		return lab.Supervise(ctx, args[1])
+		return lab.Supervise(ctx, args[1], os.Stderr)
 	}
 	return errUsage
 }

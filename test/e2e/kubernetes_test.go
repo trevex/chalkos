@@ -56,8 +56,9 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // after which the API server serves the new ones and the controller-manager and the scheduler
 // take the lead again, that a worker whose link is cut turns NotReady, and that the OS CA, the
 // Kubernetes CAs, the service-account key and the encryption key rotate with the cluster working
-// throughout. At its end the host shuts the worker down through its guest agent, and chalklab
-// destroy removes the lab.
+// throughout. At its end the host shuts the worker down through its guest agent, the control plane
+// runs on, chalklab start starts the worker's VM again, and chalklab destroy
+// removes the lab.
 // The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 the test does not
 // start that registry, so the nodes' mirror is unreachable and containerd falls back to pulling
 // from upstream.
@@ -193,6 +194,23 @@ func TestKubernetesCluster(t *testing.T) {
 		}
 		return nil
 	})
+	// The lab runs on without w1, and chalklab start has its supervisor start w1's VM alone again.
+	if !lab.Running(nodes["cp1"].vm.Config) {
+		t.Error("the VM of cp1 stopped with w1's")
+	}
+	startCtx, cancelStart := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancelStart()
+	out, err := exec.CommandContext(startCtx, os.Getenv("CHALKLAB_CHALKLAB"), "start").CombinedOutput()
+	t.Logf("chalklab start:\n%s", out)
+	if err != nil {
+		t.Fatalf("chalklab start: %v", err)
+	}
+	if !strings.Contains(string(out), "starting w1\n") {
+		t.Error("chalklab start did not start w1 alone")
+	}
+	if !lab.Running(w1.vm.Config) || !lab.Running(nodes["cp1"].vm.Config) {
+		t.Error("the VMs of cp1 and w1 do not both run after chalklab start")
+	}
 }
 
 // anonymousOnlyHealth checks that a request without credentials reaches the health endpoints
