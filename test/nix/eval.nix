@@ -570,6 +570,50 @@ lib.runTests {
         ];
       };
     };
+  # A kvm image finds its disks at boot: the initrd loads virtio's PCI transport and its block and
+  # SCSI drivers, for a control plane and a worker as the lab template defines them. A metal image
+  # leaves them out, as real machines have no virtio disks.
+  testKvmInitrdVirtio = {
+    expr =
+      let
+        c = cluster [
+          {
+            chalkos.roles.controlplane.kubernetes.kind = "controlplane";
+            chalkos.roles.worker.kubernetes.kind = "worker";
+          }
+        ];
+        virtio =
+          platform: role:
+          lib.sort lib.lessThan (
+            lib.unique (
+              lib.filter (lib.hasPrefix "virtio")
+                c.roles.${role}.nixos.${platform}.config.boot.initrd.availableKernelModules
+            )
+          );
+      in
+      {
+        kvm = map (virtio "kvm") [
+          "controlplane"
+          "worker"
+        ];
+        metal = virtio "metal" "worker";
+      };
+    expected =
+      let
+        drivers = [
+          "virtio_blk"
+          "virtio_pci"
+          "virtio_scsi"
+        ];
+      in
+      {
+        kvm = [
+          drivers
+          drivers
+        ];
+        metal = [ ];
+      };
+  };
   # A definition adds a platform of its own, or modules to one of chalkos's. A role overrides a
   # value its platform sets by priority, as module order does not: lib.mkForce for a value the
   # platform defines plainly, lib.mkOverride below 50 for the guest agent's ExecStart, which kvm

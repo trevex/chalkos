@@ -4,6 +4,14 @@
 {
   boot.kernelParams = [ "console=ttyS0,115200" ];
 
+  # The store and STATE are on virtio disks, which the initrd must see before it can mount them:
+  # virtio-blk, or virtio-scsi as Proxmox offers it. The initrd needs no network, so no NIC driver.
+  boot.initrd.availableKernelModules = [
+    "virtio_pci"
+    "virtio_blk"
+    "virtio_scsi"
+  ];
+
   # The agent starts when the host offers its channel, and only under KVM.
   services.qemuGuest.enable = true;
   systemd.services.qemu-guest-agent = {

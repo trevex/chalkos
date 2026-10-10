@@ -721,6 +721,14 @@ in
     assert lib.isString shell.drvPath;
     assert lib.all (n: n.platform == "kvm") (lib.attrValues c.manifest.nodes);
     assert lib.all (m: lib.length (lib.filter (x: x != null) m) == 1) (lib.attrValues macs);
+    # Its images find their virtio disks at boot.
+    assert lib.all (
+      r:
+      lib.all (m: lib.elem m r.nixos.kvm.config.boot.initrd.availableKernelModules) [
+        "virtio_pci"
+        "virtio_blk"
+      ]
+    ) (lib.attrValues c.roles);
     pkgs.runCommand "chalkos-template-lab" {
       images = lib.mapAttrsToList (_: r: r.images.kvm) c.roles;
     } "touch $out";

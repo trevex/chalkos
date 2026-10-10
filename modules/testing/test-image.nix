@@ -1,4 +1,5 @@
 # The image chalklab e2e tests boot: the base modules plus the probe, with small partitions.
+{ config, lib, ... }:
 {
   imports = [ ./probe.nix ];
 
@@ -9,8 +10,11 @@
     stateSize = "64M";
   };
 
-  # chalklab attaches disks as virtio-blk-pci; the initrd needs them to find the store.
-  boot.initrd.availableKernelModules = [
+  # chalklab attaches disks as virtio-blk-pci, which the initrd needs to find the store. The kvm
+  # platform loads them itself, and the Kubernetes tests boot its images to prove it. The metal
+  # platform leaves them out, as real machines have no virtio disks, so its test images, which run
+  # under QEMU too, get them here.
+  boot.initrd.availableKernelModules = lib.mkIf (config.chalkos.platform.name != "kvm") [
     "virtio_pci"
     "virtio_blk"
   ];
