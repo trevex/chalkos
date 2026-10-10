@@ -16,7 +16,81 @@ nav = [
   { "Getting started" = ["getting-started/index.md"] },
   { "Concepts" = ["concepts/index.md"] },
   { "Guides" = ["guides/index.md"] },
-  { "Reference" = ["reference/index.md"] },
+  { "Reference" = [
+    "reference/index.md",
+    # The commands' pages, which nix run .#docgen writes from their help.
+    # BEGIN docgen cli
+    { "Command line" = [
+      "reference/cli/index.md",
+      { "chalkctl" = [
+        { "Overview" = "reference/cli/chalkctl.md" },
+        { "apply-identity" = "reference/cli/chalkctl_apply-identity.md" },
+        { "bootstrap" = "reference/cli/chalkctl_bootstrap.md" },
+        { "completion" = [
+          { "Overview" = "reference/cli/chalkctl_completion.md" },
+          { "bash" = "reference/cli/chalkctl_completion_bash.md" },
+          { "fish" = "reference/cli/chalkctl_completion_fish.md" },
+          { "powershell" = "reference/cli/chalkctl_completion_powershell.md" },
+          { "zsh" = "reference/cli/chalkctl_completion_zsh.md" },
+        ] },
+        { "config" = [
+          { "Overview" = "reference/cli/chalkctl_config.md" },
+          { "new" = "reference/cli/chalkctl_config_new.md" },
+        ] },
+        { "disks" = "reference/cli/chalkctl_disks.md" },
+        { "etcd" = [
+          { "Overview" = "reference/cli/chalkctl_etcd.md" },
+          { "leave" = "reference/cli/chalkctl_etcd_leave.md" },
+          { "members" = "reference/cli/chalkctl_etcd_members.md" },
+          { "remove-member" = "reference/cli/chalkctl_etcd_remove-member.md" },
+        ] },
+        { "gen" = [
+          { "Overview" = "reference/cli/chalkctl_gen.md" },
+          { "secrets" = "reference/cli/chalkctl_gen_secrets.md" },
+        ] },
+        { "install" = "reference/cli/chalkctl_install.md" },
+        { "kubeconfig" = "reference/cli/chalkctl_kubeconfig.md" },
+        { "logs" = "reference/cli/chalkctl_logs.md" },
+        { "node" = [
+          { "Overview" = "reference/cli/chalkctl_node.md" },
+          { "renew" = "reference/cli/chalkctl_node_renew.md" },
+        ] },
+        { "node-ca" = [
+          { "Overview" = "reference/cli/chalkctl_node-ca.md" },
+          { "rotate" = "reference/cli/chalkctl_node-ca_rotate.md" },
+        ] },
+        { "reboot" = "reference/cli/chalkctl_reboot.md" },
+        { "recovery-key" = "reference/cli/chalkctl_recovery-key.md" },
+        { "rotate" = "reference/cli/chalkctl_rotate.md" },
+        { "sign" = "reference/cli/chalkctl_sign.md" },
+        { "status" = "reference/cli/chalkctl_status.md" },
+        { "storage" = [
+          { "Overview" = "reference/cli/chalkctl_storage.md" },
+          { "reset" = "reference/cli/chalkctl_storage_reset.md" },
+        ] },
+        { "upgrade" = "reference/cli/chalkctl_upgrade.md" },
+      ] },
+      { "chalklab" = [
+        { "Overview" = "reference/cli/chalklab.md" },
+        { "completion" = [
+          { "Overview" = "reference/cli/chalklab_completion.md" },
+          { "bash" = "reference/cli/chalklab_completion_bash.md" },
+          { "fish" = "reference/cli/chalklab_completion_fish.md" },
+          { "powershell" = "reference/cli/chalklab_completion_powershell.md" },
+          { "zsh" = "reference/cli/chalklab_completion_zsh.md" },
+        ] },
+        { "console" = "reference/cli/chalklab_console.md" },
+        { "create" = "reference/cli/chalklab_create.md" },
+        { "destroy" = "reference/cli/chalklab_destroy.md" },
+        { "sign" = "reference/cli/chalklab_sign.md" },
+        { "start" = "reference/cli/chalklab_start.md" },
+        { "status" = "reference/cli/chalklab_status.md" },
+      ] },
+    ] },
+    # END docgen cli
+    { "Cluster and node options" = "reference/options.md" },
+    { "Node API" = "reference/api.md" },
+  ] },
   { "Contributing" = ["contributing/index.md"] },
 ]
 

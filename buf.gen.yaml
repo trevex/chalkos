@@ -7,3 +7,8 @@ plugins:
   - local: protoc-gen-connect-go
     out: .
     opt: module=github.com/trevex/chalkos
+  # The node API's reference page.
+  - local: protoc-gen-doc
+    out: docs/reference
+    opt: api/markdown.tmpl,api.md
+    strategy: all

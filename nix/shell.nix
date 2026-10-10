@@ -12,6 +12,7 @@ pkgs.mkShell (
         buf
         protoc-gen-go
         protoc-gen-connect-go
+        protoc-gen-doc
         openssl
         python3Packages.virt-firmware
         jq

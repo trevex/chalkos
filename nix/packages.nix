@@ -6,7 +6,7 @@ let
   inherit (pkgs) lib;
   testing = import ./testing/cluster.nix { inherit self pkgs; };
   goModule = pkgs.callPackage ./go-module.nix { };
-  docs = import ./docs.nix { inherit pkgs; };
+  docs = import ./docs.nix { inherit pkgs self; };
 
   goPaths = [
     ../cmd

@@ -3,6 +3,7 @@ let
   inherit (pkgs) lib;
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   testEnv = import ./testing/env.nix { inherit pkgs self; };
+  docs = import ./docs.nix { inherit pkgs self; };
 
   # TestKubernetesCluster without the test's registry: the nodes' mirror is unreachable, so
   # containerd falls back to pulling their images from the upstream registries. It needs network
@@ -36,9 +37,14 @@ in
     program = lib.getExe chalkPkgs.chalklab;
     meta.description = "Run a chalkos cluster's nodes as QEMU virtual machines on this machine";
   };
+  docgen = {
+    type = "app";
+    program = lib.getExe docs.write;
+    meta.description = "Write the documentation pages generated from the code into the working tree";
+  };
   docs-serve = {
     type = "app";
-    program = lib.getExe (import ./docs.nix { inherit pkgs; }).serve;
+    program = lib.getExe docs.serve;
     meta.description = "Serve the documentation from the working tree while it is edited";
   };
   e2e-kubernetes-online = {

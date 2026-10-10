@@ -666,6 +666,7 @@ in
           pkgs.buf
           pkgs.protoc-gen-go
           pkgs.protoc-gen-connect-go
+          pkgs.protoc-gen-doc
         ];
         src = pkgs.lib.fileset.toSource {
           root = ../.;
@@ -735,6 +736,8 @@ in
 
   # The documentation site builds strictly.
   docs = chalkPkgs.docs;
+  # The pages generated from the code are those in the repository.
+  docs-generated = (import ./docs.nix { inherit pkgs self; }).generated;
 
   eval =
     let
