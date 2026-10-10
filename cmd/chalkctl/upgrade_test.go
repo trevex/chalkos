@@ -55,7 +55,8 @@ func upgradeManifest(controlPlanes int) string {
 }
 
 // testUpgradeImage builds a disk image of the role and version as chalkos images are laid out:
-// an ESP holding the UKI, the store's hash tree and the store, described by repart-output.json.
+// an ESP holding systemd-boot and the UKI, the store's hash tree and the store, described by
+// repart-output.json.
 func testUpgradeImage(t *testing.T, cluster, role, version string) string {
 	t.Helper()
 	return testUpgradeImageOfBlocks(t, cluster, role, version, 512)
@@ -77,13 +78,16 @@ func testUpgradeImageOfBlocks(t *testing.T, cluster, role, version string, block
 	}
 	esp := filepath.Join(dir, "esp.img")
 	uki := filepath.Join(dir, "uki.efi")
+	loader := filepath.Join(dir, "systemd-boot.efi")
+	writeFile(t, loader, string(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")})))
 	writeFile(t, uki, string(ukitest.UKI(map[string]string{
 		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_CLUSTER": cluster, "CHALKOS_ROLE": role, "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/x usrhash=%x", root))))
 	for _, args := range [][]string{
 		{"mkfs.vfat", "-C", esp, "4096"},
-		{"mmd", "-i", esp, "::/EFI", "::/EFI/Linux"},
+		{"mmd", "-i", esp, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux"},
 		{"mcopy", "-i", esp, uki, "::/EFI/Linux/chalkos_" + version + ".efi"},
+		{"mcopy", "-i", esp, loader, "::/EFI/BOOT/BOOTX64.EFI"},
 	} {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
@@ -629,7 +633,7 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 		{"a node of another role", img, []string{"--nodes", "cp1", "--sign-key", dbKey, "--sign-cert", dbCert}, "cp1 is a node of the role cp; the image is of w"},
 		{"an unsigned UKI", img, nil, "Secure Boot would refuse the image's UKI: the image is not signed"},
 		{"a UKI signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
-		{"a version with upper-case letters", testUpgradeImage(t, "lab", "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one an upgrade installs"},
+		{"a version with upper-case letters", testUpgradeImage(t, "lab", "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one chalkos installs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := l.upgrade(tc.img, tc.args...)

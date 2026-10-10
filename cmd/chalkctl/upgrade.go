@@ -44,7 +44,7 @@ type upgradeRun struct {
 	a       *app
 	cluster *cluster
 	creds   *credentials
-	image   *upgradeImage
+	image   *diskImage
 	// endpoints are the nodes' chalkd addresses that --endpoint gives.
 	endpoints map[string]string
 	// nodes are the nodes to upgrade, as they were when the run started.
@@ -111,7 +111,7 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	img, err := openUpgradeImage(ctx, *imagePath, *signKey, *signCert)
+	img, err := openImage(ctx, *imagePath, *signKey, *signCert, false)
 	if err != nil {
 		return err
 	}
@@ -135,9 +135,9 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 	return r.run(ctx)
 }
 
-// checkImage checks the image against the cluster: its cluster, and the signature of its UKI
-// when the cluster names a db certificate, or else when chalkctl signed it.
-func checkImage(c *cluster, img *upgradeImage, signCert string) error {
+// checkImage checks the image against the cluster: its cluster, and the signatures of its UKI and
+// boot loader when the cluster names a db certificate, or else when chalkctl signed them.
+func checkImage(c *cluster, img *diskImage, signCert string) error {
 	if got := img.info.Cluster(); got != c.manifest.Cluster.Name {
 		return fmt.Errorf("the image is of the cluster %s, not %s", got, c.manifest.Cluster.Name)
 	}

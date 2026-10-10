@@ -1,4 +1,5 @@
-// Package imagesign signs the boot loader and UKIs of chalkos disk images for Secure Boot.
+// Package imagesign signs the boot loader and UKIs of chalkos disk images for Secure Boot, and
+// copies them off an image for an install or upgrade.
 package imagesign
 
 import (
@@ -83,24 +84,36 @@ func mtools(ctx context.Context, name string, args ...string) (string, error) {
 }
 
 // ExtractUKI copies the one UKI on the image's ESP into dir and returns the copy's path, for an
-// upgrade, which installs the UKI by itself.
+// install or upgrade, which writes the UKI by itself.
 func ExtractUKI(ctx context.Context, image string, espOffset int64, dir string) (string, error) {
+	return extract(ctx, image, espOffset, dir, "::/EFI/Linux", "*.EFI", "UKIs")
+}
+
+// ExtractBootLoader copies the boot loader on the image's ESP, /EFI/BOOT/BOOT<ARCH>.EFI, into
+// dir and returns the copy's path, for an install, which writes the boot loader by itself.
+func ExtractBootLoader(ctx context.Context, image string, espOffset int64, dir string) (string, error) {
+	return extract(ctx, image, espOffset, dir, "::/EFI/BOOT", "BOOT*.EFI", "boot loaders")
+}
+
+// extract copies the one file of the ESP directory whose upper-cased name matches pattern.
+func extract(ctx context.Context, image string, espOffset int64, dir, espDir, pattern, what string) (string, error) {
 	fat := fmt.Sprintf("%s@@%d", image, espOffset)
-	out, err := mtools(ctx, "mdir", "-b", "-i", fat, "::/EFI/Linux")
+	out, err := mtools(ctx, "mdir", "-b", "-i", fat, espDir)
 	if err != nil {
 		return "", err
 	}
-	var ukis []string
+	var found []string
 	for _, line := range strings.Split(out, "\n") {
-		if line = strings.TrimSpace(line); strings.HasSuffix(strings.ToUpper(line), ".EFI") {
-			ukis = append(ukis, line)
+		line = strings.TrimSpace(line)
+		if ok, _ := path.Match(pattern, strings.ToUpper(path.Base(line))); ok && line != "" {
+			found = append(found, line)
 		}
 	}
-	if len(ukis) != 1 {
-		return "", fmt.Errorf("the ESP of %s holds %d UKIs, want one", image, len(ukis))
+	if len(found) != 1 {
+		return "", fmt.Errorf("the ESP of %s holds %d %s, want one", image, len(found), what)
 	}
-	dst := filepath.Join(dir, path.Base(ukis[0]))
-	if _, err := mtools(ctx, "mcopy", "-n", "-i", fat, ukis[0], dst); err != nil {
+	dst := filepath.Join(dir, path.Base(found[0]))
+	if _, err := mtools(ctx, "mcopy", "-n", "-i", fat, found[0], dst); err != nil {
 		return "", err
 	}
 	return dst, nil
