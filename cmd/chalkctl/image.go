@@ -36,8 +36,8 @@ type diskImage struct {
 
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
 // repart-output.json next to it, or the directory nix build makes. The UKI and the boot loader
-// are copied off its ESP into a temporary directory and signed there with key and cert when they
-// are given.
+// of the UKI's architecture are copied off its ESP into a temporary directory and signed there
+// with key and cert when they are given.
 func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ *diskImage, err error) {
 	if (key == "") != (cert == "") {
 		return nil, errors.New("signing needs both --sign-key and --sign-cert")
@@ -75,10 +75,21 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 	if img.uki, err = imagesign.ExtractUKI(ctx, raw, esp.Offset, dir); err != nil {
 		return nil, err
 	}
+	arch, err := fileArchitecture(img.uki)
+	if err != nil {
+		return nil, fmt.Errorf("the image's UKI: %w", err)
+	}
 	binaries := []string{img.uki}
 	if bootLoader {
-		if img.bootLoader, err = imagesign.ExtractBootLoader(ctx, raw, esp.Offset, dir); err != nil {
+		if img.bootLoader, err = imagesign.ExtractBootLoader(ctx, raw, esp.Offset, dir, arch); err != nil {
 			return nil, err
+		}
+		loaderArch, err := fileArchitecture(img.bootLoader)
+		if err != nil {
+			return nil, fmt.Errorf("the image's boot loader: %w", err)
+		}
+		if loaderArch != arch {
+			return nil, fmt.Errorf("the image's boot loader is built for %s, its UKI for %s", loaderArch, arch)
 		}
 		binaries = append(binaries, img.bootLoader)
 	}
@@ -107,11 +118,12 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 		return nil, errors.New("the image names no role or cluster in its os-release; it is no role image of a cluster")
 	}
 	h := &nodev1.ImageHeader{
-		Version:  img.info.Version(),
-		ImageId:  img.info.ID(),
-		Cluster:  img.info.Cluster(),
-		Role:     img.info.Role(),
-		RootHash: img.store.RootHash,
+		Version:      img.info.Version(),
+		ImageId:      img.info.ID(),
+		Cluster:      img.info.Cluster(),
+		Role:         img.info.Role(),
+		RootHash:     img.store.RootHash,
+		Architecture: arch,
 	}
 	if h.Store, err = sum(img.store.Data); err != nil {
 		return nil, err
@@ -240,4 +252,14 @@ func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error) error {
 			return rerr
 		}
 	}
+}
+
+// fileArchitecture is the architecture an EFI binary is built for.
+func fileArchitecture(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return uki.Architecture(f)
 }

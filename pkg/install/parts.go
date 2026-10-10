@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"debug/pe"
 	"errors"
 	"fmt"
 	"io"
@@ -66,8 +65,11 @@ func (i *Installer) FromParts(ctx context.Context, req PartsRequest) error {
 	if h.BootLoaderSize == 0 {
 		return errors.New("the image brings no boot loader, which an install writes to the ESP")
 	}
-	if i.Loader == "" {
-		return errors.New("no UEFI boot loader path is known for this architecture")
+	if i.loader() == "" {
+		return errors.New("chalkos builds no images for this machine's architecture")
+	}
+	if h.Architecture != i.Architecture {
+		return fmt.Errorf("the image is built for %s, this machine for %s", h.Architecture, i.Architecture)
 	}
 	l, err := parseLayout(req.SystemDefinitions)
 	if err != nil {
@@ -395,7 +397,7 @@ func (i *Installer) receiveUKI(tmp string, h upgrade.Header, parts io.Reader) ([
 }
 
 // receiveBootLoader receives the boot loader, the image's last part, and checks it: its SHA-256,
-// that it is built for this machine, and with Secure Boot enforced, its signature.
+// that it is built for the image's architecture, and with Secure Boot enforced, its signature.
 func (i *Installer) receiveBootLoader(h upgrade.Header, parts io.Reader) ([]byte, error) {
 	loader := make([]byte, h.BootLoaderSize)
 	if _, err := io.ReadFull(parts, loader); err != nil {
@@ -407,28 +409,13 @@ func (i *Installer) receiveBootLoader(h upgrade.Header, parts io.Reader) ([]byte
 	if sum := sha256.Sum256(loader); !bytes.Equal(sum[:], h.BootLoaderSHA256) {
 		return nil, fmt.Errorf("the boot loader's SHA-256 is %x, want %x", sum, h.BootLoaderSHA256)
 	}
-	f, err := pe.NewFile(bytes.NewReader(loader))
-	if err != nil {
-		return nil, fmt.Errorf("the boot loader: %w", err)
-	}
-	if want := loaderMachine(i.Loader); f.Machine != want {
-		return nil, fmt.Errorf("the boot loader is built for the machine type %#x, not this machine's %#x", f.Machine, want)
+	if err := upgrade.CheckArchitecture(bytes.NewReader(loader), h, "boot loader"); err != nil {
+		return nil, err
 	}
 	if err := upgrade.CheckSecureBoot(bytes.NewReader(loader), h.BootLoaderSize, i.EFIVars, "boot loader"); err != nil {
 		return nil, err
 	}
 	return loader, nil
-}
-
-// loaderMachine is the PE machine type of the boot loader firmware starts from the path.
-func loaderMachine(loader string) uint16 {
-	switch {
-	case strings.HasSuffix(loader, `\BOOTX64.EFI`):
-		return pe.IMAGE_FILE_MACHINE_AMD64
-	case strings.HasSuffix(loader, `\BOOTAA64.EFI`):
-		return pe.IMAGE_FILE_MACHINE_ARM64
-	}
-	return 0
 }
 
 // writeBootLoader writes the boot loader to the ESP's removable-media path, where firmware finds
@@ -443,7 +430,7 @@ func (i *Installer) writeBootLoader(ctx context.Context, esp partition, loader [
 			err = uerr
 		}
 	}()
-	path := filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(strings.TrimPrefix(i.Loader, `\`), `\`, "/")))
+	path := filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(strings.TrimPrefix(i.loader(), `\`), `\`, "/")))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

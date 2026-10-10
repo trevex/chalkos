@@ -23,7 +23,7 @@ func TestUpgrade(t *testing.T) {
 	c := newCreds(t)
 	image := bytes.Repeat([]byte("store hash uki "), 200000)
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{
-		Version: "0.2.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", RootHash: []byte{1, 2},
+		Version: "0.2.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: []byte{1, 2},
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 2, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 3, Sha256: []byte{6}},
 	}}
 	for _, tc := range []struct {
@@ -47,7 +47,7 @@ func TestUpgrade(t *testing.T) {
 			s.InstallImage = func(_ context.Context, h upgrade.Header, r io.Reader) (upgrade.Result, error) {
 				want := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", Cluster: "lab", Role: "worker", RootHash: []byte{1, 2},
 					StoreSize: 1, VeritySize: 2, UKISize: 3, StoreSHA256: []byte{4}, VeritySHA256: []byte{5}, UKISHA256: []byte{6}}
-				if h.Version != want.Version || h.ImageID != want.ImageID || h.Cluster != want.Cluster || h.Role != want.Role ||
+				if h.Version != want.Version || h.ImageID != want.ImageID || h.Cluster != want.Cluster || h.Role != want.Role || h.Architecture != "x86-64" ||
 					!bytes.Equal(h.RootHash, want.RootHash) || h.StoreSize != 1 || h.VeritySize != 2 || h.UKISize != 3 ||
 					!bytes.Equal(h.StoreSHA256, want.StoreSHA256) || !bytes.Equal(h.VeritySHA256, want.VeritySHA256) || !bytes.Equal(h.UKISHA256, want.UKISHA256) {
 					t.Errorf("header %+v", h)
@@ -160,7 +160,7 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 		}
 	}}
 	sum := bytes.Repeat([]byte{1}, 32)
-	h := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", Cluster: "lab", Role: "worker", RootHash: bytes.Repeat([]byte{2}, 32),
+	h := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: bytes.Repeat([]byte{2}, 32),
 		StoreSize: 1, VeritySize: 1, UKISize: 1, StoreSHA256: sum, VeritySHA256: sum, UKISHA256: sum}
 	// The fake sfdisk prints no table, which ends the upgrade.
 	if _, err := s.installImage(context.Background(), h, bytes.NewReader(nil)); err == nil {

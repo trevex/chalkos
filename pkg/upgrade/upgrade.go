@@ -51,6 +51,8 @@ type Node struct {
 	ESP, EFIVars, Cmdline string
 	// OSRelease is the running image's os-release.
 	OSRelease map[string]string
+	// Architecture is the node's, as images name theirs.
+	Architecture string
 	// OpenPartition opens a partition of the boot disk.
 	OpenPartition func(p Partition, write bool) (PartitionFile, error)
 	// TableLock, when set, is held while the boot disk's partition table is read or changed:
@@ -90,6 +92,9 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	if h.BootLoaderSize != 0 {
 		return Result{}, errors.New("an upgrade leaves the boot loader as it is; the image must not bring one")
+	}
+	if h.Architecture != n.Architecture {
+		return Result{}, fmt.Errorf("the image is built for %s, this machine for %s", h.Architecture, n.Architecture)
 	}
 	running, err := n.running()
 	if err != nil {

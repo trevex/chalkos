@@ -10,6 +10,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // SignImage signs the boot loader (/EFI/BOOT/BOOT*.EFI) and the UKIs (/EFI/Linux/*.efi) on
@@ -89,31 +91,56 @@ func ExtractUKI(ctx context.Context, image string, espOffset int64, dir string) 
 	return extract(ctx, image, espOffset, dir, "::/EFI/Linux", "*.EFI", "UKIs")
 }
 
-// ExtractBootLoader copies the boot loader on the image's ESP, /EFI/BOOT/BOOT<ARCH>.EFI, into
-// dir and returns the copy's path, for an install, which writes the boot loader by itself.
-func ExtractBootLoader(ctx context.Context, image string, espOffset int64, dir string) (string, error) {
-	return extract(ctx, image, espOffset, dir, "::/EFI/BOOT", "BOOT*.EFI", "boot loaders")
+// ExtractBootLoader copies the boot loader of the architecture off the image's ESP,
+// /EFI/BOOT/BOOTX64.EFI or /EFI/BOOT/BOOTAA64.EFI, into dir and returns the copy's path, for an
+// install, which writes the boot loader by itself.
+func ExtractBootLoader(ctx context.Context, image string, espOffset int64, dir, arch string) (string, error) {
+	name := uki.BootLoaderName(arch)
+	if name == "" {
+		return "", fmt.Errorf("chalkos builds no images for the architecture %q", arch)
+	}
+	found, err := list(ctx, image, espOffset, "::/EFI/BOOT", name)
+	if err != nil {
+		return "", err
+	}
+	if len(found) != 1 {
+		return "", fmt.Errorf("the ESP of %s has no /EFI/BOOT/%s", image, name)
+	}
+	return copyOut(ctx, image, espOffset, found[0], dir)
 }
 
 // extract copies the one file of the ESP directory whose upper-cased name matches pattern.
 func extract(ctx context.Context, image string, espOffset int64, dir, espDir, pattern, what string) (string, error) {
-	fat := fmt.Sprintf("%s@@%d", image, espOffset)
-	out, err := mtools(ctx, "mdir", "-b", "-i", fat, espDir)
+	found, err := list(ctx, image, espOffset, espDir, pattern)
 	if err != nil {
 		return "", err
-	}
-	var found []string
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if ok, _ := path.Match(pattern, strings.ToUpper(path.Base(line))); ok && line != "" {
-			found = append(found, line)
-		}
 	}
 	if len(found) != 1 {
 		return "", fmt.Errorf("the ESP of %s holds %d %s, want one", image, len(found), what)
 	}
-	dst := filepath.Join(dir, path.Base(found[0]))
-	if _, err := mtools(ctx, "mcopy", "-n", "-i", fat, found[0], dst); err != nil {
+	return copyOut(ctx, image, espOffset, found[0], dir)
+}
+
+// list returns the files of the ESP directory whose upper-cased names match pattern.
+func list(ctx context.Context, image string, espOffset int64, espDir, pattern string) ([]string, error) {
+	out, err := mtools(ctx, "mdir", "-b", "-i", fmt.Sprintf("%s@@%d", image, espOffset), espDir)
+	if err != nil {
+		return nil, err
+	}
+	var found []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if ok, _ := path.Match(pattern, strings.ToUpper(path.Base(line))); ok {
+			found = append(found, line)
+		}
+	}
+	return found, nil
+}
+
+// copyOut copies a file of the ESP into dir.
+func copyOut(ctx context.Context, image string, espOffset int64, file, dir string) (string, error) {
+	dst := filepath.Join(dir, path.Base(file))
+	if _, err := mtools(ctx, "mcopy", "-n", "-i", fmt.Sprintf("%s@@%d", image, espOffset), file, dst); err != nil {
 		return "", err
 	}
 	return dst, nil

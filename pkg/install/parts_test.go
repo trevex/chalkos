@@ -77,7 +77,7 @@ func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) pa
 // headerFor describes the image as it is.
 func (img partsImage) headerFor() upgrade.Header {
 	return upgrade.Header{
-		ImageID: "chalkos", Version: img.version, Cluster: "lab", Role: "worker", RootHash: img.root,
+		ImageID: "chalkos", Version: img.version, Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: img.root,
 		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(img.uki)), BootLoaderSize: int64(len(img.loader)),
 		StoreSHA256: sha(img.store), VeritySHA256: sha(img.hash), UKISHA256: sha(img.uki), BootLoaderSHA256: sha(img.loader),
 	}
@@ -733,6 +733,12 @@ func TestFromPartsRefuses(t *testing.T) {
 		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("usrhash=%x", sha([]byte("another store"))))
 	otherStore.header = otherStore.headerFor()
+	armLoader := img
+	armLoader.loader = ukitest.WithMachine(img.loader, 0xaa64)
+	armLoader.header = armLoader.headerFor()
+	armUKI := img
+	armUKI.uki = ukitest.WithMachine(img.uki, 0xaa64)
+	armUKI.header = armUKI.headerFor()
 	for _, tc := range []struct {
 		name  string
 		setup func(l *partsLab)
@@ -769,7 +775,8 @@ func TestFromPartsRefuses(t *testing.T) {
 		{"another root hash", nil, img, func(r *PartsRequest) { r.Image.RootHash = sha([]byte("other")) }, "the written store"},
 		{"a UKI booting another store", nil, otherStore, nil, "the UKI boots another store"},
 		{"a corrupt boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoaderSHA256 = sha(nil) }, "the boot loader's SHA-256"},
-		{"a boot loader for another machine", func(l *partsLab) { l.i.Loader = `\EFI\BOOT\BOOTAA64.EFI` }, img, nil, "built for the machine type 0x8664"},
+		{"a boot loader for another machine", nil, armLoader, nil, "the boot loader is built for arm64, but the image names x86-64"},
+		{"a UKI for another machine", nil, armUKI, nil, "the UKI is built for arm64, but the image names x86-64"},
 		{"an unsigned UKI", func(l *partsLab) { l.enforceSecureBoot(der, nil) }, img, nil, "Secure Boot would refuse the UKI"},
 		{"an unsigned boot loader", func(l *partsLab) { l.enforceSecureBoot(der, nil) }, unsignedLoader, nil, "Secure Boot would refuse the boot loader"},
 		{"a signer dbx lists", func(l *partsLab) { l.enforceSecureBoot(der, der) }, signed, nil, "Secure Boot would refuse the UKI"},
@@ -991,7 +998,8 @@ func TestFromPartsRefusesBeforeTouchingTheDisk(t *testing.T) {
 		{"an invalid storage section", func(_ *partsLab, r *PartsRequest) {
 			r.Section.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "state", Format: "ext4"}
 		}, `label "state"`},
-		{"no boot loader path", func(l *partsLab, _ *PartsRequest) { l.i.Loader = "" }, "no UEFI boot loader path"},
+		{"a machine of an unknown architecture", func(l *partsLab, _ *PartsRequest) { l.i.Architecture = "" }, "builds no images for this machine's architecture"},
+		{"an image of another architecture", func(_ *partsLab, r *PartsRequest) { r.Image.Architecture = "arm64" }, "the image is built for arm64, this machine for x86-64"},
 		{"definitions without STATE", func(_ *partsLab, r *PartsRequest) {
 			r.SystemDefinitions = maps.Clone(labDefinitions)
 			delete(r.SystemDefinitions, "50-state.conf")

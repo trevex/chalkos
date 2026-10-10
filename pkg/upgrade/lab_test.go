@@ -87,7 +87,7 @@ func sum(b []byte) []byte {
 // headerFor describes the image with the UKI given.
 func (img image) headerFor(uki []byte) Header {
 	return Header{
-		ImageID: "chalkos", Version: img.version, Cluster: "lab", Role: "worker", RootHash: img.root,
+		ImageID: "chalkos", Version: img.version, Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: img.root,
 		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(uki)),
 		StoreSHA256: sum(img.store), VeritySHA256: sum(img.hash), UKISHA256: sum(uki),
 	}
@@ -160,6 +160,7 @@ size=1MiB, type=%s, name=state
 		ESP:           l.esp,
 		EFIVars:       l.efivars,
 		Cmdline:       l.cmdline,
+		Architecture:  "x86-64",
 		OpenPartition: l.open,
 	}
 	for _, d := range []string{filepath.Join(l.esp, linuxDir), l.efivars} {

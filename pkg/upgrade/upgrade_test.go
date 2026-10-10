@@ -304,6 +304,7 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		{"another image ID", func(h *Header) { h.ImageID = "other" }, nil, "image ID is other"},
 		{"another cluster", func(h *Header) { h.Cluster = "prod" }, nil, "cluster is prod"},
 		{"another role", func(h *Header) { h.Role = "controlplane" }, nil, "role is controlplane"},
+		{"another architecture", func(h *Header) { h.Architecture = "arm64" }, nil, "the image is built for arm64, this machine for x86-64"},
 		{"a version with a counter", func(h *Header) { h.Version = "0.2.0+1" }, nil, "version"},
 		{"an upper-case version", func(h *Header) { h.Version = "0.2.0-RC1" }, nil, "version"},
 		{"the running version, rebuilt", func(h *Header) { *h = rebuilt.header }, nil, "build the image with a new version"},
@@ -394,6 +395,8 @@ func TestRefusesBeforeActivating(t *testing.T) {
 	otherRole.uki = newUKI(osRelease, img.root)
 	noTries := img
 	noTries.uki = newUKI(img.osRelease(0), img.root)
+	otherArch := img
+	otherArch.uki = ukitest.WithMachine(img.uki, 0xaa64)
 	// Another store than the running one: an upgrade carrying that is refused before it starts.
 	wrongRoot := img
 	wrongRoot.root = newImage(t, "0.3.0", 3).root
@@ -410,6 +413,7 @@ func TestRefusesBeforeActivating(t *testing.T) {
 		{"a UKI of another role", withHeader(otherRole), "role is \"controlplane\""},
 		{"a UKI booting another store", withHeader(otherStore), "boots another store"},
 		{"a UKI without boot tries", withHeader(noTries), "boot tries"},
+		{"a UKI of another architecture", withHeader(otherArch), "the UKI is built for arm64, but the image names x86-64"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
@@ -838,5 +842,17 @@ func TestParseTable(t *testing.T) {
 	}
 	if _, err := ParseTable("/dev/vda", []byte(`{"partitiontable": {"label": "dos"}}`)); err == nil || !strings.Contains(err.Error(), `a "dos" partition table, not a GPT`) {
 		t.Errorf("a DOS table: %v", err)
+	}
+}
+
+// TestHeaderArchitecture requires an architecture chalkos builds images for.
+func TestHeaderArchitecture(t *testing.T) {
+	img := newImage(t, "0.2.0", 3)
+	for arch, ok := range map[string]bool{"x86-64": true, "arm64": true, "": false, "amd64": false} {
+		h := img.header
+		h.Architecture = arch
+		if err := h.Validate(); (err == nil) != ok || err != nil && !strings.Contains(err.Error(), "architecture") {
+			t.Errorf("Validate of %q = %v", arch, err)
+		}
 	}
 }

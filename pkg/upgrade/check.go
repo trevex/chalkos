@@ -17,10 +17,12 @@ import (
 // its UKI and, in an install, its boot loader follow it in this order.
 type Header struct {
 	ImageID, Version, Cluster, Role string
-	RootHash                        []byte
-	StoreSize, VeritySize, UKISize  int64
-	StoreSHA256, VeritySHA256       []byte
-	UKISHA256                       []byte
+	// Architecture is what the image runs on, as systemd names it: x86-64 or arm64.
+	Architecture                   string
+	RootHash                       []byte
+	StoreSize, VeritySize, UKISize int64
+	StoreSHA256, VeritySHA256      []byte
+	UKISHA256                      []byte
 	// BootLoaderSize and BootLoaderSHA256 describe the boot loader; zero and nil when the image
 	// brings none.
 	BootLoaderSize   int64
@@ -44,6 +46,8 @@ func (h Header) Validate() error {
 		return fmt.Errorf("the version %q is not 1 to 23 characters of a-z, 0-9, '.', '~', '^' and '-'", h.Version)
 	case h.ImageID == "" || h.Cluster == "" || h.Role == "":
 		return errors.New("the image's ID, cluster and role are required")
+	case uki.BootLoaderName(h.Architecture) == "":
+		return fmt.Errorf("the image's architecture %q is none chalkos builds images for", h.Architecture)
 	case len(h.RootHash) != sha256.Size:
 		return errors.New("the root hash is not a SHA-256")
 	case len(h.StoreSHA256) != sha256.Size || len(h.VeritySHA256) != sha256.Size || len(h.UKISHA256) != sha256.Size:
@@ -104,6 +108,9 @@ func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 	if hash, err := img.UsrHash(); err != nil || !bytes.Equal(hash, h.RootHash) {
 		return 0, errors.New("the UKI boots another store than the image carries")
 	}
+	if err := CheckArchitecture(r, h, "UKI"); err != nil {
+		return 0, err
+	}
 	tries, err := strconv.Atoi(img.BootTries())
 	if err != nil || tries < 1 {
 		return 0, fmt.Errorf("the UKI's boot tries %q are not a positive number", img.BootTries())
@@ -155,4 +162,17 @@ func secureBootDatabases(efivars string) (db, dbx uki.Database, ok bool, err err
 		}
 	}
 	return db, dbx, true, nil
+}
+
+// CheckArchitecture checks that an EFI binary of the image, the UKI or the boot loader, is built
+// for the architecture the image names.
+func CheckArchitecture(r io.ReaderAt, h Header, what string) error {
+	arch, err := uki.Architecture(r)
+	if err != nil {
+		return fmt.Errorf("the %s: %w", what, err)
+	}
+	if arch != h.Architecture {
+		return fmt.Errorf("the %s is built for %s, but the image names %s", what, arch, h.Architecture)
+	}
+	return nil
 }

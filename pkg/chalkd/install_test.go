@@ -97,7 +97,7 @@ func TestInstallFromParts(t *testing.T) {
 	}
 	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{
-		Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", RootHash: []byte{1},
+		Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: []byte{1},
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
 		Uki: &nodev1.ImagePart{Size: 5, Sha256: []byte{6}}, BootLoader: &nodev1.ImagePart{Size: 7, Sha256: []byte{8}},
 	}
@@ -111,7 +111,7 @@ func TestInstallFromParts(t *testing.T) {
 		t.Errorf("streamed %d bytes, want the %d of the image's parts", len(streamed), len(parts))
 	}
 	want := upgrade.Header{
-		ImageID: "chalkos", Version: "0.1.0", Cluster: "lab", Role: "worker", RootHash: []byte{1},
+		ImageID: "chalkos", Version: "0.1.0", Cluster: "lab", Role: "worker", Architecture: "x86-64", RootHash: []byte{1},
 		StoreSize: 1, StoreSHA256: []byte{2}, VeritySize: 3, VeritySHA256: []byte{4},
 		UKISize: 5, UKISHA256: []byte{6}, BootLoaderSize: 7, BootLoaderSHA256: []byte{8},
 	}

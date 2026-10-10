@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -147,8 +148,8 @@ type Installer struct {
 	MountInfo string
 	// OpenDisk opens a disk for wiping, waiting for its lock a bounded time or until ctx is done.
 	OpenDisk func(ctx context.Context, path string) (Disk, error)
-	// Loader is the boot loader's path on the ESP, for the UEFI boot entry.
-	Loader string
+	// Architecture is the machine's, as images name theirs: x86-64 or arm64.
+	Architecture string
 	// EFIVars is where efivarfs is, whose db and dbx the image's UKI and boot loader are checked
 	// against when Secure Boot is on.
 	EFIVars string
@@ -182,23 +183,22 @@ func Default(inPlace bool) *Installer {
 		WorkDir:       "/run/chalkd/install",
 		MountInfo:     "/proc/self/mountinfo",
 		OpenDisk:      openExclusive,
-		Loader:        bootLoader(runtime.GOARCH),
+		Architecture:  uki.GoArchitecture(runtime.GOARCH),
 		EFIVars:       "/sys/firmware/efi/efivars",
 		OpenPartition: upgrade.OpenPartition,
 		Now:           time.Now,
 	}
 }
 
-// bootLoader is where the image's systemd-boot sits on the ESP: the removable-media path of
-// the architecture, or empty for an architecture chalkos does not build for.
-func bootLoader(goarch string) string {
-	switch goarch {
-	case "amd64":
-		return `\EFI\BOOT\BOOTX64.EFI`
-	case "arm64":
-		return `\EFI\BOOT\BOOTAA64.EFI`
+// loader is where the image's systemd-boot sits on the ESP, the removable-media path of the
+// architecture, as the UEFI boot entry names it; empty for an architecture chalkos builds no
+// images for.
+func (i *Installer) loader() string {
+	name := uki.BootLoaderName(i.Architecture)
+	if name == "" {
+		return ""
 	}
-	return ""
+	return `\EFI\BOOT\` + name
 }
 
 // InPlace installs the node on the disk it booted from, where the role image already runs.

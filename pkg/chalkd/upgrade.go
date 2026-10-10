@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"runtime"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -61,7 +63,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 // imageHeader is the image an install or upgrade header describes.
 func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	return upgrade.Header{
-		ImageID: h.GetImageId(), Version: h.GetVersion(), Cluster: h.GetCluster(), Role: h.GetRole(), RootHash: h.GetRootHash(),
+		ImageID: h.GetImageId(), Version: h.GetVersion(), Cluster: h.GetCluster(), Role: h.GetRole(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
 		StoreSize: int64(h.GetStore().GetSize()), VeritySize: int64(h.GetHashTree().GetSize()), UKISize: int64(h.GetUki().GetSize()),
 		StoreSHA256: h.GetStore().GetSha256(), VeritySHA256: h.GetHashTree().GetSha256(), UKISHA256: h.GetUki().GetSha256(),
 		BootLoaderSize: int64(h.GetBootLoader().GetSize()), BootLoaderSHA256: h.GetBootLoader().GetSha256(),
@@ -84,6 +86,7 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, image io.Re
 		EFIVars:       s.Paths.EFIVars,
 		Cmdline:       s.Paths.Cmdline,
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
+		Architecture:  uki.GoArchitecture(runtime.GOARCH),
 		OpenPartition: upgrade.OpenPartition,
 		// ApplyIdentity and ResetVolume change the boot disk's partitions under the same lock.
 		TableLock: &s.mu,

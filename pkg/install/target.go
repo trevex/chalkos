@@ -199,7 +199,7 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 		if err := i.change("add the UEFI boot entry"); err != nil {
 			return err
 		}
-		if _, err := i.Run.Run(ctx, "efibootmgr", "--create", "--disk", disk.Device, "--part", strconv.Itoa(esp.Number), "--label", bootLabel, "--loader", i.Loader); err != nil {
+		if _, err := i.Run.Run(ctx, "efibootmgr", "--create", "--disk", disk.Device, "--part", strconv.Itoa(esp.Number), "--label", bootLabel, "--loader", i.loader()); err != nil {
 			return fmt.Errorf("add a UEFI boot entry: %w", err)
 		}
 		if created, entries, err = find(); err != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // fakeRunner records commands and answers them from the first matching rule. A rule with
@@ -308,16 +309,16 @@ func newTestInstaller(t *testing.T, r *fakeRunner, disks ...testDisk) *Installer
 	r.mountInfo = filepath.Join(root, "mountinfo")
 	r.devRoot = h.DevRoot
 	return &Installer{
-		Run:         r,
-		Host:        h,
-		StateDir:    state,
-		BootDisk:    "/dev/disk/chalk-boot-disk",
-		Definitions: filepath.Join(root, "repart.d"),
-		WorkDir:     filepath.Join(root, "work"),
-		MountInfo:   filepath.Join(root, "mountinfo"),
-		OpenDisk:    func(context.Context, string) (Disk, error) { return nil, fmt.Errorf("unexpected open") },
-		Loader:      `\EFI\BOOT\BOOTX64.EFI`,
-		Now:         func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) },
+		Run:          r,
+		Host:         h,
+		StateDir:     state,
+		BootDisk:     "/dev/disk/chalk-boot-disk",
+		Definitions:  filepath.Join(root, "repart.d"),
+		WorkDir:      filepath.Join(root, "work"),
+		MountInfo:    filepath.Join(root, "mountinfo"),
+		OpenDisk:     func(context.Context, string) (Disk, error) { return nil, fmt.Errorf("unexpected open") },
+		Architecture: "x86-64",
+		Now:          func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) },
 	}
 }
 
@@ -684,17 +685,17 @@ func TestInstallWithoutFallbackEnrollsNothing(t *testing.T) {
 }
 
 func TestBootLoader(t *testing.T) {
-	for goarch, want := range map[string]string{
-		"amd64":   `\EFI\BOOT\BOOTX64.EFI`,
-		"arm64":   `\EFI\BOOT\BOOTAA64.EFI`,
-		"riscv64": "",
+	for arch, want := range map[string]string{
+		"x86-64": `\EFI\BOOT\BOOTX64.EFI`,
+		"arm64":  `\EFI\BOOT\BOOTAA64.EFI`,
+		"":       "",
 	} {
-		if got := bootLoader(goarch); got != want {
-			t.Errorf("bootLoader(%s) = %q, want %q", goarch, got, want)
+		if got := (&Installer{Architecture: arch}).loader(); got != want {
+			t.Errorf("the boot loader of %q = %q, want %q", arch, got, want)
 		}
 	}
-	if Default(false).Loader != bootLoader(runtime.GOARCH) {
-		t.Errorf("Default uses the boot loader %q on %s", Default(false).Loader, runtime.GOARCH)
+	if arch := Default(false).Architecture; arch != uki.GoArchitecture(runtime.GOARCH) {
+		t.Errorf("Default installs %q on %s", arch, runtime.GOARCH)
 	}
 }
 

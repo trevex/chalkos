@@ -87,3 +87,11 @@ func SignatureList(der []byte) []byte {
 	binary.LittleEndian.PutUint32(b[24:], uint32(16+len(der)))
 	return append(append(b, make([]byte, 16)...), der...)
 }
+
+// WithMachine returns a copy of an image Build made with another PE machine type, such as
+// 0xaa64 for arm64.
+func WithMachine(image []byte, machine uint16) []byte {
+	out := append([]byte(nil), image...)
+	binary.LittleEndian.PutUint16(out[0x44:], machine)
+	return out
+}

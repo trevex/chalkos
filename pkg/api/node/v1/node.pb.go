@@ -1049,7 +1049,10 @@ type ImageHeader struct {
 	HashTree *ImagePart `protobuf:"bytes,7,opt,name=hash_tree,json=hashTree,proto3" json:"hash_tree,omitempty"`
 	Uki      *ImagePart `protobuf:"bytes,8,opt,name=uki,proto3" json:"uki,omitempty"`
 	// The signed systemd-boot, which firmware starts from the ESP's removable-media path.
-	BootLoader    *ImagePart `protobuf:"bytes,9,opt,name=boot_loader,json=bootLoader,proto3" json:"boot_loader,omitempty"`
+	BootLoader *ImagePart `protobuf:"bytes,9,opt,name=boot_loader,json=bootLoader,proto3" json:"boot_loader,omitempty"`
+	// The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A
+	// node refuses an image of another architecture than its own.
+	Architecture  string `protobuf:"bytes,10,opt,name=architecture,proto3" json:"architecture,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1145,6 +1148,13 @@ func (x *ImageHeader) GetBootLoader() *ImagePart {
 		return x.BootLoader
 	}
 	return nil
+}
+
+func (x *ImageHeader) GetArchitecture() string {
+	if x != nil {
+		return x.Architecture
+	}
+	return ""
 }
 
 // The size and SHA-256 of a part of an image.
@@ -3672,7 +3682,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06serial\x18\x03 \x01(\tR\x06serial\x12\x10\n" +
 	"\x03wwn\x18\x04 \x01(\tR\x03wwn\x12\x12\n" +
 	"\x04size\x18\x05 \x01(\tR\x04size\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\"\xe3\x02\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\"\x87\x03\n" +
 	"\vImageHeader\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x18\n" +
@@ -3683,7 +3693,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\thash_tree\x18\a \x01(\v2\x1a.chalkos.node.v1.ImagePartR\bhashTree\x12,\n" +
 	"\x03uki\x18\b \x01(\v2\x1a.chalkos.node.v1.ImagePartR\x03uki\x12;\n" +
 	"\vboot_loader\x18\t \x01(\v2\x1a.chalkos.node.v1.ImagePartR\n" +
-	"bootLoader\"7\n" +
+	"bootLoader\x12\"\n" +
+	"\farchitecture\x18\n" +
+	" \x01(\tR\farchitecture\"7\n" +
 	"\tImagePart\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\fR\x06sha256\" \n" +

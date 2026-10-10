@@ -218,6 +218,9 @@ message ImageHeader {
   ImagePart uki = 8;
   // The signed systemd-boot, which firmware starts from the ESP's removable-media path.
   ImagePart boot_loader = 9;
+  // The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A
+  // node refuses an image of another architecture than its own.
+  string architecture = 10;
 }
 
 // The size and SHA-256 of a part of an image.

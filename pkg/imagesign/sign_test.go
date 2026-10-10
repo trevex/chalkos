@@ -155,7 +155,7 @@ func TestExtractAndSignUKI(t *testing.T) {
 }
 
 // TestExtractBootLoader copies systemd-boot off an ESP, as an install sends it, and leaves the
-// other binaries of /EFI/BOOT and the UKIs alone.
+// other binaries of /EFI/BOOT, another architecture's boot loader among them, and the UKIs alone.
 func TestExtractBootLoader(t *testing.T) {
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -179,13 +179,18 @@ func TestExtractBootLoader(t *testing.T) {
 	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_0.2.0.efi")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/fallback.efi")
-	if _, err := ExtractBootLoader(context.Background(), image, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 0 boot loaders") {
+	// Another architecture's boot loader is no x86-64 image's.
+	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTAA64.EFI")
+	if _, err := ExtractBootLoader(context.Background(), image, 0, dir, "x86-64"); err == nil || !strings.Contains(err.Error(), "has no /EFI/BOOT/BOOTX64.EFI") {
 		t.Errorf("an ESP without a boot loader: %v", err)
+	}
+	if _, err := ExtractBootLoader(context.Background(), image, 0, dir, "riscv64"); err == nil || !strings.Contains(err.Error(), "riscv64") {
+		t.Errorf("an unknown architecture: %v", err)
 	}
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTX64.EFI")
 	out := filepath.Join(dir, "out")
 	os.Mkdir(out, 0o755)
-	loader, err := ExtractBootLoader(context.Background(), image, 0, out)
+	loader, err := ExtractBootLoader(context.Background(), image, 0, out, "x86-64")
 	if err != nil {
 		t.Fatal(err)
 	}
