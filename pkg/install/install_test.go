@@ -529,7 +529,7 @@ func TestInPlaceRecreatesStateForPolicy(t *testing.T) {
 	system := filepath.Join(i.WorkDir, "system")
 	for _, want := range []string{
 		"sfdisk --delete /dev/vda 6",
-		"systemd-repart --dry-run=no --definitions=" + system + " --tpm2-pcrs=7 /dev/vda",
+		"systemd-repart --dry-run=no --seed=random --definitions=" + system + " --tpm2-pcrs=7 /dev/vda",
 		"mount -t ext4 /dev/vda6 " + i.StateDir,
 	} {
 		if !hasPrefix(r.calls, want) {
@@ -555,7 +555,7 @@ func TestInPlaceKeepsMatchingState(t *testing.T) {
 	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))); err != nil {
 		t.Fatal(err)
 	}
-	if hasPrefix(r.calls, "sfdisk --delete") || hasPrefix(r.calls, "systemd-repart --dry-run=no --definitions="+filepath.Join(i.WorkDir, "system")) {
+	if hasPrefix(r.calls, "sfdisk --delete") || hasPrefix(r.calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(i.WorkDir, "system")) {
 		t.Errorf("recreated a STATE that matches the policy: %v", r.calls)
 	}
 }

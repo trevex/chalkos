@@ -145,7 +145,7 @@ type Installer struct {
 	WorkDir string
 	// MountInfo is the mount table of chalkd's mount namespace.
 	MountInfo string
-	// OpenDisk opens a disk for wiping, waiting for its lock until ctx is done.
+	// OpenDisk opens a disk for wiping, waiting for its lock a bounded time or until ctx is done.
 	OpenDisk func(ctx context.Context, path string) (Disk, error)
 	// Loader is the boot loader's path on the ESP, for the UEFI boot entry.
 	Loader string
@@ -410,7 +410,7 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 	if err := writeDefinitions(dir, defs, policy); err != nil {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "systemd-repart", "--dry-run=no", "--definitions="+dir, "--tpm2-pcrs=7", disk.Device); err != nil {
+	if _, err := i.Run.Run(ctx, "systemd-repart", "--dry-run=no", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", disk.Device); err != nil {
 		return fmt.Errorf("create the system region on %s: %w", disk.Device, err)
 	}
 	return nil

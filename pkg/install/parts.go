@@ -83,8 +83,11 @@ func (i *Installer) FromParts(ctx context.Context, req PartsRequest) error {
 	if err := i.refuseBootDisk(target); err != nil {
 		return err
 	}
-	// An install that a crashed chalkd left behind holds the target's STATE.
+	// An install that a crashed chalkd left behind holds the target's STATE and its ESP.
 	if err := i.closeState(ctx); err != nil {
+		return err
+	}
+	if err := i.releaseESP(ctx); err != nil {
 		return err
 	}
 	// From here on the steps change the disk: a client that goes away must not kill a tool while
@@ -218,7 +221,7 @@ func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, ta
 	default:
 		return fmt.Errorf("STATE on the target disk %s holds %q; pass --wipe-disk to replace it", target, found)
 	}
-	if err := i.storage(target).Open(ctx, stateMapperName, state.Node, i.StateDir, false, found == contentLUKS); err != nil {
+	if err := i.openStateReadOnly(ctx, state.Node, found == contentLUKS); err != nil {
 		return fmt.Errorf("STATE on the target disk %s does not open on this machine, so it belongs to another node: %w; pass --wipe-disk to replace it", target, err)
 	}
 	installed, err := Installed(i.StateDir)
@@ -232,6 +235,24 @@ func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, ta
 		return fmt.Errorf("the target disk %s holds an installed node; pass --wipe-disk to replace it", target)
 	}
 	return nil
+}
+
+// openStateReadOnly opens STATE to look at it, without writing to the disk: LUKS attached
+// read-only with the TPM alone, no file system check, and the file system mounted read-only
+// without replaying its journal.
+func (i *Installer) openStateReadOnly(ctx context.Context, dev string, luks bool) error {
+	source := dev
+	if luks {
+		if _, err := i.Run.Run(ctx, "systemd-cryptsetup", "attach", stateMapperName, dev, "-", "tpm2-device=auto,headless=true,read-only"); err != nil {
+			return err
+		}
+		source = "/dev/mapper/" + stateMapperName
+	}
+	if err := os.MkdirAll(i.StateDir, 0o755); err != nil {
+		return err
+	}
+	_, err := i.Run.Run(ctx, "mount", "-t", "ext4", "-o", "ro,noload", source, i.StateDir)
+	return err
 }
 
 // storage opens and changes the node's volumes on the disk.
@@ -295,7 +316,7 @@ func (i *Installer) layOut(ctx context.Context, target storage.BlockDisk, defs m
 	if err := i.change("lay out the target disk"); err != nil {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "systemd-repart", "--dry-run=no", "--empty=allow", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", target.Device); err != nil {
+	if _, err := i.Run.Run(ctx, "systemd-repart", "--dry-run=no", "--empty=require", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", target.Device); err != nil {
 		return fmt.Errorf("lay out the target disk %s: %w", target, err)
 	}
 	return nil
@@ -463,13 +484,8 @@ func writeSynced(path string, data []byte) error {
 // and returns the directory and the function that flushes the file system and unmounts it.
 func (i *Installer) mountESP(ctx context.Context, esp partition) (string, func() error, error) {
 	dir := filepath.Join(i.WorkDir, "esp")
-	// A crashed chalkd may have left it mounted.
-	if mounted, err := isMounted(i.MountInfo, dir); err != nil {
+	if err := i.releaseESP(ctx); err != nil {
 		return "", nil, err
-	} else if mounted {
-		if _, err := i.Run.Run(ctx, "umount", dir); err != nil {
-			return "", nil, fmt.Errorf("unmount the ESP: %w", err)
-		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", nil, err
@@ -496,6 +512,20 @@ func syncFS(dir string) error {
 	defer d.Close()
 	if err := unix.Syncfs(int(d.Fd())); err != nil {
 		return fmt.Errorf("sync the ESP: %w", err)
+	}
+	return nil
+}
+
+// releaseESP unmounts the target's ESP where a crashed chalkd may have left it mounted, which
+// keeps the target in use.
+func (i *Installer) releaseESP(ctx context.Context) error {
+	dir := filepath.Join(i.WorkDir, "esp")
+	mounted, err := isMounted(i.MountInfo, dir)
+	if err != nil || !mounted {
+		return err
+	}
+	if _, err := i.Run.Run(ctx, "umount", dir); err != nil {
+		return fmt.Errorf("unmount the ESP: %w", err)
 	}
 	return nil
 }

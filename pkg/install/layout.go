@@ -3,6 +3,7 @@ package install
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -79,6 +80,12 @@ func parseLayout(defs map[string]string) (layout, error) {
 		if d.typ == "" {
 			return nil, fmt.Errorf("%s defines no partition type", name)
 		}
+		// repart rounds the minimum up to a multiple of 4096 and the maximum down.
+		minSize = (minSize + grain - 1) / grain * grain
+		maxSize = maxSize / grain * grain
+		if minSize > 0 && maxSize > 0 && minSize > maxSize {
+			return nil, fmt.Errorf("%s: SizeMinBytes rounds up to %d bytes, beyond SizeMaxBytes, which rounds down to %d; repart refuses it", name, minSize, maxSize)
+		}
 		d.maxSize = maxSize
 		if minSize > 0 && minSize == maxSize {
 			d.size = minSize
@@ -107,27 +114,70 @@ func parseLayout(defs map[string]string) (layout, error) {
 	return l, nil
 }
 
-// parseSize reads a size as repart does: bytes, or a number with K, M, G or T for powers of 1024.
+// grain is what repart rounds partition sizes to.
+const grain = 4096
+
+// sizeUnits are the units repart's sizes take, largest first, as systemd's parse_size reads them
+// to the base of 1024; a number without one counts bytes.
+var sizeUnits = []struct {
+	suffix string
+	factor uint64
+}{{"E", 1 << 60}, {"P", 1 << 50}, {"T", 1 << 40}, {"G", 1 << 30}, {"M", 1 << 20}, {"K", 1 << 10}, {"B", 1}, {"", 1}}
+
+// parseSize reads a size as repart does: one or more numbers, each with an optional fraction
+// and a unit smaller than the one before, such as 4096, 1.5G, 512B or 1G 512M.
 func parseSize(s string) (int64, error) {
-	shift := 0
-	switch {
-	case strings.HasSuffix(s, "K"):
-		shift = 10
-	case strings.HasSuffix(s, "M"):
-		shift = 20
-	case strings.HasSuffix(s, "G"):
-		shift = 30
-	case strings.HasSuffix(s, "T"):
-		shift = 40
+	bad := fmt.Errorf("%q is not a size", s)
+	var total uint64
+	rest, next := s, 0
+	for {
+		rest = strings.TrimLeft(rest, " \t\n\r")
+		rest = strings.TrimPrefix(rest, "+")
+		digits := len(rest) - len(strings.TrimLeft(rest, "0123456789"))
+		if digits == 0 {
+			return 0, bad
+		}
+		n, err := strconv.ParseUint(rest[:digits], 10, 64)
+		if err != nil {
+			return 0, bad
+		}
+		rest = rest[digits:]
+		var frac float64
+		if after, ok := strings.CutPrefix(rest, "."); ok {
+			rest = after
+			digits := len(rest) - len(strings.TrimLeft(rest, "0123456789"))
+			if digits > 0 {
+				f, err := strconv.ParseUint(rest[:digits], 10, 64)
+				if err != nil {
+					return 0, bad
+				}
+				frac = float64(f) / math.Pow10(digits)
+				rest = rest[digits:]
+			}
+		}
+		rest = strings.TrimLeft(rest, " \t\n\r")
+		unit := next
+		for unit < len(sizeUnits) && !strings.HasPrefix(rest, sizeUnits[unit].suffix) {
+			unit++
+		}
+		if unit == len(sizeUnits) {
+			return 0, bad
+		}
+		factor := sizeUnits[unit].factor
+		if n >= math.MaxInt64/factor {
+			return 0, bad
+		}
+		part := n*factor + uint64(frac*float64(factor))
+		if total > math.MaxInt64-part {
+			return 0, bad
+		}
+		total += part
+		rest = rest[len(sizeUnits[unit].suffix):]
+		next = unit + 1
+		if rest == "" {
+			return int64(total), nil
+		}
 	}
-	if shift > 0 {
-		s = s[:len(s)-1]
-	}
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil || n < 0 || n > (1<<62)>>shift {
-		return 0, fmt.Errorf("%q is not a size", s)
-	}
-	return n << shift, nil
 }
 
 // check reports how the disk's partitions differ from those the layout and the node's system

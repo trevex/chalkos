@@ -34,6 +34,10 @@ type blockDevice struct{ *os.File }
 // lockRetry is how often openExclusive tries again to lock a disk another process holds.
 const lockRetry = 100 * time.Millisecond
 
+// diskLockWait is how long openExclusive waits for a disk another process keeps locked, as sfdisk
+// does: the install holds chalkd's lock meanwhile.
+var diskLockWait = 30 * time.Second
+
 func openExclusive(ctx context.Context, path string) (Disk, error) {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_EXCL, 0)
 	if err != nil {
@@ -41,6 +45,7 @@ func openExclusive(ctx context.Context, path string) (Disk, error) {
 	}
 	// udev probes a disk, and rereads its partition table, when it is closed after writing; the
 	// lock keeps udev waiting until the kernel dropped the old partitions, so the two never race.
+	deadline := time.Now().Add(diskLockWait)
 	for {
 		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {
@@ -50,11 +55,15 @@ func openExclusive(ctx context.Context, path string) (Disk, error) {
 			f.Close()
 			return nil, fmt.Errorf("lock %s: %w", path, err)
 		}
+		if !time.Now().Before(deadline) {
+			f.Close()
+			return nil, fmt.Errorf("another program kept the target disk %s locked for %v", path, diskLockWait)
+		}
 		select {
 		case <-ctx.Done():
 			f.Close()
 			return nil, fmt.Errorf("the target disk is locked by another process: %s: %w", path, ctx.Err())
-		case <-time.After(lockRetry):
+		case <-time.After(min(lockRetry, time.Until(deadline))):
 		}
 	}
 }

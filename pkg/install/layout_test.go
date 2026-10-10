@@ -1,6 +1,7 @@
 package install
 
 import (
+	"maps"
 	"strings"
 	"testing"
 
@@ -8,14 +9,52 @@ import (
 )
 
 func TestParseSize(t *testing.T) {
-	for in, want := range map[string]int64{"4096": 4096, "256K": 256 << 10, "128M": 128 << 20, "3G": 3 << 30, "1T": 1 << 40} {
+	for in, want := range map[string]int64{
+		"4096": 4096, "256K": 256 << 10, "128M": 128 << 20, "3G": 3 << 30, "1T": 1 << 40,
+		"512B": 512, "1.5G": 3 << 29, "1G 512M": 3 << 29, "1.25K": 1280, "2 M": 2 << 20, "1.5": 1, "0.0001K": 0,
+	} {
 		if got, err := parseSize(in); err != nil || got != want {
 			t.Errorf("parseSize(%q) = %d, %v, want %d", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"", "1.5G", "-1M", "1Q", "M"} {
+	for _, in := range []string{"", "-1M", "1Q", "M", "1M 1G", "1G1G", "1KB", ".5G", "20E", "1G "} {
 		if _, err := parseSize(in); err == nil {
 			t.Errorf("parseSize(%q) took it", in)
+		}
+	}
+}
+
+// TestParseLayoutRounds rounds sizes as repart does: SizeMinBytes up to a multiple of 4096 and
+// SizeMaxBytes down, so a partition is fixed when both round to the same size.
+func TestParseLayoutRounds(t *testing.T) {
+	defs := func(store string) map[string]string {
+		d := maps.Clone(labDefinitions)
+		d["20-store-a.conf"] = "[Partition]\nType=usr-x86-64\n" + store
+		return d
+	}
+	for _, tc := range []struct {
+		store string
+		size  int64
+		want  string
+	}{
+		{"SizeMinBytes=2M\nSizeMaxBytes=2M\n", 2 << 20, ""},
+		{"SizeMinBytes=2096000\nSizeMaxBytes=2M\n", 2 << 20, ""},
+		{"SizeMinBytes=2096000\nSizeMaxBytes=2100000\n", 2 << 20, ""},
+		{"SizeMinBytes=1M\nSizeMaxBytes=2M\n", 0, ""},
+		{"SizeMinBytes=2097200\nSizeMaxBytes=2097200\n", 0, "SizeMinBytes rounds up to 2101248 bytes, beyond SizeMaxBytes, which rounds down to 2097152"},
+	} {
+		l, err := parseLayout(defs(tc.store))
+		if tc.want != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("%q: %v, want %q", tc.store, err, tc.want)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l[2].size != tc.size {
+			t.Errorf("%q fixes %d bytes, want %d", tc.store, l[2].size, tc.size)
 		}
 	}
 }

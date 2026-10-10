@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"maps"
 	"math/big"
@@ -21,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -195,11 +197,19 @@ func (l *partsLab) RunWithEnv(ctx context.Context, env []string, name string, ar
 		return l.real(ctx, name, args)
 	case name == "mount":
 		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
-		return nil, l.mount(args[len(args)-2], args[len(args)-1])
+		source, target := args[len(args)-2], args[len(args)-1]
+		if err := l.mount(source, target); err != nil {
+			return nil, err
+		}
+		if slices.Contains(args, "-o") && slices.Contains(strings.Split(args[slices.Index(args, "-o")+1], ","), "ro") {
+			return nil, nil
+		}
+		return nil, l.countMount(source)
 	case name == "umount":
 		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
 		return nil, l.umount(args[0])
 	case name == "systemd-cryptsetup" && args[0] == "attach" && l.tpmFails:
+		l.r.calls = append(l.r.calls, strings.Join(append([]string{name}, args...), " "))
 		return nil, &node.ToolError{Command: name, Code: 1, Stderr: "Failed to unseal secret using TPM2: State not recoverable"}
 	case name == "efibootmgr":
 		// The emulated firmware finds the ESP's partition UUID on the disk.
@@ -497,7 +507,7 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
-	if !hasPrefix(l.r.calls, "systemd-repart --dry-run=no --empty=allow --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 /dev/vdb") {
+	if !hasPrefix(l.r.calls, "systemd-repart --dry-run=no --empty=require --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 /dev/vdb") {
 		t.Errorf("the target was not laid out with the role's definitions: %q", l.r.calls)
 	}
 	if l.writes != 2 {
@@ -764,7 +774,8 @@ func TestFromPartsRefuses(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(l)
 			}
-			before := l.table()
+			before, image := l.table(), l.image()
+			l.r.calls = nil
 			req := l.request(tc.img)
 			if tc.edit != nil {
 				tc.edit(&req)
@@ -780,6 +791,15 @@ func TestFromPartsRefuses(t *testing.T) {
 				if after := l.table(); fmt.Sprint(after) != fmt.Sprint(before) {
 					t.Errorf("the refused target's partitions changed:\n%v\n%v", before, after)
 				}
+				if !bytes.Equal(l.image(), image) {
+					t.Error("the refused target changed")
+				}
+				if hasPrefix(l.r.calls, "e2fsck") {
+					t.Errorf("checked a file system of the refused target: %q", l.r.calls)
+				}
+			}
+			if l.tpmFails && !hasPrefix(l.r.calls, "systemd-cryptsetup attach state /dev/vdb6 - tpm2-device=auto,headless=true,read-only") {
+				t.Errorf("STATE was not opened read-only: %q", l.r.calls)
 			}
 			if tc.name != "an installed disk" && l.installed() {
 				t.Error("the target is installed")
@@ -1071,5 +1091,90 @@ func TestOpenExclusiveGivesUpWhenLocked(t *testing.T) {
 	}
 	if waited := time.Since(start); waited > 2*time.Second {
 		t.Errorf("waited %s for the lock, past the context's deadline", waited)
+	}
+}
+
+// countMount counts a mount of an ext4 file system that is not read-only in its superblock, as
+// the kernel does: such a mount writes to the disk.
+func (l *partsLab) countMount(source string) error {
+	n, err := strconv.Atoi(strings.TrimPrefix(source, labDev))
+	if err != nil || !strings.HasPrefix(source, labDev) {
+		return nil
+	}
+	p := l.table()[n]
+	f, err := os.OpenFile(l.disk, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sb := make([]byte, 1024)
+	off := p.Start*l.sector + 1024
+	if _, err := f.ReadAt(sb, off); err != nil {
+		return err
+	}
+	if binary.LittleEndian.Uint16(sb[56:]) != 0xef53 {
+		return nil
+	}
+	binary.LittleEndian.PutUint16(sb[52:], binary.LittleEndian.Uint16(sb[52:])+1)
+	// metadata_csum: the superblock's CRC32C ends it.
+	if binary.LittleEndian.Uint32(sb[100:])&0x400 != 0 {
+		binary.LittleEndian.PutUint32(sb[1020:], ^crc32.Checksum(sb[:1020], crc32.MakeTable(crc32.Castagnoli)))
+	}
+	_, err = f.WriteAt(sb, off)
+	return err
+}
+
+// image is the target disk's content.
+func (l *partsLab) image() []byte {
+	l.t.Helper()
+	data, err := os.ReadFile(l.disk)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	return data
+}
+
+// TestOpenExclusiveWaitsBounded gives up on a disk another program keeps locked, also when the
+// install runs on without its client's cancellation.
+func TestOpenExclusiveWaitsBounded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disk")
+	write(t, path, "")
+	d, err := openExclusive(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	defer func(wait time.Duration) { diskLockWait = wait }(diskLockWait)
+	diskLockWait = 300 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err = openExclusive(context.WithoutCancel(ctx), path)
+	if err == nil || !strings.Contains(err.Error(), "another program kept the target disk "+path+" locked for 300ms") {
+		t.Fatalf("err = %v, want the lock held too long", err)
+	}
+	if waited := time.Since(start); waited > 2*time.Second {
+		t.Errorf("waited %s for the lock", waited)
+	}
+}
+
+// TestFromPartsUnmountsALeftoverESP wipes a target whose ESP a crashed chalkd left mounted.
+func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
+	img := newPartsImage(t, "0.1.0", "a")
+	l := newPartsLab(t)
+	l.stopAt(img, "write the identity")
+	esp := filepath.Join(l.i.WorkDir, "esp")
+	if err := l.mount(labDev+"1", esp); err != nil {
+		t.Fatal(err)
+	}
+	req := l.request(img)
+	req.WipeDisk = true
+	if err := l.i.FromParts(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
+	if mounted, _ := isMounted(l.i.MountInfo, esp); mounted {
+		t.Error("the ESP is still mounted")
 	}
 }
