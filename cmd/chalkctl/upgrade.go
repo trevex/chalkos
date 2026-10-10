@@ -370,7 +370,7 @@ func (r *upgradeRun) install(ctx context.Context, name string) error {
 	var resp *nodev1.UpgradeResponse
 	err = r.call(name, func(conn *client.Conn) error {
 		stream := conn.Upgrade(ctx)
-		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: r.image.header}}); err != nil && !errors.Is(err, io.EOF) {
+		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: r.image.header}}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 		buf := make([]byte, chunkSize)

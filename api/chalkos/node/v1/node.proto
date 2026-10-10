@@ -199,6 +199,30 @@ message DiskReference {
   string type = 6;
 }
 
+// An image as install and upgrade send it. Its parts follow the header as chunks, in this order:
+// the store data, the hash tree, the UKI and, when the header names one, the boot loader.
+message ImageHeader {
+  // The image's version, ID, cluster and role, as its os-release names them.
+  string version = 1;
+  string image_id = 2;
+  string cluster = 3;
+  string role = 4;
+  // The verity root hash of the image's store.
+  bytes root_hash = 5;
+  // The store data the root hash covers, its hash tree and the signed UKI.
+  ImagePart store = 6;
+  ImagePart hash_tree = 7;
+  ImagePart uki = 8;
+  // The signed systemd-boot, which firmware starts from the ESP's removable-media path.
+  ImagePart boot_loader = 9;
+}
+
+// The size and SHA-256 of a part of an image.
+message ImagePart {
+  uint64 size = 1;
+  bytes sha256 = 2;
+}
+
 message ImageChunk {
   bytes data = 1;
 }
@@ -496,24 +520,11 @@ message UpgradeRequest {
 }
 
 message UpgradeHeader {
-  // The image's version, ID, cluster and role, as its os-release names them. The node refuses
-  // another ID, cluster or role than its own.
-  string version = 1;
-  string image_id = 2;
-  string cluster = 3;
-  string role = 4;
-  // The verity root hash of the image's store.
-  bytes root_hash = 5;
-  // Sizes and SHA-256 sums of the store data the root hash covers, its hash tree and the signed
-  // UKI, which follow in this order.
-  uint64 store_size = 6;
-  bytes store_sha256 = 7;
-  uint64 verity_size = 8;
-  bytes verity_sha256 = 9;
-  uint64 uki_size = 10;
-  bytes uki_sha256 = 11;
+  // The image to install. The node refuses another ID, cluster or role than its own, and an
+  // image that names a boot loader: an upgrade leaves the boot loader as it is.
+  ImageHeader image = 1;
   // Reboot the node into the image once it is installed.
-  bool reboot = 12;
+  bool reboot = 2;
 }
 
 message UpgradeResponse {

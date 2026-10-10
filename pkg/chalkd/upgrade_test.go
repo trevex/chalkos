@@ -22,10 +22,10 @@ import (
 func TestUpgrade(t *testing.T) {
 	c := newCreds(t)
 	image := bytes.Repeat([]byte("store hash uki "), 200000)
-	header := &nodev1.UpgradeHeader{
+	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{
 		Version: "0.2.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", RootHash: []byte{1, 2},
-		StoreSize: 1, VeritySize: 2, UkiSize: 3, StoreSha256: []byte{4}, VeritySha256: []byte{5}, UkiSha256: []byte{6},
-	}
+		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 2, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 3, Sha256: []byte{6}},
+	}}
 	for _, tc := range []struct {
 		name       string
 		reboot     bool
@@ -116,7 +116,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	conn := dial(t, addr, c.clients[pki.RoleOperator])
 	send := func() error {
 		stream := conn.Upgrade(context.Background())
-		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Version: "0.2.0"}}})
+		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0"}}}})
 		_, err := stream.CloseAndReceive()
 		return err
 	}
@@ -173,4 +173,23 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 		t.Fatal("the upgrade kept the storage lock")
 	}
 	s.mu.Unlock()
+}
+
+// TestUpgradeRefusesABootLoader refuses an image that brings a boot loader before anything is
+// installed: an upgrade leaves the boot loader as it is.
+func TestUpgradeRefusesABootLoader(t *testing.T) {
+	c := newCreds(t)
+	s, _ := newTestServer(t, normal, vda)
+	s.InstallImage = func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error) {
+		t.Error("the image was installed")
+		return upgrade.Result{}, nil
+	}
+	addr := serve(t, s, c, c.pool)
+	conn := dial(t, addr, c.clients[pki.RoleOperator])
+	stream := conn.Upgrade(context.Background())
+	img := &nodev1.ImageHeader{Version: "0.2.0", BootLoader: &nodev1.ImagePart{Size: 1, Sha256: []byte{7}}}
+	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: img}}})
+	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "boot loader") {
+		t.Errorf("upgrade = %v, want the boot loader refused", err)
+	}
 }

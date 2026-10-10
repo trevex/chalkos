@@ -221,7 +221,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	if !stream.Receive() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no header"))
 	}
-	h := stream.Msg().GetHeader()
+	h := stream.Msg().GetHeader().GetImage()
 	var received uint64
 	for stream.Receive() {
 		received += uint64(len(stream.Msg().GetChunk().GetData()))
@@ -236,7 +236,10 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	if refuse {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("upgrade: receive the store: unexpected EOF"))
 	}
-	if want := h.StoreSize + h.VeritySize + h.UkiSize; received != want || h.Role != n.role {
+	if h.BootLoader != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("an upgrade leaves the boot loader as it is"))
+	}
+	if want := h.Store.Size + h.HashTree.Size + h.Uki.Size; received != want || h.Role != n.role {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("received %d bytes of %d for the role %s", received, want, h.Role))
 	}
 	n.mu.Lock()
@@ -245,7 +248,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true}), nil
 	}
 	n.staged, n.stagedRoot, n.failed = h.Version, h.RootHash, ""
-	n.stagedStoreSize, n.stagedVeritySize = h.StoreSize, h.VeritySize
+	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	return connect.NewResponse(&nodev1.UpgradeResponse{Entry: "chalkos_" + h.Version + "+3.efi"}), nil
 }
 

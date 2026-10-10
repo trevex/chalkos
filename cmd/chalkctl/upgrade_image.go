@@ -27,7 +27,7 @@ type upgradeImage struct {
 	uki  string
 	info uki.Image
 	// header describes the image to the nodes.
-	header *nodev1.UpgradeHeader
+	header *nodev1.ImageHeader
 	// cleanup removes the UKI's copy.
 	cleanup func()
 }
@@ -94,33 +94,33 @@ func openUpgradeImage(ctx context.Context, path, key, cert string) (_ *upgradeIm
 	if img.info.Role() == "" || img.info.Cluster() == "" {
 		return nil, errors.New("the image names no role or cluster in its os-release; it is no role image of a cluster")
 	}
-	h := &nodev1.UpgradeHeader{
+	h := &nodev1.ImageHeader{
 		Version:  img.info.Version(),
 		ImageId:  img.info.ID(),
 		Cluster:  img.info.Cluster(),
 		Role:     img.info.Role(),
 		RootHash: img.store.RootHash,
 	}
-	if h.StoreSize, h.StoreSha256, err = sum(img.store.Data); err != nil {
+	if h.Store, err = sum(img.store.Data); err != nil {
 		return nil, err
 	}
-	if h.VeritySize, h.VeritySha256, err = sum(img.store.HashTree); err != nil {
+	if h.HashTree, err = sum(img.store.HashTree); err != nil {
 		return nil, err
 	}
-	if h.UkiSize, h.UkiSha256, err = sum(u); err != nil {
+	if h.Uki, err = sum(u); err != nil {
 		return nil, err
 	}
 	img.header = h
 	return img, nil
 }
 
-func sum(r io.Reader) (uint64, []byte, error) {
+func sum(r io.Reader) (*nodev1.ImagePart, error) {
 	h := sha256.New()
 	n, err := io.Copy(h, r)
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
-	return uint64(n), h.Sum(nil), nil
+	return &nodev1.ImagePart{Size: uint64(n), Sha256: h.Sum(nil)}, nil
 }
 
 // checkSignature checks the UKI against a db certificate, as firmware with it in db would.
@@ -134,7 +134,7 @@ func (img *upgradeImage) checkSignature(certPEM string) error {
 		return err
 	}
 	defer f.Close()
-	if err := uki.VerifySignature(f, int64(img.header.UkiSize), uki.Database{Certificates: certs}, uki.Database{}); err != nil {
+	if err := uki.VerifySignature(f, int64(img.header.Uki.Size), uki.Database{Certificates: certs}, uki.Database{}); err != nil {
 		return fmt.Errorf("Secure Boot would refuse the image's UKI: %w", err)
 	}
 	return nil

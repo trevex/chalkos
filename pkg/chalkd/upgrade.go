@@ -32,12 +32,12 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	if h == nil {
 		return nil, failed(connect.CodeInvalidArgument, "the first upgrade message must be the header")
 	}
-	header := upgrade.Header{
-		ImageID: h.ImageId, Version: h.Version, Cluster: h.Cluster, Role: h.Role, RootHash: h.RootHash,
-		StoreSize: int64(h.StoreSize), VeritySize: int64(h.VeritySize), UKISize: int64(h.UkiSize),
-		StoreSHA256: h.StoreSha256, VeritySHA256: h.VeritySha256, UKISHA256: h.UkiSha256,
+	img := h.GetImage()
+	if img.GetBootLoader() != nil {
+		return nil, failed(connect.CodeInvalidArgument, "an upgrade leaves the boot loader as it is; the image must not name one")
 	}
-	log.Printf("upgrading to %q %q with the root hash %x", h.ImageId, h.Version, h.RootHash)
+	header := imageHeader(img)
+	log.Printf("upgrading to %q %q with the root hash %x", img.GetImageId(), img.GetVersion(), img.GetRootHash())
 	res, err := s.installImage(ctx, header, &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
 		if !stream.Receive() {
 			return nil, false
@@ -45,20 +45,29 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return stream.Msg().GetChunk(), true
 	}, err: stream.Err})
 	if err != nil {
-		log.Printf("upgrade to %q failed: %v", h.Version, err)
+		log.Printf("upgrade to %q failed: %v", img.GetVersion(), err)
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
 	}
 	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, Entry: res.Entry}
 	if res.AlreadyInstalled {
-		log.Printf("%s runs already", h.Version)
+		log.Printf("%s runs already", img.GetVersion())
 		return connect.NewResponse(resp), nil
 	}
 	if h.Reboot {
-		log.Printf("rebooting into %s", h.Version)
+		log.Printf("rebooting into %s", img.GetVersion())
 		resp.Rebooting = true
 		s.rebootSoon()
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// imageHeader is the image an install or upgrade header describes.
+func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
+	return upgrade.Header{
+		ImageID: h.GetImageId(), Version: h.GetVersion(), Cluster: h.GetCluster(), Role: h.GetRole(), RootHash: h.GetRootHash(),
+		StoreSize: int64(h.GetStore().GetSize()), VeritySize: int64(h.GetHashTree().GetSize()), UKISize: int64(h.GetUki().GetSize()),
+		StoreSHA256: h.GetStore().GetSha256(), VeritySHA256: h.GetHashTree().GetSha256(), UKISHA256: h.GetUki().GetSha256(),
+	}
 }
 
 // installImage installs an upgrade's image on the node's boot disk.
