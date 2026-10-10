@@ -2740,33 +2740,73 @@ lib.runTests {
       apiServerPort = false;
     };
   };
-  # One directory with the plugins the network runs, copied out of nixpkgs's packages: flannel's
-  # plugin only with flannel.
+  # One directory with the plugins the cluster names, copied out of nixpkgs's packages: those
+  # flannel's network runs, plus flannel's own plugin, or with no network every reference plugin;
+  # a cluster adds to them or narrows them.
   testCNIPluginsFollowProvider = {
     expr =
       let
-        dirs =
-          provider:
-          (role (cluster [ { chalkos.cni.provider = provider; } ]))
-          .virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime".cni.bin_dirs;
-        flannel = dirs "flannel";
-        none = dirs "none";
+        image = settings: role (cluster [ { chalkos.cni = settings; } ]);
+        plugins =
+          settings:
+          let
+            c = image settings;
+            dir = c.system.build.chalkosCNIPlugins;
+          in
+          {
+            plugins = map baseNameOf dir.plugins;
+            binDirs = c.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime".cni.bin_dirs;
+            inherit (dir) name;
+          };
+        flannel = plugins { provider = "flannel"; };
+        none = plugins { provider = "none"; };
       in
       {
-        dirs = map builtins.length [
+        flannel = flannel.plugins;
+        none = none.plugins;
+        binDirs = map (p: p.binDirs) [
           flannel
           none
         ];
-        differ = flannel != none;
-        copied = lib.any (dir: lib.hasPrefix "${pkgs.cni-plugins}" dir) (flannel ++ none);
+        added = (plugins { plugins = [ "tuning" ]; }).plugins;
+        narrowed =
+          (plugins {
+            provider = "none";
+            plugins = lib.mkForce [ "ptp" ];
+          }).plugins;
+        name = lib.hasPrefix "cni-plugins-chalkos-${pkgs.cni-plugins.version}" flannel.name;
+        unknown = fails (plugins { plugins = [ "no-such-plugin" ]; }).plugins;
       };
     expected = {
-      dirs = [
-        1
-        1
+      flannel = [
+        "bridge"
+        "host-local"
+        "loopback"
+        "portmap"
+        "flannel"
       ];
-      differ = true;
-      copied = false;
+      none = lib.sort lib.lessThan (map baseNameOf pkgs.cni-plugins.subPackages);
+      binDirs =
+        let
+          dir =
+            provider:
+            "${(role (cluster [ { chalkos.cni.provider = provider; } ])).system.build.chalkosCNIPlugins}/bin";
+        in
+        [
+          [ (dir "flannel") ]
+          [ (dir "none") ]
+        ];
+      added = [
+        "bridge"
+        "host-local"
+        "loopback"
+        "portmap"
+        "tuning"
+        "flannel"
+      ];
+      narrowed = [ "ptp" ];
+      name = true;
+      unknown = true;
     };
   };
   # A role carries the base groups of kernel modules plus what it adds; the initrd takes its
@@ -2833,6 +2873,9 @@ lib.runTests {
       {
         scrub = lib.elem "--enable-scrub=no" xfsprogs.configureFlags;
         python = lib.any (p: lib.getName p == "python3") xfsprogs.buildInputs;
+        icu = lib.any (p: lib.getName p == "icu4c") (
+          xfsprogs.buildInputs ++ xfsprogs.propagatedBuildInputs ++ xfsprogs.nativeBuildInputs
+        );
         inherit (containerd) binaries;
         containerdOutputs = containerd.meta.outputsToInstall;
         # NixOS would generate xfs_scrub_all with a PATH alone.
@@ -2841,6 +2884,7 @@ lib.runTests {
     expected = {
       scrub = true;
       python = false;
+      icu = false;
       binaries = [
         "containerd"
         "containerd-shim-runc-v2"

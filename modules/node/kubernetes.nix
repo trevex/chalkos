@@ -39,19 +39,15 @@ let
     sourceSubnets = k.vxlanSourceSubnets;
   };
 
-  # The plugins flannel's network runs: flannel delegates to bridge with host-local addresses,
-  # and portmap serves host ports; containerd sets up each pod's loopback with loopback. Copies,
-  # so the store holds these alone.
+  # The reference plugins the cluster names (chalkos.cni.plugins), and with flannel its own plugin.
+  # Copies, so the store holds these alone.
   cniPlugins =
-    pkgs.runCommand "cni-plugins-${pkgs.cni-plugins.version}"
+    pkgs.runCommand "cni-plugins-chalkos-${pkgs.cni-plugins.version}"
       {
         plugins =
-          map (name: "${pkgs.cni-plugins}/bin/${name}") [
-            "bridge"
-            "host-local"
-            "loopback"
-            "portmap"
-          ]
+          map (name: "${pkgs.cni-plugins}/bin/${name}") (
+            lib.sort lib.lessThan (lib.unique config.chalkos.cni.plugins)
+          )
           ++ lib.optional flannel "${pkgs.cni-plugin-flannel}/bin/flannel";
       }
       ''
@@ -173,6 +169,8 @@ in
             '';
       })
     ];
+
+    system.build.chalkosCNIPlugins = cniPlugins;
 
     # containerd runs the CNI plugins, and portmap programs nftables with nft.
     systemd.services.containerd.path = [ pkgs.nftables ];
