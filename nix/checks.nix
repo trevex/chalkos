@@ -735,6 +735,25 @@ in
       touch $out
     '';
 
+  # The GitHub workflows pass actionlint, with shellcheck for their scripts.
+  workflows =
+    pkgs.runCommand "chalkos-workflows"
+      {
+        nativeBuildInputs = [
+          pkgs.actionlint
+          pkgs.shellcheck
+        ];
+        src = lib.fileset.toSource {
+          root = ../.;
+          fileset = ../.github/workflows;
+        };
+      }
+      ''
+        cd $src
+        actionlint -shellcheck shellcheck .github/workflows/*.yml
+        touch $out
+      '';
+
   # The documentation site builds strictly and shows only commands that exist.
   docs = docs.check;
   # The pages generated from the code are those in the repository.
