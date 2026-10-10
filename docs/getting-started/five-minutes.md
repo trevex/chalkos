@@ -49,10 +49,11 @@ boot. See [The image](../concepts/image.md).
 [secrets file](../reference/glossary.md#secrets-file): the [OS CA](../reference/glossary.md#os-ca)
 that the node API trusts, the [node CA](../reference/glossary.md#node-ca), the Kubernetes CAs
 and keys, and the secret that [recovery keys](../reference/glossary.md#recovery-key) derive from.
-It is `secrets.age`, encrypted with age, and images carry only its public part. People who
-operate nodes without the whole file get a [client file](../reference/glossary.md#client-file),
-a certificate of the [client role](../reference/glossary.md#client-role) reader, operator or
-admin. See [Security model](../concepts/security.md).
+It is `secrets.age`, encrypted with age, or `secrets.json` in plain text with `--plaintext`, and
+images carry only its public part. People who operate nodes without the whole file get a
+[client file](../reference/glossary.md#client-file), a certificate of the
+[client role](../reference/glossary.md#client-role) reader, operator or admin. See
+[Security model](../concepts/security.md).
 
 ## A node starts in maintenance mode
 

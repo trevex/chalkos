@@ -192,8 +192,10 @@ The output follows the life of a node:
 5. Last, chalklab writes a kubeconfig and an admin [client file](../reference/glossary.md#client-file)
    for chalkctl.
 
-The lab keeps its state, disks, keys and logs in `~/.local/state/chalklab/lab`. A supervisor
-process keeps the virtual machines running after the command returns.
+The lab keeps its state, disks, keys and logs in `~/.local/state/chalklab/lab`, or under
+`$XDG_STATE_HOME/chalklab` when that variable is set; the commands on this page use the default
+path, and `chalklab status` prints the one in use. A supervisor process keeps the virtual
+machines running after the command returns.
 
 Each virtual machine has two network cards. One is on the lab network, a switch that connects
 only the virtual machines, with the static addresses `cluster.nix` gives them. The other is
@@ -446,9 +448,9 @@ cp1    Ready    <none>   6m2s   v1.37.1
 w1     Ready    <none>   6m2s   v1.37.1
 ```
 
-The new image has the debugging tools, so a privileged pod can read the node's files.
-`kubectl debug` runs one on w1 and prints the node's os-release, whose `IMAGE_VERSION` is the
-version the image was built with:
+The new image has the debugging tools, so a debugging pod can run the node's own `cat` on its
+files. `kubectl debug` starts one on w1 and prints the node's os-release, whose `IMAGE_VERSION`
+is the version the image was built with:
 
 ```console
 $ kubectl debug node/w1 -i --image=busybox -- chroot /host /run/current-system/sw/bin/cat /etc/os-release
