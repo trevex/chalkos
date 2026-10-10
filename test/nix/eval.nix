@@ -408,10 +408,53 @@ lib.runTests {
     expr =
       let
         pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
-        installer = (cluster [ { chalkos.cluster.osCA = pub; } ]).installer;
+        installer = (cluster [ { chalkos.cluster.osCA = pub; } ]).installer.image;
       in
       lib.isDerivation installer && lib.hasInfix "chalkos-installer" installer.name;
     expected = true;
+  };
+  # The installer's modules reach its image, whose console is on the screen and the first serial
+  # port; it belongs to no role and no platform, as it installs images of every one.
+  testInstallerModules = {
+    expr =
+      let
+        c = cluster [
+          {
+            chalkos.installer.nixosModules = [
+              {
+                systemd.network.networks."10-uplink" = {
+                  matchConfig.MACAddress = "52:54:00:12:34:56";
+                  address = [ "10.0.0.5/24" ];
+                };
+                chalkos.kernel.moduleGroups = [ "wireless" ];
+              }
+            ];
+          }
+        ];
+        inherit (c.installer.nixos) config;
+      in
+      {
+        uplink = config.systemd.network.networks."10-uplink".matchConfig.MACAddress;
+        wireless = lib.elem "wireless" config.chalkos.kernel.moduleGroups;
+        consoles = lib.filter (lib.hasPrefix "console=") config.boot.kernelParams;
+        osRelease = lib.filterAttrs (
+          k: _: lib.hasPrefix "CHALKOS_" k
+        ) config.system.nixos.extraOSReleaseArgs;
+        image = c.installer.image.drvPath == config.system.build.chalkosInstaller.drvPath;
+      };
+    expected = {
+      uplink = "52:54:00:12:34:56";
+      wireless = true;
+      consoles = [
+        "console=tty0"
+        "console=ttyS0,115200"
+      ];
+      osRelease = {
+        CHALKOS_CLUSTER = "t";
+        CHALKOS_BOOT_TRIES = "3";
+      };
+      image = true;
+    };
   };
   testWrongNodeTypeFails = {
     expr =
@@ -3587,7 +3630,7 @@ lib.runTests {
       in
       {
         role = summary (role c).system.build.chalkosImage.fits;
-        installer = summary c.installer.fits;
+        installer = summary c.installer.image.fits;
       };
     expected = {
       role = {

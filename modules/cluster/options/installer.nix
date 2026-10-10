@@ -14,24 +14,47 @@ let
     settings
     module
     ;
+  cfg = config.chalkos.installer;
 in
 {
-  options.chalkos.installer = lib.mkOption {
-    type = lib.types.package;
-    readOnly = true;
-    description = ''
-      Installer of the cluster: a raw image and an ISO that boot chalkd in maintenance mode, from
-      which chalkctl install writes a node's role image to its system disk.
-    '';
+  options.chalkos.installer = {
+    nixosModules = lib.mkOption {
+      type = lib.types.listOf lib.types.deferredModule;
+      default = [ ];
+      description = ''
+        NixOS modules added to the installer: systemd-networkd with static addresses, VLANs and
+        bonds for the machines it boots on, further kernel module groups and firmware, consoles.
+        Secure Boot fixes the kernel command line, so what differs between machines goes into the
+        image, matched by MAC address or interface name.
+      '';
+    };
+    nixos = lib.mkOption {
+      type = lib.types.raw;
+      readOnly = true;
+      internal = true;
+      description = "The evaluated NixOS system of the installer.";
+    };
+    image = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      description = ''
+        Installer of the cluster: a raw image and a hybrid ISO that boot chalkd in maintenance
+        mode, from which chalkctl install writes a node's role image of any platform to its
+        system disk.
+      '';
+    };
   };
 
-  config.chalkos.installer =
-    (nixpkgs.lib.nixosSystem {
+  config.chalkos.installer = {
+    nixos = nixpkgs.lib.nixosSystem {
       modules = [
         ../../node
         ../../installer
         module
         { nixpkgs.hostPlatform = settings.cluster.system; }
-      ];
-    }).config.system.build.chalkosInstaller;
+      ]
+      ++ cfg.nixosModules;
+    };
+    image = cfg.nixos.config.system.build.chalkosInstaller;
+  };
 }

@@ -108,6 +108,8 @@ in
     "virtio_scsi"
     "xhci_pci"
   ];
+  # One installer serves every platform, so its console is on the screen and the first serial
+  # port; chalkos.installer.nixosModules may add others.
   boot.kernelParams = [
     "console=tty0"
     "console=ttyS0,115200"

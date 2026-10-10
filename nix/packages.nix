@@ -43,7 +43,7 @@ in
   test-repart-definitions =
     testing.cluster.roles.test.nixos.metal.config.environment.etc."chalkos/repart.d".source;
   test-storage-image = testing.cluster.roles.storage.images.metal;
-  test-installer = testing.cluster.installer;
+  test-installer = testing.cluster.installer.image;
   test-kubernetes-controlplane-image = testing.cluster.roles.k8s-controlplane.images.kvm;
   test-kubernetes-worker-image = testing.cluster.roles.k8s-worker.images.kvm;
   test-kubernetes-ha-image = testing.haCluster.roles.k8s-ha.images.metal;
@@ -63,7 +63,7 @@ in
           };
         }
       ];
-    }).installer;
+    }).installer.image;
 
   chalklab-e2e = goModule {
     pname = "chalklab-e2e";
