@@ -15,7 +15,7 @@ kubeconfig.
 ## Before you begin
 
 - The secrets file and the cluster's flake. Every command on this page needs the secrets file.
-- For a rotation, every node of the cluster definition running and reachable: each phase waits
+- For a rotation, every node of the [cluster definition](../reference/glossary.md#cluster-definition) running and reachable: each phase waits
   until each node confirms it, and a node that does not answer stops the phase until it does.
 - [Certificates](../concepts/certificates.md) shows the hierarchy of CAs this guide changes.
 
@@ -30,9 +30,11 @@ $ chalkctl config new --name=alice --role=operator --ttl=2160h --out=alice.json
 wrote alice.json for alice with the operator role; its certificate expires on 2027-01-08
 ```
 
-A reader may read node information, disks, status, logs and etcd's members; an operator may also
-reboot, drain, uncordon and upgrade nodes; an admin may also bootstrap, reset volumes and change
-etcd's members. Without `--out` the file goes to `~/.config/chalkos/config`, where chalkctl looks
+A [reader](../reference/glossary.md#reader) may read node information, disks, status, logs and
+etcd's members; an [operator](../reference/glossary.md#operator) may also reboot, drain, uncordon
+and upgrade nodes; an [admin](../reference/glossary.md#admin) may call every method.
+[Security model](../concepts/security.md#who-may-call-the-node-api) lists the methods of each
+role. Without `--out` the file goes to `~/.config/chalkos/config`, where chalkctl looks
 for it; `--config` or `$CHALKOSCONFIG` names another. chalkctl warns 30 days before the
 certificate expires. Hand the file over as you would a private key: it holds one.
 
@@ -53,7 +55,7 @@ the API server.
 ## Renew a node certificate by hand
 
 Nodes with Kubernetes renew their [node certificates](../reference/glossary.md#node-certificate)
-through a control plane once two thirds of the year's lifetime have passed. Two kinds of node
+through a [control plane](../reference/glossary.md#control-plane) once two thirds of the year's lifetime have passed. Two kinds of node
 need [`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose role
 has no Kubernetes, which has no control plane to ask, and a node whose certificate expired, for
 example after months switched off.
@@ -63,10 +65,10 @@ $ chalkctl node renew w1
 w1 serves a new node certificate; it expires 2027-10-10T09:12:44Z
 ```
 
-For an expired node, chalkctl accepts the node's old certificate as of its start date, so it
-trusts the node's old key. Someone who holds a leaked, expired key of that node and sits in its
-network path could receive the new certificate instead. Renewing before expiry avoids that; the
-status line `node  expires ...  less than a third of its lifetime remains` is the reminder.
+For an expired node, chalkctl trusts the node's old key, which
+[Certificates](../concepts/certificates.md#what-if-a-certificate-expired) weighs. Renewing before
+expiry avoids that; the status line `node  expires ...  less than a third of its lifetime remains`
+is the reminder.
 
 ## Rotate the node CA
 
@@ -106,17 +108,12 @@ Rotate when a key may have leaked, when someone who held a client file or a kube
 no longer have access, or on a schedule well before a CA expires: the OS CA and the Kubernetes
 CAs are valid for ten years, and status warns a year ahead.
 
-## How a rotation runs
+## Run a rotation phase by phase
 
-A rotation moves through four phases. Every node confirms a phase in its status before the next
-one starts, so no node is ever asked to trust a certificate it does not know yet:
-
-1. accept: every node trusts the new value besides the old one;
-2. switch: the new value issues or signs;
-3. refresh: what the old value issued is issued again by the new one;
-4. finish: the old value is removed, and what it issued is refused from then on.
-
-A rotation pauses where you have work to do. The OS CA and the Kubernetes CAs pause after
+A rotation moves through four phases, accept, switch, refresh and finish, and every node
+confirms a phase before the next one starts;
+[Certificates](../concepts/certificates.md#how-is-a-ca-or-key-rotated) explains what each phase
+changes. A rotation pauses where you have work to do. The OS CA and the Kubernetes CAs pause after
 accept, so you can hand out client files or kubeconfigs that trust both CAs before servers
 present certificates of the new one. Every kind pauses after refresh; `--finish` runs the last
 phase. In between, `--resume` continues:
@@ -173,8 +170,8 @@ $ chalkctl rotate os-ca --resume
 Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from secrets.pub.json; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate os-ca --finish.
 ```
 
-At this pause, commit the new `secrets.pub.json` and rebuild the installer and any images you
-keep for installs: images carry the OS CA that maintenance mode accepts. Running nodes need no
+At this pause, commit the new `secrets.pub.json` and rebuild the [installer](../reference/glossary.md#installer) and any images you
+keep for installs: images carry the OS CA that [maintenance mode](../reference/glossary.md#maintenance-mode) accepts. Running nodes need no
 new image, but the next image you build carries the new OS CA, so it needs a new version like any
 other change. Then finish:
 
@@ -192,7 +189,7 @@ to them; issue them once more after the finish to close that.
 phase one at a time, each restarting its static pods on the new files and waiting until etcd has
 every member healthy again, so etcd keeps its quorum. Workers follow.
 
-At the pause after accept, chalkos's addons and the workloads of
+At the pause after accept, chalkos's add-ons and the workloads of
 [`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests) have restarted and
 trust both CAs. Restart your own workloads that talk to the API server, so they trust both CAs
 too; pods started from then on do. Issue new kubeconfigs with `chalkctl kubeconfig`. Then
@@ -206,7 +203,7 @@ CA; issue them again after the finish.
 ## Rotate the service-account key
 
 The API server signs service-account tokens with this key. The rotation runs through accept,
-switch and refresh without stopping; the refresh restarts chalkos's addons, which get tokens of
+switch and refresh without stopping; the refresh restarts chalkos's add-ons, which get tokens of
 the new key at once. Kubelets renew the tokens of other pods within the hour after the switch, so
 the rotation pauses and names the time from which you can finish. It also names the Secrets of
 type `kubernetes.io/service-account-token` that hold tokens of the old key: nothing signs those
@@ -226,7 +223,7 @@ because removing the key would lose them.
 
 ## Revoke access
 
-chalkd and the API server check no revocation list. Access ends when what the certificate
+[chalkd](../reference/glossary.md#chalkd) and the API server check no revocation list. Access ends when what the certificate
 chains to is no longer trusted:
 
 - To revoke a client file, rotate the OS CA, and issue new client files at its first pause to
@@ -241,15 +238,15 @@ rotation.
 ## Check that it worked
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) lists what a node trusts, by the first
-16 hexadecimal digits of each fingerprint. A worker in the middle of an OS CA rotation trusts
+16 hexadecimal digits of each fingerprint. A [worker](../reference/glossary.md#worker) in the middle of an OS CA rotation trusts
 two OS CAs:
 
 ```console
 $ chalkctl status w1
 ...
 trust:
-  OS CA          3f9c2a1e7b5d0c48, 7a0b4c19d2e6f835
-  Kubernetes CA  a1b2c3d4e5f60718
+  OS CA          e7b462f19ed536c1, 28d451c4085038d7
+  Kubernetes CA  980328b6f68680b0
 ...
 ```
 

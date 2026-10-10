@@ -7,7 +7,7 @@ description: "Decide the roles, addresses, storage, keys and time sources of a p
 
 A production cluster needs decisions that the [quick start](../getting-started/index.md)'s lab
 makes for you. A few of them cannot change once the cluster runs: the IP families, the control
-planes' addresses, the [secrets file](../reference/glossary.md#secrets-file) and the Secure Boot
+planes' addresses, the [secrets file](../reference/glossary.md#secrets-file) and the [Secure Boot](../reference/glossary.md#secure-boot)
 signing key. This page takes the decisions in the order you meet them while writing the
 [cluster definition](../reference/glossary.md#cluster-definition), each with a recommendation
 and what it costs.
@@ -16,7 +16,7 @@ and what it costs.
 
 - Run the [quick start](../getting-started/index.md) once, so the commands and the status output
   are familiar.
-- Know the machines: their disks, network segments and whether their firmware lets you enroll
+- Know the machines: their disks, network segments and whether their firmware lets you enrol
   your own Secure Boot keys.
 - Read [The cluster definition](../concepts/cluster-definition.md) for how roles, platforms and
   nodes fit together.
@@ -45,9 +45,9 @@ otherwise they are tainted.
 
 ## Decide how clients reach the API server
 
-The cluster endpoint, [`chalkos.cluster.endpoint`](../reference/options.md#chalkosclusterendpoint),
-is the URL kubelets, kubeconfigs and workers use to reach the control planes. Workers also renew
-their [node certificates](../reference/glossary.md#node-certificate) through it: chalkd on a
+The [cluster endpoint](../reference/glossary.md#cluster-endpoint), [`chalkos.cluster.endpoint`](../reference/options.md#chalkosclusterendpoint),
+is the URL kubelets, kubeconfigs and [workers](../reference/glossary.md#worker) use to reach the control planes. Workers also renew
+their [node certificates](../reference/glossary.md#node-certificate) through it: [chalkd](../reference/glossary.md#chalkd) on a
 worker connects to the endpoint's host on port 50000, where a control plane's chalkd answers.
 So whatever the endpoint points at must reach chalkd on 50000 as well as the API server on 6443.
 
@@ -61,10 +61,9 @@ Two ways make the endpoint survive a control plane's failure:
   50000 too; a balancer that forwards only 6443 leaves workers unable to renew their
   certificates.
 
-The VIP's holder keeps an etcd lease of 10 seconds and checks its API server every 2 seconds;
-after three failed checks it resigns. In the HA tests the VIP moved within 30 seconds of its
-holder's link going down. Clients with open connections to the old holder can take longer to
-notice: in one test a kubelet went more than 40 seconds without reaching the API server.
+A VIP failover takes seconds: in the HA tests the VIP moved within 30 seconds of its holder's
+link going down, and a kubelet with an open connection to the old holder went more than 40
+seconds without reaching the API server.
 
 ```nix title="cluster.nix"
 {
@@ -157,11 +156,11 @@ warns at evaluation, because STATE holds the node's keys unencrypted.
 
 ## Decide who holds the Secure Boot key
 
-Every image a node boots is signed with a Secure Boot db key, and the firmware boots it only
-when the key's certificate is in db. chalkos does not enroll keys in the firmware: you enroll
+Every image a node boots is signed with a Secure Boot [db](../reference/glossary.md#db-and-dbx) key, and the firmware boots it only
+when the key's certificate is in db. chalkos does not enrol keys in the firmware: you enrol
 the certificate yourself, through the firmware's setup or your vendor's tools, before the first
 install. [Sign images for Secure Boot](secure-boot-signing.md) covers the keys and the
-enrollment.
+enrolment.
 
 Treat the db key as fixed for the cluster's lifetime. PCR 7 measures which db certificate
 verified the boot, so an image signed with another key boots, if the firmware trusts it, and
@@ -223,13 +222,14 @@ chalkctl config new --name=alice --role=operator --out=alice.json
 
 | Role | May |
 | --- | --- |
-| reader | read node information, disks, status, logs and etcd's members |
-| operator | also reboot, upgrade, drain and uncordon nodes |
-| admin | also bootstrap, reset volumes and change etcd's members |
+| [reader](../reference/glossary.md#reader) | read node information, disks, status, logs and etcd's members |
+| [operator](../reference/glossary.md#operator) | also reboot, upgrade, drain and uncordon nodes |
+| [admin](../reference/glossary.md#admin) | call every method, including bootstrap, volume resets and etcd membership changes |
 
-A client file is valid for a year unless `--ttl` says otherwise, and nothing revokes a single
+[Security model](../concepts/security.md#who-may-call-the-node-api) lists the methods of each
+role. A client file is valid for a year unless `--ttl` says otherwise, and nothing revokes a single
 one: taking access away means [rotating the OS CA](rotate-certificates.md). Issue them per
-person, with the shortest validity your routine tolerates, so a departure is a rotation you
+person, with the shortest validity your routine tolerates, so a departure is a [rotation](../reference/glossary.md#rotation) you
 plan rather than one you rush.
 
 Kubeconfigs from [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) are the same

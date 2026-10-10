@@ -10,7 +10,7 @@ This guide installs a cluster on physical machines. You build the cluster's
 [Secure Boot](../reference/glossary.md#secure-boot), boot it from a USB stick on each machine,
 and run [`chalkctl install`](../reference/cli/chalkctl_install.md) from your workstation, which
 streams the node's role image to the machine and writes it to the system disk. The machine then
-reboots into its role image, and the first control plane is bootstrapped. The installer takes an
+reboots into its role image, and the first [control plane](../reference/glossary.md#control-plane) is bootstrapped. The installer takes an
 empty system disk, and replaces one that holds data only when you say so.
 
 ## Before you begin
@@ -30,7 +30,7 @@ You need:
   [maintenance mode](../reference/glossary.md#maintenance-mode) accepts only your chalkctl.
 - Machines with UEFI firmware, Secure Boot and a [TPM](../reference/glossary.md#tpm) 2.0. The
   [requirements](../getting-started/requirements.md) list the rest.
-- A Secure Boot db key and certificate, `db.key` and `db.crt`, and the certificate enrolled in
+- A Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate, `db.key` and `db.crt`, and the certificate enrolled in
   each machine's firmware. [Sign images for Secure Boot](secure-boot-signing.md) creates them
   and explains the enrolment, which chalkos does not do for you.
 - A USB stick larger than the installer ISO, about 450 MiB, or a BMC that mounts an ISO as
@@ -55,8 +55,8 @@ $ ls result/
 chalkos-installer_0.1.0.iso  chalkos-installer_0.1.0.iso.json  chalkos-installer_0.1.0.raw  repart-output.json
 ```
 
-`<cluster>` is the name of the flake output, for example `homelab` for
-`chalkos.homelab = chalkos.lib.mkCluster { ... }`. The `.iso` is a hybrid image: it boots from a
+`<cluster>` is the name of the flake output, for example `prod` for
+`chalkos.prod = chalkos.lib.mkCluster { ... }`. The `.iso` is a hybrid image: it boots from a
 CD, from virtual media and written to a USB stick. The `.raw` is the same system as a plain disk
 image, for machines that boot better from one. The installer gets its addresses by DHCP on every
 Ethernet port; [Customise the installer](customise-installer.md) gives it static addresses,
@@ -68,7 +68,7 @@ fingerprint can install on the machine. Use the cluster's own installer where yo
 
 ## Sign the installer
 
-The firmware boots the installer only when its boot loader and UKI are signed by a certificate
+The firmware boots the installer only when its boot loader and [UKI](../reference/glossary.md#uki) are signed by a certificate
 in db. The build output is read-only, so sign a copy, with the
 [`chalkctl sign`](../reference/cli/chalkctl_sign.md) command and the `.iso.json` that describes
 the ISO's partitions:
@@ -164,14 +164,14 @@ chalkctl builds the node's role image for its role and platform from the flake (
 prints its progress first), signs the image's UKI and boot loader with the db key, and checks
 them against [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
 when the cluster definition sets it. It then sends the node its
-[identity](../reference/glossary.md#identity), a node certificate, the OS CA, the secret of the
+[identity](../reference/glossary.md#identity), a [node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
 second keyslot and, on a Kubernetes role, the node's
 [Kubernetes share](../reference/glossary.md#kubernetes-share), followed by the image's store,
 hash tree, UKI and boot loader. It does not send the whole raw image, only the compressed store
 and what boots it. chalkctl prints:
 
 ```text
-installing cp1 onto serial "S7KHNJ0W100001" from /nix/store/...-chalkos-image: chalkos 0.1.0, sending <bytes> bytes of store, hash tree, UKI and boot loader
+installing cp1 onto serial "S7KHNJ0W100001" from /nix/store/dy38wdg0y0pydkkgc1ybdva223dwgcds-chalkos-image: chalkos 1.4.0, sending 308281344 bytes of store, hash tree, UKI and boot loader
 cp1 is installed and reboots
 chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 ```
@@ -243,7 +243,7 @@ A cluster starts once, on one control plane. When `cp1` is back up in normal mod
 chalkctl bootstrap cp1
 ```
 
-The node starts etcd as its first member, starts the API server, controller manager and
+The node starts etcd as its first member, starts the API server, controller-manager and
 scheduler, and applies the cluster's manifests. chalkctl prints
 `bootstrapping cp1; the control plane pulls its images and starts`, waits, and ends with
 `cp1 is bootstrapped; applied <n> objects`. The node refuses a second bootstrap, so a cluster is
@@ -271,7 +271,7 @@ Day-to-day commands such as `status`, `logs`, `reboot` and `upgrade` work withou
 file. Give each person a
 [client file](../reference/glossary.md#client-file) of the role they need with
 [`chalkctl config new`](../reference/cli/chalkctl_config_new.md), and keep the secrets file for
-installs, rotations and kubeconfigs:
+installs, [rotations](../reference/glossary.md#rotation) and kubeconfigs:
 
 ```sh
 chalkctl config new --name=<name> --role=operator
@@ -296,7 +296,7 @@ as a password manager.
 ## Check that it worked
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs: its identity
-and whether it is the cluster definition's, the image version and whether the boot was found
+and whether it is the cluster definition's, the [image version](../reference/glossary.md#image-version) and whether the boot was found
 healthy, its volumes, Kubernetes, its certificates and any failed units.
 
 ```sh
@@ -317,7 +317,7 @@ chalkctl reports the installer's refusal as its error. The common ones:
 | `Secure Boot would refuse the UKI: ...` | The installer checked the UKI against the machine's db and dbx: the image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign with the enrolled key, or enrol its certificate. |
 | `Secure Boot would refuse the image's UKI: ...` | chalkctl checked the signature against `signerCertificate` before sending anything, and `--sign-key` is another key than the one the cluster definition names. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
-| The first boot asks for a recovery key | The installer and the role image were signed with different keys, or Secure Boot changed between install and boot. Enter `chalkctl recovery-key <node>`, then sign both with the same key. |
+| The first boot asks for a recovery key | The installer and the role image were signed with different keys, or Secure Boot changed between install and boot. Type the key `chalkctl recovery-key <node>` prints. The prompt returns at every boot until the node is reinstalled from an installer signed with the role images' key, as [Recover a node](recover-node.md#the-console-asks-for-a-passphrase-at-boot) describes. |
 
 [Troubleshooting](troubleshooting.md) covers a node that does not come up after the reboot.
 

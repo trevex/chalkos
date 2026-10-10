@@ -13,19 +13,18 @@ or storage controller the installer cannot drive, add NixOS modules to the insta
 it again and sign it. The change affects the installer alone; the role images and installed nodes
 stay as they are.
 
-## Why the settings go into the image
-
-Under [Secure Boot](../reference/glossary.md#secure-boot) the kernel command line is part of the
-signed [UKI](../reference/glossary.md#uki), so you cannot add `ip=` or a driver option at the boot
-menu, and there is nothing on the medium to edit after signing. Whatever differs between
+The settings go into the image because under [Secure Boot](../reference/glossary.md#secure-boot)
+the kernel command line is part of the signed [UKI](../reference/glossary.md#uki), so you cannot
+add `ip=` or a driver option at the boot menu, and there is nothing on the medium to edit after
+signing. Whatever differs between
 machines goes into the installer and is matched at boot by MAC address or interface name. One
 installer then serves the whole cluster: each machine finds the network configuration written for
 it, and the others fall back to DHCP.
 
 ## Before you begin
 
-You need the cluster definition with
-[`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) set, the db key and
+You need the [cluster definition](../reference/glossary.md#cluster-definition) with
+[`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) set, the [db](../reference/glossary.md#db-and-dbx) key and
 certificate from [Sign images for Secure Boot](secure-boot-signing.md), and the MAC addresses of
 the machines' ports, from the BMC, the firmware setup or the machines' labels.
 [Install on bare metal](install-bare-metal.md) builds the unchanged installer.
@@ -156,7 +155,7 @@ target disk. The node's role image needs the same drivers, set in its role or pl
 ## Change the console
 
 The installer writes its console to the screen and to the first serial port, `ttyS0`. Linux
-sends kernel messages to every console on the command line, but chalkd's lines, with the
+sends kernel messages to every console on the command line, but [chalkd](../reference/glossary.md#chalkd)'s lines, with the
 fingerprint and the addresses, go to the last one only. A machine whose BMC shows serial-over-LAN
 on the second port needs that port last:
 
@@ -195,13 +194,13 @@ chalkctl sign --image=installer.iso --repart-json=result/chalkos-installer_0.1.0
   --key=db.key --cert=db.crt
 ```
 
-Sign it with the key the role images are signed with: the installer seals each node's STATE to
+Sign it with the key the role images are signed with: the installer seals each node's [STATE](../reference/glossary.md#state) to
 [PCR 7](../reference/glossary.md#pcr-7) as measured under the installer, and a role image signed
-with another key asks for the recovery key on its first boot.
+with another key asks for the [recovery key](../reference/glossary.md#recovery-key) on its first boot.
 
 The installer also carries the cluster's [OS CA](../reference/glossary.md#os-ca), from the
 `secrets.pub.json` that `osCA` names, and accepts only clients whose certificate chains to it.
-After an OS CA rotation with [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), build and
+After an OS CA [rotation](../reference/glossary.md#rotation) with [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), build and
 sign the installer again. An installer built before the rotation refuses chalkctl's new
 certificate, and chalkctl says so: `the maintenance image trusts another OS CA than the secrets
 file, so it refuses chalkctl's certificate`.
@@ -231,3 +230,5 @@ A disk that is missing from the list needs its controller's driver; a machine wh
 - [Support additional hardware](additional-hardware.md) adds the same drivers to the role
   images, which the installed nodes run.
 - [Sign images for Secure Boot](secure-boot-signing.md) covers the db key.
+- [Architecture](../concepts/architecture.md#how-does-a-machine-become-a-node) explains what
+  the installer does during an install.

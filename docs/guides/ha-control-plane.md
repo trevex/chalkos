@@ -13,7 +13,7 @@ member, removing one and replacing a failed machine.
 
 ## Before you begin
 
-- A cluster definition and its [secrets file](../reference/glossary.md#secrets-file), as in
+- A [cluster definition](../reference/glossary.md#cluster-definition) and its [secrets file](../reference/glossary.md#secrets-file), as in
   [Plan a production cluster](production-cluster.md).
 - Three machines on one layer-2 segment, each with a static address, and one free address on
   that segment for the VIP. The VIP is announced with gratuitous ARP and unsolicited neighbour
@@ -25,7 +25,7 @@ member, removing one and replacing a failed machine.
 ## Define three control planes and the VIP
 
 Put the VIP in [`chalkos.cluster.kubernetes.vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses)
-and make the cluster endpoint point at it. Every node and client reaches the API server at the
+and make the [cluster endpoint](../reference/glossary.md#cluster-endpoint) point at it. Every node and client reaches the API server at the
 endpoint, so the endpoint has to follow the VIP from one control plane to the next.
 
 ```nix title="cluster.nix"
@@ -54,7 +54,7 @@ endpoint, so the endpoint has to follow the VIP from one control plane to the ne
 }
 ```
 
-A dual-stack cluster takes one VIP per family. chalkd adds the VIP to the interface that holds
+A dual-stack cluster takes one VIP per family. [chalkd](../reference/glossary.md#chalkd) adds the VIP to the interface that holds
 the node's address of the VIP's family, unless
 [`vip.interface`](../reference/options.md#chalkosclusterkubernetesvipinterface) names another.
 
@@ -86,7 +86,7 @@ manifests:
 ```console
 $ chalkctl bootstrap cp1
 bootstrapping cp1; the control plane pulls its images and starts
-cp1 is bootstrapped; applied 31 objects
+cp1 is bootstrapped; applied 19 objects
 ```
 
 Bootstrap only this one node. A second bootstrap would start a second etcd cluster with its own
@@ -100,7 +100,7 @@ Once cp1's API server is ready, cp1 wins the VIP's election and holds the VIP.
 ## Watch the others join
 
 cp2 and cp3 find the cluster at the endpoint and join etcd on their own, one after the other:
-etcd accepts one learner at a time. Each node adds itself as a learner, starts its etcd member,
+etcd accepts one learner at a time. Each node adds itself as a learner, starts its [etcd member](../reference/glossary.md#etcd-member),
 waits until the member caught up with the leader, has it promoted to a voter and then starts the
 rest of the control plane. Its status names the step:
 
@@ -109,9 +109,9 @@ kubernetes controlplane: joining the cluster at https://10.0.0.10:6443: checking
 kubernetes controlplane: joining the cluster at https://10.0.0.10:6443: etcd member 5b1b8a3c0e9a71f2 catches up
 ```
 
-When the node is a voter, its addresses are pinned on [STATE](../reference/glossary.md#state):
-from then on, every boot waits for exactly these addresses before it starts etcd. A joined
-control plane reports:
+Before the node adds itself as a learner, it pins its addresses on
+[STATE](../reference/glossary.md#state): from then on, every boot waits for exactly these
+addresses before it starts etcd. A joined control plane reports:
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip standby, control plane current
@@ -142,18 +142,15 @@ chalkctl kubeconfig --out=prod.kubeconfig
 kubectl --kubeconfig=prod.kubeconfig get nodes
 ```
 
-## How the VIP moves
+## Expect a VIP failover to take seconds
 
-The control planes elect the VIP's holder through an etcd lease of 10 seconds. A node campaigns
-only while its own API server answers ready; it checks every 2 seconds and resigns after three
-failed checks, releasing the address. When the holder fails without resigning, its lease
-expires and another healthy control plane takes the VIP and announces it.
-
-In the HA tests the VIP moved within 30 seconds of its holder's network link going down, and it
-stayed with the new holder when the old one came back. A cluster without etcd quorum has no
-holder, because nobody can win the election. Clients with an open connection to the old holder
-can take longer than the move to notice: in one upgrade test a kubelet went more than 40 seconds
-without renewing its lease.
+When the holder's API server stops answering, or the holder fails, another healthy control plane
+takes the VIP through an election in etcd; [Networking](../concepts/networking.md#how-does-the-vip-move-between-control-planes)
+explains the timing. In the HA tests the VIP moved within 30 seconds of its holder's network link
+going down, and it stayed with the new holder when the old one came back. Clients with an open
+connection to the old holder can take longer to notice: in one upgrade test a kubelet went more
+than 40 seconds without renewing its lease. A cluster without etcd quorum has no holder, because
+nobody can win the election.
 
 ## Add a control plane
 
@@ -174,7 +171,7 @@ cp3 left etcd; reinstall it to join the cluster again
 
 The removal is refused when the voters left would have fewer healthy members than their quorum
 needs, because etcd would then stop accepting writes. The message names the counts:
-`without cp3 etcd has 3 voters of which 1 are healthy, fewer than the 2 a quorum needs`. Bring
+`without cp3 etcd has 2 voters of which 1 are healthy, fewer than the 2 a quorum needs`. Bring
 the unhealthy members back first.
 
 The node now reports `left etcd; reinstall the node to join the cluster again` and does not
@@ -219,6 +216,8 @@ Between the two commands, boot the machine into the installer, through its BMC o
 installed node runs no maintenance mode, so `chalkctl install` cannot reach it.
 
 ## If something goes wrong
+
+These failures are specific to control planes.
 
 ### A reinstalled node finds its old member
 

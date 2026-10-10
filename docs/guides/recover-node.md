@@ -27,14 +27,14 @@ of `state`, and later of `var` and of each encrypted volume. The
 [STATE](../reference/glossary.md#state) and [VAR](../reference/glossary.md#var), because
 [PCR 7](../reference/glossary.md#pcr-7), which the keys are sealed to, changed. Common causes:
 
-- Secure Boot was turned off, or its keys changed: a new PK, KEK or db, or a dbx update that
+- [Secure Boot](../reference/glossary.md#secure-boot) was turned off, or its keys changed: a new PK, KEK or [db](../reference/glossary.md#db-and-dbx), or a dbx update that
   came with a firmware update.
 - The image was signed with another db key than the one the node was installed with.
 - The TPM was cleared, or the disk moved to another machine.
 
 The node stays at the prompt; it does not fall back to
 [maintenance mode](../reference/glossary.md#maintenance-mode), because that would let anyone
-with physical access give it a new identity. A boot that waits at the prompt also never
+with physical access give it a new [identity](../reference/glossary.md#identity). A boot that waits at the prompt also never
 reaches the [health check](../reference/glossary.md#health-check): after an upgrade, the node
 stays in that boot until you unlock it or reset the machine, and only then does the boot loader
 try the new image again or fall back.
@@ -86,8 +86,8 @@ it in a new version and upgrade again, as in
 
 chalkctl refuses the node's certificate as expired, so every command against the node fails,
 while the node itself still runs. A node renews its [node certificate](../reference/glossary.md#node-certificate)
-through a control plane once two thirds of its year have passed, so it expires only when the
-node could not renew for four months: it was switched off, could not reach the cluster endpoint
+through a [control plane](../reference/glossary.md#control-plane) once two thirds of its year have passed, so it expires only when the
+node could not renew for four months: it was switched off, could not reach the [cluster endpoint](../reference/glossary.md#cluster-endpoint)
 on port 50000, or has no Kubernetes and nobody renewed it by hand. Before the expiry, its status
 showed why:
 
@@ -105,14 +105,13 @@ w1 serves a new node certificate; it expires 2027-10-10T09:12:44Z
 ```
 
 For this command alone, chalkctl verifies the node's expired certificate as of its start date,
-so it trusts the node's old key. Someone holding a leaked old key of that node and sitting in its
-network path could receive the new certificate in its place. That is inherent to recovering an
-expired node; renewing before the expiry avoids it. Fix the reason the renewal failed too, or the
-node expires again next year.
+so it trusts the node's old key; [Certificates](../concepts/certificates.md#what-if-a-certificate-expired)
+explains what that risks. Fix the reason the renewal failed too, or the node expires again next
+year.
 
 ## The kubelet certificate was lost with VAR
 
-A worker whose [VAR](../reference/glossary.md#var) lost its data falls back to the kubelet
+A [worker](../reference/glossary.md#worker) whose [VAR](../reference/glossary.md#var) lost its data falls back to the kubelet
 certificate in its [Kubernetes share](../reference/glossary.md#kubernetes-share) on
 STATE, which it received at install. When that one expired too, the kubelet cannot join, and
 status says:
@@ -120,7 +119,7 @@ status says:
 ```text
 certificates:
   ...
-  kubelet client  expires 2027-05-11  expired; deliver a new one with chalkctl apply-identity w1 --kubernetes-share
+  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl apply-identity <node> --kubernetes-share
 ```
 
 Deliver a new share with a new kubelet certificate:
@@ -135,7 +134,7 @@ A control plane's Kubernetes line in `chalkctl status` names what holds it back,
 
 | Status | Cause | Fix |
 | --- | --- | --- |
-| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an etcd member. | Restore the address and reboot. Or remove its member with `chalkctl etcd remove-member <node>` and reinstall it. |
+| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an [etcd member](../reference/glossary.md#etcd-member). | Restore the address and reboot. Or remove its member with `chalkctl etcd remove-member <node>` and reinstall it. |
 | `joining the cluster at ...: etcd has a member <node> already; remove it with chalkctl etcd remove-member <node>` | The node was reinstalled without leaving etcd, and its old member is still there. | Run the command the status names; the node joins on its own. |
 | `left etcd; reinstall the node to join the cluster again` | The node left etcd with `chalkctl etcd leave`. | Reinstall it. |
 | `etcd data missing: restore etcd or reinstall the node` | The node is an etcd member, but VAR holds no etcd data, because VAR lost its data. | chalkos cannot restore etcd. Remove its member with `chalkctl etcd remove-member <node>` and reinstall it. |
@@ -166,7 +165,7 @@ disk longhorn: pinned disk ... is missing
 ```
 
 The disk the volume was created on is gone: removed, dead or behind a controller that did not
-come up. chalkd finds a disk by its pinned WWN, serial number and path, so another disk in its
+come up. [chalkd](../reference/glossary.md#chalkd) finds a disk by its pinned WWN, serial number and path, so another disk in its
 place is not used, even if it is empty. Put the disk back, or fix its controller, and reboot. A
 replacement disk needs the node reinstalled.
 
@@ -192,7 +191,7 @@ chalkctl logs <node> --insecure --unit=chalkd.service
 ## Reinstall a node
 
 Reinstalling gives a node a new disk layout, new keys sealed to its TPM and a fresh VAR, from
-the cluster definition. Everything on its disks is lost, so move workloads off first.
+the [cluster definition](../reference/glossary.md#cluster-definition). Everything on its disks is lost, so move workloads off first.
 
 1. For a control plane, take it out of etcd first, with `chalkctl etcd leave <node>`, so the
    others keep a correct membership. For a worker, drain it with `kubectl drain <node>`.
@@ -218,7 +217,7 @@ its management is gone for good:
 | Still works | Gone |
 | --- | --- |
 | Commands with existing client files, within their roles: status, logs, disks, reboot, upgrade, bootstrap, the etcd commands, and storage reset on nodes whose fallback is not the recovery key | Installing or reinstalling a node, `apply-identity` |
-| Node certificate renewal by the control planes, until the node CA expires | `chalkctl node renew`, `node-ca rotate` and every `rotate` |
+| Node certificate renewal by the control planes, until the [node CA](../reference/glossary.md#node-ca) expires | `chalkctl node renew`, `node-ca rotate` and every `rotate` |
 | Kubelet certificate renewal | New client files and kubeconfigs |
 | Existing kubeconfigs, until they expire | Recovery keys: a node whose TPM stops unsealing cannot be unlocked |
 

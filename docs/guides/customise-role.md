@@ -16,14 +16,14 @@ change reaches running nodes as an [upgrade](../reference/glossary.md#upgrade) t
 
 ## Before you begin
 
-You need a cluster definition in a flake and, to roll the change out, a running cluster with an
-operator [client file](../reference/glossary.md#client-file) or the secrets file.
+You need a [cluster definition](../reference/glossary.md#cluster-definition) in a flake and, to roll the change out, a running cluster with an
+operator [client file](../reference/glossary.md#client-file) or the [secrets file](../reference/glossary.md#secrets-file).
 [The cluster definition](../concepts/cluster-definition.md) explains how roles, platforms and
 nodes fit together, and [The image](../concepts/image.md) what an image holds.
 
 ## Add a module to a role
 
-A role module is an ordinary NixOS module. This one runs a service on every worker, with the
+A role module is an ordinary NixOS module. This one runs a service on every [worker](../reference/glossary.md#worker), with the
 tools it calls in its own `path`:
 
 ```nix title="cluster.nix"
@@ -81,7 +81,7 @@ read-only option. Settings belong in the cluster definition, so every image agre
 A role module cannot read `config.chalkos.nodes`. Evaluating it fails with
 `config.chalkos.nodes is not available in a role image: one image serves every node of the role`,
 because an image is built once for all nodes of its role and platform. Per-node values travel in
-the node's [identity](../reference/glossary.md#identity), which chalkd applies at boot and on
+the node's [identity](../reference/glossary.md#identity), which [chalkd](../reference/glossary.md#chalkd) applies at boot and on
 [`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md). A unit reads them in one
 of two ways:
 
@@ -166,7 +166,7 @@ one.
 
 ## Add kernel modules and debug tools
 
-A role adds module groups and single modules with
+A role adds [module groups](../reference/glossary.md#module-group) and single modules with
 [`chalkos.kernel.moduleGroups`](../reference/options.md#chalkoskernelmodulegroups) and
 [`chalkos.kernel.extraModules`](../reference/options.md#chalkoskernelextramodules):
 
@@ -180,13 +180,9 @@ A role adds module groups and single modules with
 [Support additional hardware](additional-hardware.md) finds the module a device needs and adds
 firmware and out-of-tree modules.
 
-[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) adds coreutils, grep, sed,
-findutils, procps, iproute2 and util-linux, and crictl on Kubernetes roles, for debugging from a
-privileged pod:
-
-```sh
-kubectl debug node/<node> -it --image=busybox -- chroot /host /run/current-system/sw/bin/bash
-```
+[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) adds the usual command-line
+tools for debugging from a privileged pod, as
+[Troubleshooting](troubleshooting.md#open-a-shell-on-a-node) shows.
 
 ## Add Kubernetes objects to the cluster
 
@@ -206,7 +202,7 @@ a cluster setting, not a role:
 }
 ```
 
-The control planes apply them with server-side apply after chalkos's own objects, at bootstrap
+The [control planes](../reference/glossary.md#control-plane) apply them with server-side apply after chalkos's own objects, at bootstrap
 and at every boot. They travel inside the images, so new objects arrive with an upgrade of the
 control planes. Being a cluster setting, the list is part of every role's image, so a change to it
 gives every role a new image.
@@ -226,7 +222,7 @@ settings break the node:
   role builder from the cluster definition; set the role's `kubernetes.kind` there instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
   applies only to nodes installed afterwards, and an upgrade whose store does not fit a node's
-  slot is refused.
+  [slot](../reference/glossary.md#slot) is refused.
 - On a role without Kubernetes, a boot is healthy only when no unit failed, so a unit of yours
   that fails makes the next upgrade roll back.
   [`chalkos.upgrade.healthIgnoreUnits`](../reference/options.md#chalkosupgradehealthignoreunits)
@@ -237,7 +233,7 @@ settings break the node:
 Every package and module adds to the store, which each upgrade sends to every node. The image
 build fails when the store's data takes more than 80% of its slot (3 GiB by default,
 [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize)), its hash tree more than
-80% of its partition, or the UKIs more than 80% of the ESP, so the next image always fits beside
+80% of its partition, or the [UKIs](../reference/glossary.md#uki) more than 80% of the [ESP](../reference/glossary.md#esp), so the next image always fits beside
 the running one. [Support additional hardware](additional-hardware.md#keep-the-image-within-its-slot)
 shows the message and what to do.
 
@@ -245,17 +241,17 @@ shows the message and what to do.
 
 An installed node takes a new image only with a new version, because a version names the UKI and
 the slot's partitions, and a node refuses an image whose version it has installed with another
-root hash. Set `system.image.version` in the role's modules: 1 to 23 characters of `a-z`, `0-9`,
-`.`, `~`, `^` and `-`, starting with a letter or digit.
+root hash. Set `system.image.version` in the role's modules, within the rules
+[The image](../concepts/image.md#what-may-an-image-version-be) gives:
 
 ```nix
 {
-  system.image.version = "1.4.0";
+  system.image.version = "1.5.0";
 }
 ```
 
 Then build the images and upgrade the nodes with
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), signed with the cluster's db key:
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), signed with the cluster's [db](../reference/glossary.md#db-and-dbx) key:
 
 ```sh
 chalkctl upgrade --nodes=w1,w2 --sign-key=db.key --sign-cert=db.crt

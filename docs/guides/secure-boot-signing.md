@@ -11,7 +11,7 @@ certificate in its [db](../reference/glossary.md#db-and-dbx) signed it. chalkos 
 binaries per image, systemd-boot and the [UKI](../reference/glossary.md#uki), and the UKI's
 signature covers the whole read-only store through the [root hash](../reference/glossary.md#root-hash)
 on its command line. This guide creates the key and certificate, gets the firmware of your
-machines to trust the certificate, and signs the installer and the role images with the key.
+machines to trust the certificate, and signs the [installer](../reference/glossary.md#installer) and the role images with the key.
 Nix builds images unsigned; you sign them on your workstation, so the key never enters the Nix
 store or a binary cache, and nodes never hold it.
 
@@ -20,7 +20,7 @@ store or a binary cache, and nodes never hold it.
     Getting the certificate into each machine's db is a step you do with the firmware's own
     tools, described below. [`chalkos.secureBoot.enrollment`](../reference/options.md#chalkossecurebootenrollment)
     and [`chalkos.secureBoot.require`](../reference/options.md#chalkossecurebootrequire) are
-    reserved for key enrolment by chalkd and have no effect yet. Only chalklab enrols keys, its
+    reserved for key enrolment by [chalkd](../reference/glossary.md#chalkd) and have no effect yet. Only [chalklab](../reference/glossary.md#chalklab) enrols keys, its
     own, in the firmware of its virtual machines.
 
 ## Before you begin
@@ -110,7 +110,7 @@ role image's when a machine boots it directly, and each new UKI an upgrade bring
 in three places.
 
 [`chalkctl sign`](../reference/cli/chalkctl_sign.md) signs a disk image in place: the boot loader
-(`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`) on its ESP, and nothing else, so no
+(`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`) on its [ESP](../reference/glossary.md#esp), and nothing else, so no
 other file on the ESP gains the cluster's signature. It needs the image's partition description,
 `repart-output.json`, or `<name>.iso.json` for the installer's ISO. A build output in the Nix store
 is read-only, so sign a copy:
@@ -122,7 +122,7 @@ chalkctl sign --image=installer.iso --repart-json=result/chalkos-installer_0.1.0
   --key=db.key --cert=db.crt
 ```
 
-Sign the installer this way, and a role image that a VM boots directly. Ctrl-C during the signing
+Sign the installer this way, and a role image that a VM boots directly. Ctrl+C during the signing
 can leave an image partly signed; sign a fresh copy then.
 
 `chalkctl install` with `--sign-key` and `--sign-cert` signs the role image a machine receives
@@ -150,7 +150,7 @@ A node's [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md
 encrypted volumes are sealed to PCR 7, which measures the Secure Boot state and the db
 certificate that verified the boot binaries. An image signed with the same key boots with the
 same PCR 7, so upgrades unlock the disks without anyone typing a key. An image signed with
-another key that db also trusts boots, but PCR 7 differs, the TPM does not unseal, and the
+another key that db also trusts boots, but PCR 7 differs, the [TPM](../reference/glossary.md#tpm) does not unseal, and the
 console asks for the node's [recovery key](../reference/glossary.md#recovery-key).
 
 That has three consequences:
@@ -175,7 +175,7 @@ Setup Mode. The cost is the protection itself. The disk keys are sealed to the S
 value of PCR 7, so the TPM unseals them for any image the machine boots, and anyone allowed to
 upgrade the node, the [operator](../reference/glossary.md#operator) role included, can install an
 image of their own and run it as root with the disks unlocked. Turning Secure Boot on later
-changes PCR 7, and each node asks for its recovery key once more.
+changes PCR 7, so each node asks for its recovery key at every boot until it is reinstalled.
 
 ## Check that it worked
 

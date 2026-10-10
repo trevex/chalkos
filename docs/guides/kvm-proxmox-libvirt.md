@@ -6,11 +6,11 @@ description: "Run chalkos nodes as virtual machines on a KVM hypervisor"
 # Run on KVM, Proxmox or libvirt
 
 chalkos nodes run as KVM virtual machines from the `kvm`
-[platform](../reference/glossary.md#platform)'s images, with UEFI Secure Boot and a virtual TPM
+[platform](../reference/glossary.md#platform)'s images, with UEFI [Secure Boot](../reference/glossary.md#secure-boot) and a virtual [TPM](../reference/glossary.md#tpm)
 like a physical machine. This guide builds a node's role image for `kvm`, signs it, turns it into
 a VM disk, creates the VM under plain QEMU, libvirt or Proxmox, and installs the node in place:
 the VM boots its own role image into [maintenance mode](../reference/glossary.md#maintenance-mode)
-and [`chalkctl install`](../reference/cli/chalkctl_install.md) gives it its identity and secrets,
+and [`chalkctl install`](../reference/cli/chalkctl_install.md) gives it its [identity](../reference/glossary.md#identity) and secrets,
 without an installer. The VM's disk is the node's system disk, so nothing else on the hypervisor
 changes. For a local test cluster, [chalklab](../reference/glossary.md#chalklab) does all of this
 for you; this guide is for hypervisors you run yourself.
@@ -23,13 +23,14 @@ You need:
   [secrets file](../reference/glossary.md#secrets-file), and
   [`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) set to
   `./secrets.pub.json`, as in [Install on bare metal](install-bare-metal.md#before-you-begin).
-- A Secure Boot db key and certificate, `db.key` and `db.crt`, from
+- A Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate, `db.key` and `db.crt`, from
   [Sign images for Secure Boot](secure-boot-signing.md). On a VM you own the firmware's variable
   store, so you enrol the certificate yourself, as shown below.
 - A KVM host with QEMU, OVMF built with Secure Boot and SMM support, and swtpm. libvirt and
   Proxmox bring all three. `qemu-img` on the machine where you prepare the disk.
-- About 4 GiB of memory and 2 vCPUs per control plane and 2 GiB per worker, as the
-  [requirements](../getting-started/requirements.md) give, and at least 16 GiB of disk per node.
+- 2 vCPUs and about 3 GiB of memory per [control plane](../reference/glossary.md#control-plane) and 2 GiB per [worker](../reference/glossary.md#worker), the sizes chalklab
+  gives its VMs, and at least 16 GiB of disk per node. The
+  [requirements](../getting-started/requirements.md) list what a node uses before workloads.
 
 ## Declare the nodes on the kvm platform
 
@@ -45,7 +46,7 @@ the device a virtio block disk gets, `/dev/vda`:
     role = "controlplane";
     platform = "kvm";
     storage.system.disk = "/dev/vda";
-    network.networks."10-lan" = {
+    network.networks."10-uplink" = {
       matchConfig.MACAddress = "52:54:00:12:00:11";
       address = [ "10.0.0.11/24" ];
       gateway = [ "10.0.0.1" ];
@@ -105,7 +106,7 @@ Every hypervisor below sets the same things:
 | TPM | TPM 2.0, emulated by swtpm | chalkos seals the disk keys to it; its state must persist with the VM. |
 | Disk | virtio block, the image's disk | The node's system disk, `/dev/vda` in the guest. |
 | Network | virtio-net, with the MAC address the node's network matches | |
-| Serial port | the first one, `ttyS0` | The kvm image's console, where chalkd prints its fingerprint. |
+| Serial port | the first one, `ttyS0` | The kvm image's console, where [chalkd](../reference/glossary.md#chalkd) prints its fingerprint. |
 | Guest agent channel | virtio-serial port `org.qemu.guest_agent.0` | Optional: lets the host shut the VM down cleanly and read its addresses. |
 
 The guest agent answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`, `guest-info`,
@@ -140,7 +141,7 @@ example `OVMF_VARS_4M.fd` and `OVMF_CODE_4M.secboot.fd` on Debian and Ubuntu, or
 build. Then start the VM:
 
 ```sh
-qemu-system-x86_64 -name cp1 -machine q35,smm=on,accel=kvm -cpu host -m 4096 -smp 2 \
+qemu-system-x86_64 -name cp1 -machine q35,smm=on,accel=kvm -cpu host -m 3072 -smp 2 \
   -global driver=cfi.pflash01,property=secure,value=on \
   -drive if=pflash,format=raw,unit=0,readonly=on,file=<ovmf-code> \
   -drive if=pflash,format=raw,unit=1,file=cp1/OVMF_VARS.fd \
@@ -168,7 +169,7 @@ libvirt starts itself:
 ```xml title="cp1.xml"
 <domain type="kvm">
   <name>cp1</name>
-  <memory unit="MiB">4096</memory>
+  <memory unit="MiB">3072</memory>
   <vcpu>2</vcpu>
   <os firmware="efi">
     <type machine="q35">hvm</type>
@@ -235,7 +236,7 @@ Copy the signed `controlplane.raw` to the Proxmox host and create the VM from it
 imports the raw image into its storage, so no qcow2 is needed:
 
 ```sh
-qm create 111 --name cp1 --ostype l26 --machine q35 --bios ovmf --cores 2 --memory 4096 \
+qm create 111 --name cp1 --ostype l26 --machine q35 --bios ovmf --cores 2 --memory 3072 \
   --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=1 \
   --tpmstate0 local-lvm:1,version=v2.0 \
   --virtio0 local-lvm:0,import-from=/root/controlplane.raw \
@@ -321,12 +322,14 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 | Nothing appears on the console after the firmware | The VM has no serial port, or the console shows the screen; the kvm image writes to `ttyS0` only. |
 | `the identity places the system on /dev/sda, but the node runs from /dev/vda; install it with the installer instead` | `storage.system.disk` names another disk than the one the VM booted from. Fix the cluster definition. |
 | `cp1 runs an image built for metal, but the cluster definition declares it on kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Build and sign `images.kvm`. |
-| The node asks for its recovery key after a hypervisor change | The variable store or the TPM state was reset or replaced. Enter `chalkctl recovery-key cp1`; see [Recover a node](recover-node.md). |
+| The node asks for its recovery key after a hypervisor change | The variable store or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
 
 ## What next
 
-- [The cluster definition](../concepts/cluster-definition.md) explains platforms and how a
-  role's image is built for each.
+- [The cluster definition](../concepts/cluster-definition.md#what-is-a-platform) explains
+  platforms and how a role's image is built for each, and
+  [Architecture](../concepts/architecture.md#how-does-a-machine-become-a-node) the install in
+  place.
 - [Sign images for Secure Boot](secure-boot-signing.md) covers the key's life and why it must
   not change for an installed node.
 - [Install on bare metal](install-bare-metal.md) continues with bootstrap, kubeconfigs and

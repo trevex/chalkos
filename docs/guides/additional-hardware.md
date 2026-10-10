@@ -15,10 +15,10 @@ meets.
 
 ## Before you begin
 
-You need a cluster definition with the role in question, and a way to see the hardware: a Linux
+You need a [cluster definition](../reference/glossary.md#cluster-definition) with the role in question, and a way to see the hardware: a Linux
 live system booted on the machine, or the vendor's specification of the card. For nodes that run
 already, [Upgrade a cluster](upgrade-cluster.md) rolls the new image out; machines that are not
-installed yet may need the same driver in the installer, which
+installed yet may need the same driver in the [installer](../reference/glossary.md#installer), which
 [Customise the installer](customise-installer.md) adds.
 
 ## Find the module
@@ -40,7 +40,7 @@ kernel's tree, and that directory decides which
 
 ```console
 $ modinfo -n mt7921e
-/run/booted-system/kernel-modules/lib/modules/7.2.7/kernel/drivers/net/wireless/mediatek/mt76/mt7921/mt7921e.ko.xz
+/lib/modules/6.18.55/kernel/drivers/net/wireless/mediatek/mt76/mt7921/mt7921e.ko.xz
 ```
 
 `drivers/net/wireless` belongs to the `wireless` group. Then check whether the role's image
@@ -69,7 +69,7 @@ drivers. Every image carries the base groups:
 | `virtualisation` | virtio, Hyper-V, Xen, VMware, AWS ENA and Google gVNIC |
 | `filesystems` | ext4, xfs, btrfs, FAT, erofs, overlayfs, NFS, CephFS, SMB |
 | `kubernetes` | netfilter, traffic control, SCTP, Open vSwitch |
-| `platform` | TPM, IPMI, watchdogs, sensors, ACPI, CPU frequency, crypto, the console keyboard |
+| `platform` | [TPM](../reference/glossary.md#tpm), IPMI, watchdogs, sensors, ACPI, CPU frequency, crypto, the console keyboard |
 
 The further groups are `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can` and
 `industrial`. Add a group or single modules in a role's NixOS modules, which apply to all its
@@ -107,7 +107,7 @@ not hold, so a missing driver shows at build time, not at the machine.
 
 ## Load drivers early for the system disk
 
-The initrd finds the store, STATE and the node's other disks before the system starts, so the
+The initrd finds the store, [STATE](../reference/glossary.md#state) and the node's other disks before the system starts, so the
 driver of every disk controller a node's storage uses must be in the initrd, not only in the
 image. The initrd carries NixOS's common disk drivers, such as `ahci`, `nvme`, `sd_mod` and
 `mmc_block`. A system disk or an extra disk behind another controller, a hardware RAID adapter for
@@ -218,19 +218,19 @@ Each role is built once per platform, as `chalkos.roles.<role>.images.<platform>
 the platforms its nodes use when chalkctl builds them, so only the images of `r650` carry its
 drivers. A platform of your own starts from chalkos's node modules alone: it does not include
 `metal`'s modules, so give it a console. Its name, lower-case letters, digits and dashes, becomes
-`CHALKOS_PLATFORM` in the image's os-release, and a node refuses images and identities of another
+`CHALKOS_PLATFORM` in the image's os-release, and a node refuses images and [identities](../reference/glossary.md#identity) of another
 platform, so moving a node to a new platform is a reinstall. Platform modules come before the
 role's; a role overrides a value its platform sets with `lib.mkForce`.
 
 ## Keep the image within its slot
 
 A larger module tree or firmware grows the [store](../reference/glossary.md#store). Each image
-build checks that the store's data takes at most 80% of a slot, 3 GiB by default, its hash tree
-at most 80% of the hash partition, and the UKIs the ESP holds at most 80% of the ESP, so the next
+build checks that the store's data takes at most 80% of a [slot](../reference/glossary.md#slot), 3 GiB by default, its hash tree
+at most 80% of the hash partition, and the UKIs the [ESP](../reference/glossary.md#esp) holds at most 80% of the ESP, so the next
 image still fits. A role that grows past that fails the build:
 
 ```text
-error: worker: the store's data takes <bytes> bytes, more than 80% of its slot of 3G (chalkos.disk.storeSize)
+error: worker: the store's data takes 2671771648 bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
 ```
 
 Leave out what the role does not need first. Raising

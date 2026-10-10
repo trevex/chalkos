@@ -10,7 +10,7 @@ on every node and reboots the node into it. Any change to what the image holds g
 new chalkos release, a new Kubernetes release, a change to a role's NixOS modules.
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) does it for the whole cluster: it
 writes each node's inactive [slot](../reference/glossary.md#slot), drains the node, reboots it
-and waits until the new image is found healthy, control planes one at a time and the other nodes
+and waits until the new image is found healthy, [control planes](../reference/glossary.md#control-plane) one at a time and the other nodes
 in batches. A node whose new image never becomes healthy boots its previous image again, and the
 run stops there.
 
@@ -21,7 +21,7 @@ PodDisruptionBudgets.
 
 - A running cluster and its flake, with the [secrets file](../reference/glossary.md#secrets-file)
   or an operator [client file](../reference/glossary.md#client-file).
-- The Secure Boot db key and certificate, when your nodes enforce Secure Boot and you sign the
+- The [Secure Boot](../reference/glossary.md#secure-boot) [db](../reference/glossary.md#db-and-dbx) key and certificate, when your nodes enforce Secure Boot and you sign the
   images during the upgrade. [Sign images for Secure Boot](secure-boot-signing.md) explains the
   keys.
 - Three control planes, for an upgrade without API downtime. A cluster with one or two needs
@@ -31,9 +31,9 @@ PodDisruptionBudgets.
 ## Change the image and its version
 
 Every role image carries a version, `system.image.version`, which names its
-[UKI](../reference/glossary.md#uki) and its slot's partitions. A version is 1 to 23 characters of
-`a-z`, `0-9`, `.`, `~`, `^` and `-`, starting with a letter or a digit; the image build refuses
-others. Set it in the role's NixOS modules, for every role whose image changes:
+[UKI](../reference/glossary.md#uki) and its slot's partitions, within the rules
+[The image](../concepts/image.md#what-may-an-image-version-be) gives. Set it in the role's NixOS
+modules, for every role whose image changes:
 
 ```nix title="cluster.nix"
 let
@@ -62,7 +62,7 @@ Then make the change itself:
   [`chalkos.cluster.kubernetes.package`](../reference/options.md#chalkosclusterkubernetespackage).
   Every role image carries the kubelet, so every role gets a new version. Move one minor release
   at a time, as the Kubernetes version skew policy requires; `chalkctl upgrade` upgrades the
-  control planes before the workers, which keeps the kubelets no newer than the API server.
+  control planes before the [workers](../reference/glossary.md#worker), which keeps the kubelets no newer than the API server.
 
 ## Decide how the images are built and signed
 
@@ -80,7 +80,7 @@ chalkctl upgrade --image=worker-image
 ```
 
 On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's
-db, and chalkd refuses one that is not before the node can boot it. `--sign-key` and
+db, and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before the node can boot it. `--sign-key` and
 `--sign-cert` make chalkctl sign the UKIs it sends; an upgrade leaves the boot loader as it is.
 An image you sign beforehand with [`chalkctl sign`](../reference/cli/chalkctl_sign.md) needs
 neither flag. When
@@ -98,7 +98,7 @@ upgrading controlplane on metal to chalkos 1.5.0: cp1, cp2, cp3
 upgrading worker on metal to chalkos 1.5.0: w1, w2, w3
 cp1: installing 1.5.0
 cp1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
-cp1: cordoned, evicted 2 pods, kept 5
+cp1: cordoned, evicted 2 pods, kept 6
 cp1: rebooting into 1.5.0
 cp1: runs 1.5.0, found healthy
 cp1: uncordoned
@@ -139,7 +139,7 @@ Control planes go first, one at a time. Workers and nodes without Kubernetes fol
 | --- | --- |
 | `--max-unavailable=<n>` | Upgrades `<n>` workers or nodes without Kubernetes at once; 1 by default. Control planes always go one at a time. |
 | `--nodes=<nodes>` | Upgrades only the comma-separated nodes named. |
-| `--allow-downtime` | Lets a control plane reboot even though etcd loses its quorum without it, which is always so with one or two control planes. etcd and the API server are down until it is back. |
+| `--allow-downtime` | Lets a cluster of one or two control planes upgrade, although etcd loses its quorum while one of them reboots. etcd and the API server are down until it is back. With three or more, the flag changes nothing: chalkctl still waits for the other voters to be healthy. |
 | `--no-reboot` | Installs the images without draining or rebooting; each node boots its image at its next reboot. |
 | `--delete-emptydir-data` | Also evicts pods with `emptyDir` volumes, whose data is lost. Without it, such a pod stops the drain. |
 | `--timeout=<duration>` | How long to wait for each drain and for each node to come back healthy; 30 minutes by default. |
@@ -173,7 +173,7 @@ A new image that does not become healthy within
 [`chalkos.upgrade.healthTimeout`](../reference/options.md#chalkosupgradehealthtimeout), 300
 seconds by default, is rebooted; after its last try, systemd-boot boots the previous image. The
 health check wrote the last 30 lines that chalkd and the check logged during the failed boot to
-VAR, and the previous image shows them. The run stops at that node:
+[VAR](../reference/glossary.md#var), and the previous image shows them. The run stops at that node:
 
 ```text
 chalkctl: w2: upgrade to 1.5.0 failed: rolled back to 1.4.0; it stays cordoned; its boots logged:
@@ -187,7 +187,7 @@ for as long as the failed image stays on the disk. With them:
 
 1. Find the cause. The journal lines name what the health check found missing: a failed unit
    on a node without Kubernetes, the kubelet, the Node's registration, the API server or the
-   etcd member. [Troubleshooting](troubleshooting.md) helps from there.
+   [etcd member](../reference/glossary.md#etcd-member). [Troubleshooting](troubleshooting.md) helps from there.
 2. Fix the definition, raise the version and run `chalkctl upgrade` again. chalkctl refuses to
    install 1.5.0 again on a node that fell back from it, so a known-bad image never boots twice
    by accident.
@@ -243,6 +243,6 @@ Keep the previous commit, or the image directory, until the new version has prov
 ## What next
 
 - [Upgrades](../concepts/upgrades.md) and [Boot, health and rollback](../concepts/boot-and-rollback.md)
-  explain the slots, boot counting and the health check.
+  explain the slots, [boot counting](../reference/glossary.md#boot-counting) and the health check.
 - [Troubleshooting](troubleshooting.md) starts from the symptoms of a failed boot.
 - [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists every flag.
