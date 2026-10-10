@@ -32,8 +32,9 @@ debugging goes through the node API and `kubectl debug node/<node>`.
 ## How does chalkos compare with Talos?
 
 chalkos follows the operating model of [Talos Linux](https://www.talos.dev/): an immutable OS
-without logins, managed through a mutual-TLS API with a client file of a role (reader, operator
-or admin), A/B upgrades and a control plane that holds its virtual IP through an etcd election.
+without logins, managed through a mutual-TLS API with a
+[client file](reference/glossary.md#client-file) of a role (reader, operator or admin), A/B
+upgrades and a control plane that holds its virtual IP through an etcd election.
 It differs where Nix changes the trade-offs:
 
 | Topic | Talos | chalkos |
@@ -70,10 +71,17 @@ test clusters.
 
 ## Where to start
 
-- [Quick start](getting-started/index.md): a cluster of two virtual machines on this machine with
-  chalklab, an upgrade and the teardown, in about 15 minutes.
-- [chalkos in five minutes](getting-started/five-minutes.md): the model of a cluster on one page.
-- [Concepts](concepts/index.md): how chalkos works and why.
-- [Guides](guides/index.md): installing, upgrading and operating real clusters.
-- [Reference](reference/index.md): commands, options, the node API and the glossary.
-- [Contributing](contributing/index.md): developing chalkos and its documentation.
+Each section of the documentation serves one kind of reader:
+
+- New to chalkos: the [quick start](getting-started/index.md) runs a cluster of two virtual
+  machines on one machine with chalklab, upgrades it and removes it, in about 15 minutes.
+  [chalkos in five minutes](getting-started/five-minutes.md) then gives the model of a cluster on
+  one page, and [Requirements](getting-started/requirements.md) lists what real machines need.
+- Running a cluster: the [guides](guides/index.md) install, upgrade, rotate and recover real
+  clusters, one task per page.
+- Weighing the design: the [concepts](concepts/index.md) explain how chalkos works, why, and
+  where its protections stop.
+- Looking something up: the [reference](reference/index.md) lists the commands, options, the node
+  API, the disk layout, the ports and the [glossary](reference/glossary.md).
+- Changing chalkos: [contributing](contributing/index.md) covers the development setup, the tests,
+  the code's layout and how these pages are written.

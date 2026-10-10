@@ -5,7 +5,7 @@ description: "Run a chalkos cluster of two QEMU virtual machines on this machine
 
 # Quick start
 
-This tutorial builds a chalkos cluster of one control plane and one worker on your machine, runs
+This tutorial builds a chalkos cluster of one [control plane](../reference/glossary.md#control-plane) and one [worker](../reference/glossary.md#worker) on your machine, runs
 kubectl against it, upgrades both nodes to a new image and removes the cluster again.
 [chalklab](../reference/glossary.md#chalklab) runs the two nodes as QEMU virtual machines, each
 with UEFI firmware, [Secure Boot](../reference/glossary.md#secure-boot) and a
@@ -177,7 +177,7 @@ The output follows the life of a node:
 1. Nix builds one [image](../reference/glossary.md#image) per role for the `kvm` platform. Both
    nodes of a role would boot the same image; what differs between them travels separately as
    their [identity](../reference/glossary.md#identity).
-2. chalklab creates Secure Boot keys for this lab, enrolls them in the firmware of the virtual
+2. chalklab creates Secure Boot keys for this lab, enrols them in the firmware of the virtual
    machines and signs copies of the images with them.
 3. Each virtual machine boots its image in
    [maintenance mode](../reference/glossary.md#maintenance-mode), where
@@ -289,7 +289,8 @@ The first lines say that the node runs the identity the cluster definition gives
 version 0.1.0. The certificates section lists the node's certificates and CAs with their expiry
 dates; the control plane renews the node's certificates before they expire. The trust section
 lists the CAs and keys the node trusts by the start of their fingerprints; `(issues)` marks the
-one the control plane signs with, which matters during a rotation, when two are trusted.
+one the control plane signs with, which matters during a
+[rotation](../reference/glossary.md#rotation), when two are trusted.
 
 [`chalklab status`](../reference/cli/chalklab_status.md) shows the lab itself: the virtual
 machines, their forwarded ports and the lab's files.
@@ -482,6 +483,6 @@ state and ports.
 
 - [chalkos in five minutes](five-minutes.md) puts what this tutorial showed into one model.
 - [Architecture](../concepts/architecture.md) explains the parts and how a node is installed.
-- [Upgrades](../concepts/upgrades.md) explains slots, boot counting and rollback, and
+- [Upgrades](../concepts/upgrades.md) explains slots, boot counting and [rollback](../reference/glossary.md#rollback), and
   [Upgrade a cluster](../guides/upgrade-cluster.md) upgrades a real one.
 - [Install on bare metal](../guides/install-bare-metal.md) installs chalkos on hardware.

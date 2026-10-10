@@ -61,7 +61,7 @@ with a role image, comes up in [maintenance mode](../reference/glossary.md#maint
 chalkd serves a self-signed certificate and prints its fingerprint and the node's addresses on
 the console. `chalkctl install` checks that fingerprint and sends the node its identity, its
 certificates and its share of the secrets, plus the image when the node runs the installer.
-chalkd partitions the disk, seals [STATE](../reference/glossary.md#state) to the TPM, marks the
+chalkd partitions the disk, seals [STATE](../reference/glossary.md#state) to the [TPM](../reference/glossary.md#tpm), marks the
 node installed and reboots it into [normal mode](../reference/glossary.md#normal-mode). See
 [Architecture](../concepts/architecture.md).
 
@@ -71,7 +71,7 @@ A system disk holds the [ESP](../reference/glossary.md#esp), two
 [slots](../reference/glossary.md#slot) for the read-only [store](../reference/glossary.md#store),
 STATE with the node's identity and certificates, and [VAR](../reference/glossary.md#var) for
 everything the node writes, such as etcd, containerd and logs. By default STATE and VAR are
-LUKS2 volumes whose keys the TPM unseals only under the same Secure Boot state. See
+LUKS2 volumes whose keys the TPM unseals only under the same [Secure Boot](../reference/glossary.md#secure-boot) state. See
 [Storage and encryption](../concepts/storage.md).
 
 ## One bootstrap, then nodes join on their own
@@ -81,8 +81,8 @@ LUKS2 volumes whose keys the TPM unseals only under the same Secure Boot state. 
 other node joins without a command: further control planes add themselves to etcd, and
 [workers](../reference/glossary.md#worker) register with the kubelet certificate that install
 gave them. When the cluster declares a [VIP](../reference/glossary.md#vip) for the API server,
-chalkd holds it on one healthy control plane. See [Kubernetes on chalkos](../concepts/kubernetes.md) and
-[Networking](../concepts/networking.md).
+chalkd holds it on one healthy control plane. See
+[Kubernetes on chalkos](../concepts/kubernetes.md) and [Networking](../concepts/networking.md).
 
 ## chalkd is the only way in
 
@@ -98,9 +98,10 @@ logs, reboots, upgrades, etcd membership and certificate rotation all go through
 into the inactive slot. The node reboots into it with
 [boot counting](../reference/glossary.md#boot-counting): a boot that passes the
 [health check](../reference/glossary.md#health-check) is
-[blessed](../reference/glossary.md#blessed-boot), and an image that uses up its three tries
-without one gives way to the image before. chalkctl upgrades control planes one at a time and
-workers in batches, and stops at the first [rollback](../reference/glossary.md#rollback). A Kubernetes upgrade is an image upgrade too. See
+[blessed](../reference/glossary.md#blessed-boot), and an image that uses up its tries, three by
+default, without one gives way to the image before. chalkctl upgrades control planes one at a
+time and workers in batches, and stops at the first
+[rollback](../reference/glossary.md#rollback). A Kubernetes upgrade is an image upgrade too. See
 [Upgrades](../concepts/upgrades.md) and
 [Boot, health and rollback](../concepts/boot-and-rollback.md).
 
@@ -108,6 +109,7 @@ workers in batches, and stops at the first [rollback](../reference/glossary.md#r
 
 Each node renews its [node certificate](../reference/glossary.md#node-certificate) through a
 control plane, which signs it with the node CA, and control planes renew the Kubernetes leaf
-certificates in place, so no certificate of a running cluster expires unattended. A CA or key changes only when an operator runs
-`chalkctl rotate`, which replaces it in phases that keep every node reachable; rotating is also
-how access is revoked. See [Certificates](../concepts/certificates.md).
+certificates in place, so no certificate of a running cluster expires unattended. A CA or key
+changes only when an operator runs `chalkctl rotate`, which replaces it in
+[rotation](../reference/glossary.md#rotation) phases that keep every node reachable; rotating is
+also how access is revoked. See [Certificates](../concepts/certificates.md).
