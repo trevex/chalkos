@@ -12,4 +12,4 @@ docs checks, writing a new page from a template, and the style guide.
 
 !!! note "Being written"
 
-    This page is being written.
+    This page is being written. The rules for writing pages are in the [style guide](style.md).
