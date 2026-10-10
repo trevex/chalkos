@@ -437,16 +437,47 @@ in
       '';
 
   # The worker's kernel module tree, and one with the gpu group: a module outside a role's groups
-  # is not in its tree, and neither a name the kernel does not know nor a module the image loads
-  # but its tree lacks gets past the build.
+  # is not in its tree, and neither a name the kernel does not know, a directory without modules,
+  # a module the image loads but its tree lacks, nor one whose dependency the tree lacks gets past
+  # the build. Out-of-tree modules bring the in-tree modules they depend on.
   kernel-modules =
     let
       worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos;
       treeOf = nixos: nixos.config.system.build.chalkosKernelModules;
       tree = treeOf worker;
       gpu = treeOf (worker.extendModules { modules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ]; });
+      # v4l2loopback depends on videodev, which no base group holds.
+      v4l2loopback = worker.extendModules {
+        modules = [
+          (
+            { config, ... }:
+            {
+              boot.extraModulePackages = [ config.boot.kernelPackages.v4l2loopback ];
+              boot.kernelModules = [ "v4l2loopback" ];
+            }
+          )
+        ];
+      };
+      v4l2loopbackCheck = lib.findFirst (
+        d: d.name == "kernel-modules-check"
+      ) null v4l2loopback.config.system.checks;
       tool = lib.getExe (pkgs.callPackage ./kernel-modules.nix { });
       full = lib.getOutput "modules" worker.config.boot.kernelPackages.kernel;
+      version = worker.config.boot.kernelPackages.kernel.modDirVersion;
+      # A package of one out-of-tree module whose modinfo names the dependencies given.
+      stub =
+        name: modinfo:
+        pkgs.runCommandCC "chalkos-${name}" { } ''
+          echo >empty.c
+          $CC -c empty.c -o empty.o
+          printf 'name=${name}\0${modinfo}\0vermagic=${version} SMP preempt mod_unload \0' >modinfo
+          mkdir -p $out/lib/modules/${version}/extra
+          $OBJCOPY --add-section .modinfo=modinfo --set-section-flags .modinfo=alloc,readonly \
+            empty.o $out/lib/modules/${version}/extra/${name}.ko
+        '';
+      # uvcvideo, a soft dependency, is in no base group either.
+      stubWithDependencies = stub "chalkos_stub" "depends=videodev\\0softdep=pre: uvcvideo";
+      stubWithMissingDependency = stub "chalkos_stub_missing" "depends=chalkos_no_such_module";
     in
     pkgs.runCommand "chalkos-kernel-modules" { nativeBuildInputs = [ pkgs.kmod ]; } ''
       fail() {
@@ -454,8 +485,7 @@ in
         exit 1
       }
       has() {
-        modprobe --config no-config -d "$1" -S ${worker.config.boot.kernelPackages.kernel.modDirVersion} \
-          --show-depends "$2" >/dev/null 2>&1
+        modprobe --config no-config -d "$1" -S ${version} --show-depends "$2" >/dev/null 2>&1
       }
       has ${tree} virtio_net || fail "the worker's tree lacks virtio_net"
       if has ${tree} amdgpu; then fail "the worker's tree holds amdgpu"; fi
@@ -465,10 +495,28 @@ in
       echo chalkos_no_such_module >names
       if ${tool} filter ${full} unknown directories names 2>errors; then fail "an unknown module was taken"; fi
       grep -q 'unknown kernel module chalkos_no_such_module' errors || fail "the error names no module: $(cat errors)"
+      echo drivers/chalkos_no_such_directory >directories
+      : >names
+      if ${tool} filter ${full} empty directories names 2>errors; then fail "a directory without modules was taken"; fi
+      grep -q 'no kernel module below drivers/chalkos_no_such_directory' errors || fail "the error names no directory: $(cat errors)"
 
       echo amdgpu >loaded
       if ${tool} check ${tree} loaded 2>errors; then fail "a module outside the tree passed the check"; fi
       grep -q 'does not hold: amdgpu' errors || fail "the error names no module: $(cat errors)"
+
+      # The image's own check passed: ${v4l2loopbackCheck}
+      has ${treeOf v4l2loopback} videodev || fail "the tree of an image with v4l2loopback lacks videodev"
+      echo drivers/nvme >directories
+      ${tool} filter ${full} "$PWD/stubbed" directories names ${stubWithDependencies}
+      has stubbed videodev || fail "the dependency of an out-of-tree module is missing"
+      has stubbed uvcvideo || fail "the soft dependency of an out-of-tree module is missing"
+      if ${tool} filter ${full} missing directories names ${stubWithMissingDependency} 2>errors; then
+        fail "an out-of-tree module whose dependency the kernel lacks was taken"
+      fi
+      grep -q 'chalkos_stub_missing depends on chalkos_no_such_module' errors || fail "the error names no modules: $(cat errors)"
+      : >loaded
+      if ${tool} check ${stubWithDependencies} loaded 2>errors; then fail "a module whose dependency the tree lacks passed the check"; fi
+      grep -q 'chalkos_stub depends on videodev' errors || fail "the error names no modules: $(cat errors)"
       touch $out
     '';
 

@@ -214,7 +214,8 @@ let
         passthru = { inherit directories names; };
       }
       ''
-        ${lib.getExe tool} filter ${full} $out $directoriesPath $namesPath
+        ${lib.getExe tool} filter ${full} $out $directoriesPath $namesPath \
+          ${lib.escapeShellArgs config.boot.extraModulePackages}
       '';
 
   # What the image loads by name, which the tree must hold.
@@ -245,7 +246,8 @@ in
             a role's definitions add to them, for example `[ "gpu" ]`; `lib.mkForce` replaces
             them. Base: ${lib.concatStringsSep ", " baseGroups}. Further:
             ${lib.concatStringsSep ", " (lib.subtractLists baseGroups (lib.attrNames groups))}.
-            Modules from `boot.extraModulePackages` are always included whole.
+            Modules from `boot.extraModulePackages` are always included whole, with the modules
+            of the kernel they depend on.
           '';
         };
         extraModules = lib.mkOption {
@@ -271,7 +273,8 @@ in
     system.modulesTree = lib.mkIf (!cfg.allModules) (
       lib.mkForce ([ filtered ] ++ config.boot.extraModulePackages)
     );
-    # A module the image loads that its tree lacks fails the build, not the boot.
+    # A module the image loads that its tree lacks, or one a module of the tree depends on, fails
+    # the build, not the boot.
     system.checks = [ check ];
     system.build.chalkosKernelModules = if cfg.allModules then full else filtered;
   };

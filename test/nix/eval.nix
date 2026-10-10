@@ -2836,7 +2836,8 @@ lib.runTests {
           gpu
         ];
         extra = lib.elem "kvm_amd" (tree gpu).names;
-        filtered = "${tree c}" != kernelModules c;
+        # The image's module tree is made of the filtered tree alone, not of the kernel's.
+        filtered = (tree c) ? directories && map toString c.system.modulesTree.paths == [ "${tree c}" ];
         all = "${tree all}" == kernelModules all;
         loadsChecked = lib.all (m: lib.elem m loaded) (
           c.boot.kernelModules ++ c.boot.initrd.kernelModules ++ c.boot.initrd.availableKernelModules
