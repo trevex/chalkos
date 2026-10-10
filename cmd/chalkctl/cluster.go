@@ -7,7 +7,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -114,23 +116,30 @@ func (c *cluster) node(name string) (manifest.Node, error) {
 	return n, nil
 }
 
-// buildImage builds a role's image and returns the directory holding it.
-func (a *app) buildImage(ctx context.Context, c *cluster, role string) (string, error) {
+// buildImage builds a role's image for a platform and returns the directory holding it.
+func (a *app) buildImage(ctx context.Context, c *cluster, role, platform string) (string, error) {
 	r, ok := c.manifest.Roles[role]
 	if !ok {
 		return "", fmt.Errorf("the cluster has no role %s", role)
 	}
+	image, ok := r.Images[platform]
+	if !ok {
+		return "", fmt.Errorf("the cluster has no platform %s; its platforms are %s", platform, strings.Join(slices.Sorted(maps.Keys(r.Images)), ", "))
+	}
 	if c.attr == "" {
 		return "", errors.New("the manifest was read from a file, so the role image cannot be built; pass --image")
 	}
-	image := r.Image
 	// The manifest names the image by the role's name unquoted, which splits a name with dots.
-	if image == "roles."+role+".image" {
-		quoted, err := attrName(role)
+	if image == "roles."+role+".images."+platform {
+		quotedRole, err := attrName(role)
 		if err != nil {
 			return "", err
 		}
-		image = "roles." + quoted + ".image"
+		quotedPlatform, err := attrName(platform)
+		if err != nil {
+			return "", err
+		}
+		image = "roles." + quotedRole + ".images." + quotedPlatform
 	}
 	out, err := a.nix(ctx, "build", "--no-link", "--print-out-paths", c.flags.flake+"#"+c.attr+"."+image+"^out")
 	if err != nil {
@@ -138,10 +147,10 @@ func (a *app) buildImage(ctx context.Context, c *cluster, role string) (string, 
 	}
 	paths := strings.Fields(string(out))
 	if len(paths) != 1 {
-		return "", fmt.Errorf("nix build printed %d paths for the image of role %s, want one", len(paths), role)
+		return "", fmt.Errorf("nix build printed %d paths for the image of role %s on %s, want one", len(paths), role, platform)
 	}
 	if _, err := os.Stat(paths[0]); err != nil {
-		return "", fmt.Errorf("the image of role %s: %w", role, err)
+		return "", fmt.Errorf("the image of role %s on %s: %w", role, platform, err)
 	}
 	return paths[0], nil
 }

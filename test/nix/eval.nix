@@ -20,7 +20,7 @@ let
       ]
       ++ modules;
     };
-  role = c: c.roles.worker.nixos.config;
+  role = c: c.roles.worker.nixos.metal.config;
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
   defaultTimeServers = [
     "ptbtime1.ptb.de"
@@ -451,13 +451,153 @@ lib.runTests {
     expr = withConsumer.chalkos.node.file;
     expected = "/run/chalkos/node.json";
   };
+  # A role is built for each platform, metal and kvm unless a definition adds one; each image names
+  # its platform in os-release and carries that platform's console and agents alone.
+  testPlatformImages = {
+    expr =
+      let
+        c = cluster [ ];
+        summary = c: {
+          platform = c.system.nixos.extraOSReleaseArgs.CHALKOS_PLATFORM;
+          consoles = lib.filter (lib.hasPrefix "console=") c.boot.kernelParams;
+          guestAgent = c.services.qemuGuest.enable;
+          condition = c.systemd.services.qemu-guest-agent.unitConfig.ConditionVirtualization or null;
+        };
+      in
+      {
+        images = lib.attrNames c.roles.worker.images;
+        imagesBuild = lib.all lib.isDerivation (lib.attrValues c.roles.worker.images);
+        metal = summary c.roles.worker.nixos.metal.config;
+        kvm = summary c.roles.worker.nixos.kvm.config;
+      };
+    expected = {
+      images = [
+        "kvm"
+        "metal"
+      ];
+      imagesBuild = true;
+      metal = {
+        platform = "metal";
+        consoles = [
+          "console=tty0"
+          "console=ttyS0,115200"
+        ];
+        guestAgent = false;
+        condition = null;
+      };
+      kvm = {
+        platform = "kvm";
+        consoles = [ "console=ttyS0,115200" ];
+        guestAgent = true;
+        condition = "kvm";
+      };
+    };
+  };
+  # The guest agent answers what the host asks about the node; it runs no commands and touches no
+  # files.
+  testGuestAgentRestricted = {
+    expr =
+      let
+        exec =
+          (cluster [ ])
+          .roles.worker.nixos.kvm.config.systemd.services.qemu-guest-agent.serviceConfig.ExecStart;
+      in
+      {
+        ping = lib.hasInfix "guest-ping" exec;
+        exec = lib.hasInfix "guest-exec" exec;
+        files = lib.hasInfix "guest-file" exec;
+      };
+    expected = {
+      ping = true;
+      exec = false;
+      files = false;
+    };
+  };
+  # A definition adds a platform of its own, or modules to one of chalkos's; a role's modules
+  # come after the platform's.
+  testCustomPlatform = {
+    expr =
+      let
+        c = cluster [
+          {
+            chalkos.platforms.esxi.nixosModules = [ { services.openssh.enable = true; } ];
+            chalkos.platforms.metal.nixosModules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ];
+            chalkos.roles.worker.nixosModules = [
+              { boot.kernelParams = lib.mkAfter [ "role" ]; }
+            ];
+          }
+        ];
+        nixos = c.roles.worker.nixos;
+      in
+      {
+        images = lib.attrNames c.roles.worker.images;
+        esxi = nixos.esxi.config.services.openssh.enable;
+        esxiPlatform = nixos.esxi.config.system.nixos.extraOSReleaseArgs.CHALKOS_PLATFORM;
+        kvm = nixos.kvm.config.services.openssh.enable;
+        metalGPU = lib.elem "gpu" nixos.metal.config.chalkos.kernel.moduleGroups;
+        kvmGPU = lib.elem "gpu" nixos.kvm.config.chalkos.kernel.moduleGroups;
+        last = lib.last nixos.kvm.config.boot.kernelParams;
+      };
+    expected = {
+      images = [
+        "esxi"
+        "kvm"
+        "metal"
+      ];
+      esxi = true;
+      esxiPlatform = "esxi";
+      kvm = false;
+      metalGPU = true;
+      kvmGPU = false;
+      last = "role";
+    };
+  };
+  # A node runs on metal unless it names a defined platform, which its identity carries.
+  testNodePlatform = {
+    expr =
+      let
+        node = platform: {
+          chalkos.nodes.n1 = {
+            role = "worker";
+            inherit platform;
+            storage.system.disk = "/dev/vda";
+          };
+        };
+        manifest = modules: (cluster modules).manifest.nodes.n1;
+      in
+      {
+        default = (storageCluster [ ]).manifest.nodes.n1.platform;
+        kvm = {
+          inherit (manifest [ (node "kvm") ]) platform;
+          identity = (manifest [ (node "kvm") ]).identity.platform;
+        };
+        unknown = fails (manifest [ (node "esxi") ]);
+        defined =
+          (manifest [
+            (node "esxi")
+            { chalkos.platforms.esxi = { }; }
+          ]).platform;
+      };
+    expected = {
+      default = "metal";
+      kvm = {
+        platform = "kvm";
+        identity = "kvm";
+      };
+      unknown = true;
+      defined = "esxi";
+    };
+  };
   testManifestVersion = {
     expr = twoNodes.manifest.schemaVersion;
     expected = 0;
   };
-  testManifestRoleImagePath = {
-    expr = twoNodes.manifest.roles.worker.image;
-    expected = "roles.worker.image";
+  testManifestRoleImagePaths = {
+    expr = twoNodes.manifest.roles.worker.images;
+    expected = {
+      kvm = "roles.worker.images.kvm";
+      metal = "roles.worker.images.metal";
+    };
   };
   testManifestIdentity = {
     expr = removeAttrs twoNodes.manifest.nodes.n1.identity [ "storage" ];
@@ -465,6 +605,7 @@ lib.runTests {
       hostname = "n1";
       cluster = "t";
       role = "worker";
+      platform = "metal";
       network = { };
       networkUnits = { };
       labels = { };
@@ -2084,7 +2225,7 @@ lib.runTests {
             };
           }
         ];
-        image = modules: (cluster modules).roles.worker.image.drvPath;
+        image = modules: (cluster modules).roles.worker.images.metal.drvPath;
         clusterFile =
           modules: (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text;
         identity = modules: (cluster modules).manifest.nodes.n1;
@@ -3222,6 +3363,7 @@ lib.runTests {
         osRelease = {
           CHALKOS_CLUSTER = "t";
           CHALKOS_ROLE = "worker";
+          CHALKOS_PLATFORM = "metal";
           CHALKOS_BOOT_TRIES = "3";
         };
         labels = [
@@ -3233,6 +3375,7 @@ lib.runTests {
         osRelease = {
           CHALKOS_CLUSTER = "t";
           CHALKOS_ROLE = "worker";
+          CHALKOS_PLATFORM = "metal";
           CHALKOS_BOOT_TRIES = "1";
         };
         labels = [

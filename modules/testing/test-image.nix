@@ -15,10 +15,8 @@
     "virtio_blk"
   ];
 
-  boot.kernelParams = [
-    "console=ttyS0,115200"
-    "quiet"
-  ];
+  # The platform puts the console on the first serial port, where the tests read the facts.
+  boot.kernelParams = [ "quiet" ];
 
   # Certificates last a year; a test renews them by delivering the identity, due or not.
   systemd.services.chalkd.environment.CHALKD_TEST_RENEW_ON_APPLY_IDENTITY = "1";

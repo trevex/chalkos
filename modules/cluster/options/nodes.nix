@@ -31,6 +31,14 @@ let
           type = lib.types.enum (lib.attrNames config.chalkos.roles);
           description = "Role whose image this node runs; must name an entry of `chalkos.roles`.";
         };
+        platform = lib.mkOption {
+          type = lib.types.enum (lib.attrNames config.chalkos.platforms);
+          default = "metal";
+          description = ''
+            Platform the node runs on, which must name an entry of `chalkos.platforms`: the node
+            runs its role's image for it. Changing it is a reinstall.
+          '';
+        };
         hostname = lib.mkOption {
           type = lib.types.str;
           default = name;

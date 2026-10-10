@@ -5,6 +5,7 @@ let
   storage = import ../storage.nix { inherit lib; };
   coreNodeOptions = [
     "role"
+    "platform"
     "hostname"
     "storage"
     "network"
@@ -37,7 +38,7 @@ let
   renderNetwork =
     name: n:
     let
-      nixos = cfg.roles.${n.role}.nixos;
+      nixos = cfg.roles.${n.role}.nixos.${n.platform};
       inherit (nixos._module.args.utils.systemdUtils.network) units;
       kinds = {
         networks = {
@@ -131,13 +132,13 @@ let
     ) (lib.filterAttrs (_: v: v.enable && v.format == "swap") n.storage.volumes);
 
   node = name: n: {
-    inherit (n) role;
+    inherit (n) role platform;
     identity = {
       inherit (n) hostname network labels;
       # The cluster and the role the node's image is built for: the installer refuses an image of
-      # others.
+      # others. The platform names which of the role's images the node runs.
       cluster = cfg.cluster.name;
-      inherit (n) role;
+      inherit (n) role platform;
       networkUnits = renderNetwork name n;
       storage = renderStorage name n;
       taints = map strip n.taints;
@@ -184,7 +185,7 @@ in
     # Relative to the cluster's attribute, which only the evaluating CLI knows; the flake may
     # expose the cluster under any name.
     roles = lib.mapAttrs (role: r: {
-      image = "roles.${role}.image";
+      images = lib.mapAttrs (platform: _: "roles.${role}.images.${platform}") cfg.platforms;
       inherit (r.kubernetes) kind;
     }) cfg.roles;
     nodes = lib.mapAttrs node cfg.nodes;

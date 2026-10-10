@@ -26,6 +26,15 @@
           role.
         '';
       };
+      options.platform.name = lib.mkOption {
+        type = lib.types.nullOr (lib.types.strMatching "[a-z0-9][a-z0-9-]*");
+        default = null;
+        description = ''
+          The platform the image is built for, a name of `chalkos.platforms`, set by the role
+          builder; null on the installer, which installs images of every platform. A node refuses
+          an image or an identity of another platform.
+        '';
+      };
       options.role.kubernetes.kind = lib.mkOption {
         type = lib.types.nullOr (
           lib.types.enum [

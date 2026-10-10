@@ -38,15 +38,15 @@ in
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
   chalkd = pkgs.callPackage ./chalkd.nix { };
 
-  test-image = testing.cluster.roles.test.image;
+  test-image = testing.cluster.roles.test.images.metal;
   # The repart definitions of the test role's system region, which its image ships.
   test-repart-definitions =
-    testing.cluster.roles.test.nixos.config.environment.etc."chalkos/repart.d".source;
-  test-storage-image = testing.cluster.roles.storage.image;
+    testing.cluster.roles.test.nixos.metal.config.environment.etc."chalkos/repart.d".source;
+  test-storage-image = testing.cluster.roles.storage.images.metal;
   test-installer = testing.cluster.installer;
-  test-kubernetes-controlplane-image = testing.cluster.roles.k8s-controlplane.image;
-  test-kubernetes-worker-image = testing.cluster.roles.k8s-worker.image;
-  test-kubernetes-ha-image = testing.haCluster.roles.k8s-ha.image;
+  test-kubernetes-controlplane-image = testing.cluster.roles.k8s-controlplane.images.kvm;
+  test-kubernetes-worker-image = testing.cluster.roles.k8s-worker.images.kvm;
+  test-kubernetes-ha-image = testing.haCluster.roles.k8s-ha.images.metal;
   test-upgrade-image = testing.upgradeImage;
   test-unhealthy-image = testing.unhealthyImage;
   test-kubernetes-ha-upgrade-image = testing.haUpgradeImage;

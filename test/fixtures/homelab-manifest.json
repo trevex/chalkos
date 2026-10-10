@@ -8,16 +8,24 @@
     "signerCertificate": null
   },
   "roles": {
-    "controlplane": { "image": "roles.controlplane.image", "kind": "controlplane" },
-    "worker": { "image": "roles.worker.image", "kind": "worker" }
+    "controlplane": {
+      "images": { "kvm": "roles.controlplane.images.kvm", "metal": "roles.controlplane.images.metal" },
+      "kind": "controlplane"
+    },
+    "worker": {
+      "images": { "kvm": "roles.worker.images.kvm", "metal": "roles.worker.images.metal" },
+      "kind": "worker"
+    }
   },
   "nodes": {
     "cp1": {
       "role": "controlplane",
+      "platform": "metal",
       "identity": {
         "hostname": "cp1",
         "cluster": "homelab",
         "role": "controlplane",
+        "platform": "metal",
         "network": {
           "networks": {
             "10-uplink": {
@@ -61,10 +69,12 @@
     },
     "w1": {
       "role": "worker",
+      "platform": "metal",
       "identity": {
         "hostname": "w1",
         "cluster": "homelab",
         "role": "worker",
+        "platform": "metal",
         "network": {},
         "networkUnits": {},
         "labels": { "node.kubernetes.io/storage": "ssd" },

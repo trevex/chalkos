@@ -24,11 +24,11 @@ func TestDecodeGoldenManifest(t *testing.T) {
 	if m.Cluster.Name != "homelab" || m.Cluster.Endpoint != "https://10.0.0.11:6443" {
 		t.Errorf("cluster = %+v", m.Cluster)
 	}
-	if got := m.Roles["worker"].Image; got != "roles.worker.image" {
-		t.Errorf("worker image = %q", got)
+	if got := m.Roles["worker"].Images["kvm"]; got != "roles.worker.images.kvm" {
+		t.Errorf("worker image on kvm = %q", got)
 	}
 	w1 := m.Nodes["w1"]
-	if w1.Role != "worker" || w1.Identity.Hostname != "w1" {
+	if w1.Role != "worker" || w1.Platform != "metal" || w1.Identity.Platform != "metal" || w1.Identity.Hostname != "w1" {
 		t.Errorf("w1 = %+v", w1)
 	}
 	if len(w1.Identity.Taints) != 1 || w1.Identity.Taints[0].Effect != "NoSchedule" {

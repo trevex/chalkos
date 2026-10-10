@@ -50,7 +50,7 @@ func upgradeManifest(controlPlanes int) string {
 	}
 	nodes = append(nodes, node("n1", "plain", 31))
 	return `{"schemaVersion": 0, "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-	  "roles": {"cp": {"image": "roles.cp.image", "kind": "controlplane"}, "w": {"image": "roles.w.image", "kind": "worker"}, "plain": {"image": "roles.plain.image"}},
+	  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}, "kind": "controlplane"}, "w": {"images": {"metal": "roles.w.images.metal"}, "kind": "worker"}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
 	  "nodes": {` + strings.Join(nodes, ",\n") + `}}`
 }
 

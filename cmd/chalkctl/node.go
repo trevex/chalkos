@@ -335,7 +335,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		}}
 		path := *imagePath
 		if path == "" {
-			if path, err = a.buildImage(ctx, t.cluster, t.node.Role); err != nil {
+			if path, err = a.buildImage(ctx, t.cluster, t.node.Role, t.node.Platform); err != nil {
 				return err
 			}
 		}

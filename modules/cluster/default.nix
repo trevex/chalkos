@@ -3,6 +3,7 @@
   imports = [
     ./options/cluster.nix
     ./options/secure-boot.nix
+    ./options/platforms.nix
     ./options/roles.nix
     ./options/nodes.nix
     ./options/storage.nix

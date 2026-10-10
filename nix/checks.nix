@@ -98,7 +98,7 @@ in
   vxlan-rule =
     let
       worker =
-        (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.config;
+        (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm.config;
       # The script NixOS runs to load and reload the firewall.
       firewall = builtins.elemAt worker.systemd.services.nftables.serviceConfig.ExecReload 1;
       script =
@@ -442,7 +442,7 @@ in
   # the build. Out-of-tree modules bring the in-tree modules they depend on.
   kernel-modules =
     let
-      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos;
+      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm;
       treeOf = nixos: nixos.config.system.build.chalkosKernelModules;
       tree = treeOf worker;
       gpu = treeOf (worker.extendModules { modules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ]; });
@@ -531,9 +531,9 @@ in
       testing = import ./testing/cluster.nix { inherit self pkgs; };
       ceilings = import ./testing/image-sizes.nix;
       measure =
-        name: ceiling:
+        name: platform: ceiling:
         let
-          inherit (testing.cluster.roles.${name}.nixos) config;
+          inherit (testing.cluster.roles.${name}.nixos.${platform}) config;
           image = config.system.build.image;
         in
         lib.escapeShellArgs [
@@ -546,7 +546,7 @@ in
           ceiling.hashTree
           ceiling.uki
         ];
-      test = testing.cluster.roles.test.nixos.config;
+      test = testing.cluster.roles.test.nixos.metal.config;
       testImage = "${test.system.build.image}/${test.image.fileName}";
       testPartitions = "${test.system.build.image}/repart-output.json";
       testUKI = "${test.system.build.uki}/${test.system.boot.loader.ukiFile}";
@@ -586,15 +586,15 @@ in
             failed=1
           fi
         }
-        check ${measure "k8s-controlplane" ceilings.k8s-controlplane}
-        check ${measure "k8s-worker" ceilings.k8s-worker}
-        check ${measure "test" ceilings.test}
+        check ${measure "k8s-controlplane" "kvm" ceilings.k8s-controlplane}
+        check ${measure "k8s-worker" "kvm" ceilings.k8s-worker}
+        check ${measure "test" "metal" ceilings.test}
 
         # An image over a ceiling fails the check and lists the largest paths of its closure.
         if (
           failed=0
           check ${
-            measure "test" {
+            measure "test" "metal" {
               storeData = 1;
               hashTree = 1;
               uki = 1;
@@ -637,7 +637,7 @@ in
   # its kernel, the UKI on the ESP: the store holds neither the kernel nor the initrd.
   bootspec =
     let
-      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos;
+      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm;
       bootJSON = "${worker.config.system.build.toplevel}/boot.json";
     in
     pkgs.runCommand "chalkos-bootspec" { nativeBuildInputs = [ pkgs.jq ]; } ''

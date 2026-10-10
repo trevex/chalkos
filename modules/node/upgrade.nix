@@ -91,6 +91,9 @@ in
     }
     // lib.optionalAttrs (config.chalkos.role.name != null) {
       CHALKOS_ROLE = config.chalkos.role.name;
+    }
+    // lib.optionalAttrs (config.chalkos.platform.name != null) {
+      CHALKOS_PLATFORM = config.chalkos.platform.name;
     };
   };
 }

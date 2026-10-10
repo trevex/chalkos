@@ -48,18 +48,21 @@ type SecureBoot struct {
 	SignerCertificate string `json:"signerCertificate"`
 }
 
-// Role is a node role; all nodes of a role run the same image.
+// Role is a node role; all nodes of a role on a platform run the same image.
 type Role struct {
-	// Image is the attribute path, relative to the cluster's attribute, that builds the role's
-	// unsigned disk image; the CLI prepends the attribute path it evaluated the manifest from.
-	Image string `json:"image"`
+	// Images are the attribute paths, relative to the cluster's attribute, that build the role's
+	// unsigned disk image for each platform; the CLI prepends the attribute path it evaluated the
+	// manifest from.
+	Images map[string]string `json:"images"`
 	// Kind is what the role's nodes are in Kubernetes: KindControlPlane, KindWorker, or empty.
 	Kind string `json:"kind"`
 }
 
-// Node is one machine of the cluster, by the role it runs and the values unique to it.
+// Node is one machine of the cluster, by the role it runs, the platform it runs on and the values
+// unique to it.
 type Node struct {
 	Role     string   `json:"role"`
+	Platform string   `json:"platform"`
 	Identity Identity `json:"identity"`
 }
 
@@ -68,9 +71,11 @@ type Identity struct {
 	Hostname string `json:"hostname"`
 	// Cluster and Role are the cluster and the role the node's image is built for; the installer
 	// refuses an image of others.
-	Cluster string         `json:"cluster"`
-	Role    string         `json:"role"`
-	Network map[string]any `json:"network"`
+	Cluster string `json:"cluster"`
+	Role    string `json:"role"`
+	// Platform is the platform the node's image is built for.
+	Platform string         `json:"platform"`
+	Network  map[string]any `json:"network"`
 	// NetworkUnits are the systemd-networkd unit files rendered from Network, by file name.
 	NetworkUnits map[string]string `json:"networkUnits"`
 	Labels       map[string]string `json:"labels"`

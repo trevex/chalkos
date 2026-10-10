@@ -90,7 +90,7 @@ let
       role = "storage";
       storage.system.disk = "/dev/vda";
     };
-    # A control plane and a worker, connected through the switch of the Kubernetes test.
+    # A control plane and a worker on KVM, connected through the switch of the Kubernetes test.
     chalkos.roles.k8s-controlplane = {
       kubernetes.kind = "controlplane";
       nixosModules = [ ../../modules/testing/test-image.nix ];
@@ -103,6 +103,7 @@ let
     # would install the routes.
     chalkos.nodes.cp1 = {
       role = "k8s-controlplane";
+      platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = pkgs.lib.recursiveUpdate (clusterNetwork "52:54:00:00:01:11" "11") {
         networks."10-cluster".routes = [
@@ -121,6 +122,7 @@ let
     # at boot, neither its user-mode NIC's nor its cluster network's.
     chalkos.nodes.w1 = {
       role = "k8s-worker";
+      platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = pkgs.lib.recursiveUpdate (clusterNetwork "52:54:00:00:01:12" "12") {
         netdevs."20-bgp0".netdevConfig = {
@@ -203,14 +205,14 @@ let
       mirrored
     ];
   };
-  # The images of a role again, at another version and with the modules given.
+  # The metal image of a role again, at another version and with the modules given.
   imageAt =
     modules: role: version: extra:
     (self.lib.mkCluster {
       modules = modules ++ [
         { chalkos.roles.${role}.nixosModules = [ ({ system.image.version = version; } // extra) ]; }
       ];
-    }).roles.${role}.image;
+    }).roles.${role}.images.metal;
 in
 {
   inherit cluster haCluster;

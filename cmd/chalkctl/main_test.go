@@ -42,14 +42,16 @@ func TestRunSignRequiresAllFlags(t *testing.T) {
 const testManifest = `{
   "schemaVersion": 0,
   "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-  "roles": {"test": {"image": "roles.test.image"}},
+  "roles": {"test": {"images": {"metal": "roles.test.images.metal", "kvm": "roles.test.images.kvm"}}},
   "nodes": {
     "n1": {
       "role": "test",
+      "platform": "metal",
       "identity": {
         "hostname": "n1",
         "cluster": "lab",
         "role": "test",
+        "platform": "metal",
         "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}},
         "networkUnits": {},
         "labels": {},
@@ -612,7 +614,7 @@ func TestLoadClusterEvaluatesFlake(t *testing.T) {
 	ta := newTestApp(t)
 	// Dots in cluster and role names are part of the names, not attribute separators.
 	ta.editManifest(t, func(m *manifest.Manifest) {
-		m.Roles = map[string]manifest.Role{"web.v2": {Image: "roles.web.v2.image"}}
+		m.Roles = map[string]manifest.Role{"web.v2": {Images: map[string]string{"kvm": "roles.web.v2.images.kvm"}}}
 	})
 	manifestJSON, _ := json.Marshal(ta.manifest)
 	imageDir := t.TempDir()
@@ -633,14 +635,14 @@ func TestLoadClusterEvaluatesFlake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir, err := ta.buildImage(context.Background(), c, "web.v2")
+	dir, err := ta.buildImage(context.Background(), c, "web.v2", "kvm")
 	if err != nil || dir != imageDir {
 		t.Fatalf("image = %q, %v", dir, err)
 	}
 	want := []string{
 		"eval --json /src/lab#chalkos --apply builtins.attrNames",
 		`eval --json /src/lab#chalkos."home.lab".manifest`,
-		`build --no-link --print-out-paths /src/lab#chalkos."home.lab".roles."web.v2".image^out`,
+		`build --no-link --print-out-paths /src/lab#chalkos."home.lab".roles."web.v2".images."kvm"^out`,
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Errorf("nix calls = %v, want %v", calls, want)
@@ -674,7 +676,7 @@ func TestBuildImageChecksOutputPath(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ta.nix = func(context.Context, ...string) ([]byte, error) { return []byte(out), nil }
-			if dir, err := ta.buildImage(context.Background(), c, "test"); err == nil {
+			if dir, err := ta.buildImage(context.Background(), c, "test", "metal"); err == nil {
 				t.Errorf("image = %q, want an error", dir)
 			}
 		})

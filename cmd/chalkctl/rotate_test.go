@@ -30,7 +30,7 @@ import (
 const rotationManifest = `{
   "schemaVersion": 0,
   "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-  "roles": {"cp": {"image": "roles.cp.image", "kind": "controlplane"}, "w": {"image": "roles.w.image", "kind": "worker"}, "plain": {"image": "roles.plain.image"}},
+  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}, "kind": "controlplane"}, "w": {"images": {"metal": "roles.w.images.metal"}, "kind": "worker"}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
   "nodes": {
     "cp1": {"role": "cp", "identity": {"hostname": "cp1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}},
     "cp2": {"role": "cp", "identity": {"hostname": "cp2", "network": {"networks": {"10-uplink": {"address": ["10.0.0.12/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}},

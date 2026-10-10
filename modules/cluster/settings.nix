@@ -6,6 +6,7 @@ rec {
   settings = removeAttrs chalkos [
     "nodes"
     "roles"
+    "platforms"
     "installer"
     "manifest"
     "warnings"
