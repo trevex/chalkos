@@ -2548,7 +2548,7 @@ role image under the same names as in the cluster definition, read-only.
 Add coreutils, grep, sed, findutils, procps, iproute2 and util-linux to the system path,
 and crictl on roles with Kubernetes; systemd, bash, less, nftables and kmod are on it
 already\. Nodes have no logins; use them from a privileged pod on the node, for example
-` kubectl debug node/<node> -it --image=busybox -- chroot /host /run/current-system/sw/bin/bash `\.
+` kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- chroot /host /run/current-system/sw/bin/bash `\.
 
 
 

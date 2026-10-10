@@ -62,6 +62,8 @@ connections from other machines. They are reachable from the node itself.
 
 | Port | Protocol | Service | Address | Nodes |
 | --- | --- | --- | --- | --- |
+| 53 | UDP and TCP | systemd-resolved's stub resolver, which the node's own name lookups use | `127.0.0.53` and `127.0.0.54` | every node |
+| 323 | UDP | chrony's command port, for chronyc | `127.0.0.1` and `::1` | every node |
 | 2379 | TCP | etcd's client port, for the local API server | the loopback address of the primary family | control planes |
 | 2381 | TCP | etcd's metrics and health, plain HTTP | the loopback address of the primary family | control planes |
 | 8081 | TCP | flanneld's health | every address | nodes with flannel |
@@ -122,7 +124,7 @@ between the nodes.
 | DNS resolvers of the node's network | 53 | UDP and TCP | Names of registries and time servers. |
 | DHCP servers, when the node's network units use DHCP | 67 | UDP | Addresses. |
 | The cluster endpoint | 6443 | TCP | The kubelet and kube-proxy of every Kubernetes node. |
-| The cluster endpoint's host | 50000 | TCP | Renewal of the node certificate at a control plane, once two thirds of its lifetime have passed. |
+| The cluster endpoint's host | 50000 | TCP | Renewal of a worker's node certificate at a control plane, once two thirds of its lifetime have passed; control planes sign their own. |
 | The other control planes | 2379, 2380 | TCP | etcd membership and replication. |
 | The other Kubernetes nodes | 10250 | TCP | The API server reaching kubelets, from control planes. |
 | The other Kubernetes nodes | 8472 | UDP | flannel's VXLAN. |

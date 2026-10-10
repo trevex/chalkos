@@ -46,8 +46,8 @@ system region.
 | `00-esp` | `esp` | [`espSize`](options.md#chalkosdiskespsize), `1G` | vfat | none | image build |
 | `10-store-verity-a` | `store-verity_<version>` | [`storeVeritySize`](options.md#chalkosdiskstoreveritysize), `128M` | dm-verity hash tree | none | image build |
 | `20-store-a` | `store_<version>` | [`storeSize`](options.md#chalkosdiskstoresize), `3G` | erofs, zstd | none | image build |
-| `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot |
-| `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot |
+| `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot, or install from the installer |
+| `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
 | `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the [TPM](glossary.md#tpm) by default | first boot, install |
 | `50-var` | `var` | [`var.size`](options.md#chalkosnodesstoragevarsize), rest of the disk | ext4 | node's policy | install |
 | `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later identity |
@@ -121,7 +121,7 @@ The other UUIDs are set as follows:
 | A slot being written | random, with both labels `_empty`, so nothing boots it |
 | A written slot | derived from the root hash, with the labels naming the version |
 | ESP | random, set at install, because systemd-boot reports it as the boot partition and no other disk with the same image may match it |
-| STATE | random, from systemd-repart's `--seed=random` at install |
+| STATE | random, from systemd-repart's `--seed=random`, when an install from the installer lays out the disk or an install recreates STATE for another encryption; otherwise the one systemd-repart gave it at first boot |
 | VAR and volumes | derived by systemd-repart from a seed per cluster, node and disk name |
 
 The labels name a slot's version but nothing boots by label; the boot finds the store by
@@ -153,7 +153,8 @@ boot loader.
 After an upgrade, chalkd sets the EFI variable `LoaderEntryPreferred` to the new entry's ID,
 `chalkos_<version>.efi` in lower case, because systemd-boot otherwise boots the newest version,
 which after a downgrade is not the new image. An install from the installer adds a UEFI boot
-entry labelled `chalkos` for `\EFI\BOOT\BOOTX64.EFI` on the target's ESP.
+entry labelled `chalkos` for the target ESP's removable-media path, `\EFI\BOOT\BOOTX64.EFI` on
+x86-64 and `\EFI\BOOT\BOOTAA64.EFI` on arm64.
 
 ## Files on STATE
 

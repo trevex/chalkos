@@ -143,10 +143,12 @@ See [The cluster definition](../concepts/cluster-definition.md).
 
 ## Health check { #health-check }
 
-The check `chalkos-health.service` runs on a counted boot: on a control plane, the local etcd
-member, the API server and the kubelet are healthy; on a worker, the kubelet is healthy and its
-Node registered; on a node without Kubernetes, chalkd serves and no unit failed. A boot that
-passes within [`chalkos.upgrade.healthTimeout`](options.md#chalkosupgradehealthtimeout) is
+The check `chalkos-health.service` runs on a counted boot. chalkd must serve on every node, and on
+a node with Kubernetes the preparation must have succeeded. Then a control plane that is an etcd
+member needs its local etcd member, its API server and its kubelet healthy, and a worker its
+kubelet healthy and its Node registered. A node without Kubernetes, or a control plane not
+bootstrapped yet, needs its identity applied and no unit of the boot failed. A boot that passes
+within [`chalkos.upgrade.healthTimeout`](options.md#chalkosupgradehealthtimeout) is
 [blessed](#blessed-boot). See [Boot, health and rollback](../concepts/boot-and-rollback.md).
 
 ## Identity { #identity }
