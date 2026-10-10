@@ -17,11 +17,6 @@ let
       ];
     };
   };
-  # containerd, the kubelet and the CNI plugins outgrow the test image's verity partition.
-  kubernetesImage = [
-    ../../modules/testing/test-image.nix
-    { chalkos.disk.storeVeritySize = pkgs.lib.mkForce "128M"; }
-  ];
   definition = {
     chalkos.cluster = {
       name = "chalklab";
@@ -98,11 +93,11 @@ let
     # A control plane and a worker, connected through the switch of the Kubernetes test.
     chalkos.roles.k8s-controlplane = {
       kubernetes.kind = "controlplane";
-      nixosModules = kubernetesImage;
+      nixosModules = [ ../../modules/testing/test-image.nix ];
     };
     chalkos.roles.k8s-worker = {
       kubernetes.kind = "worker";
-      nixosModules = kubernetesImage;
+      nixosModules = [ ../../modules/testing/test-image.nix ];
     };
     # cp1 reaches w1's addresses through w1's address on the cluster network, as a routing daemon
     # would install the routes.
@@ -165,7 +160,7 @@ let
     };
     chalkos.roles.k8s-ha = {
       kubernetes.kind = "controlplane";
-      nixosModules = kubernetesImage;
+      nixosModules = [ ../../modules/testing/test-image.nix ];
     };
     chalkos.nodes = pkgs.lib.genAttrs [ "cp1" "cp2" "cp3" ] (
       name:

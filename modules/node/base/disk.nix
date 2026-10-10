@@ -82,7 +82,11 @@ in
         storeVeritySize = lib.mkOption {
           type = lib.types.nullOr lib.types.str;
           default = "128M";
-          description = "Size of each store slot's dm-verity hash partition; null sizes it to its contents.";
+          description = ''
+            Size of each store slot's dm-verity hash partition; null sizes it to its contents. The
+            image build fails when the hash tree takes more than 80% of it. With 4 KiB blocks the
+            tree needs up to about 1/128 of storeSize.
+          '';
         };
         stateSize = lib.mkOption {
           type = lib.types.str;
