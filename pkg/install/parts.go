@@ -204,7 +204,11 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 	if a := pairs[0]; a.Version() != "" && !a.Holds(req.Image.RootHash) {
 		return false, fmt.Errorf("slot A of the target disk %s holds version %s of another store; pass --wipe-disk to replace it", target, a.Version())
 	}
-	return false, i.checkState(ctx, target, table, req.Section.Encryption)
+	if err := i.checkState(ctx, target, table, req.Section.Encryption); err != nil {
+		return false, err
+	}
+	log.Printf("continuing the install on %s", target)
+	return false, nil
 }
 
 // checkState refuses a target whose STATE belongs to an installed node or to another machine:

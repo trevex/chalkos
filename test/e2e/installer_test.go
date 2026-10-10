@@ -60,6 +60,12 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
+	// The second run took the disk up where the first left it, not laid out anew.
+	logged, cancelLogged := context.WithTimeout(context.Background(), time.Minute)
+	defer cancelLogged()
+	if _, err := n.vm.Console.WaitFor(logged, regexp.MustCompile(`continuing the install on `)); err != nil {
+		t.Fatalf("the second install did not continue the first: %v", err)
+	}
 	for _, out := range []string{interrupted, out} {
 		// The store data, hash tree, UKI and boot loader, not the whole raw image.
 		m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(out)
@@ -94,8 +100,8 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 }
 
 // cancelledInstall runs chalkctl with the arguments until chalkd retires slot A of the target, before
-// it writes the store there, then kills it, and waits for chalkd to give the install up. It
-// returns what chalkctl printed.
+// it writes the store there, then kills it, and waits for chalkd to give the install up while it
+// receives the store. It returns what chalkctl printed.
 func cancelledInstall(t *testing.T, n *node, args []string) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -119,8 +125,12 @@ func cancelledInstall(t *testing.T, n *node, args []string) string {
 	if r.err == nil {
 		t.Fatal("the install completed before it was cancelled")
 	}
-	if _, err := n.vm.Console.WaitFor(wait, regexp.MustCompile(`install failed: `)); err != nil {
+	m, err := n.vm.Console.WaitFor(wait, regexp.MustCompile(`install failed: (.*)`))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(m[1], "receive the store: ") {
+		t.Fatalf("the install failed with %q, want it to fail while it receives the store", m[1])
 	}
 	return r.out
 }
