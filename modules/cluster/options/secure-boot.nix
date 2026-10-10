@@ -13,12 +13,20 @@
         and adds the cluster certificates, `strict` keeps only the cluster certificate plus
         option ROM hashes, `none` never writes variables because the firmware is prepared
         beforehand.
+
+        chalkos does not act on this option yet: enroll the firmware keys out of band. The option
+        is reserved for key enrollment by chalkd.
       '';
     };
     require = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Refuse to install a node that could not boot the signed image under Secure Boot.";
+      description = ''
+        Refuse to install a node that could not boot the signed image under Secure Boot.
+
+        chalkos does not act on this option yet: enroll the firmware keys out of band. The option
+        is reserved for key enrollment by chalkd.
+      '';
     };
     signerCertificate = lib.mkOption {
       type = lib.types.nullOr lib.types.path;

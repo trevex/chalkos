@@ -2343,6 +2343,9 @@ and adds the cluster certificates, ` strict ` keeps only the cluster certificate
 option ROM hashes, ` none ` never writes variables because the firmware is prepared
 beforehand\.
 
+chalkos does not act on this option yet: enroll the firmware keys out of band\. The option
+is reserved for key enrollment by chalkd\.
+
 
 
 *Type:*
@@ -2366,6 +2369,9 @@ one of “append”, “strict”, “none”
 
 
 Refuse to install a node that could not boot the signed image under Secure Boot\.
+
+chalkos does not act on this option yet: enroll the firmware keys out of band\. The option
+is reserved for key enrollment by chalkd\.
 
 
 
