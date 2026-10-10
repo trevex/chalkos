@@ -9,9 +9,9 @@ List etcd's members and their health
 
 ## Synopsis
 
-Lists etcd's members as a control-plane node's own member sees them: name, ID, peer URLs,
-whether a member votes or is a learner, and its health. The first control-plane node that
-answers is asked, or --via.
+Lists etcd's members the way one control plane's own member sees them: name, ID, peer URLs,
+whether a member votes or is a learner, and its health. The first control plane that answers is
+asked, or --via. The command needs a reader client file or the secrets file.
 
 ```
 chalkctl etcd members [flags]
@@ -34,7 +34,7 @@ chalkctl etcd members [flags]
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --manifest string    read the cluster's manifest from this file instead of evaluating the flake
       --secrets string     secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
-      --via string         control-plane node to ask (default the first one that answers)
+      --via string         control plane to ask (default the first one that answers)
 ```
 
 ## SEE ALSO

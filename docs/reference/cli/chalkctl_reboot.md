@@ -10,7 +10,8 @@ Reboot a node
 ## Synopsis
 
 Reboots a node, installed or in maintenance mode. An installed node does not drain its
-Kubernetes pods first.
+Kubernetes pods first. The command needs an operator client file or the secrets file; a node in
+maintenance mode is reached with --fingerprint or --insecure as well.
 
 ```
 chalkctl reboot <node> [flags]

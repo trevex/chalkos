@@ -9,10 +9,11 @@ Remove a node's etcd member, such as a stale one
 
 ## Synopsis
 
-Removes another node's etcd member, named by its node or its member ID, such as the member of
-a node that is gone. The removal is refused when the voters left would have fewer healthy
-members than their quorum, unless --force is given. A control-plane node other than the removed
-one does the removal: --via, or the first one that answers.
+Removes another node's etcd member, named by its node or its member ID: for example the member
+of a node that is gone. The removal is refused when the voters left would have fewer healthy
+members than their quorum, unless --force is given. A control plane other than the removed one
+does the removal: --via, or the first one that answers. The command needs an admin client file
+or the secrets file.
 
 ```
 chalkctl etcd remove-member <node|id> [flags]
@@ -40,7 +41,7 @@ chalkctl etcd remove-member <node|id> [flags]
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --manifest string    read the cluster's manifest from this file instead of evaluating the flake
       --secrets string     secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
-      --via string         control-plane node that removes the member (default the first other one that answers)
+      --via string         control plane that removes the member (default the first other one that answers)
 ```
 
 ## SEE ALSO

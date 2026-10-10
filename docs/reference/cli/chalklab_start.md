@@ -10,8 +10,9 @@ Start a stopped lab, or the VMs of a running lab that stopped
 ## Synopsis
 
 Starts a lab again from its state, with its disks, firmware variables, TPM state and ports. When
-the supervisor runs, it starts the VMs that stopped, as one the node powered off; otherwise, as
-after a reboot of this machine, chalklab starts the supervisor, which starts every VM.
+the supervisor runs, it starts the VMs that stopped (for example a VM whose node powered off).
+When no supervisor runs (for example after a reboot of this machine), chalklab starts the
+supervisor, which starts every VM. The command needs no secrets file or client file.
 
 ```
 chalklab start [flags]

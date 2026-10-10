@@ -13,7 +13,8 @@ Issues the node a new node certificate and key from the node CA and delivers the
 node's own certificate expired. Such a node is verified by the OS CA as of its certificate's
 start, so chalkctl trusts the node's old key: someone holding a leaked, expired key of the node
 and sitting in its network path could receive the new certificate in its place. That is inherent
-to recovering a node; renewing node certificates before they expire avoids it.
+to recovering a node; renewing node certificates before they expire avoids it. The command needs
+the secrets file.
 
 ```
 chalkctl node renew <node> [flags]

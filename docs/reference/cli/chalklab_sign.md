@@ -10,8 +10,9 @@ Sign an image with the lab's Secure Boot keys, for upgrades
 ## Synopsis
 
 Signs the boot loader and UKIs of an image with the lab's Secure Boot db key, so the lab's VMs
-boot it, as for an upgrade with an image built elsewhere. An image in the Nix store cannot be
-changed, so --out copies the image into a directory and signs the copy.
+boot it; an upgrade with an image built elsewhere needs that. An image in the Nix store cannot be
+changed, so --out copies the image into a directory and signs the copy. The command needs no
+secrets file or client file.
 
 ```
 chalklab sign <image> [flags]
@@ -30,7 +31,7 @@ chalklab sign <image> [flags]
 ```
       --cluster string   cluster whose lab's keys to sign with (default the only lab)
   -h, --help             help for sign
-      --out string       directory to copy the image to, made when missing, and sign there, as for an image in the Nix store, which cannot be signed in place
+      --out string       directory to copy the image to (made when missing) and sign there; needed for an image in the Nix store, which cannot be signed in place
 ```
 
 ## SEE ALSO

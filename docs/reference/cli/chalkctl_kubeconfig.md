@@ -12,8 +12,9 @@ Write an admin kubeconfig
 Writes a kubeconfig with a client certificate for the Kubernetes API server, issued from the
 secrets file for --name in the group chalkos:cluster-admins, which is bound to cluster-admin,
 and valid for --ttl. The file holds the certificate's private key and is written with mode
-0600. --server points clients at another URL than the cluster endpoint, as a forwarded port,
-while they still verify the API server's certificate for the endpoint.
+0600. --server points clients at another URL than the cluster endpoint (a forwarded port, for
+example), while they still verify the API server's certificate for the endpoint. The command
+needs the secrets file.
 
 ```
 chalkctl kubeconfig [flags]
@@ -22,7 +23,7 @@ chalkctl kubeconfig [flags]
 ## Examples
 
 ```
-  chalkctl kubeconfig --out ~/.kube/config --force
+  chalkctl kubeconfig --out lab.kubeconfig
 
   # Through a port forwarded to the API server.
   chalkctl kubeconfig --server https://127.0.0.1:6443 --out -

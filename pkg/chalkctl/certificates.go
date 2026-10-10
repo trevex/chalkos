@@ -71,7 +71,7 @@ func (a *app) nodeCARotateCommand() *cobra.Command {
 	var change changeFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "rotate",
-		Short:   "Issue a new node CA and deliver it to the control-plane nodes",
+		Short:   "Issue a new node CA and deliver it to the control planes",
 		Long:    nodeCARotateLong,
 		Example: nodeCARotateExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeCARotate(ctx, n, change, pos) })

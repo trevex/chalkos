@@ -9,9 +9,12 @@ Wipe and recreate one volume
 
 ## Synopsis
 
-Wipes one volume of a node and creates it again as the node's identity defines it, empty. Its
-data is lost. The volume is unlocked as before: by the TPM, and by the second keyslot's recovery
-key or password. The command needs the cluster definition, which defines the volume.
+Wipes one volume of a node and creates it again, empty, the way the node's identity defines it.
+Its data is lost. A volume the identity encrypts is sealed to the TPM again and, unless the
+node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
+A volume the identity leaves unencrypted is created without encryption. The command needs the
+cluster definition, which defines the volume, and an admin client file or the secrets file. A
+node whose fallback is its recovery key needs the secrets file, from which the key is derived.
 
 ```
 chalkctl storage reset <node> <volume> [flags]

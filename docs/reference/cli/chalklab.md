@@ -13,10 +13,11 @@ chalklab runs the nodes of a chalkos cluster as QEMU virtual machines on this ma
 Secure Boot and a TPM. A lab is built from the cluster definition in a flake: its kvm nodes run
 on a private network that matches their static addresses, and each node's chalkd and each
 control plane's API server are forwarded to a port on 127.0.0.1. A supervisor process keeps the
-VMs running in the background. A lab's state, its disks, keys, console logs, kubeconfig and
-client file, lives in $XDG_STATE_HOME/chalklab/&lt;cluster>, by default
+VMs running in the background. A lab's state (its disks, keys, console logs, kubeconfig and
+client file) lives in $XDG_STATE_HOME/chalklab/&lt;cluster>, by default
 ~/.local/state/chalklab/&lt;cluster>. chalklab needs /dev/kvm, which most distributions grant to the
-kvm group.
+kvm group. Only create needs the cluster's secrets file; the other commands work on the lab's
+state alone.
 
 ## Examples
 

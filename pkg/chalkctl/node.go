@@ -264,7 +264,7 @@ func (a *app) installCommand() *cobra.Command {
 	var f installFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "install <node>",
-		Short:   "Install a node in maintenance mode",
+		Short:   "Install a node that waits in maintenance mode",
 		Long:    installLong,
 		Example: installExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.install(ctx, f, pos) })

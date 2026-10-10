@@ -9,7 +9,7 @@ Manage a node's certificate
 
 ## Synopsis
 
-Manages the node certificate of an installed node.
+Manages the node certificate of an installed node. Its command needs the secrets file.
 
 ## Examples
 

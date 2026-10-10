@@ -9,7 +9,8 @@ Manage a node's volumes
 
 ## Synopsis
 
-Manages the volumes of an installed node.
+Manages the volumes of an installed node. Its command needs an admin client file or the
+secrets file.
 
 ## Examples
 

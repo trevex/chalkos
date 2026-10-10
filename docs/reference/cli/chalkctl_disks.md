@@ -9,10 +9,11 @@ List a node's disks
 
 ## Synopsis
 
-Lists the disks of a node with their size, type, model, serial number, WWN and use, and the
-partitions on them, as a node's storage definition names its disks. An installed node is reached
-with the cluster's credentials; a node in maintenance mode with --fingerprint or --insecure. A
-node that the cluster definition does not name yet is reached at --endpoint, in maintenance mode.
+Lists a node's disks with their use, the partitions on them, and the properties a storage
+definition selects disks by: size, type, model, serial number and WWN. An installed node is
+reached with a reader client file or the secrets file; a node in maintenance mode with
+--fingerprint or --insecure as well. A node that the cluster definition does not name yet is
+reached at --endpoint, in maintenance mode, and needs no secrets file or client file.
 
 ```
 chalkctl disks [<node>] [flags]

@@ -10,7 +10,8 @@ Follow a node's serial console
 ## Synopsis
 
 Prints a node's serial console log and follows what the node writes until interrupted;
---follow=false prints the log and exits. The console is read-only.
+--follow=false prints the log and exits. The console is read-only. The command needs no
+secrets file or client file.
 
 ```
 chalklab console <node> [flags]

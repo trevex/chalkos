@@ -14,8 +14,13 @@ role, creates the lab's Secure Boot keys and enrolls them in the VMs' firmware, 
 the images with them, gives each node a disk backed by its role's image and starts the
 supervisor, which runs a TPM and a VM per node. Each node boots its image in maintenance mode;
 chalklab reads chalkd's certificate fingerprint from the console and installs the node in place
-with chalkctl install --fingerprint. It then bootstraps the first control plane and writes a
-kubeconfig and a chalkctl client file that reach the cluster through the forwarded ports.
+with chalkctl install --fingerprint. When the lab has a control plane, chalklab bootstraps the
+first one and writes a kubeconfig that reaches its API server through the forwarded port. Last,
+it writes an admin client file for chalkctl that reaches the nodes through their forwarded ports.
+
+The command needs the cluster's secrets file, which chalkctl reads to install the nodes and to
+write the kubeconfig and the client file: --secrets, else secrets.age or secrets.json in the
+flake directory.
 
 Only nodes on the kvm platform run in a lab, and each needs exactly one MAC address in its
 network definition, which the lab's network interface gets. --nodes runs some of them. With
@@ -46,9 +51,9 @@ chalklab create [flags]
       --cpus int                  virtual CPUs of each VM (default 2)
       --disk-size string          size of each VM's sparse disk (default "16G")
       --flake string              directory of the flake that defines the cluster (default ".")
-      --guest-forward strings     GUEST=HOST: make a host address, such as a local registry, reachable at a guest address of the VMs' user-mode network; may be repeated
+      --guest-forward strings     GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated
   -h, --help                      help for create
-      --image strings             ROLE=DIR: the kvm image of a role, as nix build makes it, instead of building it; may be repeated
+      --image strings             ROLE=DIR: the kvm image of a role (the directory nix build makes) instead of building it; may be repeated
       --manifest string           read the cluster's manifest from this file instead of evaluating the flake; every role needs --image then
       --memory int                memory of the other VMs, in MiB (default 2048)
       --nodes string              comma-separated nodes to run (default every node of the cluster)

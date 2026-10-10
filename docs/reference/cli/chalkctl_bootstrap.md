@@ -1,18 +1,19 @@
 ---
 title: "chalkctl bootstrap"
-description: "Initialise the cluster on a control-plane node"
+description: "Initialise the cluster on a control plane"
 ---
 
 # chalkctl bootstrap
 
-Initialise the cluster on a control-plane node
+Initialise the cluster on a control plane
 
 ## Synopsis
 
-Initialises the cluster on one control-plane node: the node starts etcd as its first member,
-starts the control plane and applies the cluster's manifests. chalkctl waits until they are
-applied, up to --timeout. The node refuses when it is bootstrapped already or holds etcd data,
-so a second cluster is never initialised; the other control planes join the first.
+Initialises the cluster on one control plane: the node starts etcd as its first member, starts
+the Kubernetes control-plane components and applies the cluster's manifests. chalkctl waits until
+they are applied, up to --timeout. The node refuses when it is bootstrapped already or holds etcd
+data, so a second cluster is never initialised; the other control planes join the first. The
+command needs an admin client file or the secrets file.
 
 ```
 chalkctl bootstrap <node> [flags]

@@ -1,19 +1,20 @@
 ---
 title: "chalkctl install"
-description: "Install a node in maintenance mode"
+description: "Install a node that waits in maintenance mode"
 ---
 
 # chalkctl install
 
-Install a node in maintenance mode
+Install a node that waits in maintenance mode
 
 ## Synopsis
 
-Installs a node that waits in maintenance mode, as the installer and a role image booted
-for the first time do. The node serves a self-signed certificate in maintenance mode, so chalkctl
-verifies it by the SHA-256 fingerprint the node prints on its console (--fingerprint), or accepts
-any certificate with --insecure and prints the fingerprint it saw, which can be checked against
-the console afterwards; the secrets go over a second connection pinned to that fingerprint.
+Installs a node that waits in maintenance mode: a machine that booted the installer, or a role
+image booted for the first time. The node serves a self-signed certificate in maintenance mode, so
+chalkctl verifies it by the SHA-256 fingerprint the node prints on its console (--fingerprint),
+or accepts any certificate with --insecure and prints the fingerprint it saw, which can be checked
+against the console afterwards; the secrets go over a second connection pinned to that
+fingerprint.
 
 chalkctl sends the node its identity from the cluster definition, a node certificate, the OS CA,
 the secret of its encrypted volumes' second keyslot (its recovery key, or a password) and, on a
@@ -22,7 +23,8 @@ A node that runs the installer gets the role image of its platform as well: --im
 chalkctl builds from the flake, signed for Secure Boot with --sign-key and --sign-cert when
 given. The installer writes it to the disk the node's identity names: a disk on which blkid finds
 no signature, or one holding an unfinished install of the node's role, which it continues; any
-other disk only with --wipe-disk. The node reboots into the installed image.
+other disk only with --wipe-disk. The node reboots into the installed image. The command needs
+the secrets file.
 
 ```
 chalkctl install <node> [flags]
@@ -34,8 +36,9 @@ chalkctl install <node> [flags]
   # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
-  # Install w1 at an address of the network it booted into, with a prebuilt, signed image.
-  chalkctl install w1 --endpoint 192.168.1.50 --insecure --image ./w1-image \
+  # Install w1 at an address of the network it booted into, with a prebuilt image, which
+  # chalkctl signs.
+  chalkctl install w1 --endpoint 192.168.1.50 --insecure --image ./worker-image \
     --sign-key db.key --sign-cert db.crt
 ```
 

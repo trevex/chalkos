@@ -10,8 +10,11 @@ Show an installed node's status
 ## Synopsis
 
 Shows an installed node's status: the identity it runs and whether it is the one the cluster
-definition gives, its platform, its volumes and their state, Kubernetes, the certificates it
-serves and when they expire, the CAs it trusts, its clock and the units that failed.
+definition gives; its platform; the image version it booted and whether that boot was found
+healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled
+back, with the journal of the boot that failed; its volumes and their state; Kubernetes; the
+certificates it serves and when they expire; the CAs it trusts; its clock; and the units that
+failed. The command needs a reader client file or the secrets file.
 
 ```
 chalkctl status <node> [flags]
@@ -22,7 +25,7 @@ chalkctl status <node> [flags]
 ```
   chalkctl status cp1
 
-  # With a client file, as a lab writes.
+  # With the client file a lab writes.
   chalkctl status cp1 --config ~/.local/state/chalklab/lab/chalkctl.json
 ```
 

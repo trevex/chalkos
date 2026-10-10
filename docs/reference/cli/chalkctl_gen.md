@@ -9,7 +9,7 @@ Generate files of a cluster
 
 ## Synopsis
 
-Generates the files a cluster starts from.
+Generates the files a cluster starts from. Its command needs no secrets file or client file.
 
 ## Examples
 

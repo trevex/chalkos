@@ -9,9 +9,9 @@ Show a node's journal
 
 ## Synopsis
 
-Prints a node's journal, of every unit or of --unit alone; with --follow it keeps printing new
-entries until interrupted. A node in maintenance mode is reached with --fingerprint or
---insecure.
+Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
+keeps printing new entries until interrupted. The command needs a reader client file or the
+secrets file. A node in maintenance mode is reached with --fingerprint or --insecure as well.
 
 ```
 chalkctl logs <node> [flags]

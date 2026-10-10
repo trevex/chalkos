@@ -10,12 +10,14 @@ Write a client file, which operates the cluster without the secrets file
 ## Synopsis
 
 Writes a client file: a new key with a certificate from the OS CA for --name and --role, the OS
-CA that nodes' certificates chain to, and the nodes' addresses. A reader may read nodes'
+CA that nodes' certificates chain to, and the nodes' addresses. A client file works for status,
+logs, disks, reboot, storage reset, bootstrap, the etcd commands and upgrade; every other command
+needs the secrets file. The role decides what chalkd allows: a reader may read nodes'
 information, disks, status and logs and etcd's members; an operator may also reboot and upgrade
-nodes; an admin may do everything chalkd offers. Commands that issue certificates or change the
-cluster's CAs still need the secrets file. The file is written to ~/.config/chalkos/config
-unless --out names another; commands read it from there, or from the path --config or
-$CHALKOSCONFIG names.
+nodes; an admin may call every method of chalkd except RenewNodeCertificate, which needs the node
+role (nodes call it to renew their own certificates). The file is written to
+~/.config/chalkos/config unless --out names another; commands read it from there, or from the
+path --config or $CHALKOSCONFIG names. The command needs the secrets file.
 
 ```
 chalkctl config new [flags]

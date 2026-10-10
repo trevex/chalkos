@@ -37,7 +37,7 @@ func (a *app) bootstrapCommand() *cobra.Command {
 	var timeout time.Duration
 	cmd := a.command(&cobra.Command{
 		Use:     "bootstrap <node>",
-		Short:   "Initialise the cluster on a control-plane node",
+		Short:   "Initialise the cluster on a control plane",
 		Long:    bootstrapLong,
 		Example: bootstrapExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.bootstrap(ctx, n, timeout, pos) })

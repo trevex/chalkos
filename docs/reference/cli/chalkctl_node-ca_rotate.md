@@ -1,18 +1,19 @@
 ---
 title: "chalkctl node-ca rotate"
-description: "Issue a new node CA and deliver it to the control-plane nodes"
+description: "Issue a new node CA and deliver it to the control planes"
 ---
 
 # chalkctl node-ca rotate
 
-Issue a new node CA and deliver it to the control-plane nodes
+Issue a new node CA and deliver it to the control planes
 
 ## Synopsis
 
 Issues a new node CA from the OS CA, writes it to the secrets file and delivers it to every
-control-plane node, which issue node certificates from it from then on. Node certificates of the
-old node CA stay valid until they expire, as they chain to the same OS CA. The secrets file is
-updated in place, keeping its previous version as &lt;file>.prev, unless --out names a new file.
+control plane; the control planes issue node certificates from it from then on. Node certificates
+of the old node CA stay valid until they expire, because they chain to the same OS CA. The
+secrets file is updated in place, keeping its previous version as &lt;file>.prev, unless --out names
+a new file. The command needs the secrets file.
 
 ```
 chalkctl node-ca rotate [flags]

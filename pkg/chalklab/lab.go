@@ -193,7 +193,7 @@ func (a *app) signCommand() *cobra.Command {
 		Example: signExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.sign(ctx, cluster, out, pos) })
 	registerCluster(cmd, &cluster, "cluster whose lab's keys to sign with (default the only lab)")
-	cmd.Flags().StringVar(&out, "out", "", "directory to copy the image to, made when missing, and sign there, as for an image in the Nix store, which cannot be signed in place")
+	cmd.Flags().StringVar(&out, "out", "", "directory to copy the image to (made when missing) and sign there; needed for an image in the Nix store, which cannot be signed in place")
 	return cmd
 }
 

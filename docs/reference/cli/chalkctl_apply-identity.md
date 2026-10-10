@@ -10,11 +10,13 @@ Deliver a node's identity from the cluster definition
 ## Synopsis
 
 Delivers a node's identity from the cluster definition to the installed node: its hostname,
-networks, labels, taints, storage and extensions. The node applies additive storage changes,
-such as a new volume, while it runs and refuses destructive ones (chalkctl storage reset
-recreates a volume); it restarts the units that read what changed, and chalkctl prints the
-changes and the units. --kubernetes-share also delivers a new Kubernetes share, such as a
-worker's new kubelet certificate.
+networks, labels, taints, storage, time servers, Kubernetes settings (node name, addresses and
+subnets) and extensions. The node applies additive storage changes (a new volume, for example)
+while it runs. When the identity changes a volume destructively, the node refuses the whole
+identity and applies none of it; chalkctl storage reset recreates such a volume. Otherwise the
+node restarts the units that read what changed, and chalkctl prints the changes and the units.
+--kubernetes-share also delivers a new Kubernetes share: for example a worker's new kubelet
+certificate. The command needs the secrets file.
 
 ```
 chalkctl apply-identity <node> [flags]

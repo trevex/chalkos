@@ -11,8 +11,8 @@ Install new images on the cluster's nodes, one control plane at a time
 
 Installs on each node the image of its role and platform: control planes one at a time, each
 only while etcd keeps its quorum without it, then workers and nodes without Kubernetes in batches
-of --max-unavailable. Without --image the nodes, every node of the cluster or those --nodes
-names, are grouped by the role and platform they run, and each group's image is built from the
+of --max-unavailable. Without --image the nodes (every node of the cluster, or those --nodes
+names) are grouped by the role and platform they run, and each group's image is built from the
 cluster definition; with --image the nodes of the image's role and platform get it, and those of
 its role on another platform are skipped and named. A node that runs on another platform than
 the cluster definition declares stops the run before any node is sent anything.
@@ -26,8 +26,9 @@ back from the image before gets it once more.
 Run again, the command skips nodes that run the image and continues one it stopped at; it
 uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
 one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
-volumes are evicted only with --delete-emptydir-data. An operator client file is enough to run it
-with --image.
+volumes are evicted only with --delete-emptydir-data. The command needs an operator client file
+or the secrets file. Without --image it builds the images from the flake, so it runs in the
+flake's directory or with --flake.
 
 ```
 chalkctl upgrade [flags]
@@ -39,7 +40,8 @@ chalkctl upgrade [flags]
   # Build each node's image from the flake and upgrade the whole cluster.
   chalkctl upgrade
 
-  # Upgrade the workers of an image's role, two at a time, with a prebuilt, signed image.
+  # Upgrade the workers of an image's role, two at a time, with a prebuilt image, which
+  # chalkctl signs.
   chalkctl upgrade --image ./worker-image --max-unavailable 2 --sign-key db.key --sign-cert db.crt
 ```
 

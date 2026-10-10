@@ -9,7 +9,8 @@ Manage client files
 
 ## Synopsis
 
-Manages client files, which let a person operate the cluster without the secrets file.
+Manages client files, which let a person operate the cluster without the secrets file. Writing
+a client file needs the secrets file.
 
 ## Examples
 

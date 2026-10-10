@@ -68,13 +68,13 @@ func (a *app) createCommand() *cobra.Command {
 	fs.StringVar(&f.cluster, "cluster", "", "cluster to use when the flake defines several")
 	fs.StringVar(&f.manifest, "manifest", "", "read the cluster's manifest from this file instead of evaluating the flake; every role needs --image then")
 	fs.StringVar(&f.secrets, "secrets", "", "secrets file chalkctl reads (default secrets.age, else secrets.json, in the flake directory)")
-	fs.Var(&f.images, "image", "ROLE=DIR: the kvm image of a role, as nix build makes it, instead of building it; may be repeated")
+	fs.Var(&f.images, "image", "ROLE=DIR: the kvm image of a role (the directory nix build makes) instead of building it; may be repeated")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to run (default every node of the cluster)")
 	fs.IntVar(&f.cpus, "cpus", 2, "virtual CPUs of each VM")
 	fs.IntVar(&f.controlPlaneMemory, "controlplane-memory", 3072, "memory of a control plane's VM, in MiB")
 	fs.IntVar(&f.memory, "memory", 2048, "memory of the other VMs, in MiB")
 	fs.StringVar(&f.diskSize, "disk-size", "16G", "size of each VM's sparse disk")
-	fs.Var(&f.guestForwards, "guest-forward", "GUEST=HOST: make a host address, such as a local registry, reachable at a guest address of the VMs' user-mode network; may be repeated")
+	fs.Var(&f.guestForwards, "guest-forward", "GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated")
 	return cmd
 }
 

@@ -15,9 +15,10 @@ switch (the new value issues or signs), refresh (what the old value issued is is
 with --finish, finish (the old value is removed, and whatever it issued is refused from then on).
 The secrets file records the phase reached and is updated in place, keeping its previous version
 as &lt;file>.prev, unless --out names a new file; an encrypted file is encrypted again to the
-recipients it records inside, which --recipient replaces. A rotation that stopped, as at an
-unreachable node, or paused for the operator, continues with --resume. One rotation runs at a
-time, and one chalkctl command at a time changes the secrets file, holding &lt;file>.lock.
+recipients it records inside, which --recipient replaces. A rotation that stopped (at an
+unreachable node, for example) or paused for the operator continues with --resume. One rotation
+runs at a time, and one chalkctl command at a time changes the secrets file, holding &lt;file>.lock.
+The command needs the secrets file.
 
 ```
 chalkctl rotate <kind> [flags]
@@ -27,7 +28,7 @@ chalkctl rotate <kind> [flags]
 
 ```
   # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
-  # trust the new CA before it issues certificates, and after the refresh.
+  # trust the new CA before it issues certificates. It pauses again after the refresh.
   chalkctl rotate kubernetes-ca
   chalkctl rotate kubernetes-ca --resume
   chalkctl rotate kubernetes-ca --finish

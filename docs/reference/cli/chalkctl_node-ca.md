@@ -9,7 +9,8 @@ Manage the node CA
 
 ## Synopsis
 
-Manages the node CA, which issues the certificates nodes serve.
+Manages the node CA, which issues the certificates nodes serve. Its command needs the secrets
+file.
 
 ## Examples
 
@@ -26,5 +27,5 @@ Manages the node CA, which issues the certificates nodes serve.
 ## SEE ALSO
 
 * [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
-* [chalkctl node-ca rotate](chalkctl_node-ca_rotate.md)	 - Issue a new node CA and deliver it to the control-plane nodes
+* [chalkctl node-ca rotate](chalkctl_node-ca_rotate.md)	 - Issue a new node CA and deliver it to the control planes
 
