@@ -1,0 +1,48 @@
+# The chalkos documentation site, built with Zensical: nix build .#docs builds it, nix run
+# .#docs-serve serves it while it is edited. Zensical's default Markdown extensions stay on; they
+# give admonitions, content tabs, Mermaid diagrams in superfences and code highlighting.
+[project]
+site_name = "chalkos"
+site_description = "An image-based NixOS for Kubernetes nodes, with Secure Boot, a TPM and A/B upgrades"
+site_url = "https://trevex.github.io/chalkos/"
+repo_url = "https://github.com/trevex/chalkos"
+repo_name = "trevex/chalkos"
+edit_uri = "edit/main/docs/"
+docs_dir = "docs"
+site_dir = "site"
+extra_css = ["stylesheets/chalkos.css"]
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = ["getting-started/index.md"] },
+  { "Concepts" = ["concepts/index.md"] },
+  { "Guides" = ["guides/index.md"] },
+  { "Reference" = ["reference/index.md"] },
+  { "Contributing" = ["contributing/index.md"] },
+]
+
+[project.theme]
+logo = "assets/logo.svg"
+favicon = "assets/logo.svg"
+features = [
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.indexes",
+  "navigation.sections",
+  "navigation.footer",
+  "navigation.top",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/moon"
+toggle.name = "Dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/sun"
+toggle.name = "Light mode"

@@ -36,6 +36,11 @@ in
     program = lib.getExe chalkPkgs.chalklab;
     meta.description = "Run a chalkos cluster's nodes as QEMU virtual machines on this machine";
   };
+  docs-serve = {
+    type = "app";
+    program = lib.getExe (import ./docs.nix { inherit pkgs; }).serve;
+    meta.description = "Serve the documentation from the working tree while it is edited";
+  };
   e2e-kubernetes-online = {
     type = "app";
     program = lib.getExe kubernetesOnline;

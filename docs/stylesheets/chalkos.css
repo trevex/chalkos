@@ -1,0 +1,12 @@
+/* chalkos's palette: chalkboard green-grey with chalk yellow. */
+:root {
+  --md-primary-fg-color: #2f3e46;
+  --md-primary-fg-color--light: #52796f;
+  --md-primary-fg-color--dark: #1f2a30;
+  --md-accent-fg-color: #c99a2e;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #354f52;
+  --md-accent-fg-color: #e9c46a;
+}

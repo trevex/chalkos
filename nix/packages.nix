@@ -6,6 +6,7 @@ let
   inherit (pkgs) lib;
   testing = import ./testing/cluster.nix { inherit self pkgs; };
   goModule = pkgs.callPackage ./go-module.nix { };
+  docs = import ./docs.nix { inherit pkgs; };
 
   goPaths = [
     ../cmd
@@ -64,6 +65,9 @@ in
         --set-default CHALKLAB_OVMF_VARS ${pkgs.OVMFFull.fd}/FV/OVMF_VARS.fd
     '';
   };
+
+  # The documentation site.
+  docs = docs.site;
 
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
   chalkd = pkgs.callPackage ./chalkd.nix { };

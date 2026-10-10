@@ -733,6 +733,9 @@ in
       touch $out
     '';
 
+  # The documentation site builds strictly.
+  docs = chalkPkgs.docs;
+
   eval =
     let
       failures = import ../test/nix/eval.nix {
