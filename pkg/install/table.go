@@ -13,16 +13,20 @@ var errNotFound = errors.New("no such partition")
 
 // partition is one entry of a GPT as sfdisk --json prints it.
 type partition struct {
-	Node   string `json:"node"`
+	Node string `json:"node"`
+	// Size is in the disk's sectors, as sfdisk counts; Bytes in bytes.
+	Size   int64  `json:"size"`
 	Type   string `json:"type"`
 	UUID   string `json:"uuid"`
 	Name   string `json:"name"`
 	Number int    `json:"-"`
+	Bytes  int64  `json:"-"`
 }
 
 type partitionTable struct {
 	device     string
 	Label      string      `json:"label"`
+	SectorSize int64       `json:"sectorsize"`
 	Partitions []partition `json:"partitions"`
 }
 
@@ -44,12 +48,16 @@ func (i *Installer) readTable(ctx context.Context, dev string) (partitionTable, 
 		return partitionTable{}, fmt.Errorf("%s has a %q partition table, not a GPT", dev, t.Label)
 	}
 	t.device = dev
+	if t.SectorSize == 0 {
+		t.SectorSize = 512
+	}
 	for n, p := range t.Partitions {
 		number, err := strconv.Atoi(strings.TrimPrefix(strings.TrimPrefix(p.Node, dev), "p"))
 		if err != nil {
 			return partitionTable{}, fmt.Errorf("partition %s of %s: no partition number", p.Node, dev)
 		}
 		t.Partitions[n].Number = number
+		t.Partitions[n].Bytes = p.Size * t.SectorSize
 		t.Partitions[n].Type = strings.ToLower(p.Type)
 		t.Partitions[n].UUID = strings.ToLower(p.UUID)
 	}

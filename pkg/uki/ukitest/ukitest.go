@@ -77,3 +77,13 @@ func UKI(osRelease map[string]string, cmdline string) []byte {
 	}
 	return Build(map[string][]byte{".osrel": []byte(b.String()), ".cmdline": []byte(cmdline)})
 }
+
+// SignatureList is an EFI signature list of one X.509 certificate, as db and dbx hold them.
+func SignatureList(der []byte) []byte {
+	b := make([]byte, 28)
+	// EFI_CERT_X509_GUID
+	copy(b, []byte{0xa1, 0x59, 0xc0, 0xa5, 0xe4, 0x94, 0xa7, 0x4a, 0x87, 0xb5, 0xab, 0x15, 0x5c, 0x2b, 0xf0, 0x72})
+	binary.LittleEndian.PutUint32(b[16:], uint32(28+16+len(der)))
+	binary.LittleEndian.PutUint32(b[24:], uint32(16+len(der)))
+	return append(append(b, make([]byte, 16)...), der...)
+}

@@ -3513,6 +3513,7 @@ lib.runTests {
         "chrony"
         "coreutils"
         "cryptsetup"
+        "dosfstools"
         "e2fsprogs"
         "efibootmgr"
         "findutils"

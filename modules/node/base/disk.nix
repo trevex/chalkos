@@ -140,10 +140,12 @@ in
     };
 
     # First boot: add slot B and STATE behind the partitions the image ships with.
-    # Definitions match existing partitions by type, in file-name order.
+    # Definitions match existing partitions by type, in file-name order. The installer lays out a
+    # whole disk with them, so they format the ESP, which repart never does to an existing one.
     systemd.repart.partitions = {
       "00-esp" = {
         Type = "esp";
+        Format = "vfat";
       }
       // fixed cfg.espSize;
       "10-store-verity-a" = {

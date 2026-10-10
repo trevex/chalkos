@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 const (
@@ -148,7 +149,22 @@ type Installer struct {
 	OpenDisk func(ctx context.Context, path string) (Disk, error)
 	// Loader is the boot loader's path on the ESP, for the UEFI boot entry.
 	Loader string
+	// EFIVars is where efivarfs is, whose db and dbx the image's UKI and boot loader are checked
+	// against when Secure Boot is on.
+	EFIVars string
+	// OpenPartition opens a partition of the target disk for its store slots.
+	OpenPartition func(p upgrade.Partition, write bool) (upgrade.PartitionFile, error)
+	// Change, when set, is called before each change to the target disk, its ESP, STATE and the
+	// firmware's boot entries; tests make it fail to stop an install at each of them.
+	Change func(what string) error
 	Now    func() time.Time
+}
+
+func (i *Installer) change(what string) error {
+	if i.Change == nil {
+		return nil
+	}
+	return i.Change(what)
 }
 
 // Default installs on the running node: in place at /state, from media at /run/chalkd/target.
@@ -158,16 +174,18 @@ func Default(inPlace bool) *Installer {
 		stateDir = "/run/chalkd/target"
 	}
 	return &Installer{
-		Run:         node.ExecRunner{},
-		Host:        storage.DefaultHost(),
-		StateDir:    stateDir,
-		BootDisk:    "/dev/disk/chalk-boot-disk",
-		Definitions: "/etc/chalkos/repart.d",
-		WorkDir:     "/run/chalkd/install",
-		MountInfo:   "/proc/self/mountinfo",
-		OpenDisk:    openExclusive,
-		Loader:      bootLoader(runtime.GOARCH),
-		Now:         time.Now,
+		Run:           node.ExecRunner{},
+		Host:          storage.DefaultHost(),
+		StateDir:      stateDir,
+		BootDisk:      "/dev/disk/chalk-boot-disk",
+		Definitions:   "/etc/chalkos/repart.d",
+		WorkDir:       "/run/chalkd/install",
+		MountInfo:     "/proc/self/mountinfo",
+		OpenDisk:      openExclusive,
+		Loader:        bootLoader(runtime.GOARCH),
+		EFIVars:       "/sys/firmware/efi/efivars",
+		OpenPartition: upgrade.OpenPartition,
+		Now:           time.Now,
 	}
 }
 
@@ -212,7 +230,13 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	if err := i.closeState(ctx); err != nil {
 		return err
 	}
-	return i.installOn(ctx, boot, defs, req)
+	if err := i.installOn(ctx, boot, defs, req); err != nil {
+		return err
+	}
+	if err := i.randomizeESP(ctx, boot); err != nil {
+		return err
+	}
+	return i.markInstalled()
 }
 
 // closeState unmounts STATE from StateDir and closes its LUKS device: the STATE the node booted
@@ -238,8 +262,9 @@ func (i *Installer) closeState(ctx context.Context) error {
 	return nil
 }
 
-// installOn runs the steps both flows share on disk, which holds the role image. defs are the
-// role image's repart definitions of the system region.
+// installOn runs the steps both flows share on disk, which holds the role image: STATE, the
+// node's volumes, the fallback key and the identity. defs are the role image's repart definitions
+// of the system region.
 func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request) error {
 	policy := req.Section.Encryption
 	if err := i.prepareState(ctx, disk, defs, policy); err != nil {
@@ -253,12 +278,9 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	if err != nil {
 		return err
 	}
-	st := &node.Storage{
-		Run:        i.Run,
-		Host:       i.Host,
-		StateDir:   i.StateDir,
-		BootDisk:   disk.Device,
-		StatusFile: filepath.Join(i.WorkDir, "storage-status.json"),
+	st := i.storage(disk)
+	if err := i.change("open STATE"); err != nil {
+		return err
 	}
 	if err := st.Open(ctx, stateMapperName, state.Node, i.StateDir, false, policy == storage.EncryptionTPM2); err != nil {
 		return err
@@ -269,6 +291,9 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		return err
 	}
 	if err := WriteFile(filepath.Join(st.StorageDir(), "storage.json"), section, 0o600); err != nil {
+		return err
+	}
+	if err := i.change("apply the storage section"); err != nil {
 		return err
 	}
 	status := storage.Status{Disks: map[string]storage.DiskStatus{}}
@@ -289,11 +314,17 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		if err != nil {
 			return err
 		}
+		if err := i.change("enroll the fallback key"); err != nil {
+			return err
+		}
 		if err := Enroll(ctx, i.Run, devices, req.FallbackSecret); err != nil {
 			return err
 		}
 	}
 
+	if err := i.change("write the identity"); err != nil {
+		return err
+	}
 	// chalkd/ holds the node's private key.
 	chalkdDir := filepath.Join(i.StateDir, "chalkd")
 	if err := os.MkdirAll(chalkdDir, 0o700); err != nil {
@@ -336,7 +367,13 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 			return err
 		}
 	}
-	if err := i.randomizeESP(ctx, disk); err != nil {
+	return nil
+}
+
+// markInstalled writes the installed marker to STATE, last: until it is there, the node is not
+// installed and the install runs again.
+func (i *Installer) markInstalled() error {
+	if err := i.change("mark the node installed"); err != nil {
 		return err
 	}
 	return WriteFile(filepath.Join(i.StateDir, installedMarker), []byte(i.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)

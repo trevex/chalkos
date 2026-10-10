@@ -12,8 +12,10 @@ in
     pkgs.dosfstools
     # veritysetup, which the verity tests check their trees against.
     pkgs.cryptsetup
-    # sfdisk, with which the upgrade tests partition a disk image.
+    # sfdisk, with which the upgrade tests partition a disk image, and blkid and the file system
+    # tools systemd-repart runs when the install tests lay out theirs.
     pkgs.util-linux
+    pkgs.e2fsprogs
     # VM-to-VM networking, and the forwards that reach registries the tests serve.
     pkgs.vde2
     pkgs.socat
@@ -28,5 +30,8 @@ in
     CHALKLAB_SB_KEYS = "${secureboot}";
     # Any valid PE binary works for the signing tests; systemd-boot is small and always available.
     CHALKOS_TEST_EFI = "${pkgs.systemd}/lib/systemd/boot/efi/systemd-bootx64.efi";
+    # The install tests lay out disk images with the systemd-repart the images run; systemd itself
+    # stays off the PATH.
+    CHALKOS_TEST_REPART = "${pkgs.systemd}/bin/systemd-repart";
   };
 }

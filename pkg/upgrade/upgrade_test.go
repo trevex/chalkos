@@ -7,7 +7,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
 // TestUpgradeAndFallBack installs a newer image, boots it until its tries are used up, and
@@ -435,7 +435,7 @@ func TestSecureBoot(t *testing.T) {
 			l := newLab(t, old)
 			l.setGlobal("SecureBoot", globalVendor, []byte{tc.secureBoot})
 			l.setGlobal("SetupMode", globalVendor, []byte{0})
-			l.setGlobal("db", securityVendor, signatureList(tc.db))
+			l.setGlobal("db", securityVendor, ukitest.SignatureList(tc.db))
 			l.setGlobal("dbx", securityVendor, nil)
 			_, err := l.install(tc.img)
 			if tc.want == "" {
@@ -453,15 +453,6 @@ func TestSecureBoot(t *testing.T) {
 			}
 		})
 	}
-}
-
-// signatureList is an EFI signature list of one X.509 certificate.
-func signatureList(der []byte) []byte {
-	b := make([]byte, 28)
-	copy(b, []byte{0xa1, 0x59, 0xc0, 0xa5, 0xe4, 0x94, 0xa7, 0x4a, 0x87, 0xb5, 0xab, 0x15, 0x5c, 0x2b, 0xf0, 0x72})
-	binary.LittleEndian.PutUint32(b[16:], uint32(28+16+len(der)))
-	binary.LittleEndian.PutUint32(b[24:], uint32(16+len(der)))
-	return append(append(b, make([]byte, 16)...), der...)
 }
 
 func testSigner(t *testing.T, dir, name string) (key, cert string, der []byte) {
