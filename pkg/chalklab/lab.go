@@ -369,7 +369,7 @@ func (a *app) start(ctx context.Context, cluster string, pos []string) error {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "starting %s\n", joinNames(nodeNames(l)))
-	if err := startSupervisor(ctx, dir); err != nil {
+	if err := a.startSupervisor(ctx, dir); err != nil {
 		return fmt.Errorf("%w; chalklab status shows the lab", err)
 	}
 	fmt.Fprintf(a.stdout, "the lab of %s runs %s\n", l.Cluster, joinNames(nodeNames(l)))

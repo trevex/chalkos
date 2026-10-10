@@ -211,7 +211,7 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 
 	fmt.Fprintf(a.stdout, "starting %s\n", strings.Join(nodeNames(l), ", "))
 	started = true
-	if err := startSupervisor(ctx, dir); err != nil {
+	if err := a.startSupervisor(ctx, dir); err != nil {
 		return fmt.Errorf("%w; chalklab destroy removes what runs of the lab", err)
 	}
 	if err := a.setUp(ctx, f, dir, l); err != nil {
@@ -422,7 +422,7 @@ func signImage(ctx context.Context, raw, partitions, keys string) error {
 
 // startSupervisor starts the lab's supervisor in a session of its own, so it outlives this
 // command and the terminal, and waits until it runs every VM.
-func startSupervisor(ctx context.Context, dir string) error {
+func (a *app) startSupervisor(ctx context.Context, dir string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -432,7 +432,7 @@ func startSupervisor(ctx context.Context, dir string) error {
 		return err
 	}
 	defer log.Close()
-	cmd := exec.Command(self, "supervise", dir)
+	cmd := exec.Command(self, a.superviseArgs(dir)...)
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {

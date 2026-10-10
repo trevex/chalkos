@@ -28,7 +28,12 @@ type app struct {
 	// chalkctl runs chalkctl with its output on out: its errors too when out is not stdout, as when
 	// chalklab reads what it prints. chalkctl asks for secrets on the terminal itself.
 	chalkctl func(ctx context.Context, out io.Writer, args ...string) error
+	// supervise is the hidden command that runs a lab's supervisor.
+	supervise *cobra.Command
 }
+
+// superviseName is the name of the hidden command that runs a lab's supervisor.
+const superviseName = "supervise"
 
 // NewCommand returns chalklab's root command, which runs programs and chalkctl from PATH.
 func NewCommand() *cobra.Command {
@@ -82,8 +87,8 @@ func newCommand(a *app) *cobra.Command {
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return fmt.Errorf("%w; %s --help lists its flags", err, cmd.CommandPath())
 	})
-	supervise := &cobra.Command{
-		Use:    "supervise <dir>",
+	a.supervise = &cobra.Command{
+		Use:    superviseName + " <dir>",
 		Short:  "Run a lab's VMs in the background",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -105,7 +110,7 @@ func newCommand(a *app) *cobra.Command {
 		a.consoleCommand(),
 		a.signCommand(),
 		a.destroyCommand(),
-		supervise,
+		a.supervise,
 	)
 	return root
 }
@@ -137,3 +142,10 @@ func Execute(ctx context.Context, root *cobra.Command) int {
 }
 
 var errUsage = errors.New("usage")
+
+// superviseArgs are the arguments that run the supervisor of the lab in dir: the path of the
+// supervise command below the root, so a program running chalklab's tree under a root of its
+// own starts the supervisor without code of its own.
+func (a *app) superviseArgs(dir string) []string {
+	return append(strings.Fields(a.supervise.CommandPath())[1:], dir)
+}

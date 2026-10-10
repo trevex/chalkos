@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -459,7 +460,19 @@ func (a *app) run(ctx context.Context, args []string) error {
 }
 
 func TestExecute(t *testing.T) {
-	for args, want := range map[string]int{"": 2, "bogus": 2, "status --bogus": 1, "status --help": 0, "console": 1} {
+	// cp1's console holds a line, so console without --follow prints it and ends.
+	dir := writeLab(t)
+	console := filepath.Join(dir, "cp1", "console.log")
+	if err := os.MkdirAll(filepath.Dir(console), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(console, []byte("cp1 login:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for args, want := range map[string]int{
+		"": 2, "bogus": 2, "status --bogus": 1, "status --help": 0, "console": 1,
+		"console cp1 -f=false": 0, "console cp1 --follow=false": 0,
+	} {
 		a, out := testApp()
 		var stderr bytes.Buffer
 		a.stderr = &stderr
@@ -476,12 +489,27 @@ func TestExecute(t *testing.T) {
 	}
 }
 
-// The supervisor create starts runs chalklab's hidden supervise command.
-func TestSuperviseIsHidden(t *testing.T) {
+// The supervisor create starts runs chalklab's hidden supervise command, also when a program
+// runs chalklab's tree under a root of its own.
+func TestSuperviseArgsFindTheSupervisor(t *testing.T) {
 	a, _ := testApp()
-	cmd, _, err := newCommand(a).Find([]string{"supervise", "/tmp/lab"})
-	if err != nil || cmd.Name() != "supervise" || !cmd.Hidden {
-		t.Errorf("supervise = %v, %v; want the hidden supervise command", cmd, err)
+	root := newCommand(a)
+	b, _ := testApp()
+	embedded := newCommand(b)
+	embedded.Use = "lab"
+	foo := &cobra.Command{Use: "foo"}
+	foo.AddCommand(embedded)
+	for _, c := range []struct {
+		root *cobra.Command
+		args []string
+	}{
+		{root, a.superviseArgs("/tmp/lab")},
+		{foo, b.superviseArgs("/tmp/lab")},
+	} {
+		cmd, rest, err := c.root.Find(c.args)
+		if err != nil || cmd.Name() != superviseName || !cmd.Hidden || !reflect.DeepEqual(rest, []string{"/tmp/lab"}) {
+			t.Errorf("%s %v finds %v %v, %v; want the hidden supervise command with the directory", c.root.Name(), c.args, cmd, rest, err)
+		}
 	}
 }
 
