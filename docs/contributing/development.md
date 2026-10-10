@@ -111,8 +111,9 @@ Run the unit tests in the development shell:
 go test ./pkg/... ./cmd/...
 ```
 
-None of them needs root. The tests of `pkg/kubernetes/vip` run themselves again in a new user
-and network namespace, so the kernel must allow unprivileged user namespaces. The install and
+None of them needs root. The tests of `pkg/kubernetes/vip` and `pkg/kubernetes/nodeip` run
+themselves again in a new user and network namespace, and a test of `pkg/kubernetes/node` in a new
+user and mount namespace, so the kernel must allow unprivileged user namespaces. The install and
 upgrade tests lay out disk image files with the real sfdisk and systemd-repart and emulate
 mounts, LUKS, the [TPM](../reference/glossary.md#tpm) and the firmware, so they need no loop
 devices.

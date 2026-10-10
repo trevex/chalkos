@@ -70,8 +70,10 @@ To change one, change its source and regenerate all of them:
 nix run .#docgen
 ```
 
-`docgen` is a Nix derivation, `docs.reference` in `nix/docs.nix`, so the command writes exactly
-what the check compares. Commit the source and the generated pages together.
+The `docgen` app runs the script `docs.write` of `nix/docs.nix`, which copies the output of the
+derivation `docs.reference` into the working tree, so it writes exactly what the check compares.
+Run it in the repository's root, where `zensical.toml` is; elsewhere it refuses. Commit the source
+and the generated pages together.
 
 ## Checks
 

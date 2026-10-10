@@ -89,7 +89,7 @@ These limits hold in the current code, grouped by area.
 ### Upgrades
 
 - An upgrade sends the whole store, its hash tree and the UKI to each node, about 300 MiB for
-  a Kubernetes role's image.
+  a Kubernetes role's image as [The image](../concepts/image.md#how-large-is-an-image) measures it.
 - The boot loader is never updated after install, as above.
 
 ### Networking
