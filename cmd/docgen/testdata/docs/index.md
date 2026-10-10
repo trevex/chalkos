@@ -12,11 +12,25 @@ chalklab console cp1 -f=false
 chalkctl etcd members --help
 chalkctl upgrade --max-unavailable N # placeholders are not checked
 echo "$(chalkctl recovery-key w1)"
+echo "key: $(chalkctl recovery-key w2 --flake "$(pwd)")"
+nix run .#chalkctl -- status cp1 --config client.json
+nix run github:trevex/chalkos#chalklab -- create --nodes cp1
+sudo -E chalkctl status cp2
+sudo -u root chalkctl status cp3
+env FOO=1 chalkctl status cp4
+env -i PATH=/bin chalkctl status cp5
+time chalkctl status cp6
+chalkctl status cp7 --flake $(pwd)
+chalkctl logs cp1 > log.txt 2>&1 --unit chalkd.service
+chalkctl logs cp1 &> log.txt -f
+chalkctl logs cp1 -fh
 ```
 
 ```console
 $ chalklab status
 chalkctl bogus is output here, not a command
+$ chalkctl install cp1 \
+> --fingerprint 00ff
 ```
 
 ```nix
@@ -28,3 +42,7 @@ chalkctl bogus is output here, not a command
     ```bash
     chalkctl completion bash
     ```
+
+```SH
+chalkctl reboot w1
+```
