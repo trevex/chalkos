@@ -6,6 +6,7 @@
 //	export CHALKLAB_UPGRADE_IMAGE_DIR=$(nix build .#test-upgrade-image --no-link --print-out-paths)
 //	export CHALKLAB_UNHEALTHY_IMAGE_DIR=$(nix build .#test-unhealthy-image --no-link --print-out-paths)
 //	export CHALKLAB_CHALKCTL=$(nix build .#chalkctl --no-link --print-out-paths)/bin/chalkctl
+//	export CHALKLAB_CHALKLAB=$(nix build .#chalklab --no-link --print-out-paths)/bin/chalklab
 //	export CHALKLAB_SECRETS=$(nix build .#test-secrets --no-link --print-out-paths)/secrets.json
 //	export CHALKLAB_MANIFESTS=$(nix build .#test-manifests --no-link --print-out-paths)
 package e2e

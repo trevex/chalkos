@@ -82,6 +82,7 @@ in
     }
   );
   e2e-kubernetes = e2e "kubernetes" "^TestKubernetesCluster$" {
+    CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
     CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR = "${chalkPkgs.test-kubernetes-controlplane-image}";
     CHALKLAB_K8S_WORKER_IMAGE_DIR = "${chalkPkgs.test-kubernetes-worker-image}";
     CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";

@@ -90,7 +90,8 @@ let
       role = "storage";
       storage.system.disk = "/dev/vda";
     };
-    # A control plane and a worker on KVM, connected through the switch of the Kubernetes test.
+    # A control plane and a worker on KVM, which the Kubernetes test runs with chalklab, as the lab
+    # template defines its nodes: chalklab connects them by the MAC address their network matches.
     chalkos.roles.k8s-controlplane = {
       kubernetes.kind = "controlplane";
       nixosModules = [ ../../modules/testing/test-image.nix ];
