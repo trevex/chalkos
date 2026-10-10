@@ -21,7 +21,7 @@ An image carries one os-release file in two places with the same content:
 The UKI's Secure Boot signature covers its `.osrel` section, so on a node with
 [Secure Boot](glossary.md#secure-boot) enforced, an image cannot claim another cluster,
 [role](glossary.md#role), [platform](glossary.md#platform) or version than the one it was signed
-with. chalkctl and chalkd read the UKI's copy of an image they are about to install, and
+with. chalkctl and [chalkd](glossary.md#chalkd) read the UKI's copy of an image they are about to install, and
 `/etc/os-release` for the image a node runs.
 
 ## Fields chalkos sets
@@ -43,16 +43,16 @@ entry IDs; evaluation fails on another value. A platform's name matches
 The other fields are NixOS's, unchanged: `ID=nixos`, `NAME`, `VERSION`, `VERSION_ID`,
 `BUILD_ID`, `PRETTY_NAME` and the URLs. chalkos does not read them.
 
-The os-release of an image of the test cluster's `test` role on `metal`, as its UKI carries it:
+The os-release of the `lab` template's worker image for `kvm`, as its UKI carries it:
 
 ```text
 ANSI_COLOR="0;38;2;126;186;228"
 BUG_REPORT_URL="https://github.com/NixOS/nixpkgs/issues"
 BUILD_ID="26.11.20261003.a7868a7"
 CHALKOS_BOOT_TRIES=3
-CHALKOS_CLUSTER=chalklab
-CHALKOS_PLATFORM=metal
-CHALKOS_ROLE=test
+CHALKOS_CLUSTER=lab
+CHALKOS_PLATFORM=kvm
+CHALKOS_ROLE=worker
 CPE_NAME="cpe:/o:nixos:nixos:26.11"
 DEFAULT_HOSTNAME=nixos
 DOCUMENTATION_URL="https://nixos.org/learn.html"
@@ -85,14 +85,14 @@ The installer's carries `IMAGE_ID="chalkos-installer"`, `CHALKOS_CLUSTER` and
 | `IMAGE_VERSION` | chalkd's Upgrade | A new image of the running version and the same root hash is installed already; one of the running version with another root hash is refused. |
 | `IMAGE_VERSION` | chalkd's upgrade and install, on the UKI | The UKI's version equals the image header's. |
 | `CHALKOS_CLUSTER` | chalkctl, reading an image | The image is of the cluster the manifest names. |
-| `CHALKOS_CLUSTER`, `CHALKOS_ROLE` | chalkd's [Install](api.md#method-install) in place and [ApplyIdentity](api.md#method-applyidentity) | The identity's cluster and role equal the running image's. |
+| `CHALKOS_CLUSTER`, `CHALKOS_ROLE` | chalkd's [Install](api.md#method-install) in place and [ApplyIdentity](api.md#method-applyidentity) | The [identity](glossary.md#identity)'s cluster and role equal the running image's. |
 | `CHALKOS_CLUSTER`, `CHALKOS_ROLE`, `CHALKOS_PLATFORM` | chalkd's Upgrade | The new image's equal the running image's; a running image without them takes no upgrade. |
-| `CHALKOS_ROLE`, `CHALKOS_PLATFORM` | chalkctl install and upgrade | The image is of the node's role and platform in the cluster definition; an image without them is no role image and is refused. |
+| `CHALKOS_ROLE`, `CHALKOS_PLATFORM` | chalkctl install and upgrade | The image is of the node's role and platform in the [cluster definition](glossary.md#cluster-definition); an image without them is no role image and is refused. |
 | `CHALKOS_PLATFORM` | chalkd's Install in place and ApplyIdentity | The identity's platform equals the running image's: changing a node's platform is a reinstall. |
 | `CHALKOS_BOOT_TRIES` | chalkd's upgrade, on the UKI | A positive integer, which becomes the boot counter in the UKI's name, `+3` by default. An install writes no counter. |
 | `IMAGE_ID`, `IMAGE_VERSION`, `CHALKOS_CLUSTER`, `CHALKOS_ROLE`, `CHALKOS_PLATFORM` | chalkd's [Info](api.md#method-info) | Reported as they are; empty on an image that sets none. |
 | `CHALKOS_PLATFORM` | chalkd's [Status](api.md#method-status) | Reported, and shown by [`chalkctl status`](cli/chalkctl_status.md) beside the platform the cluster definition declares. |
-| `IMAGE_VERSION` | chalkd's Status and the health check | The running image's version, in the boot status and in the record of a boot that was not found healthy. |
+| `IMAGE_VERSION` | chalkd's Status and the [health check](glossary.md#health-check) | The running image's version, in the boot status and in the record of a boot that was not found healthy. |
 
 [The image](../concepts/image.md) explains what an image is and [Upgrades](../concepts/upgrades.md)
 how the checks above keep an upgrade within its cluster, role and platform.

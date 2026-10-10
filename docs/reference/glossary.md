@@ -5,11 +5,6 @@ description: "The terms of the chalkos documentation, each with a short definiti
 
 # Glossary
 
-<!--
-Scope: Every term the documentation uses repeatedly, defined in one or two sentences, with a
-link to the concept page that explains it. Pages link a term here on its first use.
--->
-
 Each entry defines a term the documentation uses repeatedly and links to the page that explains
 it. Option, command and API names link to the generated reference.
 
@@ -87,10 +82,19 @@ The Nix modules that declare a cluster: its settings, [roles](#role), [platforms
 by a [flake](#flake). It is the only inventory chalkctl reads. See
 [The cluster definition](../concepts/cluster-definition.md).
 
+## Cluster endpoint { #cluster-endpoint }
+
+The URL of the cluster's API server,
+[`chalkos.cluster.endpoint`](options.md#chalkosclusterendpoint), at which kubelets, kubeconfigs
+and joining control planes reach it. Nodes also renew their
+[node certificates](#node-certificate) at port 50000 of its host, so it points at a control plane,
+a [VIP](#vip) or a load balancer that forwards both ports. See
+[Networking](../concepts/networking.md).
+
 ## Control plane { #control-plane }
 
 A node whose role has the Kubernetes kind `controlplane`. It runs etcd, the API server, the
-controller manager and the scheduler as static pods that chalkd renders, besides containerd and
+controller-manager and the scheduler as static pods that chalkd renders, besides containerd and
 the kubelet. See [Kubernetes on chalkos](../concepts/kubernetes.md).
 
 ## db and dbx { #db-and-dbx }
@@ -114,15 +118,22 @@ systemd-boot and the [UKIs](#uki) of both [slots](#slot), and is 1 GiB by defaul
 ## etcd member { #etcd-member }
 
 A control plane that belongs to the cluster's etcd, as a learner while it catches up and as a
-voter after. Once a node is a member, its addresses are pinned on [STATE](#state) and every
-later boot waits for exactly them; [`chalkctl etcd leave`](cli/chalkctl_etcd_leave.md) undoes
-it. See [Kubernetes on chalkos](../concepts/kubernetes.md).
+voter after. A control plane pins its addresses on [STATE](#state) when it bootstraps, or before
+it adds itself as a learner, and every later boot waits for exactly them;
+[`chalkctl etcd leave`](cli/chalkctl_etcd_leave.md) undoes both. See [Kubernetes on chalkos](../concepts/kubernetes.md).
 
 ## Extension { #extension }
 
 A cluster module outside chalkos that adds options under its own `chalkos.<name>` namespace,
 optionally per node, and contributes NixOS modules to roles. chalkos's own features use the
 same mechanism. See [The cluster definition](../concepts/cluster-definition.md).
+
+## Fallback keyslot { #fallback-keyslot }
+
+The second keyslot of every encrypted partition, which unlocks it when the [TPM](#tpm) does not:
+the node's [recovery key](#recovery-key) by default, a password, or none, as
+[`storage.encryption.fallback`](options.md#chalkosnodesstorageencryptionfallback) chooses. See
+[Storage and encryption](../concepts/storage.md).
 
 ## Flake { #flake }
 
@@ -255,8 +266,9 @@ members. See [Security model](../concepts/security.md).
 
 ## Recovery key { #recovery-key }
 
-The second key of every encrypted partition, used when the TPM does not unseal. chalkos derives
-it per node from the [secrets file](#secrets-file), so the file never changes, and
+The default [fallback keyslot](#fallback-keyslot) of every encrypted partition, used when the
+TPM does not unseal. chalkos derives it per node from the [secrets file](#secrets-file), so the
+file never changes, and
 [`chalkctl recovery-key`](cli/chalkctl_recovery-key.md) prints it. See
 [Storage and encryption](../concepts/storage.md).
 

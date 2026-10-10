@@ -21,11 +21,11 @@ and on the CNI.
 
 | Port | Protocol | Service | Nodes | Connects to it |
 | --- | --- | --- | --- | --- |
-| 50000 | TCP | [chalkd](glossary.md#chalkd)'s node API, mutual TLS | every node, the [installer](glossary.md#installer) too | chalkctl and chalklab; nodes renewing their [node certificate](glossary.md#node-certificate), at a control plane through the cluster endpoint's host |
+| 50000 | TCP | [chalkd](glossary.md#chalkd)'s node API, mutual TLS | every node, the [installer](glossary.md#installer) too | chalkctl and [chalklab](glossary.md#chalklab); nodes renewing their [node certificate](glossary.md#node-certificate), at a [control plane](glossary.md#control-plane) through the [cluster endpoint](glossary.md#cluster-endpoint)'s host |
 | 6443 | TCP | Kubernetes API server | control planes | kubectl, every kubelet and kube-proxy at the cluster endpoint; pods, flannel among them, through the `kubernetes` service |
 | 2379 | TCP | etcd's client port | control planes | the other control planes |
 | 2380 | TCP | etcd's peer port | control planes | the other control planes |
-| 10250 | TCP | kubelet | control planes and workers | the API server |
+| 10250 | TCP | kubelet | control planes and [workers](glossary.md#worker) | the API server |
 | 30000–32767 | TCP | NodePort services | control planes and workers | clients of NodePort services |
 | 8472 | UDP | flannel's VXLAN | control planes and workers, with flannel | the other nodes |
 

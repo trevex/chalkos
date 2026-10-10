@@ -64,7 +64,7 @@ The "Created by" column names the first writer of each partition:
 - First boot: systemd-repart in the initrd runs the system region's definitions against the
   disk systemd-boot was loaded from, so it adds slot B and STATE behind the partitions the image
   shipped with. It runs at every boot and changes nothing once they exist.
-- Install: from the [installer](glossary.md#installer), chalkd lays out the whole system region
+- Install: from the [installer](glossary.md#installer), [chalkd](glossary.md#chalkd) lays out the whole system region
   on the target disk with one systemd-repart run of the role's definitions and writes slot A
   itself. In place, chalkd recreates STATE when its contents do not match the node's encryption
   policy (an unencrypted STATE for `mode = "none"`). In both flows it then creates VAR and the
@@ -164,9 +164,9 @@ STATE is mounted at `/state`. It holds what makes the node this node and nothing
 | --- | --- | --- |
 | `identity.json` | install, ApplyIdentity | The node's identity as delivered. |
 | `chalkd/node.pem` | install, renewal | The [node certificate](glossary.md#node-certificate)'s chain and its key in one file, so both are replaced together. |
-| `chalkd/ca.crt` | install, rotation | The certificates of the [OS CAs](glossary.md#os-ca) the node trusts, a bundle. |
+| `chalkd/ca.crt` | install, [rotation](glossary.md#rotation) | The certificates of the [OS CAs](glossary.md#os-ca) the node trusts, a bundle. |
 | `kubernetes/share.json` | install, rotation | The node's [Kubernetes share](glossary.md#kubernetes-share). |
-| `kubernetes/node-ip` | chalkd | A control plane's addresses, pinned when it became an [etcd member](glossary.md#etcd-member), one per line. |
+| `kubernetes/node-ip` | chalkd | A [control plane](glossary.md#control-plane)'s addresses, pinned when it became an [etcd member](glossary.md#etcd-member), one per line. |
 | `kubernetes/joining` | chalkd | The node started joining the cluster, so it never bootstraps a cluster of its own. |
 | `kubernetes/bootstrapped` | Bootstrap | The node bootstrapped the cluster. |
 | `kubernetes/etcd-initialised` | chalkd | etcd answered ready after the bootstrap, so its data exists. |
