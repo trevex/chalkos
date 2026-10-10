@@ -80,7 +80,7 @@ writeShellApplication {
       while read -r name; do
         [[ -n $name ]] || continue
         if ! resolve "$source" "$version" "$name" >>"$work/selected"; then
-          echo "error: unknown kernel module $name" >&2
+          echo "error: unknown kernel module $name, named by chalkos.kernel.extraModules or a module group" >&2
           failed=1
         fi
       done <"$names"
@@ -154,6 +154,9 @@ writeShellApplication {
         echo "error: the kernel module $module depends on $dependency, which the image's module tree does not hold" >&2
         failed=1
       done <"$work/missing"
+      if [[ -s $work/missing ]]; then
+        echo "add the missing modules to chalkos.kernel.extraModules, or their group to chalkos.kernel.moduleGroups" >&2
+      fi
       rm -r "$work"
       if [[ $failed != 0 ]]; then exit 1; fi
     }

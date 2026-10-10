@@ -519,6 +519,7 @@ in
       : >loaded
       if ${tool} check ${stubWithDependencies} loaded 2>errors; then fail "a module whose dependency the tree lacks passed the check"; fi
       grep -q 'chalkos_stub depends on videodev' errors || fail "the error names no modules: $(cat errors)"
+      grep -q 'to chalkos.kernel.extraModules' errors || fail "the error does not say how to fix it: $(cat errors)"
       touch $out
     '';
 
@@ -572,7 +573,7 @@ in
             fi
           done
           if [[ ''${#over[@]} != 0 ]]; then
-            echo "error: $name is over its ceiling in ''${over[*]}; the largest paths of its closure:" >&2
+            echo "error: $name is over its ceiling in ''${over[*]} (nix/testing/image-sizes.nix); the largest paths of its closure:" >&2
             # closureInfo's registration: a path, its hash, its size, its deriver, its number of
             # references and the references.
             awk 'step == 0 { path = $0; step = 1; next }
@@ -604,7 +605,7 @@ in
           echo "error: the test image passed ceilings of 1 MiB" >&2
           failed=1
         fi
-        grep -q "the largest paths of its closure" errors && grep -q "MiB /nix/store/" errors || {
+        grep -q "(nix/testing/image-sizes.nix); the largest paths of its closure" errors && grep -q "MiB /nix/store/" errors || {
           cat errors >&2
           failed=1
         }

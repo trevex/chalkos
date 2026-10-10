@@ -54,7 +54,8 @@ func randomData(seed uint64, n int) []byte {
 }
 
 // TestAgreesWithVeritysetup checks trees of one to three levels and a single data block, of
-// 512-byte blocks as systemd-repart writes them and of 4 KiB blocks, against veritysetup.
+// 4 KiB blocks as systemd-repart writes them and of 512-byte blocks as images built before that
+// carry them, against veritysetup.
 func TestAgreesWithVeritysetup(t *testing.T) {
 	salt := randomData(1, 32)
 	for _, tc := range []struct {
