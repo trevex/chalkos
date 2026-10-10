@@ -49,9 +49,9 @@ const configNewLong = `Writes a client file: a new key with a certificate from t
 CA that nodes' certificates chain to, and the nodes' addresses. A client file works for status,
 logs, disks, reboot, storage reset, bootstrap, the etcd commands and upgrade; every other command
 needs the secrets file. The role decides what chalkd allows: a reader may read nodes'
-information, disks, status and logs and etcd's members; an operator may also reboot and upgrade
-nodes; an admin may call every method of chalkd except RenewNodeCertificate, which needs the node
-role (nodes call it to renew their own certificates). The file is written to
+information, disks, status and logs and etcd's members; an operator may also reboot, upgrade,
+drain and uncordon nodes; an admin may call every method of chalkd except RenewNodeCertificate,
+which needs the node role (nodes call it to renew their own certificates). The file is written to
 ~/.config/chalkos/config unless --out names another; commands read it from there, or from the
 path --config or $CHALKOSCONFIG names. The command needs the secrets file.`
 
