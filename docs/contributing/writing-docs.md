@@ -59,7 +59,7 @@ These pages are generated and never edited by hand:
 
 | Page | Generated from | By |
 | --- | --- | --- |
-| `docs/reference/cli/` | the command trees of chalkctl and chalklab, with their help in `pkg/chalkctl/help.go` and `pkg/chalklab/help.go` | `docgen cli` |
+| `docs/reference/cli/` | the command trees of chalkctl and [chalklab](../reference/glossary.md#chalklab), with their help in `pkg/chalkctl/help.go` and `pkg/chalklab/help.go` | `docgen cli` |
 | `docs/reference/options.md` | the option declarations of `modules/cluster` and of the node modules | nixosOptionsDoc |
 | `docs/reference/api.md` | `api/chalkos/node/v1/node.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
 | the navigation region of `zensical.toml` | the command trees | `docgen cli` |

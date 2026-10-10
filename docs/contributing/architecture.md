@@ -12,13 +12,13 @@ page is for changing it.
 
 ## Where do Nix and Go meet?
 
-Go code never evaluates Nix itself. The cluster definition reaches it as JSON, in three forms:
+Go code never evaluates Nix itself. The [cluster definition](../reference/glossary.md#cluster-definition) reaches it as JSON, in three forms:
 
 - The [manifest](../reference/glossary.md#manifest), which `mkCluster` generates as
   `chalkos.<cluster>.manifest`: the cluster's settings, the roles' image paths and every node's
-  [identity](../reference/glossary.md#identity). chalkctl and chalklab read the cluster through
+  [identity](../reference/glossary.md#identity). chalkctl and [chalklab](../reference/glossary.md#chalklab) read the cluster through
   it alone, decoded by `pkg/manifest`.
-- A node's identity, the manifest's entry for that node, which chalkctl delivers to chalkd and
+- A node's identity, the manifest's entry for that node, which chalkctl delivers to [chalkd](../reference/glossary.md#chalkd) and
   chalkd keeps on [STATE](../reference/glossary.md#state).
 - Files the [role](../reference/glossary.md#role) image carries in `/etc/chalkos`, written by
   the node modules: the cluster's Kubernetes settings in `kubernetes/cluster.json`, the
@@ -45,7 +45,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 
 | Program | What its main does |
 | --- | --- |
-| `cmd/chalkctl` | Runs `chalkctl.NewCommand()` with a context that Ctrl-C cancels. |
+| `cmd/chalkctl` | Runs `chalkctl.NewCommand()` with a context that Ctrl+C cancels. |
 | `cmd/chalklab` | The same for `chalklab.NewCommand()`. |
 | `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-identity` (chalkos-identity.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
 | `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, and runs as a systemd generator for the other volumes. |
@@ -67,19 +67,19 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes` | The node's Kubernetes cluster as the image records it, and the node as its identity names it. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
 | `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal. |
-| `kubernetes/manifests` | The control plane's static pods. |
+| `kubernetes/manifests` | The [control plane](../reference/glossary.md#control-plane)'s static pods. |
 | `kubernetes/node` | The node's Kubernetes files at boot: addresses, kubelet credentials and flags, control-plane certificates. |
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs. |
 | `kubernetes/vip` | Adds a VIP to an interface and announces it. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console, for chalklab and the end-to-end tests. |
 | `manifest` | The manifest's Go types. |
-| `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and node certificates, client roles. |
+| `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
 | `storage` | Storage sections, disk references and pins, repart definitions, change classification. |
 | `storage/node` | Storage on the node: STATE, [volumes](../reference/glossary.md#volume), [VAR](../reference/glossary.md#var) and the generator's units. |
 | `uki` | Reads a [UKI](../reference/glossary.md#uki)'s os-release and command line, and checks its signature as firmware does. |
 | `upgrade` | Writes an image into the inactive [slot](../reference/glossary.md#slot) and makes it the next boot; the slot writer install shares. |
-| `verity` | Reads and checks dm-verity hash trees. |
+| `verity` | Reads and checks [dm-verity](../reference/glossary.md#dm-verity) hash trees. |
 
 `uki/ukitest` and `kubernetes/etcd/etcdtest` hold test helpers: small UKIs and in-process etcd
 members.
@@ -96,7 +96,7 @@ nodev1connect.NodeServiceInstallProcedure: {[]nodev1.Mode{maintenance}, pki.Role
 nodev1connect.NodeServiceUpgradeProcedure: {[]nodev1.Mode{normal}, pki.RoleOperator},
 ```
 
-A new method needs an entry there; the authorizer refuses a method without one. Comments in the
+A new method needs an entry there; the authoriser refuses a method without one. Comments in the
 proto file become the [Node API](../reference/api.md) page, so they are written for users.
 
 ## The command-line programs
@@ -134,8 +134,8 @@ The layout follows these rules, so each change has one place to go:
   options of a role image.
 - Go code reads the cluster definition through the manifest, the identity and the image's files
   alone.
-- `nix/` holds tooling: packages, apps, checks, the dev shell, the docs build and test fixtures,
-  not product logic.
+- `nix/` holds tooling: packages, apps, checks, the development shell, the docs build and test
+  fixtures, not product logic.
 - `cmd/` holds the mains, which wire packages up; logic worth testing lives in `pkg/`.
 
 [Development setup](development.md) lists the commands of a development loop and

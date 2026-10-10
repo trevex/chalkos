@@ -5,12 +5,6 @@ description: "How chalkos documentation is written: voice, words, headings, code
 
 # Style guide
 
-<!--
-Scope: The rules every hand-written page follows, with examples, the page templates and the
-checklist a writer runs before handing a page in. The generated reference pages follow the
-voice rules through their sources: command help, option descriptions and proto comments.
--->
-
 This guide holds the rules every hand-written page of the chalkos documentation follows. Each
 rule has a reason, so a case the guide does not cover can be decided the same way. The
 generated reference pages are written in their sources (command help in `pkg/chalkctl/help.go`
@@ -147,6 +141,8 @@ generated and hide the point. Edit each away.
 
 ## Code blocks
 
+Code blocks show commands, their output and the files a page asks the reader to write.
+
 ### Which kind of block?
 
 | Content | Fence | Prompt |
@@ -257,6 +253,9 @@ stateDiagram-v2
   `stateDiagram-v2`; other diagram types render less reliably.
 
 ## Links
+
+Links within the site point to Markdown files, which the strict build checks; links outside it
+point to upstream documentation.
 
 ### Between pages
 

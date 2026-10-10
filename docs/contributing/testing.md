@@ -26,7 +26,7 @@ Start at the top of the table and go down only when the level above cannot show 
 ## Go unit tests
 
 Unit tests run with `go test` and take no privileges. Commands are tested in-process through
-`NewCommand`, with their output captured. Run them in the [dev shell](development.md):
+`NewCommand`, with their output captured. Run them in the [development shell](development.md):
 
 ```sh
 go test ./pkg/... ./cmd/...
@@ -50,7 +50,7 @@ run them in isolation:
   mount, LUKS, the TPM and the firmware's variables with directories and fakes. They stop an
   install or upgrade before each change it makes and check that the disk still boots, so they
   cover interruptions that a VM test could reach only one at a time.
-- The `vxlan-rule` check loads a worker's firewall as NixOS renders it in a network namespace,
+- The `vxlan-rule` check loads a [worker](../reference/glossary.md#worker)'s firewall as NixOS renders it in a network namespace,
   with a peer and a pod in namespaces of their own, and sends UDP to check what the VXLAN rule
   accepts.
 
@@ -84,7 +84,7 @@ Build checks in `nix/checks.nix` check what an image build produces, without boo
 ## End-to-end tests
 
 The end-to-end tests in `test/e2e` boot chalkos images in QEMU with OVMF, Secure Boot and a
-software TPM, through the same `pkg/lab` code chalklab uses, and drive the nodes with the real
+software TPM, through the same `pkg/lab` code [chalklab](../reference/glossary.md#chalklab) uses, and drive the nodes with the real
 chalkctl. Each check runs one test or a group of them:
 
 | Check | Test | VMs |
@@ -98,7 +98,7 @@ chalkctl. Each check runs one test or a group of them:
 | `e2e-iso` | The installer's ISO boots. | 1 |
 | `e2e-storage` | Volumes on the system disk and a data disk. | 1 |
 | `e2e-upgrade` | Under Secure Boot, an [upgrade](../reference/glossary.md#upgrade) that boots from [slot](../reference/glossary.md#slot) B and is found healthy, then one that never becomes healthy and falls back. | 1 |
-| `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, renewals and rotations, a reboot. | 2 |
+| `e2e-kubernetes` | A dual-stack cluster of a [control plane](../reference/glossary.md#control-plane) and a worker through chalklab: networking, DNS, renewals and [rotations](../reference/glossary.md#rotation), a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.

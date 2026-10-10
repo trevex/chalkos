@@ -58,8 +58,8 @@ milestones.
 
 ## The contributing pages
 
-- [Development setup](development.md): the dev shell, the repository's directories and the
-  commands of a development loop.
+- [Development setup](development.md): the development shell, the repository's directories and
+  the commands of a development loop.
 - [Testing](testing.md): the kinds of tests, when to write which, and how to run them.
 - [Architecture for developers](architecture.md): the Go packages, the Nix modules and how
   they connect.

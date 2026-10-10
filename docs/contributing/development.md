@@ -1,6 +1,6 @@
 ---
 title: "Development setup"
-description: "The dev shell, the repository layout and the commands of a development loop"
+description: "The development shell, the repository layout and the commands of a development loop"
 ---
 
 # Development setup
@@ -11,9 +11,9 @@ formatting, and running a [lab](../reference/glossary.md#lab) from the checkout.
 runs through Nix, so the only requirements are an x86-64 Linux machine with Nix and flakes
 enabled, and `/dev/kvm` for anything that boots a virtual machine.
 
-## Enter the dev shell
+## Enter the development shell
 
-Clone the repository and enter its dev shell:
+Clone the repository and enter its development shell:
 
 ```sh
 git clone https://github.com/trevex/chalkos
@@ -43,13 +43,13 @@ use the same tools and variables from `nix/testing/env.nix`.
 | `api/` | The node API's protobuf definition, `api/chalkos/node/v1/node.proto`, and the template of its reference page. |
 | `cmd/` | Thin mains: `chalkctl`, `chalkd`, `chalklab`, `chalkos-storage` and `docgen`. |
 | `pkg/` | The Go packages, including `pkg/api`, the code `buf generate` writes. |
-| `modules/cluster/` | The cluster definition: core options in `options/`, built-in features in `features/`, the Kubernetes objects every cluster gets in `kubernetes/`. |
+| `modules/cluster/` | The [cluster definition](../reference/glossary.md#cluster-definition): core options in `options/`, built-in features in `features/`, the Kubernetes objects every cluster gets in `kubernetes/`. |
 | `modules/node/` | The NixOS modules every [role](../reference/glossary.md#role) [image](../reference/glossary.md#image) is built from. |
 | `modules/platforms/` | The `metal` and `kvm` [platforms](../reference/glossary.md#platform). |
 | `modules/installer/` | The [installer](../reference/glossary.md#installer) image and its ISO. |
 | `modules/testing/` | The test probe and the test image's small partitions. |
 | `lib/` | `mkCluster` and the flake-parts module. |
-| `nix/` | Tooling: packages, apps, checks, the dev shell, the docs build, test fixtures and the test cluster in `nix/testing/`. |
+| `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, test fixtures and the test cluster in `nix/testing/`. |
 | `templates/lab/` | The lab template the quick start uses. |
 | `examples/homelab/` | An example cluster flake, which the `manifest-golden` check evaluates. |
 | `test/e2e/` | The end-to-end tests, which boot virtual machines. |
@@ -78,7 +78,7 @@ go run ./cmd/chalkctl --help
 go run ./cmd/chalklab --help
 ```
 
-chalkd only does useful work on a node; the end-to-end tests and a lab run it there.
+[chalkd](../reference/glossary.md#chalkd) only does useful work on a node; the end-to-end tests and a lab run it there.
 
 ## Build images
 
@@ -105,7 +105,7 @@ The result is a directory with the raw image, `repart-output.json` and `repart.d
 
 ## Run the Go tests
 
-Run the unit tests in the dev shell:
+Run the unit tests in the development shell:
 
 ```sh
 go test ./pkg/... ./cmd/...
@@ -118,8 +118,8 @@ mounts, LUKS, the [TPM](../reference/glossary.md#tpm) and the firmware, so they 
 devices.
 
 `go test ./...` also runs the end-to-end tests in `test/e2e`, which boot VMs as soon as the
-variables they need are set; the dev shell sets those of the firmware test. Run them through
-their flake checks instead, as [Testing](testing.md) describes.
+variables they need are set; the development shell sets those of the firmware test. Run them
+through their flake checks instead, as [Testing](testing.md) describes.
 
 ## Regenerate code and pages
 
@@ -166,7 +166,7 @@ input's URL:
 inputs.chalkos.url = "git+file://<checkout>";
 ```
 
-Then follow the template's README, with chalklab and chalkctl now built from the checkout:
+Then follow the template's README, with [chalklab](../reference/glossary.md#chalklab) and chalkctl now built from the checkout:
 
 ```sh
 git init && git add .
