@@ -250,10 +250,12 @@ func program(cmd []string) []string {
 	return nil
 }
 
-// operators end a simple command; redirections end its arguments.
+// operators end a simple command; redirections end its arguments. A placeholder, a word such as
+// <node>, is an argument, though a shell would read it as a redirection.
 var (
 	operators    = []string{"|", "||", "&&", ";", "&", "(", ")"}
 	redirections = regexp.MustCompile(`^[0-9]*(>|>>|<|<<|>&|<&|&>)`)
+	placeholder  = regexp.MustCompile(`^<[A-Za-z0-9._-]+>$`)
 )
 
 // substitution stands in a command for a command substitution, which is a command of its own.
@@ -282,7 +284,7 @@ func simpleCommands(ws []string) [][]string {
 			cur = nil
 		case slices.Contains(operators, w):
 			cmds, cur = append(cmds, cur), nil
-		case redirections.MatchString(w):
+		case redirections.MatchString(w) && !placeholder.MatchString(w):
 			// The redirection's target, when it is a word of its own, is no argument either.
 			target = redirections.ReplaceAllString(w, "") == ""
 		case target:

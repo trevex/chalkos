@@ -15,6 +15,8 @@ env FOO=1 chalkctl disks w1 --bogus
 time chalklab strat
 chalkctl logs cp1 > log.txt 2>&1 --unti chalkd.service
 chalkctl logs cp1 -fx
+chalkctl install <node> --fingerprnt <fp>
+chalkctl instal <node> < input.txt 2> /dev/null
 ```
 
 ```console

@@ -24,6 +24,8 @@ chalkctl status cp7 --flake $(pwd)
 chalkctl logs cp1 > log.txt 2>&1 --unit chalkd.service
 chalkctl logs cp1 &> log.txt -f
 chalkctl logs cp1 -fh
+chalkctl install <node> --fingerprint <fp> --image <image.raw>
+chalkctl status cp17 < input.txt 2> /dev/null
 ```
 
 ```console
