@@ -319,6 +319,7 @@ func TestEndpointPrecedence(t *testing.T) {
 		{"the definition without the opt-in", def, "", file(map[string]string{"n1": "127.0.0.1:15001"}, false), "10.0.0.11", "the cluster definition"},
 		{"the secrets file", def, "", &credentials{}, "10.0.0.11", "the cluster definition"},
 		{"no cluster definition", clusterOfConfig(client.Config{Cluster: "lab", Nodes: map[string]string{"n1": "10.0.0.20"}}, clusterFlags{}), "", file(map[string]string{"n1": "10.0.0.20"}, false), "10.0.0.20", "the client file lab.json"},
+		{"no cluster definition nor credentials", clusterOfConfig(client.Config{Cluster: "lab", Nodes: map[string]string{"n1": "10.0.0.20"}}, clusterFlags{}), "", nil, "10.0.0.20", "the client file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			addr, source, err := tc.c.endpoint(tc.flag, tc.creds, "n1", tc.c.manifest.Nodes["n1"].Identity)

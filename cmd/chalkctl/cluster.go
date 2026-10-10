@@ -194,6 +194,10 @@ func (c *cluster) endpoint(flagValue string, creds *credentials, node string, id
 		return "", "", fmt.Errorf("node %s has no static address; pass --endpoint", node)
 	}
 	if c.partial {
+		// A caller that passes no credentials does not know the file's path.
+		if creds == nil || creds.configPath == "" {
+			return addrs[0], "the client file", nil
+		}
 		return addrs[0], "the client file " + creds.configPath, nil
 	}
 	return addrs[0], "the cluster definition", nil
