@@ -252,7 +252,11 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 	// VAR is lost; if that one expired too, the kubelet cannot join until a new one arrives.
 	if share.Kubelet != nil && (clientErr != nil || !now.Before(client.NotAfter)) {
 		if cert, err := pki.ParseCertificate([]byte(share.Kubelet.Certificate)); err == nil && !now.Before(cert.NotAfter) {
-			add("kubelet client", cert, "expired; deliver a new one with chalkctl apply-identity <node> --kubernetes-share")
+			name := "<node>"
+			if n, err := k8s.ReadNode(k.Paths.NodeFile); err == nil {
+				name = n.Name
+			}
+			add("kubelet client", cert, "expired; deliver a new one with chalkctl apply-identity "+name+" --kubernetes-share")
 		}
 	}
 	if serving, err := readPEMCertificate(k.Paths.KubeletServing()); err == nil {
