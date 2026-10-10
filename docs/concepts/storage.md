@@ -118,7 +118,7 @@ with [`storage.encryption.fallback`](../reference/options.md#chalkosnodesstorage
 | Fallback | Second keyslot |
 | --- | --- |
 | `recovery-key` (default) | The node's [recovery key](../reference/glossary.md#recovery-key), derived from the [secrets file](../reference/glossary.md#secrets-file); [`chalkctl recovery-key`](../reference/cli/chalkctl_recovery-key.md) prints it |
-| `password` | A password the operator gives with `--password-file` at install and with each later change that adds an encrypted volume |
+| `password` | A password chalkctl asks for on the terminal, or reads from `--password-file`, at install and with each later change that adds an encrypted volume |
 | `none` | None: a volume the TPM does not unseal can only be recreated empty |
 
 [chalkd](../reference/glossary.md#chalkd) enrols the fallback with `systemd-cryptenroll` at install, unlocking each volume with the
@@ -141,8 +141,10 @@ service for an encrypted one, and a mount or swap unit for a formatted one. Thes
 wanted, with `nofail`, so a missing disk fails its own units without holding up the boot. A node
 that is not installed has no storage section on STATE, so `/var` stays on tmpfs until it is.
 
-chalkos refuses to mount a device that should be encrypted but holds no LUKS header, so data
-meant to be encrypted never lands on a plain file system.
+chalkos refuses to mount VAR when it should be encrypted but holds no LUKS header, and mounts an
+encrypted volume only from its unlocked device, so data meant to be encrypted never lands on a
+plain file system. STATE is exempt from the check, because its encryption mode is recorded on
+STATE itself and cannot be known before it is mounted.
 
 ## What happens when the TPM does not unseal?
 
@@ -165,7 +167,7 @@ Additive changes keep every byte of existing data, and the node applies them whi
 
 - a new volume, on the system disk or a new disk;
 - a larger size, or a fixed size changed to fill the disk;
-- a new mount point.
+- a new, changed or removed mount point.
 
 Destructive changes need a volume to be wiped:
 

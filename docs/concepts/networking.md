@@ -83,7 +83,9 @@ pinned address 10.0.0.11 is not present, 5m0s after chalkos-node-addresses.targe
 ```
 
 [`chalkctl etcd leave`](../reference/cli/chalkctl_etcd_leave.md) removes the pin together with the
-node's member.
+node's member. A node whose pinned address is gone runs no etcd member that could answer, so it
+leaves with `chalkctl etcd leave <node> --force`, which removes its member through the other
+members.
 
 ## How does dual stack work?
 
@@ -175,8 +177,9 @@ default, flannel carries pod traffic between nodes in VXLAN on UDP port 8472, on
 registered them, and masquerades what pods send to other nodes behind them.
 
 VXLAN carries pod packets unauthenticated, so the firewall accepts it only when it is sent to one
-of the node's own addresses: on the interface that holds the address, or on any interface but the
-pod network's when the address is on a loopback or dummy interface. The node picks its addresses
+of the node's own addresses: on the interface that holds the address, or, when the address is on a
+loopback or dummy interface, on any interface but those of the pod network and kube-proxy
+(`cni*`, `flannel*`, `kube-*` and `veth*`), where pods could send it. The node picks its addresses
 after the firewall started, so a table of chalkos's own, `chalkos-vxlan`, which the preparation
 fills with the addresses it picked, marks such packets, and the firewall accepts packets that
 carry the mark. No VXLAN is accepted while the addresses are being picked or when none are found.
@@ -214,9 +217,11 @@ family, as the kubelet registered them.
 A node's addresses do not have to come from networkd. A routing daemon, such as a BGP speaker an
 extension adds, can announce an address on a loopback or dummy interface. Such a unit orders itself
 before `chalkos-node-addresses.target` and is wanted by it; the preparation starts after the target
-and still waits up to `nodeIP.timeout` for the addresses. A dummy interface holding a node's
-address needs an MTU of at least `chalkos.cni.flannel.mtu`, 20 more for an IPv6 address, or the
-node refuses to prepare.
+and still waits up to `nodeIP.timeout` for the addresses. An address on a loopback interface needs
+[`chalkos.cni.flannel.mtu`](../reference/options.md#chalkoscniflannelmtu) set, because flannel
+would take the loopback's MTU. When the option is set, a dummy interface holding a node's address
+needs an MTU of at least its value, 20 more for an IPv6 address. Otherwise the node refuses to
+prepare.
 
 ## Limits
 
@@ -230,7 +235,8 @@ node refuses to prepare.
 - Within `vxlanSourceSubnets` a source address can be forged. The kernel drops an IPv4 packet
   that claims the node's own address as its source, but has no such check for IPv6.
 - A control plane whose pinned address is gone does not start etcd or the control plane until the
-  address returns or the node leaves etcd and is reinstalled.
+  address returns, or until the node leaves etcd with `chalkctl etcd leave --force` and is
+  reinstalled.
 
 ## Related pages
 

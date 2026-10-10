@@ -67,7 +67,8 @@ Before it sends anything, chalkctl checks each image against the cluster:
 - the cluster is this cluster;
 - the UKI carries a signature of the certificate in
   [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate),
-  or, when that is not set, of the certificate chalkctl signed with.
+  or, when that is not set, of the certificate chalkctl signed with. With neither, chalkctl checks
+  no signature.
 
 chalkctl also stops before any image is built or sent when a node runs another role or platform
 than the [cluster definition](../reference/glossary.md#cluster-definition) declares for it, because changing either is a reinstall.
@@ -83,6 +84,8 @@ chalkd checks the image's header against the running image's os-release and the 
   machine's;
 - the version is not the running one, unless the root hash is the same too, in which case the node
   answers that it runs the image already and changes nothing;
+- the root hash is not the running one under another version, whose partitions would be the
+  running slot's;
 - no UKI on the ESP holds the version with another root hash, and no UKI that stays would collide
   with the new entry's name;
 - the running boot was found healthy, when the upgrade would remove the image the node falls back
@@ -187,9 +190,9 @@ upgraded 3 nodes to 1.5.0
 ### Why must etcd keep its quorum?
 
 etcd needs a majority of its voting members to answer, and the API server needs etcd. Before a
-control plane that is an [etcd member](../reference/glossary.md#etcd-member) reboots, chalkctl
-asks for etcd's members through a control plane and requires that the other voters are healthy and
-still a majority of all voters. A learner refuses the check until it has joined as a voter. etcd
+control plane that is an [etcd member](../reference/glossary.md#etcd-member) reboots, chalkctl asks
+for etcd's members through a control plane and requires that enough of the other voters are healthy
+to make a majority of all voters. A learner refuses the check until it has joined as a voter. etcd
 may need a moment after the previous control plane came back, so the check is retried for up to a
 minute.
 
@@ -204,7 +207,8 @@ method, because an operator's client file carries no Kubernetes credentials. cha
 node, marks it with the annotation `chalkos.dev/upgrade-cordon` and evicts its pods through the
 eviction API, so PodDisruptionBudgets hold. It keeps DaemonSet pods, mirror pods, finished pods and
 pods without a controller, which nothing would start elsewhere; chalkctl names those. Pods with
-emptyDir volumes are evicted only with `--delete-emptydir-data`, which deletes their data. A drain
+emptyDir volumes are evicted only with `--delete-emptydir-data`, which deletes their data; without
+it, a node that runs such a pod is not drained, the run stops and the node stays cordoned. A drain
 that does not finish within `--timeout`, 30 minutes by default, stops the run and leaves the node
 cordoned.
 
@@ -257,9 +261,11 @@ again. Usually the fix is a new build, which needs a new version.
 | `--timeout` | How long a drain and a node's return may take, 30 minutes by default |
 
 The command needs an operator [client file](../reference/glossary.md#client-file) or the
-[secrets file](../reference/glossary.md#secrets-file). A [lab](../reference/glossary.md#lab),
-for example, is upgraded with its client file and its Secure Boot keys, which
-[`chalklab status`](../reference/cli/chalklab_status.md) names:
+[secrets file](../reference/glossary.md#secrets-file). Without `--image` it builds the images from
+the cluster definition, so it runs in the flake's directory or names it with `--flake`. A
+[lab](../reference/glossary.md#lab), for example, is upgraded from its flake's directory with its
+client file and its Secure Boot keys, which [`chalklab status`](../reference/cli/chalklab_status.md)
+names:
 
 ```sh
 chalkctl upgrade --config=<client-file> --sign-key=<db-key> --sign-cert=<db-cert> \

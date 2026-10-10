@@ -211,11 +211,13 @@ findutils, procps, iproute2 and util-linux, and crictl on roles with Kubernetes.
 from a privileged pod that enters the node's root:
 
 ```sh
-kubectl debug node/<node> -it --image=busybox -- chroot /host /run/current-system/sw/bin/bash
+kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- \
+  chroot /host /run/current-system/sw/bin/bash
 ```
 
-`<node>` is the Kubernetes node's name. A node has no `/bin/bash`, so the command names the
-system path's.
+`<node>` is the Kubernetes node's name. `--profile=sysadmin` makes the pod privileged, which
+tools such as `nft` need; kubectl's default profile leaves it without their capabilities. A node
+has no `/bin/bash`, so the command names the system path's.
 
 ## How large is an image?
 

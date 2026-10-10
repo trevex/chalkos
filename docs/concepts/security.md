@@ -82,9 +82,11 @@ signed.
 
 [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted
 [volumes](../reference/glossary.md#volume) are LUKS2 volumes whose key the TPM seals to
-[PCR 7](../reference/glossary.md#pcr-7). PCR 7 measures the Secure Boot state: whether it is on,
-the contents of PK, KEK, db and dbx, and the db certificate that verified the boot binaries. The
-TPM releases the key only when PCR 7 holds the value it was sealed under.
+[PCR 7](../reference/glossary.md#pcr-7) under the default
+[encryption mode](../reference/options.md#chalkosnodesstorageencryptionmode) `tpm2`; the mode
+`none` leaves them unencrypted. PCR 7 measures the Secure Boot state: whether it is on, the
+contents of PK, KEK, db and dbx, and the db certificate that verified the boot binaries. The TPM
+releases the key only when PCR 7 holds the value it was sealed under.
 
 PCR 7 is chosen over the PCRs that measure the kernel and initrd because an
 [upgrade](../reference/glossary.md#upgrade) changes those with every image, while an image signed

@@ -8,9 +8,11 @@ description: "Every certificate authority and certificate of a cluster, and how 
 A chalkos cluster runs on five certificate authorities and two keys, all generated once by
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) and kept in the
 [secrets file](../reference/glossary.md#secrets-file). Two CAs authenticate the node API that
-[chalkd](../reference/glossary.md#chalkd) serves; three authenticate Kubernetes. This page lists what
-each one issues, how long each certificate lives, what renews it, and how a CA or key is replaced.
-The [Security model](security.md) explains who is allowed what with these certificates.
+[chalkd](../reference/glossary.md#chalkd) serves; three authenticate Kubernetes. This page lists
+what each one issues, how long each certificate lives, what renews it, and how a CA or key is
+replaced. The secrets file also holds the recovery secret, from which each node's
+[recovery key](../reference/glossary.md#recovery-key) is derived. The [Security model](security.md)
+explains who is allowed what with these certificates.
 
 ## Which CAs and keys does a cluster have?
 
@@ -19,7 +21,7 @@ expiry and backdated by an hour, so a node whose clock lags slightly still accep
 
 | CA or key | Lifetime | Issues or does | Held by |
 | --- | --- | --- | --- |
-| [OS CA](../reference/glossary.md#os-ca) | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is in every image and on every node |
+| [OS CA](../reference/glossary.md#os-ca) | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with [`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) |
 | [Node CA](../reference/glossary.md#node-ca) | 5 years | Node certificates, for TLS servers and clients only; path length 0 | The secrets file and every control plane |
 | Kubernetes CA | 10 years | The API server's, controllers' and kubelets' certificates and admin kubeconfigs | The secrets file and every control plane; workers get its certificate |
 | Front-proxy CA | 10 years | The certificate the API server presents to aggregated API servers | The secrets file and every control plane |
@@ -133,6 +135,7 @@ one marked `(issues)`. A certificate line carries a note when something needs do
 | `less than a tenth of its lifetime remains, though the kubelet renews it itself` | A kubelet certificate close to its end |
 | `<CA> expires <date>` | A CA in its last year, the node CA in its last 18 months with `run chalkctl node-ca rotate` |
 | `expired`, `<CA> expired <date>` | A certificate or CA past its end |
+| `expired; deliver a new one with chalkctl apply-identity <node> --kubernetes-share` | A worker's kubelet client certificate when the one the kubelet renewed was lost with VAR and the one its Kubernetes share holds has expired too; the note names the node |
 
 The node CA is reported six months earlier than the other CAs because no node certificate outlives
 it, so the certificates it issues get shorter in its last year.

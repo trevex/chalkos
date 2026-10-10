@@ -200,10 +200,14 @@ Other states name what the node waits for or why it stopped:
 
 | State | Meaning |
 | --- | --- |
+| `no share` | The node holds no Kubernetes share yet; it gets one at install or with `chalkctl apply-identity --kubernetes-share` |
+| `preparing` | The preparation of the node's addresses, certificates and kubelet flags runs |
 | `waiting for bootstrap or for the cluster at <endpoint>` | A control plane that found no cluster to join yet |
 | `joining the cluster at <endpoint>: <step>` | A join that runs, with its step or its last error |
 | `bootstrapped` | A control plane that is an etcd voter, by bootstrap or join |
+| `bootstrapped: <problem>` | A control plane whose address differs from its etcd peer URL, or whose etcd member belongs to another cluster than the other control planes' members |
 | `joined` | A worker |
+| `joined: <problem>` | A worker whose Node lacks a pod range of one of the cluster's families |
 | `preparation failed: <reason>` | The preparation stopped, for example because no address matched |
 | `left etcd; reinstall the node to join the cluster again` | A control plane after `chalkctl etcd leave` |
 | `etcd data missing: restore etcd or reinstall the node` | A bootstrapped control plane whose etcd data is gone, as after VAR was lost |

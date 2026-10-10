@@ -78,7 +78,7 @@ Every option of a cluster lives under `chalkos`. The
 | `chalkos.nodes` | Every node by name, with its role, platform and own settings |
 | `chalkos.platforms` | The kinds of machine, each with the NixOS modules its images carry |
 | `chalkos.installer` | The [installer](../reference/glossary.md#installer)'s own NixOS modules and the installer image |
-| `chalkos.secureBoot` | The certificate of the [Secure Boot](../reference/glossary.md#secure-boot) signer whose signature chalkctl requires on images |
+| `chalkos.secureBoot` | The certificate of the [Secure Boot](../reference/glossary.md#secure-boot) signer: `chalkctl install` and `chalkctl upgrade` refuse an image whose UKI or boot loader it did not sign |
 | `chalkos.time` | The time servers every node uses |
 | `chalkos.cni` | The pod network: flannel or none, and the CNI plugins the images ship |
 | `chalkos.manifest` | The generated manifest, read-only |
@@ -152,7 +152,7 @@ A [node](../reference/glossary.md#node) is a machine of the cluster under
 | [`network`](../reference/options.md#chalkosnodesnetwork) | none | systemd-networkd networks, netdevs and links, in the shape of NixOS's `systemd.network` |
 | [`labels`](../reference/options.md#chalkosnodeslabels), [`taints`](../reference/options.md#chalkosnodestaints) | none | The Kubernetes Node's labels and taints |
 | [`storage`](../reference/options.md#chalkosnodesstoragesystemdisk) | the role's | The system disk, [VAR](../reference/glossary.md#var), further volumes and encryption |
-| [`kubernetes.nodeIPs`](../reference/options.md#chalkosnodeskubernetesnodeips) | `kubernetes.nodeIP`, else the first static address of each family | The addresses the kubelet registers and a [control plane](../reference/glossary.md#control-plane) advertises |
+| [`kubernetes.nodeIPs`](../reference/options.md#chalkosnodeskubernetesnodeips) | `kubernetes.nodeIP`, else the first static address of each family; none when the node's [`kubernetes.validSubnets`](../reference/options.md#chalkosnodeskubernetesvalidsubnets) or the cluster's [`kubernetes.nodeIP.validSubnets`](../reference/options.md#chalkosclusterkubernetesnodeipvalidsubnets) are set, and the node picks its addresses at boot | The addresses the kubelet registers and a [control plane](../reference/glossary.md#control-plane) advertises |
 | [`time.servers`](../reference/options.md#chalkosnodestimeservers) | the cluster's | Time servers that replace the cluster's |
 
 A node's name is its name in Kubernetes too, which its kubelet certificate carries. Changing a
@@ -213,7 +213,8 @@ role or platform.
 
 The manifest is the JSON document layer 1 generates at `chalkos.<cluster>.manifest`. It is how Go
 code reads what Nix declared: chalkctl evaluates it with `nix eval` and learns nothing about the
-cluster from anywhere else. In the directory of the
+cluster from anywhere else, except when it runs with a client file and finds no `flake.nix`: it
+then takes the node names and addresses from the client file. In the directory of the
 [homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab):
 
 ```console
@@ -365,8 +366,10 @@ The three parts reach the node by different paths:
 - The role module runs a unit that reads the value as a credential, and chalkd restarts it when
   the value changes.
 
-A namespace must not collide with the names chalkos uses inside images: `node`, `disk`, `role`
-and `nodes` are taken.
+A namespace must not collide with a name chalkos declares under `chalkos`. In the cluster
+definition those are `cluster`, `cni`, `installer`, `manifest`, `nodes`, `platforms`, `roles`,
+`secureBoot`, `time` and `warnings`; inside images `debug`, `disk`, `kernel`, `node`, `platform`,
+`role` and `upgrade` are taken too.
 
 ## Where does the OS CA come from?
 

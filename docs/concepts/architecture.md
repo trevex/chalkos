@@ -70,18 +70,22 @@ What Nix decides at build time and what reaches a node at runtime:
 | Partition sizes of the system region | Time servers |
 | Boot tries and health timeout | Values of [extensions](../reference/glossary.md#extension) |
 
-The split keeps one image per role and platform, so a cluster of fifty [workers](../reference/glossary.md#worker) builds and signs
-one worker image. A change in the left column is an [upgrade](upgrades.md); a change in the right
-column is delivered with [`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md)
-and needs no reboot.
+The split keeps one image per role and platform, so a cluster of fifty
+[workers](../reference/glossary.md#worker) builds and signs one worker image. A change in the left
+column is an [upgrade](upgrades.md); a change in the right column is delivered with
+[`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md) and needs no reboot. A
+storage change that would destroy data, such as a volume moved to another disk, is refused there
+and needs [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md).
 
 ## What runs on the operator's machine?
 
 chalkctl reads the cluster from the flake with `nix eval` of `chalkos.<cluster>.manifest`, or from
 a file with `--manifest`. It is the only inventory chalkctl has: node names, roles, platforms and
-addresses all come from the cluster definition. When a command needs an image, chalkctl builds
-it with `nix build` of `chalkos.<cluster>.roles.<role>.images.<platform>`, or takes one given with
-`--image`.
+addresses all come from the cluster definition. The one exception is a command run with a client
+file, without `--manifest` or `--cluster`, where the flake directory (`--flake`, the current
+directory by default) holds no `flake.nix`: chalkctl then takes the node names and addresses
+from the client file. When a command needs an image, chalkctl builds it with `nix build` of
+`chalkos.<cluster>.roles.<role>.images.<platform>`, or takes one given with `--image`.
 
 chalkctl authenticates in one of two ways:
 
@@ -142,8 +146,8 @@ installed, chalkd serves a self-signed certificate and prints its SHA-256 finger
 node's addresses on the console:
 
 ```text
-maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
-addresses <addresses>; certificate fingerprint <fingerprint>
+chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
+chalkd: addresses <addresses>; certificate fingerprint <fingerprint>
 ```
 
 It accepts only reads (node information, disks and logs), a reboot and an install. An image built
@@ -163,11 +167,13 @@ new install.
 
 ## How do chalkctl and chalkd talk?
 
-They use the [node API](../reference/api.md): Connect RPC over HTTPS with TLS 1.3 on TCP port
-50000, with a client certificate on every call. chalkd reads the client's role from its
-certificate's Organization and checks it for every request against the OS CAs it trusts at that
-moment, so a client whose CA was rotated out loses access on its next request, not when its
-connection closes. [Security model](security.md) explains the roles and what each may call.
+They use the [node API](../reference/api.md): Connect RPC over HTTPS with TLS 1.3 on TCP port 50000,
+with a client certificate on every call. chalkd reads the client's role from its certificate's
+Organization and checks it for every request against the OS CAs it trusts at that moment,
+so a client whose CA was rotated out loses access on its next request, not when its connection
+closes. The one exception is maintenance mode on an image built without an OS CA: chalkd checks no
+certificate there and treats every client as admin. [Security model](security.md) explains the roles
+and what each may call.
 
 ## How does a machine become a node?
 
@@ -196,14 +202,14 @@ chalkctl install <node> --fingerprint=<fingerprint>
 
 `<node>` is the node's name in the cluster definition and `<fingerprint>` the one on its
 console. `--insecure` accepts any certificate instead and prints the fingerprint chalkctl saw, to
-compare with the console afterwards. Either way, the secrets travel over a second connection
-pinned to that fingerprint.
+compare with the console afterwards; the secrets then travel over a second connection pinned to
+that fingerprint. With `--fingerprint` the first connection is pinned already and carries them.
 
 On a node that runs its role image, the install happens in place: chalkctl sends no image. chalkd
-recreates STATE if its encryption differs from the node's storage settings, opens it, creates VAR
-and the volumes, enrols the second keyslot of every encrypted volume, writes the identity and
-certificates, gives the [ESP](../reference/glossary.md#esp) a random partition UUID and writes
-the `installed` marker.
+recreates STATE if its encryption differs from the node's storage settings, opens it, creates
+VAR and the volumes, enrols the second keyslot of every encrypted volume unless the fallback is
+`none`, writes the identity and certificates, gives the [ESP](../reference/glossary.md#esp) a random
+partition UUID and writes the `installed` marker.
 
 On a node that runs the installer, chalkctl also sends the role image of the node's platform, in
 the same parts an upgrade sends, plus the boot loader. The sequence shows what the installer does
