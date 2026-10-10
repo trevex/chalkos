@@ -134,7 +134,7 @@ func (r Ref) String() string {
 			parts = append(parts, fmt.Sprintf("%s %q", f.key, f.value))
 		}
 	}
-	return "{" + strings.Join(parts, ", ") + "}"
+	return strings.Join(parts, ", ")
 }
 
 // ReadSection reads a recorded storage section. A missing file is returned as an error that

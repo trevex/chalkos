@@ -154,9 +154,15 @@ func TestVolumeOfDefinition(t *testing.T) {
 }
 
 func TestRefString(t *testing.T) {
-	got := Ref{Selector: Selector{Model: "Samsung*", Type: "nvme"}}.String()
-	if !strings.Contains(got, `model "Samsung*"`) || !strings.Contains(got, `type "nvme"`) {
-		t.Errorf("String() = %s", got)
+	for ref, want := range map[Ref]string{
+		{Path: "/dev/sda"}:                                     "/dev/sda",
+		{Selector: Selector{Serial: "S1"}}:                     `serial "S1"`,
+		{Selector: Selector{Model: "Samsung*", Type: "nvme"}}:  `model "Samsung*", type "nvme"`,
+		{Selector: Selector{Model: "Samsung*", Size: ">= 1T"}}: `model "Samsung*", size ">= 1T"`,
+	} {
+		if got := ref.String(); got != want {
+			t.Errorf("String() = %s, want %s", got, want)
+		}
 	}
 }
 

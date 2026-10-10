@@ -539,7 +539,7 @@ func TestStatus(t *testing.T) {
 	  },
 	  "fallback": "recovery-key", "encryption": "tpm2"}`)
 	write(t, filepath.Join(s.Paths.StateDir, "storage", "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "p", "size": 1, "type": "hdd"}, "partitions": {"var": "a"}}}}`)
-	write(t, s.Paths.StorageStatus, `{"installed": true, "disks": {"system": {"device": "/dev/disk/chalk-boot-disk"}, "extra": {"error": "no disk matches {serial \"chalk-extra\"}"}}}`)
+	write(t, s.Paths.StorageStatus, `{"installed": true, "disks": {"system": {"device": "/dev/disk/chalk-boot-disk"}, "extra": {"error": "no disk matches serial \"chalk-extra\""}}}`)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	r.rules = []rule{{prefix: "systemctl list-units --state=failed", out: "systemd-cryptsetup@extra.service loaded failed failed Unlock chalkos volume extra\nsrv-extra.mount loaded failed failed chalkos volume extra\n"}}
 
