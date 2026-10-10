@@ -105,8 +105,9 @@ func Supervise(ctx context.Context, dir string, log io.Writer) error {
 		}
 		vm.Stop()
 		delete(vms, vm.Config.Name)
-		os.Remove(ready)
+		// Logged first, so whoever finds the lab not ready finds the reason in the log.
 		fmt.Fprintf(log, "%s the VM of %s exited; chalklab start starts it again\n", time.Now().Format(time.RFC3339), vm.Config.Name)
+		os.Remove(ready)
 	}
 	for _, n := range l.Nodes {
 		if err := startVM(n); err != nil {
