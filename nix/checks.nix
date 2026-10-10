@@ -689,11 +689,13 @@ in
       '';
 
   # The lab template: its flake gives the cluster, which runs every node on kvm with the one MAC
-  # address chalklab connects to the lab network, and its kvm images build. Its secrets.pub.json,
-  # which chalkctl gen secrets writes, is the test secrets'.
+  # address chalklab connects to the lab network, and its kvm images build; its dev shell brings
+  # chalklab, chalkctl and kubectl. Its secrets.pub.json, which chalkctl gen secrets writes, is the
+  # test secrets'.
   template-lab =
     let
       template = (import ../templates/lab/flake.nix).outputs { chalkos = self; };
+      shell = template.devShells.${pkgs.stdenv.hostPlatform.system}.default;
       c = self.lib.mkCluster {
         modules = [
           ../templates/lab/cluster.nix
@@ -708,6 +710,12 @@ in
       ) c.manifest.nodes;
     in
     assert template.chalkos.lab.cluster.name == "lab";
+    assert lib.all (p: lib.elem p shell.nativeBuildInputs) [
+      chalkPkgs.chalklab
+      chalkPkgs.chalkctl
+      pkgs.kubectl
+    ];
+    assert lib.isString shell.drvPath;
     assert lib.all (n: n.platform == "kvm") (lib.attrValues c.manifest.nodes);
     assert lib.all (m: lib.length (lib.filter (x: x != null) m) == 1) (lib.attrValues macs);
     pkgs.runCommand "chalkos-template-lab" {

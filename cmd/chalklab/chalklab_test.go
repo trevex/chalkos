@@ -143,6 +143,7 @@ func TestCreateKeys(t *testing.T) {
 // TestCreateLeavesNothingWhenItFails refuses a lab that exists, and removes what a failed create
 // made before anything ran.
 func TestCreateLeavesNothingWhenItFails(t *testing.T) {
+	fakeKVM(t)
 	// Short, as the lab's socket paths must be.
 	state, err := os.MkdirTemp("", "cl")
 	if err != nil {
@@ -309,5 +310,91 @@ func TestStartRefusesARunningLab(t *testing.T) {
 	}
 	if err := a.run(context.Background(), []string{"start", "--cluster", "other"}); err == nil || !strings.Contains(err.Error(), "chalklab create") {
 		t.Errorf("start of no lab = %v, want chalklab create named", err)
+	}
+}
+
+// fakeKVM stands in for /dev/kvm with a file the test may open.
+func fakeKVM(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kvm")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := kvmDevice
+	kvmDevice = path
+	t.Cleanup(func() { kvmDevice = old })
+}
+
+// TestCreateNeedsKVM refuses to run a lab without access to /dev/kvm, before anything is built.
+func TestCreateNeedsKVM(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("CHALKLAB_OVMF_CODE", "/fw/CODE.fd")
+	t.Setenv("CHALKLAB_OVMF_VARS", "/fw/VARS.fd")
+	fakeKVM(t)
+	missing := filepath.Join(t.TempDir(), "kvm")
+	kvmDevice = missing
+	a, _ := testApp()
+	err := a.run(context.Background(), []string{"create", "--manifest", "/nonexistent.json"})
+	if err == nil || !strings.Contains(err.Error(), missing) || !strings.Contains(err.Error(), "KVM") {
+		t.Errorf("create without KVM = %v, want %s named", err, missing)
+	}
+	if os.Geteuid() != 0 {
+		if err := os.WriteFile(missing, nil, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.run(context.Background(), []string{"create", "--manifest", "/nonexistent.json"}); err == nil || !strings.Contains(err.Error(), "kvm group") {
+			t.Errorf("create without access to KVM = %v, want the kvm group named", err)
+		}
+	}
+}
+
+// TestSignIntoAnExistingDirectory copies an image into a directory that exists, again and again.
+func TestSignIntoAnExistingDirectory(t *testing.T) {
+	writeLab(t)
+	img := t.TempDir()
+	for name, data := range map[string]string{"chalkos.raw": "raw", "repart-output.json": "[]", "repart.d/10-esp.conf": "[Partition]\n"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(img, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(img, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := t.TempDir()
+	a, _ := testApp()
+	for range 2 {
+		// The test's image has no ESP to sign.
+		err := a.run(context.Background(), []string{"sign", img, "--out", out})
+		if err == nil || strings.Contains(err.Error(), "exists") {
+			t.Errorf("sign into %s = %v, want only the ESP missing", out, err)
+		}
+		for _, name := range []string{"chalkos.raw", "repart-output.json", "repart.d/10-esp.conf"} {
+			if _, err := os.Stat(filepath.Join(out, name)); err != nil {
+				t.Errorf("the copy: %v", err)
+			}
+		}
+	}
+}
+
+// TestStatusNamesTheLabsFiles names the kubeconfig, the client file and the db key and
+// certificate an upgrade's images are signed with.
+func TestStatusNamesTheLabsFiles(t *testing.T) {
+	dir := writeLab(t)
+	for _, name := range []string{kubeconfigFile, clientFile, "keys/db.key", "keys/db.crt"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, out := testApp()
+	if err := a.run(context.Background(), []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"kubeconfig: " + dir + "/kubeconfig", "client file: " + dir + "/chalkctl.json", "Secure Boot db key: " + dir + "/keys/db.key", "Secure Boot db certificate: " + dir + "/keys/db.crt"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status = %q, want %q", out, want)
+		}
 	}
 }

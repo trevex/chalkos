@@ -111,7 +111,10 @@ func (a *app) status(args []string) error {
 		}
 		fmt.Fprintf(a.stdout, "%s %s not run; chalklab start starts the lab again\n", joinNames(stopped), verb)
 	}
-	for _, f := range []struct{ what, file string }{{"kubeconfig", kubeconfigFile}, {"client file", clientFile}} {
+	for _, f := range []struct{ what, file string }{
+		{"kubeconfig", kubeconfigFile}, {"client file", clientFile},
+		{"Secure Boot db key", filepath.Join("keys", "db.key")}, {"Secure Boot db certificate", filepath.Join("keys", "db.crt")},
+	} {
 		if _, err := os.Stat(filepath.Join(dir, f.file)); err == nil {
 			fmt.Fprintf(a.stdout, "%s: %s\n", f.what, filepath.Join(dir, f.file))
 		}
@@ -166,7 +169,7 @@ func (a *app) sign(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("sign", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
 	cluster := fs.String("cluster", "", "cluster whose lab's keys to sign with (default the only lab)")
-	out := fs.String("out", "", "directory to copy the image to and sign there, as for an image in the Nix store, which cannot be signed in place")
+	out := fs.String("out", "", "directory to copy the image to, made when missing, and sign there, as for an image in the Nix store, which cannot be signed in place")
 	pos, err := parse(fs, args)
 	if err != nil || len(pos) != 1 {
 		return errors.Join(err, errors.New("usage: chalklab sign <image> [--out DIR] [--cluster NAME]"))
@@ -183,7 +186,7 @@ func (a *app) sign(ctx context.Context, args []string) error {
 		return err
 	}
 	if *out != "" {
-		if err := os.Mkdir(*out, 0o755); err != nil {
+		if err := os.MkdirAll(*out, 0o755); err != nil {
 			return err
 		}
 		copied := filepath.Join(*out, filepath.Base(raw))
@@ -222,7 +225,7 @@ func copyDir(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Mkdir(dst, 0o755); err != nil {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
 	}
 	for _, e := range entries {

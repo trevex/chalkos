@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net"
 	"os"
@@ -77,6 +78,9 @@ func (a *app) create(ctx context.Context, args []string) (err error) {
 	code, vars := os.Getenv("CHALKLAB_OVMF_CODE"), os.Getenv("CHALKLAB_OVMF_VARS")
 	if code == "" || vars == "" {
 		return errors.New("CHALKLAB_OVMF_CODE and CHALKLAB_OVMF_VARS name no firmware; run chalklab from its package, which sets them")
+	}
+	if err := checkKVM(); err != nil {
+		return err
 	}
 	images := map[string]string{}
 	for _, img := range f.images {
@@ -592,4 +596,22 @@ func forwardedClientFile(path string, l *lab.Lab) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// kvmDevice is the device the lab's VMs run on.
+var kvmDevice = "/dev/kvm"
+
+// checkKVM fails unless this user may run VMs on KVM: without it QEMU would emulate the CPU, far
+// too slowly for a cluster.
+func checkKVM() error {
+	f, err := os.OpenFile(kvmDevice, os.O_RDWR, 0)
+	switch {
+	case err == nil:
+		return f.Close()
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("%s does not exist: chalklab runs its VMs on KVM, which needs an x86-64 machine with virtualization enabled in its firmware and the kvm module loaded", kvmDevice)
+	case errors.Is(err, fs.ErrPermission):
+		return fmt.Errorf("you may not open %s: chalklab runs its VMs on KVM; join the kvm group, as users.users.<you>.extraGroups = [ \"kvm\" ] does on NixOS, and log in again", kvmDevice)
+	}
+	return fmt.Errorf("open %s, which chalklab runs its VMs on (KVM): %w", kvmDevice, err)
 }
