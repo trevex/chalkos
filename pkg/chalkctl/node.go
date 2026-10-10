@@ -263,8 +263,10 @@ type installFlags struct {
 func (a *app) installCommand() *cobra.Command {
 	var f installFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "install <node>",
-		Short: "Install a node in maintenance mode",
+		Use:     "install <node>",
+		Short:   "Install a node in maintenance mode",
+		Long:    installLong,
+		Example: installExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.install(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.register(fs)
@@ -458,8 +460,10 @@ type nodePinFlags struct {
 func (a *app) disksCommand() *cobra.Command {
 	var f nodePinFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "disks [<node>]",
-		Short: "List a node's disks",
+		Use:     "disks [<node>]",
+		Short:   "List a node's disks",
+		Long:    disksLong,
+		Example: disksExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f.node, f.pin, pos) })
 	f.node.registerClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
@@ -538,8 +542,10 @@ type applyIdentityFlags struct {
 func (a *app) applyIdentityCommand() *cobra.Command {
 	var f applyIdentityFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "apply-identity <node>",
-		Short: "Deliver a node's identity from the cluster definition",
+		Use:     "apply-identity <node>",
+		Short:   "Deliver a node's identity from the cluster definition",
+		Long:    applyIdentityLong,
+		Example: applyIdentityExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyIdentity(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.register(fs)
@@ -601,8 +607,10 @@ func (a *app) resetVolumeCommand() *cobra.Command {
 	var n nodeCommand
 	var passwordFile string
 	cmd := a.command(&cobra.Command{
-		Use:   "reset <node> <volume>",
-		Short: "Wipe and recreate one volume",
+		Use:     "reset <node> <volume>",
+		Short:   "Wipe and recreate one volume",
+		Long:    resetVolumeLong,
+		Example: resetVolumeExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.resetVolume(ctx, n, passwordFile, pos) })
 	n.registerClient(cmd.Flags())
 	registerPasswordFile(cmd.Flags(), &passwordFile)
@@ -642,8 +650,10 @@ func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile strin
 func (a *app) statusCommand() *cobra.Command {
 	var n nodeCommand
 	cmd := a.command(&cobra.Command{
-		Use:   "status <node>",
-		Short: "Show an installed node's status",
+		Use:     "status <node>",
+		Short:   "Show an installed node's status",
+		Long:    statusLong,
+		Example: statusExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.status(ctx, n, pos) })
 	n.registerClient(cmd.Flags())
 	return cmd
@@ -823,8 +833,10 @@ type logsFlags struct {
 func (a *app) logsCommand() *cobra.Command {
 	var f logsFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "logs <node>",
-		Short: "Show a node's journal",
+		Use:     "logs <node>",
+		Short:   "Show a node's journal",
+		Long:    logsLong,
+		Example: logsExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.logs(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.registerClient(fs)
@@ -868,8 +880,10 @@ func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
 func (a *app) rebootCommand() *cobra.Command {
 	var f nodePinFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "reboot <node>",
-		Short: "Reboot a node",
+		Use:     "reboot <node>",
+		Short:   "Reboot a node",
+		Long:    rebootLong,
+		Example: rebootExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.reboot(ctx, f.node, f.pin, pos) })
 	f.node.registerClient(cmd.Flags())
 	f.pin.register(cmd.Flags())

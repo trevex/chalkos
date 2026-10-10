@@ -203,8 +203,10 @@ func (a *app) recoveryKeyCommand() *cobra.Command {
 	var cf clusterFlags
 	var sf secretFlags
 	cmd := a.command(&cobra.Command{
-		Use:   "recovery-key <node>",
-		Short: "Print a node's recovery key",
+		Use:     "recovery-key <node>",
+		Short:   "Print a node's recovery key",
+		Long:    recoveryKeyLong,
+		Example: recoveryKeyExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.recoveryKey(ctx, cf, sf, pos) })
 	cf.register(cmd.Flags())
 	sf.register(cmd.Flags())
