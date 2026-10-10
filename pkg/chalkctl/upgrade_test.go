@@ -696,6 +696,9 @@ func TestUpgradeDrainsAsAsked(t *testing.T) {
 	if !l.emptyDir["w1"] {
 		t.Error("w1 was drained keeping emptyDir data")
 	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: cordoned, evicted 1 pod, kept 1\n") {
+		t.Errorf("output:\n%s", out)
+	}
 	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: keeps pods without a controller: default/bare") || !strings.Contains(out, "tolerations") {
 		t.Errorf("output:\n%s", out)
 	}

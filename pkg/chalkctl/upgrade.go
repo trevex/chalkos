@@ -576,7 +576,11 @@ func (r *upgradeRun) drain(ctx context.Context, n *upgradeNode) error {
 	if !resp.Marked {
 		cordon = "was cordoned before and stays so"
 	}
-	r.say("%s: %s, evicted %d pods, kept %d", n.name, cordon, len(resp.Evicted), len(resp.Kept)+len(resp.Unmanaged))
+	pods := "pods"
+	if len(resp.Evicted) == 1 {
+		pods = "pod"
+	}
+	r.say("%s: %s, evicted %d %s, kept %d", n.name, cordon, len(resp.Evicted), pods, len(resp.Kept)+len(resp.Unmanaged))
 	if len(resp.Unmanaged) > 0 {
 		r.say("%s: keeps pods without a controller: %s; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow", n.name, strings.Join(resp.Unmanaged, ", "))
 	}
