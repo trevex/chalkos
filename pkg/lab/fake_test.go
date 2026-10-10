@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // The test binary stands in for QEMU, swtpm and vde_switch when it runs under their names, as
@@ -19,10 +21,13 @@ import (
 func TestMain(m *testing.M) {
 	switch filepath.Base(os.Args[0]) {
 	case "qemu-system-x86_64":
+		exitWithTest()
 		fakeQEMU(os.Args[1:])
 	case "swtpm":
+		exitWithTest()
 		fakeSWTPM(os.Args[1:])
 	case "vde_switch":
+		exitWithTest()
 		fakeSwitch(os.Args[1:])
 	case "deny-io-uring":
 		// Deny io_uring, then start a program as chalklab starts QEMU.
@@ -39,17 +44,30 @@ func TestMain(m *testing.M) {
 	}
 }
 
+// exitWithTest ends a fake tool once the test binary that started it is gone, as when go test is
+// interrupted or killed: no cleanup of the test stops the tool then.
+func exitWithTest() {
+	parent := os.Getppid()
+	go func() {
+		for os.Getppid() == parent {
+			time.Sleep(200 * time.Millisecond)
+		}
+		os.Exit(1)
+	}()
+}
+
 // fakeFingerprint is what fake QEMU's chalkd prints as its certificate's fingerprint.
 var fakeFingerprint = strings.Repeat("ab", 32)
 
-// fakeTools puts the fake QEMU, swtpm and vde_switch first on the PATH.
+// fakeTools puts the fake QEMU, swtpm and vde_switch first on the PATH, and fails the test if one
+// of them outlives it.
 func fakeTools(t *testing.T) {
 	t.Helper()
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := t.TempDir()
+	bin := noProcessLeft(t)
 	for _, name := range []string{"qemu-system-x86_64", "swtpm", "vde_switch"} {
 		if err := os.Symlink(self, filepath.Join(bin, name)); err != nil {
 			t.Fatal(err)
@@ -164,4 +182,27 @@ func fakeSwitch(args []string) {
 			fakeFail(err)
 		}
 	}
+}
+
+// noProcessLeft returns a new temporary directory of the test and fails the test if a process
+// that names one of its temporary directories on its command line runs when the test ends, after
+// the cleanups registered later stopped what they started. It kills such a process, so no VM,
+// TPM or switch of a test runs on after it.
+func noProcessLeft(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	root := filepath.Dir(dir)
+	t.Cleanup(func() {
+		procs, _ := os.ReadDir("/proc")
+		for _, p := range procs {
+			pid, err := strconv.Atoi(p.Name())
+			if err != nil || pid == os.Getpid() || !namesDir(pid, root) {
+				continue
+			}
+			cmdline, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+			syscall.Kill(pid, syscall.SIGKILL)
+			t.Errorf("process %d runs on after the test: %s", pid, strings.ReplaceAll(strings.TrimRight(string(cmdline), "\x00"), "\x00", " "))
+		}
+	})
+	return dir
 }

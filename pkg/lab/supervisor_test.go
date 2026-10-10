@@ -44,6 +44,20 @@ func testLab(t *testing.T) (string, *Lab) {
 	if err := l.CheckSockets(dir); err != nil {
 		t.Fatal(err)
 	}
+	// Whatever of the lab a test leaves running, as when it fails halfway, stops once the
+	// supervisors the test runs did.
+	t.Cleanup(func() {
+		// StopLab would send this process the SIGTERM a supervisor stops on.
+		if pid, running, _ := Supervisor(dir); running && pid == os.Getpid() {
+			t.Error("the test's supervisor runs on")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := StopLab(ctx, dir); err != nil {
+			t.Errorf("stop the lab: %v", err)
+		}
+	})
 	return dir, l
 }
 
@@ -206,13 +220,7 @@ func TestStopLabWithoutSupervisor(t *testing.T) {
 // TestStopLabStopsTheSupervisor asks a running supervisor to stop the lab.
 func TestStopLabStopsTheSupervisor(t *testing.T) {
 	dir, l := testLab(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- Supervise(ctx, dir, io.Discard) }()
-	for !Ready(dir) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	stop := supervise(t, dir, io.Discard)
 	// The supervisor is this process, which takes the SIGTERM StopLab sends as chalklab does.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM)
@@ -221,8 +229,7 @@ func TestStopLabStopsTheSupervisor(t *testing.T) {
 	go func() {
 		defer close(stopped)
 		<-sig
-		cancel()
-		<-done
+		stop()
 	}()
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stopCancel()

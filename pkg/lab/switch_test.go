@@ -15,11 +15,12 @@ func TestSwitchStartsAndStops(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	dir := filepath.Join(t.TempDir(), "switch")
+	dir := filepath.Join(noProcessLeft(t), "switch")
 	s, err := StartSwitch(ctx, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(s.Stop)
 	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
 		t.Errorf("socket directory: %v, %v", info, err)
 	}

@@ -20,7 +20,7 @@ func requireTools(t *testing.T, tools ...string) {
 
 func TestSWTPMStartsAndStops(t *testing.T) {
 	requireTools(t, "swtpm")
-	dir := t.TempDir()
+	dir := noProcessLeft(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -28,6 +28,7 @@ func TestSWTPMStartsAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(tpm.Stop)
 	if _, err := os.Stat(tpm.Socket); err != nil {
 		t.Fatalf("control socket missing: %v", err)
 	}
