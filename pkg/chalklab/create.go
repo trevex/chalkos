@@ -1,4 +1,4 @@
-package main
+package chalklab
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -20,6 +19,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/image"
@@ -44,6 +45,7 @@ type listFlag []string
 
 func (l *listFlag) String() string     { return strings.Join(*l, ",") }
 func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }
+func (l *listFlag) Type() string       { return "strings" }
 
 type createFlags struct {
 	flake, cluster, manifest, secrets string
@@ -53,10 +55,13 @@ type createFlags struct {
 	diskSize                          string
 }
 
-func (a *app) create(ctx context.Context, args []string) (err error) {
-	fs := flag.NewFlagSet("create", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
+func (a *app) createCommand() *cobra.Command {
 	var f createFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "create",
+		Short: "Create a lab of the cluster's nodes, install them and bootstrap the cluster",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.create(ctx, f, pos) })
+	fs := cmd.Flags()
 	fs.StringVar(&f.flake, "flake", ".", "directory of the flake that defines the cluster")
 	fs.StringVar(&f.cluster, "cluster", "", "cluster to use when the flake defines several")
 	fs.StringVar(&f.manifest, "manifest", "", "read the cluster's manifest from this file instead of evaluating the flake; every role needs --image then")
@@ -68,10 +73,10 @@ func (a *app) create(ctx context.Context, args []string) (err error) {
 	fs.IntVar(&f.memory, "memory", 2048, "memory of the other VMs, in MiB")
 	fs.StringVar(&f.diskSize, "disk-size", "16G", "size of each VM's sparse disk")
 	fs.Var(&f.guestForwards, "guest-forward", "GUEST=HOST: make a host address, such as a local registry, reachable at a guest address of the VMs' user-mode network; may be repeated")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+	return cmd
+}
+
+func (a *app) create(ctx context.Context, f createFlags, pos []string) (err error) {
 	if len(pos) != 0 || f.cpus < 1 || f.controlPlaneMemory < 1 || f.memory < 1 {
 		return errors.New("usage: chalklab create [--flake .] [--cluster NAME] [--nodes N,...] [--cpus 2] [--controlplane-memory 3072] [--memory 2048] [--disk-size 16G]")
 	}

@@ -1,9 +1,8 @@
-package main
+package chalklab
 
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/lab"
 )
@@ -62,14 +63,21 @@ func labDir(cluster string) (string, *lab.Lab, error) {
 	return dir, l, err
 }
 
-func (a *app) status(args []string) error {
-	fs := flag.NewFlagSet("status", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	cluster := fs.String("cluster", "", "cluster whose lab to show (default the only lab)")
-	if pos, err := parse(fs, args); err != nil || len(pos) != 0 {
-		return errors.Join(err, errors.New("usage: chalklab status [--cluster NAME]"))
+func (a *app) statusCommand() *cobra.Command {
+	var cluster string
+	cmd := a.command(&cobra.Command{
+		Use:   "status",
+		Short: "Show the lab's VMs, ports and files",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.status(cluster, pos) })
+	registerCluster(cmd, &cluster, "cluster whose lab to show (default the only lab)")
+	return cmd
+}
+
+func (a *app) status(cluster string, pos []string) error {
+	if len(pos) != 0 {
+		return errors.New("usage: chalklab status [--cluster NAME]")
 	}
-	dir, l, err := labDir(*cluster)
+	dir, l, err := labDir(cluster)
 	if err != nil {
 		return err
 	}
@@ -123,16 +131,23 @@ func (a *app) status(args []string) error {
 }
 
 // console prints a node's console log and what the node writes to it, until interrupted.
-func (a *app) console(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("console", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	cluster := fs.String("cluster", "", "cluster of the node's lab (default the only lab)")
-	follow := fs.Bool("f", true, "keep printing what the node writes")
-	pos, err := parse(fs, args)
-	if err != nil || len(pos) != 1 {
-		return errors.Join(err, errors.New("usage: chalklab console <node> [--cluster NAME] [-f=false]"))
+func (a *app) consoleCommand() *cobra.Command {
+	var cluster string
+	var follow bool
+	cmd := a.command(&cobra.Command{
+		Use:   "console <node>",
+		Short: "Follow a node's serial console",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.console(ctx, cluster, follow, pos) })
+	registerCluster(cmd, &cluster, "cluster of the node's lab (default the only lab)")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", true, "keep printing what the node writes")
+	return cmd
+}
+
+func (a *app) console(ctx context.Context, cluster string, follow bool, pos []string) error {
+	if len(pos) != 1 {
+		return errors.New("usage: chalklab console <node> [--cluster NAME] [-f=false]")
 	}
-	dir, l, err := labDir(*cluster)
+	dir, l, err := labDir(cluster)
 	if err != nil {
 		return err
 	}
@@ -152,7 +167,7 @@ func (a *app) console(ctx context.Context, args []string) error {
 		if _, err := io.Copy(a.stdout, f); err != nil {
 			return err
 		}
-		if !*follow {
+		if !follow {
 			return nil
 		}
 		select {
@@ -165,16 +180,22 @@ func (a *app) console(ctx context.Context, args []string) error {
 
 // sign signs an image with the lab's db key, in place or as a copy, so the lab's firmware boots
 // it, as an upgrade's image.
-func (a *app) sign(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("sign", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	cluster := fs.String("cluster", "", "cluster whose lab's keys to sign with (default the only lab)")
-	out := fs.String("out", "", "directory to copy the image to, made when missing, and sign there, as for an image in the Nix store, which cannot be signed in place")
-	pos, err := parse(fs, args)
-	if err != nil || len(pos) != 1 {
-		return errors.Join(err, errors.New("usage: chalklab sign <image> [--out DIR] [--cluster NAME]"))
+func (a *app) signCommand() *cobra.Command {
+	var cluster, out string
+	cmd := a.command(&cobra.Command{
+		Use:   "sign <image>",
+		Short: "Sign an image with the lab's Secure Boot keys, for upgrades",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.sign(ctx, cluster, out, pos) })
+	registerCluster(cmd, &cluster, "cluster whose lab's keys to sign with (default the only lab)")
+	cmd.Flags().StringVar(&out, "out", "", "directory to copy the image to, made when missing, and sign there, as for an image in the Nix store, which cannot be signed in place")
+	return cmd
+}
+
+func (a *app) sign(ctx context.Context, cluster, out string, pos []string) error {
+	if len(pos) != 1 {
+		return errors.New("usage: chalklab sign <image> [--out DIR] [--cluster NAME]")
 	}
-	dir, l, err := labDir(*cluster)
+	dir, l, err := labDir(cluster)
 	if err != nil {
 		return err
 	}
@@ -185,11 +206,11 @@ func (a *app) sign(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *out != "" {
-		if err := os.MkdirAll(*out, 0o755); err != nil {
+	if out != "" {
+		if err := os.MkdirAll(out, 0o755); err != nil {
 			return err
 		}
-		copied := filepath.Join(*out, filepath.Base(raw))
+		copied := filepath.Join(out, filepath.Base(raw))
 		if err := lab.CopySparse(ctx, raw, copied); err != nil {
 			return err
 		}
@@ -197,13 +218,13 @@ func (a *app) sign(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(*out, filepath.Base(partitions)), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(out, filepath.Base(partitions)), data, 0o644); err != nil {
 			return err
 		}
-		if err := copyDir(filepath.Join(filepath.Dir(raw), "repart.d"), filepath.Join(*out, "repart.d")); err != nil {
+		if err := copyDir(filepath.Join(filepath.Dir(raw), "repart.d"), filepath.Join(out, "repart.d")); err != nil {
 			return err
 		}
-		raw, partitions = copied, filepath.Join(*out, filepath.Base(partitions))
+		raw, partitions = copied, filepath.Join(out, filepath.Base(partitions))
 	} else if f, err := os.OpenFile(raw, os.O_WRONLY, 0); err != nil {
 		return fmt.Errorf("%w; sign a copy with --out DIR", err)
 	} else {
@@ -241,14 +262,21 @@ func copyDir(src, dst string) error {
 }
 
 // destroy stops the lab and removes its state: disks, firmware variables, TPM state, keys, logs.
-func (a *app) destroy(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("destroy", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	cluster := fs.String("cluster", "", "cluster whose lab to remove (default the only lab)")
-	if pos, err := parse(fs, args); err != nil || len(pos) != 0 {
-		return errors.Join(err, errors.New("usage: chalklab destroy [--cluster NAME]"))
+func (a *app) destroyCommand() *cobra.Command {
+	var cluster string
+	cmd := a.command(&cobra.Command{
+		Use:   "destroy",
+		Short: "Stop the lab and remove its state",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.destroy(ctx, cluster, pos) })
+	registerCluster(cmd, &cluster, "cluster whose lab to remove (default the only lab)")
+	return cmd
+}
+
+func (a *app) destroy(ctx context.Context, cluster string, pos []string) error {
+	if len(pos) != 0 {
+		return errors.New("usage: chalklab destroy [--cluster NAME]")
 	}
-	dir, _, err := labDir(*cluster)
+	dir, _, err := labDir(cluster)
 	if e, ok := errors.AsType[noLabError](err); ok {
 		fmt.Fprintf(a.stdout, "%s; nothing to destroy\n", string(e))
 		return nil
@@ -279,14 +307,21 @@ func joinNames(names []string) string {
 // start starts the VMs of a lab again from its state, with their disks, firmware variables, TPM
 // state and ports: through its supervisor the VMs that exited, or a lab that no supervisor runs,
 // as after a host's reboot or a supervisor that was killed.
-func (a *app) start(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("start", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	cluster := fs.String("cluster", "", "cluster whose lab to start (default the only lab)")
-	if pos, err := parse(fs, args); err != nil || len(pos) != 0 {
-		return errors.Join(err, errors.New("usage: chalklab start [--cluster NAME]"))
+func (a *app) startCommand() *cobra.Command {
+	var cluster string
+	cmd := a.command(&cobra.Command{
+		Use:   "start",
+		Short: "Start a stopped lab, or the VMs of a running lab that stopped",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.start(ctx, cluster, pos) })
+	registerCluster(cmd, &cluster, "cluster whose lab to start (default the only lab)")
+	return cmd
+}
+
+func (a *app) start(ctx context.Context, cluster string, pos []string) error {
+	if len(pos) != 0 {
+		return errors.New("usage: chalklab start [--cluster NAME]")
 	}
-	dir, l, err := labDir(*cluster)
+	dir, l, err := labDir(cluster)
 	if err != nil {
 		return err
 	}
@@ -329,4 +364,9 @@ func (a *app) start(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "the lab of %s runs %s\n", l.Cluster, joinNames(nodeNames(l)))
 	return nil
+}
+
+// registerCluster registers --cluster, which names the lab of a command.
+func registerCluster(cmd *cobra.Command, cluster *string, usage string) {
+	cmd.Flags().StringVar(cluster, "cluster", "", usage)
 }

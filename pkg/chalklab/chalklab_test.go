@@ -1,4 +1,4 @@
-package main
+package chalklab
 
 import (
 	"bytes"
@@ -442,5 +442,43 @@ func TestWaitBootstrapPrintsTheStatus(t *testing.T) {
 	}
 	if want := "cp1: " + line + "\n"; !strings.Contains(out.String(), want) {
 		t.Errorf("output %q, want %q", out, want)
+	}
+}
+
+// run runs chalklab's command tree with args, with a's streams, and returns the error of the
+// command that ran.
+func (a *app) run(ctx context.Context, args []string) error {
+	root := newCommand(a)
+	root.SetArgs(args)
+	root.SetIn(a.stdin)
+	root.SetOut(a.stdout)
+	root.SetErr(a.stderr)
+	return root.ExecuteContext(ctx)
+}
+
+func TestExecute(t *testing.T) {
+	for args, want := range map[string]int{"": 2, "bogus": 2, "status --bogus": 1, "status --help": 0, "console": 1} {
+		a, out := testApp()
+		var stderr bytes.Buffer
+		a.stderr = &stderr
+		root := newCommand(a)
+		root.SetArgs(strings.Fields(args))
+		root.SetOut(out)
+		root.SetErr(&stderr)
+		if got := Execute(context.Background(), root); got != want {
+			t.Errorf("chalklab %s exits with %d, want %d:\n%s", args, got, want, stderr.String())
+		}
+		if want == 2 && !strings.Contains(stderr.String(), "Usage:") {
+			t.Errorf("chalklab %s prints no usage:\n%s", args, stderr.String())
+		}
+	}
+}
+
+// The supervisor create starts runs chalklab's hidden supervise command.
+func TestSuperviseIsHidden(t *testing.T) {
+	a, _ := testApp()
+	cmd, _, err := newCommand(a).Find([]string{"supervise", "/tmp/lab"})
+	if err != nil || cmd.Name() != "supervise" || !cmd.Hidden {
+		t.Errorf("supervise = %v, %v; want the hidden supervise command", cmd, err)
 	}
 }
