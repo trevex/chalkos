@@ -29,8 +29,9 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 
 // TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
 // next to a blank disk, installs a node onto that disk from the role image's parts, which chalkctl
-// signs and sends from the host, and checks the node boots from it installed: slot A holding the
-// image, slot B empty, VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.
+// signs and sends from the host, cancels that install while slot A is written and runs it again
+// without --wipe-disk, and checks the node boots from the disk installed: slot A holding the image,
+// slot B empty, VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.
 func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -50,18 +51,24 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 		t.Fatalf("info = %+v, want the installer", info)
 	}
 	keys := os.Getenv("CHALKLAB_SB_KEYS")
-	out, err := chalkctl(t, n, "base", "install", "chalklab-target", "--fingerprint", fingerprint, "--image", os.Getenv("CHALKLAB_IMAGE_DIR"),
-		"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt"))
+	install := []string{"install", "chalklab-target", "--fingerprint", fingerprint, "--image", os.Getenv("CHALKLAB_IMAGE_DIR"),
+		"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt")}
+	// An install cancelled while chalkd writes slot A of the laid-out target continues without
+	// --wipe-disk.
+	interrupted := cancelledInstall(t, n, install)
+	out, err := chalkctl(t, n, "base", install...)
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	// The store data, hash tree, UKI and boot loader, not the whole raw image.
-	m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(out)
-	if m == nil {
-		t.Fatal("chalkctl did not say how many bytes it sends")
-	}
-	if sent, _ := strconv.ParseInt(m[1], 10, 64); sent >= 400<<20 {
-		t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
+	for _, out := range []string{interrupted, out} {
+		// The store data, hash tree, UKI and boot loader, not the whole raw image.
+		m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(out)
+		if m == nil {
+			t.Fatal("chalkctl did not say how many bytes it sends")
+		}
+		if sent, _ := strconv.ParseInt(m[1], 10, 64); sent >= 400<<20 {
+			t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
+		}
 	}
 
 	// The boot entry the installer added makes the VM boot the target.
@@ -84,6 +91,38 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	if out, err := chalkctl(t, n, "base", "status", "chalklab-target"); err != nil || !strings.Contains(out, "(the cluster definition's)") {
 		t.Errorf("status: %v", err)
 	}
+}
+
+// cancelledInstall runs chalkctl with the arguments until chalkd retires slot A of the target, before
+// it writes the store there, then kills it, and waits for chalkd to give the install up. It
+// returns what chalkctl printed.
+func cancelledInstall(t *testing.T, n *node, args []string) string {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := chalkctlContext(ctx, t, n, "base", args...)
+		done <- result{out, err}
+	}()
+	wait, stop := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer stop()
+	if _, err := n.vm.Console.WaitFor(wait, regexp.MustCompile(`retired the slot of partitions 2 and 3`)); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	r := <-done
+	if r.err == nil {
+		t.Fatal("the install completed before it was cancelled")
+	}
+	if _, err := n.vm.Console.WaitFor(wait, regexp.MustCompile(`install failed: `)); err != nil {
+		t.Fatal(err)
+	}
+	return r.out
 }
 
 // TestInstallerISOBoots signs the generic installer ISO as chalkctl sign signs disk images,
