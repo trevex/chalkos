@@ -302,6 +302,28 @@ func TestInstallInPlace(t *testing.T) {
 	}
 }
 
+// TestInstallInPlaceRefusesAnotherPlatform refuses to install a node in place that runs an image
+// of another platform than the cluster definition declares.
+func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
+	ta := newTestApp(t)
+	ta.editManifest(t, func(m *manifest.Manifest) {
+		n := m.Nodes["n1"]
+		n.Platform, n.Identity.Platform = "kvm", "kvm"
+		m.Nodes["n1"] = n
+	})
+	s := maintenanceNode()
+	called := false
+	s.InPlace = func(context.Context, install.Request) error { called = true; return nil }
+	addr := ta.startNode(t, s)
+	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr))
+	if want := "n1 runs an image built for metal, but the cluster definition declares it on kvm; changing a node's platform is a reinstall"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("install = %v, want %q", err, want)
+	}
+	if called {
+		t.Error("installed a node of another platform")
+	}
+}
+
 func TestInstallRefusesWrongFingerprint(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
@@ -362,7 +384,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	}
 }
 
-// TestInstallChecksTheImage refuses images of another cluster or role, and images whose UKI or
+// TestInstallChecksTheImage refuses images of another cluster, role or platform, and images whose UKI or
 // boot loader the cluster's db certificate did not sign, before the installer is sent anything;
 // --sign-key signs both.
 func TestInstallChecksTheImage(t *testing.T) {
@@ -400,6 +422,11 @@ func TestInstallChecksTheImage(t *testing.T) {
 	}{
 		{"another cluster", image("prod", "test"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image is of the cluster prod, not lab"},
 		{"another role", image("lab", "w"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 is a node of the role test; the image is of w"},
+		{"another platform", func() string {
+			dir := testUpgradeImageOfBlocks(t, "lab", "test", "kvm", "0.1.0", 512)
+			writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+			return dir
+		}(), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 runs on metal; the image is built for kvm"},
 		{"an unsigned image", img, nil, "Secure Boot would refuse the image's UKI"},
 		{"an image signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
 	} {
@@ -532,7 +559,7 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "(the cluster definition's)") {
+	if !strings.Contains(ta.stdout.String(), "(the cluster definition's)") || !strings.Contains(ta.stdout.String(), "platform metal (the cluster definition's)") {
 		t.Errorf("status after = %q", ta.stdout)
 	}
 }

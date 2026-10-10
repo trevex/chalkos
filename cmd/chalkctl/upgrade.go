@@ -21,34 +21,42 @@ import (
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
-const upgradeHelp = `usage: chalkctl upgrade --image PATH [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data] [flags]
+const upgradeHelp = `usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data] [flags]
 
-Installs an image on the nodes of its role: control planes one at a time, each only while etcd
-keeps its quorum without it, then workers and nodes without Kubernetes in batches of
---max-unavailable. A node gets the image in its inactive slot, is cordoned and drained within
-its pods' PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found
-healthy and the node is Ready. A node whose image never becomes healthy falls back to the image
-before, and the run stops there, showing what that boot logged; with --retry-failed a node that
-fell back from the image before gets it once more.
+Installs on each node the image of its role and platform: control planes one at a time, each
+only while etcd keeps its quorum without it, then workers and nodes without Kubernetes in batches
+of --max-unavailable. Without --image the nodes, every node of the cluster or those --nodes
+names, are grouped by the role and platform they run, and each group's image is built from the
+cluster definition; with --image the nodes of the image's role and platform get it, and those of
+its role on another platform are skipped and named. A node that runs on another platform than
+the cluster definition declares stops the run before any node is sent anything.
+
+A node gets the image in its inactive slot, is cordoned and drained within its pods'
+PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
+and the node is Ready. A node whose image never becomes healthy falls back to the image before,
+and the run stops there, showing what that boot logged; with --retry-failed a node that fell
+back from the image before gets it once more.
 
 Run again, the command skips nodes that run the image and continues one it stopped at; it
 uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
 one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
-volumes are evicted only with --delete-emptydir-data. An operator client file is enough to run it.
+volumes are evicted only with --delete-emptydir-data. An operator client file is enough to run it
+with --image.
 
 flags:
 `
 
-// upgradeRun upgrades nodes to an image.
+// upgradeRun upgrades nodes to the images of their roles and platforms.
 type upgradeRun struct {
 	a       *app
 	cluster *cluster
 	creds   *credentials
-	image   *diskImage
 	// endpoints are the nodes' chalkd addresses that --endpoint gives.
 	endpoints map[string]string
-	// nodes are the nodes to upgrade, as they were when the run started.
-	nodes map[string]*upgradeNode
+	// nodes are the nodes to upgrade, as they were when the run started, and groups the same
+	// nodes by the image they get.
+	nodes  map[string]*upgradeNode
+	groups []*upgradeGroup
 	// controlPlanes are the cluster's control-plane nodes, which drain and uncordon nodes.
 	controlPlanes           []string
 	allowDowntime, noReboot bool
@@ -61,10 +69,18 @@ type upgradeRun struct {
 }
 
 // upgradeNode is a node to upgrade, by its part in Kubernetes: its kind, and whether it is part
-// of a cluster, so its Node exists.
+// of a cluster, so its Node exists; and the image it gets.
 type upgradeNode struct {
 	name, kind string
 	inCluster  bool
+	image      *diskImage
+}
+
+// upgradeGroup is the nodes of a role on a platform, which get one image.
+type upgradeGroup struct {
+	role, platform string
+	nodes          []string
+	image          *diskImage
 }
 
 func (a *app) upgrade(ctx context.Context, args []string) error {
@@ -81,22 +97,22 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 	config := fs.String("config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, when there is no secrets file)")
 	endpoints := endpointList{}
 	fs.Var(endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address)")
-	imagePath := fs.String("image", "", "role image to install: a raw image with repart-output.json next to it, or the directory nix build produces")
-	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI")
+	imagePath := fs.String("image", "", "image to install on the nodes of its role and platform: a raw image with repart-output.json next to it, or the directory nix build produces (default: build each node's image from the cluster definition)")
+	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
 	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")
-	nodesFlag := fs.String("nodes", "", "comma-separated nodes to upgrade (default every node of the image's role)")
+	nodesFlag := fs.String("nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node of the image's role)")
 	maxUnavailable := fs.Int("max-unavailable", 1, "how many workers and nodes without Kubernetes upgrade at once")
 	allowDowntime := fs.Bool("allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
-	noReboot := fs.Bool("no-reboot", false, "install the image on the nodes without draining or rebooting them; it boots with their next reboot")
-	retryFailed := fs.Bool("retry-failed", false, "install the image again, once, on nodes that fell back from it")
+	noReboot := fs.Bool("no-reboot", false, "install the images on the nodes without draining or rebooting them; they boot with their next reboot")
+	retryFailed := fs.Bool("retry-failed", false, "install an image again, once, on nodes that fell back from it")
 	deleteEmptyDir := fs.Bool("delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
 	timeout := fs.Duration("timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 0 || *imagePath == "" || *maxUnavailable < 1 {
-		return errors.New("usage: chalkctl upgrade --image PATH [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data]")
+	if len(pos) != 0 || *maxUnavailable < 1 {
+		return errors.New("usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data]")
 	}
 	creds, err := a.loadCredentials(ctx, sf, *config, cf.flake)
 	if err != nil {
@@ -111,16 +127,20 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	img, err := openImage(ctx, *imagePath, *signKey, *signCert, false)
-	if err != nil {
-		return err
-	}
-	defer img.Close()
-	if err := checkImage(c, img, *signCert); err != nil {
-		return err
+	var img *diskImage
+	if *imagePath != "" {
+		if img, err = openImage(ctx, *imagePath, *signKey, *signCert, false); err != nil {
+			return err
+		}
+		defer img.Close()
+		if err := checkImage(c, img, *signCert); err != nil {
+			return err
+		}
+	} else if c.attr == "" {
+		return errors.New("without --image the images are built from the cluster definition, which a manifest file or a client file does not give; pass --image, or --flake")
 	}
 	r := &upgradeRun{
-		a: a, cluster: c, creds: creds, image: img, endpoints: endpoints,
+		a: a, cluster: c, creds: creds, endpoints: endpoints,
 		allowDowntime: *allowDowntime, noReboot: *noReboot, maxUnavailable: *maxUnavailable,
 		retryFailed: *retryFailed, deleteEmptyDir: *deleteEmptyDir,
 		timeout: *timeout, drainTimeout: *timeout, poll: a.poll(), quorumWait: min(*timeout, time.Minute),
@@ -129,8 +149,29 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 	if *nodesFlag != "" {
 		named = strings.Split(*nodesFlag, ",")
 	}
-	if err := r.find(ctx, named); err != nil {
+	if err := r.find(ctx, named, img); err != nil {
 		return err
+	}
+	for _, g := range r.groups {
+		if g.image == nil {
+			path, err := a.buildImage(ctx, c, g.role, g.platform)
+			if err != nil {
+				return err
+			}
+			if g.image, err = openImage(ctx, path, *signKey, *signCert, false); err != nil {
+				return err
+			}
+			defer g.image.Close()
+			if err := checkImage(c, g.image, *signCert); err != nil {
+				return err
+			}
+			if got := g.image.info; got.Role() != g.role || got.Platform() != g.platform {
+				return fmt.Errorf("the image built for the role %s on %s is of the role %s on %s", g.role, g.platform, got.Role(), got.Platform())
+			}
+		}
+		for _, name := range g.nodes {
+			r.nodes[name].image = g.image
+		}
 	}
 	return r.run(ctx)
 }
@@ -198,20 +239,32 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 	return info, st, err
 }
 
-// find picks the nodes to upgrade: those named, which must run the image's role, or every node of
-// the role. A client file without a cluster definition knows no roles, so its nodes are asked.
-func (r *upgradeRun) find(ctx context.Context, named []string) error {
+// find picks the nodes to upgrade, those named or else every node of the cluster, with an image
+// every node of its role, and groups them by the role and platform they run. Every node is asked
+// what it runs before any is sent anything: one that runs another role or platform than the
+// cluster definition declares stops the run. With an image, a node of its role on another platform
+// is skipped and named; a named one stops the run. A client file without a cluster definition
+// knows no roles or platforms, so its nodes are asked alone.
+func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
 	m := r.cluster.manifest
-	role := r.image.info.Role()
 	candidates := named
 	if len(candidates) == 0 {
 		for _, name := range slices.Sorted(maps.Keys(m.Nodes)) {
-			if r.cluster.partial || m.Nodes[name].Role == role {
+			if r.cluster.partial || img == nil || m.Nodes[name].Role == img.info.Role() {
 				candidates = append(candidates, name)
 			}
 		}
 	}
 	r.nodes = map[string]*upgradeNode{}
+	groups := map[[2]string]*upgradeGroup{}
+	var skipped []string
+	skip := func(name, platform string) error {
+		if len(named) > 0 {
+			return fmt.Errorf("%s runs on %s; the image is built for %s", name, platform, img.info.Platform())
+		}
+		skipped = append(skipped, fmt.Sprintf("%s (%s)", name, platform))
+		return nil
+	}
 	// The control planes a client file names are known by asking them.
 	probedCPs := map[string]bool{}
 	for _, name := range candidates {
@@ -219,30 +272,63 @@ func (r *upgradeRun) find(ctx context.Context, named []string) error {
 		if err != nil {
 			return err
 		}
-		if !r.cluster.partial && node.Role != role {
-			return fmt.Errorf("%s is a node of the role %s; the image is of %s", name, node.Role, role)
+		if !r.cluster.partial && img != nil {
+			if node.Role != img.info.Role() {
+				return fmt.Errorf("%s is a node of the role %s; the image is of %s", name, node.Role, img.info.Role())
+			}
+			if node.Platform != img.info.Platform() {
+				if err := skip(name, node.Platform); err != nil {
+					return err
+				}
+				continue
+			}
 		}
 		info, st, err := r.probe(ctx, name)
 		if err != nil {
 			return err
 		}
 		switch {
-		case info.Cluster != r.image.info.Cluster():
-			return fmt.Errorf("%s runs an image of the cluster %q, not %s", name, info.Cluster, r.image.info.Cluster())
-		case info.Role != role && len(named) > 0:
-			return fmt.Errorf("%s runs an image of the role %q; the image is of %s", name, info.Role, role)
+		case info.Cluster != m.Cluster.Name:
+			return fmt.Errorf("%s runs an image of the cluster %q, not %s", name, info.Cluster, m.Cluster.Name)
+		case !r.cluster.partial && info.Platform != node.Platform:
+			return fmt.Errorf("%s runs an image built for %s, but the cluster definition declares it on %s; changing a node's platform is a reinstall", name, info.Platform, node.Platform)
+		case !r.cluster.partial && img == nil && info.Role != node.Role:
+			return fmt.Errorf("%s runs an image of the role %q, but the cluster definition declares %s", name, info.Role, node.Role)
+		case img != nil && info.Role != img.info.Role() && len(named) > 0:
+			return fmt.Errorf("%s runs an image of the role %q; the image is of %s", name, info.Role, img.info.Role())
 		}
 		n := &upgradeNode{name: name}
 		if k := st.Kubernetes; k != nil {
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
 		probedCPs[name] = n.kind == manifest.KindControlPlane
-		if info.Role == role {
-			r.nodes[name] = n
+		if img != nil && info.Role != img.info.Role() {
+			continue
 		}
+		if img != nil && info.Platform != img.info.Platform() {
+			if err := skip(name, info.Platform); err != nil {
+				return err
+			}
+			continue
+		}
+		r.nodes[name] = n
+		key := [2]string{info.Role, info.Platform}
+		if groups[key] == nil {
+			groups[key] = &upgradeGroup{role: info.Role, platform: info.Platform, image: img}
+		}
+		groups[key].nodes = append(groups[key].nodes, name)
+	}
+	if len(skipped) > 0 {
+		r.say("skipping %s: the image is built for %s", strings.Join(skipped, ", "), img.info.Platform())
 	}
 	if len(r.nodes) == 0 {
-		return fmt.Errorf("the cluster has no node of the role %s to upgrade", role)
+		if img != nil {
+			return fmt.Errorf("the cluster has no node of the role %s on %s to upgrade", img.info.Role(), img.info.Platform())
+		}
+		return errors.New("the cluster has no node to upgrade")
+	}
+	for _, key := range slices.SortedFunc(maps.Keys(groups), func(a, b [2]string) int { return strings.Compare(a[0]+"\x00"+a[1], b[0]+"\x00"+b[1]) }) {
+		r.groups = append(r.groups, groups[key])
 	}
 	for _, name := range slices.Sorted(maps.Keys(m.Nodes)) {
 		if probedCPs[name] || !r.cluster.partial && m.Roles[m.Nodes[name].Role].Kind == manifest.KindControlPlane {
@@ -262,7 +348,11 @@ func (r *upgradeRun) run(ctx context.Context) error {
 			others = append(others, name)
 		}
 	}
-	r.say("upgrading %s to %s %s: %s", r.image.info.Role(), r.image.info.ID(), r.image.info.Version(), strings.Join(slices.Concat(controlPlanes, others), ", "))
+	versions := map[string]bool{}
+	for _, g := range r.groups {
+		r.say("upgrading %s on %s to %s %s: %s", g.role, g.platform, g.image.info.ID(), g.image.info.Version(), strings.Join(g.nodes, ", "))
+		versions[g.image.info.Version()] = true
+	}
 	for _, name := range controlPlanes {
 		if err := r.node(ctx, r.nodes[name]); err != nil {
 			return err
@@ -283,10 +373,11 @@ func (r *upgradeRun) run(ctx context.Context) error {
 			return err
 		}
 	}
+	version := strings.Join(slices.Sorted(maps.Keys(versions)), ", ")
 	if r.noReboot {
-		r.say("installed %s on %d nodes; it boots with their next reboot", r.image.info.Version(), len(r.nodes))
+		r.say("installed %s on %d nodes; it boots with their next reboot", version, len(r.nodes))
 	} else {
-		r.say("upgraded %d nodes to %s", len(r.nodes), r.image.info.Version())
+		r.say("upgraded %d nodes to %s", len(r.nodes), version)
 	}
 	return nil
 }
@@ -295,7 +386,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 // and was found healthy is uncordoned once its Node is Ready, one that booted it is waited for,
 // and the image installed already is not sent again.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
-	version := r.image.info.Version()
+	version := n.image.info.Version()
 	info, st, err := r.probe(ctx, n.name)
 	if err != nil {
 		return err
@@ -307,7 +398,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		return fmt.Errorf("%s: its boot is unknown: %s", n.name, boot.GetError())
 	case boot.GetFailed() == version && !r.retryFailed:
 		return r.rolledBack(n, boot)
-	case runs && !bytes.Equal(boot.GetRootHash(), r.image.header.RootHash):
+	case runs && !bytes.Equal(boot.GetRootHash(), n.image.header.RootHash):
 		return r.otherBuild(n, boot)
 	case runs && boot.GetBlessed():
 		if r.noReboot {
@@ -334,7 +425,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		}
 		if boot.GetStaged() == version {
 			r.say("%s: %s is installed already", n.name, version)
-		} else if err := r.install(ctx, n.name); err != nil {
+		} else if err := r.install(ctx, n); err != nil {
 			return err
 		}
 		if r.noReboot {
@@ -359,10 +450,11 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	return r.uncordon(ctx, n)
 }
 
-// install sends the node the image.
-func (r *upgradeRun) install(ctx context.Context, name string) error {
-	r.say("%s: installing %s", name, r.image.info.Version())
-	parts, done, err := r.image.parts()
+// install sends the node its image.
+func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
+	name, img := n.name, n.image
+	r.say("%s: installing %s", name, img.info.Version())
+	parts, done, err := img.parts()
 	if err != nil {
 		return err
 	}
@@ -370,7 +462,7 @@ func (r *upgradeRun) install(ctx context.Context, name string) error {
 	var resp *nodev1.UpgradeResponse
 	err = r.call(name, func(conn *client.Conn) error {
 		stream := conn.Upgrade(ctx)
-		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: r.image.header}}}); err != nil && !errors.Is(err, io.EOF) {
+		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: img.header}}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 		if err := sendChunks(parts, func(c *nodev1.ImageChunk) error {
@@ -388,9 +480,9 @@ func (r *upgradeRun) install(ctx context.Context, name string) error {
 		return err
 	}
 	if resp.AlreadyInstalled {
-		r.say("%s: runs %s already", name, r.image.info.Version())
+		r.say("%s: runs %s already", name, img.info.Version())
 	} else {
-		r.say("%s: installed %s, which boots next as %s", name, r.image.info.Version(), resp.Entry)
+		r.say("%s: installed %s, which boots next as %s", name, img.info.Version(), resp.Entry)
 	}
 	return nil
 }
@@ -537,7 +629,7 @@ func (r *upgradeRun) uncordon(ctx context.Context, n *upgradeNode) error {
 // waitHealthy waits until the node runs the image, its boot was found healthy, and a node in
 // the cluster is Ready, or until it fell back.
 func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
-	version := r.image.info.Version()
+	version := n.image.info.Version()
 	deadline := time.Now().Add(r.timeout)
 	var last error
 	for {
@@ -549,7 +641,7 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 			return r.rolledBack(n, st.GetBoot())
 		case info.Version != version:
 			last = fmt.Errorf("it runs %s", info.Version)
-		case !bytes.Equal(st.GetBoot().GetRootHash(), r.image.header.RootHash):
+		case !bytes.Equal(st.GetBoot().GetRootHash(), n.image.header.RootHash):
 			// Waiting does not change the build it booted.
 			return r.otherBuild(n, st.GetBoot())
 		case !st.GetBoot().GetBlessed():
@@ -573,11 +665,11 @@ func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
 
 // otherBuild is the error of a node that runs the image's version, but not the image's store.
 func (r *upgradeRun) otherBuild(n *upgradeNode, boot *nodev1.BootStatus) error {
-	version := r.image.info.Version()
+	version := n.image.info.Version()
 	if len(boot.GetRootHash()) == 0 {
 		return fmt.Errorf("%s runs %s, but does not report the root hash of its store, so whether it runs this build of it is unknown", n.name, version)
 	}
-	return fmt.Errorf("%s runs another build of %s, whose store has the root hash %x, not %x; build the image with a new version", n.name, version, boot.GetRootHash(), r.image.header.RootHash)
+	return fmt.Errorf("%s runs another build of %s, whose store has the root hash %x, not %x; build the image with a new version", n.name, version, boot.GetRootHash(), n.image.header.RootHash)
 }
 
 // inCluster reports whether a node is part of a cluster, so its Node exists.

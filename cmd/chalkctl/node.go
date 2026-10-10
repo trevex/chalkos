@@ -325,6 +325,10 @@ func (a *app) install(ctx context.Context, args []string) error {
 
 	var img *diskImage
 	if !info.Msg.Installer {
+		// The node runs its image already, which must be of the node's platform.
+		if err := samePlatform(t, info.Msg.Platform); err != nil {
+			return err
+		}
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
 	} else {
@@ -627,6 +631,7 @@ func (a *app) status(ctx context.Context, args []string) error {
 		}
 	}
 	fmt.Fprintf(a.stdout, "identity %s (%s)\n", s.IdentityVersion, state)
+	fmt.Fprintln(a.stdout, platformLine(t, s.Platform))
 	for _, line := range bootLines(s.Boot) {
 		fmt.Fprintln(a.stdout, line)
 	}
@@ -877,4 +882,25 @@ func ipAddresses(addrs []string) []net.IP {
 		}
 	}
 	return ips
+}
+
+// samePlatform refuses a node that runs an image of another platform than the cluster definition
+// declares: its identity and images would not fit the machine.
+func samePlatform(t *target, reported string) error {
+	if t.cluster.partial || reported == t.node.Platform {
+		return nil
+	}
+	return fmt.Errorf("%s runs an image built for %s, but the cluster definition declares it on %s; changing a node's platform is a reinstall", t.name, reported, t.node.Platform)
+}
+
+// platformLine is the status line of the platform the node runs on, compared with the cluster
+// definition's.
+func platformLine(t *target, reported string) string {
+	switch {
+	case t.cluster.partial:
+		return "platform " + reported
+	case reported != t.node.Platform:
+		return fmt.Sprintf("platform %s, but the cluster definition declares %s; changing a node's platform is a reinstall", reported, t.node.Platform)
+	}
+	return fmt.Sprintf("platform %s (the cluster definition's)", reported)
 }
