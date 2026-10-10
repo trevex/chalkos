@@ -241,3 +241,24 @@ func TestClientFileNodes(t *testing.T) {
 		t.Errorf("stdout = %q", ta.stdout)
 	}
 }
+
+// TestClientFileAddresses reaches a node at the address its client file names, such as a
+// forwarded port, before the static address of the cluster definition.
+func TestClientFileAddresses(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", pki.RoleReader, time.Hour, map[string]string{"n1": addr}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := c.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(ta.dir, "alice.json")
+	writeFile(t, path, string(data))
+	if err := ta.run(context.Background(), []string{"status", "n1", "--config", path, "--manifest", filepath.Join(ta.dir, "manifest.json")}); err != nil {
+		t.Fatalf("status at the client file's address: %v", err)
+	}
+}

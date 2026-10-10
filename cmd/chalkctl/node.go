@@ -42,7 +42,7 @@ type nodeCommand struct {
 func (n *nodeCommand) register(fs *flag.FlagSet) {
 	n.cluster.register(fs)
 	n.secrets.register(fs)
-	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the node's first static address)")
+	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the address a client file names, else the node's first static address)")
 }
 
 // registerClient registers the flags of a command that a client file may run.
@@ -93,7 +93,12 @@ func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*targ
 	if err != nil {
 		return nil, err
 	}
-	addr, err := endpoint(n.endpoint, name, node.Identity)
+	// A client file names how its holder reaches the nodes, such as through forwarded ports.
+	addr := n.endpoint
+	if addr == "" && creds.config != nil {
+		addr = creds.config.Nodes[name]
+	}
+	addr, err = endpoint(addr, name, node.Identity)
 	if err != nil {
 		return nil, err
 	}

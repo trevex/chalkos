@@ -33,7 +33,8 @@ type Config struct {
 	// issued the certificate, and while it rotates the other one.
 	OSCA string `json:"osCA"`
 	// Nodes are the nodes' addresses by name, as the cluster definition had them when the file
-	// was issued; used only when no cluster definition is at hand.
+	// was issued, or as its holder reaches them otherwise, such as through forwarded ports; they
+	// come before the cluster definition's static addresses.
 	Nodes map[string]string `json:"nodes"`
 }
 
