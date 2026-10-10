@@ -464,7 +464,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 			}); err != nil {
 				return err
 			}
-			r.say("  %s trusts the %d OS CAs of the secrets file", name, len(want))
+			r.say("  %s trusts the %s of the secrets file", name, count(len(want), "OS CA"))
 			return nil
 		})
 	case pki.PhaseSwitch:

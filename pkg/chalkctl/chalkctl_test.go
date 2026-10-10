@@ -1106,3 +1106,20 @@ func TestCommandsDescribed(t *testing.T) {
 	}
 	walk(newCommand(&app{}))
 }
+
+func TestCount(t *testing.T) {
+	for _, tc := range []struct {
+		got, want string
+	}{
+		{count(0, "node"), "0 nodes"},
+		{count(1, "node"), "1 node"},
+		{count(uint32(1), "object"), "1 object"},
+		{count(uint64(19), "object"), "19 objects"},
+		{count(1, "OS CA"), "1 OS CA"},
+		{count(2, "OS CA"), "2 OS CAs"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%q, want %q", tc.got, tc.want)
+		}
+	}
+}

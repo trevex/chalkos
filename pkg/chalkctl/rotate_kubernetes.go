@@ -302,7 +302,7 @@ func (r *rotation) rewriteEncrypted(ctx context.Context) error {
 		return err
 	}
 	if n := counts[old[0].Name]; n > 0 {
-		return fmt.Errorf("etcd still holds %d objects under the old key %s", n, old[0].Name)
+		return fmt.Errorf("etcd still holds %s under the old key %s", count(n, "object"), old[0].Name)
 	}
 	return nil
 }
@@ -327,7 +327,7 @@ func (r *rotation) finishGuardKubernetes(ctx context.Context, kind string, force
 			return err
 		}
 		if n := counts[old[0].Name]; n > 0 {
-			return fmt.Errorf("etcd holds %d objects encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", n, old[0].Name)
+			return fmt.Errorf("etcd holds %s encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", count(n, "object"), old[0].Name)
 		}
 	}
 	return nil
@@ -395,7 +395,7 @@ func (r *rotation) encryptedCounts(ctx context.Context, step nodev1.RotationStep
 			return err
 		}
 		if resp.Msg.Rewritten > 0 {
-			r.say("  rewrote %d encrypted objects unchanged", resp.Msg.Rewritten)
+			r.say("  rewrote %s unchanged", count(resp.Msg.Rewritten, "encrypted object"))
 		}
 		for _, e := range resp.Msg.Encrypted {
 			counts[e.Key] += e.Objects

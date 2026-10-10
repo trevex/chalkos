@@ -434,7 +434,7 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthyMembers = []string{"cp2"}
 	err := l.upgrade(testUpgradeImage(t, "lab", "cp", "0.2.0"), "--nodes", "cp1", "--timeout", "100ms")
-	if err == nil || !strings.Contains(err.Error(), "without cp1 etcd has 1 healthy voters of 3, fewer than the 2 its quorum needs") {
+	if err == nil || !strings.Contains(err.Error(), "without cp1 etcd has 1 healthy voter of 3, fewer than the 2 its quorum needs") {
 		t.Errorf("upgrade = %v", err)
 	}
 	for _, e := range l.takeEvents() {
@@ -445,7 +445,7 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 
 	single := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "lab", "cp", "0.2.0")
-	if err := single.upgrade(img); err == nil || !strings.Contains(err.Error(), "--allow-downtime") {
+	if err := single.upgrade(img); err == nil || !strings.Contains(err.Error(), "etcd has 1 voter, and without cp1") || !strings.Contains(err.Error(), "--allow-downtime") {
 		t.Errorf("upgrade of a single control plane = %v", err)
 	}
 	if err := single.upgrade(img, "--allow-downtime"); err != nil {
@@ -453,6 +453,9 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 	}
 	if v := single.versions()["cp1"]; v != "0.2.0" {
 		t.Errorf("cp1 runs %s", v)
+	}
+	if !strings.Contains(single.ta.stdout.String(), "upgraded 1 node to 0.2.0") {
+		t.Errorf("output:\n%s", single.ta.stdout)
 	}
 
 	// Two control planes lose their quorum while either reboots.

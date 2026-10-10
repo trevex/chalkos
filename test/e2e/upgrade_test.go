@@ -37,7 +37,7 @@ func TestUpgrade(t *testing.T) {
 			"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt"), "--timeout", "10m")
 	}
 	upgraded := time.Now()
-	if out, err := upgrade("CHALKLAB_UPGRADE_IMAGE_DIR"); err != nil || !strings.Contains(out, "upgraded 1 nodes to 0.2.0") {
+	if out, err := upgrade("CHALKLAB_UPGRADE_IMAGE_DIR"); err != nil || !strings.Contains(out, "upgraded 1 node to 0.2.0") {
 		t.Fatalf("upgrade to 0.2.0: %v", err)
 	}
 	t.Logf("upgraded to 0.2.0 in %v", time.Since(upgraded).Round(time.Second))

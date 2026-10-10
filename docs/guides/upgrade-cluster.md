@@ -219,10 +219,10 @@ Keep the previous commit, or the image directory, until the new version has prov
 
 ## If something goes wrong
 
-- `without cp2 etcd has 1 healthy voters of 3, fewer than the 2 its quorum needs`: another
+- `without cp2 etcd has 1 healthy voter of 3, fewer than the 2 its quorum needs`: another
   control plane is down or unhealthy. chalkctl does not reboot cp2 until enough of the others are
   healthy; `chalkctl etcd members` shows which one is not.
-- `etcd has 1 voters, and without cp1 fewer than the 1 its quorum needs: ...; pass --allow-downtime to accept that`:
+- `etcd has 1 voter, and without cp1 fewer than the 1 its quorum needs: ...; pass --allow-downtime to accept that`:
   the cluster has one or two control planes, so the API server is down while one reboots. Pass
   `--allow-downtime` when that is acceptable.
 - `pods ... have emptyDir volumes, whose data an eviction deletes; pass --delete-emptydir-data to evict them`:

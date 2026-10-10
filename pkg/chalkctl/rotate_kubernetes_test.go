@@ -130,11 +130,11 @@ func TestRotateEncryptionKey(t *testing.T) {
 	}
 	// An object written under the old key, as from a backup, stops the finish.
 	l.encrypted[pki.DefaultEncryptionKeyName] = 1
-	if err := l.rotate("encryption-key", "--finish"); err == nil || !strings.Contains(err.Error(), "1 objects encrypted with the old key") {
+	if err := l.rotate("encryption-key", "--finish"); err == nil || !strings.Contains(err.Error(), "1 object encrypted with the old key") {
 		t.Fatalf("err = %v, want the finish refused", err)
 	}
 	// --force overrides the service-account key's wait alone, never data left under the old key.
-	if err := l.rotate("encryption-key", "--finish", "--force"); err == nil || !strings.Contains(err.Error(), "1 objects encrypted with the old key") {
+	if err := l.rotate("encryption-key", "--finish", "--force"); err == nil || !strings.Contains(err.Error(), "1 object encrypted with the old key") {
 		t.Fatalf("--force: err = %v, want the finish refused", err)
 	}
 	if l.phase() != "refresh applied" {

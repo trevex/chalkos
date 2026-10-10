@@ -354,9 +354,9 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	}
 	version := strings.Join(slices.Sorted(maps.Keys(versions)), ", ")
 	if r.noReboot {
-		r.say("installed %s on %d nodes; it boots with their next reboot", version, len(r.nodes))
+		r.say("installed %s on %s; it boots with their next reboot", version, count(len(r.nodes), "node"))
 	} else {
-		r.say("upgraded %d nodes to %s", len(r.nodes), version)
+		r.say("upgraded %s to %s", count(len(r.nodes), "node"), version)
 	}
 	return nil
 }
@@ -519,11 +519,11 @@ func (r *upgradeRun) quorumOnce(ctx context.Context, name string) error {
 		// A control plane that is no etcd member takes nothing of etcd down.
 		return nil
 	case voters-1 < quorum && !r.allowDowntime:
-		return finalError{fmt.Errorf("etcd has %d voters, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", voters, name, quorum, name)}
+		return finalError{fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", count(voters, "voter"), name, quorum, name)}
 	case voters-1 < quorum:
 		return nil
 	case healthy < quorum:
-		return fmt.Errorf("without %s etcd has %d healthy voters of %d, fewer than the %d its quorum needs", name, healthy, voters, quorum)
+		return fmt.Errorf("without %s etcd has %s of %d, fewer than the %d its quorum needs", name, count(healthy, "healthy voter"), voters, quorum)
 	}
 	return nil
 }

@@ -69,7 +69,7 @@ func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duratio
 	if err != nil {
 		return fmt.Errorf("bootstrap %s: %w", t.name, err)
 	}
-	fmt.Fprintf(a.stdout, "%s is bootstrapped; applied %d objects\n", t.name, resp.Msg.Applied)
+	fmt.Fprintf(a.stdout, "%s is bootstrapped; applied %s\n", t.name, count(resp.Msg.Applied, "object"))
 	return nil
 }
 
