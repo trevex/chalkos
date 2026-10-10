@@ -107,6 +107,9 @@ func (a *app) run(ctx context.Context, args []string) error {
 			return errUsage
 		}
 		signal.Ignore(syscall.SIGHUP)
+		if err := lab.DenyIOURing(); err != nil {
+			return err
+		}
 		return lab.Supervise(ctx, args[1])
 	}
 	return errUsage

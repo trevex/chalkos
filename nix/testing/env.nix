@@ -6,7 +6,9 @@ let
 in
 {
   tools = [
-    (import ../qemu.nix { inherit pkgs; })
+    # Headless, from the binary cache; the tests deny it io_uring, whose main loop loses TPM
+    # emulator commands.
+    pkgs.qemu_test
     pkgs.swtpm
     pkgs.mtools
     pkgs.sbsigntool

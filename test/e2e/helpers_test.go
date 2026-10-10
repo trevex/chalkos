@@ -13,6 +13,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +25,15 @@ import (
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/lab"
 )
+
+// TestMain denies io_uring to the QEMU the tests start, as chalklab does.
+func TestMain(m *testing.M) {
+	if err := lab.DenyIOURing(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 func requireEnv(t *testing.T, names ...string) {
 	t.Helper()

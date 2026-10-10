@@ -37,7 +37,8 @@ in
 
   # chalklab, with the tools a lab runs: QEMU, OVMF with Secure Boot, swtpm, the switch, socat for
   # guest forwards, the tools that sign images and enroll the lab's keys, and chalkctl. A package of
-  # its own, so chalkctl's closure stays free of them.
+  # its own, so chalkctl's closure stays free of them. QEMU is the headless one of the binary cache;
+  # chalklab denies it io_uring, whose main loop loses TPM emulator commands.
   chalklab = goModule {
     pname = "chalklab";
     paths = goPaths;
@@ -49,7 +50,7 @@ in
     postFixup = ''
       wrapProgram $out/bin/chalklab --prefix PATH : ${
         lib.makeBinPath [
-          (import ./qemu.nix { inherit pkgs; })
+          pkgs.qemu_test
           pkgs.swtpm
           pkgs.vde2
           pkgs.socat

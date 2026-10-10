@@ -24,6 +24,16 @@ func TestMain(m *testing.M) {
 		fakeSWTPM(os.Args[1:])
 	case "vde_switch":
 		fakeSwitch(os.Args[1:])
+	case "deny-io-uring":
+		// Deny io_uring, then start a program as chalklab starts QEMU.
+		if err := DenyIOURing(); err != nil {
+			fakeFail(err)
+		}
+		if err := syscall.Exec(os.Args[1], os.Args[1:], os.Environ()); err != nil {
+			fakeFail(err)
+		}
+	case "io-uring-setup":
+		ioURingSetup()
 	default:
 		os.Exit(m.Run())
 	}
