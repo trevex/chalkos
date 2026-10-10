@@ -30,6 +30,11 @@ let
   };
 in
 {
+  chalklab = {
+    type = "app";
+    program = lib.getExe chalkPkgs.chalklab;
+    meta.description = "Run a chalkos cluster's nodes as QEMU virtual machines on this machine";
+  };
   e2e-kubernetes-online = {
     type = "app";
     program = lib.getExe kubernetesOnline;

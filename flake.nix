@@ -13,6 +13,10 @@
     {
       lib = { inherit (chalkosLib) mkCluster; };
       flakeModules.default = chalkosLib.flakeModule;
+      templates.lab = {
+        path = ./templates/lab;
+        description = "A cluster of a control plane and a worker that chalklab runs as QEMU virtual machines";
+      };
       packages.${system} = import ./nix/packages.nix { inherit pkgs self; };
       checks.${system} = import ./nix/checks.nix { inherit pkgs self; };
       apps.${system} = import ./nix/apps.nix { inherit pkgs self; };

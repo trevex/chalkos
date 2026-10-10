@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -26,7 +27,7 @@ func StartSwitch(ctx context.Context, dir string) (*Switch, error) {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("vde_switch", "--sock", dir, "--dirmode", "0700", "--nostdin")
+	cmd := exec.Command("vde_switch", "--sock", dir, "--dirmode", "0700", "--nostdin", "--pidfile", dir+".pid")
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start vde_switch: %w", err)
 	}
@@ -57,4 +58,12 @@ func (s *Switch) Stop() {
 		s.cmd.Process.Kill()
 		<-s.exited
 	})
+}
+
+// stopSwitchIn kills the switch whose sockets are in dir, as another process started it.
+func stopSwitchIn(dir string) {
+	if pid, ok := runningPID(dir+".pid", dir); ok {
+		syscall.Kill(pid, syscall.SIGKILL)
+		stopProcess(pid, dir, 10*time.Second)
+	}
 }

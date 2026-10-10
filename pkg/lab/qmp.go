@@ -3,6 +3,7 @@ package lab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -23,10 +24,14 @@ func DialQMP(ctx context.Context, path string) (*QMP, error) {
 	for {
 		conn, err := d.DialContext(ctx, "unix", path)
 		if err == nil {
+			// QEMU serves one client at a time and leaves others waiting for its greeting, so ctx
+			// bounds the wait.
+			stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Now()) })
 			q := &QMP{conn: conn, dec: json.NewDecoder(conn)}
-			if err := q.handshake(); err != nil {
+			err := q.handshake()
+			if !stop() || err != nil {
 				conn.Close()
-				return nil, err
+				return nil, fmt.Errorf("%w; another client may hold the QMP socket %s", errors.Join(err, ctx.Err()), path)
 			}
 			return q, nil
 		}

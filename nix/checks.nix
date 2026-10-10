@@ -681,6 +681,32 @@ in
         touch $out
       '';
 
+  # The lab template: its flake gives the cluster, which runs every node on kvm with the one MAC
+  # address chalklab connects to the lab network, and its kvm images build. Its secrets.pub.json,
+  # which chalkctl gen secrets writes, is the test secrets'.
+  template-lab =
+    let
+      template = (import ../templates/lab/flake.nix).outputs { chalkos = self; };
+      c = self.lib.mkCluster {
+        modules = [
+          ../templates/lab/cluster.nix
+          { chalkos.cluster.osCA = lib.mkForce "${chalkPkgs.test-secrets}/secrets.pub.json"; }
+        ];
+      };
+      macs = lib.mapAttrs (
+        _: n:
+        lib.mapAttrsToList (_: network: network.matchConfig.MACAddress or null) (
+          n.identity.network.networks or { }
+        )
+      ) c.manifest.nodes;
+    in
+    assert template.chalkos.lab.cluster.name == "lab";
+    assert lib.all (n: n.platform == "kvm") (lib.attrValues c.manifest.nodes);
+    assert lib.all (m: lib.length (lib.filter (x: x != null) m) == 1) (lib.attrValues macs);
+    pkgs.runCommand "chalkos-template-lab" {
+      images = lib.mapAttrsToList (_: r: r.images.kvm) c.roles;
+    } "touch $out";
+
   manifest-golden =
     let
       homelab = self.lib.mkCluster { modules = [ ../examples/homelab/cluster.nix ]; };

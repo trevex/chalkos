@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -97,5 +100,43 @@ func waitForLines(t *testing.T, c *Console, n int) {
 			t.Fatalf("the console holds %d lines, want %d", got, n)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestFileConsoleSkip follows a console log from an offset, and Skip passes over what the log
+// holds then, even lines not read yet.
+func TestFileConsoleSkip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "console.log")
+	if err := os.WriteFile(path, []byte("before\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, f, err := followConsole(path, int64(len("before\r\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	appendLine := func(line string) {
+		log, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprint(log, line)
+		log.Close()
+	}
+	appendLine("CHALKTEST a=1\r\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if m, err := c.WaitFor(ctx, factRE); err != nil || m[1] != "a" {
+		t.Fatalf("first fact = %v, %v", m, err)
+	}
+	appendLine("CHALKTEST b=1\n")
+	c.Skip()
+	appendLine("CHALKTEST c=1\n")
+	if m, err := c.WaitFor(ctx, factRE); err != nil || m[1] != "c" {
+		t.Fatalf("fact after Skip = %v, %v; want c", m, err)
+	}
+	f.Close()
+	if _, err := c.WaitFor(ctx, factRE); err == nil || !strings.Contains(err.Error(), "console closed") {
+		t.Errorf("WaitFor after Close = %v", err)
 	}
 }

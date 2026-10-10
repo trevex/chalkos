@@ -35,6 +35,35 @@ in
     '';
   };
 
+  # chalklab, with the tools a lab runs: QEMU, OVMF with Secure Boot, swtpm, the switch, socat for
+  # guest forwards, the tools that sign images and enroll the lab's keys, and chalkctl. A package of
+  # its own, so chalkctl's closure stays free of them.
+  chalklab = goModule {
+    pname = "chalklab";
+    paths = goPaths;
+    subPackages = [ "cmd/chalklab" ];
+    # The go-unit check runs its tests.
+    doCheck = false;
+    meta.mainProgram = "chalklab";
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postFixup = ''
+      wrapProgram $out/bin/chalklab --prefix PATH : ${
+        lib.makeBinPath [
+          (import ./qemu.nix { inherit pkgs; })
+          pkgs.swtpm
+          pkgs.vde2
+          pkgs.socat
+          pkgs.mtools
+          pkgs.sbsigntool
+          pkgs.python3Packages.virt-firmware
+          self.packages.${pkgs.stdenv.hostPlatform.system}.chalkctl
+        ]
+      } \
+        --set-default CHALKLAB_OVMF_CODE ${pkgs.OVMFFull.fd}/FV/OVMF_CODE.fd \
+        --set-default CHALKLAB_OVMF_VARS ${pkgs.OVMFFull.fd}/FV/OVMF_VARS.fd
+    '';
+  };
+
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
   chalkd = pkgs.callPackage ./chalkd.nix { };
 

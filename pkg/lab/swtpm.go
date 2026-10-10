@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -32,6 +33,7 @@ func StartSWTPM(ctx context.Context, stateDir string) (*SWTPM, error) {
 	cmd := exec.Command("swtpm", "socket", "--tpm2",
 		"--tpmstate", "dir="+stateDir,
 		"--ctrl", "type=unixio,path="+sock,
+		"--pid", "file="+filepath.Join(stateDir, "swtpm.pid"),
 		"--log", "file="+logPath+",level=5")
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start swtpm: %w", err)
@@ -63,4 +65,12 @@ func (s *SWTPM) Stop() {
 		s.cmd.Process.Kill()
 		<-s.exited
 	})
+}
+
+// stopSWTPMIn kills the swtpm whose state is in stateDir, as another process started it.
+func stopSWTPMIn(stateDir string) {
+	if pid, ok := runningPID(filepath.Join(stateDir, "swtpm.pid"), stateDir); ok {
+		syscall.Kill(pid, syscall.SIGKILL)
+		stopProcess(pid, stateDir, 10*time.Second)
+	}
 }

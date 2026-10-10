@@ -1,6 +1,7 @@
 package lab
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -36,11 +38,14 @@ type VMConfig struct {
 	// this directory, for traffic between VMs.
 	Switch string
 	MAC    string
+	// GuestAgent adds the channel the QEMU guest agent answers on, at GuestAgentSocket.
+	GuestAgent bool
 }
 
 // GuestForward makes a host address reachable at a guest address, such as 10.0.2.100:5000.
 type GuestForward struct {
-	Guest, Host string
+	Guest string `json:"guest"`
+	Host  string `json:"host"`
 }
 
 // Forward makes a guest TCP port reachable on a host port.
@@ -57,6 +62,14 @@ type Disk struct {
 
 func (c VMConfig) varsPath() string { return filepath.Join(c.Dir, "OVMF_VARS.fd") }
 func (c VMConfig) qmpPath() string  { return filepath.Join(c.Dir, "qmp.sock") }
+func (c VMConfig) pidPath() string  { return filepath.Join(c.Dir, "qemu.pid") }
+func (c VMConfig) tpmDir() string   { return filepath.Join(c.Dir, "tpm") }
+
+// ConsolePath is the file QEMU appends the VM's serial console to, across restarts.
+func (c VMConfig) ConsolePath() string { return filepath.Join(c.Dir, "console.log") }
+
+// GuestAgentSocket is where the host reaches the QEMU guest agent of a VM with GuestAgent.
+func (c VMConfig) GuestAgentSocket() string { return filepath.Join(c.Dir, "qga.sock") }
 
 func (c VMConfig) qemuArgs(tpmSocket string) []string {
 	args := []string{
@@ -70,8 +83,11 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 		"-drive", "if=pflash,format=raw,unit=1,file=" + c.varsPath(),
 		"-display", "none",
 		"-monitor", "none",
-		"-serial", "stdio",
+		// QEMU writes the console itself, so it outlives whoever started the VM.
+		"-chardev", "file,id=console,append=on,path=" + c.ConsolePath(),
+		"-serial", "chardev:console",
 		"-qmp", "unix:" + c.qmpPath() + ",server=on,wait=off",
+		"-pidfile", c.pidPath(),
 	}
 	if len(c.Forwards)+len(c.GuestForwards) == 0 {
 		args = append(args, "-nic", "none")
@@ -89,6 +105,12 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 		args = append(args,
 			"-netdev", "vde,id=switch,sock="+c.Switch,
 			"-device", "virtio-net-pci,netdev=switch,mac="+c.MAC)
+	}
+	if c.GuestAgent {
+		args = append(args,
+			"-device", "virtio-serial-pci,id=agent",
+			"-chardev", "socket,id=qga,path="+c.GuestAgentSocket()+",server=on,wait=off",
+			"-device", "virtserialport,bus=agent.0,chardev=qga,name=org.qemu.guest_agent.0")
 	}
 	if c.CDROM != "" {
 		args = append(args,
@@ -114,21 +136,26 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 	return args
 }
 
-// VM is a running QEMU process together with its TPM emulator.
+// VM is a running QEMU process together with its TPM emulator: one this process started, or one
+// it attached to.
 type VM struct {
 	Config  VMConfig
 	Console *Console
 	QMP     *QMP
 
+	// cmd and tpm are set on a VM this process started; pid on one it attached to.
 	cmd      *exec.Cmd
 	tpm      *SWTPM
+	pid      int
 	log      *os.File
+	follower *follower
 	exited   chan struct{}
 	stopOnce sync.Once
 }
 
 // StartVM starts QEMU and connects to its QMP socket. Firmware variables and TPM state already
-// present in c.Dir are reused, so stopping and starting a VM behaves like a power cycle.
+// present in c.Dir are reused, so stopping and starting a VM behaves like a power cycle. The
+// console shows only what the VM writes from now on.
 func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
 		return nil, err
@@ -142,7 +169,7 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 	vm := &VM{Config: c, exited: make(chan struct{})}
 	tpmSocket := ""
 	if c.TPM {
-		tpm, err := StartSWTPM(ctx, filepath.Join(c.Dir, "tpm"))
+		tpm, err := StartSWTPM(ctx, c.tpmDir())
 		if err != nil {
 			return nil, err
 		}
@@ -150,43 +177,79 @@ func StartVM(ctx context.Context, c VMConfig) (*VM, error) {
 		tpmSocket = tpm.Socket
 	}
 
-	log, err := os.OpenFile(filepath.Join(c.Dir, "console.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	console, err := os.OpenFile(c.ConsolePath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		vm.cleanup()
+		return nil, err
+	}
+	start, err := console.Seek(0, 2)
+	console.Close()
+	if err != nil {
+		vm.cleanup()
+		return nil, err
+	}
+	if vm.Console, vm.follower, err = followConsole(c.ConsolePath(), start); err != nil {
+		vm.cleanup()
+		return nil, err
+	}
+	log, err := os.OpenFile(filepath.Join(c.Dir, "qemu.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		vm.cleanup()
 		return nil, err
 	}
 	vm.log = log
 
-	// A pipe we own, rather than cmd.StdoutPipe, so cmd.Wait cannot close it under the console reader.
-	r, w, err := os.Pipe()
-	if err != nil {
-		vm.cleanup()
-		return nil, err
-	}
 	os.Remove(c.qmpPath())
 	cmd := exec.Command("qemu-system-x86_64", c.qemuArgs(tpmSocket)...)
-	cmd.Stdout = w
-	cmd.Stderr = w
+	cmd.Stdout = log
+	cmd.Stderr = log
 	if err := cmd.Start(); err != nil {
-		w.Close()
-		r.Close()
 		vm.cleanup()
 		return nil, fmt.Errorf("start qemu: %w", err)
 	}
-	w.Close()
 	vm.cmd = cmd
-	vm.Console = NewConsole(r, log)
 	go func() {
 		cmd.Wait()
 		close(vm.exited)
 	}()
 
-	qmp, err := DialQMP(ctx, c.qmpPath())
+	qmpCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-vm.exited:
+			cancel()
+		case <-qmpCtx.Done():
+		}
+	}()
+	qmp, err := DialQMP(qmpCtx, c.qmpPath())
 	if err != nil {
 		vm.Stop()
+		if out, _ := os.ReadFile(log.Name()); len(out) > 0 {
+			return nil, fmt.Errorf("%w; qemu: %s", err, out)
+		}
 		return nil, err
 	}
 	vm.QMP = qmp
+	return vm, nil
+}
+
+// AttachVM reaches a VM that runs already, as another process started it: its QMP socket and its
+// console, read from the start of the log.
+func AttachVM(ctx context.Context, c VMConfig) (*VM, error) {
+	pid, ok := runningPID(c.pidPath(), c.Dir)
+	if !ok {
+		return nil, fmt.Errorf("the VM %s does not run", c.Name)
+	}
+	vm := &VM{Config: c, pid: pid}
+	var err error
+	if vm.Console, vm.follower, err = followConsole(c.ConsolePath(), 0); err != nil {
+		return nil, err
+	}
+	if vm.QMP, err = DialQMP(ctx, c.qmpPath()); err != nil {
+		vm.follower.Close()
+		return nil, err
+	}
 	return vm, nil
 }
 
@@ -205,29 +268,94 @@ func (vm *VM) SetLink(up bool) error {
 // Stop terminates QEMU and the TPM emulator. Everything in Config.Dir is kept.
 func (vm *VM) Stop() error {
 	vm.stopOnce.Do(func() {
-		if vm.QMP != nil {
+		switch {
+		case vm.QMP != nil:
 			vm.QMP.Execute("quit", nil)
 			vm.QMP.Close()
+		case vm.cmd != nil:
+			// QEMU quits on SIGTERM too, as without a QMP connection.
+			vm.cmd.Process.Signal(syscall.SIGTERM)
+		case vm.pid != 0:
+			syscall.Kill(vm.pid, syscall.SIGTERM)
 		}
-		if vm.cmd != nil {
+		switch {
+		case vm.cmd != nil:
 			select {
 			case <-vm.exited:
 			case <-time.After(10 * time.Second):
 				vm.cmd.Process.Kill()
 				<-vm.exited
 			}
+		case vm.pid != 0:
+			stopProcess(vm.pid, vm.Config.Dir, 10*time.Second)
+			stopSWTPMIn(vm.Config.tpmDir())
 		}
 		vm.cleanup()
 	})
 	return nil
 }
 
+// Detach lets go of the VM without stopping it: QEMU and its TPM emulator keep running, and
+// AttachVM reaches them again.
+func (vm *VM) Detach() {
+	vm.stopOnce.Do(func() {
+		if vm.QMP != nil {
+			vm.QMP.Close()
+		}
+		if vm.follower != nil {
+			vm.follower.Close()
+		}
+		if vm.log != nil {
+			vm.log.Close()
+		}
+	})
+}
+
 func (vm *VM) cleanup() {
 	if vm.tpm != nil {
 		vm.tpm.Stop()
 	}
+	if vm.follower != nil {
+		vm.follower.Close()
+	}
 	if vm.log != nil {
 		vm.log.Close()
+	}
+}
+
+// runningPID reads the PID a process wrote to a file and reports whether it runs still: a
+// process whose command line names dir, so a PID used again by another process is not taken for
+// it.
+func runningPID(pidFile, dir string) (int, bool) {
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(string(bytes.TrimSpace(data)))
+	if err != nil || pid <= 0 {
+		return 0, false
+	}
+	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil || !bytes.Contains(cmdline, []byte(dir)) {
+		return 0, false
+	}
+	return pid, true
+}
+
+// stopProcess ends the process that runs with dir on its command line: it waits for it to exit
+// on its own until timeout, then kills it.
+func stopProcess(pid int, dir string, timeout time.Duration) {
+	running := func() bool {
+		cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		return err == nil && bytes.Contains(cmdline, []byte(dir))
+	}
+	deadline := time.Now().Add(timeout)
+	for running() {
+		if time.Now().After(deadline) {
+			syscall.Kill(pid, syscall.SIGKILL)
+			deadline = time.Now().Add(timeout)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

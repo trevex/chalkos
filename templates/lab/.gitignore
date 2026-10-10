@@ -1,0 +1,3 @@
+# The cluster's secrets in plain text. secrets.pub.json, their public part, belongs to the
+# repository: the flake reads it.
+secrets.json

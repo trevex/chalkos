@@ -27,8 +27,10 @@ func TestQemuArgs(t *testing.T) {
 		{"-global", "driver=cfi.pflash01,property=secure,value=on"},
 		{"-drive", "if=pflash,format=raw,unit=0,readonly=on,file=/fw/CODE.fd"},
 		{"-drive", "if=pflash,format=raw,unit=1,file=/vm/OVMF_VARS.fd"},
-		{"-serial", "stdio"},
+		{"-chardev", "file,id=console,append=on,path=/vm/console.log"},
+		{"-serial", "chardev:console"},
 		{"-qmp", "unix:/vm/qmp.sock,server=on,wait=off"},
+		{"-pidfile", "/vm/qemu.pid"},
 		{"-drive", "if=none,id=disk0,format=qcow2,file=/vm/disk.qcow2"},
 		{"-device", "virtio-blk-pci,drive=disk0,bootindex=1"},
 		{"-drive", "if=none,id=disk1,format=qcow2,file=/vm/data.qcow2"},
@@ -76,6 +78,20 @@ func TestQemuArgs(t *testing.T) {
 
 	if noTPM := c.qemuArgs(""); hasPair(noTPM, "-device", "tpm-tis,tpmdev=tpm0") {
 		t.Error("TPM device present without a TPM socket")
+	}
+	if hasPair(args, "-device", "virtio-serial-pci,id=agent") {
+		t.Error("a VM without GuestAgent has its channel")
+	}
+	c.GuestAgent = true
+	agent := c.qemuArgs("")
+	for _, w := range [][2]string{
+		{"-device", "virtio-serial-pci,id=agent"},
+		{"-chardev", "socket,id=qga,path=/vm/qga.sock,server=on,wait=off"},
+		{"-device", "virtserialport,bus=agent.0,chardev=qga,name=org.qemu.guest_agent.0"},
+	} {
+		if !hasPair(agent, w[0], w[1]) {
+			t.Errorf("missing %s %s in %v", w[0], w[1], agent)
+		}
 	}
 }
 
