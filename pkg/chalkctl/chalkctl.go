@@ -5,7 +5,6 @@ package chalkctl
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -66,49 +65,41 @@ file or a client file, and talks to chalkd on each node.`,
 	})
 
 	gen := group(&cobra.Command{Use: "gen", Short: "Generate files of a cluster"})
-	gen.AddCommand(legacy(a, "secrets", "Generate the cluster's secrets file", func(a *app, _ context.Context, args []string) error { return a.genSecrets(args) }))
+	gen.AddCommand(a.genSecretsCommand())
 	node := group(&cobra.Command{Use: "node", Short: "Manage a node's certificate"})
-	node.AddCommand(legacy(a, "renew <node>", "Issue a node a new node certificate, also once its own expired", (*app).nodeRenew))
+	node.AddCommand(a.nodeRenewCommand())
 	nodeCA := group(&cobra.Command{Use: "node-ca", Short: "Manage the node CA"})
-	nodeCA.AddCommand(legacy(a, "rotate", "Issue a new node CA and deliver it to the control-plane nodes", (*app).nodeCARotate))
+	nodeCA.AddCommand(a.nodeCARotateCommand())
 	config := group(&cobra.Command{Use: "config", Short: "Manage client files"})
-	config.AddCommand(legacy(a, "new", "Write a client file, which operates the cluster without the secrets file", (*app).configNew))
+	config.AddCommand(a.configNewCommand())
 	storage := group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes"})
-	storage.AddCommand(legacy(a, "reset <node> <volume>", "Wipe and recreate one volume", (*app).resetVolume))
+	storage.AddCommand(a.resetVolumeCommand())
 	etcd := group(&cobra.Command{Use: "etcd", Short: "Manage the cluster's etcd members"})
-	etcd.AddCommand(
-		legacy(a, "members", "List etcd's members and their health", (*app).etcdMembers),
-		legacy(a, "remove-member <node|id>", "Remove a node's etcd member, such as a stale one", (*app).etcdRemoveMember),
-		legacy(a, "leave <node>", "Take a control-plane node out of etcd", (*app).etcdLeave),
-	)
+	etcd.AddCommand(a.etcdMembersCommand(), a.etcdRemoveMemberCommand(), a.etcdLeaveCommand())
 	root.AddCommand(
 		gen, node, nodeCA, config, storage, etcd,
-		legacy(a, "recovery-key <node>", "Print a node's recovery key", (*app).recoveryKey),
-		legacy(a, "install <node>", "Install a node in maintenance mode", (*app).install),
-		legacy(a, "disks [<node>]", "List a node's disks", (*app).disks),
-		legacy(a, "apply-identity <node>", "Deliver a node's identity from the cluster definition", (*app).applyIdentity),
-		legacy(a, "status <node>", "Show an installed node's status", (*app).status),
-		legacy(a, "logs <node>", "Show a node's journal", (*app).logs),
-		legacy(a, "reboot <node>", "Reboot a node", (*app).reboot),
-		legacy(a, "rotate <kind>", "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key", (*app).rotate),
-		legacy(a, "bootstrap <node>", "Initialise the cluster on a control-plane node", (*app).bootstrap),
-		legacy(a, "kubeconfig", "Write an admin kubeconfig", (*app).kubeconfig),
-		legacy(a, "upgrade", "Install new images on the cluster's nodes, one control plane at a time", (*app).upgrade),
-		legacy(a, "sign", "Sign the boot loader and UKIs of a disk image", func(_ *app, ctx context.Context, args []string) error { return runSign(ctx, args) }),
+		a.recoveryKeyCommand(),
+		a.installCommand(),
+		a.disksCommand(),
+		a.applyIdentityCommand(),
+		a.statusCommand(),
+		a.logsCommand(),
+		a.rebootCommand(),
+		a.rotateCommand(),
+		a.bootstrapCommand(),
+		a.kubeconfigCommand(),
+		a.upgradeCommand(),
+		signCommand(),
 	)
 	return root
 }
 
-// legacy is a command whose handler parses its own flags.
-func legacy(a *app, use, short string, run func(a *app, ctx context.Context, args []string) error) *cobra.Command {
-	return &cobra.Command{
-		Use:                use,
-		Short:              short,
-		DisableFlagParsing: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(a.with(cmd), cmd.Context(), args)
-		},
+// command makes cmd run run with the environment and streams of the command that runs.
+func (a *app) command(cmd *cobra.Command, run func(a *app, ctx context.Context, args []string) error) *cobra.Command {
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		return run(a.with(c), c.Context(), args)
 	}
+	return cmd
 }
 
 // group makes cmd a command that only holds subcommands: run alone, or with one it does not
@@ -175,23 +166,36 @@ func runNix(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func runSign(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("sign", flag.ContinueOnError)
-	imagePath := fs.String("image", "", "raw disk image to sign in place")
-	repartJSON := fs.String("repart-json", "", "repart-output.json describing the image's partitions")
-	key := fs.String("key", "", "PEM private key of the Secure Boot db signer")
-	cert := fs.String("cert", "", "PEM certificate of the Secure Boot db signer")
-	if err := fs.Parse(args); err != nil {
-		return err
+type signFlags struct {
+	image, repartJSON, key, cert string
+}
+
+func signCommand() *cobra.Command {
+	var f signFlags
+	cmd := &cobra.Command{
+		Use:   "sign",
+		Short: "Sign the boot loader and UKIs of a disk image",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSign(cmd.Context(), f)
+		},
 	}
-	for _, f := range []struct{ name, value string }{
-		{"--image", *imagePath}, {"--repart-json", *repartJSON}, {"--key", *key}, {"--cert", *cert},
+	fs := cmd.Flags()
+	fs.StringVar(&f.image, "image", "", "raw disk image to sign in place")
+	fs.StringVar(&f.repartJSON, "repart-json", "", "repart-output.json describing the image's partitions")
+	fs.StringVar(&f.key, "key", "", "PEM private key of the Secure Boot db signer")
+	fs.StringVar(&f.cert, "cert", "", "PEM certificate of the Secure Boot db signer")
+	return cmd
+}
+
+func runSign(ctx context.Context, f signFlags) error {
+	for _, required := range []struct{ name, value string }{
+		{"--image", f.image}, {"--repart-json", f.repartJSON}, {"--key", f.key}, {"--cert", f.cert},
 	} {
-		if f.value == "" {
-			return errors.New("sign: " + f.name + " is required")
+		if required.value == "" {
+			return errors.New("sign: " + required.name + " is required")
 		}
 	}
-	return signImage(ctx, *imagePath, *repartJSON, *key, *cert)
+	return signImage(ctx, f.image, f.repartJSON, f.key, f.cert)
 }
 
 func signImage(ctx context.Context, imagePath, repartJSON, key, cert string) error {

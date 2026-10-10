@@ -276,11 +276,11 @@ func TestNodeCARotateNeedsAControlPlane(t *testing.T) {
 // node renew trusts the expired node's old key, which its help says.
 func TestNodeRenewHelp(t *testing.T) {
 	ta := newTestApp(t)
-	if err := ta.run(context.Background(), []string{"node", "renew", "-h"}); err == nil {
-		t.Error("node renew -h ran")
+	if err := ta.run(context.Background(), []string{"node", "renew", "-h"}); err != nil {
+		t.Fatal(err)
 	}
-	help := ta.stderr.String()
-	for _, want := range []string{"usage: chalkctl node renew <node>", "old key", "-endpoint"} {
+	help := ta.stdout.String()
+	for _, want := range []string{"chalkctl node renew <node>", "old key", "--endpoint"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help lacks %q:\n%s", want, help)
 		}

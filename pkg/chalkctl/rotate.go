@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"maps"
 	"slices"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
@@ -18,10 +18,8 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// rotateHelp explains chalkctl rotate.
-const rotateHelp = `usage: chalkctl rotate os-ca|kubernetes-ca|service-account-key|encryption-key [--resume | --finish [--force]] [flags]
-
-Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
+// rotateLong explains chalkctl rotate.
+const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
 status before the next one starts: accept (every node trusts the new value besides the old one),
 switch (the new value issues or signs), refresh (what the old value issued is issued again) and,
 with --finish, finish (the old value is removed, and whatever it issued is refused from then on).
@@ -29,15 +27,21 @@ The secrets file records the phase reached and is updated in place, keeping its 
 as <file>.prev, unless --out names a new file; an encrypted file is encrypted again to the
 recipients it records inside, which --recipient replaces. A rotation that stopped, as at an
 unreachable node, or paused for the operator, continues with --resume. One rotation runs at a
-time, and one chalkctl command at a time changes the secrets file, holding <file>.lock.
-
-flags:
-`
+time, and one chalkctl command at a time changes the secrets file, holding <file>.lock.`
 
 // endpointList is --endpoint NODE=ADDR, which may be given for each node.
 type endpointList map[string]string
 
-func (l endpointList) String() string { return fmt.Sprint(map[string]string(l)) }
+func (l endpointList) String() string {
+	var s []string
+	for _, name := range slices.Sorted(maps.Keys(l)) {
+		s = append(s, name+"="+l[name])
+	}
+	return strings.Join(s, ",")
+}
+
+// Type names the value in help.
+func (l endpointList) Type() string { return "node=addr" }
 
 func (l endpointList) Set(v string) error {
 	name, addr, ok := strings.Cut(v, "=")
@@ -48,30 +52,37 @@ func (l endpointList) Set(v string) error {
 	return nil
 }
 
-func (a *app) rotate(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("rotate", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), rotateHelp)
-		fs.PrintDefaults()
-	}
-	var cf clusterFlags
-	var sf secretFlags
-	var change changeFlags
-	cf.register(fs)
-	sf.register(fs)
-	change.register(fs)
-	endpoints := endpointList{}
-	fs.Var(endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address)")
-	resume := fs.Bool("resume", false, "continue the rotation the secrets file records")
-	finish := fs.Bool("finish", false, "remove the old value from every node and the secrets file")
-	force := fs.Bool("force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")
-	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for each node to apply a phase")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 1 || *resume && *finish || *force && !*finish {
+type rotateFlags struct {
+	cluster               clusterFlags
+	secrets               secretFlags
+	change                changeFlags
+	endpoints             endpointList
+	resume, finish, force bool
+	timeout               time.Duration
+}
+
+func (a *app) rotateCommand() *cobra.Command {
+	f := rotateFlags{endpoints: endpointList{}}
+	cmd := a.command(&cobra.Command{
+		Use:   "rotate <kind>",
+		Short: "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key",
+		Long:  rotateLong,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.rotate(ctx, f, pos) })
+	fs := cmd.Flags()
+	f.cluster.register(fs)
+	f.secrets.register(fs)
+	f.change.register(fs)
+	fs.Var(f.endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address)")
+	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
+	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
+	fs.BoolVar(&f.force, "force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")
+	fs.DurationVar(&f.timeout, "timeout", 10*time.Minute, "how long to wait for each node to apply a phase")
+	return cmd
+}
+
+func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
+	cf, sf, change, endpoints := f.cluster, f.secrets, f.change, f.endpoints
+	if len(pos) != 1 || f.resume && f.finish || f.force && !f.finish {
 		return errors.New("usage: chalkctl rotate " + strings.Join(pki.RotationKinds, "|") + " [--resume | --finish [--force]]")
 	}
 	kind := pos[0]
@@ -87,16 +98,16 @@ func (a *app) rotate(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	f, err := a.openSecrets(ctx, sf, cf.flake, change)
+	file, err := a.openSecrets(ctx, sf, cf.flake, change)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	r := &rotation{a: a, cluster: c, file: f, endpoints: endpoints, timeout: *timeout, poll: a.poll()}
+	defer file.Close()
+	r := &rotation{a: a, cluster: c, file: file, endpoints: endpoints, timeout: f.timeout, poll: a.poll()}
 	switch {
-	case *finish:
-		return r.finish(ctx, kind, *force)
-	case *resume:
+	case f.finish:
+		return r.finish(ctx, kind, f.force)
+	case f.resume:
 		return r.resume(ctx, kind)
 	}
 	return r.start(ctx, kind)

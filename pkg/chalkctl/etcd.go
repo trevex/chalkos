@@ -3,13 +3,13 @@ package chalkctl
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
@@ -87,20 +87,30 @@ func controlPlaneNodes(m *manifest.Manifest, skip string) []string {
 	return names
 }
 
-func (a *app) etcdMembers(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("etcd members", flag.ContinueOnError)
-	var n nodeCommand
-	n.registerClient(fs)
-	via := fs.String("via", "", "control-plane node to ask (default the first one that answers)")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+// etcdFlags are the flags of the etcd commands.
+type etcdFlags struct {
+	node  nodeCommand
+	via   string
+	force bool
+}
+
+func (a *app) etcdMembersCommand() *cobra.Command {
+	var f etcdFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "members",
+		Short: "List etcd's members and their health",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdMembers(ctx, f, pos) })
+	f.node.registerClient(cmd.Flags())
+	cmd.Flags().StringVar(&f.via, "via", "", "control-plane node to ask (default the first one that answers)")
+	return cmd
+}
+
+func (a *app) etcdMembers(ctx context.Context, f etcdFlags, pos []string) error {
 	if len(pos) != 0 {
 		return errors.New("usage: chalkctl etcd members [--via NODE]")
 	}
 	var members []*nodev1.EtcdMember
-	err = a.throughControlPlane(ctx, n, *via, "", func(conn *client.Conn) error {
+	err := a.throughControlPlane(ctx, f.node, f.via, "", func(conn *client.Conn) error {
 		resp, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
 		if err == nil {
 			members = resp.Msg.Members
@@ -128,22 +138,26 @@ func (a *app) etcdMembers(ctx context.Context, args []string) error {
 	return w.Flush()
 }
 
-func (a *app) etcdRemoveMember(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("etcd remove-member", flag.ContinueOnError)
-	var n nodeCommand
-	n.registerClient(fs)
-	via := fs.String("via", "", "control-plane node that removes the member (default the first other one that answers)")
-	force := fs.Bool("force", false, "remove the member even when the voters left would have no healthy quorum")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+func (a *app) etcdRemoveMemberCommand() *cobra.Command {
+	var f etcdFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "remove-member <node|id>",
+		Short: "Remove a node's etcd member, such as a stale one",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdRemoveMember(ctx, f, pos) })
+	fs := cmd.Flags()
+	f.node.registerClient(fs)
+	fs.StringVar(&f.via, "via", "", "control-plane node that removes the member (default the first other one that answers)")
+	fs.BoolVar(&f.force, "force", false, "remove the member even when the voters left would have no healthy quorum")
+	return cmd
+}
+
+func (a *app) etcdRemoveMember(ctx context.Context, f etcdFlags, pos []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl etcd remove-member <node|id> [--via NODE] [--force]")
 	}
 	var removed *nodev1.EtcdMember
-	err = a.throughControlPlane(ctx, n, *via, pos[0], func(conn *client.Conn) error {
-		resp, err := conn.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: pos[0], Force: *force}))
+	err := a.throughControlPlane(ctx, f.node, f.via, pos[0], func(conn *client.Conn) error {
+		resp, err := conn.EtcdRemoveMember(ctx, connect.NewRequest(&nodev1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
 		if err == nil {
 			removed = resp.Msg.Removed
 		}
@@ -156,19 +170,22 @@ func (a *app) etcdRemoveMember(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a *app) etcdLeave(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("etcd leave", flag.ContinueOnError)
-	var n nodeCommand
-	n.registerClient(fs)
-	force := fs.Bool("force", false, "leave through the other members also when the node's own etcd member does not answer, as when it lost its pinned address")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+func (a *app) etcdLeaveCommand() *cobra.Command {
+	var f etcdFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "leave <node>",
+		Short: "Take a control-plane node out of etcd",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.etcdLeave(ctx, f, pos) })
+	f.node.registerClient(cmd.Flags())
+	cmd.Flags().BoolVar(&f.force, "force", false, "leave through the other members also when the node's own etcd member does not answer, as when it lost its pinned address")
+	return cmd
+}
+
+func (a *app) etcdLeave(ctx context.Context, f etcdFlags, pos []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl etcd leave <node> [--force]")
 	}
-	t, err := a.clientTarget(ctx, n, pos[0])
+	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
@@ -176,7 +193,7 @@ func (a *app) etcdLeave(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := conn.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: *force})); err != nil {
+	if _, err := conn.EtcdLeave(ctx, connect.NewRequest(&nodev1.EtcdLeaveRequest{Force: f.force})); err != nil {
 		return fmt.Errorf("%s: %w", t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "%s left etcd; reinstall it to join the cluster again\n", t.name)

@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +17,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
@@ -39,14 +40,14 @@ type nodeCommand struct {
 	config string
 }
 
-func (n *nodeCommand) register(fs *flag.FlagSet) {
+func (n *nodeCommand) register(fs *pflag.FlagSet) {
 	n.cluster.register(fs)
 	n.secrets.register(fs)
 	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the node's first static address, or the address a client file that prefers its addresses names)")
 }
 
 // registerClient registers the flags of a command that a client file may run.
-func (n *nodeCommand) registerClient(fs *flag.FlagSet) {
+func (n *nodeCommand) registerClient(fs *pflag.FlagSet) {
 	n.register(fs)
 	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)")
 }
@@ -127,7 +128,7 @@ type pinning struct {
 	insecure    bool
 }
 
-func (p *pinning) register(fs *flag.FlagSet) {
+func (p *pinning) register(fs *pflag.FlagSet) {
 	fs.StringVar(&p.fingerprint, "fingerprint", "", "SHA-256 fingerprint the node prints on its console in maintenance mode")
 	fs.BoolVar(&p.insecure, "insecure", false, "accept any certificate and print the node's fingerprint")
 }
@@ -252,21 +253,32 @@ func nodeError(err error, name string) error {
 	return errors.New(strings.ReplaceAll(err.Error(), "<node>", name))
 }
 
-func (a *app) install(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
-	var n nodeCommand
-	var p pinning
-	n.register(fs)
-	p.register(fs)
-	imagePath := fs.String("image", "", "role image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or the directory nix build produces (default: build the node's role image)")
-	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
-	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")
-	wipe := fs.Bool("wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node's role or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
-	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+type installFlags struct {
+	node                                   nodeCommand
+	pin                                    pinning
+	image, signKey, signCert, passwordFile string
+	wipeDisk                               bool
+}
+
+func (a *app) installCommand() *cobra.Command {
+	var f installFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "install <node>",
+		Short: "Install a node in maintenance mode",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.install(ctx, f, pos) })
+	fs := cmd.Flags()
+	f.node.register(fs)
+	f.pin.register(fs)
+	fs.StringVar(&f.image, "image", "", "role image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or the directory nix build produces (default: build the node's role image)")
+	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
+	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer")
+	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node's role or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
+	fs.StringVar(&f.passwordFile, "password-file", "", "file holding the password of a node whose fallback is a password")
+	return cmd
+}
+
+func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
+	n, p := f.node, f.pin
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl install <node> [flags]")
 	}
@@ -307,7 +319,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackSecret(ctx, t, *passwordFile, true)
+	fallback, err := a.fallbackSecret(ctx, t, f.passwordFile, true)
 	if err != nil {
 		return err
 	}
@@ -321,7 +333,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		NodeKey:         []byte(nodeCert.Key),
 		CaCertificate:   []byte(t.secrets.OSCABundle()),
 		FallbackSecret:  fallback,
-		WipeDisk:        *wipe,
+		WipeDisk:        f.wipeDisk,
 		KubernetesShare: share,
 	}
 
@@ -339,20 +351,20 @@ func (a *app) install(ctx context.Context, args []string) error {
 			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
 			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
 		}}
-		path := *imagePath
+		path := f.image
 		if path == "" {
 			if path, err = a.buildImage(ctx, t.cluster, t.node.Role, t.node.Platform); err != nil {
 				return err
 			}
 		}
-		if img, err = openImage(ctx, path, *signKey, *signCert, true); err != nil {
+		if img, err = openImage(ctx, path, f.signKey, f.signCert, true); err != nil {
 			return err
 		}
 		defer img.Close()
 		if header.SystemDefinitions, err = readDefinitions(img.definitions); err != nil {
 			return err
 		}
-		if err := checkInstallImage(t, img, *signCert); err != nil {
+		if err := checkInstallImage(t, img, f.signCert); err != nil {
 			return err
 		}
 		header.Image = img.header
@@ -436,17 +448,27 @@ func readDefinitions(dir string) (map[string]string, error) {
 	return defs, nil
 }
 
-func (a *app) disks(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("disks", flag.ContinueOnError)
-	var n nodeCommand
-	var p pinning
-	n.registerClient(fs)
-	p.register(fs)
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+// nodePinFlags are the flags of a command that reaches an installed node or, with a fingerprint
+// or --insecure, a node in maintenance mode.
+type nodePinFlags struct {
+	node nodeCommand
+	pin  pinning
+}
+
+func (a *app) disksCommand() *cobra.Command {
+	var f nodePinFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "disks [<node>]",
+		Short: "List a node's disks",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f.node, f.pin, pos) })
+	f.node.registerClient(cmd.Flags())
+	f.pin.register(cmd.Flags())
+	return cmd
+}
+
+func (a *app) disks(ctx context.Context, n nodeCommand, p pinning, pos []string) error {
 	var conn *client.Conn
+	var err error
 	switch {
 	case len(pos) == 1:
 		t, err := a.clientTarget(ctx, n, pos[0])
@@ -507,16 +529,32 @@ func size(bytes uint64) string {
 	return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0") + units[i]
 }
 
-func (a *app) applyIdentity(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("apply-identity", flag.ContinueOnError)
-	var n nodeCommand
-	n.register(fs)
-	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
-	withShare := fs.Bool("kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+type applyIdentityFlags struct {
+	node            nodeCommand
+	passwordFile    string
+	kubernetesShare bool
+}
+
+func (a *app) applyIdentityCommand() *cobra.Command {
+	var f applyIdentityFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "apply-identity <node>",
+		Short: "Deliver a node's identity from the cluster definition",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.applyIdentity(ctx, f, pos) })
+	fs := cmd.Flags()
+	f.node.register(fs)
+	registerPasswordFile(fs, &f.passwordFile)
+	fs.BoolVar(&f.kubernetesShare, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
+	return cmd
+}
+
+// registerPasswordFile registers --password-file.
+func registerPasswordFile(fs *pflag.FlagSet, p *string) {
+	fs.StringVar(p, "password-file", "", "file holding the password of a node whose fallback is a password")
+}
+
+func (a *app) applyIdentity(ctx context.Context, f applyIdentityFlags, pos []string) error {
+	n := f.node
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl apply-identity <node> [--kubernetes-share]")
 	}
@@ -532,12 +570,12 @@ func (a *app) applyIdentity(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackFor(ctx, conn, t, *passwordFile, "")
+	fallback, err := a.fallbackFor(ctx, conn, t, f.passwordFile, "")
 	if err != nil {
 		return err
 	}
 	var share []byte
-	if *withShare {
+	if f.kubernetesShare {
 		if share, err = kubernetesShare(t, time.Now()); err != nil {
 			return err
 		}
@@ -559,15 +597,19 @@ func (a *app) applyIdentity(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a *app) resetVolume(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("storage reset", flag.ContinueOnError)
+func (a *app) resetVolumeCommand() *cobra.Command {
 	var n nodeCommand
-	n.registerClient(fs)
-	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+	var passwordFile string
+	cmd := a.command(&cobra.Command{
+		Use:   "reset <node> <volume>",
+		Short: "Wipe and recreate one volume",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.resetVolume(ctx, n, passwordFile, pos) })
+	n.registerClient(cmd.Flags())
+	registerPasswordFile(cmd.Flags(), &passwordFile)
+	return cmd
+}
+
+func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile string, pos []string) error {
 	if len(pos) != 2 {
 		return errors.New("usage: chalkctl storage reset <node> <volume>")
 	}
@@ -586,7 +628,7 @@ func (a *app) resetVolume(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackFor(ctx, conn, t, *passwordFile, pos[1])
+	fallback, err := a.fallbackFor(ctx, conn, t, passwordFile, pos[1])
 	if err != nil {
 		return err
 	}
@@ -597,14 +639,17 @@ func (a *app) resetVolume(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a *app) status(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+func (a *app) statusCommand() *cobra.Command {
 	var n nodeCommand
-	n.registerClient(fs)
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+	cmd := a.command(&cobra.Command{
+		Use:   "status <node>",
+		Short: "Show an installed node's status",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.status(ctx, n, pos) })
+	n.registerClient(cmd.Flags())
+	return cmd
+}
+
+func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl status <node>")
 	}
@@ -769,18 +814,28 @@ func kubernetesLine(k *nodev1.KubernetesStatus) string {
 	return line
 }
 
-func (a *app) logs(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
-	var n nodeCommand
-	var p pinning
-	n.registerClient(fs)
-	p.register(fs)
-	follow := fs.Bool("f", false, "keep printing new entries")
-	unit := fs.String("unit", "", "show only this unit's entries")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+type logsFlags struct {
+	nodePinFlags
+	follow bool
+	unit   string
+}
+
+func (a *app) logsCommand() *cobra.Command {
+	var f logsFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "logs <node>",
+		Short: "Show a node's journal",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.logs(ctx, f, pos) })
+	fs := cmd.Flags()
+	f.node.registerClient(fs)
+	f.pin.register(fs)
+	fs.BoolVarP(&f.follow, "follow", "f", false, "keep printing new entries")
+	fs.StringVar(&f.unit, "unit", "", "show only this unit's entries")
+	return cmd
+}
+
+func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
+	n, p := f.node, f.pin
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl logs <node> [-f] [--unit U]")
 	}
@@ -792,7 +847,7 @@ func (a *app) logs(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	stream, err := conn.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Unit: *unit, Follow: *follow}))
+	stream, err := conn.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Unit: f.unit, Follow: f.follow}))
 	if err != nil {
 		return err
 	}
@@ -800,7 +855,7 @@ func (a *app) logs(ctx context.Context, args []string) error {
 	defer out.Flush()
 	for stream.Receive() {
 		fmt.Fprintln(out, stream.Msg().Line)
-		if *follow {
+		if f.follow {
 			out.Flush()
 		}
 	}
@@ -810,16 +865,18 @@ func (a *app) logs(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a *app) reboot(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("reboot", flag.ContinueOnError)
-	var n nodeCommand
-	var p pinning
-	n.registerClient(fs)
-	p.register(fs)
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+func (a *app) rebootCommand() *cobra.Command {
+	var f nodePinFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "reboot <node>",
+		Short: "Reboot a node",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.reboot(ctx, f.node, f.pin, pos) })
+	f.node.registerClient(cmd.Flags())
+	f.pin.register(cmd.Flags())
+	return cmd
+}
+
+func (a *app) reboot(ctx context.Context, n nodeCommand, p pinning, pos []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl reboot <node>")
 	}

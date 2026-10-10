@@ -33,7 +33,7 @@ import (
 )
 
 func TestRunSignRequiresAllFlags(t *testing.T) {
-	err := runSign(context.Background(), []string{"--image", "disk.raw"})
+	err := runSign(context.Background(), signFlags{image: "disk.raw"})
 	if err == nil || !strings.Contains(err.Error(), "--repart-json") {
 		t.Fatalf("err = %v, want a missing --repart-json error", err)
 	}
@@ -1003,5 +1003,27 @@ func TestCompletion(t *testing.T) {
 	}
 	if !strings.Contains(ta.stdout.String(), "__start_chalkctl") {
 		t.Errorf("chalkctl completion bash prints no completion script:\n%.200s", ta.stdout.String())
+	}
+}
+
+func TestExecuteFlags(t *testing.T) {
+	ta := newTestApp(t)
+	if got := ta.execute(context.Background(), "install", "n1", "--bogus"); got != 1 {
+		t.Errorf("an unknown flag exits with %d, want 1", got)
+	}
+	if want := "chalkctl: unknown flag: --bogus; chalkctl install --help lists its flags\n"; ta.stderr.String() != want {
+		t.Errorf("stderr = %q, want %q", ta.stderr.String(), want)
+	}
+	// Single-dash long flags are shorthands to pflag.
+	ta = newTestApp(t)
+	if got := ta.execute(context.Background(), "install", "n1", "-insecure"); got != 1 {
+		t.Errorf("-insecure exits with %d, want 1", got)
+	}
+	ta = newTestApp(t)
+	if got := ta.execute(context.Background(), "logs", "--help"); got != 0 {
+		t.Errorf("--help exits with %d, want 0", got)
+	}
+	if !strings.Contains(ta.stdout.String(), "-f, --follow") {
+		t.Errorf("logs --help lacks -f, --follow:\n%s", ta.stdout.String())
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"maps"
 	"os"
@@ -13,32 +12,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/pflag"
+
 	"github.com/trevex/chalkos/pkg/manifest"
 )
-
-// parse parses flags anywhere among args, as in `chalkctl install w1 --insecure`, and returns the
-// positional arguments.
-func parse(fs *flag.FlagSet, args []string) ([]string, error) {
-	var positional []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-		args = fs.Args()
-		if len(args) == 0 {
-			return positional, nil
-		}
-		positional = append(positional, args[0])
-		args = args[1:]
-	}
-}
 
 // clusterFlags select the cluster definition.
 type clusterFlags struct {
 	flake, cluster, manifest string
 }
 
-func (c *clusterFlags) register(fs *flag.FlagSet) {
+func (c *clusterFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&c.flake, "flake", ".", "directory of the flake that defines the cluster")
 	fs.StringVar(&c.cluster, "cluster", "", "cluster to use when the flake defines several")
 	fs.StringVar(&c.manifest, "manifest", "", "read the cluster's manifest from this file instead of evaluating the flake")

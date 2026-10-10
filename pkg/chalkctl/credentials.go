@@ -5,12 +5,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/install"
@@ -167,22 +168,34 @@ func clusterOfConfig(c client.Config, f clusterFlags) *cluster {
 
 // configNew issues a client file from the secrets file: a certificate of the role for a new
 // key, the OS CA, and the nodes' addresses.
-func (a *app) configNew(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("config new", flag.ContinueOnError)
-	var cf clusterFlags
-	var sf secretFlags
-	cf.register(fs)
-	sf.register(fs)
-	name := fs.String("name", "", "the user's name, which the certificate carries")
-	role := fs.String("role", "", "the role the certificate grants: admin, operator or reader")
-	ttl := fs.Duration("ttl", 8760*time.Hour, "validity of the certificate")
-	out := fs.String("out", "", "file to write (default ~/.config/chalkos/config)")
-	force := fs.Bool("force", false, "replace an existing file")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 0 || *name == "" || *role == "" {
+type configNewFlags struct {
+	cluster         clusterFlags
+	secrets         secretFlags
+	name, role, out string
+	ttl             time.Duration
+	force           bool
+}
+
+func (a *app) configNewCommand() *cobra.Command {
+	var f configNewFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "new",
+		Short: "Write a client file, which operates the cluster without the secrets file",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.configNew(ctx, f, pos) })
+	fs := cmd.Flags()
+	f.cluster.register(fs)
+	f.secrets.register(fs)
+	fs.StringVar(&f.name, "name", "", "the user's name, which the certificate carries")
+	fs.StringVar(&f.role, "role", "", "the role the certificate grants: admin, operator or reader")
+	fs.DurationVar(&f.ttl, "ttl", 8760*time.Hour, "validity of the certificate")
+	fs.StringVar(&f.out, "out", "", "file to write (default ~/.config/chalkos/config)")
+	fs.BoolVar(&f.force, "force", false, "replace an existing file")
+	return cmd
+}
+
+func (a *app) configNew(ctx context.Context, f configNewFlags, pos []string) error {
+	cf, sf := f.cluster, f.secrets
+	if len(pos) != 0 || f.name == "" || f.role == "" {
 		return errors.New("usage: chalkctl config new --name NAME --role admin|operator|reader [--ttl 8760h] [--out FILE] [--force]")
 	}
 	c, err := a.loadCluster(ctx, cf)
@@ -199,7 +212,7 @@ func (a *app) configNew(ctx context.Context, args []string) error {
 			nodes[node] = addrs[0]
 		}
 	}
-	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.manifest.Cluster.Name, *name, *role, *ttl, nodes, time.Now())
+	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.manifest.Cluster.Name, f.name, f.role, f.ttl, nodes, time.Now())
 	if err != nil {
 		return err
 	}
@@ -207,7 +220,7 @@ func (a *app) configNew(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	path := *out
+	path := f.out
 	if path == "" {
 		path = defaultConfigPath(a.home)
 	}
@@ -216,7 +229,7 @@ func (a *app) configNew(ctx context.Context, args []string) error {
 		return err
 	}
 	// The file holds the user's private key.
-	if *force {
+	if f.force {
 		err = install.WriteFile(path, data, 0o600)
 	} else if _, statErr := os.Stat(path); statErr == nil {
 		return fmt.Errorf("%s exists; pass --force to replace it", path)
@@ -230,6 +243,6 @@ func (a *app) configNew(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "wrote %s for %s with the %s role; its certificate expires on %s\n", path, *name, *role, leaf.NotAfter.UTC().Format(time.DateOnly))
+	fmt.Fprintf(a.stdout, "wrote %s for %s with the %s role; its certificate expires on %s\n", path, f.name, f.role, leaf.NotAfter.UTC().Format(time.DateOnly))
 	return nil
 }

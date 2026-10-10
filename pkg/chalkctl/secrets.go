@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,6 +16,8 @@ import (
 
 	"filippo.io/age"
 	"filippo.io/age/plugin"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
@@ -28,6 +29,7 @@ type stringList []string
 
 func (l *stringList) String() string     { return strings.Join(*l, ",") }
 func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
+func (l *stringList) Type() string       { return "strings" }
 
 // secretFlags say where the secrets file is and how to decrypt it.
 type secretFlags struct {
@@ -35,7 +37,7 @@ type secretFlags struct {
 	identities stringList
 }
 
-func (s *secretFlags) register(fs *flag.FlagSet) {
+func (s *secretFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&s.path, "secrets", "", "secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)")
 	fs.Var(&s.identities, "identity", "age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
 }
@@ -197,16 +199,19 @@ func readInterruptible(ctx context.Context, read func() ([]byte, error), restore
 	}
 }
 
-func (a *app) recoveryKey(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("recovery-key", flag.ContinueOnError)
+func (a *app) recoveryKeyCommand() *cobra.Command {
 	var cf clusterFlags
 	var sf secretFlags
-	cf.register(fs)
-	sf.register(fs)
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
+	cmd := a.command(&cobra.Command{
+		Use:   "recovery-key <node>",
+		Short: "Print a node's recovery key",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.recoveryKey(ctx, cf, sf, pos) })
+	cf.register(cmd.Flags())
+	sf.register(cmd.Flags())
+	return cmd
+}
+
+func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, pos []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl recovery-key <node>")
 	}
@@ -229,26 +234,38 @@ func (a *app) recoveryKey(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a *app) genSecrets(args []string) error {
-	fs := flag.NewFlagSet("gen secrets", flag.ContinueOnError)
-	var recipients stringList
-	fs.Var(&recipients, "recipient", "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
-	plaintext := fs.Bool("plaintext", false, "write secrets.json unencrypted, for files protected by other means")
-	out := fs.String("out", ".", "directory to write the files to")
-	if _, err := parse(fs, args); err != nil {
-		return err
-	}
-	if (len(recipients) == 0) == !*plaintext {
+type genSecretsFlags struct {
+	recipients stringList
+	plaintext  bool
+	out        string
+}
+
+func (a *app) genSecretsCommand() *cobra.Command {
+	var f genSecretsFlags
+	cmd := a.command(&cobra.Command{
+		Use:   "secrets",
+		Short: "Generate the cluster's secrets file",
+	}, func(a *app, ctx context.Context, pos []string) error { return a.genSecrets(f) })
+	fs := cmd.Flags()
+	fs.Var(&f.recipients, "recipient", "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
+	fs.BoolVar(&f.plaintext, "plaintext", false, "write secrets.json unencrypted, for files protected by other means")
+	fs.StringVar(&f.out, "out", ".", "directory to write the files to")
+	return cmd
+}
+
+func (a *app) genSecrets(f genSecretsFlags) error {
+	recipients := f.recipients
+	if (len(recipients) == 0) == !f.plaintext {
 		return errors.New("gen secrets: pass --recipient (one or more) or --plaintext")
 	}
 	name := "secrets.age"
-	if *plaintext {
+	if f.plaintext {
 		name = "secrets.json"
 	}
-	secretsFile := filepath.Join(*out, name)
-	publicPath := filepath.Join(*out, "secrets.pub.json")
+	secretsFile := filepath.Join(f.out, name)
+	publicPath := filepath.Join(f.out, "secrets.pub.json")
 	// The secrets file is written once: a new one would orphan every installed node.
-	for _, p := range []string{filepath.Join(*out, "secrets.age"), filepath.Join(*out, "secrets.json"), publicPath} {
+	for _, p := range []string{filepath.Join(f.out, "secrets.age"), filepath.Join(f.out, "secrets.json"), publicPath} {
 		if _, err := os.Stat(p); err == nil {
 			return fmt.Errorf("%s exists; the secrets are generated once per cluster", p)
 		}
@@ -258,11 +275,11 @@ func (a *app) genSecrets(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.writeSecrets(secrets, recipients, *plaintext, secretsFile, publicPath); err != nil {
+	if err := a.writeSecrets(secrets, recipients, f.plaintext, secretsFile, publicPath); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "wrote %s and %s\n", secretsFile, publicPath)
-	if *plaintext {
+	if f.plaintext {
 		fmt.Fprintf(a.stderr, "warning: %s holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry\n", secretsFile)
 	}
 	return nil
@@ -362,7 +379,7 @@ type changeFlags struct {
 	recipients     stringList
 }
 
-func (c *changeFlags) register(fs *flag.FlagSet) {
+func (c *changeFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&c.out, "out", "", "write the changed secrets file to this new file instead of updating the secrets file in place")
 	fs.StringVar(&c.publicOut, "public-out", "", "write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place")
 	fs.Var(&c.recipients, "recipient", "age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out")

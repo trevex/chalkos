@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -15,15 +14,14 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
-const upgradeHelp = `usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data] [flags]
-
-Installs on each node the image of its role and platform: control planes one at a time, each
+const upgradeLong = `Installs on each node the image of its role and platform: control planes one at a time, each
 only while etcd keeps its quorum without it, then workers and nodes without Kubernetes in batches
 of --max-unavailable. Without --image the nodes, every node of the cluster or those --nodes
 names, are grouped by the role and platform they run, and each group's image is built from the
@@ -41,10 +39,7 @@ Run again, the command skips nodes that run the image and continues one it stopp
 uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
 one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
 volumes are evicted only with --delete-emptydir-data. An operator client file is enough to run it
-with --image.
-
-flags:
-`
+with --image.`
 
 // upgradeRun upgrades nodes to the images of their roles and platforms.
 type upgradeRun struct {
@@ -83,38 +78,48 @@ type upgradeGroup struct {
 	image          *diskImage
 }
 
-func (a *app) upgrade(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), upgradeHelp)
-		fs.PrintDefaults()
-	}
-	var cf clusterFlags
-	var sf secretFlags
-	cf.register(fs)
-	sf.register(fs)
-	config := fs.String("config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)")
-	endpoints := endpointList{}
-	fs.Var(endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address, or the address a client file that prefers its addresses names)")
-	imagePath := fs.String("image", "", "image to install on the nodes of its role and platform: a raw image with repart-output.json next to it, or the directory nix build produces (default: build each node's image from the cluster definition)")
-	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
-	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")
-	nodesFlag := fs.String("nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node of the image's role)")
-	maxUnavailable := fs.Int("max-unavailable", 1, "how many workers and nodes without Kubernetes upgrade at once")
-	allowDowntime := fs.Bool("allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
-	noReboot := fs.Bool("no-reboot", false, "install the images on the nodes without draining or rebooting them; they boot with their next reboot")
-	retryFailed := fs.Bool("retry-failed", false, "install an image again, once, on nodes that fell back from it")
-	deleteEmptyDir := fs.Bool("delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
-	timeout := fs.Duration("timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 0 || *maxUnavailable < 1 {
+type upgradeFlags struct {
+	cluster                                 clusterFlags
+	secrets                                 secretFlags
+	config, image, signKey, signCert, nodes string
+	endpoints                               endpointList
+	maxUnavailable                          int
+	allowDowntime, noReboot, retryFailed    bool
+	deleteEmptyDir                          bool
+	timeout                                 time.Duration
+}
+
+func (a *app) upgradeCommand() *cobra.Command {
+	f := upgradeFlags{endpoints: endpointList{}}
+	cmd := a.command(&cobra.Command{
+		Use:   "upgrade",
+		Short: "Install new images on the cluster's nodes, one control plane at a time",
+		Long:  upgradeLong,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f, pos) })
+	fs := cmd.Flags()
+	f.cluster.register(fs)
+	f.secrets.register(fs)
+	fs.StringVar(&f.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)")
+	fs.Var(f.endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address, or the address a client file that prefers its addresses names)")
+	fs.StringVar(&f.image, "image", "", "image to install on the nodes of its role and platform: a raw image with repart-output.json next to it, or the directory nix build produces (default: build each node's image from the cluster definition)")
+	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
+	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer")
+	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node of the image's role)")
+	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many workers and nodes without Kubernetes upgrade at once")
+	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
+	fs.BoolVar(&f.noReboot, "no-reboot", false, "install the images on the nodes without draining or rebooting them; they boot with their next reboot")
+	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
+	fs.BoolVar(&f.deleteEmptyDir, "delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
+	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
+	return cmd
+}
+
+func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
+	cf, sf, endpoints := f.cluster, f.secrets, f.endpoints
+	if len(pos) != 0 || f.maxUnavailable < 1 {
 		return errors.New("usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data]")
 	}
-	creds, err := a.loadCredentials(ctx, sf, *config, cf.flake)
+	creds, err := a.loadCredentials(ctx, sf, f.config, cf.flake)
 	if err != nil {
 		return err
 	}
@@ -128,12 +133,12 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 		}
 	}
 	var img *diskImage
-	if *imagePath != "" {
-		if img, err = openImage(ctx, *imagePath, *signKey, *signCert, false); err != nil {
+	if f.image != "" {
+		if img, err = openImage(ctx, f.image, f.signKey, f.signCert, false); err != nil {
 			return err
 		}
 		defer img.Close()
-		if err := checkImage(c, img, *signCert); err != nil {
+		if err := checkImage(c, img, f.signCert); err != nil {
 			return err
 		}
 	} else if c.attr == "" {
@@ -141,13 +146,13 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 	}
 	r := &upgradeRun{
 		a: a, cluster: c, creds: creds, endpoints: endpoints,
-		allowDowntime: *allowDowntime, noReboot: *noReboot, maxUnavailable: *maxUnavailable,
-		retryFailed: *retryFailed, deleteEmptyDir: *deleteEmptyDir,
-		timeout: *timeout, drainTimeout: *timeout, poll: a.poll(), quorumWait: min(*timeout, time.Minute),
+		allowDowntime: f.allowDowntime, noReboot: f.noReboot, maxUnavailable: f.maxUnavailable,
+		retryFailed: f.retryFailed, deleteEmptyDir: f.deleteEmptyDir,
+		timeout: f.timeout, drainTimeout: f.timeout, poll: a.poll(), quorumWait: min(f.timeout, time.Minute),
 	}
 	var named []string
-	if *nodesFlag != "" {
-		named = strings.Split(*nodesFlag, ",")
+	if f.nodes != "" {
+		named = strings.Split(f.nodes, ",")
 	}
 	if err := r.find(ctx, named, img); err != nil {
 		return err
@@ -158,11 +163,11 @@ func (a *app) upgrade(ctx context.Context, args []string) error {
 			if err != nil {
 				return err
 			}
-			if g.image, err = openImage(ctx, path, *signKey, *signCert, false); err != nil {
+			if g.image, err = openImage(ctx, path, f.signKey, f.signCert, false); err != nil {
 				return err
 			}
 			defer g.image.Close()
-			if err := checkImage(c, g.image, *signCert); err != nil {
+			if err := checkImage(c, g.image, f.signCert); err != nil {
 				return err
 			}
 			if got := g.image.info; got.Role() != g.role || got.Platform() != g.platform {
