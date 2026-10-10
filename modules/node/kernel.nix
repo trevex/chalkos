@@ -90,7 +90,12 @@ let
         "ena"
         "gve"
       ]
-      ++ lib.optional isx86_64 "ptp_kvm";
+      ++ lib.optionals isx86_64 [
+        "ptp_kvm"
+        # VMware's memory balloon and its guest clock.
+        "vmw_balloon"
+        "ptp_vmw"
+      ];
     };
     filesystems = {
       directories = [
@@ -103,13 +108,20 @@ let
         "fs/overlayfs"
         "fs/fuse"
         "fs/nfs"
+        # CephFS and SMB, which CSI drivers mount.
+        "fs/ceph"
+        "fs/smb"
         "fs/isofs"
         # systemd mounts these: efivars, which chalkd writes, the ESP's automount and configfs.
         "fs/efivarfs"
         "fs/autofs"
         "fs/configfs"
       ];
-      modules = [ "ext2" ];
+      modules = [
+        "ext2"
+        # NFS with Kerberos.
+        "rpcsec_gss_krb5"
+      ];
     };
     kubernetes = {
       directories = [
@@ -138,6 +150,8 @@ let
         "drivers/watchdog"
         "drivers/edac"
         "drivers/hwmon"
+        # SMBus, which watchdogs such as iTCO_wdt, IPMI over SSIF and sensors use.
+        "drivers/i2c/busses"
         "drivers/acpi"
         "drivers/firmware"
         "drivers/cpufreq"
@@ -162,7 +176,10 @@ let
       modules = [
         "evdev"
         "input_leds"
-      ];
+        "i2c_dev"
+      ]
+      # Intel's LPC bridge, which iTCO_wdt needs.
+      ++ lib.optional isx86_64 "lpc_ich";
     };
     gpu.directories = [
       "drivers/gpu"

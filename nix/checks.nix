@@ -487,7 +487,9 @@ in
       has() {
         modprobe --config no-config -d "$1" -S ${version} --show-depends "$2" >/dev/null 2>&1
       }
-      has ${tree} virtio_net || fail "the worker's tree lacks virtio_net"
+      for module in virtio_net i2c_i801 i2c_dev lpc_ich vmw_balloon ptp_vmw ceph cifs rpcsec_gss_krb5; do
+        has ${tree} $module || fail "the worker's tree lacks $module"
+      done
       if has ${tree} amdgpu; then fail "the worker's tree holds amdgpu"; fi
       has ${gpu} amdgpu || fail "the gpu group's tree lacks amdgpu"
 
