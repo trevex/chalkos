@@ -304,3 +304,137 @@ func TestPingGuestAgent(t *testing.T) {
 		t.Errorf("commands %q", commands)
 	}
 }
+
+// TestStartAgain stops the lab when one of its VMs exits, as when its guest powers off, refuses
+// to start a lab a supervisor runs, and starts a stopped lab again from its state, over the stale
+// sockets a host's reboot leaves.
+func TestStartAgain(t *testing.T) {
+	dir, l := testLab(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- Supervise(ctx, dir) }()
+	for !Ready(dir) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := PrepareStart(ctx, dir); err == nil || !strings.Contains(err.Error(), "runs the lab") {
+		t.Errorf("PrepareStart of a supervised lab = %v, want a refusal", err)
+	}
+
+	w1 := l.VMConfig(dir, l.Nodes[1])
+	pid, ok := runningPID(w1.pidPath(), w1.Dir)
+	if !ok {
+		t.Fatal("w1 does not run")
+	}
+	syscall.Kill(pid, syscall.SIGTERM)
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "w1") {
+			t.Errorf("the supervisor ended with %v, want w1 named", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the supervisor runs on after w1 exited")
+	}
+	if Ready(dir) {
+		t.Error("the lab is ready after w1 exited")
+	}
+	for _, n := range l.Nodes {
+		if Running(l.VMConfig(dir, n)) {
+			t.Errorf("%s runs on after w1 exited", n.Name)
+		}
+	}
+
+	// A host's reboot leaves the switch's socket behind.
+	os.Remove(filepath.Join(dir, "switch", "ctl"))
+	if err := os.MkdirAll(filepath.Join(dir, "switch"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "switch", "ctl"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareStart(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	supervise(t, dir)
+	for _, n := range l.Nodes {
+		c := l.VMConfig(dir, n)
+		pid, ok := runningPID(c.pidPath(), c.Dir)
+		if !ok {
+			t.Fatalf("%s does not run after the start", n.Name)
+		}
+		cmdline, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		if want := fmt.Sprintf("hostfwd=tcp:127.0.0.1:%d-:50000", n.ChalkdPort); !strings.Contains(string(cmdline), want) {
+			t.Errorf("%s runs without its port: %q", n.Name, cmdline)
+		}
+	}
+}
+
+// TestStartSwitchOverAStaleSocket waits for the new switch, not the socket a switch that is gone
+// left behind.
+func TestStartSwitchOverAStaleSocket(t *testing.T) {
+	fakeTools(t)
+	dir := filepath.Join(t.TempDir(), "switch")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ctl"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s, err := StartSwitch(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop()
+	conn, err := net.Dial("unix", filepath.Join(dir, "ctl"))
+	if err != nil {
+		t.Fatalf("the switch does not listen once started: %v", err)
+	}
+	conn.Close()
+}
+
+// TestSupervisorPIDNotYetWritten waits for the PID of a supervisor that holds the lock but has
+// not written its PID yet.
+func TestSupervisorPIDNotYetWritten(t *testing.T) {
+	dir := t.TempDir()
+	lock, err := os.OpenFile(filepath.Join(dir, supervisorFile), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		lock.WriteString("4242\n")
+	}()
+	if pid, running, err := Supervisor(dir); err != nil || !running || pid != 4242 {
+		t.Errorf("Supervisor = %d, %v, %v; want 4242 once written", pid, running, err)
+	}
+}
+
+// TestRunningPIDMatchesTheDirectory takes a process for one of the lab's only when its command
+// line names the lab's directory, not another whose name begins the same.
+func TestRunningPIDMatchesTheDirectory(t *testing.T) {
+	fakeTools(t)
+	base := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	other := filepath.Join(base, "lab2", "switch")
+	s, err := StartSwitch(ctx, other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop()
+	if _, ok := runningPID(other+".pid", other); !ok {
+		t.Error("the switch is not taken for its own directory's")
+	}
+	if _, ok := runningPID(other+".pid", filepath.Join(base, "lab")); ok {
+		t.Error("the switch of lab2 is taken for one of lab")
+	}
+	if _, ok := runningPID(other+".pid", filepath.Join(base, "lab2")); !ok {
+		t.Error("the switch of lab2 is not taken for one of lab2")
+	}
+}

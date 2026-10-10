@@ -116,12 +116,6 @@ func (a *app) create(ctx context.Context, args []string) (err error) {
 		n.CPUs, n.MemoryMB = f.cpus, f.memory
 		if n.Kind == manifest.KindControlPlane {
 			n.MemoryMB = f.controlPlaneMemory
-			if n.APIPort, err = lab.FreePort(); err != nil {
-				return err
-			}
-		}
-		if n.ChalkdPort, err = lab.FreePort(); err != nil {
-			return err
 		}
 		l.Nodes = append(l.Nodes, n)
 	}
@@ -185,6 +179,18 @@ func (a *app) create(ctx context.Context, args []string) (err error) {
 			return err
 		}
 		if err := lab.CreateOverlay(ctx, filepath.Join(dir, "images", n.Role+".raw"), filepath.Join(dir, n.Name, "disk.qcow2"), f.diskSize); err != nil {
+			return err
+		}
+	}
+	// The ports are picked last, so they are most likely still free when the VMs start.
+	for i := range l.Nodes {
+		n := &l.Nodes[i]
+		if n.Kind == manifest.KindControlPlane {
+			if n.APIPort, err = lab.FreePort(); err != nil {
+				return err
+			}
+		}
+		if n.ChalkdPort, err = lab.FreePort(); err != nil {
 			return err
 		}
 	}
@@ -502,18 +508,23 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 }
 
 // maintenanceFingerprint waits for a node's chalkd to come up in maintenance mode, and returns
-// the fingerprint of the certificate it prints on the console.
+// the fingerprint of the certificate it prints on the console. It reads the console log alone, so
+// QMP stays free for others.
 func maintenanceFingerprint(ctx context.Context, l *lab.Lab, dir string, n lab.LabNode) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	vm, err := lab.AttachVM(ctx, l.VMConfig(dir, n))
+	c := l.VMConfig(dir, n)
+	if !lab.Running(c) {
+		return "", fmt.Errorf("the VM of %s does not run; its console is in %s", n.Name, c.ConsolePath())
+	}
+	console, stop, err := lab.FollowConsole(c.ConsolePath())
 	if err != nil {
 		return "", err
 	}
-	defer vm.Detach()
-	m, err := vm.Console.WaitFor(ctx, maintenanceRE)
+	defer stop()
+	m, err := console.WaitFor(ctx, maintenanceRE)
 	if err != nil {
-		return "", fmt.Errorf("%s did not come up in maintenance mode: %w; its console is in %s", n.Name, err, vm.Config.ConsolePath())
+		return "", fmt.Errorf("%s did not come up in maintenance mode: %w; its console is in %s", n.Name, err, c.ConsolePath())
 	}
 	return m[1], nil
 }

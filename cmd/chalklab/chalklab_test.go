@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -237,5 +238,76 @@ func TestLabDir(t *testing.T) {
 	}
 	if _, _, err := labDir("none"); err == nil {
 		t.Error("found a lab of a cluster without one")
+	}
+}
+
+// writeLab records a lab of cp1 and w1 that nothing runs, in a new state directory.
+func writeLab(t *testing.T) string {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir, _ := lab.StateDir("lab")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	l := &lab.Lab{Cluster: "lab", Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001, APIPort: 16443}, {Name: "w1", ChalkdPort: 15002}}}
+	if err := l.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestDestroyTwice removes a lab, and has nothing to destroy the second time.
+func TestDestroyTwice(t *testing.T) {
+	dir := writeLab(t)
+	a, out := testApp()
+	if err := a.run(context.Background(), []string{"destroy"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("destroy left %s: %v", dir, err)
+	}
+	for _, args := range [][]string{{"destroy"}, {"destroy", "--cluster", "lab"}} {
+		out.Reset()
+		if err := a.run(context.Background(), args); err != nil {
+			t.Errorf("%v of a lab destroyed = %v", args, err)
+		}
+		if !strings.Contains(out.String(), "nothing to destroy") {
+			t.Errorf("%v printed %q", args, out)
+		}
+	}
+}
+
+// TestStatusOfAStoppedLab shows the VMs that do not run and how to start them again.
+func TestStatusOfAStoppedLab(t *testing.T) {
+	writeLab(t)
+	a, out := testApp()
+	if err := a.run(context.Background(), []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"no supervisor runs it", "cp1 and w1 do not run; chalklab start starts the lab again"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status = %q, want %q", out, want)
+		}
+	}
+}
+
+// TestStartRefusesARunningLab refuses to start a lab a supervisor runs, and a lab that is not.
+func TestStartRefusesARunningLab(t *testing.T) {
+	dir := writeLab(t)
+	lock, err := os.OpenFile(filepath.Join(dir, "supervisor.pid"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	lock.WriteString("4242\n")
+	a, _ := testApp()
+	if err := a.run(context.Background(), []string{"start"}); err == nil || !strings.Contains(err.Error(), "runs the lab") {
+		t.Errorf("start of a running lab = %v", err)
+	}
+	if err := a.run(context.Background(), []string{"start", "--cluster", "other"}); err == nil || !strings.Contains(err.Error(), "chalklab create") {
+		t.Errorf("start of no lab = %v, want chalklab create named", err)
 	}
 }

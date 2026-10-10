@@ -20,9 +20,10 @@ const (
 	readyFile = "supervisor.ready"
 )
 
-// Supervise runs the lab of the state directory dir until ctx ends: the switch of the lab network,
-// then each node's VM with its TPM. Once they all run it marks the lab ready; when ctx ends, or
-// starting failed, it stops them. It holds the lab's lock meanwhile, so one supervisor runs a lab.
+// Supervise runs the lab of the state directory dir until ctx ends or a VM exits: the switch of
+// the lab network, then each node's VM with its TPM. Once they all run it marks the lab ready;
+// when it ends, or starting failed, it stops them. It holds the lab's lock meanwhile, so one
+// supervisor runs a lab.
 func Supervise(ctx context.Context, dir string) error {
 	lock, err := os.OpenFile(filepath.Join(dir, supervisorFile), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
@@ -74,8 +75,20 @@ func Supervise(ctx context.Context, dir string) error {
 	if err := os.WriteFile(ready, nil, 0o600); err != nil {
 		return err
 	}
-	<-ctx.Done()
-	return nil
+	// A VM that exits, as when its guest powers off, ends the lab: chalklab start starts it again.
+	exited := make(chan string, len(vms))
+	for _, vm := range vms {
+		go func() {
+			<-vm.exited
+			exited <- vm.Config.Name
+		}()
+	}
+	select {
+	case <-ctx.Done():
+		return nil
+	case name := <-exited:
+		return fmt.Errorf("the VM of %s exited, so the lab stops", name)
+	}
 }
 
 // Ready reports whether the lab's supervisor runs every VM of the lab.
@@ -100,15 +113,34 @@ func Supervisor(dir string) (int, bool, error) {
 	case !errors.Is(err, syscall.EWOULDBLOCK):
 		return 0, false, err
 	}
-	data, err := os.ReadFile(f.Name())
-	if err != nil {
-		return 0, false, err
+	// A supervisor that just took the lock writes its PID right after.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(f.Name())
+		if err != nil {
+			return 0, false, err
+		}
+		if s := strings.TrimSpace(string(data)); s != "" || time.Now().After(deadline) {
+			pid, err := strconv.Atoi(s)
+			if err != nil {
+				return 0, false, fmt.Errorf("%s holds no PID: %w", f.Name(), err)
+			}
+			return pid, true, nil
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0, false, fmt.Errorf("%s holds no PID: %w", f.Name(), err)
+}
+
+// PrepareStart readies a lab that no supervisor runs to start again from its state, as after a
+// host's reboot, a supervisor that was killed or a VM that exited: it stops what runs of the lab
+// still. It refuses a lab a supervisor runs.
+func PrepareStart(ctx context.Context, dir string) error {
+	if pid, running, err := Supervisor(dir); err != nil {
+		return err
+	} else if running {
+		return fmt.Errorf("the supervisor %d runs the lab in %s", pid, dir)
 	}
-	return pid, true, nil
+	return StopLab(ctx, dir)
 }
 
 // StopLab stops the lab in dir: its supervisor stops the VMs and the switch, and what runs of the

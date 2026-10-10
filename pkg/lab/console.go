@@ -40,6 +40,16 @@ func newConsole(r io.Reader, log io.Writer, from int64, size func() int64) *Cons
 	return c
 }
 
+// FollowConsole follows a VM's console log from its start, as the QEMU of the VM appends to it,
+// without reaching the VM itself, until stop is called.
+func FollowConsole(path string) (c *Console, stop func(), err error) {
+	c, fr, err := followConsole(path, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, func() { fr.Close() }, nil
+}
+
 // followConsole follows the console log QEMU appends to from the offset given, until the
 // follower is closed.
 func followConsole(path string, from int64) (*Console, *follower, error) {

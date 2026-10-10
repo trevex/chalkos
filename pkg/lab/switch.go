@@ -22,9 +22,15 @@ type Switch struct {
 	stopOnce sync.Once
 }
 
-// StartSwitch starts a switch with its sockets in dir and waits until VMs can attach.
+// StartSwitch starts a switch with its sockets in dir, which no other switch may use, and waits
+// until VMs can attach.
 func StartSwitch(ctx context.Context, dir string) (*Switch, error) {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		return nil, err
+	}
+	// The sockets a switch that is gone left, as after a host's reboot, would be taken for this
+	// one's.
+	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
 	cmd := exec.Command("vde_switch", "--sock", dir, "--dirmode", "0700", "--nostdin", "--pidfile", dir+".pid")

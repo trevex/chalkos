@@ -335,22 +335,32 @@ func runningPID(pidFile, dir string) (int, bool) {
 	if err != nil || pid <= 0 {
 		return 0, false
 	}
-	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil || !bytes.Contains(cmdline, []byte(dir)) {
+	if !namesDir(pid, dir) {
 		return 0, false
 	}
 	return pid, true
 }
 
+// namesDir reports whether the process runs with dir, or a path in it, among its arguments, so
+// a directory whose name begins the same, such as a lab of another cluster, does not count.
+func namesDir(pid int, dir string) bool {
+	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return false
+	}
+	for _, arg := range bytes.Split(cmdline, []byte{0}) {
+		if string(arg) == dir || bytes.Contains(arg, []byte(dir+"/")) {
+			return true
+		}
+	}
+	return false
+}
+
 // stopProcess ends the process that runs with dir on its command line: it waits for it to exit
 // on its own until timeout, then kills it.
 func stopProcess(pid int, dir string, timeout time.Duration) {
-	running := func() bool {
-		cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-		return err == nil && bytes.Contains(cmdline, []byte(dir))
-	}
 	deadline := time.Now().Add(timeout)
-	for running() {
+	for namesDir(pid, dir) {
 		if time.Now().After(deadline) {
 			syscall.Kill(pid, syscall.SIGKILL)
 			deadline = time.Now().Add(timeout)

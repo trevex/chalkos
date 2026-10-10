@@ -24,6 +24,7 @@ commands:
                                           the lab's Secure Boot keys, boot them, install them in place
                                           and bootstrap the first control plane
   status [--cluster NAME]                 show the lab's VMs, ports and console logs
+  start [--cluster NAME]                  start a stopped lab again, as after a reboot, from its state
   console <node> [--cluster NAME]         follow a node's serial console
   sign <image> [--out DIR] [--cluster NAME]
                                           sign an image with the lab's Secure Boot keys, for upgrades
@@ -96,6 +97,8 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.console(ctx, args[1:])
 	case "sign":
 		return a.sign(ctx, args[1:])
+	case "start":
+		return a.start(ctx, args[1:])
 	case "destroy":
 		return a.destroy(ctx, args[1:])
 	case "supervise":

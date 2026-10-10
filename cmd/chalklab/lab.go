@@ -9,11 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/lab"
 )
+
+// noLabError is what labDir fails with when there is no lab to find.
+type noLabError string
+
+func (e noLabError) Error() string { return string(e) + "; chalklab create starts one" }
 
 // labDir finds the lab of the cluster named, or the only lab there is.
 func labDir(cluster string) (string, *lab.Lab, error) {
@@ -34,7 +40,7 @@ func labDir(cluster string) (string, *lab.Lab, error) {
 		}
 		switch len(names) {
 		case 0:
-			return "", nil, fmt.Errorf("there is no lab in %s; chalklab create starts one", root)
+			return "", nil, noLabError("there is no lab in " + root)
 		case 1:
 			cluster = names[0]
 		default:
@@ -51,7 +57,7 @@ func labDir(cluster string) (string, *lab.Lab, error) {
 			// A create that failed before it recorded the lab; destroy removes what it left.
 			return dir, nil, nil
 		}
-		return "", nil, fmt.Errorf("there is no lab of %s in %s", cluster, dir)
+		return "", nil, noLabError("there is no lab of " + cluster + " in " + dir)
 	}
 	return dir, l, err
 }
@@ -71,19 +77,23 @@ func (a *app) status(args []string) error {
 		return fmt.Errorf("%s holds no lab; chalklab destroy removes it", dir)
 	}
 	supervisor := "no supervisor runs it"
-	if pid, running, err := lab.Supervisor(dir); err != nil {
+	pid, running, err := lab.Supervisor(dir)
+	if err != nil {
 		return err
-	} else if running {
+	}
+	if running {
 		supervisor = "its supervisor runs as PID " + strconv.Itoa(pid)
 	}
 	fmt.Fprintf(a.stdout, "lab of %s in %s; %s\n", l.Cluster, dir, supervisor)
 	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	var stopped []string
 	fmt.Fprintln(w, "NODE\tROLE\tVM\tCHALKD\tAPI SERVER\tCONSOLE")
 	for _, n := range l.Nodes {
 		c := l.VMConfig(dir, n)
-		state := "stopped"
-		if lab.Running(c) {
-			state = "running"
+		state := "running"
+		if !lab.Running(c) {
+			state = "stopped"
+			stopped = append(stopped, n.Name)
 		}
 		api := "-"
 		if n.APIPort != 0 {
@@ -93,6 +103,13 @@ func (a *app) status(args []string) error {
 	}
 	if err := w.Flush(); err != nil {
 		return err
+	}
+	if len(stopped) > 0 && !running {
+		verb := "does"
+		if len(stopped) > 1 {
+			verb = "do"
+		}
+		fmt.Fprintf(a.stdout, "%s %s not run; chalklab start starts the lab again\n", joinNames(stopped), verb)
 	}
 	for _, f := range []struct{ what, file string }{{"kubeconfig", kubeconfigFile}, {"client file", clientFile}} {
 		if _, err := os.Stat(filepath.Join(dir, f.file)); err == nil {
@@ -229,6 +246,10 @@ func (a *app) destroy(ctx context.Context, args []string) error {
 		return errors.Join(err, errors.New("usage: chalklab destroy [--cluster NAME]"))
 	}
 	dir, _, err := labDir(*cluster)
+	if e, ok := errors.AsType[noLabError](err); ok {
+		fmt.Fprintf(a.stdout, "%s; nothing to destroy\n", string(e))
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -241,5 +262,43 @@ func (a *app) destroy(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "removed the lab in %s\n", dir)
+	return nil
+}
+
+// joinNames lists names as in "cp1, cp2 and w1".
+func joinNames(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+// start starts a lab that no supervisor runs again from its state, as after a host's reboot, a
+// supervisor that was killed or a VM that exited: with its disks, firmware variables, TPM state
+// and ports.
+func (a *app) start(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("start", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	cluster := fs.String("cluster", "", "cluster whose lab to start (default the only lab)")
+	if pos, err := parse(fs, args); err != nil || len(pos) != 0 {
+		return errors.Join(err, errors.New("usage: chalklab start [--cluster NAME]"))
+	}
+	dir, l, err := labDir(*cluster)
+	if err != nil {
+		return err
+	}
+	if l == nil {
+		return fmt.Errorf("%s holds no lab; chalklab destroy removes it", dir)
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := lab.PrepareStart(stopCtx, dir); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.stdout, "starting %s\n", joinNames(nodeNames(l)))
+	if err := startSupervisor(ctx, dir); err != nil {
+		return fmt.Errorf("%w; chalklab status shows the lab", err)
+	}
+	fmt.Fprintf(a.stdout, "the lab of %s runs %s\n", l.Cluster, joinNames(nodeNames(l)))
 	return nil
 }
