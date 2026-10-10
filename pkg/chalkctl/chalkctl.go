@@ -57,6 +57,9 @@ func newCommand(a *app) *cobra.Command {
 		Example:       rootExample,
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		// A flag before a subcommand's name is parsed as the flag of the command before it, which
+		// has none: a usage error.
+		TraverseChildren: true,
 	}
 	group(root)
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
@@ -123,6 +126,11 @@ func group(cmd *cobra.Command) *cobra.Command {
 // another error.
 func Execute(ctx context.Context, root *cobra.Command) int {
 	cmd, err := root.ExecuteContextC(ctx)
+	// The root and groups fail only with usage errors; another error of theirs is a flag before a
+	// subcommand's name, which cobra returns without the flag error function.
+	if err != nil && !errors.Is(err, errUsage) && cmd.HasSubCommands() {
+		err = fmt.Errorf("%w: %w", errUsage, err)
+	}
 	status := exitStatus(err)
 	// A command Ctrl-C ended exits as after SIGINT, also where the error lost errInterrupted on
 	// the way, as age's error for an SSH key's passphrase does.

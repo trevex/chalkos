@@ -11,9 +11,8 @@ admin, operator or reader role. Each command's help says which of the two it nee
 accept both take --config, else --secrets, else the client file $CHALKOSCONFIG names, else a
 secrets file in the flake directory, else ~/.config/chalkos/config.
 
-Flags may go anywhere among a command's arguments, and -- ends them: every argument after it is
-read as a positional argument. A flag of a subcommand may come before the subcommand's name when
-it is given in the form --flag=value (chalkctl etcd --via=cp2 members).`
+A command's flags go after its name, anywhere among its arguments, and -- ends them: every
+argument after it is read as a positional argument.`
 
 const rootExample = `  # Generate the cluster's secrets, install and bootstrap a control plane, write a kubeconfig.
   chalkctl gen secrets --recipient age1...

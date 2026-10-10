@@ -983,7 +983,7 @@ func TestExecuteUsageErrors(t *testing.T) {
 }
 
 // A flag error on the root or on a command with subcommands is a usage error, as an unknown
-// command is.
+// command is. A flag before a subcommand's name is one, in either form.
 func TestExecuteFlagUsageErrors(t *testing.T) {
 	for _, c := range []struct {
 		args []string
@@ -992,6 +992,11 @@ func TestExecuteFlagUsageErrors(t *testing.T) {
 		{[]string{"--bogus"}, "--bogus"},
 		{[]string{"etcd", "--bogus"}, "--bogus"},
 		{[]string{"etcd", "--force", "leave", "n1"}, "--force"},
+		{[]string{"etcd", "--force=true", "leave", "n1"}, "--force"},
+		{[]string{"etcd", "--via=cp2", "members"}, "--via"},
+		{[]string{"etcd", "--via", "cp2", "members"}, "--via"},
+		{[]string{"--insecure", "install", "cp1"}, "--insecure"},
+		{[]string{"--insecure=true", "install", "cp1"}, "--insecure"},
 	} {
 		args, flag := c.args, c.flag
 		ta := newTestApp(t)

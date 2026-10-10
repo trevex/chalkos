@@ -76,6 +76,8 @@ func newCommand(a *app) *cobra.Command {
 		Example:       rootExample,
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		// A flag before a subcommand's name is parsed as the root's, which has none: a usage error.
+		TraverseChildren: true,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return fmt.Errorf("%w: unknown command %q for %q", errUsage, args[0], cmd.CommandPath())
@@ -85,6 +87,10 @@ func newCommand(a *app) *cobra.Command {
 		RunE: func(*cobra.Command, []string) error { return errUsage },
 	}
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		// On the root, the flag may as well be a misplaced subcommand's: a usage error.
+		if cmd.HasSubCommands() {
+			return fmt.Errorf("%w: %w", errUsage, err)
+		}
 		return fmt.Errorf("%w; %s --help lists its flags", err, cmd.CommandPath())
 	})
 	a.supervise = &cobra.Command{
@@ -127,6 +133,11 @@ func (a *app) command(cmd *cobra.Command, run func(a *app, ctx context.Context, 
 // 2 and the command's usage after a usage error, 1 after another error.
 func Execute(ctx context.Context, root *cobra.Command) int {
 	cmd, err := root.ExecuteContextC(ctx)
+	// The root fails only with usage errors; another error of its own is a flag before a
+	// subcommand's name, which cobra returns without the flag error function.
+	if err != nil && !errors.Is(err, errUsage) && cmd.HasSubCommands() {
+		err = fmt.Errorf("%w: %w", errUsage, err)
+	}
 	switch {
 	case err == nil:
 		return 0

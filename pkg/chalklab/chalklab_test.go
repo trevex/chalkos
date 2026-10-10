@@ -472,6 +472,8 @@ func TestExecute(t *testing.T) {
 	for args, want := range map[string]int{
 		"": 2, "bogus": 2, "status --bogus": 1, "status --help": 0, "console": 1,
 		"console cp1 -f=false": 0, "console cp1 --follow=false": 0,
+		// A flag before a subcommand's name is a usage error, in either form.
+		"--bogus": 2, "--cluster=x status": 2, "--cluster x status": 2,
 	} {
 		a, out := testApp()
 		var stderr bytes.Buffer
