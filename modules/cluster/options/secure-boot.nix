@@ -32,8 +32,8 @@
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = ''
-        PEM certificate of the db signing key (public). chalkctl upgrade refuses an image whose UKI
-        this certificate's key did not sign.
+        PEM certificate of the db signing key (public). chalkctl install and chalkctl upgrade
+        refuse an image whose UKI or boot loader this certificate's key did not sign.
       '';
     };
   };
