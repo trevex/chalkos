@@ -236,8 +236,8 @@ in
     boot.loader.efi.efiSysMountPoint = "/efi";
     systemd.services.systemd-bless-boot.environment.SYSTEMD_ESP_PATH = "/efi";
 
-    # Install recreates STATE from these definitions, and the installer writes a role image's
-    # system region with them, so they travel with the image.
+    # Install recreates STATE from these definitions, and the installer lays out the target disk
+    # with them, so they travel with the image.
     environment.etc."chalkos/repart.d".source = systemDefinitions;
     system.build.chalkosImageFits = fits;
     system.build.chalkosImage = pkgs.runCommand "${config.image.repart.name}-image" { inherit fits; } ''

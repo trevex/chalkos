@@ -1,7 +1,8 @@
 // Package install turns a node in maintenance mode into an installed node: in place, when the
 // role image already runs from the boot disk, or from the installer, which first lays out a
-// target disk and writes the role image's parts to it. Every step can be repeated, so an interrupted install can run
-// again; the node counts as installed once STATE holds the installed marker, written last.
+// target disk and writes the role image's parts to it. Every step can be repeated, so an
+// interrupted install can run again; the node counts as installed once STATE holds the installed
+// marker, written last.
 package install
 
 import (
@@ -168,7 +169,7 @@ func (i *Installer) change(what string) error {
 	return i.Change(what)
 }
 
-// Default installs on the running node: in place at /state, from media at /run/chalkd/target.
+// Default installs on the running node.
 func Default(inPlace bool) *Installer {
 	stateDir := "/state"
 	if !inPlace {

@@ -3,7 +3,6 @@ package chalkd
 import (
 	"bytes"
 	"context"
-
 	"errors"
 	"io"
 	"reflect"

@@ -259,7 +259,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 	imagePath := fs.String("image", "", "role image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or the directory nix build produces (default: build the node's role image)")
 	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
 	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")
-	wipe := fs.Bool("wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node")
+	wipe := fs.Bool("wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node's role or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -339,17 +339,13 @@ func (a *app) install(ctx context.Context, args []string) error {
 				return err
 			}
 		}
-		_, definitions, err := imageFiles(path)
-		if err != nil {
-			return err
-		}
-		if header.SystemDefinitions, err = readDefinitions(definitions); err != nil {
-			return err
-		}
 		if img, err = openImage(ctx, path, *signKey, *signCert, true); err != nil {
 			return err
 		}
 		defer img.Close()
+		if header.SystemDefinitions, err = readDefinitions(img.definitions); err != nil {
+			return err
+		}
 		if err := checkInstallImage(t, img, *signCert); err != nil {
 			return err
 		}

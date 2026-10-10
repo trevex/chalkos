@@ -30,6 +30,8 @@ type diskImage struct {
 	info            uki.Image
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
+	// definitions is the directory of the image's repart definitions of its system region.
+	definitions string
 	// cleanup removes the copies of the UKI and the boot loader.
 	cleanup func()
 }
@@ -42,7 +44,7 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 	if (key == "") != (cert == "") {
 		return nil, errors.New("signing needs both --sign-key and --sign-cert")
 	}
-	raw, _, err := imageFiles(path)
+	raw, definitions, err := imageFiles(path)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +60,7 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 	if err != nil {
 		return nil, err
 	}
-	img := &diskImage{raw: f, cleanup: func() {}}
+	img := &diskImage{raw: f, definitions: definitions, cleanup: func() {}}
 	defer func() {
 		if err != nil {
 			img.Close()
