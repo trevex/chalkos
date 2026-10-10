@@ -35,6 +35,12 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "the first upgrade message must be the header")
 	}
 	img := h.GetImage()
+	switch {
+	case img == nil:
+		return nil, failed(connect.CodeInvalidArgument, "the header names no image")
+	case img.GetBootLoader() != nil:
+		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
+	}
 	header := imageHeader(img)
 	log.Printf("upgrading to %q %q with the root hash %x", img.GetImageId(), img.GetVersion(), img.GetRootHash())
 	res, err := s.installImage(ctx, header, &chunkReader{next: func() (*nodev1.ImageChunk, bool) {

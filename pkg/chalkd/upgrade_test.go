@@ -102,6 +102,33 @@ func TestUpgrade(t *testing.T) {
 	}
 }
 
+// TestUpgradeRefusesMalformedHeaders refuses a header without an image, and one naming a boot
+// loader, as invalid before anything else.
+func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
+	c := newCreds(t)
+	s, _ := newTestServer(t, normal, vda)
+	s.InstallImage = func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error) {
+		t.Error("installed the image")
+		return upgrade.Result{}, nil
+	}
+	addr := serve(t, s, c, c.pool)
+	conn := dial(t, addr, c.clients[pki.RoleOperator])
+	for _, tc := range []struct {
+		header *nodev1.UpgradeHeader
+		want   string
+	}{
+		{&nodev1.UpgradeHeader{Reboot: true}, "the header names no image"},
+		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", BootLoader: &nodev1.ImagePart{Size: 1, Sha256: []byte{1}}}}, "an upgrade carries no boot loader"},
+	} {
+		stream := conn.Upgrade(context.Background())
+		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: tc.header}})
+		_, err := stream.CloseAndReceive()
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: %v, want %q", tc.header, err, tc.want)
+		}
+	}
+}
+
 // TestOneUpgradeAtATime refuses a second upgrade while one runs.
 func TestOneUpgradeAtATime(t *testing.T) {
 	c := newCreds(t)
