@@ -38,9 +38,15 @@ const storeBlocks = 300
 
 func newImage(t *testing.T, version string, tries int) image {
 	t.Helper()
+	return newImageOfBlocks(t, version, tries, 512, storeBlocks)
+}
+
+// newImageOfBlocks makes an image whose store has the number of dm-verity blocks of the size.
+func newImageOfBlocks(t *testing.T, version string, tries int, blockSize uint32, blocks uint64) image {
+	t.Helper()
 	seed := sha256.Sum256([]byte(version))
 	r := rand.New(rand.NewPCG(binary.LittleEndian.Uint64(seed[:]), binary.LittleEndian.Uint64(seed[8:])))
-	store := make([]byte, storeBlocks*512)
+	store := make([]byte, blocks*uint64(blockSize))
 	for i := range store {
 		store[i] = byte(r.Uint32())
 	}
@@ -48,7 +54,7 @@ func newImage(t *testing.T, version string, tries int) image {
 	for i := range salt {
 		salt[i] = byte(r.Uint32())
 	}
-	hash, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: 512, HashBlockSize: 512, DataBlocks: storeBlocks, Salt: salt})
+	hash, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: blockSize, HashBlockSize: blockSize, DataBlocks: blocks, Salt: salt})
 	if err != nil {
 		t.Fatal(err)
 	}

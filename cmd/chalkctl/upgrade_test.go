@@ -58,14 +58,20 @@ func upgradeManifest(controlPlanes int) string {
 // an ESP holding the UKI, the store's hash tree and the store, described by repart-output.json.
 func testUpgradeImage(t *testing.T, cluster, role, version string) string {
 	t.Helper()
+	return testUpgradeImageOfBlocks(t, cluster, role, version, 512)
+}
+
+// testUpgradeImageOfBlocks builds a test image whose store has dm-verity blocks of the size.
+func testUpgradeImageOfBlocks(t *testing.T, cluster, role, version string, blockSize int) string {
+	t.Helper()
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not in PATH", tool)
 		}
 	}
 	dir := t.TempDir()
-	store := bytes.Repeat([]byte(version+role), 300*512)[:300*512]
-	tree, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: 512, HashBlockSize: 512, DataBlocks: 300, Salt: []byte(version)})
+	store := bytes.Repeat([]byte(version+role), 300*blockSize)[:300*blockSize]
+	tree, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: uint32(blockSize), HashBlockSize: uint32(blockSize), DataBlocks: 300, Salt: []byte(version)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +95,7 @@ func testUpgradeImage(t *testing.T, cluster, role, version string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const espSize, treeSize, storeSize = 4 << 20, 64 << 10, 1 << 20
+	const espSize, treeSize, storeSize = 4 << 20, 64 << 10, 2 << 20
 	raw := make([]byte, espSize+treeSize+storeSize)
 	copy(raw, espData)
 	copy(raw[espSize:], tree)
@@ -119,6 +125,8 @@ type upgradeFake struct {
 	version, staged, failed string
 	// root and stagedRoot are the root hashes of the stores of version and staged.
 	root, stagedRoot []byte
+	// stagedStoreSize and stagedVeritySize are the bytes of store and hash tree staged.
+	stagedStoreSize, stagedVeritySize uint64
 	// rebooting makes the node unreachable, as while it reboots.
 	rebooting bool
 }
@@ -237,6 +245,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true}), nil
 	}
 	n.staged, n.stagedRoot, n.failed = h.Version, h.RootHash, ""
+	n.stagedStoreSize, n.stagedVeritySize = h.StoreSize, h.VeritySize
 	return connect.NewResponse(&nodev1.UpgradeResponse{Entry: "chalkos_" + h.Version + "+3.efi"}), nil
 }
 
@@ -548,6 +557,19 @@ func TestUpgradeWithoutReboot(t *testing.T) {
 	}
 	if n := l.nodes["cp2"]; n.staged != "0.2.0" || n.version != "0.1.0" {
 		t.Errorf("cp2 runs %s with %s staged", n.version, n.staged)
+	}
+}
+
+// TestUpgradeWith4KiBVerityBlocks sends the store of an image built with 4 KiB dm-verity blocks
+// and its hash tree, as long as the tree's superblock counts them.
+func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.upgrade(testUpgradeImageOfBlocks(t, "lab", "cp", "0.2.0", 4096), "--no-reboot"); err != nil {
+		t.Fatal(err)
+	}
+	// 300 data blocks; the superblock's block, three of digests and their root.
+	if n := l.nodes["cp1"]; n.staged != "0.2.0" || n.stagedStoreSize != 300*4096 || n.stagedVeritySize != 5*4096 {
+		t.Errorf("cp1 staged %s with %d bytes of store and %d of hash tree", n.staged, n.stagedStoreSize, n.stagedVeritySize)
 	}
 }
 

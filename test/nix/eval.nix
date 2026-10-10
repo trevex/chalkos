@@ -3299,13 +3299,38 @@ lib.runTests {
       "-C65536"
     ];
   };
-  # Building an image checks that it leaves room for the next: its store in a slot, and on the ESP
-  # the UKIs of both slots and an upgrade's; the installer, never upgraded, holds one UKI.
+  # dm-verity refuses blocks smaller than a disk's logical block size; 4 KiB blocks also make the
+  # hash tree an eighth of what 512-byte ones do.
+  testStoreVerityBlocks = {
+    expr =
+      let
+        c = role (cluster [ ]);
+        inherit (c.image.repart.verityStore) partitionIds;
+      in
+      lib.intersectAttrs {
+        VerityDataBlockSizeBytes = null;
+        VerityHashBlockSizeBytes = null;
+      } c.image.repart.partitions.${partitionIds.store-verity}.repartConfig;
+    expected = {
+      VerityDataBlockSizeBytes = 4096;
+      VerityHashBlockSizeBytes = 4096;
+    };
+  };
+  # Building an image checks that it leaves room for the next: its store in a slot, its hash tree in
+  # the slot's verity partition, and on the ESP the UKIs of both slots and an upgrade's; the
+  # installer, never upgraded, holds one UKI.
   testImageFitCheck = {
     expr =
       let
         c = cluster [ ];
-        summary = fits: { inherit (fits) ukis storeSize espSize; };
+        summary = fits: {
+          inherit (fits)
+            ukis
+            storeSize
+            storeVeritySize
+            espSize
+            ;
+        };
       in
       {
         role = summary (role c).system.build.chalkosImage.fits;
@@ -3315,11 +3340,13 @@ lib.runTests {
       role = {
         ukis = 3;
         storeSize = "3G";
+        storeVeritySize = "128M";
         espSize = "1G";
       };
       installer = {
         ukis = 1;
         storeSize = "-";
+        storeVeritySize = "-";
         espSize = "256M";
       };
     };

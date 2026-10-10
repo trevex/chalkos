@@ -4,17 +4,17 @@
 {
   k8s-controlplane = {
     storeData = 281;
-    hashTree = 19;
+    hashTree = 2.2;
     uki = 51;
   };
   k8s-worker = {
     storeData = 281;
-    hashTree = 19;
+    hashTree = 2.2;
     uki = 51;
   };
   test = {
     storeData = 222;
-    hashTree = 15;
+    hashTree = 1.8;
     uki = 51;
   };
 }

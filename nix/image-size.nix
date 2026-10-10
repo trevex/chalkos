@@ -4,9 +4,10 @@
 #     prints the bytes of the store's data and of its hash tree as its dm-verity superblock counts
 #     them, which an upgrade sends: the data is the erofs the root hash covers, less than its
 #     partition holds.
-#   chalkos-image-size fits NAME RAW REPART_OUTPUT UKI UKIS STORE_SIZE ESP_SIZE
-#     fails when the store's data takes more than 80% of STORE_SIZE, or UKIS copies of the UKI
-#     more than 80% of ESP_SIZE. Sizes are repart's, as 3G; a STORE_SIZE of - skips the store.
+#   chalkos-image-size fits NAME RAW REPART_OUTPUT UKI UKIS STORE_SIZE STORE_VERITY_SIZE ESP_SIZE
+#     fails when the store's data takes more than 80% of STORE_SIZE, its hash tree more than 80% of
+#     STORE_VERITY_SIZE, or UKIS copies of the UKI more than 80% of ESP_SIZE. Sizes are repart's,
+#     as 3G; a size of - skips that part.
 {
   writeShellApplication,
   coreutils,
@@ -49,14 +50,23 @@ writeShellApplication {
     }
 
     fits() {
-      local name=$1 raw=$2 partitions=$3 uki=$4 ukis=$5 storeSize=$6 espSize=$7
-      local sizes data slot ukiBytes esp
-      if [[ $storeSize != - ]]; then
+      local name=$1 raw=$2 partitions=$3 uki=$4 ukis=$5 storeSize=$6 storeVeritySize=$7 espSize=$8
+      local sizes data hash slot ukiBytes esp
+      if [[ $storeSize != - || $storeVeritySize != - ]]; then
         sizes=$(measure "$raw" "$partitions")
-        read -r data _ <<<"$sizes"
+        read -r data hash <<<"$sizes"
+      fi
+      if [[ $storeSize != - ]]; then
         slot=$(numfmt --from=iec "$storeSize")
         if ((data * 5 > slot * 4)); then
           echo "error: $name: the store's data takes $data bytes, more than 80% of its slot of $slot (chalkos.disk.storeSize)" >&2
+          exit 1
+        fi
+      fi
+      if [[ $storeVeritySize != - ]]; then
+        slot=$(numfmt --from=iec "$storeVeritySize")
+        if ((hash * 5 > slot * 4)); then
+          echo "error: $name: the store's hash tree takes $hash bytes, more than 80% of its partition of $slot (chalkos.disk.storeVeritySize)" >&2
           exit 1
         fi
       fi
@@ -72,7 +82,7 @@ writeShellApplication {
       measure) measure "''${@:2}" ;;
       fits) fits "''${@:2}" ;;
       *)
-        echo "usage: chalkos-image-size measure RAW REPART_OUTPUT | fits NAME RAW REPART_OUTPUT UKI UKIS STORE_SIZE ESP_SIZE" >&2
+        echo "usage: chalkos-image-size measure RAW REPART_OUTPUT | fits NAME RAW REPART_OUTPUT UKI UKIS STORE_SIZE STORE_VERITY_SIZE ESP_SIZE" >&2
         exit 2
         ;;
     esac

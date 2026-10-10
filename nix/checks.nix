@@ -515,8 +515,12 @@ in
           read -r data hash <<<"$sizes"
           local -A size=([storeData]=$data [hashTree]=$hash [uki]=$(stat -L -c %s "$uki"))
           for part in storeData hashTree uki; do
-            echo "$name: $part $(mib "''${size[$part]}") of at most ''${ceiling[$part]} MiB"
-            if ((size[$part] > ceiling[$part] * 1048576)); then over+=("$part"); fi
+            # A ceiling may be a fraction of a MiB, which Nix writes as 2.200000.
+            echo "$name: $part $(mib "''${size[$part]}") of at most $(awk -v c="''${ceiling[$part]}" 'BEGIN { printf "%g", c }') MiB"
+            if awk -v size="''${size[$part]}" -v ceiling="''${ceiling[$part]}" \
+              'BEGIN { exit !(size > ceiling * 1048576) }'; then
+              over+=("$part")
+            fi
           done
           if [[ ''${#over[@]} != 0 ]]; then
             echo "error: $name is over its ceiling in ''${over[*]}; the largest paths of its closure:" >&2
@@ -536,18 +540,24 @@ in
         check ${measure "k8s-worker"}
         check ${measure "test"}
 
-        # The fit check every image build runs refuses a store or UKIs that leave no room.
-        if chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 64M 256M 2>errors; then
+        # The fit check every image build runs refuses a store, a hash tree or UKIs that leave no
+        # room.
+        if chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 64M 64M 256M 2>errors; then
           echo "error: the fit check passed a store larger than its slot" >&2
           failed=1
         fi
         grep -q "the store's data takes" errors || { cat errors >&2; failed=1; }
-        if chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 2G 100M 2>errors; then
+        if chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 2G 1M 256M 2>errors; then
+          echo "error: the fit check passed a hash tree larger than its partition" >&2
+          failed=1
+        fi
+        grep -q "the store's hash tree takes" errors || { cat errors >&2; failed=1; }
+        if chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 2G 64M 100M 2>errors; then
           echo "error: the fit check passed UKIs larger than the ESP" >&2
           failed=1
         fi
         grep -q "3 UKIs of" errors || { cat errors >&2; failed=1; }
-        chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 2G 256M
+        chalkos-image-size fits test ${testImage} ${testPartitions} ${testUKI} 3 2G 64M 256M
 
         if [[ $failed != 0 ]]; then exit 1; fi
         touch $out

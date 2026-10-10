@@ -83,6 +83,33 @@ func TestUpgradeAndFallBack(t *testing.T) {
 	}
 }
 
+// TestVerityBlockSizes installs images whose stores have dm-verity blocks of 4 KiB, as images
+// are built, or of 512 bytes, as they were, over each other, and boots them.
+func TestVerityBlockSizes(t *testing.T) {
+	// 200 blocks of 4 KiB make a tree of two levels and fit the lab's slots.
+	const blocks4K = 200
+	for _, tc := range []struct {
+		name         string
+		running, img image
+	}{
+		{"512 to 4096", newImage(t, "0.1.0", 3), newImageOfBlocks(t, "0.2.0", 2, 4096, blocks4K)},
+		{"4096 to 4096", newImageOfBlocks(t, "0.1.0", 3, 4096, blocks4K), newImageOfBlocks(t, "0.2.0", 2, 4096, blocks4K)},
+		{"4096 to 512", newImageOfBlocks(t, "0.1.0", 3, 4096, blocks4K), newImage(t, "0.2.0", 2)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newLab(t, tc.running)
+			if _, err := l.install(tc.img); err != nil {
+				t.Fatal(err)
+			}
+			l.boots(tc.img, 2)
+			l.bless(l.attempt())
+			if e, version := l.boot(); version != tc.img.version || e.File != "chalkos_0.2.0.efi" {
+				t.Errorf("a blessed boot booted %q from %s", version, e.File)
+			}
+		})
+	}
+}
+
 // TestDowngrade installs an older image: systemd-boot prefers it over the newer one it runs,
 // and falls back to that once the older one's tries are used up.
 func TestDowngrade(t *testing.T) {

@@ -38,8 +38,9 @@ let
     SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_PART_GPT_AUTO_ROOT_DISK}=="1", ENV{ID_PART_ENTRY_NAME}=="?*", SYMLINK+="disk/chalk-boot/$env{ID_PART_ENTRY_NAME}"
   '';
   # An image leaves room for the next one: the build fails when the store's data takes more than
-  # 80% of a slot, or the UKIs the ESP holds more than 80% of it. That is three UKIs on an image
-  # that is upgraded, both slots' and an upgrade's temporary file, and one otherwise.
+  # 80% of a slot, its hash tree more than 80% of the slot's verity partition, or the UKIs the ESP
+  # holds more than 80% of it. That is three UKIs on an image that is upgraded, both slots' and an
+  # upgrade's temporary file, and one otherwise.
   fits =
     let
       name = lib.defaultTo config.image.repart.name config.chalkos.role.name;
@@ -50,11 +51,12 @@ let
         nativeBuildInputs = [ (pkgs.callPackage ../../../nix/image-size.nix { }) ];
         ukis = if cfg.storeSize == null then 1 else 3;
         storeSize = lib.defaultTo "-" cfg.storeSize;
+        storeVeritySize = lib.defaultTo "-" cfg.storeVeritySize;
         inherit (cfg) espSize;
       }
       ''
         chalkos-image-size fits ${name} ${image}/${config.image.fileName} ${image}/repart-output.json \
-          ${config.system.build.uki}/${config.system.boot.loader.ukiFile} "$ukis" "$storeSize" "$espSize"
+          ${config.system.build.uki}/${config.system.boot.loader.ukiFile} "$ukis" "$storeSize" "$storeVeritySize" "$espSize"
         touch $out
       '';
 in
@@ -96,13 +98,14 @@ in
       enable = true;
       name = lib.mkDefault "chalkos";
       verityStore.enable = true;
-      # repart formats erofs with the 512-byte sector size, and libblkid rejects checksummed erofs
-      # with blocks of 1 KiB or less; without a detected filesystem, udev never marks the verity
-      # device ready and the initrd times out waiting for /dev/mapper/usr.
-      # zstd 9 with 64 KiB clusters comes within 3% of zstd 15's size at a sixth of its build time.
-      # The kernel's erofs reads zstd and deflate, not LZMA. Upgrades send the compressed store.
       mkfsOptions.erofs = [
+        # repart formats erofs with the 512-byte sector size, and libblkid rejects checksummed
+        # erofs with blocks of 1 KiB or less; without a detected filesystem, udev never marks the
+        # verity device ready and the initrd times out waiting for /dev/mapper/usr.
         "-b 4096"
+        # zstd 9 with 64 KiB clusters comes within 3% of zstd 15's size at a sixth of its build
+        # time. The kernel's erofs reads zstd and deflate, not LZMA. Upgrades send the compressed
+        # store.
         "-zzstd,level=9"
         "-C65536"
       ];
@@ -120,6 +123,11 @@ in
         # same way. The boot finds the store by partition UUID, never by label.
         ${partitionIds.store-verity}.repartConfig = storePartition cfg.storeVeritySize // {
           Label = "store-verity_${config.system.image.version}";
+          # dm-verity refuses blocks smaller than the disk's logical block size, so 512-byte ones
+          # would not open on 4Kn disks. 4 KiB blocks also make the tree, which every upgrade
+          # sends, an eighth of the size.
+          VerityDataBlockSizeBytes = 4096;
+          VerityHashBlockSizeBytes = 4096;
         };
         ${partitionIds.store}.repartConfig = storePartition cfg.storeSize // {
           Label = "store_${config.system.image.version}";
