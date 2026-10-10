@@ -102,9 +102,9 @@ type Server struct {
 	Run         node.Runner
 	Host        storage.Host
 	Identity    identity.Loader
-	// InPlace and FromMedia install the node; tests replace them.
+	// InPlace and FromParts install the node; tests replace them.
 	InPlace   func(context.Context, install.Request) error
-	FromMedia func(context.Context, install.MediaRequest) error
+	FromParts func(context.Context, install.PartsRequest) error
 	// InstallImage installs an upgrade's image; nil installs it on the boot disk. Tests replace it.
 	InstallImage func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error)
 	// Journal streams the journal of the boot, or of one unit.

@@ -54,6 +54,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		if s.Installer {
 			return nil, failed(connect.CodeFailedPrecondition, "the installer installs nodes onto a disk; name the target disk")
 		}
+		if h.Image != nil {
+			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its role image already")
+		}
 		log.Print("installing in place")
 		err = s.InPlace(ctx, req)
 	case *nodev1.InstallHeader_Disk:
@@ -62,18 +65,21 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		}
 		d := target.Disk
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}
-		log.Printf("installing onto %s", ref)
-		err = s.FromMedia(ctx, install.MediaRequest{
+		if h.Image == nil {
+			return nil, failed(connect.CodeInvalidArgument, "the installer needs the role image to write to the target disk")
+		}
+		img := imageHeader(h.Image)
+		log.Printf("installing %q %q with the root hash %x onto %s", img.ImageID, img.Version, img.RootHash, ref)
+		err = s.FromParts(ctx, install.PartsRequest{
 			Request: req,
 			Target:  ref,
-			Image: &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
+			Image:   img,
+			Parts: &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
 				if !stream.Receive() {
 					return nil, false
 				}
 				return stream.Msg().GetChunk(), true
 			}, err: stream.Err},
-			ImageSize:         int64(h.ImageSize),
-			ImageSHA256:       h.ImageSha256,
 			SystemDefinitions: h.SystemDefinitions,
 			WipeDisk:          h.WipeDisk,
 		})

@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -28,7 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// chunkSize is how much of the image one install message carries.
+// chunkSize is how much of an image one install or upgrade message carries.
 const chunkSize = 1 << 20
 
 // nodeCommand holds what commands addressing one node share.
@@ -257,10 +256,10 @@ func (a *app) install(ctx context.Context, args []string) error {
 	var p pinning
 	n.register(fs)
 	p.register(fs)
-	imagePath := fs.String("image", "", "role image to write when the node runs the installer: a raw image with repart.d next to it, or the directory nix build produces (default: build the node's role image)")
-	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the built image")
+	imagePath := fs.String("image", "", "role image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or the directory nix build produces (default: build the node's role image)")
+	signKey := fs.String("sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
 	signCert := fs.String("sign-cert", "", "PEM certificate of the Secure Boot db signer")
-	wipe := fs.Bool("wipe-disk", false, "let the installer overwrite a target disk that carries data")
+	wipe := fs.Bool("wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node")
 	passwordFile := fs.String("password-file", "", "file holding the password of a node whose fallback is a password")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -324,7 +323,7 @@ func (a *app) install(ctx context.Context, args []string) error {
 		KubernetesShare: share,
 	}
 
-	var image *os.File
+	var img *diskImage
 	if !info.Msg.Installer {
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
@@ -340,68 +339,41 @@ func (a *app) install(ctx context.Context, args []string) error {
 				return err
 			}
 		}
-		raw, definitions, err := imageFiles(path)
+		_, definitions, err := imageFiles(path)
 		if err != nil {
 			return err
 		}
 		if header.SystemDefinitions, err = readDefinitions(definitions); err != nil {
 			return err
 		}
-		if *signKey != "" || *signCert != "" {
-			signed, cleanup, err := signedCopy(ctx, raw, *signKey, *signCert)
-			if err != nil {
-				return err
-			}
-			// Removed once the install has finished or failed.
-			defer cleanup()
-			raw = signed
-		}
-		if image, err = os.Open(raw); err != nil {
+		if img, err = openImage(ctx, path, *signKey, *signCert, true); err != nil {
 			return err
 		}
-		defer image.Close()
-		h := sha256.New()
-		size, err := io.Copy(h, image)
-		if err != nil {
+		defer img.Close()
+		if err := checkInstallImage(t, img, *signCert); err != nil {
 			return err
 		}
-		if _, err := image.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-		header.ImageSize = uint64(size)
-		header.ImageSha256 = h.Sum(nil)
-		fmt.Fprintf(a.stdout, "installing %s onto %s from %s\n", t.name, ref, raw)
+		header.Image = img.header
+		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, path, img.info.ID(), img.info.Version(), img.size())
 	}
 
 	stream := conn.Install(ctx)
 	if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	if image != nil {
-		buf := make([]byte, chunkSize)
-		for {
-			n, rerr := image.Read(buf)
-			if n > 0 {
-				msg := &nodev1.InstallRequest{Message: &nodev1.InstallRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: buf[:n]}}}
-				// The node may have refused already; CloseAndReceive returns why.
-				if err := stream.Send(msg); errors.Is(err, io.EOF) {
-					break
-				} else if err != nil {
-					return err
-				}
-			}
-			if rerr == io.EOF {
-				break
-			}
-			if rerr != nil {
-				return rerr
-			}
+	if img != nil {
+		parts, done, err := img.parts()
+		if err != nil {
+			return err
+		}
+		defer done()
+		if err := sendChunks(parts, func(c *nodev1.ImageChunk) error {
+			return stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Chunk{Chunk: c}})
+		}); err != nil {
+			return err
 		}
 	}
 	if _, err := stream.CloseAndReceive(); err != nil {
-		if info.Msg.Installer && !*wipe {
-			return fmt.Errorf("install %s: %w; if the installer created STATE on the target disk before failing, the retry needs --wipe-disk", t.name, err)
-		}
 		return fmt.Errorf("install %s: %w", t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
@@ -460,53 +432,6 @@ func readDefinitions(dir string) (map[string]string, error) {
 		defs[filepath.Base(p)] = string(data)
 	}
 	return defs, nil
-}
-
-// signedCopy signs a copy of a raw image; images in the Nix store are read-only. The copy is as
-// large as the image, so it goes to the user's cache directory instead of the temporary
-// directory, which often lives in memory. cleanup removes it.
-func signedCopy(ctx context.Context, raw, key, cert string) (signed string, cleanup func(), err error) {
-	if key == "" || cert == "" {
-		return "", nil, errors.New("signing needs both --sign-key and --sign-cert")
-	}
-	src, err := os.Open(raw)
-	if err != nil {
-		return "", nil, err
-	}
-	defer src.Close()
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return "", nil, fmt.Errorf("find a directory for the signed image: %w", err)
-	}
-	parent := filepath.Join(cache, "chalkctl")
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return "", nil, err
-	}
-	dir, err := os.MkdirTemp(parent, "signed-")
-	if err != nil {
-		return "", nil, err
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(dir)
-		}
-	}()
-	out := filepath.Join(dir, filepath.Base(raw))
-	dst, err := os.Create(out)
-	if err != nil {
-		return "", nil, err
-	}
-	if _, err = io.Copy(dst, src); err != nil {
-		dst.Close()
-		return "", nil, fmt.Errorf("copy %s: %w", raw, err)
-	}
-	if err = dst.Close(); err != nil {
-		return "", nil, err
-	}
-	if err = signImage(ctx, out, filepath.Join(filepath.Dir(raw), "repart-output.json"), key, cert); err != nil {
-		return "", nil, err
-	}
-	return out, func() { os.RemoveAll(dir) }, nil
 }
 
 func (a *app) disks(ctx context.Context, args []string) error {

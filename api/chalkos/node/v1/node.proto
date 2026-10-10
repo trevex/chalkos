@@ -14,7 +14,9 @@ service NodeService {
   // Disks lists the node's disks and their partitions. Available in both modes to readers.
   rpc Disks(DisksRequest) returns (DisksResponse);
   // Install turns a node in maintenance mode into an installed node and reboots it. The first
-  // message carries the header; image chunks follow when the node is the installer.
+  // message carries the header; when the node is the installer, the image's store data, hash
+  // tree, UKI and boot loader follow as chunks. An install the installer did not finish
+  // continues when run again.
   rpc Install(stream InstallRequest) returns (InstallResponse);
   // ApplyIdentity replaces the identity of an installed node. Destructive storage changes are
   // refused; additive ones are applied live.
@@ -170,21 +172,22 @@ message InstallHeader {
   oneof target {
     // The role image already runs from the boot disk.
     InPlace in_place = 6;
-    // The installer writes the streamed image to this disk.
+    // The installer lays out this disk and writes the streamed image to it.
     DiskReference disk = 7;
   }
-  // Size and SHA-256 of the streamed image; installer only.
-  uint64 image_size = 8;
-  bytes image_sha256 = 9;
-  // Let the installer overwrite a target disk that carries data other than chalkos partitions.
-  bool wipe_disk = 10;
-  // The role image's repart definitions of the system region (slot B, STATE) by file name;
-  // installer only. Each role chooses its partition sizes, so the installer's own may not fit.
-  map<string, string> system_definitions = 11;
+  // The role image the installer writes to the target disk, whose parts follow as chunks; it
+  // must name the boot loader. Installer only.
+  ImageHeader image = 8;
+  // Let the installer replace whatever the target disk holds, including an installed node.
+  bool wipe_disk = 9;
+  // The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file
+  // name, which the installer lays out the target disk with; installer only. Each role chooses
+  // its partition sizes, so the installer's own may not fit.
+  map<string, string> system_definitions = 10;
   // The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
   // certificate and a kubelet client certificate for a worker. Empty for a role without
   // Kubernetes.
-  bytes kubernetes_share = 12;
+  bytes kubernetes_share = 11;
 }
 
 message InPlace {}

@@ -83,7 +83,9 @@ type NodeServiceClient interface {
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
-	// message carries the header; image chunks follow when the node is the installer.
+	// message carries the header; when the node is the installer, the image's store data, hash
+	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
+	// continues when run again.
 	Install(context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse]
 	// ApplyIdentity replaces the identity of an installed node. Destructive storage changes are
 	// refused; additive ones are applied live.
@@ -372,7 +374,9 @@ type NodeServiceHandler interface {
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
-	// message carries the header; image chunks follow when the node is the installer.
+	// message carries the header; when the node is the installer, the image's store data, hash
+	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
+	// continues when run again.
 	Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
 	// ApplyIdentity replaces the identity of an installed node. Destructive storage changes are
 	// refused; additive ones are applied live.

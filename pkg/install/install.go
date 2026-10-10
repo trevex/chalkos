@@ -1,6 +1,6 @@
 // Package install turns a node in maintenance mode into an installed node: in place, when the
-// role image already runs from the boot disk, or from installer media, which first writes the
-// role image to a target disk. Every step can be repeated, so an interrupted install can run
+// role image already runs from the boot disk, or from the installer, which first lays out a
+// target disk and writes the role image's parts to it. Every step can be repeated, so an interrupted install can run
 // again; the node counts as installed once STATE holds the installed marker, written last.
 package install
 
@@ -145,7 +145,7 @@ type Installer struct {
 	WorkDir string
 	// MountInfo is the mount table of chalkd's mount namespace.
 	MountInfo string
-	// OpenDisk opens a disk for writing the image, waiting for its lock until ctx is done.
+	// OpenDisk opens a disk for wiping, waiting for its lock until ctx is done.
 	OpenDisk func(ctx context.Context, path string) (Disk, error)
 	// Loader is the boot loader's path on the ESP, for the UEFI boot entry.
 	Loader string

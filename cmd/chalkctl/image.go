@@ -210,3 +210,34 @@ func (img *diskImage) Close() {
 	img.raw.Close()
 	img.cleanup()
 }
+
+// checkInstallImage checks the image against the node it installs: of the node's role, and
+// checked against the cluster as an upgrade's image is.
+func checkInstallImage(t *target, img *diskImage, signCert string) error {
+	if got := img.info.Role(); got != t.node.Role {
+		return fmt.Errorf("%s is a node of the role %s; the image is of %s", t.name, t.node.Role, got)
+	}
+	return checkImage(t.cluster, img, signCert)
+}
+
+// sendChunks sends what r holds in chunks. A send that finds the stream closed ends it: the node
+// refused the image already, and closing the stream returns why.
+func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error) error {
+	buf := make([]byte, chunkSize)
+	for {
+		n, rerr := io.ReadFull(r, buf)
+		if n > 0 {
+			if err := send(&nodev1.ImageChunk{Data: buf[:n]}); errors.Is(err, io.EOF) {
+				return nil
+			} else if err != nil {
+				return err
+			}
+		}
+		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
+			return nil
+		}
+		if rerr != nil {
+			return rerr
+		}
+	}
+}

@@ -373,24 +373,10 @@ func (r *upgradeRun) install(ctx context.Context, name string) error {
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: r.image.header}}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
-		buf := make([]byte, chunkSize)
-		for {
-			n, rerr := io.ReadFull(parts, buf)
-			if n > 0 {
-				msg := &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: buf[:n]}}}
-				// The node may have refused already; CloseAndReceive returns why.
-				if err := stream.Send(msg); errors.Is(err, io.EOF) {
-					break
-				} else if err != nil {
-					return err
-				}
-			}
-			if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
-				break
-			}
-			if rerr != nil {
-				return rerr
-			}
+		if err := sendChunks(parts, func(c *nodev1.ImageChunk) error {
+			return stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: c}})
+		}); err != nil {
+			return err
 		}
 		res, err := stream.CloseAndReceive()
 		if err == nil {

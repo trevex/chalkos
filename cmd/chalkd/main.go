@@ -306,7 +306,7 @@ func serve() error {
 		Host:        storage.DefaultHost(),
 		Identity:    identity.Default(),
 		InPlace:     install.Default(true).InPlace,
-		FromMedia:   install.Default(false).FromMedia,
+		FromParts:   install.Default(false).FromParts,
 		Journal:     chalkd.Journal,
 		RebootNode: func() {
 			if out, err := exec.Command("systemctl", "reboot").CombinedOutput(); err != nil {

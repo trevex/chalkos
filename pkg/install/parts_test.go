@@ -14,11 +14,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	mrand "math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -531,6 +533,9 @@ func TestFromPartsInterrupted(t *testing.T) {
 			if l.installed() {
 				t.Error("the target is installed")
 			}
+			if l.r.holds(labDev) {
+				t.Error("the stopped install left a partition of the target mounted or open")
+			}
 			l.i.Change = nil
 			l.writes = 0
 			if err := l.install(img); err != nil {
@@ -820,4 +825,190 @@ func TestFromPartsUnderSecureBoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
+}
+
+// diskLog records what happened to the target disk.
+type diskLog struct {
+	reread int
+	writes []diskWrite
+}
+
+type diskWrite struct {
+	off  int64
+	n    int
+	zero bool
+}
+
+// fileDisk is a file standing for a disk; it records writes and partition table rereads.
+type fileDisk struct {
+	*os.File
+	log *diskLog
+}
+
+func (d fileDisk) WriteAt(p []byte, off int64) (int, error) {
+	d.log.writes = append(d.log.writes, diskWrite{off, len(p), !bytes.ContainsFunc(p, func(r rune) bool { return r != 0 })})
+	return d.File.WriteAt(p, off)
+}
+
+func (d fileDisk) RereadPartitions() error { d.log.reread++; return nil }
+
+const (
+	// staleUUID is the ESP of an earlier attempt, which is on no disk any more.
+	staleUUID = "5ca1ab1e-0000-4000-8000-000000000000"
+	// otherUUID is the ESP of a chalkos node on another disk.
+	otherUUID = "0717e400-0000-4000-8000-000000000000"
+)
+
+// TestFromPartsBootsTheNewEntry makes the target's entry the next boot and deletes the entries of
+// earlier attempts whose ESP is on no disk, keeping those of other disks.
+func TestFromPartsBootsTheNewEntry(t *testing.T) {
+	l := newPartsLab(t)
+	links := filepath.Join(l.i.Host.DevRoot, "disk", "by-partuuid")
+	if err := os.MkdirAll(links, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../vda", filepath.Join(links, otherUUID)); err != nil {
+		t.Fatal(err)
+	}
+	l.r.efi = &fakeEFI{
+		entries: []efiEntry{{"0001", "UEFI Misc Device", ""}, {"0003", "chalkos", staleUUID}, {"0005", "chalkos", otherUUID}},
+		next:    6,
+	}
+	img := newPartsImage(t, "0.1.0", "a")
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
+	want := []efiEntry{{"0001", "UEFI Misc Device", ""}, {"0005", "chalkos", otherUUID}, {"0006", "chalkos", l.table()[1].UUID}}
+	if !reflect.DeepEqual(l.r.efi.entries, want) || l.r.efi.bootNext != "0006" {
+		t.Errorf("boot entries = %+v, next %s; want %+v, next 0006", l.r.efi.entries, l.r.efi.bootNext, want)
+	}
+	if !reflect.DeepEqual(l.r.efi.deleted, []string{"0003"}) {
+		t.Errorf("deleted boot entries %v, want only the stale 0003", l.r.efi.deleted)
+	}
+}
+
+// TestFromPartsRefusesBeforeTouchingTheDisk refuses requests that cannot install before any tool
+// runs.
+func TestFromPartsRefusesBeforeTouchingTheDisk(t *testing.T) {
+	img := newPartsImage(t, "0.1.0", "a")
+	for _, tc := range []struct {
+		name  string
+		setup func(l *partsLab, r *PartsRequest)
+		want  string
+	}{
+		{"the installer's disk", func(_ *partsLab, r *PartsRequest) { r.Target = storage.Ref{Path: "/dev/vda"} }, "the installer runs from"},
+		{"a dangling boot disk link", func(l *partsLab, _ *PartsRequest) { l.linkBootDisk("../vdz") }, "find the disk the installer runs from"},
+		{"a boot disk link to a partition", func(l *partsLab, _ *PartsRequest) { l.linkBootDisk("../vda1") }, "not a whole disk"},
+		{"an invalid storage section", func(_ *partsLab, r *PartsRequest) {
+			r.Section.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "state", Format: "ext4"}
+		}, `label "state"`},
+		{"no boot loader path", func(l *partsLab, _ *PartsRequest) { l.i.Loader = "" }, "no UEFI boot loader path"},
+		{"definitions without STATE", func(_ *partsLab, r *PartsRequest) {
+			r.SystemDefinitions = maps.Clone(labDefinitions)
+			delete(r.SystemDefinitions, "50-state.conf")
+		}, "an ESP, two store slots and STATE"},
+		{"definitions that do not format the ESP", func(_ *partsLab, r *PartsRequest) {
+			r.SystemDefinitions = maps.Clone(labDefinitions)
+			r.SystemDefinitions["00-esp.conf"] = "[Partition]\nType=esp\n"
+		}, "does not format the ESP"},
+		{"an invalid version", func(_ *partsLab, r *PartsRequest) { r.Image.Version = "0.1.0+1" }, "the image: the version"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newPartsLab(t)
+			req := l.request(img)
+			req.WipeDisk = true
+			tc.setup(l, &req)
+			err := l.i.FromParts(context.Background(), req)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+			if len(l.r.calls) != 0 || len(l.diskLog.writes) != 0 {
+				t.Errorf("ran %v and wrote %v", l.r.calls, l.diskLog.writes)
+			}
+		})
+	}
+}
+
+// linkBootDisk points the boot disk's link elsewhere.
+func (l *partsLab) linkBootDisk(target string) {
+	l.t.Helper()
+	link := filepath.Join(l.i.Host.DevRoot, "disk", "chalk-boot-disk")
+	if err := os.Remove(link); err != nil {
+		l.t.Fatal(err)
+	}
+	write(l.t, filepath.Join(l.i.Host.DevRoot, "vda1"), "")
+	if err := os.Symlink(target, link); err != nil {
+		l.t.Fatal(err)
+	}
+}
+
+// TestFromPartsWithoutABootDiskLink installs when the installer's disk is unknown because udev
+// made no link to it.
+func TestFromPartsWithoutABootDiskLink(t *testing.T) {
+	l := newPartsLab(t)
+	if err := os.Remove(filepath.Join(l.i.Host.DevRoot, "disk", "chalk-boot-disk")); err != nil {
+		t.Fatal(err)
+	}
+	img := newPartsImage(t, "0.1.0", "a")
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
+}
+
+func TestFromPartsRefusesDiskInUse(t *testing.T) {
+	l := newPartsLab(t)
+	l.i.OpenDisk = func(context.Context, string) (Disk, error) {
+		return nil, &os.PathError{Op: "open", Path: labDev, Err: syscall.EBUSY}
+	}
+	if err := l.install(newPartsImage(t, "0.1.0", "a")); err == nil || !strings.Contains(err.Error(), "is in use") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestFromPartsReleasesTheTarget frees a target whose STATE a crashed chalkd left open before it
+// installs, and frees it again when the install fails.
+func TestFromPartsReleasesTheTarget(t *testing.T) {
+	img := newPartsImage(t, "0.1.0", "a")
+	l := newPartsLab(t)
+	l.stopAt(img, "write the identity")
+	if l.r.holds(labDev) {
+		t.Fatal("the failed install left the target's STATE mounted or open")
+	}
+	for _, p := range l.table() {
+		if p.Name == stateLabel {
+			write(t, filepath.Join(l.i.Host.DevRoot, "mapper", "state"), p.Node)
+			if err := l.mount("/dev/mapper/state", l.i.StateDir); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	l.r.calls = nil
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	assertCalls(t, l.r.calls[:2], []string{"umount " + l.i.StateDir, "systemd-cryptsetup detach state"})
+	l.checkInstalled(img)
+}
+
+func TestOpenExclusiveGivesUpWhenLocked(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disk")
+	write(t, path, "")
+	d, err := openExclusive(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err = openExclusive(ctx, path)
+	if err == nil || !strings.Contains(err.Error(), "the target disk is locked by another process") {
+		t.Fatalf("err = %v, want the lock held by another process", err)
+	}
+	if waited := time.Since(start); waited > 2*time.Second {
+		t.Errorf("waited %s for the lock, past the context's deadline", waited)
+	}
 }

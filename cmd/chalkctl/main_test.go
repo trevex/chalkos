@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -27,6 +28,8 @@ import (
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/uki"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 func TestRunSignRequiresAllFlags(t *testing.T) {
@@ -171,7 +174,7 @@ func maintenanceNode() *chalkd.Server {
 	return &chalkd.Server{
 		Mode:       nodev1.Mode_MODE_MAINTENANCE,
 		InPlace:    func(context.Context, install.Request) error { return errors.New("unexpected install in place") },
-		FromMedia:  func(context.Context, install.MediaRequest) error { return errors.New("unexpected install from media") },
+		FromParts:  func(context.Context, install.PartsRequest) error { return errors.New("unexpected install onto a disk") },
 		RebootNode: func() {},
 	}
 }
@@ -308,20 +311,20 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 	}
 }
 
-func TestInstallFromMediaStreamsImage(t *testing.T) {
+// TestInstallFromPartsStreamsTheImage sends the installer the image's store, hash tree, UKI and
+// boot loader with the header describing them, and the role's definitions.
+func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	ta := newTestApp(t)
-	image := bytes.Repeat([]byte("chalkos image "), 200000)
-	imageDir := filepath.Join(ta.dir, "image")
-	writeFile(t, filepath.Join(imageDir, "chalkos_0.1.0.raw"), string(image))
+	imageDir := testUpgradeImage(t, "lab", "test", "0.1.0")
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	s := maintenanceNode()
 	s.Installer = true
-	var got install.MediaRequest
+	var got install.PartsRequest
 	var streamed []byte
-	s.FromMedia = func(_ context.Context, req install.MediaRequest) error {
+	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
 		got = req
 		var err error
-		streamed, err = io.ReadAll(req.Image)
+		streamed, err = io.ReadAll(req.Parts)
 		return err
 	}
 	addr := ta.startNode(t, s)
@@ -330,15 +333,89 @@ func TestInstallFromMediaStreamsImage(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", fp, "--image", imageDir}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(image)
-	if !bytes.Equal(streamed, image) || got.ImageSize != int64(len(image)) || !bytes.Equal(got.ImageSHA256, sum[:]) {
-		t.Errorf("streamed %d bytes, header size %d", len(streamed), got.ImageSize)
+	h := got.Image
+	if h.ImageID != "chalkos" || h.Version != "0.1.0" || h.Cluster != "lab" || h.Role != "test" || h.BootLoaderSize == 0 {
+		t.Errorf("image = %+v", h)
+	}
+	size := h.StoreSize + h.VeritySize + h.UKISize + h.BootLoaderSize
+	loader := sha256.Sum256(streamed[max(len(streamed)-int(h.BootLoaderSize), 0):])
+	if int64(len(streamed)) != size || !bytes.Equal(loader[:], h.BootLoaderSHA256) {
+		t.Errorf("streamed %d bytes, want %d ending in the boot loader", len(streamed), size)
+	}
+	if !strings.Contains(ta.stdout.String(), fmt.Sprintf("sending %d bytes", size)) {
+		t.Errorf("chalkctl printed %q, not the bytes it sends", ta.stdout)
 	}
 	if got.Target != (storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}) || got.WipeDisk {
 		t.Errorf("target = %+v, wipe = %v", got.Target, got.WipeDisk)
 	}
 	if !reflect.DeepEqual(got.SystemDefinitions, map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}) {
 		t.Errorf("definitions = %v", got.SystemDefinitions)
+	}
+}
+
+// TestInstallChecksTheImage refuses images of another cluster or role, and images whose UKI or
+// boot loader the cluster's db certificate did not sign, before the installer is sent anything;
+// --sign-key signs both.
+func TestInstallChecksTheImage(t *testing.T) {
+	if _, err := exec.LookPath("sbsign"); err != nil {
+		t.Skip("sbsign not in PATH")
+	}
+	ta := newTestApp(t)
+	keys := t.TempDir()
+	dbKey, dbCert := testSigner(t, keys, "db")
+	otherKey, otherCert := testSigner(t, keys, "other")
+	certPEM, _ := os.ReadFile(dbCert)
+	ta.editManifest(t, func(m *manifest.Manifest) { m.SecureBoot.SignerCertificate = string(certPEM) })
+	image := func(cluster, role string) string {
+		dir := testUpgradeImage(t, cluster, role, "0.1.0")
+		writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+		return dir
+	}
+	s := maintenanceNode()
+	s.Installer = true
+	var parts []byte
+	var header upgrade.Header
+	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
+		var err error
+		header = req.Image
+		parts, err = io.ReadAll(req.Parts)
+		return err
+	}
+	addr := ta.startNode(t, s)
+	img := image("lab", "test")
+	for _, tc := range []struct {
+		name string
+		img  string
+		args []string
+		want string
+	}{
+		{"another cluster", image("prod", "test"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image is of the cluster prod, not lab"},
+		{"another role", image("lab", "w"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 is a node of the role test; the image is of w"},
+		{"an unsigned image", img, nil, "Secure Boot would refuse the image's UKI"},
+		{"an image signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts = nil
+			args := append([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", tc.img}, tc.args...)
+			err := ta.run(context.Background(), ta.args(args, addr))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("install = %v, want %q", err, tc.want)
+			}
+			if parts != nil {
+				t.Error("the installer was sent the image")
+			}
+		})
+	}
+	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", img, "--sign-key", dbKey, "--sign-cert", dbCert}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := pki.ParseBundle(string(certPEM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loader := parts[len(parts)-int(header.BootLoaderSize):]
+	if err := uki.VerifySignature(bytes.NewReader(loader), header.BootLoaderSize, uki.Database{Certificates: certs}, uki.Database{}); err != nil {
+		t.Errorf("the boot loader sent: %v", err)
 	}
 }
 
@@ -352,24 +429,6 @@ func TestInstallReportsNodeRefusal(t *testing.T) {
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "runs from /dev/vda") {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestInstallFromMediaFailureNamesWipeDisk(t *testing.T) {
-	ta := newTestApp(t)
-	imageDir := filepath.Join(ta.dir, "image")
-	writeFile(t, filepath.Join(imageDir, "chalkos_0.1.0.raw"), "chalkos image")
-	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
-	s := maintenanceNode()
-	s.Installer = true
-	s.FromMedia = func(_ context.Context, req install.MediaRequest) error {
-		io.Copy(io.Discard, req.Image)
-		return errors.New("enroll the TPM2 keyslot of var: no TPM")
-	}
-	addr := ta.startNode(t, s)
-	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure", "--image", imageDir}, addr))
-	if err == nil || !strings.Contains(err.Error(), "no TPM") || !strings.Contains(err.Error(), "--wipe-disk") {
-		t.Fatalf("err = %v, want the node's error and the need for --wipe-disk", err)
 	}
 }
 
@@ -786,33 +845,6 @@ func TestDefaultIdentitiesSkipUnreadable(t *testing.T) {
 	// An identity named on the command line must load.
 	if _, err := ta.ageIdentities(context.Background(), []string{broken}); err == nil || !strings.Contains(err.Error(), broken) {
 		t.Errorf("err = %v, want the named identity's failure", err)
-	}
-}
-
-func TestSignedCopyCleansUp(t *testing.T) {
-	cache := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", cache)
-	dir := t.TempDir()
-	raw := filepath.Join(dir, "chalkos.raw")
-	writeFile(t, raw, "image")
-	for name, src := range map[string]string{
-		"missing image":    filepath.Join(dir, "missing.raw"),
-		"unreadable image": dir,
-		// Signing fails: there is no repart-output.json next to the image.
-		"signing fails": raw,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, _, err := signedCopy(context.Background(), src, "key.pem", "cert.pem"); err == nil {
-				t.Fatal("no error")
-			}
-			left, _ := filepath.Glob(filepath.Join(cache, "chalkctl", "*"))
-			if len(left) != 0 {
-				t.Errorf("left %v behind", left)
-			}
-		})
-	}
-	if _, err := os.Stat(filepath.Join(cache, "chalkctl")); err != nil {
-		t.Errorf("the copy was not made in the cache directory: %v", err)
 	}
 }
 

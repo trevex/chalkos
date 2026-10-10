@@ -3,9 +3,10 @@ package chalkd
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
+
 	"errors"
 	"io"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 const installIdentity = `{"hostname": "n1", "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "s", "repart": {}}}, "volumes": {}, "fallback": "recovery-key", "encryption": "tpm2"}}`
@@ -81,34 +83,64 @@ func TestInstallInPlace(t *testing.T) {
 	}
 }
 
-func TestInstallFromMedia(t *testing.T) {
+func TestInstallFromParts(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
-	image := bytes.Repeat([]byte("chalkos"), 5000)
-	sum := sha256.Sum256(image)
-	var got install.MediaRequest
+	parts := bytes.Repeat([]byte("chalkos"), 5000)
+	var got install.PartsRequest
 	var streamed []byte
-	s.FromMedia = func(_ context.Context, req install.MediaRequest) error {
+	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
 		got = req
 		var err error
-		streamed, err = io.ReadAll(req.Image)
+		streamed, err = io.ReadAll(req.Parts)
 		return err
 	}
 	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
-	h.ImageSize = uint64(len(image))
-	h.ImageSha256 = sum[:]
+	h.Image = &nodev1.ImageHeader{
+		Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", RootHash: []byte{1},
+		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
+		Uki: &nodev1.ImagePart{Size: 5, Sha256: []byte{6}}, BootLoader: &nodev1.ImagePart{Size: 7, Sha256: []byte{8}},
+	}
 	h.SystemDefinitions = map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}
 	h.WipeDisk = true
 
-	if err := sendInstall(t, s, h, image); err != nil {
+	if err := sendInstall(t, s, h, parts); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(streamed, image) {
-		t.Errorf("streamed %d bytes, want the %d of the image", len(streamed), len(image))
+	if !bytes.Equal(streamed, parts) {
+		t.Errorf("streamed %d bytes, want the %d of the image's parts", len(streamed), len(parts))
 	}
-	if got.Target != (storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}) || got.ImageSize != int64(len(image)) ||
-		!bytes.Equal(got.ImageSHA256, sum[:]) || !got.WipeDisk || got.SystemDefinitions["50-state.conf"] == "" {
-		t.Errorf("media request = %+v", got)
+	want := upgrade.Header{
+		ImageID: "chalkos", Version: "0.1.0", Cluster: "lab", Role: "worker", RootHash: []byte{1},
+		StoreSize: 1, StoreSHA256: []byte{2}, VeritySize: 3, VeritySHA256: []byte{4},
+		UKISize: 5, UKISHA256: []byte{6}, BootLoaderSize: 7, BootLoaderSHA256: []byte{8},
+	}
+	if got.Target != (storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}) || !reflect.DeepEqual(got.Image, want) ||
+		!got.WipeDisk || got.SystemDefinitions["50-state.conf"] == "" {
+		t.Errorf("parts request = %+v", got)
+	}
+}
+
+// TestInstallImageMatchesTheTarget refuses an installer install without an image, and an install
+// in place with one.
+func TestInstallImageMatchesTheTarget(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	s.InPlace = func(context.Context, install.Request) error {
+		t.Error("installed in place")
+		return nil
+	}
+	in := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	in.Image = &nodev1.ImageHeader{Version: "0.1.0"}
+	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("in place with an image: %v", err)
+	}
+	s.Installer = true
+	s.FromParts = func(context.Context, install.PartsRequest) error {
+		t.Error("installed onto the disk")
+		return nil
+	}
+	if err := sendInstall(t, s, header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}), nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("onto a disk without an image: %v", err)
 	}
 }
 
