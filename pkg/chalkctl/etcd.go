@@ -1,4 +1,4 @@
-package main
+package chalkctl
 
 import (
 	"context"
@@ -15,21 +15,6 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/manifest"
 )
-
-func (a *app) etcd(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errUsage
-	}
-	switch args[0] {
-	case "members":
-		return a.etcdMembers(ctx, args[1:])
-	case "remove-member":
-		return a.etcdRemoveMember(ctx, args[1:])
-	case "leave":
-		return a.etcdLeave(ctx, args[1:])
-	}
-	return errUsage
-}
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.

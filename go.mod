@@ -6,6 +6,7 @@ require (
 	connectrpc.com/connect v1.21.0
 	filippo.io/age v1.3.2
 	github.com/google/go-containerregistry v0.22.1
+	github.com/spf13/cobra v1.10.2
 	go.etcd.io/etcd/api/v3 v3.7.2
 	go.etcd.io/etcd/client/pkg/v3 v3.7.2
 	go.etcd.io/etcd/client/v3 v3.7.2
@@ -60,6 +61,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect

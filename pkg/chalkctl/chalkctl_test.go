@@ -1,4 +1,4 @@
-package main
+package chalkctl
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ import (
 )
 
 func TestRunSignRequiresAllFlags(t *testing.T) {
-	err := runSign([]string{"--image", "disk.raw"})
+	err := runSign(context.Background(), []string{"--image", "disk.raw"})
 	if err == nil || !strings.Contains(err.Error(), "--repart-json") {
 		t.Fatalf("err = %v, want a missing --repart-json error", err)
 	}
@@ -940,5 +940,68 @@ func TestOlderSecretsFilesAreRefused(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "version "+version+" is not supported") || !strings.Contains(err.Error(), "chalkctl gen secrets") {
 			t.Errorf("version %s: %v, want a refusal naming chalkctl gen secrets", version, err)
 		}
+	}
+}
+
+// run runs chalkctl's command tree with args, with the test's streams, and returns the error of
+// the command that ran.
+func (a *app) run(ctx context.Context, args []string) error {
+	root := newCommand(a)
+	root.SetArgs(args)
+	root.SetIn(a.stdin)
+	root.SetOut(a.stdout)
+	root.SetErr(a.stderr)
+	return root.ExecuteContext(ctx)
+}
+
+// execute runs args as the chalkctl program does and returns its exit status.
+func (a *app) execute(ctx context.Context, args ...string) int {
+	root := newCommand(a)
+	root.SetArgs(args)
+	root.SetIn(a.stdin)
+	root.SetOut(a.stdout)
+	root.SetErr(a.stderr)
+	return Execute(ctx, root)
+}
+
+func TestExecuteUsageErrors(t *testing.T) {
+	for _, args := range [][]string{nil, {"bogus"}, {"etcd"}, {"etcd", "bogus"}, {"gen"}} {
+		ta := newTestApp(t)
+		if got := ta.execute(context.Background(), args...); got != 2 {
+			t.Errorf("chalkctl %v exits with %d, want 2", args, got)
+		}
+		if !strings.Contains(ta.stderr.String(), "Usage:") {
+			t.Errorf("chalkctl %v prints no usage:\n%s", args, ta.stderr.String())
+		}
+		if len(args) > 0 && args[len(args)-1] == "bogus" && !strings.Contains(ta.stderr.String(), `unknown command "bogus"`) {
+			t.Errorf("chalkctl %v does not name the unknown command:\n%s", args, ta.stderr.String())
+		}
+	}
+}
+
+func TestExecuteErrors(t *testing.T) {
+	ta := newTestApp(t)
+	if got := ta.execute(context.Background(), "status", "n1", "--manifest", filepath.Join(ta.dir, "missing.json")); got != 1 {
+		t.Errorf("a failing command exits with %d, want 1", got)
+	}
+	if !strings.HasPrefix(ta.stderr.String(), "chalkctl: ") {
+		t.Errorf("stderr = %q, want the error after chalkctl:", ta.stderr.String())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ta = newTestApp(t)
+	if got := ta.execute(ctx, "status", "n1", "--manifest", filepath.Join(ta.dir, "missing.json")); got != 130 {
+		t.Errorf("a command whose context ended exits with %d, want 130", got)
+	}
+}
+
+// Shell completion comes from cobra's completion command.
+func TestCompletion(t *testing.T) {
+	ta := newTestApp(t)
+	if err := ta.run(context.Background(), []string{"completion", "bash"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ta.stdout.String(), "__start_chalkctl") {
+		t.Errorf("chalkctl completion bash prints no completion script:\n%.200s", ta.stdout.String())
 	}
 }
