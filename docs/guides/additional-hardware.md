@@ -220,7 +220,9 @@ drivers. A platform of your own starts from chalkos's node modules alone: it doe
 `metal`'s modules, so give it a console. Its name, lower-case letters, digits and dashes, becomes
 `CHALKOS_PLATFORM` in the image's os-release, and a node refuses images and [identities](../reference/glossary.md#identity) of another
 platform, so moving a node to a new platform is a reinstall. Platform modules come before the
-role's; a role overrides a value its platform sets with `lib.mkForce`.
+role's; a role overrides a value its platform sets plainly with `lib.mkForce`, and one the platform
+forces itself with `lib.mkOverride` below 50, as for the `kvm` platform's `ExecStart` of the guest
+agent.
 
 ## Keep the image within its slot
 
@@ -245,7 +247,8 @@ with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) on the r
 pod reaches the node's tools:
 
 ```sh
-kubectl debug node/<node> -it --image=busybox -- chroot /host /run/current-system/sw/bin/bash
+kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- \
+  chroot /host /run/current-system/sw/bin/bash
 ```
 
 There, `ip link` lists a new network card, `lsblk` a new disk, and `dmesg` names the firmware

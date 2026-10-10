@@ -74,7 +74,11 @@ carries it:
         vlanConfig.Id = 42;
       };
       systemd.network.networks."10-uplink" = {
-        matchConfig.MACAddress = "3c:ec:ef:00:00:11";
+        matchConfig = {
+          MACAddress = "3c:ec:ef:00:00:11";
+          # The VLAN device has the port's MAC address too; only the port is of type ether.
+          Type = "ether";
+        };
         vlan = [ "vlan42" ];
         networkConfig.LinkLocalAddressing = "no";
       };
@@ -90,10 +94,15 @@ carries it:
 The port's own file takes it from the default DHCP file and runs no DHCP there. The VLAN device
 gets its address by DHCP here; give it `address` and `gateway` instead for a static one.
 
+A VLAN device inherits its port's MAC address, so a port file that matched by MAC address alone
+would match `vlan42` too and, as it sorts first, take it from its own file. `Type = "ether"`
+limits the match to the physical port.
+
 ## Bond ports
 
 A bond is a netdev too, with the ports matched by their MAC addresses, which networkd takes as a
-space-separated list:
+space-separated list, and by `Type = "ether"`, because the bond takes the MAC address of one of
+its ports:
 
 ```nix title="installer.nix"
 {
@@ -110,7 +119,11 @@ space-separated list:
         };
       };
       systemd.network.networks."10-bond0-ports" = {
-        matchConfig.MACAddress = "3c:ec:ef:00:00:21 3c:ec:ef:00:00:22";
+        matchConfig = {
+          MACAddress = "3c:ec:ef:00:00:21 3c:ec:ef:00:00:22";
+          # The bond takes a port's MAC address; only the ports are of type ether.
+          Type = "ether";
+        };
         networkConfig.Bond = "bond0";
       };
       systemd.network.networks."20-bond0" = {

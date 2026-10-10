@@ -130,8 +130,12 @@ from the installer. chalkctl copies the UKI and the boot loader off the image, s
 and streams them with the store, so the image in the Nix store stays as it is:
 
 ```sh
-chalkctl install <node> --fingerprint=<fingerprint> --sign-key=db.key --sign-cert=db.crt
+chalkctl install <node> --endpoint=<address> --fingerprint=<fingerprint> \
+  --sign-key=db.key --sign-cert=db.crt
 ```
+
+`<node>` is the node's name in the cluster definition, `<address>` the address the installer's
+console shows and `<fingerprint>` the certificate fingerprint next to it.
 
 `chalkctl upgrade` with the same flags signs the UKI of each image it rolls out:
 

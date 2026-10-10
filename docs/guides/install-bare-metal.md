@@ -216,9 +216,9 @@ The installer takes a disk on which `blkid` finds no signature, or one an earlie
 install left. It refuses any other with a message that names what it found, for example:
 
 ```text
-the target disk /dev/nvme0n1 carries data (dos); pass --wipe-disk to replace it
-the target disk /dev/nvme0n1 is not one an install of this role left: ...; pass --wipe-disk to replace it
-the target disk /dev/nvme0n1 holds an installed node; pass --wipe-disk to replace it
+the target disk /dev/nvme0n1 (model "...", size ..., serial "...") carries data (dos); pass --wipe-disk to replace it
+the target disk /dev/nvme0n1 (model "...", size ..., serial "...") is not one an install of this role left: ...; pass --wipe-disk to replace it
+the target disk /dev/nvme0n1 (model "...", size ..., serial "...") holds an installed node; pass --wipe-disk to replace it
 ```
 
 `--wipe-disk` lets the installer clear the disk's partition tables and lay it out anew.
@@ -315,7 +315,7 @@ chalkctl reports the installer's refusal as its error. The common ones:
 | --- | --- |
 | `the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate` | The installer was built before the OS CA was rotated, or from another cluster's `secrets.pub.json`. Build and sign it again from the current one. |
 | `Secure Boot would refuse the UKI: ...` | The installer checked the UKI against the machine's db and dbx: the image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign with the enrolled key, or enrol its certificate. |
-| `Secure Boot would refuse the image's UKI: ...` | chalkctl checked the signature against `signerCertificate` before sending anything, and `--sign-key` is another key than the one the cluster definition names. |
+| `Secure Boot would refuse the image's UKI: ...` or `... boot loader: ...` | chalkctl checked the UKI and the boot loader against `signerCertificate` before sending anything: `--sign-key` was left out, so the image is unsigned, or it is another key than the one the cluster definition names. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
 | The first boot asks for a recovery key | The installer and the role image were signed with different keys, or Secure Boot changed between install and boot. Type the key `chalkctl recovery-key <node>` prints. The prompt returns at every boot until the node is reinstalled from an installer signed with the role images' key, as [Recover a node](recover-node.md#the-console-asks-for-a-passphrase-at-boot) describes. |
 

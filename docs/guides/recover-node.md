@@ -84,12 +84,15 @@ it in a new version and upgrade again, as in
 
 ## The node certificate expired
 
-chalkctl refuses the node's certificate as expired, so every command against the node fails,
-while the node itself still runs. A node renews its [node certificate](../reference/glossary.md#node-certificate)
-through a [control plane](../reference/glossary.md#control-plane) once two thirds of its year have passed, so it expires only when the
-node could not renew for four months: it was switched off, could not reach the [cluster endpoint](../reference/glossary.md#cluster-endpoint)
-on port 50000, or has no Kubernetes and nobody renewed it by hand. Before the expiry, its status
-showed why:
+chalkctl refuses the node's certificate as expired, so every command against the node fails, while
+the node itself still runs. A node renews its
+[node certificate](../reference/glossary.md#node-certificate) once two thirds of its year have
+passed: a [control plane](../reference/glossary.md#control-plane) signs its own with its node CA,
+and a worker asks a control plane at the
+[cluster endpoint](../reference/glossary.md#cluster-endpoint) on port 50000. A certificate therefore
+expires only when the node could not renew for four months: it was switched off, a worker could not
+reach the endpoint, or the node has no Kubernetes and nobody renewed it by hand. Before the expiry,
+its status showed why:
 
 ```text
 certificates:
@@ -134,7 +137,7 @@ A control plane's Kubernetes line in `chalkctl status` names what holds it back,
 
 | Status | Cause | Fix |
 | --- | --- | --- |
-| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an [etcd member](../reference/glossary.md#etcd-member). | Restore the address and reboot. Or remove its member with `chalkctl etcd remove-member <node>` and reinstall it. |
+| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an [etcd member](../reference/glossary.md#etcd-member). | Restore the address and reboot. Or take the node out of etcd and reinstall it: `chalkctl etcd leave <node> --force` removes its member through the other members, as does `chalkctl etcd remove-member <node>`. |
 | `joining the cluster at ...: etcd has a member <node> already; remove it with chalkctl etcd remove-member <node>` | The node was reinstalled without leaving etcd, and its old member is still there. | Run the command the status names; the node joins on its own. |
 | `left etcd; reinstall the node to join the cluster again` | The node left etcd with `chalkctl etcd leave`. | Reinstall it. |
 | `etcd data missing: restore etcd or reinstall the node` | The node is an etcd member, but VAR holds no etcd data, because VAR lost its data. | chalkos cannot restore etcd. Remove its member with `chalkctl etcd remove-member <node>` and reinstall it. |
@@ -216,7 +219,7 @@ its management is gone for good:
 
 | Still works | Gone |
 | --- | --- |
-| Commands with existing client files, within their roles: status, logs, disks, reboot, upgrade, bootstrap, the etcd commands, and storage reset on nodes whose fallback is not the recovery key | Installing or reinstalling a node, `apply-identity` |
+| Commands with existing client files, within their roles: status, logs, disks, reboot, upgrade, bootstrap, the etcd commands, and storage reset where no TPM-encrypted volume is created: on nodes whose fallback is not the recovery key, or of a volume without encryption | Installing or reinstalling a node, `apply-identity` |
 | Node certificate renewal by the control planes, until the [node CA](../reference/glossary.md#node-ca) expires | `chalkctl node renew`, `node-ca rotate` and every `rotate` |
 | Kubelet certificate renewal | New client files and kubeconfigs |
 | Existing kubeconfigs, until they expire | Recovery keys: a node whose TPM stops unsealing cannot be unlocked |

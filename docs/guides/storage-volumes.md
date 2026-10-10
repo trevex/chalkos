@@ -11,11 +11,11 @@ on [volumes](../reference/glossary.md#volume): partitions on the system disk or 
 their own, encrypted or not, formatted and mounted or left raw. This guide declares them, applies
 them to a running node, and recreates a volume when a change cannot be applied in place.
 
-[chalkd](../reference/glossary.md#chalkd) creates volumes with systemd-repart: at install, when
-[`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md) delivers a change, and
-again at every boot. It only ever adds partitions or grows them. A change that would shrink,
-reformat, re-encrypt or move a volume is refused until you reset that volume, which deletes its
-data.
+Volumes are created with systemd-repart: by [chalkd](../reference/glossary.md#chalkd) at install and
+when [`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md) delivers a change, and
+by `chalkos-storage.service` in the initrd at every boot. repart only ever adds partitions or grows
+them. A change that would shrink, reformat, re-encrypt or move a volume is refused until you reset
+that volume, which deletes its data.
 
 ## Before you begin
 
@@ -113,8 +113,9 @@ A volume without `disk` goes on the system disk, behind VAR:
 }
 ```
 
-The volume's name is its partition label: lower-case letters, digits and dashes, at most 32
-characters. `esp`, `store`, `store-verity`, `state`, `var` and `system` are taken.
+The volume's name is its partition label: lower-case letters, digits and dashes, starting and ending
+with a letter or digit, at most 32 characters. `esp`, `store`, `store-verity`, `state`, `var` and
+`system` are taken.
 
 ## Put a volume on a disk of its own
 
@@ -258,7 +259,10 @@ of the identity.
 
 A reset recreates a volume in place. It refuses VAR, which the running node uses, a volume the
 definition no longer has, and a volume that moves to another disk. Those changes need the node
-reinstalled with the new layout.
+reinstalled with the new layout. It also refuses while the identity changes other volumes
+destructively too, naming them (`the identity changes other volumes destructively too: ...`), so
+one reset applies one volume's change: take the others out of the definition, reset this volume,
+then put them back one at a time.
 
 ## Check that it worked
 
@@ -276,8 +280,9 @@ var       system    /var               mounted
 ```
 
 `missing` means the volume's partition was not found, `not mounted` that it exists but its mount
-failed. A line `disk <name>: <problem>` after the table names a disk chalkd could not use, such
-as one whose pinned disk is gone or one that carries other data.
+failed, and `present` that it exists and has no mount point, as a raw volume does. A line
+`disk <name>: <problem>` after the table names a disk chalkd could not use, such as one whose pinned
+disk is gone or one that carries other data.
 
 ## If something goes wrong
 

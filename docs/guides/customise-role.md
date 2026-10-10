@@ -56,8 +56,10 @@ system and is the place for what other programs look up there, such as a mount h
 
 Modules that several roles share go into a list you reuse, or into a platform when they belong to
 a kind of machine; [Support additional hardware](additional-hardware.md#define-a-platform-of-your-own)
-defines one. A platform's modules come before the role's, and a role overrides a value its
-platform sets with `lib.mkForce`.
+defines one. A platform's modules come before the role's, but NixOS merges a value by priority, not
+by module order: a role overrides a value its platform sets plainly with `lib.mkForce`, and one the
+platform sets with `lib.mkForce` itself, such as the `kvm` platform's `ExecStart` of the guest
+agent, with `lib.mkOverride` below 50, for example `lib.mkOverride 40`.
 
 ## Read cluster settings in a role module
 
@@ -159,10 +161,10 @@ namespace of its own and adds modules to roles. A per-node option is declared on
 
 Import the file in the cluster definition, set `chalkos.site.enable = true`, and give each worker
 `site.name`. A change of a node's `site.name` needs no new image: `chalkctl apply-identity <node>`
-delivers it, and chalkd restarts `site-name.service`. The namespace must not be one chalkos uses
-inside images, `node`, `disk`, `role` or `nodes`. [The cluster
-definition](../concepts/cluster-definition.md) explains how extensions work and shows a larger
-one.
+delivers it, and chalkd restarts `site-name.service`. The namespace must not be a name chalkos
+declares under `chalkos`, in the cluster definition or inside images;
+[The cluster definition](../concepts/cluster-definition.md#how-does-an-extension-add-options) lists
+them, explains how extensions work and shows a larger one.
 
 ## Add kernel modules and debug tools
 
@@ -204,8 +206,8 @@ a cluster setting, not a role:
 
 The [control planes](../reference/glossary.md#control-plane) apply them with server-side apply after chalkos's own objects, at bootstrap
 and at every boot. They travel inside the images, so new objects arrive with an upgrade of the
-control planes. Being a cluster setting, the list is part of every role's image, so a change to it
-gives every role a new image.
+control planes. Only control-plane images carry the list, so a change to it gives the roles of
+kind `controlplane` a new image and leaves the other roles' images as they are.
 
 ## What a role may not change
 
@@ -223,8 +225,9 @@ settings break the node:
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
   applies only to nodes installed afterwards, and an upgrade whose store does not fit a node's
   [slot](../reference/glossary.md#slot) is refused.
-- On a role without Kubernetes, a boot is healthy only when no unit failed, so a unit of yours
-  that fails makes the next upgrade roll back.
+- On a role without Kubernetes, a boot is healthy only when no unit that `multi-user.target` or
+  `sysinit.target` pulls in failed, so such a unit of yours that fails makes the next upgrade roll
+  back. Jobs that timers and sockets start never count.
   [`chalkos.upgrade.healthIgnoreUnits`](../reference/options.md#chalkosupgradehealthignoreunits)
   lists units whose failure does not count.
 

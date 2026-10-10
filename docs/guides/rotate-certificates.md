@@ -185,9 +185,12 @@ to them; issue them once more after the finish to close that.
 
 ## Rotate the Kubernetes CAs
 
-`kubernetes-ca` replaces the cluster's three Kubernetes CAs together. Control planes take each
-phase one at a time, each restarting its static pods on the new files and waiting until etcd has
-every member healthy again, so etcd keeps its quorum. Workers follow.
+`kubernetes-ca` replaces the cluster's three Kubernetes CAs together. In accept, switch and finish,
+control planes take the phase one at a time, each restarting its static pods on the new files and
+waiting until etcd has every member healthy again, so etcd keeps its quorum, and workers follow.
+The refresh delivers nothing to control planes, which issued their kubelet client certificates
+themselves at the switch: it gives each worker a kubelet client certificate of the new CA, then
+has every node's kubelet renew its serving certificate.
 
 At the pause after accept, chalkos's add-ons and the workloads of
 [`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests) have restarted and

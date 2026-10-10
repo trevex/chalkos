@@ -124,13 +124,13 @@ variable store or a new TPM state stops the node from unlocking without its
 
 Prepare a variable store with Secure Boot on and your db certificate enrolled with
 `virt-fw-vars` from virt-firmware. `--enroll-generate` creates a platform key and KEK for the
-store, and `--no-microsoft` leaves Microsoft's certificates out, so the VM boots only what you
-signed:
+store. `--no-microsoft` leaves Microsoft's certificates out of db, and `--microsoft-kek none` out
+of KEK, so the VM boots only what you signed and accepts no db update that Microsoft signed:
 
 ```sh
 mkdir -p cp1/tpm
 virt-fw-vars --input <ovmf-vars> --output cp1/OVMF_VARS.fd \
-  --enroll-generate "cp1 platform key" --no-microsoft \
+  --enroll-generate "cp1 platform key" --no-microsoft --microsoft-kek none \
   --add-db "$(uuidgen)" db.crt --secure-boot
 swtpm socket --tpm2 --tpmstate dir=cp1/tpm --ctrl type=unixio,path=cp1/tpm/swtpm.sock --daemon
 ```
@@ -320,7 +320,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 | --- | --- |
 | The firmware reports `Access Denied` and boots nothing | The image is unsigned or signed with a key whose certificate is not in the VM's db. Sign the image, or enrol `db.crt`. |
 | Nothing appears on the console after the firmware | The VM has no serial port, or the console shows the screen; the kvm image writes to `ttyS0` only. |
-| `the identity places the system on /dev/sda, but the node runs from /dev/vda; install it with the installer instead` | `storage.system.disk` names another disk than the one the VM booted from. Fix the cluster definition. |
+| `the identity places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | `storage.system.disk` names another disk than the one the VM booted from. Fix the cluster definition. |
 | `cp1 runs an image built for metal, but the cluster definition declares it on kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Build and sign `images.kvm`. |
 | The node asks for its recovery key after a hypervisor change | The variable store or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
 

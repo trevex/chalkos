@@ -54,15 +54,16 @@ Read it from the top:
 | `platform` | The platform the image was built for. | A mismatch with the definition: changing a node's platform is a reinstall. |
 | `image` | The [image version](../reference/glossary.md#image-version) booted, its boot entry, and `not found healthy yet` while the [health check](../reference/glossary.md#health-check) runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
 | `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
-| `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the [VIP](../reference/glossary.md#vip) and its [control plane](../reference/glossary.md#control-plane)'s state. | Any state other than `bootstrapped` or `joined`; the table of symptoms below lists them. |
+| `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the [VIP](../reference/glossary.md#vip) and its [control plane](../reference/glossary.md#control-plane)'s state. | Any state other than `bootstrapped` or `joined`, or one of them followed by `: <problem>`; the table of symptoms below lists them. |
 | `certificates:` | Every certificate the node holds or issues, with its expiry. | A third column names what needs doing. |
 | `trust:` | The CAs and keys the node trusts, by fingerprint; `(issues)` marks the one that issues. | Two fingerprints outside a [rotation](../reference/glossary.md#rotation). |
 | `time` | Whether chrony synchronised the clock, to which source and with what offset. | `not synchronised`. |
 | `failed unit` | Each systemd unit that failed in this boot. | Any line: read that unit's log. |
 
-A control plane's Kubernetes line adds `vip holder` or `vip standby` and the control plane's
-state, `current` when its API server and etcd serve the node's certificates and the API server
-answers ready.
+A control plane's Kubernetes line adds `vip holder` or `vip standby` when
+[`vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses) is set, and the
+control plane's state, `current` when its API server and etcd serve the node's certificates and the
+API server answers ready.
 
 ## Read a unit's log
 
@@ -106,7 +107,8 @@ Kubernetes roles, crictl; systemd, bash, less, nftables and kmod are always ther
 pod on the node then reaches them through the host's root:
 
 ```sh
-kubectl debug node/<node> -it --image=busybox -- chroot /host /run/current-system/sw/bin/bash
+kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- \
+  chroot /host /run/current-system/sw/bin/bash
 ```
 
 The option changes the image, so it reaches running nodes with an upgrade and a new version. It

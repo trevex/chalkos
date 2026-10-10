@@ -61,9 +61,9 @@ Two ways make the endpoint survive a control plane's failure:
   50000 too; a balancer that forwards only 6443 leaves workers unable to renew their
   certificates.
 
-A VIP failover takes seconds: in the HA tests the VIP moved within 30 seconds of its holder's
-link going down, and a kubelet with an open connection to the old holder went more than 40
-seconds without reaching the API server.
+A VIP failover takes seconds: in runs of the HA end-to-end test the VIP moved within about 30
+seconds of its holder's link going down, and in one run of an upgrade test a kubelet with an open
+connection to the old holder went more than 40 seconds without reaching the API server.
 
 ```nix title="cluster.nix"
 {
@@ -149,7 +149,7 @@ decides what unlocks a volume when the TPM does not:
 | --- | --- | --- |
 | `recovery-key` (default) | The node's [recovery key](../reference/glossary.md#recovery-key), derived from the secrets file and printed by `chalkctl recovery-key` | Someone types the 64-letter key at the console, through a BMC or in person. |
 | `password` | A password you give at install | You keep one more secret per node, outside the secrets file. |
-| `none` | Nothing | A volume the TPM does not unseal is reset; for STATE and VAR that means reinstalling the node. |
+| `none` | Nothing | A volume the TPM does not unseal stays locked until `chalkctl storage reset` recreates it empty; STATE and VAR cannot be reset that way, so for them it means reinstalling the node. |
 
 Set `encryption.mode = "none"` only for machines in a place you trust physically. chalkos then
 warns at evaluation, because STATE holds the node's keys unencrypted.
@@ -170,7 +170,8 @@ that changes db or dbx has the same effect.
 Decide who signs. Whoever runs `chalkctl upgrade --sign-key=<db-key>` holds the key on their
 machine; a build machine that signs images and hands them out keeps it in one place. Set
 [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
-to the db certificate, so `chalkctl upgrade` refuses an image that key did not sign.
+to the db certificate, so `chalkctl install` and `chalkctl upgrade` refuse an image that key did
+not sign.
 
 ## Protect the secrets file
 

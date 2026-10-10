@@ -117,7 +117,9 @@ addresses before it starts etcd. A joined control plane reports:
 kubernetes controlplane: bootstrapped, node ready: True, vip standby, control plane current
 ```
 
-`vip standby` means the node takes part in the VIP's election; the holder shows `vip holder`.
+`vip standby` is shown on every bootstrapped control plane that does not hold the VIP; the holder
+shows `vip holder`. A standby node takes part in the VIP's election only while its API server
+answers ready.
 `control plane current` means its API server and etcd serve the certificates the node holds and
 the API server answers ready.
 
@@ -146,10 +148,11 @@ kubectl --kubeconfig=prod.kubeconfig get nodes
 
 When the holder's API server stops answering, or the holder fails, another healthy control plane
 takes the VIP through an election in etcd; [Networking](../concepts/networking.md#how-does-the-vip-move-between-control-planes)
-explains the timing. In the HA tests the VIP moved within 30 seconds of its holder's network link
-going down, and it stayed with the new holder when the old one came back. Clients with an open
-connection to the old holder can take longer to notice: in one upgrade test a kubelet went more
-than 40 seconds without renewing its lease. A cluster without etcd quorum has no holder, because
+explains the timing. In runs of the HA end-to-end test the VIP moved within about 30 seconds of its
+holder's network link going down, against the test's limit of 2 minutes, and it stayed with the new
+holder when the old one came back. Clients with an open connection to the old holder can take
+longer to notice: in one run of an upgrade test a kubelet went more than 40 seconds without
+renewing its lease. A cluster without etcd quorum has no holder, because
 nobody can win the election.
 
 ## Add a control plane
