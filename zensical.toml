@@ -12,9 +12,40 @@ site_dir = "site"
 extra_css = ["stylesheets/chalkos.css"]
 nav = [
   { "Home" = "index.md" },
-  { "Getting started" = ["getting-started/index.md"] },
-  { "Concepts" = ["concepts/index.md"] },
-  { "Guides" = ["guides/index.md"] },
+  { "Getting started" = [
+    "getting-started/index.md",
+    "getting-started/requirements.md",
+    "getting-started/five-minutes.md",
+  ] },
+  { "Concepts" = [
+    "concepts/index.md",
+    "concepts/architecture.md",
+    "concepts/cluster-definition.md",
+    "concepts/image.md",
+    "concepts/boot-and-rollback.md",
+    "concepts/security.md",
+    "concepts/certificates.md",
+    "concepts/storage.md",
+    "concepts/networking.md",
+    "concepts/kubernetes.md",
+    "concepts/upgrades.md",
+  ] },
+  { "Guides" = [
+    "guides/index.md",
+    "guides/install-bare-metal.md",
+    "guides/kvm-proxmox-libvirt.md",
+    "guides/production-cluster.md",
+    "guides/ha-control-plane.md",
+    "guides/customise-role.md",
+    "guides/customise-installer.md",
+    "guides/additional-hardware.md",
+    "guides/storage-volumes.md",
+    "guides/upgrade-cluster.md",
+    "guides/rotate-certificates.md",
+    "guides/secure-boot-signing.md",
+    "guides/recover-node.md",
+    "guides/troubleshooting.md",
+  ] },
   { "Reference" = [
     "reference/index.md",
     # The commands' pages, which nix run .#docgen writes from their help.
@@ -89,8 +120,20 @@ nav = [
     # END docgen cli
     { "Cluster and node options" = "reference/options.md" },
     { "Node API" = "reference/api.md" },
+    "reference/image-layout.md",
+    "reference/ports-and-firewall.md",
+    "reference/os-release.md",
+    "reference/glossary.md",
   ] },
-  { "Contributing" = ["contributing/index.md"] },
+  { "Contributing" = [
+    "contributing/index.md",
+    "contributing/development.md",
+    "contributing/testing.md",
+    "contributing/architecture.md",
+    "contributing/writing-docs.md",
+    "contributing/style.md",
+    "contributing/roadmap.md",
+  ] },
 ]
 
 [project.theme]

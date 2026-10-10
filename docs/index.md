@@ -1,9 +1,14 @@
 ---
-title: chalkos
-description: An image-based NixOS for Kubernetes nodes
+title: "chalkos"
+description: "An image-based NixOS for Kubernetes nodes"
 ---
 
 # chalkos
+
+<!--
+Scope: What chalkos is, who it is for, how it compares with Talos and plain NixOS, and where to
+start reading.
+-->
 
 chalkos turns bare-metal machines and virtual machines into a Kubernetes cluster that runs an
 immutable operating system managed through an API. A cluster is declared in a Nix flake; each

@@ -1,12 +1,16 @@
+---
+title: "Contributing"
+description: "How to contribute to chalkos: what a change needs and where to start"
+---
+
 # Contributing
+
+<!--
+Scope: The contributing guide: where to start, what a change needs (tests, documentation,
+nix fmt, the flake checks), commit conventions, how changes are reviewed, and an overview of
+the other contributing pages.
+-->
 
 !!! note "Being written"
 
-    This section will hold the contributing guide; the development setup with the dev shell and
-    the repository layout; testing with unit, namespace, evaluation and end-to-end tests and the
-    end-to-end tests' resource budget; the architecture for developers; writing documentation,
-    with the style guide; and the roadmap and known limits.
-
-The site is built with [Zensical](https://zensical.org): `nix build .#docs` builds it strictly,
-as the `docs` check does, and `nix run .#docs-serve` serves it from the repository root while
-it is edited.
+    This page is being written.
