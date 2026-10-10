@@ -174,22 +174,3 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 	}
 	s.mu.Unlock()
 }
-
-// TestUpgradeRefusesABootLoader refuses an image that brings a boot loader before anything is
-// installed: an upgrade leaves the boot loader as it is.
-func TestUpgradeRefusesABootLoader(t *testing.T) {
-	c := newCreds(t)
-	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error) {
-		t.Error("the image was installed")
-		return upgrade.Result{}, nil
-	}
-	addr := serve(t, s, c, c.pool)
-	conn := dial(t, addr, c.clients[pki.RoleOperator])
-	stream := conn.Upgrade(context.Background())
-	img := &nodev1.ImageHeader{Version: "0.2.0", BootLoader: &nodev1.ImagePart{Size: 1, Sha256: []byte{7}}}
-	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: img}}})
-	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "boot loader") {
-		t.Errorf("upgrade = %v, want the boot loader refused", err)
-	}
-}

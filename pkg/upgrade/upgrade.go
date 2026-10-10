@@ -18,29 +18,27 @@
 //     <id>_<version>+<tries>.efi.
 //
 // The running slot and its UKI are never written.
+//
+// The installer shares the slot writer, SlotWriter, and the checks of an image's UKI and boot
+// loader, CheckUKI and CheckSecureBoot: it writes slot A of the disk it installs a node onto.
 package upgrade
 
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/uki"
-	"github.com/trevex/chalkos/pkg/verity"
 )
 
 // Node is the running node an upgrade changes. Tests point it at a disk image and directories.
@@ -73,38 +71,6 @@ func (n *Node) change(what string) error {
 	return n.Change(what)
 }
 
-// Header describes the image an upgrade installs, whose store, hash tree and UKI follow it.
-type Header struct {
-	ImageID, Version, Cluster, Role string
-	RootHash                        []byte
-	StoreSize, VeritySize, UKISize  int64
-	StoreSHA256, VeritySHA256       []byte
-	UKISHA256                       []byte
-}
-
-// VersionPattern is what an image version may be: what a GPT label holds after "store-verity_"
-// and what systemd-boot keeps unchanged in an entry's ID.
-var VersionPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.~^-]{0,22}$`)
-
-// maxUKI bounds the UKI an upgrade takes; it must fit the ESP beside the running one.
-const maxUKI = 512 << 20
-
-func (h Header) validate() error {
-	switch {
-	case !VersionPattern.MatchString(h.Version):
-		return fmt.Errorf("the version %q is not 1 to 23 characters of a-z, 0-9, '.', '~', '^' and '-'", h.Version)
-	case h.ImageID == "" || h.Cluster == "" || h.Role == "":
-		return errors.New("the image's ID, cluster and role are required")
-	case len(h.RootHash) != sha256.Size:
-		return errors.New("the root hash is not a SHA-256")
-	case len(h.StoreSHA256) != sha256.Size || len(h.VeritySHA256) != sha256.Size || len(h.UKISHA256) != sha256.Size:
-		return errors.New("the SHA-256 sums of the store, the hash tree and the UKI are required")
-	case h.StoreSize <= 0 || h.VeritySize <= 0 || h.UKISize <= 0 || h.UKISize > maxUKI:
-		return errors.New("the sizes of the store, the hash tree and the UKI are required")
-	}
-	return nil
-}
-
 // Result is what an upgrade did.
 type Result struct {
 	// AlreadyInstalled is set when the node runs the image already, and nothing changed.
@@ -119,8 +85,11 @@ type Result struct {
 // the inactive slot and makes it the next boot. Everything is checked before the slot is
 // retired, except what only the received image tells; the slot stays retired until that passed.
 func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result, error) {
-	if err := h.validate(); err != nil {
+	if err := h.Validate(); err != nil {
 		return Result{}, err
+	}
+	if h.BootLoaderSize != 0 {
+		return Result{}, errors.New("an upgrade leaves the boot loader as it is; the image must not bring one")
 	}
 	running, err := n.running()
 	if err != nil {
@@ -149,14 +118,12 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if bytes.Equal(h.RootHash, running) {
 		return Result{}, fmt.Errorf("the node runs this store as version %s, not %s", version, h.Version)
 	}
-	unlock := n.lockTable()
-	parts, err := n.readTable(ctx)
+	w := n.slots()
+	parts, err := w.ReadTable(ctx)
 	if err != nil {
-		unlock()
 		return Result{}, err
 	}
 	_, inactive, err := slots(parts, running)
-	unlock()
 	if err != nil {
 		return Result{}, err
 	}
@@ -201,7 +168,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err := n.retire(ctx, all, h.ImageID, booted, running, inactive); err != nil {
 		return Result{}, err
 	}
-	wrote, err := n.write(h, inactive, stream)
+	wrote, err := w.Write(h, inactive, stream)
 	if err != nil {
 		return Result{}, err
 	}
@@ -237,13 +204,14 @@ func (n *Node) running() ([]byte, error) {
 	return hash, nil
 }
 
-// lockTable takes the partition table's lock, when there is one, and returns its release.
-func (n *Node) lockTable() func() {
-	if n.TableLock == nil {
-		return func() {}
-	}
-	n.TableLock.Lock()
-	return n.TableLock.Unlock
+// slots is the slot writer of the node's boot disk.
+func (n *Node) slots() *SlotWriter {
+	return &SlotWriter{Run: n.Run, Disk: n.Disk, OpenPartition: n.OpenPartition, TableLock: n.TableLock, LockWait: n.LockWait, Change: n.Change}
+}
+
+// readTable reads the boot disk's GPT.
+func (n *Node) readTable(ctx context.Context) ([]Partition, error) {
+	return n.slots().ReadTable(ctx)
 }
 
 // retired reports whether the retirement removes the UKI: one of the image that neither the node
@@ -284,113 +252,7 @@ func (n *Node) retire(ctx context.Context, entries []Entry, imageID string, boot
 			return err
 		}
 	}
-	if err := n.setSlot(ctx, slot, randomUUID(), emptyLabel, randomUUID(), emptyLabel); err != nil {
-		return err
-	}
-	log.Printf("retired the slot of partitions %d and %d", slot.Verity.Number, slot.Data.Number)
-	return nil
-}
-
-// write writes the store and its hash tree into the slot and checks them against the root hash.
-// A slot that holds them already is left as it is, and the stream's copies are skipped.
-func (n *Node) write(h Header, slot Slot, stream io.Reader) (bool, error) {
-	if n.holds(slot, h) {
-		log.Printf("the slot of partitions %d and %d holds the store of %s already", slot.Verity.Number, slot.Data.Number, h.Version)
-		if _, err := io.CopyN(io.Discard, stream, h.StoreSize+h.VeritySize); err != nil {
-			return false, fmt.Errorf("receive the image: %w", err)
-		}
-		return false, nil
-	}
-	for _, part := range []struct {
-		what string
-		p    Partition
-		size int64
-		sum  []byte
-	}{
-		{"store", slot.Data, h.StoreSize, h.StoreSHA256},
-		{"hash tree", slot.Verity, h.VeritySize, h.VeritySHA256},
-	} {
-		if err := n.change("write the " + part.what); err != nil {
-			return false, err
-		}
-		if err := n.copyInto(part.p, stream, part.size, part.sum, part.what); err != nil {
-			return false, err
-		}
-	}
-	sb, err := n.verify(slot, h.RootHash)
-	if err != nil {
-		return false, fmt.Errorf("the written store: %w", err)
-	}
-	if sb.DataSize() != h.StoreSize || sb.HashSize() != h.VeritySize {
-		return false, fmt.Errorf("the hash tree covers %d bytes of store in %d bytes, but the image has %d and %d", sb.DataSize(), sb.HashSize(), h.StoreSize, h.VeritySize)
-	}
-	return true, nil
-}
-
-// holds reports whether the slot holds the image's store and hash tree. Only a hash tree with
-// the image's root hash is read in full.
-func (n *Node) holds(slot Slot, h Header) bool {
-	hash, err := n.OpenPartition(slot.Verity, false)
-	if err != nil {
-		return false
-	}
-	sb, root, err := verity.Root(hash)
-	hash.Close()
-	if err != nil || !bytes.Equal(root, h.RootHash) || sb.DataSize() != h.StoreSize || sb.HashSize() != h.VeritySize {
-		return false
-	}
-	_, err = n.verify(slot, h.RootHash)
-	return err == nil
-}
-
-func (n *Node) verify(slot Slot, root []byte) (verity.Superblock, error) {
-	data, err := n.OpenPartition(slot.Data, false)
-	if err != nil {
-		return verity.Superblock{}, err
-	}
-	defer data.Close()
-	hash, err := n.OpenPartition(slot.Verity, false)
-	if err != nil {
-		return verity.Superblock{}, err
-	}
-	defer hash.Close()
-	return verity.Verify(data, hash, root)
-}
-
-// chunk is how much of the stream is written at once.
-const chunk = 4 << 20
-
-// copyInto writes size bytes of the stream to the start of the partition and checks their
-// SHA-256.
-func (n *Node) copyInto(p Partition, stream io.Reader, size int64, sum []byte, what string) error {
-	f, err := n.OpenPartition(p, true)
-	if errors.Is(err, syscall.EBUSY) {
-		return fmt.Errorf("partition %d is in use; it must not be written", p.Number)
-	}
-	if err != nil {
-		return fmt.Errorf("open partition %d: %w", p.Number, err)
-	}
-	defer f.Close()
-	h := sha256.New()
-	buf := make([]byte, min(chunk, size))
-	for off := int64(0); off < size; {
-		b := buf[:min(int64(len(buf)), size-off)]
-		if _, err := io.ReadFull(stream, b); err != nil {
-			return fmt.Errorf("receive the %s: %w", what, err)
-		}
-		h.Write(b)
-		if _, err := f.WriteAt(b, off); err != nil {
-			return fmt.Errorf("write the %s: %w", what, err)
-		}
-		off += int64(len(b))
-	}
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("write the %s: %w", what, err)
-	}
-	if got := h.Sum(nil); !bytes.Equal(got, sum) {
-		return fmt.Errorf("the %s's SHA-256 is %x, want %x", what, got, sum)
-	}
-	return f.Close()
+	return n.slots().Retire(ctx, slot)
 }
 
 // receiveUKI writes the UKI to the ESP under a name systemd-boot ignores and checks it. It
@@ -404,59 +266,14 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 		return "", 0, err
 	}
 	tmp := filepath.Join(dir, tempPrefix+h.Version+".efi")
-	f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return tmp, 0, fmt.Errorf("write the UKI to the ESP: %w", err)
-	}
-	defer f.Close()
-	sum := sha256.New()
-	if _, err := io.CopyN(io.MultiWriter(f, sum), stream, h.UKISize); err != nil {
-		return tmp, 0, fmt.Errorf("receive the UKI: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		return tmp, 0, fmt.Errorf("write the UKI to the ESP: %w", err)
-	}
-	if got := sum.Sum(nil); !bytes.Equal(got, h.UKISHA256) {
-		return tmp, 0, fmt.Errorf("the UKI's SHA-256 is %x, want %x", got, h.UKISHA256)
-	}
-	img, err := uki.Read(f)
-	if err != nil {
-		return tmp, 0, err
-	}
-	for _, field := range []struct{ name, uki, header string }{
-		{"image ID", img.ID(), h.ImageID},
-		{"version", img.Version(), h.Version},
-		{"cluster", img.Cluster(), h.Cluster},
-		{"role", img.Role(), h.Role},
-	} {
-		if field.uki != field.header {
-			return tmp, 0, fmt.Errorf("the UKI's %s is %q, but the upgrade names %q", field.name, field.uki, field.header)
-		}
-	}
-	if hash, err := img.UsrHash(); err != nil || !bytes.Equal(hash, h.RootHash) {
-		return tmp, 0, errors.New("the UKI boots another store than the upgrade carries")
-	}
-	tries, err := strconv.Atoi(img.BootTries())
-	if err != nil || tries < 1 {
-		return tmp, 0, fmt.Errorf("the UKI's boot tries %q are not a positive number", img.BootTries())
-	}
-	db, dbx, enforced, err := secureBootDatabases(n.EFIVars)
-	if err != nil {
-		return tmp, 0, err
-	}
-	if enforced {
-		if err := uki.VerifySignature(f, h.UKISize, db, dbx); err != nil {
-			return tmp, 0, fmt.Errorf("Secure Boot would refuse the UKI: %w", err)
-		}
-	}
-	return tmp, tries, f.Close()
+	tries, err := ReceiveUKI(tmp, h, stream, n.EFIVars)
+	return tmp, tries, err
 }
 
 // activate makes the slot hold the image as systemd finds it, prefers its entry in systemd-boot,
 // and gives the UKI its name. Until the rename, nothing boots the slot.
 func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, tries int) (string, error) {
-	dataUUID, verityUUID := PartitionUUIDs(h.RootHash)
-	if err := n.setSlot(ctx, slot, verityUUID, "store-verity_"+h.Version, dataUUID, "store_"+h.Version); err != nil {
+	if err := n.slots().Activate(ctx, slot, h); err != nil {
 		return "", err
 	}
 	// systemd-boot boots the newest version first; preferring the entry boots an older one, and
@@ -481,35 +298,4 @@ func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, tr
 		return "", err
 	}
 	return name, nil
-}
-
-// setSlot gives the slot's verity and data partitions UUIDs and labels. It reads the partition
-// table again under its lock, and refuses partitions that moved since the slot was found.
-func (n *Node) setSlot(ctx context.Context, slot Slot, verityUUID, verityLabel, dataUUID, dataLabel string) error {
-	unlock := n.lockTable()
-	defer unlock()
-	parts, err := n.readTable(ctx)
-	if err != nil {
-		return err
-	}
-	current := map[int]Partition{}
-	for _, p := range parts {
-		current[p.Number] = p
-	}
-	for _, set := range []struct {
-		p           Partition
-		uuid, label string
-	}{
-		{slot.Verity, verityUUID, verityLabel},
-		{slot.Data, dataUUID, dataLabel},
-	} {
-		p, ok := current[set.p.Number]
-		if !ok || p.Start != set.p.Start || p.Size != set.p.Size || p.Type != set.p.Type {
-			return fmt.Errorf("partition %d of the inactive slot changed during the upgrade", set.p.Number)
-		}
-		if err := n.setPartition(ctx, p, set.uuid, set.label); err != nil {
-			return err
-		}
-	}
-	return nil
 }

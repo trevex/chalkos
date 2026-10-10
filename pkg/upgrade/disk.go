@@ -1,16 +1,12 @@
 package upgrade
 
 import (
-	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -24,7 +20,7 @@ var (
 // emptyLabel marks a slot that holds no image, as the image's first boot creates slot B.
 const emptyLabel = "_empty"
 
-// Partition is a partition of the boot disk as sfdisk --json lists it.
+// Partition is a partition of a disk as sfdisk --json lists it.
 type Partition struct {
 	Node   string `json:"node"`
 	Start  int64  `json:"start"`
@@ -77,83 +73,13 @@ func randomUUID() string {
 	return formatUUID(b)
 }
 
-// defaultLockWait is how long sfdisk waits for the disk's lock by default.
-const defaultLockWait = 30 * time.Second
-
-// sfdisk runs sfdisk on the boot disk with its BSD lock, as systemd-repart takes it, and which
-// udev waits for before it probes the disk. sfdisk takes the lock before it reads or writes
-// anything; while another program holds it, sfdisk is run again for a bounded time, so the
-// partition table's lock, which chalkd's other requests wait for, is not held as long as another
-// program holds the disk's.
-func (n *Node) sfdisk(ctx context.Context, args ...string) ([]byte, error) {
-	wait := n.LockWait
-	if wait == 0 {
-		wait = defaultLockWait
-	}
-	deadline := time.Now().Add(wait)
-	for {
-		out, err := n.Run.Run(ctx, "sfdisk", append([]string{"--lock=nonblock"}, args...)...)
-		if err == nil || !strings.Contains(err.Error(), "already locked") {
-			return out, err
-		}
-		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("another program kept %s locked for %v: %w", n.Disk, wait, err)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(min(250*time.Millisecond, time.Until(deadline))):
-		}
-	}
-}
-
-// readTable reads the boot disk's GPT with sfdisk.
-func (n *Node) readTable(ctx context.Context) ([]Partition, error) {
-	out, err := n.sfdisk(ctx, "--json", n.Disk)
-	if err != nil {
-		return nil, fmt.Errorf("read the partition table of %s: %w", n.Disk, err)
-	}
-	var dump struct {
-		Table struct {
-			Label      string      `json:"label"`
-			Partitions []Partition `json:"partitions"`
-		} `json:"partitiontable"`
-	}
-	if err := json.Unmarshal(out, &dump); err != nil {
-		return nil, fmt.Errorf("read the partition table of %s: %w", n.Disk, err)
-	}
-	if dump.Table.Label != "gpt" {
-		return nil, fmt.Errorf("%s has no GPT", n.Disk)
-	}
-	parts := dump.Table.Partitions
-	for i, p := range parts {
-		number, err := strconv.Atoi(strings.TrimPrefix(strings.TrimPrefix(p.Node, n.Disk), "p"))
-		if err != nil {
-			return nil, fmt.Errorf("partition %s of %s: no partition number", p.Node, n.Disk)
-		}
-		parts[i].Number = number
-		parts[i].Type = strings.ToLower(p.Type)
-		parts[i].UUID = strings.ToLower(p.UUID)
-	}
-	return parts, nil
-}
-
 // slots finds the boot disk's two store slots, pairing verity and data partitions in disk order,
 // and tells the one holding the running image from the other.
 func slots(parts []Partition, running []byte) (booted, inactive Slot, err error) {
-	var verity, data []Partition
-	for _, p := range parts {
-		switch {
-		case verityTypes[p.Type]:
-			verity = append(verity, p)
-		case dataTypes[p.Type]:
-			data = append(data, p)
-		}
+	pairs, err := StoreSlots("the boot disk", parts)
+	if err != nil {
+		return Slot{}, Slot{}, err
 	}
-	if len(verity) != 2 || len(data) != 2 {
-		return Slot{}, Slot{}, fmt.Errorf("the boot disk has %d store and %d verity partitions; an upgrade needs two slots of each", len(data), len(verity))
-	}
-	pairs := []Slot{{verity[0], data[0]}, {verity[1], data[1]}}
 	// The node found its store by these UUIDs; on two slots, which one it runs is unknown.
 	if pairs[0].Holds(running) && pairs[1].Holds(running) {
 		return Slot{}, Slot{}, errors.New("both slots carry the running store's partition UUIDs; which one the node runs is unknown")
@@ -172,27 +98,6 @@ func slots(parts []Partition, running []byte) (booted, inactive Slot, err error)
 		return s, other, nil
 	}
 	return Slot{}, Slot{}, errors.New("no slot of the boot disk holds the running image's store")
-}
-
-// setPartition gives a partition of the boot disk a UUID and a label, unless it has them.
-func (n *Node) setPartition(ctx context.Context, p Partition, uuid, label string) error {
-	if p.UUID != uuid {
-		if err := n.change(fmt.Sprintf("set the UUID of partition %d", p.Number)); err != nil {
-			return err
-		}
-		if _, err := n.sfdisk(ctx, "--no-tell-kernel", "--part-uuid", n.Disk, strconv.Itoa(p.Number), uuid); err != nil {
-			return fmt.Errorf("set the UUID of partition %d: %w", p.Number, err)
-		}
-	}
-	if p.Name != label {
-		if err := n.change(fmt.Sprintf("label partition %d", p.Number)); err != nil {
-			return err
-		}
-		if _, err := n.sfdisk(ctx, "--no-tell-kernel", "--part-label", n.Disk, strconv.Itoa(p.Number), label); err != nil {
-			return fmt.Errorf("label partition %d: %w", p.Number, err)
-		}
-	}
-	return nil
 }
 
 // PartitionFile is a partition opened for reading or writing.
@@ -219,4 +124,22 @@ func OpenPartition(p Partition, write bool) (PartitionFile, error) {
 		return nil, fmt.Errorf("drop the cached data of %s: %w", p.Node, err)
 	}
 	return f, nil
+}
+
+// StoreSlots finds the two store slots of a disk, which errors name, pairing verity and data
+// partitions in disk order: slot A first, then slot B.
+func StoreSlots(disk string, parts []Partition) ([]Slot, error) {
+	var verity, data []Partition
+	for _, p := range parts {
+		switch {
+		case verityTypes[p.Type]:
+			verity = append(verity, p)
+		case dataTypes[p.Type]:
+			data = append(data, p)
+		}
+	}
+	if len(verity) != 2 || len(data) != 2 {
+		return nil, fmt.Errorf("%s has %d store and %d verity partitions; it needs two slots of each", disk, len(data), len(verity))
+	}
+	return []Slot{{verity[0], data[0]}, {verity[1], data[1]}}, nil
 }

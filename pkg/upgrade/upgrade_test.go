@@ -757,3 +757,46 @@ func TestRemovesTheTemporaryUKI(t *testing.T) {
 		t.Errorf("the ESP keeps %q", temp)
 	}
 }
+
+// TestRefusesABootLoader refuses an image that brings a boot loader before anything changes: an
+// upgrade leaves the boot loader as it is.
+func TestRefusesABootLoader(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	l := newLab(t, old)
+	l.node.Change = func(what string) error {
+		t.Errorf("changed: %s", what)
+		return nil
+	}
+	img.header.BootLoaderSize, img.header.BootLoaderSHA256 = 1, sum([]byte{1})
+	stream := io.MultiReader(img.stream(), bytes.NewReader([]byte{1}))
+	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "boot loader") {
+		t.Fatalf("install = %v, want the boot loader refused", err)
+	}
+}
+
+// TestHeaderValidate checks the header's boot loader: optional, with its size and SHA-256
+// together, and bounded.
+func TestHeaderValidate(t *testing.T) {
+	img := newImage(t, "0.2.0", 3)
+	for _, tc := range []struct {
+		name   string
+		size   int64
+		sha256 []byte
+		want   string
+	}{
+		{"none", 0, nil, ""},
+		{"one", 100, sum([]byte{1}), ""},
+		{"no SHA-256", 100, nil, "together"},
+		{"a SHA-256 alone", 0, sum([]byte{1}), "together"},
+		{"too large", 64 << 20, sum([]byte{1}), "larger"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := img.header
+			h.BootLoaderSize, h.BootLoaderSHA256 = tc.size, tc.sha256
+			err := h.Validate()
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Errorf("Validate = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

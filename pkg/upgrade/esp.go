@@ -241,35 +241,6 @@ func setLoaderString(efivars, name, value string, cleared func() error) error {
 	return f.Close()
 }
 
-// secureBootDatabases returns db and dbx when Secure Boot is enforced, and ok false when it is
-// not: disabled, or in setup mode.
-func secureBootDatabases(efivars string) (db, dbx uki.Database, ok bool, err error) {
-	enabled, err := readVariable(efivars, "SecureBoot", globalVendor)
-	if err != nil {
-		return uki.Database{}, uki.Database{}, false, err
-	}
-	setup, err := readVariable(efivars, "SetupMode", globalVendor)
-	if err != nil {
-		return uki.Database{}, uki.Database{}, false, err
-	}
-	if len(enabled) != 1 || enabled[0] != 1 || len(setup) == 1 && setup[0] == 1 {
-		return uki.Database{}, uki.Database{}, false, nil
-	}
-	for _, v := range []struct {
-		name string
-		into *uki.Database
-	}{{"db", &db}, {"dbx", &dbx}} {
-		data, err := readVariable(efivars, v.name, securityVendor)
-		if err != nil {
-			return uki.Database{}, uki.Database{}, false, err
-		}
-		if *v.into, err = uki.ParseDatabase(data); err != nil {
-			return uki.Database{}, uki.Database{}, false, fmt.Errorf("the firmware's %s: %w", v.name, err)
-		}
-	}
-	return db, dbx, true, nil
-}
-
 // syncESP flushes the ESP's file system: the boot loader reads it without the kernel's caches.
 func syncESP(esp string) error {
 	d, err := os.Open(filepath.Join(esp, linuxDir))
