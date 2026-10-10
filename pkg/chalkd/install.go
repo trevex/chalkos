@@ -57,6 +57,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		if h.Image != nil {
 			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its role image already")
 		}
+		if err := s.checkImageOf(id.Cluster, id.Role); err != nil {
+			return nil, err
+		}
 		log.Print("installing in place")
 		err = s.InPlace(ctx, req)
 	case *nodev1.InstallHeader_Disk:

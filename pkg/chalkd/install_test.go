@@ -166,6 +166,26 @@ func TestInstallImageOfTheIdentity(t *testing.T) {
 	}
 }
 
+// TestInstallInPlaceOfTheImage refuses to install in place an identity of another cluster or role
+// than the running image's.
+func TestInstallInPlaceOfTheImage(t *testing.T) {
+	for _, tc := range []struct{ cluster, role, want string }{
+		{"prod", "worker", `the identity is of the cluster "prod" and the role "worker", but the node's image is of "lab" and "worker"`},
+		{"lab", "controlplane", `the identity is of the cluster "lab" and the role "controlplane", but the node's image is of "lab" and "worker"`},
+	} {
+		s, _ := newTestServer(t, maintenance, vda)
+		s.InPlace = func(context.Context, install.Request) error {
+			t.Error("installed in place")
+			return nil
+		}
+		h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+		h.Identity = strings.NewReplacer(`"cluster": "lab"`, `"cluster": "`+tc.cluster+`"`, `"role": "worker"`, `"role": "`+tc.role+`"`).Replace(installIdentity)
+		if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("an identity of %s and %s: %v, want %q", tc.cluster, tc.role, err, tc.want)
+		}
+	}
+}
+
 func TestInstallTargetMustMatchImage(t *testing.T) {
 	for _, c := range []struct {
 		name      string

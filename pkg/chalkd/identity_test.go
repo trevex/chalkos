@@ -42,7 +42,7 @@ func section(varSize, extraFormat string) string {
 }
 
 func identityWith(rack, storageSection string) string {
-	return `{"hostname": "n1", "networkUnits": {}, "extensions": {"rack": {"location": "` + rack + `"}}, "storage": ` + storageSection + `}`
+	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "networkUnits": {}, "extensions": {"rack": {"location": "` + rack + `"}}, "storage": ` + storageSection + `}`
 }
 
 // installedServer is a normal-mode server whose STATE records the section and its pins.
@@ -158,6 +158,30 @@ func TestApplyIdentityRefusesDestructiveChange(t *testing.T) {
 	}
 	if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
 		t.Error("recorded a refused identity")
+	}
+}
+
+// TestApplyIdentityRefusesAnotherClusterOrRole refuses an identity of another cluster or role than
+// the running image's.
+func TestApplyIdentityRefusesAnotherClusterOrRole(t *testing.T) {
+	for _, tc := range []struct{ identity, want string }{
+		{strings.Replace(identityWith("rack-b", section("", "")), `"cluster": "lab"`, `"cluster": "prod"`, 1),
+			`the identity is of the cluster "prod" and the role "worker", but the node's image is of "lab" and "worker"`},
+		{strings.Replace(identityWith("rack-b", section("", "")), `"role": "worker"`, `"role": "controlplane"`, 1),
+			`the identity is of the cluster "lab" and the role "controlplane", but the node's image is of "lab" and "worker"`},
+	} {
+		s, r := installedServer(t, section("", ""), false)
+		before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+		_, err := apply(s, tc.identity, secret)
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("err = %v, want %q", err, tc.want)
+		}
+		if len(r.calls) != 0 {
+			t.Errorf("ran %v for a refused identity", r.calls)
+		}
+		if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
+			t.Error("recorded a refused identity")
+		}
 	}
 }
 
@@ -656,7 +680,7 @@ func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
 func TestApplyIdentityReloadsTimeServers(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	withTime := func(host string) string {
-		return `{"hostname": "n1", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "` + host + `", "nts": true}]}}`
+		return `{"hostname": "n1", "cluster": "lab", "role": "worker", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "` + host + `", "nts": true}]}}`
 	}
 	count := func() int {
 		n := 0

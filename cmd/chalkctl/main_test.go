@@ -151,6 +151,11 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	pair, _ := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.Key))
 	leaf, _ := x509.ParseCertificate(pair.Certificate[0])
 	s.Fingerprint = pki.Fingerprint(leaf.Raw)
+	// The node runs the image of the test node's role.
+	if s.Paths.OSRelease == "" {
+		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
+		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=test\n")
+	}
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
