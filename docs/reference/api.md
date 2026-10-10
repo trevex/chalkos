@@ -158,7 +158,7 @@ a node cordoned otherwise as it is.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `changes` | repeated `StorageChange` | Storage changes that were applied. |
+| `changes` | repeated [`StorageChange`](#message-storagechange) | Storage changes that were applied. |
 | `restarted_units` | repeated `string` | Units restarted because identity keys they read changed. |
 
 ### BootStatus { #message-bootstatus }
@@ -179,6 +179,8 @@ a node cordoned otherwise as it is.
 ### BootstrapRequest { #message-bootstraprequest }
 
 
+
+No fields.
 
 ### BootstrapResponse { #message-bootstrapresponse }
 
@@ -214,7 +216,7 @@ a node cordoned otherwise as it is.
 | `wwn` | `string` |  |
 | `type` | `string` | nvme, ssd or hdd. |
 | `path` | `string` | udev's ID_PATH. |
-| `partitions` | repeated `Partition` |  |
+| `partitions` | repeated [`Partition`](#message-partition) |  |
 | `usage` | `string` | How chalkos uses the disk: "boot" for the boot disk, "disk <name>" for a pinned disk of the node's storage, empty when chalkos does not use it. |
 
 ### DiskReference { #message-diskreference }
@@ -244,13 +246,15 @@ A disk by /dev path, or by a selector whose set fields must all match.
 
 
 
+No fields.
+
 ### DisksResponse { #message-disksresponse }
 
 
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `disks` | repeated `Disk` |  |
+| `disks` | repeated [`Disk`](#message-disk) |  |
 
 ### DrainNodeRequest { #message-drainnoderequest }
 
@@ -295,6 +299,8 @@ A disk by /dev path, or by a selector whose set fields must all match.
 
 
 
+No fields.
+
 ### EtcdMember { #message-etcdmember }
 
 
@@ -311,13 +317,15 @@ A disk by /dev path, or by a selector whose set fields must all match.
 
 
 
+No fields.
+
 ### EtcdMembersResponse { #message-etcdmembersresponse }
 
 
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `members` | repeated `EtcdMember` |  |
+| `members` | repeated [`EtcdMember`](#message-etcdmember) |  |
 
 ### EtcdRemoveMemberRequest { #message-etcdremovememberrequest }
 
@@ -334,7 +342,7 @@ A disk by /dev path, or by a selector whose set fields must all match.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `removed` | `EtcdMember` |  |
+| `removed` | [`EtcdMember`](#message-etcdmember) |  |
 
 ### ImageChunk { #message-imagechunk }
 
@@ -356,10 +364,10 @@ the store data, the hash tree, the UKI and, when the header names one, the boot 
 | `cluster` | `string` |  |
 | `role` | `string` |  |
 | `root_hash` | `bytes` | The verity root hash of the image's store. |
-| `store` | `ImagePart` | The store data the root hash covers, its hash tree and the signed UKI. |
-| `hash_tree` | `ImagePart` |  |
-| `uki` | `ImagePart` |  |
-| `boot_loader` | `ImagePart` | The signed systemd-boot, which firmware starts from the ESP's removable-media path. |
+| `store` | [`ImagePart`](#message-imagepart) | The store data the root hash covers, its hash tree and the signed UKI. |
+| `hash_tree` | [`ImagePart`](#message-imagepart) |  |
+| `uki` | [`ImagePart`](#message-imagepart) |  |
+| `boot_loader` | [`ImagePart`](#message-imagepart) | The signed systemd-boot, which firmware starts from the ESP's removable-media path. |
 | `architecture` | `string` | The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A node refuses an image of another architecture than its own. |
 | `platform` | `string` | The platform the image is built for, as its os-release names it, such as metal or kvm. A node refuses an image of another platform than its own, or than its identity names. |
 
@@ -376,9 +384,13 @@ The size and SHA-256 of a part of an image.
 
 
 
+No fields.
+
 ### InfoRequest { #message-inforequest }
 
 
+
+No fields.
 
 ### InfoResponse { #message-inforesponse }
 
@@ -386,13 +398,13 @@ The size and SHA-256 of a part of an image.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `mode` | `Mode` |  |
+| `mode` | [`Mode`](#enum-mode) |  |
 | `version` | `string` | chalkos version of the running image. |
 | `image_id` | `string` | Image ID of the running image, such as "chalkos". |
 | `installer` | `bool` | Whether the node runs the installer, which writes a role image to another disk. |
 | `boot_disk` | `string` | Device of the disk the node booted from; empty on the installer booted from a CD. |
 | `tpm` | `bool` |  |
-| `secure_boot` | `SecureBoot` |  |
+| `secure_boot` | [`SecureBoot`](#enum-secureboot) |  |
 | `fingerprint` | `string` | SHA-256 of the certificate chalkd serves, in lower-case hex. |
 | `hostname` | `string` |  |
 | `cluster` | `string` | The cluster and role the running image was built for; empty on the installer. |
@@ -410,11 +422,11 @@ The size and SHA-256 of a part of an image.
 | `node_key` | `bytes` |  |
 | `ca_certificate` | `bytes` | PEM certificates of the OS CAs the node trusts, the one that issues client certificates and the node CA first, then those still trusted while it rotates. |
 | `fallback_secret` | `string` | Recovery key or password enrolled as the second keyslot of every encrypted volume; empty when the node's fallback is none. |
-| `in_place` | `InPlace` | The role image already runs from the boot disk. |
-| `disk` | `DiskReference` | The installer lays out this disk and writes the streamed image to it. |
-| `image` | `ImageHeader` | The role image the installer writes to the target disk, whose parts follow as chunks; it must name the boot loader. Installer only. |
+| `in_place` | [`InPlace`](#message-inplace) | The role image already runs from the boot disk. |
+| `disk` | [`DiskReference`](#message-diskreference) | The installer lays out this disk and writes the streamed image to it. |
+| `image` | [`ImageHeader`](#message-imageheader) | The role image the installer writes to the target disk, whose parts follow as chunks; it must name the boot loader. Installer only. |
 | `wipe_disk` | `bool` | Let the installer replace whatever the target disk holds, including an installed node. |
-| `system_definitions` | repeated `InstallHeader.SystemDefinitionsEntry` | The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each role chooses its partition sizes, so the installer's own may not fit. |
+| `system_definitions` | repeated [`InstallHeader.SystemDefinitionsEntry`](#message-installheadersystemdefinitionsentry) | The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each role chooses its partition sizes, so the installer's own may not fit. |
 | `kubernetes_share` | `bytes` | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for a role without Kubernetes. |
 
 ### InstallHeader.SystemDefinitionsEntry { #message-installheadersystemdefinitionsentry }
@@ -432,12 +444,14 @@ The size and SHA-256 of a part of an image.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `header` | `InstallHeader` |  |
-| `chunk` | `ImageChunk` |  |
+| `header` | [`InstallHeader`](#message-installheader) |  |
+| `chunk` | [`ImageChunk`](#message-imagechunk) |  |
 
 ### InstallResponse { #message-installresponse }
 
 
+
+No fields.
 
 ### KubernetesStatus { #message-kubernetesstatus }
 
@@ -486,9 +500,13 @@ The size and SHA-256 of a part of an image.
 
 
 
+No fields.
+
 ### RebootResponse { #message-rebootresponse }
 
 
+
+No fields.
 
 ### RenewNodeCertificateRequest { #message-renewnodecertificaterequest }
 
@@ -520,13 +538,15 @@ The size and SHA-256 of a part of an image.
 
 
 
+No fields.
+
 ### RotationStepRequest { #message-rotationsteprequest }
 
 
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `step` | `RotationStep` |  |
+| `step` | [`RotationStep`](#enum-rotationstep) |  |
 
 ### RotationStepResponse { #message-rotationstepresponse }
 
@@ -537,12 +557,14 @@ The size and SHA-256 of a part of an image.
 | `restarted` | repeated `string` | The workloads restarted, as namespace/kind/name. |
 | `token_secrets` | repeated `string` | The Secrets of type kubernetes.io/service-account-token, as namespace/name. |
 | `rewritten` | `uint64` | How many objects were updated. |
-| `encrypted` | repeated `EncryptedObjects` | The objects etcd holds by resource and key. |
+| `encrypted` | repeated [`EncryptedObjects`](#message-encryptedobjects) | The objects etcd holds by resource and key. |
 | `not_waited` | repeated `string` | The workloads restarted but not waited for, as namespace/kind/name: their rollout does not complete by itself (an OnDelete update strategy, a StatefulSet's partition, a paused Deployment). |
 
 ### StatusRequest { #message-statusrequest }
 
 
+
+No fields.
 
 ### StatusResponse { #message-statusresponse }
 
@@ -551,14 +573,14 @@ The size and SHA-256 of a part of an image.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `identity_version` | `string` | SHA-256 of the identity document the node runs, in lower-case hex. |
-| `disks` | repeated `DiskStatus` |  |
-| `volumes` | repeated `VolumeStatus` |  |
+| `disks` | repeated [`DiskStatus`](#message-diskstatus) |  |
+| `volumes` | repeated [`VolumeStatus`](#message-volumestatus) |  |
 | `failed_units` | repeated `string` |  |
-| `kubernetes` | `KubernetesStatus` | Absent on a node of a role without Kubernetes. |
-| `certificates` | repeated `CertificateStatus` | Every certificate the node holds or issues, with its expiry and what needs doing about it. |
-| `time` | `TimeStatus` | How the node keeps its clock. |
-| `trust` | repeated `TrustStatus` | What the node trusts and issues with, by fingerprint. |
-| `boot` | `BootStatus` | The image the node booted, and what upgrades installed beside it. |
+| `kubernetes` | [`KubernetesStatus`](#message-kubernetesstatus) | Absent on a node of a role without Kubernetes. |
+| `certificates` | repeated [`CertificateStatus`](#message-certificatestatus) | Every certificate the node holds or issues, with its expiry and what needs doing about it. |
+| `time` | [`TimeStatus`](#message-timestatus) | How the node keeps its clock. |
+| `trust` | repeated [`TrustStatus`](#message-truststatus) | What the node trusts and issues with, by fingerprint. |
+| `boot` | [`BootStatus`](#message-bootstatus) | The image the node booted, and what upgrades installed beside it. |
 | `platform` | `string` | The platform the running image was built for. |
 
 ### StorageChange { #message-storagechange }
@@ -614,7 +636,7 @@ The size and SHA-256 of a part of an image.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `image` | `ImageHeader` | The image to install. The node refuses another ID, cluster or role than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
+| `image` | [`ImageHeader`](#message-imageheader) | The image to install. The node refuses another ID, cluster or role than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
 
 ### UpgradeRequest { #message-upgraderequest }
@@ -623,8 +645,8 @@ The size and SHA-256 of a part of an image.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `header` | `UpgradeHeader` |  |
-| `chunk` | `ImageChunk` |  |
+| `header` | [`UpgradeHeader`](#message-upgradeheader) |  |
+| `chunk` | [`ImageChunk`](#message-imagechunk) |  |
 
 ### UpgradeResponse { #message-upgraderesponse }
 

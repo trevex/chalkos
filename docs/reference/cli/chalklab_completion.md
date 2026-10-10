@@ -9,9 +9,15 @@ Generate the autocompletion script for the specified shell
 
 ## Synopsis
 
-Generate the autocompletion script for chalklab for the specified shell.
-See each sub-command's help for details on how to use the generated script.
+Writes a script that completes chalklab's commands and flags in a shell. Each shell's command
+says how to load the script. The command needs no secrets file or client file.
 
+## Examples
+
+```
+  # Complete chalklab's commands in every new bash session.
+  chalklab completion bash > ~/.local/share/bash-completion/completions/chalklab
+```
 
 ## Options
 

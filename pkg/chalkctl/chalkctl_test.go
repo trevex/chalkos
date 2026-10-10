@@ -1080,6 +1080,19 @@ func TestExecuteFlags(t *testing.T) {
 	}
 }
 
+// The help names the value of --endpoint NODE=ADDR.
+func TestEndpointValueName(t *testing.T) {
+	for _, name := range []string{"rotate", "upgrade"} {
+		ta := newTestApp(t)
+		if got := ta.execute(context.Background(), name, "--help"); got != 0 {
+			t.Fatalf("%s --help exits with %d", name, got)
+		}
+		if !strings.Contains(ta.stdout.String(), "--endpoint NODE=ADDR ") {
+			t.Errorf("%s --help does not show --endpoint NODE=ADDR:\n%s", name, ta.stdout.String())
+		}
+	}
+}
+
 // Every command is described for its help and the reference pages.
 func TestCommandsDescribed(t *testing.T) {
 	var walk func(cmd *cobra.Command)

@@ -81,7 +81,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 	f.cluster.register(fs)
 	f.secrets.register(fs)
 	fs.StringVar(&f.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)")
-	fs.Var(f.endpoints, "endpoint", "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address, or the address a client file that prefers its addresses names)")
+	fs.Var(f.endpoints, "endpoint", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's first static address, or the address a client file that prefers its addresses names)")
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes of its role and platform: a raw image with repart-output.json next to it, or the directory nix build produces (default: build each node's image from the cluster definition)")
 	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
 	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer")

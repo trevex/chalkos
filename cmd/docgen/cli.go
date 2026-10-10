@@ -43,7 +43,7 @@ func writeCLI(roots []*cobra.Command, dir, config string) error {
 			nav = append(nav, "  "+line)
 		}
 	}
-	index += "\nBoth print the same text with `--help`, and `completion` writes a shell completion script.\n"
+	index += "\nEvery command shows its description, examples and flags with `--help`, and `completion` writes a shell completion script.\n"
 	nav = append(nav, "] },")
 	if err := os.WriteFile(filepath.Join(dir, "index.md"), []byte(index), 0o644); err != nil {
 		return err

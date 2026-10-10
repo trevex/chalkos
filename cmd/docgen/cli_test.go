@@ -39,6 +39,10 @@ func TestWriteCLI(t *testing.T) {
 	if got, want := strings.Join(names, " "), "index.md tool.md tool_group.md tool_group_add.md tool_run.md"; got != want {
 		t.Errorf("pages = %s, want %s", got, want)
 	}
+	index, _ := os.ReadFile(filepath.Join(out, "index.md"))
+	if !strings.Contains(string(index), "Every command shows its description, examples and flags with `--help`") {
+		t.Errorf("index.md does not say what --help shows:\n%s", index)
+	}
 	page, _ := os.ReadFile(filepath.Join(out, "tool_run.md"))
 	for _, want := range []string{
 		"---\ntitle: \"tool run\"\ndescription: \"Run a thing\"\n---\n\n# tool run\n",
@@ -112,5 +116,15 @@ func TestGroupPageHasNoUsageLine(t *testing.T) {
 	page, _ := os.ReadFile(filepath.Join(dir, "cli", "tool.md"))
 	if strings.Contains(string(page), "[flags]") {
 		t.Errorf("tool.md shows a usage line:\n%s", page)
+	}
+}
+
+// The completion command's page describes it in the site's words instead of cobra's.
+func TestCompletionDescribed(t *testing.T) {
+	for _, root := range programs() {
+		cmd, _, _ := root.Find([]string{"completion"})
+		if strings.Contains(cmd.Long, "autocompletion") || !strings.Contains(cmd.Long, root.Name()+"'s commands") || !strings.Contains(cmd.Example, root.Name()+" completion bash") {
+			t.Errorf("%s completion has cobra's description or no example:\n%s\n%s", root.Name(), cmd.Long, cmd.Example)
+		}
 	}
 }

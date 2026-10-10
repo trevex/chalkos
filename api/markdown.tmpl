@@ -8,7 +8,7 @@ description: "The API chalkd serves on every node, generated from its protobuf d
 chalkd serves this API on every node on TCP port 50000 over TLS, as a Connect service that also
 answers gRPC and gRPC-Web; chalkctl is its client. This page is generated from the protobuf
 definition with protoc-gen-doc.
-{{range .Files}}
+{{range .Files}}{{$kinds := dict}}{{range .Messages}}{{$_ := set $kinds .FullName "message"}}{{end}}{{range .Enums}}{{$_ := set $kinds .FullName "enum"}}{{end}}
 The definition is `api/{{.Name}}`, package `{{.Package}}`.
 {{range .Services}}
 ## {{.Name}}
@@ -31,8 +31,10 @@ The definition is `api/{{.Name}}`, package `{{.Package}}`.
 {{if .HasFields}}
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-{{range .Fields}}| `{{.Name}}` | {{if eq .Label "repeated"}}repeated {{end}}{{if eq .Label "optional"}}optional {{end}}`{{.LongType}}` | {{nobr .Description}} |
-{{end}}{{end}}{{end}}
+{{range .Fields}}| `{{.Name}}` | {{if eq .Label "repeated"}}repeated {{end}}{{if eq .Label "optional"}}optional {{end}}{{$kind := index $kinds .FullType}}{{if $kind}}[`{{.LongType}}`](#{{$kind}}-{{.LongType | lower | replace "." ""}}){{else}}`{{.LongType}}`{{end}} | {{nobr .Description}} |
+{{end}}{{else}}
+No fields.
+{{end}}{{end}}
 ## Enums
 {{range .Enums}}
 ### {{.LongName}} { #enum-{{.LongName | lower | replace "." ""}} }

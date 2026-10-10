@@ -52,7 +52,7 @@ chalkctl upgrade [flags]
       --cluster string         cluster to use when the flake defines several
       --config string          client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)
       --delete-emptydir-data   evict pods with emptyDir volumes too, deleting their data
-      --endpoint node=addr     address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address, or the address a client file that prefers its addresses names)
+      --endpoint NODE=ADDR     address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address, or the address a client file that prefers its addresses names)
       --flake string           directory of the flake that defines the cluster (default ".")
   -h, --help                   help for upgrade
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)

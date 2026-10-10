@@ -38,7 +38,7 @@ chalkctl rotate <kind> [flags]
 
 ```
       --cluster string       cluster to use when the flake defines several
-      --endpoint node=addr   address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address)
+      --endpoint NODE=ADDR   address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address)
       --finish               remove the old value from every node and the secrets file
       --flake string         directory of the flake that defines the cluster (default ".")
       --force                with --finish, finish the service-account key's rotation within the hour after its switch

@@ -41,12 +41,25 @@ func run(args []string) error {
 }
 
 // programs are the command trees of chalkctl and chalklab, with the help and completion commands
-// cobra adds when a program runs.
+// cobra adds when a program runs. The completion command's page gets a description of docgen's:
+// cobra creates the command as the program runs, bound to its output, so the programs cannot
+// describe it themselves.
 func programs() []*cobra.Command {
 	roots := []*cobra.Command{chalkctl.NewCommand(), chalklab.NewCommand()}
 	for _, root := range roots {
 		root.InitDefaultHelpCmd()
 		root.InitDefaultCompletionCmd()
+		completion, _, _ := root.Find([]string{"completion"})
+		completion.Long = fmt.Sprintf(completionLong, root.Name())
+		completion.Example = fmt.Sprintf(completionExample, root.Name())
 	}
 	return roots
 }
+
+// The description and example of a program's completion command, by the program's name.
+const (
+	completionLong = `Writes a script that completes %[1]s's commands and flags in a shell. Each shell's command
+says how to load the script. The command needs no secrets file or client file.`
+	completionExample = `  # Complete %[1]s's commands in every new bash session.
+  %[1]s completion bash > ~/.local/share/bash-completion/completions/%[1]s`
+)
