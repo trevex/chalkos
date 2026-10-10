@@ -398,3 +398,23 @@ func TestStatusNamesTheLabsFiles(t *testing.T) {
 		}
 	}
 }
+
+// TestWaitBootstrapPrintsTheStatus waits for the control plane to wait for its bootstrap, and
+// prints the status line that says so, which names the cluster's endpoint.
+func TestWaitBootstrapPrintsTheStatus(t *testing.T) {
+	a, out := testApp()
+	const line = "kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.123.11:6443"
+	a.chalkctl = func(_ context.Context, w io.Writer, args ...string) error {
+		if args[0] != "status" || args[1] != "cp1" {
+			return errors.New("unexpected chalkctl " + strings.Join(args, " "))
+		}
+		_, err := io.WriteString(w, "identity abc (the cluster definition's)\n"+line+"\n")
+		return err
+	}
+	if err := a.waitBootstrap(context.Background(), "cp1", "127.0.0.1:15001", nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := "cp1: " + line + "\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("output %q, want %q", out, want)
+	}
+}

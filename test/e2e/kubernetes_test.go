@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -27,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/trevex/chalkos/pkg/lab"
+	"github.com/trevex/chalkos/pkg/manifest"
 )
 
 // The cluster's nodes, as nix/testing/cluster.nix defines them, and their VMs' memory.
@@ -54,7 +56,8 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // after which the API server serves the new ones and the controller-manager and the scheduler
 // take the lead again, that a worker whose link is cut turns NotReady, and that the OS CA, the
 // Kubernetes CAs, the service-account key and the encryption key rotate with the cluster working
-// throughout; chalklab destroy removes the lab at the end.
+// throughout. At its end the host shuts the worker down through its guest agent, and chalklab
+// destroy removes the lab.
 // The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 the test does not
 // start that registry, so the nodes' mirror is unreachable and containerd falls back to pulling
 // from upstream.
@@ -176,6 +179,20 @@ func TestKubernetesCluster(t *testing.T) {
 	waitFor(t, 5*time.Minute, "w1 Ready with its link back", func() error { return nodesReady(ctx, cs, "w1") })
 
 	rotations(t, ctx, nodes, p, dir, apiPort)
+
+	// The host shuts the worker down through its guest agent, and its VM exits.
+	w1 := nodes["w1"]
+	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, time.Minute)
+	defer cancelShutdown()
+	if err := w1.vm.ShutdownGuest(shutdownCtx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 3*time.Minute, "the VM of w1 to exit once its guest agent shut it down", func() error {
+		if lab.Running(w1.vm.Config) {
+			return errors.New("the VM of w1 runs")
+		}
+		return nil
+	})
 }
 
 // anonymousOnlyHealth checks that a request without credentials reaches the health endpoints
@@ -658,12 +675,22 @@ func vxlanRules(t *testing.T, n *node, manifest, name string) (marks, drops []st
 
 // createLab brings the cluster's control plane and worker up with chalklab create, in a state
 // directory below dir, and attaches to their VMs; it returns the nodes, the forwarded port of the
-// API server and the kubeconfig chalklab wrote. chalklab destroy removes the lab once the test
-// ends, after the console of each VM was logged on a failure.
+// API server and the kubeconfig chalklab wrote. It checks that cp1 waited for its bootstrap at the
+// cluster's endpoint and that the lab's client file reaches it. chalklab destroy removes the lab
+// once the test ends, after the console of each VM was logged on a failure.
 func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int, string) {
 	t.Helper()
 	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
-	state, err := lab.StateDir("chalklab")
+	base := filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), "base.json")
+	data, err := os.ReadFile(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := manifest.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := lab.StateDir(m.Cluster.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,11 +701,12 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 		t.Logf("chalklab %s:\n%s", strings.Join(args, " "), out)
 		return string(out), err
 	}
-	var configs []lab.VMConfig
 	t.Cleanup(func() {
-		if t.Failed() {
-			for _, c := range configs {
-				logConsoleTail(t, c.ConsolePath(), 200)
+		// Read before destroy removes it, so a create that failed logs the consoles too.
+		l, _ := lab.ReadLab(state)
+		if t.Failed() && l != nil {
+			for _, n := range l.Nodes {
+				logConsoleTail(t, l.VMConfig(state, n).ConsolePath(), 200)
 			}
 		}
 		if _, err := chalklab("destroy"); err != nil {
@@ -687,35 +715,53 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 		if _, err := os.Stat(state); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("chalklab destroy left %s: %v", state, err)
 		}
-		for _, c := range configs {
-			if lab.Running(c) {
-				t.Errorf("the VM of %s runs after chalklab destroy", c.Name)
+		if l != nil {
+			for _, n := range l.Nodes {
+				if lab.Running(l.VMConfig(state, n)) {
+					t.Errorf("the VM of %s runs after chalklab destroy", n.Name)
+				}
 			}
 		}
 	})
 	create := []string{"create",
-		"--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), "base.json"), "--secrets", os.Getenv("CHALKLAB_SECRETS"),
+		"--manifest", base, "--secrets", os.Getenv("CHALKLAB_SECRETS"),
 		"--nodes", "cp1,w1",
 		"--image", "k8s-controlplane=" + os.Getenv("CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR"),
 		"--image", "k8s-worker=" + os.Getenv("CHALKLAB_K8S_WORKER_IMAGE_DIR"),
 		"--controlplane-memory", strconv.Itoa(kubernetesNodes[0].memoryMB), "--memory", strconv.Itoa(kubernetesNodes[1].memoryMB)}
-	if _, err := chalklab(append(create, args...)...); err != nil {
+	out, err := chalklab(append(create, args...)...)
+	if err != nil {
 		t.Fatalf("chalklab create: %v", err)
+	}
+	// The status chalklab saw before the bootstrap names the cluster's endpoint.
+	if want := "cp1: kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.100.11:6443"; !strings.Contains(out, want) {
+		t.Errorf("chalklab create did not print %q", want)
 	}
 	l, err := lab.ReadLab(state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := chalklab("status"); err != nil || !strings.Contains(out, "its supervisor runs") {
+	if out, err := chalklab("status"); err != nil {
 		t.Errorf("chalklab status: %v", err)
+	} else if !strings.Contains(out, "its supervisor runs") {
+		t.Error("chalklab status does not say that its supervisor runs the lab")
 	}
+	// The lab's client file reaches cp1 at its forwarded port, not at the cluster definition's
+	// address on the lab network, which the host does not reach.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	status := []string{"status", "cp1", "--config", filepath.Join(state, "chalkctl.json"), "--manifest", base}
+	statusOut, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), status...).CombinedOutput()
+	t.Logf("chalkctl %s:\n%s", strings.Join(status, " "), statusOut)
+	if err != nil {
+		t.Errorf("chalkctl status with the lab's client file: %v", err)
+	} else if !strings.Contains(string(statusOut), "kubernetes controlplane: ") {
+		t.Error("chalkctl status with the lab's client file shows no Kubernetes status of cp1")
+	}
 	nodes := map[string]*node{}
 	apiPort := 0
 	for _, n := range l.Nodes {
 		c := l.VMConfig(state, n)
-		configs = append(configs, c)
 		vm, err := lab.AttachVM(ctx, c)
 		if err != nil {
 			t.Fatal(err)

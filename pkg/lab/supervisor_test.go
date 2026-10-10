@@ -438,3 +438,65 @@ func TestRunningPIDMatchesTheDirectory(t *testing.T) {
 		t.Error("the switch of lab2 is not taken for one of lab2")
 	}
 }
+
+// fakeGuestAgent answers guest-sync as the agent does and reports guest-shutdown with the answer
+// given, closing the connection without one, as the agent's guest goes away.
+func fakeGuestAgent(t *testing.T, vm *VM, shutdownError string) <-chan string {
+	t.Helper()
+	l, err := net.Listen("unix", vm.Config.GuestAgentSocket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	commands := make(chan string, 10)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		dec := json.NewDecoder(conn)
+		for {
+			var req struct {
+				Execute   string
+				Arguments struct{ ID int64 }
+			}
+			if dec.Decode(&req) != nil {
+				return
+			}
+			commands <- req.Execute
+			switch {
+			case req.Execute == "guest-sync":
+				fmt.Fprintf(conn, "{\"return\": %d}\n", req.Arguments.ID)
+			case req.Execute == "guest-shutdown" && shutdownError != "":
+				fmt.Fprintf(conn, "{\"error\": {\"class\": \"GenericError\", \"desc\": %q}}\n", shutdownError)
+			case req.Execute == "guest-shutdown":
+				return
+			}
+		}
+	}()
+	return commands
+}
+
+// TestShutdownGuest asks the guest agent to shut the guest down, which answers only when it
+// cannot.
+func TestShutdownGuest(t *testing.T) {
+	for _, failure := range []string{"", "Failed to execute child process “/sbin/poweroff”"} {
+		dir, err := os.MkdirTemp("", "qga")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+		vm := &VM{Config: VMConfig{Dir: dir}}
+		commands := fakeGuestAgent(t, vm, failure)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err = vm.ShutdownGuest(ctx)
+		if failure == "" && err != nil || failure != "" && (err == nil || !strings.Contains(err.Error(), failure)) {
+			t.Errorf("ShutdownGuest with the agent answering %q = %v", failure, err)
+		}
+		if got := []string{<-commands, <-commands}; strings.Join(got, " ") != "guest-sync guest-shutdown" {
+			t.Errorf("commands %q", got)
+		}
+	}
+}

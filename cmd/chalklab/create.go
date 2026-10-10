@@ -557,15 +557,21 @@ func chalkdAnswers(ctx context.Context, addr, fingerprint string) error {
 	}
 }
 
-// waitBootstrap waits until the control plane's status says it waits for its bootstrap.
+// waitBootstrap waits until the control plane's status says it waits for its bootstrap, and prints
+// the line that says so, which names the cluster's endpoint.
 func (a *app) waitBootstrap(ctx context.Context, name, addr string, cluster []string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	var last bytes.Buffer
 	for {
 		last.Reset()
-		if err := a.chalkctl(ctx, &last, append([]string{"status", name, "--endpoint", addr}, cluster...)...); err == nil && strings.Contains(last.String(), "waiting for bootstrap") {
-			return nil
+		if err := a.chalkctl(ctx, &last, append([]string{"status", name, "--endpoint", addr}, cluster...)...); err == nil {
+			for line := range strings.Lines(last.String()) {
+				if strings.Contains(line, "waiting for bootstrap") {
+					fmt.Fprintf(a.stdout, "%s: %s", name, line)
+					return nil
+				}
+			}
 		}
 		select {
 		case <-ctx.Done():
