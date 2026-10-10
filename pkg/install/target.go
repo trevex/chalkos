@@ -131,6 +131,7 @@ func describe(p partition) string {
 
 var (
 	bootEntryRE = regexp.MustCompile(`^Boot([0-9A-Fa-f]{4})\*?\s`)
+	bootNextRE  = regexp.MustCompile(`(?m)^BootNext: ([0-9A-Fa-f]{4})`)
 	gptPartRE   = regexp.MustCompile(`HD\([0-9a-fA-Fx]+,GPT,([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
 )
 

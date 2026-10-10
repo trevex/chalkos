@@ -201,6 +201,9 @@ func (e *fakeEFI) run(f *fakeRunner, args []string) ([]byte, error) {
 	case len(args) == 1 && args[0] == "--verbose":
 		var out strings.Builder
 		out.WriteString("BootCurrent: 0001\n")
+		if e.bootNext != "" {
+			fmt.Fprintf(&out, "BootNext: %s\n", e.bootNext)
+		}
 		for _, en := range e.entries {
 			path := "PciRoot(0x0)/Pci(0x4,0x0){auto_created_boot_option}"
 			if en.partUUID != "" {
@@ -211,6 +214,11 @@ func (e *fakeEFI) run(f *fakeRunner, args []string) ([]byte, error) {
 		return []byte(out.String()), nil
 	case len(args) > 0 && args[0] == "--bootnext":
 		e.bootNext = args[1]
+	case len(args) == 1 && args[0] == "--delete-bootnext":
+		if e.bootNext == "" {
+			return nil, &node.ToolError{Command: "efibootmgr", Code: 2, Stderr: "Could not delete BootNext: No such file or directory"}
+		}
+		e.bootNext = ""
 	case len(args) > 0 && args[0] == "--delete-bootnum":
 		num := flag("--bootnum")
 		e.deleted = append(e.deleted, num)

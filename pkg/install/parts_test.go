@@ -693,22 +693,24 @@ func sbsign(t *testing.T, binary []byte, key, cert string) []byte {
 	return signed
 }
 
-// enforceSecureBoot turns Secure Boot on with db and dbx holding the certificates.
-func (l *partsLab) enforceSecureBoot(db, dbx []byte) {
+// enforceSecureBoot turns Secure Boot on with db holding the certificates and dbx those of
+// revoked, which may be none.
+func (l *partsLab) enforceSecureBoot(db []byte, revoked ...[]byte) {
 	l.t.Helper()
 	const global, security = "8be4df61-93ca-11d2-aa0d-00e098032b8c", "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
+	var dbx []byte
+	for _, der := range revoked {
+		dbx = append(dbx, ukitest.SignatureList(der)...)
+	}
 	for _, v := range []struct {
 		name, vendor string
 		value        []byte
 	}{
 		{"SecureBoot", global, []byte{1}},
 		{"SetupMode", global, []byte{0}},
-		{"db", security, ukitest.SignatureList(db)},
-		{"dbx", security, nil},
+		{"db", security, db},
+		{"dbx", security, dbx},
 	} {
-		if v.name == "dbx" && dbx != nil {
-			v.value = ukitest.SignatureList(dbx)
-		}
 		write(l.t, filepath.Join(l.efivars, v.name+"-"+v.vendor), string(append([]byte{7, 0, 0, 0}, v.value...)))
 	}
 }
@@ -728,6 +730,16 @@ func TestFromPartsRefuses(t *testing.T) {
 	unsignedLoader := signed
 	unsignedLoader.loader = img.loader
 	unsignedLoader.header = unsignedLoader.headerFor()
+	// The boot loader signed by another db certificate, which dbx lists.
+	revokedKey, revokedCert, revokedDER := testSigner(t, keys, "revoked")
+	revokedLoader := signed
+	revokedLoader.loader = sbsign(t, img.loader, revokedKey, revokedCert)
+	revokedLoader.header = revokedLoader.headerFor()
+	noTries := img
+	noTries.uki = ukitest.UKI(map[string]string{
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_BOOT_TRIES": "0",
+	}, fmt.Sprintf("usrhash=%x", img.root))
+	noTries.header = noTries.headerFor()
 	otherStore := img
 	otherStore.uki = ukitest.UKI(map[string]string{
 		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_CLUSTER": "lab", "CHALKOS_ROLE": "worker", "CHALKOS_BOOT_TRIES": "3",
@@ -777,9 +789,15 @@ func TestFromPartsRefuses(t *testing.T) {
 		{"a corrupt boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoaderSHA256 = sha(nil) }, "the boot loader's SHA-256"},
 		{"a boot loader for another machine", nil, armLoader, nil, "the boot loader is built for arm64, but the image names x86-64"},
 		{"a UKI for another machine", nil, armUKI, nil, "the UKI is built for arm64, but the image names x86-64"},
-		{"an unsigned UKI", func(l *partsLab) { l.enforceSecureBoot(der, nil) }, img, nil, "Secure Boot would refuse the UKI"},
-		{"an unsigned boot loader", func(l *partsLab) { l.enforceSecureBoot(der, nil) }, unsignedLoader, nil, "Secure Boot would refuse the boot loader"},
-		{"a signer dbx lists", func(l *partsLab) { l.enforceSecureBoot(der, der) }, signed, nil, "Secure Boot would refuse the UKI"},
+		{"an unsigned UKI", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der)) }, img, nil, "Secure Boot would refuse the UKI"},
+		{"an unsigned boot loader", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der)) }, unsignedLoader, nil, "Secure Boot would refuse the boot loader"},
+		{"a signer dbx lists", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der), der) }, signed, nil, "Secure Boot would refuse the UKI"},
+		{"a boot loader signer dbx lists", func(l *partsLab) {
+			l.enforceSecureBoot(append(ukitest.SignatureList(der), ukitest.SignatureList(revokedDER)...), revokedDER)
+		}, revokedLoader, nil, "Secure Boot would refuse the boot loader"},
+		{"a UKI without boot tries", nil, noTries, nil, "boot tries \"0\" are not a positive number"},
+		{"a wrong store SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.StoreSHA256 = sha(nil) }, "the store's SHA-256"},
+		{"a wrong hash tree SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.VeritySHA256 = sha(nil) }, "the hash tree's SHA-256"},
 		{"a header without a boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoaderSize, r.Image.BootLoaderSHA256 = 0, nil }, "brings no boot loader"},
 		{"more than the header names", nil, img, func(r *PartsRequest) { r.Parts = io.MultiReader(img.parts(), strings.NewReader("x")) }, "longer than its header says"},
 	} {
@@ -915,7 +933,7 @@ func TestFromPartsUnderSecureBoot(t *testing.T) {
 	img.uki, img.loader = sbsign(t, img.uki, key, cert), sbsign(t, img.loader, key, cert)
 	img.header = img.headerFor()
 	l := newPartsLab(t)
-	l.enforceSecureBoot(der, nil)
+	l.enforceSecureBoot(ukitest.SignatureList(der))
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
@@ -1230,6 +1248,37 @@ func TestFromPartsWithTheRoleDefinitions(t *testing.T) {
 		t.Fatalf("install = %v, want the stop after the layout", err)
 	}
 	l.i.Change = nil
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
+}
+
+// TestFromPartsUnbootsAResumedTarget stops an install once the boot loader is written and the
+// target boots next, then refuses the run that resumes it on a signature: the run removed the boot
+// loader and BootNext first, so the unfinished target does not boot.
+func TestFromPartsUnbootsAResumedTarget(t *testing.T) {
+	img := newPartsImage(t, "0.1.0", "a")
+	l := newPartsLab(t)
+	l.stopAt(img, "mark the node installed")
+	if !l.bootable() || l.r.efi.bootNext == "" {
+		t.Fatal("the stopped install left no boot loader or BootNext")
+	}
+	_, _, der := testSigner(t, t.TempDir(), "db")
+	l.enforceSecureBoot(ukitest.SignatureList(der))
+	if err := l.install(img); err == nil || !strings.Contains(err.Error(), "Secure Boot would refuse the UKI") {
+		t.Fatalf("install = %v, want the unsigned UKI refused", err)
+	}
+	if l.bootable() {
+		t.Error("the refused run left the boot loader")
+	}
+	if l.r.efi.bootNext != "" {
+		t.Errorf("firmware boots %s next", l.r.efi.bootNext)
+	}
+	if l.installed() {
+		t.Error("the target is installed")
+	}
+	os.Remove(filepath.Join(l.efivars, "SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"))
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}

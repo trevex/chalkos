@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-const installIdentity = `{"hostname": "n1", "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "s", "repart": {}}}, "volumes": {}, "fallback": "recovery-key", "encryption": "tpm2"}}`
+const installIdentity = `{"hostname": "n1", "cluster": "lab", "role": "worker", "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "s", "repart": {}}}, "volumes": {}, "fallback": "recovery-key", "encryption": "tpm2"}}`
 
 func header(target any) *nodev1.InstallHeader {
 	h := &nodev1.InstallHeader{
@@ -141,6 +142,28 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 	}
 	if err := sendInstall(t, s, header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}), nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("onto a disk without an image: %v", err)
+	}
+}
+
+// TestInstallImageOfTheIdentity refuses an image of another cluster or role than the identity's.
+func TestInstallImageOfTheIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		cluster, role, want string
+	}{
+		{"prod", "worker", `the image is of the cluster "prod" and the role "worker", but the identity names "lab" and "worker"`},
+		{"lab", "controlplane", `the image is of the cluster "lab" and the role "controlplane", but the identity names "lab" and "worker"`},
+	} {
+		s, _ := newTestServer(t, maintenance, vda)
+		s.Installer = true
+		s.FromParts = func(context.Context, install.PartsRequest) error {
+			t.Error("installed onto the disk")
+			return nil
+		}
+		h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}})
+		h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: tc.cluster, Role: tc.role}
+		if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("an image of %s and %s: %v, want %q", tc.cluster, tc.role, err, tc.want)
+		}
 	}
 }
 

@@ -16,6 +16,8 @@
       "role": "controlplane",
       "identity": {
         "hostname": "cp1",
+        "cluster": "homelab",
+        "role": "controlplane",
         "network": {
           "networks": {
             "10-uplink": {
@@ -61,6 +63,8 @@
       "role": "worker",
       "identity": {
         "hostname": "w1",
+        "cluster": "homelab",
+        "role": "worker",
         "network": {},
         "networkUnits": {},
         "labels": { "node.kubernetes.io/storage": "ssd" },

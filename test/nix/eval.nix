@@ -463,6 +463,8 @@ lib.runTests {
     expr = removeAttrs twoNodes.manifest.nodes.n1.identity [ "storage" ];
     expected = {
       hostname = "n1";
+      cluster = "t";
+      role = "worker";
       network = { };
       networkUnits = { };
       labels = { };

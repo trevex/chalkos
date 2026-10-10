@@ -114,10 +114,7 @@ func (w *SlotWriter) Retire(ctx context.Context, slot Slot) error {
 func (w *SlotWriter) Write(h Header, slot Slot, stream io.Reader) (bool, error) {
 	if w.Holds(slot, h) {
 		log.Printf("the slot of partitions %d and %d holds the store of %s already", slot.Verity.Number, slot.Data.Number, h.Version)
-		if _, err := io.CopyN(io.Discard, stream, h.StoreSize+h.VeritySize); err != nil {
-			return false, fmt.Errorf("receive the image: %w", err)
-		}
-		return false, nil
+		return false, Skip(h, stream)
 	}
 	if err := slot.Fits(h); err != nil {
 		return false, err
@@ -268,6 +265,25 @@ func (w *SlotWriter) setPartition(ctx context.Context, p Partition, uuid, label 
 		}
 		if _, err := w.sfdisk(ctx, "--no-tell-kernel", "--part-label", w.Disk, strconv.Itoa(p.Number), label); err != nil {
 			return fmt.Errorf("label partition %d: %w", p.Number, err)
+		}
+	}
+	return nil
+}
+
+// Skip receives the store and its hash tree that the stream holds for a slot that holds them
+// already, and checks their SHA-256 all the same: every part of an image is checked.
+func Skip(h Header, stream io.Reader) error {
+	for _, part := range []struct {
+		what string
+		size int64
+		sum  []byte
+	}{{"store", h.StoreSize, h.StoreSHA256}, {"hash tree", h.VeritySize, h.VeritySHA256}} {
+		sum := sha256.New()
+		if _, err := io.CopyN(sum, stream, part.size); err != nil {
+			return fmt.Errorf("receive the %s: %w", part.what, err)
+		}
+		if got := sum.Sum(nil); !bytes.Equal(got, part.sum) {
+			return fmt.Errorf("the %s's SHA-256 is %x, want %x", part.what, got, part.sum)
 		}
 	}
 	return nil

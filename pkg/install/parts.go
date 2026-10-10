@@ -41,7 +41,8 @@ type PartsRequest struct {
 // what an earlier, interrupted attempt did and continues from there:
 //
 //  1. Classify the target: an empty disk, or any with WipeDisk, is wiped and laid out anew; one
-//     that holds what an earlier attempt left is continued; anything else is refused.
+//     that holds what an earlier attempt left is continued, without the boot loader that attempt
+//     may have written or BootNext; anything else is refused.
 //  2. Lay out the system region with one systemd-repart run of the role's definitions: the ESP,
 //     slot A, slot B as _empty, and STATE.
 //  3. Write slot A with the upgrade's slot writer: retired, written, verified from the disk, and
@@ -118,6 +119,8 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 		if err := i.layOut(ctx, target, req.SystemDefinitions, req.Section.Encryption); err != nil {
 			return err
 		}
+	} else if err := i.unboot(ctx, target); err != nil {
+		return err
 	}
 	slots := i.slotWriter(target)
 	parts, err := slots.ReadTable(ctx)
@@ -330,10 +333,7 @@ func (i *Installer) layOut(ctx context.Context, target storage.BlockDisk, defs m
 func writeSlot(ctx context.Context, w *upgrade.SlotWriter, slot upgrade.Slot, h upgrade.Header, parts io.Reader) error {
 	if slot.Holds(h.RootHash) && slot.Version() == h.Version && w.Holds(slot, h) {
 		log.Printf("slot A holds the store of %s already", h.Version)
-		if _, err := io.CopyN(io.Discard, parts, h.StoreSize+h.VeritySize); err != nil {
-			return fmt.Errorf("receive the image: %w", err)
-		}
-		return nil
+		return upgrade.Skip(h, parts)
 	}
 	if err := slot.Fits(h); err != nil {
 		return err
@@ -430,7 +430,7 @@ func (i *Installer) writeBootLoader(ctx context.Context, esp partition, loader [
 			err = uerr
 		}
 	}()
-	path := filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(strings.TrimPrefix(i.loader(), `\`), `\`, "/")))
+	path := i.loaderFile(dir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -515,4 +515,69 @@ func (i *Installer) releaseESP(ctx context.Context) error {
 		return fmt.Errorf("unmount the ESP: %w", err)
 	}
 	return nil
+}
+
+// unboot is the first change to a target an earlier attempt left: it removes the boot loader
+// that attempt may have written and stops firmware from booting the target next, so a run that
+// is refused later never leaves a target that boots a node not installed.
+func (i *Installer) unboot(ctx context.Context, target storage.BlockDisk) error {
+	table, err := i.readTable(ctx, target.Device)
+	if err != nil {
+		return err
+	}
+	esp, err := table.findType(typeESP)
+	if err != nil {
+		return err
+	}
+	if err := i.removeBootLoader(ctx, esp); err != nil {
+		return err
+	}
+	out, err := i.Run.Run(ctx, "efibootmgr", "--verbose")
+	if err != nil {
+		return fmt.Errorf("list UEFI boot entries: %w", err)
+	}
+	next := bootNextRE.FindStringSubmatch(string(out))
+	if next == nil {
+		return nil
+	}
+	for _, e := range parseBootEntries(string(out)) {
+		if e.label == bootLabel && e.partUUID == esp.UUID && strings.EqualFold(e.num, next[1]) {
+			if err := i.change("stop booting the target next"); err != nil {
+				return err
+			}
+			if _, err := i.Run.Run(ctx, "efibootmgr", "--delete-bootnext"); err != nil {
+				return fmt.Errorf("stop booting the target next: %w", err)
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// removeBootLoader removes the boot loader from the ESP.
+func (i *Installer) removeBootLoader(ctx context.Context, esp partition) (err error) {
+	dir, unmount, err := i.mountESP(ctx, esp)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if uerr := unmount(); err == nil {
+			err = uerr
+		}
+	}()
+	path := i.loaderFile(dir)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if err := i.change("remove the boot loader"); err != nil {
+		return err
+	}
+	return os.Remove(path)
+}
+
+// loaderFile is the boot loader's file on the ESP mounted at dir.
+func (i *Installer) loaderFile(dir string) string {
+	return filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(strings.TrimPrefix(i.loader(), `\`), `\`, "/")))
 }

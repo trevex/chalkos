@@ -856,3 +856,30 @@ func TestHeaderArchitecture(t *testing.T) {
 		}
 	}
 }
+
+// TestSkippedStoreIsChecked installs an image again into the slot that holds it: the store and
+// hash tree are not written again, but their SHA-256 is checked all the same.
+func TestSkippedStoreIsChecked(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	for _, tc := range []struct {
+		name string
+		edit func(h *Header)
+	}{
+		{"store", func(h *Header) { h.StoreSHA256 = sum(nil) }},
+		{"hash tree", func(h *Header) { h.VeritySHA256 = sum(nil) }},
+	} {
+		l := newLab(t, old)
+		if _, err := l.install(img); err != nil {
+			t.Fatal(err)
+		}
+		h := img.header
+		tc.edit(&h)
+		clear(l.writes)
+		if _, err := l.node.Install(context.Background(), h, img.stream()); err == nil || !strings.Contains(err.Error(), "the "+tc.name+"'s SHA-256") {
+			t.Errorf("install = %v, want the %s's SHA-256 refused", err, tc.name)
+		}
+		if len(l.writes) != 0 {
+			t.Errorf("wrote partitions %v", l.writes)
+		}
+	}
+}

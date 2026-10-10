@@ -69,6 +69,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 			return nil, failed(connect.CodeInvalidArgument, "the installer needs the role image to write to the target disk")
 		}
 		img := imageHeader(h.Image)
+		if img.Cluster != id.Cluster || img.Role != id.Role {
+			return nil, failed(connect.CodeInvalidArgument, "the image is of the cluster %q and the role %q, but the identity names %q and %q", img.Cluster, img.Role, id.Cluster, id.Role)
+		}
 		log.Printf("installing %q %q with the root hash %x onto %s", img.ImageID, img.Version, img.RootHash, ref)
 		err = s.FromParts(ctx, install.PartsRequest{
 			Request: req,

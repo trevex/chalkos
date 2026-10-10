@@ -134,6 +134,10 @@ let
     inherit (n) role;
     identity = {
       inherit (n) hostname network labels;
+      # The cluster and the role the node's image is built for: the installer refuses an image of
+      # others.
+      cluster = cfg.cluster.name;
+      inherit (n) role;
       networkUnits = renderNetwork name n;
       storage = renderStorage name n;
       taints = map strip n.taints;
