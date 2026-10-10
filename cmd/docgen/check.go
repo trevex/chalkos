@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// shellLanguages are the code blocks whose commands are checked; a block without a language
-// counts as shell, as cobra's pages write them.
+// shellLanguages are the code blocks whose commands are checked; a block without a language,
+// also one with attributes alone, counts as shell, as cobra's pages write them.
 var shellLanguages = []string{"", "sh", "bash", "shell", "zsh", "console", "shell-session"}
 
 // check finds the chalkctl and chalklab commands in the shell code blocks of the Markdown files
@@ -63,8 +63,28 @@ type block struct {
 	lines   []string
 }
 
-// fence opens or closes a code block, also indented in a list, an admonition or a tab.
-var fence = regexp.MustCompile("^\\s*(```+|~~~+)\\s*([^\\s`]*)")
+// fence opens or closes a code block, also indented in a list, an admonition or a tab, and
+// holds its info string. The info string of a fence of backticks has no backticks.
+var fence = regexp.MustCompile("^\\s*(```+|~~~+)(.*)$")
+
+// language returns the language of a fence's info string: its first word, or the first class of
+// an attribute list ({ .sh title="x" }). A fence with attributes alone (title="x") has none.
+func language(info string) string {
+	info = strings.TrimSpace(info)
+	if attrs, ok := strings.CutPrefix(info, "{"); ok {
+		for _, a := range strings.Fields(strings.TrimSuffix(attrs, "}")) {
+			if class, ok := strings.CutPrefix(a, "."); ok {
+				return strings.ToLower(class)
+			}
+		}
+		return ""
+	}
+	lang, _, _ := strings.Cut(info, " ")
+	if strings.Contains(lang, "=") {
+		return ""
+	}
+	return strings.ToLower(strings.TrimPrefix(lang, "."))
+}
 
 // shellBlocks returns the shell code blocks of a Markdown file.
 func shellBlocks(path string) ([]block, error) {
@@ -80,15 +100,18 @@ func shellBlocks(path string) ([]block, error) {
 	for n := 1; scanner.Scan(); n++ {
 		line := scanner.Text()
 		m := fence.FindStringSubmatch(line)
+		if m != nil && m[1][0] == '`' && strings.Contains(m[2], "`") {
+			m = nil
+		}
 		switch {
 		case open == "" && m != nil:
 			open = m[1]
-			lang := strings.ToLower(strings.Trim(m[2], "{}."))
+			lang := language(m[2])
 			if slices.Contains(shellLanguages, lang) {
 				blocks = append(blocks, block{first: n + 1, console: lang == "console" || lang == "shell-session"})
 				cur = &blocks[len(blocks)-1]
 			}
-		case open != "" && m != nil && m[2] == "" && strings.HasPrefix(m[1], open):
+		case open != "" && m != nil && strings.TrimSpace(m[2]) == "" && strings.HasPrefix(m[1], open):
 			open, cur = "", nil
 		case cur != nil:
 			cur.lines = append(cur.lines, line)
@@ -107,8 +130,8 @@ type invocation struct {
 var programNames = []string{"chalkctl", "chalklab"}
 
 // invocations returns the chalkctl and chalklab command lines of a block. Lines continued with a
-// backslash are joined; in a console block, only lines with a $ prompt are commands, and the
-// lines they continue on may start with a > prompt.
+// backslash are joined, and a $ prompt is dropped; in a console block, only lines with a $
+// prompt are commands, and the lines they continue on may start with a > prompt.
 func invocations(b block) []invocation {
 	var invs []invocation
 	for i := 0; i < len(b.lines); i++ {
@@ -128,6 +151,8 @@ func invocations(b block) []invocation {
 				continue
 			}
 			line = rest
+		} else {
+			line = strings.TrimPrefix(line, "$ ")
 		}
 		for _, cmd := range commands(line) {
 			if args := program(cmd); args != nil {
@@ -138,8 +163,8 @@ func invocations(b block) []invocation {
 	return invs
 }
 
-// commands returns the simple commands of a line, including those in command substitutions
-// within double quotes.
+// commands returns the simple commands of a line, including those in command substitutions,
+// $(…) or backticks, within double quotes.
 func commands(line string) [][]string {
 	cmds := simpleCommands(words(line))
 	for _, inner := range quotedSubstitutions(line) {
@@ -148,22 +173,37 @@ func commands(line string) [][]string {
 	return cmds
 }
 
-// wrapperOptions are the options with a value of the programs that run the command after them.
-var wrapperOptions = map[string][]string{
-	"sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-U", "-R"},
-	"env":  {"-u", "-C", "-S"},
-	"time": {"-f", "-o"},
+// wrapper is a program that runs the command after its options: valued are the options that take
+// the next word as their value, operands the words between the options and the command.
+type wrapper struct {
+	valued   []string
+	operands int
+}
+
+// wrappers are the programs that run the command after them.
+var wrappers = map[string]wrapper{
+	"sudo": {valued: []string{
+		"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-U", "-R",
+		"--user", "--group", "--close-from", "--chdir", "--host", "--prompt", "--role", "--type",
+		"--command-timeout", "--other-user", "--chroot",
+	}},
+	"env":     {valued: []string{"-u", "-C", "-S", "--unset", "--chdir", "--split-string"}},
+	"time":    {valued: []string{"-f", "-o", "--format", "--output"}},
+	"timeout": {valued: []string{"-s", "-k", "--signal", "--kill-after"}, operands: 1},
+	"watch":   {valued: []string{"-n", "-q", "--interval", "--equexit"}},
+	"exec":    {valued: []string{"-a"}},
 }
 
 // program returns chalkctl's or chalklab's name and arguments when cmd runs one of them: directly,
-// after variables set for it, through sudo, env or time, or with nix run from a flake.
+// after variables set for it, through a wrapper, with nix run from a flake or in nix develop.
 func program(cmd []string) []string {
 	for len(cmd) > 0 {
 		w := cmd[0]
+		wr, isWrapper := wrappers[w]
 		switch {
 		case strings.Contains(w, "=") && !strings.HasPrefix(w, "-"):
 			cmd = cmd[1:]
-		case wrapperOptions[w] != nil:
+		case isWrapper:
 			cmd = cmd[1:]
 			for len(cmd) > 0 && strings.HasPrefix(cmd[0], "-") {
 				opt := cmd[0]
@@ -171,8 +211,15 @@ func program(cmd []string) []string {
 				if opt == "--" {
 					break
 				}
-				if slices.Contains(wrapperOptions[w], opt) && len(cmd) > 0 {
+				if slices.Contains(wr.valued, opt) && len(cmd) > 0 {
 					cmd = cmd[1:]
+				}
+			}
+			cmd = cmd[min(wr.operands, len(cmd)):]
+			// watch runs a single argument with sh -c.
+			if w == "watch" && len(cmd) == 1 {
+				if cmds := simpleCommands(words(cmd[0])); len(cmds) > 0 {
+					cmd = cmds[0]
 				}
 			}
 		case w == "nix" && len(cmd) > 1 && cmd[1] == "run":
@@ -187,6 +234,13 @@ func program(cmd []string) []string {
 				}
 			}
 			return nil
+		case w == "nix" && len(cmd) > 1 && cmd[1] == "develop":
+			// nix develop [options] [installable] (-c | --command) <command>
+			i := slices.IndexFunc(cmd, func(a string) bool { return a == "-c" || a == "--command" })
+			if i < 0 {
+				return nil
+			}
+			cmd = cmd[i+1:]
 		case slices.Contains(programNames, filepath.Base(w)):
 			return append([]string{filepath.Base(w)}, cmd[1:]...)
 		default:
@@ -355,8 +409,8 @@ func closingParen(s string, open int) int {
 	return len(s)
 }
 
-// quotedSubstitutions returns the commands of the command substitutions within double quotes of
-// a line, outside its comment; words keeps them inside their words.
+// quotedSubstitutions returns the commands of the command substitutions, $(…) or backticks,
+// within double quotes of a line, outside its comment; words keeps them inside their words.
 func quotedSubstitutions(line string) []string {
 	var subs []string
 	for i := 0; i < len(line); i++ {
@@ -382,6 +436,13 @@ func quotedSubstitutions(line string) []string {
 				case line[j] == '$' && j+1 < end && line[j+1] == '(':
 					closing := closingParen(line, j+1)
 					subs = append(subs, line[j+2:min(closing, len(line))])
+					j = closing
+				case line[j] == '`':
+					closing := end
+					if k := strings.IndexByte(line[j+1:end], '`'); k >= 0 {
+						closing = j + 1 + k
+					}
+					subs = append(subs, line[j+1:closing])
 					j = closing
 				}
 			}

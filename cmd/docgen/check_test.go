@@ -30,6 +30,17 @@ func TestCheck(t *testing.T) {
 		`testdata/docs/guides/bad.md:21: chalkctl status cp1 --bogus: chalkctl status has no flag --bogus`,
 		`testdata/docs/guides/bad.md:22: chalkctl install cp1 --fingerprnt 00ff: chalkctl install has no flag --fingerprnt`,
 		`testdata/docs/guides/bad.md:27: chalkctl bogus: chalkctl has no command "bogus"`,
+		`testdata/docs/guides/bad.md:31: chalkctl statuss cp1: chalkctl has no command "statuss"`,
+		`testdata/docs/guides/bad.md:32: chalkctl instal cp1: chalkctl has no command "instal"`,
+		`testdata/docs/guides/bad.md:33: chalklab creat: chalklab has no command "creat"`,
+		`testdata/docs/guides/bad.md:34: chalkctl rebot w1: chalkctl has no command "rebot"`,
+		`testdata/docs/guides/bad.md:35: chalkctl logs cp1 --bogus: chalkctl logs has no flag --bogus`,
+		`testdata/docs/guides/bad.md:36: chalkctl statsu cp1: chalkctl has no command "statsu"`,
+		`testdata/docs/guides/bad.md:37: chalklab statsu: chalklab has no command "statsu"`,
+		`testdata/docs/guides/bad.md:38: chalkctl disk w1: chalkctl has no command "disk"`,
+		`testdata/docs/guides/bad.md:39: chalkctl staus cp1: chalkctl has no command "staus"`,
+		`testdata/docs/guides/bad.md:40: chalkctl recovery-ky w2: chalkctl has no command "recovery-ky"`,
+		`testdata/docs/guides/bad.md:44: chalkctl install cp1 --fingerprnt 00ff: chalkctl install has no flag --fingerprnt`,
 	}
 	got := strings.Split(err.Error(), "\n")[1:]
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -75,6 +86,17 @@ func TestInvocationsOfTheGoodPage(t *testing.T) {
 		"chalkctl install cp1 --fingerprint 00ff",
 		"chalkctl completion bash",
 		"chalkctl reboot w1",
+		"chalkctl status cp8",
+		"chalkctl status cp9",
+		"chalklab status",
+		"chalkctl status cp10",
+		"chalkctl status cp11",
+		"chalkctl status cp12",
+		"chalkctl status cp13",
+		"chalkctl status cp14",
+		"chalkctl status cp15",
+		"chalkctl recovery-key w3",
+		"chalkctl status cp16",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("invocations:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

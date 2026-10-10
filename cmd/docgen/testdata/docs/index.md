@@ -46,3 +46,24 @@ $ chalkctl install cp1 \
 ```SH
 chalkctl reboot w1
 ```
+
+```sh
+$ chalkctl status cp8
+nix develop -c chalkctl status cp9
+nix develop .#ci --command chalklab status
+timeout 60 chalkctl status cp10
+timeout -s KILL --kill-after=10s 5m chalkctl status cp11
+watch -n 5 chalkctl status cp12
+watch 'chalkctl status cp13 | head'
+exec chalkctl status cp14
+sudo --user root chalkctl status cp15
+echo "key: `chalkctl recovery-key w3`"
+```
+
+``` title="status.sh"
+chalkctl status cp16
+```
+
+```{ .yaml title="values.yaml" }
+chalkctl bogus
+```

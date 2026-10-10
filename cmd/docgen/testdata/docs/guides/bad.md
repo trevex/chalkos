@@ -26,3 +26,20 @@ $ chalkctl install cp1 \
 ```Bash
 chalkctl bogus
 ```
+
+```sh
+$ chalkctl statuss cp1
+nix develop -c chalkctl instal cp1
+nix develop .#ci --command chalklab creat
+timeout 60 chalkctl rebot w1
+timeout -s KILL 5m chalkctl logs cp1 --bogus
+watch -n 5 chalkctl statsu cp1
+watch 'chalklab statsu'
+exec chalkctl disk w1
+sudo --user root chalkctl staus cp1
+echo "key: `chalkctl recovery-ky w2`"
+```
+
+``` title="install.sh"
+chalkctl install cp1 --fingerprnt 00ff
+```
