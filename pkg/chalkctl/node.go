@@ -341,6 +341,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if c, err = imageContract(filepath.Dir(img.definitions)); err != nil {
 			return err
 		}
+		c.imageCluster, c.role, c.platform = img.info.Cluster(), img.info.Role(), img.info.Platform()
 		header.Image, header.Schemas, header.KubernetesCluster = img.header, c.files, c.kubernetes
 	}
 	d, err := configFor(t, c)
@@ -684,13 +685,14 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 	s := resp.Msg
 	state := "no cluster definition to compare it with"
 	if !t.cluster.partial {
-		b, err := config.FromManifest(t.cluster.manifest, t.name)
-		if err != nil {
-			return err
-		}
-		state = "the cluster definition's"
-		if b.Version != s.ConfigVersion {
+		// A definition chalkctl cannot generate config from does not hide the rest of the status.
+		switch b, err := config.FromManifest(t.cluster.manifest, t.name); {
+		case err != nil:
+			state = "cannot generate the cluster definition's config: " + err.Error()
+		case b.Version != s.ConfigVersion:
 			state = "not the cluster definition's; chalkctl apply-config " + t.name + " delivers it"
+		default:
+			state = "the cluster definition's"
 		}
 	}
 	version := s.ConfigVersion

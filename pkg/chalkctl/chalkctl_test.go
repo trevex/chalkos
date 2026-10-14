@@ -850,15 +850,20 @@ func TestStorageResetAsksForPasswordOnlyForEncryptedVolume(t *testing.T) {
 	for _, c := range []struct {
 		encryption string
 		prompts    int
-	}{{storage.EncryptionNone, 0}, {storage.EncryptionTPM2, 2}} {
+		// want is why the reset fails: the node has no partition of volume data yet, or the password
+		// typed twice differs.
+		want string
+	}{{storage.EncryptionNone, 0, "volume data has no recorded partition"}, {storage.EncryptionTPM2, 2, "differ"}} {
 		t.Run(c.encryption, func(t *testing.T) {
 			ta := newTestApp(t)
 			withPassword(t, ta, c.encryption)
 			s, _ := installedNode(t, ta, []byte(`{}`))
 			addr := ta.startNode(t, s)
 			ta.answers = []string{"right", "wrong"}
-			// The node fails to find the volume's partition; only the prompts matter here.
-			ta.run(context.Background(), ta.args([]string{"storage", "reset", "n1", "data"}, addr))
+			err := ta.run(context.Background(), ta.args([]string{"storage", "reset", "n1", "data"}, addr))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("reset = %v, want %q", err, c.want)
+			}
 			if len(ta.prompts) != c.prompts {
 				t.Errorf("prompts = %q, want %d", ta.prompts, c.prompts)
 			}
@@ -1186,5 +1191,134 @@ func TestCount(t *testing.T) {
 		if tc.got != tc.want {
 			t.Errorf("%q, want %q", tc.got, tc.want)
 		}
+	}
+}
+
+// TestApplyConfigRefusesAnotherImage refuses to deliver config to a node whose image was built
+// for another role or platform than the cluster definition gives it: the node would translate
+// the config for its own.
+func TestApplyConfigRefusesAnotherImage(t *testing.T) {
+	for name, tc := range map[string]struct{ release, want string }{
+		"role": {"CHALKOS_CLUSTER=lab\nCHALKOS_ROLE=w\nCHALKOS_PLATFORM=metal\n",
+			"n1 runs an image of the role w, but the cluster definition gives it the role test; changing a node's role or platform is a reinstall"},
+		"platform": {"CHALKOS_CLUSTER=lab\nCHALKOS_ROLE=test\nCHALKOS_PLATFORM=kvm\n",
+			"n1 runs an image built for kvm, but the cluster definition declares it on metal; changing a node's role or platform is a reinstall"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ta := newTestApp(t)
+			s, r := installedNode(t, ta, []byte(`{}`))
+			s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
+			writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\n"+tc.release)
+			addr := ta.startNode(t, s)
+			for _, cmd := range [][]string{{"apply-config", "n1"}, {"storage", "reset", "n1", "var"}} {
+				err := ta.run(context.Background(), ta.args(cmd, addr))
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("%s = %v, want %q", cmd[0], err, tc.want)
+				}
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("node ran %v for refused config", r.calls)
+			}
+		})
+	}
+}
+
+// TestInstallInPlaceRefusesAnotherRole refuses to install a node in place that runs an image of
+// another role than the cluster definition gives it.
+func TestInstallInPlaceRefusesAnotherRole(t *testing.T) {
+	ta := newTestApp(t)
+	s := maintenanceNode()
+	s.InPlace = func(context.Context, install.Request) error { t.Error("installed in place"); return nil }
+	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=w\nCHALKOS_PLATFORM=metal\n")
+	addr := ta.startNode(t, s)
+	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr))
+	if want := "n1 runs an image of the role w, but the cluster definition gives it the role test"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("install = %v, want %q", err, want)
+	}
+}
+
+// TestApplyConfigStopsOnAFailingCheck sends nothing when the documents do not check against the
+// schemas of the node's image: here the image lacks networkd's Network kind.
+func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
+	ta := newTestApp(t)
+	s, r := installedNode(t, ta, []byte(`{"hostname": "old"}`))
+	s.Identity.Schemas = filepath.Join(t.TempDir(), "schemas")
+	entries, err := os.ReadDir(fixtureSchemas[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		data, _ := os.ReadFile(filepath.Join(fixtureSchemas[0], e.Name()))
+		writeFile(t, filepath.Join(s.Identity.Schemas, e.Name()), string(data))
+	}
+	addr := ta.startNode(t, s)
+	err = ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "the config of n1") {
+		t.Fatalf("apply-config = %v, want the check's refusal", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("node ran %v", r.calls)
+	}
+	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(got) != `{"hostname": "old"}` {
+		t.Errorf("identity on the node = %s", got)
+	}
+	if v, err := store.Version(s.Identity.Config); err != nil || v != "" {
+		t.Errorf("config version on the node = %q, %v; want none", v, err)
+	}
+}
+
+func TestImageContractNeedsSchemas(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := imageContract(dir); err == nil || !strings.Contains(err.Error(), dir+" has no schemas/") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// TestInstallFromPartsSendsTheImageContract sends the installer the schemas and kubernetes.json
+// of the image it installs, which it translates the config for.
+func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
+	ta := newTestApp(t)
+	withKind(t, ta, manifest.KindWorker)
+	imageDir := testUpgradeImage(t, "lab", "test", "0.1.0")
+	copySchemas(t, filepath.Join(imageDir, "schemas"))
+	writeFile(t, filepath.Join(imageDir, "kubernetes.json"), clusterFile("worker"))
+	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+	s := maintenanceNode()
+	s.Installer = true
+	// The installer's own image has no schemas: the config checks against those sent alone.
+	s.Identity.Schemas = filepath.Join(t.TempDir(), "none")
+	var got install.PartsRequest
+	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
+		got = req
+		_, err := io.ReadAll(req.Parts)
+		return err
+	}
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", imageDir}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got.Config == nil || got.Kubernetes == nil || got.Kubernetes.NodeName != "n1" {
+		t.Errorf("install request config = %+v, kubernetes = %+v; want both translated for the image sent", got.Config, got.Kubernetes)
+	}
+}
+
+// TestStatusWithoutTheDefinitionsConfig reports the rest of the status when chalkctl cannot
+// generate the node's config from the cluster definition.
+func TestStatusWithoutTheDefinitionsConfig(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	ta.editManifest(t, func(m *manifest.Manifest) {
+		n := m.Nodes["n1"]
+		n.Identity.NetworkUnits = map[string]string{"10-uplink.conf": "[Network]\nAddress=10.0.0.11/24\n"}
+		m.Nodes["n1"] = n
+	})
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	out := ta.stdout.String()
+	if !strings.Contains(out, "config none (cannot generate the cluster definition's config: ") || !strings.Contains(out, "platform metal") || !strings.Contains(out, "var") {
+		t.Errorf("status = %q", out)
 	}
 }
