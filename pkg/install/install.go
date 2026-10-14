@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/config/store"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -72,6 +73,9 @@ type Request struct {
 	// KubernetesShare is the node's share of the Kubernetes secrets (JSON); empty on a node of a
 	// role without Kubernetes.
 	KubernetesShare []byte
+	// Config is the node's config set as STATE keeps it, when it was delivered config; nil for
+	// an identity.
+	Config *store.Stored
 }
 
 func (r Request) validate() error {
@@ -351,6 +355,11 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	for _, f := range files {
 		if err := WriteFile(filepath.Join(i.StateDir, f.path), f.data, f.perm); err != nil {
 			return err
+		}
+	}
+	if req.Config != nil {
+		if err := store.Write(filepath.Join(i.StateDir, "config"), *req.Config); err != nil {
+			return fmt.Errorf("store the config: %w", err)
 		}
 	}
 	if len(req.KubernetesShare) > 0 {

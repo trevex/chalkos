@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -912,5 +914,36 @@ func TestInPlaceWritesALoadableNodeCertificate(t *testing.T) {
 				t.Errorf("node.pem cannot be loaded: %v", err)
 			}
 		})
+	}
+}
+
+func TestInPlaceStoresConfig(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	r.add(inPlaceRules(i)...)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	docs, err := config.Parse(strings.NewReader("apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n1}\nspec: {imageRef: metal}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Config = &store.Stored{Documents: docs, Version: "abc"}
+	if err := i.InPlace(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := store.Read(filepath.Join(i.StateDir, "config"))
+	if err != nil || !found || got.Version != "abc" || len(got.Documents) != 1 || got.Documents[0].Name != "n1" {
+		t.Errorf("stored config = %+v, found %v, %v", got, found, err)
+	}
+}
+
+func TestInPlaceWithoutConfigStoresNone(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	r.add(inPlaceRules(i)...)
+	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(i.StateDir, "config")); !os.IsNotExist(err) {
+		t.Errorf("stored a config for an identity: %v", err)
 	}
 }
