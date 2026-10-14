@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -27,6 +28,9 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 		return nil, failed(connect.CodeInternal, "read the identity: %v", err)
 	}
 	resp.IdentityVersion = identity.IdentityVersion(data)
+	if resp.ConfigVersion, err = store.Version(s.Identity.Config); err != nil {
+		return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
+	}
 
 	var status storage.Status
 	if raw, err := os.ReadFile(s.Paths.StorageStatus); err == nil {

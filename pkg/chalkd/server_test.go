@@ -554,6 +554,9 @@ func TestStatus(t *testing.T) {
 	if got.IdentityVersion != identity.IdentityVersion([]byte(identityJSON)) {
 		t.Errorf("identity version = %s", got.IdentityVersion)
 	}
+	if got.ConfigVersion != "" {
+		t.Errorf("config version of a node without config = %q", got.ConfigVersion)
+	}
 	if !reflect.DeepEqual(got.FailedUnits, []string{"systemd-cryptsetup@extra.service", "srv-extra.mount"}) {
 		t.Errorf("failed units = %v", got.FailedUnits)
 	}

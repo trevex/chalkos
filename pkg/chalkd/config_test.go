@@ -288,3 +288,10 @@ func TestApplyIdentityRemovesStoredConfig(t *testing.T) {
 		t.Errorf("demo's credentials = %v, %v; want an empty directory", entries, err)
 	}
 }
+
+func TestStatusReportsConfigVersion(t *testing.T) {
+	s, _ := configServer(t)
+	if got := status(t, s).ConfigVersion; got != hashOf(t, baseConfig) {
+		t.Errorf("config version = %q, want the hash of the delivered documents", got)
+	}
+}
