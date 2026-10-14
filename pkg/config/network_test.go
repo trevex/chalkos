@@ -108,7 +108,7 @@ spec:
   network: {address: 10.0.0.11/24}
   address: [{address: "fd00::11/64"}]
 `)
-	m := networkMap(docs)
+	m := NetworkMap(docs)
 	nets := m["networks"].(map[string]any)["10-a"].(map[string]any)
 	// Only [Network] Address= counts, as the cluster definition's static addresses read it.
 	if got := nets["address"].([]any); len(got) != 1 || got[0] != "10.0.0.11/24" {
@@ -145,7 +145,7 @@ spec:
   match: {name: enp1s0}
   network: {dhcp: "yes"}
 `)
-	nets := networkMap(docs)["networks"].(map[string]any)["10-dhcp"].(map[string]any)
+	nets := NetworkMap(docs)["networks"].(map[string]any)["10-dhcp"].(map[string]any)
 	if got, ok := nets["address"].([]any); !ok || got == nil || len(got) != 0 {
 		t.Errorf("address = %#v, want []", nets["address"])
 	}
@@ -158,7 +158,7 @@ func TestNetworkMapJoinsAListOfMACs(t *testing.T) {
 	docs := []Document{{APIVersion: NetworkdAPI, Kind: "Network", Name: "a", Object: map[string]any{
 		"spec": map[string]any{"match": map[string]any{"macAddress": []any{"52:54:00:00:00:01", "52:54:00:00:00:02"}}},
 	}}}
-	nets := networkMap(docs)["networks"].(map[string]any)["a"].(map[string]any)
+	nets := NetworkMap(docs)["networks"].(map[string]any)["a"].(map[string]any)
 	if mac := nets["matchConfig"].(map[string]any)["MACAddress"]; mac != "52:54:00:00:00:01 52:54:00:00:00:02" {
 		t.Errorf("MACAddress = %#v", mac)
 	}

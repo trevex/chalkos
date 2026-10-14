@@ -60,7 +60,7 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 		Cluster:      cluster.Name,
 		Role:         t.Role,
 		Platform:     t.Platform,
-		Network:      networkMap(networkDocs),
+		Network:      NetworkMap(networkDocs),
 		NetworkUnits: units,
 		Labels:       map[string]string{},
 		Taints:       []manifest.Taint{},

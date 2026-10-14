@@ -13,6 +13,7 @@ callPackage ./go-module.nix { } {
     ../pkg/install
     ../pkg/kubernetes
     ../pkg/manifest
+    ../pkg/networkdschema
     ../pkg/pki
     ../pkg/schema
     ../pkg/storage
