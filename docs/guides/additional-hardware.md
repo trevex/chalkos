@@ -218,8 +218,9 @@ Each role is built once per platform, as `chalkos.roles.<role>.images.<platform>
 the platforms its nodes use when chalkctl builds them, so only the images of `r650` carry its
 drivers. A platform of your own starts from chalkos's node modules alone: it does not include
 `metal`'s modules, so give it a console. Its name, lower-case letters, digits and dashes, becomes
-`CHALKOS_PLATFORM` in the image's os-release, and a node refuses images and [identities](../reference/glossary.md#config) of another
-platform, so moving a node to a new platform is a reinstall. Platform modules come before the
+`CHALKOS_PLATFORM` in the image's os-release. A node refuses images of another platform, and its
+[config](../reference/glossary.md#config) is translated for the platform it runs, so moving a node
+to a new platform is a reinstall. Platform modules come before the
 role's; a role overrides a value its platform sets plainly with `lib.mkForce`, and one the platform
 forces itself with `lib.mkOverride` below 50, as for the `kvm` platform's `ExecStart` of the guest
 agent.

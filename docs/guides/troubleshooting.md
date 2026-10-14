@@ -22,12 +22,12 @@ does not unlock, boot, renew or rejoin, [Recover a node](recover-node.md) has th
 ## Read the node's status
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) is the first command to run. It asks
-the node's [chalkd](../reference/glossary.md#chalkd) for everything chalkd checks, and compares the node's identity with the
+the node's [chalkd](../reference/glossary.md#chalkd) for everything chalkd checks, and compares the node's config with the
 [cluster definition](../reference/glossary.md#cluster-definition). A healthy [worker](../reference/glossary.md#worker):
 
 ```console
 $ chalkctl status w1
-identity b02445f30a5a8197dac34ce49e8af8c62f9974d2c7b8dbf02ffb1d54cd620a65 (the cluster definition's)
+config b02445f30a5a8197dac34ce49e8af8c62f9974d2c7b8dbf02ffb1d54cd620a65 (the cluster definition's)
 platform metal (the cluster definition's)
 image 1.5.0, booted from chalkos_1.5.0.efi
 VOLUME    DISK      MOUNT POINT        STATE
@@ -50,7 +50,7 @@ Read it from the top:
 
 | Line | Says | When it is wrong |
 | --- | --- | --- |
-| `identity` | The version of the [identity](../reference/glossary.md#config) the node runs, and whether it is the cluster definition's. | `not the cluster definition's; chalkctl apply-config w1 delivers it`: the definition changed since the last delivery. |
+| `config` | The version of the [config](../reference/glossary.md#config) the node runs, the SHA-256 of its documents, and whether it is the cluster definition's; `none` on a node installed before config documents. | `not the cluster definition's; chalkctl apply-config w1 delivers it`: the definition changed since the last delivery. `cannot generate the cluster definition's config: ...`: chalkctl could not generate the documents from the definition, for the reason it names. |
 | `platform` | The platform the image was built for. | A mismatch with the definition: changing a node's platform is a reinstall. |
 | `image` | The [image version](../reference/glossary.md#image-version) booted, its boot entry, and `not found healthy yet` while the [health check](../reference/glossary.md#health-check) runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
 | `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
@@ -78,8 +78,8 @@ The units that matter most:
 
 | Unit | Does |
 | --- | --- |
-| `chalkd.service` | The node agent: installs, upgrades, identity, certificates, joining etcd, the VIP. |
-| `chalkos-identity.service` | Applies the node's identity at boot: hostname, network, time servers. |
+| `chalkd.service` | The node agent: installs, upgrades, config, certificates, joining etcd, the VIP. |
+| `chalkos-identity.service` | Applies the node's config at boot: hostname, network, time servers, the documents services read. |
 | `chalkos-kubernetes.service` | Picks the node's addresses and writes the Kubernetes certificates and configuration before the kubelet starts. |
 | `chalkos-health.service` | Decides whether a boot after an upgrade is healthy. |
 | `kubelet.service` | The kubelet, which runs the static pods of etcd and the control plane, and every pod. |

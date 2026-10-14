@@ -18,7 +18,7 @@ image it ran before stays on disk for a [rollback](#rollback). See
 ## Admin { #admin }
 
 The [client role](#client-role) that may call every method of the node API, including
-install, identity changes, volume resets, bootstrap, etcd membership changes and rotations. See
+install, config changes, volume resets, bootstrap, etcd membership changes and rotations. See
 [Security model](../concepts/security.md).
 
 ## Blessed boot { #blessed-boot }
@@ -52,7 +52,7 @@ through its [manifest](#manifest), installs, upgrades and operates nodes through
 ## chalkd { #chalkd }
 
 The agent on every node. It serves the [node API](api.md) on TCP port 50000 over mutual TLS,
-installs and upgrades the node, applies its [identity](#config), runs the Kubernetes control
+installs and upgrades the node, applies its [config](#config), runs the Kubernetes control
 plane and decides whether a boot is healthy. See [Architecture](../concepts/architecture.md).
 
 ## chalklab { #chalklab }
@@ -91,6 +91,34 @@ and joining control planes reach it. Nodes also renew their
 a [VIP](#vip) or a load balancer that forwards both ports. See
 [Networking](../concepts/networking.md).
 
+## Config { #config }
+
+A node's configuration at runtime: a set of [config documents](#config-document), each of a
+[kind](#kind) its image accepts, such as `Node`, `Network`, `SystemDisk`, `Kubelet` or an
+extension's own. chalkctl generates them from the [cluster definition](#cluster-definition),
+checks them against the node's image's [contract](#contract) and delivers them at install and
+with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd checks them again, keeps
+them on [STATE](#state) and applies them at every boot. Secrets travel as `Secret` documents and
+reach only the services that read the kinds referencing them. See
+[The cluster definition](../concepts/cluster-definition.md).
+
+## Config document { #config-document }
+
+One object of a node's [config](#config), in the style of a Kubernetes object: an `apiVersion`
+of a group and a version, a `kind`, a `metadata.name` and a `spec`. The schema of its
+[kind](#kind) defines the `spec`. On the node, chalkd writes each document except `Secret`s to
+`/run/chalkos/config/<group>/<Kind>/<name>.json`. See
+[The cluster definition](../concepts/cluster-definition.md).
+
+## Contract { #contract }
+
+What an image accepts as [config](#config): the cluster, role and platform it was built for, the
+JSON Schemas of its [kinds](#kind) and its Kubernetes settings. The image carries the schemas in
+`/etc/chalkos/schemas`, and its image directory has them as `schemas/` beside
+`kubernetes.json`. chalkctl reads the contract from the image directory when it installs from the
+[installer](#installer), and from the running node with the [Contract](api.md#method-contract)
+method otherwise. See [Image and partition layout](image-layout.md).
+
 ## Control plane { #control-plane }
 
 A node whose role has the Kubernetes kind `controlplane`. It runs etcd, the API server, the
@@ -125,7 +153,8 @@ it adds itself as a learner, and every later boot waits for exactly them;
 ## Extension { #extension }
 
 A cluster module outside chalkos that adds options under its own `chalkos.<name>` namespace,
-optionally per node, and contributes NixOS modules to roles. chalkos's own features use the
+optionally per node, and contributes NixOS modules to roles, which may declare config
+[kinds](#kind) whose documents its per-node options add. chalkos's own features use the
 same mechanism. See [The cluster definition](../concepts/cluster-definition.md).
 
 ## Fallback keyslot { #fallback-keyslot }
@@ -147,23 +176,24 @@ The check `chalkos-health.service` runs on a counted boot. chalkd must serve on 
 a node with Kubernetes the preparation must have succeeded. Then a control plane that is an etcd
 member needs its local etcd member, its API server and its kubelet healthy, and a worker its
 kubelet healthy and its Node registered. A node without Kubernetes, or a control plane not
-bootstrapped yet, needs its identity applied and no unit of the boot failed. A boot that passes
+bootstrapped yet, needs its config applied and no unit of the boot failed. A boot that passes
 within [`chalkos.upgrade.healthTimeout`](options.md#chalkosupgradehealthtimeout) is
 [blessed](#blessed-boot). See [Boot, health and rollback](../concepts/boot-and-rollback.md).
 
 ## Identity { #identity }
 
-A node's part of the cluster definition, without secrets: hostname, network units, labels,
-taints, storage, platform, time servers and extension values. chalkctl delivers it at install
-and with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd keeps it on
-[STATE](#state) and applies it at every boot. See
+A node's settings in the form the [manifest](#manifest) renders them: hostname, network units,
+labels, taints, storage, Kubernetes addresses and time servers, without secrets. chalkctl
+generates the node's [config](#config) from it and checks that the config translates back to it.
+On the node, chalkd translates the config into the same form, keeps it on [STATE](#state) as
+`identity.json` and applies it at every boot. See
 [The cluster definition](../concepts/cluster-definition.md).
 
 ## Image { #image }
 
 A role image: one unsigned raw disk image per [role](#role) and [platform](#platform), with the
 ESP and slot A filled. Every node of that role and platform boots the same image; what differs
-between nodes travels in their [identity](#config). See [The image](../concepts/image.md).
+between nodes travels in their [config](#config). See [The image](../concepts/image.md).
 
 ## Image version { #image-version }
 
@@ -177,6 +207,15 @@ An image that always boots into [maintenance mode](#maintenance-mode) and writes
 a disk of the machine. It is built as a raw image and a hybrid ISO from
 [`chalkos.installer`](options.md#chalkosinstallerimage), and serves every role and platform.
 See [Architecture](../concepts/architecture.md).
+
+## Kind { #kind }
+
+The type of a [config document](#config-document), named by its `kind` and the group and version
+of its `apiVersion`. chalkos declares its own kinds in `chalkos.dev` and its subdomains; an
+[extension](#extension) declares more under [`chalkos.kinds`](options.md#chalkoskinds) in a role
+module, with a group of its own. A unit reads the documents of the kinds it names under
+[`chalkos.consumers`](options.md#chalkosconsumers). See
+[The cluster definition](../concepts/cluster-definition.md).
 
 ## Kubernetes share { #kubernetes-share }
 
@@ -200,8 +239,9 @@ reboots and an install. See [Architecture](../concepts/architecture.md).
 ## Manifest { #manifest }
 
 The JSON document `mkCluster` generates from the cluster definition (`chalkos.<cluster>.manifest`):
-the cluster's settings, its roles' image paths and every node's identity. It is how Go code
-reads what Nix declared. See [The cluster definition](../concepts/cluster-definition.md).
+the cluster's settings, its roles' image paths, every node's [identity](#identity) and the
+documents its extensions add, from which chalkctl generates each node's [config](#config). It is
+how Go code reads what Nix declared. See [The cluster definition](../concepts/cluster-definition.md).
 
 ## Module group { #module-group }
 
@@ -322,7 +362,7 @@ A and B. See [The image](../concepts/image.md).
 ## STATE { #state }
 
 A small partition, 128 MiB by default, encrypted and sealed to the TPM by default. It holds the
-node's identity, node certificate, trusted CAs, Kubernetes share and storage definitions, and
+node's config, node certificate, trusted CAs, Kubernetes share and storage definitions, and
 the marker that the node is installed. See [Storage and encryption](../concepts/storage.md).
 
 ## Store { #store }

@@ -406,7 +406,7 @@ the store data, the hash tree, the UKI and, when the header names one, the boot 
 | `uki` | [`ImagePart`](#message-imagepart) |  |
 | `boot_loader` | [`ImagePart`](#message-imagepart) | The signed systemd-boot, which firmware starts from the ESP's removable-media path. |
 | `architecture` | `string` | The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A node refuses an image of another architecture than its own. |
-| `platform` | `string` | The platform the image is built for, as its os-release names it, such as metal or kvm. A node refuses an image of another platform than its own, or than its identity names. |
+| `platform` | `string` | The platform the image is built for, as its os-release names it, such as metal or kvm. A node refuses an upgrade to an image of another platform than its own, and the installer translates the config for the platform the image names. |
 
 ### ImagePart { #message-imagepart }
 

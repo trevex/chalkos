@@ -164,7 +164,7 @@ chalkctl builds the node's role image for its role and platform from the flake (
 prints its progress first), signs the image's UKI and boot loader with the db key, and checks
 them against [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
 when the cluster definition sets it. It then sends the node its
-[identity](../reference/glossary.md#config), a [node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
+[config](../reference/glossary.md#config), checked against the image's schemas, a [node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
 second keyslot and, on a Kubernetes role, the node's
 [Kubernetes share](../reference/glossary.md#kubernetes-share), followed by the image's store,
 hash tree, UKI and boot loader. It does not send the whole raw image, only the compressed store
@@ -186,7 +186,7 @@ On the machine, the installer:
    [root hash](../reference/glossary.md#root-hash);
 4. writes the UKI, after checking its signature against the firmware's db and dbx when Secure
    Boot is enforced, so the machine never reboots into an image its firmware refuses;
-5. writes the identity and the certificates to STATE, creates
+5. writes the config and the certificates to STATE, creates
    [VAR](../reference/glossary.md#var) and the node's other volumes, and enrols the second
    keyslot;
 6. writes the boot loader, adds a UEFI boot entry named `chalkos` and boots it next, and writes
@@ -194,7 +194,7 @@ On the machine, the installer:
 
 The machine reboots into its role image. The new boot entry comes first in the boot order, so the
 stick may stay in; remove it before the next install elsewhere. After the reboot the node runs in
-[normal mode](../reference/glossary.md#normal-mode) with the network of its identity, and
+[normal mode](../reference/glossary.md#normal-mode) with the network of its config, and
 chalkctl reaches it at its first static address, or at `--endpoint`.
 
 `--fingerprint` is the way to pin the node. When reading the console is impractical, `--insecure`
@@ -295,7 +295,7 @@ as a password manager.
 
 ## Check that it worked
 
-[`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs: its identity
+[`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs: its config
 and whether it is the cluster definition's, the [image version](../reference/glossary.md#image-version) and whether the boot was found
 healthy, its volumes, Kubernetes, its certificates and any failed units.
 

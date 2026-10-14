@@ -205,12 +205,12 @@ systemd-repart gives it on an existing partition, which for most keys is none.
 ## Apply the change
 
 Check the definition first: an invalid storage section stops evaluation with every problem
-listed under `chalkos.nodes.<node>.storage is invalid`. Then deliver the node's [identity](../reference/glossary.md#config):
+listed under `chalkos.nodes.<node>.storage is invalid`. Then deliver the node's [config](../reference/glossary.md#config):
 
 ```console
 $ chalkctl apply-config w1
 volume scratch: new volume
-w1 runs identity 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
+w1 runs config 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
 ```
 
 chalkd writes the new definitions, runs systemd-repart on each disk, enrols the fallback
@@ -230,11 +230,11 @@ The changes chalkd applies while the node runs, and those it refuses, are these:
 | Another disk, or a reference that now finds another disk | no |
 | A volume removed | no |
 
-When a change is destructive, the node refuses the whole identity and applies none of it,
+When a change is destructive, the node refuses the whole config and applies none of it,
 naming the volume:
 
 ```text
-the identity changes storage destructively: scratch: format xfs instead of ext4 (destructive); reset it with chalkctl storage reset w1 scratch
+the config changes storage destructively: scratch: format xfs instead of ext4 (destructive); reset it with chalkctl storage reset w1 scratch
 ```
 
 ## Reset a volume
@@ -255,12 +255,12 @@ volume scratch of w1 was wiped and created again
 An encrypted volume is sealed to the TPM again and gets its fallback keyslot back, so the command
 needs the secrets file for a node whose fallback is its recovery key, and the password for one
 whose fallback is a password. Once the reset is done, run `chalkctl apply-config` for the rest
-of the identity.
+of the config.
 
 A reset recreates a volume in place. It refuses VAR, which the running node uses, a volume the
 definition no longer has, and a volume that moves to another disk. Those changes need the node
-reinstalled with the new layout. It also refuses while the identity changes other volumes
-destructively too, naming them (`the identity changes other volumes destructively too: ...`), so
+reinstalled with the new layout. It also refuses while the config changes other volumes
+destructively too, naming them (`the config changes other volumes destructively too: ...`), so
 one reset applies one volume's change: take the others out of the definition, reset this volume,
 then put them back one at a time.
 

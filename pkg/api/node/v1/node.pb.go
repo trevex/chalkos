@@ -1202,7 +1202,8 @@ type ImageHeader struct {
 	// node refuses an image of another architecture than its own.
 	Architecture string `protobuf:"bytes,10,opt,name=architecture,proto3" json:"architecture,omitempty"`
 	// The platform the image is built for, as its os-release names it, such as metal or kvm. A node
-	// refuses an image of another platform than its own, or than its identity names.
+	// refuses an upgrade to an image of another platform than its own, and the installer
+	// translates the config for the platform the image names.
 	Platform      string `protobuf:"bytes,11,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

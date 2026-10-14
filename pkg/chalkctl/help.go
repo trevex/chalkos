@@ -202,8 +202,9 @@ const disksExample = `  # The disks of an installed node.
 const applyConfigLong = `Delivers a node's config to the installed node: the documents chalkctl generates from the
 cluster definition, which set its hostname, networks, storage, time servers, Kubernetes settings
 (labels, taints, addresses and subnets) and the documents of its extensions' kinds. chalkctl first
-asks the node for the schemas of the image it runs and checks that the documents give back what
-the cluster definition declares for the node. The node replaces its config as a whole, and
+asks the node for the contract of the image it runs: its cluster, role, platform and schemas. It
+refuses an image of another cluster, role or platform than the cluster definition gives the node,
+and checks that the documents give back what the cluster definition declares for the node. The node replaces its config as a whole, and
 applies additive storage changes (a new volume, for example) while it runs. When the config
 changes a volume destructively, the node refuses the whole config and applies none of it;
 chalkctl storage reset recreates such a volume. Otherwise the node restarts the units that read

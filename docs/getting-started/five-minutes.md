@@ -33,15 +33,15 @@ exposes the result as `chalkos.<cluster>`. Part of that result is the
 `nix eval`, so the flake is the only inventory of the cluster.
 See [The cluster definition](../concepts/cluster-definition.md).
 
-## Roles become images, nodes get identities
+## Roles become images, nodes get config
 
 A [role](../reference/glossary.md#role), such as `controlplane` or `worker`, is a kind of node
 with its own NixOS modules. Nix builds one [image](../reference/glossary.md#image) per role and
 [platform](../reference/glossary.md#platform) (`metal` or `kvm`), and every node of that role
 and platform boots the same image. What differs between nodes is their
-[identity](../reference/glossary.md#config): hostname, network, labels, taints, storage and
-time servers, without secrets. chalkctl delivers it at install, and chalkd applies it at every
-boot. See [The image](../concepts/image.md).
+[config](../reference/glossary.md#config): documents for its hostname, network, labels, taints,
+storage, time servers and extensions. chalkctl generates them from the cluster definition and
+delivers them at install, and chalkd applies them at every boot. See [The image](../concepts/image.md).
 
 ## The secrets file stays with the operator
 
@@ -60,7 +60,7 @@ images carry only its public part. People who operate nodes without the whole fi
 A machine booted from the [installer](../reference/glossary.md#installer), or a disk written
 with a role image, comes up in [maintenance mode](../reference/glossary.md#maintenance-mode):
 chalkd serves a self-signed certificate and prints its fingerprint and the node's addresses on
-the console. `chalkctl install` checks that fingerprint and sends the node its identity, its
+the console. `chalkctl install` checks that fingerprint and sends the node its config, its
 certificates and its share of the secrets, plus the image when the node runs the installer.
 chalkd partitions the disk, seals [STATE](../reference/glossary.md#state) to the [TPM](../reference/glossary.md#tpm), marks the
 node installed and reboots it into [normal mode](../reference/glossary.md#normal-mode). See
@@ -70,7 +70,7 @@ node installed and reboots it into [normal mode](../reference/glossary.md#normal
 
 A system disk holds the [ESP](../reference/glossary.md#esp), two
 [slots](../reference/glossary.md#slot) for the read-only [store](../reference/glossary.md#store),
-STATE with the node's identity and certificates, and [VAR](../reference/glossary.md#var) for
+STATE with the node's config and certificates, and [VAR](../reference/glossary.md#var) for
 everything the node writes, such as etcd, containerd and logs. By default STATE and VAR are
 LUKS2 volumes whose keys the TPM unseals only under the same [Secure Boot](../reference/glossary.md#secure-boot) state. See
 [Storage and encryption](../concepts/storage.md).

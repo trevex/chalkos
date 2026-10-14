@@ -127,7 +127,7 @@ in
         stateSize = lib.mkOption {
           type = lib.types.str;
           default = "128M";
-          description = "Size of the STATE partition holding node identity and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
+          description = "Size of the STATE partition holding the node's config and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
         };
       };
     };

@@ -83,75 +83,99 @@ read-only option. Settings belong in the cluster definition, so every image agre
 A role module cannot read `config.chalkos.nodes`. Evaluating it fails with
 `config.chalkos.nodes is not available in a role image: one image serves every node of the role`,
 because an image is built once for all nodes of its role and platform. Per-node values travel in
-the node's [identity](../reference/glossary.md#config), which [chalkd](../reference/glossary.md#chalkd) applies at boot and on
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A unit reads them in one
-of two ways:
-
-- The whole identity, without secrets, is at
-  [`chalkos.node.file`](../reference/options.md#chalkosnodefile), `/run/chalkos/node.json`.
-- [`chalkos.node.consumers`](../reference/options.md#chalkosnodeconsumers) names a unit and the
-  identity keys it reads. Each key arrives as a systemd credential of the same name, and chalkd
-  restarts the unit when one of its keys changes.
-
-Prefer consumers: the unit gets exactly its values, and a change restarts it. A key is a dotted
-path, looked up first among the extension values of the identity, then among its own fields:
+the node's [config](../reference/glossary.md#config), documents that
+[chalkd](../reference/glossary.md#chalkd) applies at boot and on
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A unit reads the documents of
+the kinds it names under [`chalkos.consumers`](../reference/options.md#chalkosconsumers): chalkd
+writes them to `/run/chalkos/config/<group>/<Kind>/<name>.json` and restarts the unit when one of
+them changes. The node's `Node` document gives its hostname, for example:
 
 ```nix
-{ pkgs, ... }:
+{ config, lib, pkgs, ... }:
 {
   systemd.services.hostname-report = {
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${pkgs.coreutils}/bin/cat %d/hostname";
+      # Active after it ran, so the restart on a change runs it again.
+      RemainAfterExit = true;
+      ExecStart = "${lib.getExe pkgs.jq} -r '.spec.hostname // .metadata.name' ${config.chalkos.kinds.Node.dir}/*.json";
     };
   };
-  chalkos.node.consumers.hostname-report.keys = [ "hostname" ];
+  chalkos.consumers.hostname-report.kinds = [ "Node" ];
 }
 ```
 
-`%d` is the unit's credentials directory. A key the identity lacks gets no credential, so the
-unit fails to start instead of reading a stale value. Set
-[`restartOnChange`](../reference/options.md#chalkosnodeconsumersrestartonchange) to `false` for
-a unit that rereads its credentials itself.
+A kind's [`dir`](../reference/options.md#chalkoskindsdir) is the directory of its documents, one
+file per document named after it. Evaluating the image fails when a unit names a kind the image
+does not declare. A `secretRef` field of a kind the unit reads names a key of a `Secret` document;
+the unit reads its value as the systemd credential `secret_<secret>.<key>`, in
+`$CREDENTIALS_DIRECTORY` or `%d`, and the value never appears below `/run/chalkos/config`. Set
+[`restartOnChange`](../reference/options.md#chalkosconsumersrestartonchange) to `false` for a
+unit that rereads its documents itself.
 
 ## Add a per-node option with an extension
 
 Values of your own, such as a site name per node, come from an
 [extension](../reference/glossary.md#extension): a cluster module that declares options in a
-namespace of its own and adds modules to roles. A per-node option is declared on
-`chalkos.nodes`, and its value lands in the node's identity under the same path:
+namespace of its own and adds modules to roles. A role module declares a config kind, the
+per-node option adds a document of that kind to the node's
+[`documents`](../reference/options.md#chalkosnodesdocuments), and a unit reads it:
 
 ```nix title="extensions/site.nix"
 { config, lib, ... }:
+let
+  inherit (config.chalkos.site) enable;
+in
 {
   options.chalkos.site.enable = lib.mkEnableOption "the site name on every worker";
 
   options.chalkos.nodes = lib.mkOption {
     type = lib.types.attrsOf (
-      lib.types.submodule {
-        options.site.name = lib.mkOption {
-          type = lib.types.str;
-          example = "berlin-1";
-          description = "Site the node runs at.";
-        };
-      }
+      lib.types.submodule (
+        { config, ... }:
+        {
+          options.site.name = lib.mkOption {
+            type = lib.types.str;
+            example = "berlin-1";
+            description = "Site the node runs at.";
+          };
+          # Only the worker image declares the kind, and a node refuses a kind its image lacks.
+          config.documents = lib.mkIf (enable && config.role == "worker") [
+            {
+              apiVersion = "site.example.org/v1alpha1";
+              kind = "Site";
+              metadata.name = "site";
+              spec.name = config.site.name;
+            }
+          ];
+        }
+      )
     );
   };
 
-  config = lib.mkIf config.chalkos.site.enable {
+  config = lib.mkIf enable {
     chalkos.roles.worker.nixosModules = [
       (
-        { pkgs, ... }:
+        { config, pkgs, ... }:
         {
+          chalkos.kinds.Site = {
+            group = "site.example.org";
+            version = "v1alpha1";
+            spec.name = lib.mkOption {
+              type = lib.types.nonEmptyStr;
+              description = "Site the node runs at.";
+            };
+          };
+          chalkos.consumers.site-name.kinds = [ "Site" ];
           systemd.services.site-name = {
             wantedBy = [ "multi-user.target" ];
             serviceConfig = {
               Type = "oneshot";
-              ExecStart = "${pkgs.coreutils}/bin/cat %d/site.name";
+              RemainAfterExit = true;
+              ExecStart = "${lib.getExe pkgs.jq} -r .spec.name ${config.chalkos.kinds.Site.dir}/site.json";
             };
           };
-          chalkos.node.consumers.site-name.keys = [ "site.name" ];
         }
       )
     ];
@@ -161,8 +185,11 @@ namespace of its own and adds modules to roles. A per-node option is declared on
 
 Import the file in the cluster definition, set `chalkos.site.enable = true`, and give each worker
 `site.name`. A change of a node's `site.name` needs no new image: `chalkctl apply-config <node>`
-delivers it, and chalkd restarts `site-name.service`. The namespace must not be a name chalkos
-declares under `chalkos`, in the cluster definition or inside images;
+delivers the new `Site` document, and chalkd restarts `site-name.service`. The extension adds the
+document to workers alone, because a node whose image lacks the kind refuses it: the role that
+declares a kind is the one whose nodes may carry its documents. The kind's group is a DNS name of
+your own, since chalkos keeps `chalkos.dev` and its subdomains for its own kinds. The namespace
+must not be a name chalkos declares under `chalkos`, in the cluster definition or inside images;
 [The cluster definition](../concepts/cluster-definition.md#how-does-an-extension-add-options) lists
 them, explains how extensions work and shows a larger one.
 
@@ -275,8 +302,8 @@ chalkctl logs w1 --unit=disk-report.service
 
 ## What next
 
-- [The cluster definition](../concepts/cluster-definition.md) explains roles, platforms, the
-  identity and extensions.
+- [The cluster definition](../concepts/cluster-definition.md) explains roles, platforms, config
+  documents and extensions.
 - [The image](../concepts/image.md) describes what a role's image holds.
 - [Support additional hardware](additional-hardware.md) adds drivers and firmware.
 - [Upgrade a cluster](upgrade-cluster.md) rolls the new images out.

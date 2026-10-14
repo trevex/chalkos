@@ -50,12 +50,12 @@ system region.
 | `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
 | `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the [TPM](glossary.md#tpm) by default | first boot, install |
 | `50-var` | `var` | [`var.size`](options.md#chalkosnodesstoragevarsize), rest of the disk | ext4 | node's policy | install |
-| `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later identity |
+| `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later config |
 
 A volume with a disk of its own is the only partition on that disk, from the definition
 `10-<name>`. The system region's definitions are the same files the image ships in
 `/etc/chalkos/repart.d`; VAR's and the volumes' come from the node's
-[identity](glossary.md#config) and are kept on STATE.
+[config](glossary.md#config) and are kept on STATE.
 
 The "Created by" column names the first writer of each partition:
 
@@ -69,7 +69,7 @@ The "Created by" column names the first writer of each partition:
   itself. In place, chalkd recreates STATE when its contents do not match the node's encryption
   policy (an unencrypted STATE for `mode = "none"`). In both flows it then creates VAR and the
   volumes.
-- Identity: [`chalkctl apply-config`](cli/chalkctl_apply-config.md) creates volumes added
+- Config: [`chalkctl apply-config`](cli/chalkctl_apply-config.md) creates volumes added
   to a node's storage and grows those whose size grew. At every boot, `chalkos-storage` in the
   initrd applies the storage section recorded on STATE again.
 
@@ -163,8 +163,8 @@ STATE is mounted at `/state`. It holds what makes the node this node and nothing
 
 | Path | Written by | What it holds |
 | --- | --- | --- |
-| `identity.json` | install, ApplyConfig | The node's identity as delivered. |
-| `config/<group>/<Kind>/<name>.json` | install, ApplyConfig | The node's config documents with their schemas' defaults filled in, when the node was delivered config rather than an identity; `identity.json` then holds what they translate to. `config` is a symbolic link to a directory beside it, which a new set replaces as a whole. |
+| `identity.json` | install, ApplyConfig | The node's [identity](glossary.md#identity), which its config translates to and the boot applies: hostname, network units, storage, Kubernetes and time settings. |
+| `config/<group>/<Kind>/<name>.json` | install, ApplyConfig | The node's config documents with their schemas' defaults filled in. `config` is a symbolic link to a directory beside it, which a new set replaces as a whole. |
 | `config/secrets/<name>.json` | install, ApplyConfig | The config's `Secret` documents. |
 | `config/version` | install, ApplyConfig | The SHA-256 of the config as delivered, which Status reports. |
 | `chalkd/node.pem` | install, renewal | The [node certificate](glossary.md#node-certificate)'s chain and its key in one file, so both are replaced together. |
@@ -235,13 +235,12 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster sets [`chalkos.cluster.osCA`](options.md#chalkosclusterosca). |
 | `/etc/chalkos/kubernetes/cluster.json` | The cluster's Kubernetes settings, on images of a role with a Kubernetes kind. |
-| `/etc/chalkos/consumers.json` | The units that read identity keys or config kinds, and whether they restart when one changes. |
-| `/run/chalkos/node.json` | The node's identity as units read it. |
-| `/run/chalkos/credentials/<key>` | One file per identity key a unit reads. |
+| `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
+| `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s excepted. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
-| `/run/chalkos/chrony/identity.sources` | The time servers of the identity, for chrony. |
+| `/run/chalkos/chrony/identity.sources` | The time servers of the config, for chrony. |
 | `/run/chalkos/kubernetes/manifests` | The static pods chalkd renders on a control plane. |
 | `/run/chalkos/kubernetes/pki` | The control plane's certificates and kubeconfigs. |
 | `/run/chalkos/kubernetes/kubelet` | The kubelet's `kubeconfig`, `flags` and `ca.crt`. |

@@ -176,7 +176,7 @@ The output follows the life of a node:
 
 1. Nix builds one [image](../reference/glossary.md#image) per role for the `kvm` platform. Both
    nodes of a role would boot the same image; what differs between them travels separately as
-   their [identity](../reference/glossary.md#config).
+   their [config](../reference/glossary.md#config).
 2. chalklab creates Secure Boot keys for this lab, enrols them in the firmware of the virtual
    machines and signs copies of the images with them.
 3. Each virtual machine boots its image in
@@ -185,7 +185,7 @@ The output follows the life of a node:
    chalklab reads it there and runs [`chalkctl install`](../reference/cli/chalkctl_install.md)
    with `--fingerprint`, so chalkctl talks only to that chalkd. The install creates the node's
    encrypted [STATE](../reference/glossary.md#state) and [VAR](../reference/glossary.md#var)
-   partitions, sealed to its TPM, writes its identity and certificates and reboots it.
+   partitions, sealed to its TPM, writes its config and certificates and reboots it.
 4. After the reboot, cp1 waits to be bootstrapped. chalklab runs
    [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md), which starts etcd and the
    control plane; the worker joins on its own.
@@ -261,7 +261,7 @@ instead, with the client file chalklab wrote.
 
 ```console
 $ chalkctl status cp1 --config ~/.local/state/chalklab/lab/chalkctl.json
-identity c894bf1180c4721d13955b4ea32f206591af2b882aff5ad3926f7995c732222a (the cluster definition's)
+config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d (the cluster definition's)
 platform kvm (the cluster definition's)
 image 0.1.0, booted from chalkos_0.1.0.efi
 VOLUME  DISK    MOUNT POINT  STATE
@@ -287,7 +287,7 @@ trust:
 time: synchronised to 192.53.103.103, offset +0.000642 s
 ```
 
-The first lines say that the node runs the identity the cluster definition gives it and image
+The first lines say that the node runs the config the cluster definition gives it and image
 version 0.1.0. The certificates section lists the node's certificates and CAs with their expiry
 dates; the control plane renews the node's certificates before they expire. The trust section
 lists the CAs and keys the node trusts by the start of their fingerprints; `(issues)` marks the
@@ -421,7 +421,7 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 
 ```console
 $ chalkctl status w1 --config ~/.local/state/chalklab/lab/chalkctl.json
-identity 2621ced5cd0f62cdf1aa80dc85098b8f7e3250c8fa0f18dd646657c3021319c8 (the cluster definition's)
+config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850 (the cluster definition's)
 platform kvm (the cluster definition's)
 image 0.2.0, booted from chalkos_0.2.0.efi
 VOLUME  DISK    MOUNT POINT  STATE

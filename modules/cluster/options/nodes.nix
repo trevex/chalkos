@@ -36,21 +36,22 @@ let
           default = "metal";
           description = ''
             Platform the node runs on, which must name an entry of `chalkos.platforms`: the node
-            runs its role's image for it, and refuses images and identities of another platform.
-            Changing it is a reinstall.
+            runs its role's image for it, and refuses images of another platform. Changing it is a
+            reinstall.
           '';
         };
         hostname = lib.mkOption {
           type = lib.types.str;
           default = name;
-          description = "Hostname set at boot from the node identity.";
+          description = "Hostname set at boot from the node's config.";
         };
         network = lib.mkOption {
           type = lib.types.lazyAttrsOf lib.types.anything;
           default = { };
           description = ''
             systemd-networkd configuration in the shape of NixOS's `systemd.network` options
-            (`networks`, `netdevs`, `links`), delivered to the node through its identity.
+            (`networks`, `netdevs`, `links`), delivered to the node as networkd documents of its
+            config.
           '';
         };
         labels = lib.mkOption {

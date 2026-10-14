@@ -1158,7 +1158,7 @@ list of attribute set of anything
 
 
 
-Hostname set at boot from the node identity\.
+Hostname set at boot from the node’s config\.
 
 
 
@@ -1292,7 +1292,8 @@ attribute set of string
 
 
 systemd-networkd configuration in the shape of NixOS’s ` systemd.network ` options
-(` networks `, ` netdevs `, ` links `), delivered to the node through its identity\.
+(` networks `, ` netdevs `, ` links `), delivered to the node as networkd documents of its
+config\.
 
 
 
@@ -1317,8 +1318,8 @@ lazy attribute set of anything
 
 
 Platform the node runs on, which must name an entry of ` chalkos.platforms `: the node
-runs its role’s image for it, and refuses images and identities of another platform\.
-Changing it is a reinstall\.
+runs its role’s image for it, and refuses images of another platform\. Changing it is a
+reinstall\.
 
 
 
@@ -2725,7 +2726,7 @@ string
 
 
 
-Size of the STATE partition holding node identity and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes\.
+Size of the STATE partition holding the node’s config and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes\.
 
 
 
@@ -3048,7 +3049,7 @@ string matching the pattern v\[0-9]+((alpha|beta)\[0-9]+)?
 
 The platform the image is built for, a name of ` chalkos.platforms `, set by the role
 builder; null on the installer, which installs images of every platform\. A node refuses
-an image or an identity of another platform\.
+an image of another platform, and translates its config for its own\.
 
 
 

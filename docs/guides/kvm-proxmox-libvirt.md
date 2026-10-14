@@ -10,7 +10,7 @@ chalkos nodes run as KVM virtual machines from the `kvm`
 like a physical machine. This guide builds a node's role image for `kvm`, signs it, turns it into
 a VM disk, creates the VM under plain QEMU, libvirt or Proxmox, and installs the node in place:
 the VM boots its own role image into [maintenance mode](../reference/glossary.md#maintenance-mode)
-and [`chalkctl install`](../reference/cli/chalkctl_install.md) gives it its [identity](../reference/glossary.md#config) and secrets,
+and [`chalkctl install`](../reference/cli/chalkctl_install.md) gives it its [config](../reference/glossary.md#config) and secrets,
 without an installer. The VM's disk is the node's system disk, so nothing else on the hypervisor
 changes. For a local test cluster, [chalklab](../reference/glossary.md#chalklab) does all of this
 for you; this guide is for hypervisors you run yourself.
@@ -284,10 +284,10 @@ chalkctl install cp1 --endpoint=<address> --fingerprint=<fingerprint>
 
 chalkctl prints `installing cp1 in place` and, once the node accepted everything,
 `cp1 is installed and reboots`. It sends no image: the node keeps the image it runs, makes STATE
-match the node's encryption policy, writes its identity and certificates there, creates VAR
+match the node's encryption policy, writes its config and certificates there, creates VAR
 and its volumes, enrols the second keyslot and gives the ESP a random partition UUID, so no two
 VMs made from the same image share it. The node reboots into
-[normal mode](../reference/glossary.md#normal-mode) with the static address of its identity.
+[normal mode](../reference/glossary.md#normal-mode) with the static address of its config.
 
 From here a VM cluster continues as a bare-metal one:
 [bootstrap the first control plane](install-bare-metal.md#bootstrap-the-first-control-plane),
@@ -320,7 +320,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 | --- | --- |
 | The firmware reports `Access Denied` and boots nothing | The image is unsigned or signed with a key whose certificate is not in the VM's db. Sign the image, or enrol `db.crt`. |
 | Nothing appears on the console after the firmware | The VM has no serial port, or the console shows the screen; the kvm image writes to `ttyS0` only. |
-| `the identity places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | `storage.system.disk` names another disk than the one the VM booted from. Fix the cluster definition. |
+| `the config places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | `storage.system.disk` names another disk than the one the VM booted from. Fix the cluster definition. |
 | `cp1 runs an image built for metal, but the cluster definition declares it on kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Build and sign `images.kvm`. |
 | The node asks for its recovery key after a hypervisor change | The variable store or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
 
