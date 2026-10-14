@@ -50,8 +50,78 @@ func TestLoadFailsOnMissingSchema(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte(md), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "a.example.org_v1_Gone.json") {
+	if err := os.Mkdir(filepath.Join(dir, "schemas"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "a.example.org/v1 Gone") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A node has no metadata.json, only the schemas directory; chalkd reads the contract this way.
+func TestLoadSchemasOnFixture(t *testing.T) {
+	ss, err := LoadSchemas(filepath.Join(fixture, "schemas"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := ss.Kinds()
+	if len(kinds) != 1 || kinds[0] != (Kind{APIVersion: "demo.example.org/v1alpha1", Kind: "Demo", Multiple: true}) {
+		t.Fatalf("kinds = %+v", kinds)
+	}
+	doc := decode(t, `{
+		"apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "metadata": {"name": "a"},
+		"spec": {"name": "x"}
+	}`)
+	if err := ss.Validate(doc); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchema(t *testing.T, dir, name string, xChalkosKind string) {
+	t.Helper()
+	doc := `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"x-chalkos-kind": ` + xChalkosKind + `
+	}`
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadSchemasRejectsMismatchedFileName(t *testing.T) {
+	dir := t.TempDir()
+	writeSchema(t, dir, "wrong_name.json",
+		`{"group": "a.example.org", "version": "v1", "kind": "Thing", "multiple": false}`)
+	_, err := LoadSchemas(dir)
+	if err == nil || !strings.Contains(err.Error(), "wrong_name.json") {
+		t.Fatalf("err = %v, want it to name wrong_name.json", err)
+	}
+}
+
+func TestLoadSchemasRejectsDuplicateKind(t *testing.T) {
+	dir := t.TempDir()
+	writeSchema(t, dir, "a.example.org_v1_Thing.json",
+		`{"group": "a.example.org", "version": "v1", "kind": "Thing", "multiple": false}`)
+	writeSchema(t, dir, "a.example.org_v1_Thing_again.json",
+		`{"group": "a.example.org", "version": "v1", "kind": "Thing", "multiple": false}`)
+	_, err := LoadSchemas(dir)
+	if err == nil || !strings.Contains(err.Error(), "a.example.org/v1 Thing") {
+		t.Fatalf("err = %v, want it to name the duplicate kind", err)
+	}
+}
+
+// A kind present in schemas/ but not listed by metadata is as much a mismatch as the reverse.
+func TestLoadFailsOnUndeclaredSchema(t *testing.T) {
+	dir := t.TempDir()
+	if err := copyDir(fixture, dir); err != nil {
+		t.Fatal(err)
+	}
+	writeSchema(t, filepath.Join(dir, "schemas"), "b.example.org_v1_Extra.json",
+		`{"group": "b.example.org", "version": "v1", "kind": "Extra", "multiple": false}`)
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "b.example.org/v1 Extra") {
+		t.Fatalf("err = %v, want it to name b.example.org/v1 Extra", err)
 	}
 }
 
