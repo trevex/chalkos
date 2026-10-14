@@ -96,13 +96,38 @@ func credentials(docs []config.Document, schemas *schema.Schemas, consumers map[
 	return out, nil
 }
 
+// CredentialPrefix is the ID a consumer's LoadCredential= gives its credentials directory. systemd
+// loads each file in it as the credential <CredentialPrefix>_<file>, so the Nix module's
+// LoadCredential= must use the same prefix for checkCredential to hold.
+const CredentialPrefix = "secret"
+
 func credentialFile(ref config.SecretRef) string { return ref.Name + "." + ref.Key }
 
+// checkCredential refuses a reference whose file would not become a credential: systemd fails a
+// unit whose credentials directory holds a file whose credential ID is not valid.
 func checkCredential(ref config.SecretRef) error {
-	if !validName(ref.Name) || !validName(ref.Key) || !validName(credentialFile(ref)) {
-		return fmt.Errorf("key %q of Secret %q cannot name a credential file", ref.Key, ref.Name)
+	if !validName(ref.Name) || !validName(ref.Key) || !validName(credentialFile(ref)) ||
+		!credentialNameValid(CredentialPrefix+"_"+credentialFile(ref)) {
+		return fmt.Errorf("key %q of Secret %q cannot name a credential: use printable ASCII without / or :, at most %d bytes for Secret and key together", ref.Key, ref.Name, maxCredentialName-len(CredentialPrefix)-2)
 	}
 	return nil
+}
+
+// maxCredentialName is systemd's FDNAME_MAX and NAME_MAX, which both bound a credential name.
+const maxCredentialName = 255
+
+// credentialNameValid is systemd's credential_name_valid: a valid file name (not empty, . or ..,
+// no /, at most NAME_MAX bytes) that is also a valid fd name (bytes 32 to 126 alone, no :).
+func credentialNameValid(s string) bool {
+	if s == "" || s == "." || s == ".." || len(s) > maxCredentialName {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < ' ' || c > '~' || c == ':' || c == '/' {
+			return false
+		}
+	}
+	return true
 }
 
 func secretData(d config.Document) map[string]string {

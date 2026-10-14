@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -92,6 +93,18 @@ func TestCheckCredentials(t *testing.T) {
 	slash := strings.Replace(set, "key: token", "key: a/b", 1)
 	if err := CheckCredentials(parse(t, slash), s); err == nil || !strings.Contains(err.Error(), `"a/b"`) {
 		t.Errorf("a key with a slash: %v", err)
+	}
+	// systemd loads each file as the credential secret_<file> and refuses a unit whose
+	// credential IDs are not valid file and fd names: printable ASCII without a colon, at most
+	// 255 bytes with the prefix.
+	for _, key := range []string{"a:b", "schlüssel", "tab\there", strings.Repeat("k", 250)} {
+		bad := strings.Replace(set, "key: token", "key: "+strconv.Quote(key), 1)
+		if err := CheckCredentials(parse(t, bad), s); err == nil || !strings.Contains(err.Error(), strconv.Quote(key)) {
+			t.Errorf("key %q: %v", key, err)
+		}
+	}
+	if err := CheckCredentials(parse(t, strings.Replace(set, "key: token", "key: "+strings.Repeat("k", 243), 1)), s); err != nil {
+		t.Errorf("a credential ID of 255 bytes: %v", err)
 	}
 	clash := `
 apiVersion: demo.example.org/v1alpha1
