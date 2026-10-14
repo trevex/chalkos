@@ -14,9 +14,10 @@ import (
 // Hash names a set of documents by the SHA-256, in lower-case hex, of their canonical form: the
 // documents ordered by apiVersion, kind and name, as one JSON array in which every object's keys
 // are sorted and every value of a Secret's spec.data is replaced by the hex SHA-256 of the value.
-// It shows whether two sets are the same without revealing a secret. Clients hash the documents
-// they deliver, before chalkd fills in defaults, so the hash depends on the operator's files
-// alone and not on the schemas of the image they meet.
+// Numbers are hashed as written, so 1 and 1.0 differ. It shows whether two sets are the same
+// without revealing a secret. Clients hash the documents they deliver, before chalkd fills in
+// defaults, so the hash depends on the operator's files alone and not on the schemas of the image
+// they meet.
 func Hash(docs []Document) (string, error) {
 	c, err := canonical(docs)
 	if err != nil {

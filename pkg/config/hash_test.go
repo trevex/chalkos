@@ -88,6 +88,10 @@ func TestHashChangesWithAValue(t *testing.T) {
 			t.Errorf("%s -> %s left the hash unchanged", edit.from, edit.to)
 		}
 	}
+	// Numbers are hashed as written.
+	if hashOf(t, strings.Replace(hashed, "name: two", "name: two, replicas: 1", 1)) == hashOf(t, strings.Replace(hashed, "name: two", "name: two, replicas: 1.0", 1)) {
+		t.Error("1 and 1.0 hash alike")
+	}
 }
 
 func TestHashHidesSecretValues(t *testing.T) {
