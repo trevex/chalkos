@@ -142,3 +142,24 @@ func TestKindHashes(t *testing.T) {
 		t.Errorf("a Demo's change: %v -> %v, want Demo alone to change", before, demo)
 	}
 }
+
+func TestKindHashesIgnoreAnUnreferencedSecret(t *testing.T) {
+	s := imageSchemas(t)
+	unreferenced := hashed + `---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: spare}
+spec: {data: {token: unused}}
+`
+	before, err := KindHashes(parseDocs(t, unreferenced), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := KindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("an unreferenced Secret's change: %v -> %v, want no kind to change", before, after)
+	}
+}
