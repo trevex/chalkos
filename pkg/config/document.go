@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -17,15 +21,18 @@ type Document struct {
 	Name       string
 	// Object is the whole document as YAML read it, with no scalar reinterpreted: strings,
 	// timestamps and binary values stay exactly the text written, and every integer and float is
-	// a json.Number holding that same text, so a value no decoder has rounded or reformatted.
+	// a json.Number in JSON's spelling of the same value, which no decoder has rounded.
 	Object map[string]any
 }
+
+// jsonNumber matches a number literal as JSON writes it.
+var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 
 // mergeTag is the short form of the YAML tag a plain "<<" scalar resolves to.
 const mergeTag = "!!merge"
 
 // Parse reads the documents of a YAML stream, separated by ---. Empty documents are skipped.
-// Every scalar keeps the text it was written with: Parse does not let yaml.v3's resolver turn an
+// Every scalar keeps its exact value: Parse does not let yaml.v3's resolver turn an
 // unquoted value such as a date into a time.Time, or a number into a float64 that cannot hold it
 // exactly. A mapping key must be a plain or quoted string; any other key, and a merge key (<<),
 // are errors naming the document and line.
@@ -96,7 +103,7 @@ func nodeValue(doc int, n *yaml.Node) (any, error) {
 }
 
 // scalarValue resolves a scalar node's YAML tag and returns the value at that tag: nil, bool,
-// json.Number for !!int and !!float, keeping their text exact, and the node's own text for
+// json.Number for !!int and !!float, in JSON's spelling and exact, and the node's own text for
 // !!str, !!timestamp and !!binary, which must not turn into time.Time or decoded bytes here.
 func scalarValue(doc int, n *yaml.Node) (any, error) {
 	switch n.ShortTag() {
@@ -109,7 +116,13 @@ func scalarValue(doc int, n *yaml.Node) (any, error) {
 		}
 		return b, nil
 	case "!!int":
-		return json.Number(n.Value), nil
+		// YAML also writes integers in hex, octal and binary and with _ separators, none of which
+		// JSON reads; the decimal text of the same integer, of any size, is.
+		var i big.Int
+		if _, ok := i.SetString(strings.ReplaceAll(n.Value, "_", ""), 0); !ok {
+			return nil, fmt.Errorf("document %d, line %d: %s is not an integer", doc, n.Line, n.Value)
+		}
+		return json.Number(i.String()), nil
 	case "!!float":
 		var f float64
 		if err := n.Decode(&f); err != nil {
@@ -118,7 +131,12 @@ func scalarValue(doc int, n *yaml.Node) (any, error) {
 		if math.IsInf(f, 0) || math.IsNaN(f) {
 			return nil, fmt.Errorf("document %d, line %d: %s is not a finite number", doc, n.Line, n.Value)
 		}
-		return json.Number(n.Value), nil
+		// A JSON number literal stays as written, so no digit of it is rounded away; any other
+		// YAML spelling, such as +1.5 or .5, becomes the shortest JSON form of the same float.
+		if jsonNumber.MatchString(n.Value) {
+			return json.Number(n.Value), nil
+		}
+		return json.Number(strconv.FormatFloat(f, 'g', -1, 64)), nil
 	case "!!str", "!!timestamp", "!!binary":
 		return n.Value, nil
 	case mergeTag:
