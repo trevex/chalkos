@@ -1,0 +1,36 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: homelab}
+spec: {endpoint: "https://10.0.0.11:6443"}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: worker-metal}
+spec: {source: ./images/worker-metal}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w1}
+spec: {type: worker, imageRef: worker-metal}
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002}
+  var: {size: 200G}
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: longhorn}
+spec:
+  disk: {model: "Samsung SSD 870*", type: ssd}
+  format: xfs
+  mountPoint: /var/lib/longhorn
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubelet
+metadata: {name: kubelet}
+spec:
+  labels: {node.kubernetes.io/storage: ssd}
+  taints: [{key: dedicated, value: storage, effect: NoSchedule}]
