@@ -104,7 +104,9 @@ let
     else if lib.hasPrefix "strMatching " n then
       {
         type = "string";
-        # builtins.match matches the whole string, a JSON Schema pattern any part of it.
+        # builtins.match matches the whole string, a JSON Schema pattern any part of it. Nix
+        # patterns are POSIX ERE and JSON Schema patterns ECMA-262: classes such as [[:alpha:]]
+        # differ between the two, so patterns should stick to their common subset.
         pattern = "^(?:${t.functor.payload.pattern})$";
       }
     else if n == "bool" then
@@ -131,6 +133,12 @@ let
         type = "array";
         items = typeSchema "${at}.*" t.nestedTypes.elemType;
       }
+      # nonEmptyListOf keeps the name "listOf": it is addCheck'd onto it rather than a type of its
+      # own, and marks itself only in its description. Other addCheck'd types (nonEmptyStr among
+      # them) keep their base type's name too, but add no constraint this converter does not
+      # already give their base type, so the type table above covers named types and this is the
+      # one check worth lifting into JSON Schema.
+      // lib.optionalAttrs (lib.hasPrefix "non-empty " t.description) { minItems = 1; }
     else if n == "attrsOf" || n == "lazyAttrsOf" then
       {
         type = "object";
@@ -145,32 +153,52 @@ let
         submodule and chalkosLib.types.secretRef.
       '';
 
+  # attrsOf and lazyAttrsOf read a submodule's options by instantiating it once, before any
+  # attribute name is known; a default or example computed from the submodule's `name` argument
+  # then holds the module system's placeholder for it instead of a real value, and must not reach
+  # the schema.
+  leaksNamePlaceholder = v: lib.hasInfix "‹name›" (builtins.toJSON v);
+
   optionSchema =
     at: opt:
     typeSchema at (opt.type or (throw "${at} declares no type"))
     // lib.optionalAttrs (lib.isString (opt.description or null)) { inherit (opt) description; }
-    // lib.optionalAttrs (opt ? default && isPlain opt.default) { inherit (opt) default; }
-    // lib.optionalAttrs (opt ? example && isPlain opt.example) { examples = [ opt.example ]; };
+    // lib.optionalAttrs (opt ? default && isPlain opt.default && !leaksNamePlaceholder opt.default) {
+      inherit (opt) default;
+    }
+    // lib.optionalAttrs (opt ? example && isPlain opt.example && !leaksNamePlaceholder opt.example) {
+      examples = [ opt.example ];
+    };
 
   # An option without a default must be given; a group must be given when one of its options must.
-  isRequired = v: if isOption v then !(v ? default) else lib.any isRequired (lib.attrValues v);
+  isRequired =
+    at: v:
+    if isOption v then
+      !(v ? default)
+    else if lib.isAttrs v then
+      lib.any (name: isRequired "${at}.${name}" v.${name}) (lib.attrNames v)
+    else
+      throw "${at} is neither an option declaration nor a group of them";
 
   # An attribute set of option declarations, nested as in a module's options, is an object that
   # accepts its options alone.
   groupSchema =
     at: tree:
-    let
-      options = removeAttrs tree [ "_module" ];
-      required = lib.filter (name: isRequired options.${name}) (lib.attrNames options);
-    in
-    {
-      type = "object";
-      properties = lib.mapAttrs (
-        name: v: if isOption v then optionSchema "${at}.${name}" v else groupSchema "${at}.${name}" v
-      ) options;
-      additionalProperties = false;
-    }
-    // lib.optionalAttrs (required != [ ]) { inherit required; };
+    if !(lib.isAttrs tree) then
+      throw "${at} is neither an option declaration nor a group of them"
+    else
+      let
+        options = removeAttrs tree [ "_module" ];
+        required = lib.filter (name: isRequired "${at}.${name}" options.${name}) (lib.attrNames options);
+      in
+      {
+        type = "object";
+        properties = lib.mapAttrs (
+          name: v: if isOption v then optionSchema "${at}.${name}" v else groupSchema "${at}.${name}" v
+        ) options;
+        additionalProperties = false;
+      }
+      // lib.optionalAttrs (required != [ ]) { inherit required; };
 in
 rec {
   types.secretRef =

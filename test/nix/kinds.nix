@@ -112,6 +112,43 @@ lib.runTests {
       additionalProperties.type = "integer";
     };
   };
+  testLazyAttrsOf = {
+    expr = propOf (types.lazyAttrsOf types.int);
+    expected = {
+      type = "object";
+      additionalProperties.type = "integer";
+    };
+  };
+  testIntsUnsigned = {
+    expr = propOf types.ints.unsigned;
+    expected = {
+      type = "integer";
+      minimum = 0;
+    };
+  };
+  testIntsS8 = {
+    expr = propOf types.ints.s8;
+    expected = {
+      type = "integer";
+      minimum = -128;
+      maximum = 127;
+    };
+  };
+  testNullOrStr = {
+    expr = propOf (types.nullOr types.str);
+    expected.anyOf = [
+      { type = "string"; }
+      { type = "null"; }
+    ];
+  };
+  testNonEmptyListOf = {
+    expr = propOf (types.nonEmptyListOf types.str);
+    expected = {
+      type = "array";
+      items.type = "string";
+      minItems = 1;
+    };
+  };
   testSubmodule = {
     expr = propOf (
       types.submodule {
@@ -134,6 +171,27 @@ lib.runTests {
       required = [ "a" ];
       additionalProperties = false;
     };
+  };
+  # attrsOf and lazyAttrsOf instantiate their submodule once to read its options, before any
+  # attribute name is known, so a default computed from the submodule's name argument is the
+  # module system's placeholder rather than a real value and must not reach the schema.
+  testSubmoduleNamePlaceholderDropsDefault = {
+    expr =
+      (propOf (
+        types.attrsOf (
+          types.submodule (
+            { name, ... }:
+            {
+              options.a = mkOption {
+                type = types.str;
+                default = name;
+              };
+            }
+          )
+        )
+      )).additionalProperties.properties.a
+        ? default;
+    expected = false;
   };
   # A group of options without mkOption of its own is an object, required when one of its
   # options is.
@@ -171,6 +229,12 @@ lib.runTests {
   testOptionWithoutTypeFails = {
     expr = fails (specOf {
       x = mkOption { default = 1; };
+    });
+    expected = true;
+  };
+  testGroupLeafWithoutOptionFails = {
+    expr = fails (specOf {
+      x = "foo";
     });
     expected = true;
   };
