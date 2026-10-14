@@ -8,11 +8,13 @@ callPackage ./go-module.nix { } {
     ../pkg/api
     ../pkg/chalkd
     ../pkg/client
+    ../pkg/config
     ../pkg/identity
     ../pkg/install
     ../pkg/kubernetes
     ../pkg/manifest
     ../pkg/pki
+    ../pkg/schema
     ../pkg/storage
     ../pkg/uki
     ../pkg/upgrade
