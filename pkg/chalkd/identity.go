@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -28,6 +29,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -141,10 +143,29 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := req.Msg
-	// Without an identity the node keeps its own, which the share is checked against.
-	keep := m.Identity == ""
+	if m.Config != "" && m.Identity != "" {
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers both config and an identity; deliver one of them")
+	}
+	// Without an identity or config the node keeps its own, which the share is checked against.
+	keep := m.Identity == "" && m.Config == ""
 	if keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers no identity, share, node certificate or OS CAs")
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers no identity, config, share, node certificate or OS CAs")
+	}
+	identity := m.Identity
+	// next is the config set the node keeps from now on: nil for an identity, after which the
+	// node keeps none.
+	var next *store.Stored
+	var schemas *schema.Schemas
+	if m.Config != "" {
+		t, running, err := s.runningTarget()
+		if err != nil {
+			return nil, err
+		}
+		c, err := configure(m.Config, running, t)
+		if err != nil {
+			return nil, err
+		}
+		identity, next, schemas = string(c.identity), &c.stored, running
 	}
 	// A node certificate is checked against the OS CAs the node trusts when it arrives.
 	if len(m.Trust) > 0 && len(m.NodeCertificate) > 0 {
@@ -154,7 +175,6 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	if err != nil {
 		return nil, err
 	}
-	identity := m.Identity
 	if keep {
 		data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 		if err != nil {
@@ -223,6 +243,11 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 		if restarted, old, err = s.applyIdentity(ctx, d.data); err != nil {
 			return nil, err
 		}
+		units, err := s.applyConfig(ctx, next, schemas)
+		if err != nil {
+			return nil, err
+		}
+		restarted = append(restarted, units...)
 	}
 	if len(m.NodeCertificate) > 0 {
 		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {

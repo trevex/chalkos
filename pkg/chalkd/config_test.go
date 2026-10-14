@@ -1,0 +1,290 @@
+package chalkd
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"connectrpc.com/connect"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/schema"
+)
+
+// baseConfig is a node of the test server's image, a worker of the cluster lab without
+// Kubernetes, with a Demo whose token is a secret.
+const baseConfig = `
+apiVersion: chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: lab}
+spec: {}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: metal}
+spec: {source: ./images/metal}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: n1}
+spec: {imageRef: metal}
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec: {disk: {path: /dev/vda}}
+---
+apiVersion: demo.example.org/v1alpha1
+kind: Demo
+metadata: {name: one}
+spec: {name: first, token: {secretRef: {name: demo, key: token}}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: demo}
+spec: {data: {token: s3cret}}
+`
+
+const timeSyncConfig = `---
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec: {servers: [{host: ntp.lan}]}
+`
+
+// schemaFixtures hold the schemas of the built-in kinds, of a networkd Network and of the Demo
+// extension kind, whose token is a secretRef.
+var schemaFixtures = []string{
+	"../../test/fixtures/kinds/builtin",
+	"../../test/fixtures/config/networkd/schemas",
+	"../../test/fixtures/kinds/image/schemas",
+}
+
+// fixtureSchemas returns the fixture schemas by file name, as an install header carries them.
+func fixtureSchemas(t *testing.T) map[string][]byte {
+	t.Helper()
+	files := map[string][]byte{}
+	for _, dir := range schemaFixtures {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			files[e.Name()] = b
+		}
+	}
+	return files
+}
+
+func writeSchemas(t *testing.T, dir string) {
+	t.Helper()
+	for name, b := range fixtureSchemas(t) {
+		write(t, filepath.Join(dir, name), string(b))
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func hashOf(t *testing.T, text string) string {
+	t.Helper()
+	docs, err := config.Parse(strings.NewReader(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := config.Hash(docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+// configServer is a normal-mode server that runs baseConfig: STATE holds the set, the identity
+// it translates to and that identity's storage section, pinned. The image has the consumers
+// demo, of the Demo kind, and timesync, of the TimeSync kind.
+func configServer(t *testing.T) (*Server, *fakeRunner) {
+	t.Helper()
+	s, r := newTestServer(t, normal, vda, vdb)
+	writeSchemas(t, s.Identity.Schemas)
+	write(t, s.Identity.Consumers, `{
+	  "demo": {"keys": [], "kinds": ["Demo"], "restartOnChange": true},
+	  "timesync": {"keys": [], "kinds": ["TimeSync"], "restartOnChange": true}
+	}`)
+	schemas, err := schema.LoadSchemas(s.Identity.Schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := configure(baseConfig, schemas, config.Target{Role: "worker", Platform: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id manifest.Identity
+	if err := json.Unmarshal(c.identity, &id); err != nil {
+		t.Fatal(err)
+	}
+	section, err := json.Marshal(id.Storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(s.Paths.StateDir, "storage")
+	write(t, filepath.Join(dir, "storage.json"), string(section))
+	write(t, filepath.Join(dir, "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}}}}`)
+	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(c.identity))
+	if err := store.Write(s.Identity.Config, c.stored); err != nil {
+		t.Fatal(err)
+	}
+	return s, r
+}
+
+func sendConfig(s *Server, text string) (*nodev1.ApplyIdentityResponse, error) {
+	resp, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Config: text}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func TestApplyConfig(t *testing.T) {
+	s, r := configServer(t)
+	next := strings.NewReplacer("token: s3cret", "token: n3w", "name: first", "name: second").Replace(baseConfig)
+
+	resp, err := sendConfig(s, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"networkctl reload", "systemctl try-restart demo"}; !slices.Equal(r.calls, want) {
+		t.Errorf("commands = %v, want %v", r.calls, want)
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"demo"}) || len(resp.Changes) != 0 {
+		t.Errorf("response = %+v", resp)
+	}
+	if v, err := store.Version(s.Identity.Config); err != nil || v != hashOf(t, next) {
+		t.Errorf("stored version = %q, %v; want the hash of the delivered documents", v, err)
+	}
+	stored := readFile(t, filepath.Join(s.Identity.Config, "demo.example.org", "Demo", "one.json"))
+	if !strings.Contains(stored, `"name":"second"`) || !strings.Contains(stored, `"replicas":1`) {
+		t.Errorf("stored Demo = %s, want the new name and the schema's default replicas", stored)
+	}
+	if info, err := os.Stat(filepath.Join(s.Identity.Config, "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("stored Secret: %v, %v", info, err)
+	}
+	var id manifest.Identity
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))), &id); err != nil ||
+		id.Hostname != "n1" || id.Cluster != "lab" || id.Role != "worker" || id.Platform != "metal" {
+		t.Errorf("identity on STATE = %+v, %v", id, err)
+	}
+	if got := readFile(t, filepath.Join(s.Identity.RunDir, "credentials", "demo", "demo.token")); got != "n3w" {
+		t.Errorf("demo's credential = %q", got)
+	}
+	runConfig, err := filepath.EvalSymlinks(filepath.Join(s.Identity.RunDir, "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	err = filepath.WalkDir(runConfig, func(path string, e os.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return err
+		}
+		files = append(files, strings.TrimPrefix(path, runConfig+"/"))
+		if text := readFile(t, path); strings.Contains(text, "n3w") || strings.Contains(text, "s3cret") {
+			t.Errorf("%s holds a secret value: %s", path, text)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(files, "demo.example.org/Demo/one.json") || slices.ContainsFunc(files, func(f string) bool { return strings.Contains(f, "Secret") }) {
+		t.Errorf("/run/chalkos/config holds %v", files)
+	}
+}
+
+// TestApplyConfigRestartsByKind restarts the consumers of the kinds whose documents changed, or a
+// Secret one of them references.
+func TestApplyConfigRestartsByKind(t *testing.T) {
+	for name, c := range map[string]struct {
+		next string
+		want []string
+	}{
+		"unchanged":                  {baseConfig, nil},
+		"a Secret a Demo references": {strings.Replace(baseConfig, "token: s3cret", "token: n3w", 1), []string{"demo"}},
+		"a Demo":                     {strings.Replace(baseConfig, "name: first", "name: second", 1), []string{"demo"}},
+		"a TimeSync added":           {baseConfig + timeSyncConfig, []string{"timesync"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := configServer(t)
+			resp, err := sendConfig(s, c.next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(resp.RestartedUnits, c.want) {
+				t.Errorf("restarted %v, want %v", resp.RestartedUnits, c.want)
+			}
+		})
+	}
+}
+
+func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
+	s, r := configServer(t)
+	_, err := sendConfig(s, strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {}", 1))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `Node "n1"`) {
+		t.Fatalf("err = %v, want a refusal naming the Node", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v for a refused config", r.calls)
+	}
+	if v, _ := store.Version(s.Identity.Config); v != hashOf(t, baseConfig) {
+		t.Error("stored a refused config")
+	}
+}
+
+func TestApplyRefusesConfigWithIdentity(t *testing.T) {
+	s, r := configServer(t)
+	identityText := readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))
+	_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Config: baseConfig, Identity: identityText}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "both config and an identity") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
+	}
+}
+
+// TestApplyIdentityRemovesStoredConfig: an identity carries no config set, so the node's stored
+// set goes, and the consumers of its kinds restart.
+func TestApplyIdentityRemovesStoredConfig(t *testing.T) {
+	s, _ := configServer(t)
+	resp, err := apply(s, readFile(t, filepath.Join(s.Paths.StateDir, "identity.json")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"demo"}) {
+		t.Errorf("restarted %v, want demo", resp.RestartedUnits)
+	}
+	if _, found, err := store.Read(s.Identity.Config); err != nil || found {
+		t.Errorf("the stored config remains: %v", err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(s.Identity.RunDir, "credentials", "demo")); err != nil || len(entries) != 0 {
+		t.Errorf("demo's credentials = %v, %v; want an empty directory", entries, err)
+	}
+}
