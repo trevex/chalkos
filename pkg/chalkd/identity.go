@@ -243,11 +243,6 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 		if restarted, old, err = s.applyIdentity(ctx, d.data); err != nil {
 			return nil, err
 		}
-		units, err := s.applyConfig(ctx, next, schemas)
-		if err != nil {
-			return nil, err
-		}
-		restarted = append(restarted, units...)
 	}
 	if len(m.NodeCertificate) > 0 {
 		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
@@ -255,13 +250,23 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 		}
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
+	var kubernetesUnits []string
 	if s.Kubernetes != nil {
-		units, err := s.applyKubernetes(ctx, old, d.data, share)
+		if kubernetesUnits, err = s.applyKubernetes(ctx, old, d.data, share); err != nil {
+			return nil, err
+		}
+	}
+	// The config comes last: identity.json is on STATE once applyIdentity ran, so a retry after
+	// a failure here finds the identity unchanged and would not restart Kubernetes again. A
+	// config that failed before it was stored is applied in full by the retry.
+	if !keep {
+		units, err := s.applyConfig(ctx, next, schemas)
 		if err != nil {
 			return nil, err
 		}
 		restarted = append(restarted, units...)
 	}
+	restarted = append(restarted, kubernetesUnits...)
 	// Deliveries without an identity, as a rotation's, renew nothing: forced renewals would
 	// restart the control plane's pods on top of the restarts the rotation waits for.
 	if s.RenewOnApplyIdentity && !keep {

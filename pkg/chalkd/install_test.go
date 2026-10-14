@@ -305,6 +305,12 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 }
 
 func TestInstallRefusesConfig(t *testing.T) {
+	schemas := fixtureSchemas(t)
+	fromInstaller := func(h *nodev1.InstallHeader) {
+		h.Identity, h.Config, h.Schemas = "", workerConfig, schemas
+		h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
+		h.Image = &nodev1.ImageHeader{Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal"}
+	}
 	for name, c := range map[string]struct {
 		installer bool
 		edit      func(*nodev1.InstallHeader)
@@ -322,6 +328,16 @@ func TestInstallRefusesConfig(t *testing.T) {
 			h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
 			h.Image = &nodev1.ImageHeader{Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal"}
 		}, "schemas"},
+		"neither an identity nor config": {false, func(h *nodev1.InstallHeader) { h.Identity = "" }, "the header delivers no identity or config"},
+		"from the installer with an invalid kubernetes.json": {true, func(h *nodev1.InstallHeader) {
+			fromInstaller(h)
+			h.KubernetesCluster = []byte(`{"kind": "worker"`)
+		}, "kubernetes.json"},
+		"from the installer with a schema outside schemas/": {true, func(h *nodev1.InstallHeader) {
+			fromInstaller(h)
+			h.KubernetesCluster = []byte(workerCluster)
+			h.Schemas = map[string][]byte{"../x.json": []byte("{}")}
+		}, `"../x.json" is not the name of a schema file`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)

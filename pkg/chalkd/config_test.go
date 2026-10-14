@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -286,6 +288,66 @@ func TestApplyIdentityRemovesStoredConfig(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(filepath.Join(s.Identity.RunDir, "credentials", "demo")); err != nil || len(entries) != 0 {
 		t.Errorf("demo's credentials = %v, %v; want an empty directory", entries, err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(s.Identity.RunDir, "config")); err != nil || len(entries) != 0 {
+		t.Errorf("/run/chalkos/config = %v, %v; want an empty directory", entries, err)
+	}
+}
+
+// TestApplyConfigOnAKubernetesImage translates config with the running image's kubernetes.json.
+func TestApplyConfigOnAKubernetesImage(t *testing.T) {
+	s, _ := configServer(t)
+	write(t, s.Paths.KubernetesCluster, workerCluster)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	var id manifest.Identity
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))), &id); err != nil {
+		t.Fatal(err)
+	}
+	if k := id.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
+		t.Errorf("Kubernetes identity = %+v", id.Kubernetes)
+	}
+}
+
+func TestApplyConfigRefusesAMalformedClusterFile(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Paths.KubernetesCluster, `{"kind": "worker"`)
+	_, err := sendConfig(s, workerConfig)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), s.Paths.KubernetesCluster) {
+		t.Fatalf("err = %v, want a failure naming the cluster file", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
+	}
+}
+
+// TestApplyConfigFailingRestartNamesTheUnits: once the new set is stored, a retry finds nothing
+// changed, so the error names the units still to restart.
+func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
+	s, r := configServer(t)
+	r.rules = append(r.rules, rule{prefix: "systemctl try-restart demo", err: errors.New("exit status 1")})
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1) + timeSyncConfig
+	_, err := sendConfig(s, next)
+	if err == nil || !strings.Contains(err.Error(), "restart demo by hand") || strings.Contains(err.Error(), "timesync by hand") {
+		t.Fatalf("err = %v, want it to name demo alone", err)
+	}
+	if !slices.Contains(r.calls, "systemctl try-restart timesync") {
+		t.Errorf("commands = %v; a failed restart must not stop the others", r.calls)
+	}
+}
+
+// TestApplyConfigFailureKeepsKubernetesRestarts: the identity is on STATE once applyIdentity
+// ran, so a retry would find it unchanged; Kubernetes is restarted even when the config fails.
+func TestApplyConfigFailureKeepsKubernetesRestarts(t *testing.T) {
+	s, r := kubernetesServer(t, k8s.KindWorker, true)
+	// STATE holds a file where the config link belongs, which the store refuses to read.
+	write(t, s.Identity.Config, "not a config set")
+	if _, err := apply(s, kubernetesIdentity("n1"), ""); err == nil || !strings.Contains(err.Error(), "stored config") {
+		t.Fatalf("err = %v, want the config's failure", err)
+	}
+	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("commands = %v, want Kubernetes restarted", r.calls)
 	}
 }
 

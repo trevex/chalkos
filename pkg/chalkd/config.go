@@ -100,29 +100,48 @@ func (s *Server) applyConfig(ctx context.Context, next *store.Stored, schemas *s
 	}
 	after := map[string]string{}
 	if next != nil {
-		if err := store.Write(dir, *next); err != nil {
-			return nil, failed(connect.CodeInternal, "store the config: %v", err)
-		}
 		if after, err = config.KindHashes(next.Documents, schemas); err != nil {
 			return nil, failed(connect.CodeInternal, "hash the config: %v", err)
 		}
-	} else if err := store.Remove(dir); err != nil {
-		return nil, failed(connect.CodeInternal, "remove the stored config: %v", err)
-	}
-	if err := s.Identity.LoadConfig(); err != nil {
-		return nil, failed(connect.CodeInternal, "write the config for its consumers: %v", err)
 	}
 	consumers, err := identity.ReadConsumers(s.Identity.Consumers)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	units := identity.KindRestarts(consumers, before, after)
+	if next != nil {
+		if err := store.Write(dir, *next); err != nil {
+			return nil, failed(connect.CodeInternal, "store the config: %v", err)
+		}
+	} else if err := store.Remove(dir); err != nil {
+		return nil, failed(connect.CodeInternal, "remove the stored config: %v", err)
+	}
+	// From here on STATE holds the new set, so a retry compares it with itself and restarts
+	// nothing. A failure therefore names the units that still need a restart, rather than
+	// leaving a node whose units read the old config without saying so.
+	if err := s.Identity.LoadConfig(); err != nil {
+		return nil, failed(connect.CodeInternal, "write the config for its consumers: %v%s", err, restartByHand(units))
+	}
+	var pending []string
+	var errs []error
 	for _, unit := range units {
 		if _, err := s.Run.Run(ctx, "systemctl", "try-restart", unit); err != nil {
-			return nil, failed(connect.CodeInternal, "restart %s: %v", unit, err)
+			pending = append(pending, unit)
+			errs = append(errs, fmt.Errorf("restart %s: %w", unit, err))
 		}
 	}
+	if len(errs) > 0 {
+		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), restartByHand(pending))
+	}
 	return units, nil
+}
+
+// restartByHand tells the operator which units read a config they have not loaded yet.
+func restartByHand(units []string) string {
+	if len(units) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; the config is stored, so restart %s by hand once that is fixed", strings.Join(units, " "))
 }
 
 // installIdentity returns the identity an install header delivers, as JSON, and the config set
@@ -133,6 +152,8 @@ func (s *Server) installIdentity(h *nodev1.InstallHeader) (string, *store.Stored
 	switch {
 	case h.Config != "" && h.Identity != "":
 		return "", nil, failed(connect.CodeInvalidArgument, "the header delivers both config and an identity; deliver one of them")
+	case h.Config == "" && h.Identity == "":
+		return "", nil, failed(connect.CodeInvalidArgument, "the header delivers no identity or config")
 	case h.Config == "":
 		return h.Identity, nil, nil
 	}
