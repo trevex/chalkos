@@ -52,7 +52,7 @@ func Read(dir string) (s Stored, found bool, err error) {
 	if err != nil {
 		return Stored{}, false, err
 	}
-	if s.Version, err = Version(dir); err != nil {
+	if s.Version, err = Version(root); err != nil {
 		return Stored{}, false, err
 	}
 	err = filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
@@ -89,8 +89,12 @@ func Version(dir string) (string, error) {
 }
 
 // Remove removes the set kept in dir: the link first, so the whole set is gone at once, then the
-// directory it named.
+// directory it named and any an interrupted write left. It refuses a link to anything but a
+// directory the store writes next to dir, so it never removes a directory it did not write.
 func Remove(dir string) error {
+	if err := checkLink(dir); err != nil {
+		return err
+	}
 	target, err := os.Readlink(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -98,16 +102,16 @@ func Remove(dir string) error {
 	if err != nil {
 		return err
 	}
+	if target != filepath.Base(target) || !strings.HasPrefix(target, "."+filepath.Base(dir)+"-") {
+		return fmt.Errorf("%s links to %s, not to a config set kept next to it", dir, target)
+	}
 	if err := os.Remove(dir); err != nil {
 		return err
 	}
 	if err := syncDir(filepath.Dir(dir)); err != nil {
 		return err
 	}
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(filepath.Dir(dir), target)
-	}
-	return os.RemoveAll(target)
+	return removeStale(dir, "")
 }
 
 // replace fills a new directory next to dir and makes dir, a symbolic link, name it, then removes
@@ -118,6 +122,9 @@ func Remove(dir string) error {
 func replace(dir string, fill func(tmp string) error) error {
 	parent, base := filepath.Dir(dir), filepath.Base(dir)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	if err := checkLink(dir); err != nil {
 		return err
 	}
 	tmp, err := os.MkdirTemp(parent, "."+base+"-")
@@ -145,18 +152,44 @@ func replace(dir string, fill func(tmp string) error) error {
 	if err := syncDir(parent); err != nil {
 		return err
 	}
-	stale, err := filepath.Glob(filepath.Join(parent, "."+base+"-*"))
+	return removeStale(dir, tmp)
+}
+
+// removeStale removes the directories next to dir that earlier or interrupted writes left, all
+// but keep.
+func removeStale(dir, keep string) error {
+	stale, err := filepath.Glob(filepath.Join(filepath.Dir(dir), "."+filepath.Base(dir)+"-*"))
 	if err != nil {
 		return err
 	}
 	for _, p := range stale {
-		if p != tmp {
+		if p != keep {
 			if err := os.RemoveAll(p); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// checkLink fails when something other than a symbolic link is at dir, which the store never
+// writes there and must not replace or remove.
+func checkLink(dir string) error {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case info.Mode()&fs.ModeSymlink != 0:
+		return nil
+	case info.IsDir():
+		return fmt.Errorf("%s is a directory, not a config link", dir)
+	default:
+		return fmt.Errorf("%s is not a config link", dir)
+	}
 }
 
 // fillDir makes tmp readable by all, fills it and syncs every directory in it, so the new set is
