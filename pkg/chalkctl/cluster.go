@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
@@ -164,7 +165,7 @@ func attrName(name string) (string, error) {
 // --endpoint; else the address a client file names for the node when the file prefers its
 // addresses, as chalklab's does; else the node's first static address in the cluster definition,
 // which without a definition is the client file's.
-func (c *cluster) endpoint(flagValue string, creds *credentials, node string, id manifest.Identity) (addr, source string, err error) {
+func (c *cluster) endpoint(flagValue string, creds *credentials, node string) (addr, source string, err error) {
 	if flagValue != "" {
 		return flagValue, "--endpoint", nil
 	}
@@ -173,7 +174,10 @@ func (c *cluster) endpoint(flagValue string, creds *credentials, node string, id
 			return addr, "the client file " + creds.configPath, nil
 		}
 	}
-	addrs := id.StaticAddresses()
+	addrs, err := c.addresses(node)
+	if err != nil {
+		return "", "", err
+	}
 	if len(addrs) == 0 {
 		return "", "", fmt.Errorf("node %s has no static address; pass --endpoint", node)
 	}
@@ -185,4 +189,18 @@ func (c *cluster) endpoint(flagValue string, creds *credentials, node string, id
 		return addrs[0], "the client file " + creds.configPath, nil
 	}
 	return addrs[0], "the cluster definition", nil
+}
+
+// addresses returns a node's static addresses: those of the documents chalkctl delivers to it,
+// or the client file's for a cluster known from one alone. The documents give them without the
+// schemas of the node's image, which chalkctl can only ask the node for once it has reached it.
+func (c *cluster) addresses(name string) ([]string, error) {
+	if c.partial {
+		return c.manifest.Nodes[name].Identity.StaticAddresses(), nil
+	}
+	b, err := config.FromManifest(c.manifest, name)
+	if err != nil {
+		return nil, err
+	}
+	return config.StaticAddresses(b.Documents), nil
 }

@@ -247,7 +247,7 @@ func TestClientFileNodes(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"status", "n1", "--config", path, "--flake", ta.dir}); err != nil {
 		t.Fatalf("status through the client file's address: %v", err)
 	}
-	if !strings.Contains(ta.stdout.String(), "identity ") {
+	if !strings.Contains(ta.stdout.String(), "config ") {
 		t.Errorf("stdout = %q", ta.stdout)
 	}
 }
@@ -322,7 +322,7 @@ func TestEndpointPrecedence(t *testing.T) {
 		{"no cluster definition nor credentials", clusterOfConfig(client.Config{Cluster: "lab", Nodes: map[string]string{"n1": "10.0.0.20"}}, clusterFlags{}), "", nil, "10.0.0.20", "the client file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			addr, source, err := tc.c.endpoint(tc.flag, tc.creds, "n1", tc.c.manifest.Nodes["n1"].Identity)
+			addr, source, err := tc.c.endpoint(tc.flag, tc.creds, "n1")
 			if err != nil || addr != tc.addr || source != tc.source {
 				t.Errorf("endpoint = %q, %q, %v; want %q, %q", addr, source, err, tc.addr, tc.source)
 			}

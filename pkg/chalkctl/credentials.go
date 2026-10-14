@@ -209,8 +209,12 @@ func (a *app) configNew(ctx context.Context, f configNewFlags, pos []string) err
 		return err
 	}
 	nodes := map[string]string{}
-	for node, n := range c.manifest.Nodes {
-		if addrs := n.Identity.StaticAddresses(); len(addrs) > 0 {
+	for node := range c.manifest.Nodes {
+		addrs, err := c.addresses(node)
+		if err != nil {
+			return err
+		}
+		if len(addrs) > 0 {
 			nodes[node] = addrs[0]
 		}
 	}

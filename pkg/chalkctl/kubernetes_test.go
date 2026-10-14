@@ -39,6 +39,10 @@ func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	s := maintenanceNode()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	if kind := ta.manifest.Roles["test"].Kind; kind != "" {
+		s.Paths.KubernetesCluster = filepath.Join(t.TempDir(), "cluster.json")
+		writeFile(t, s.Paths.KubernetesCluster, clusterFile(kind))
+	}
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure"}, addr))
 	return got, err
@@ -95,9 +99,8 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	}
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
-	writeFile(t, s.Kubernetes.Paths.Cluster, `{"kind": "worker", "endpoint": "https://10.0.0.10:6443",
-	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
-	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
+	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))
+	s.Paths.KubernetesCluster = s.Kubernetes.Paths.Cluster
 	return s, r
 }
 

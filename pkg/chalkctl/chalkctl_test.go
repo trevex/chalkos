@@ -25,6 +25,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -54,15 +56,18 @@ const testManifest = `{
         "role": "test",
         "platform": "metal",
         "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}},
-        "networkUnits": {},
+        "networkUnits": {"10-uplink.network": "[Network]\nAddress=10.0.0.11/24\n"},
         "labels": {},
         "taints": [],
         "storage": {
-          "disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "2869f04c-5655-50f4-28b9-6b2eb9700a02", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}}},
+          "disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "3786212b-e096-c4b2-df4e-69fa65255324",
+            "repart": {"50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"}}},
           "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null}},
           "fallback": "recovery-key",
           "encryption": "tpm2"
-        }
+        },
+        "kubernetes": null,
+        "time": {"servers": []}
       }
     }
   }
@@ -160,6 +165,13 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=test\nCHALKOS_PLATFORM=metal\n")
 	}
+	if s.Identity.Schemas == "" {
+		s.Identity.Schemas = filepath.Join(t.TempDir(), "schemas")
+		copySchemas(t, s.Identity.Schemas)
+	}
+	if s.Paths.KubernetesCluster == "" {
+		s.Paths.KubernetesCluster = filepath.Join(t.TempDir(), "cluster.json")
+	}
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
@@ -188,6 +200,35 @@ func maintenanceNode() *chalkd.Server {
 		FromParts:  func(context.Context, install.PartsRequest) error { return errors.New("unexpected install onto a disk") },
 		RebootNode: func() {},
 	}
+}
+
+// fixtureSchemas are the schemas of the built-in kinds and of networkd's Network.
+var fixtureSchemas = []string{"../../test/fixtures/kinds/builtin", "../../test/fixtures/config/networkd/schemas"}
+
+// copySchemas writes the fixture schemas into dir, as an image ships them.
+func copySchemas(t *testing.T, dir string) {
+	t.Helper()
+	for _, src := range fixtureSchemas {
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			data, err := os.ReadFile(filepath.Join(src, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(dir, e.Name()), string(data))
+		}
+	}
+}
+
+// clusterFile is an image's kubernetes.json for nodes of the kind.
+func clusterFile(kind string) string {
+	return `{"kind": "` + kind + `", "endpoint": "https://10.0.0.10:6443", "version": "1.37.1",
+	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
+	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
+	  "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`
 }
 
 func TestGenSecretsPlaintext(t *testing.T) {
@@ -277,9 +318,12 @@ func TestInstallInPlace(t *testing.T) {
 	if !strings.Contains(ta.stdout.String(), "n1 is installed and reboots") {
 		t.Errorf("stdout = %q", ta.stdout)
 	}
-	want, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
-	if !bytes.Equal(got.Identity, want) {
-		t.Errorf("identity = %s, want %s", got.Identity, want)
+	want, err := config.FromManifest(ta.manifest, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Config == nil || got.Config.Version != want.Version || got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
+		t.Errorf("install request config = %+v, section = %+v; want the config of version %s", got.Config, got.Section, want.Version)
 	}
 	key, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "lab", "n1")
 	if got.FallbackSecret != key {
@@ -349,6 +393,7 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	ta := newTestApp(t)
 	imageDir := testUpgradeImage(t, "lab", "test", "0.1.0")
+	copySchemas(t, filepath.Join(imageDir, "schemas"))
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	s := maintenanceNode()
 	s.Installer = true
@@ -402,6 +447,7 @@ func TestInstallChecksTheImage(t *testing.T) {
 	image := func(cluster, role string) string {
 		dir := testUpgradeImage(t, cluster, role, "0.1.0")
 		writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+		copySchemas(t, filepath.Join(dir, "schemas"))
 		return dir
 	}
 	s := maintenanceNode()
@@ -427,6 +473,7 @@ func TestInstallChecksTheImage(t *testing.T) {
 		{"another platform", func() string {
 			dir := testUpgradeImageOfBlocks(t, "lab", "test", "kvm", "0.1.0", 512)
 			writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+			copySchemas(t, filepath.Join(dir, "schemas"))
 			return dir
 		}(), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 runs on metal; the image is built for kvm"},
 		{"an unsigned image", img, nil, "Secure Boot would refuse the image's UKI"},
@@ -481,7 +528,7 @@ func TestPasswordFileTrimsOneNewline(t *testing.T) {
 	} {
 		path := filepath.Join(ta.dir, "password")
 		writeFile(t, path, content)
-		if got, err := ta.fallbackSecret(context.Background(), tg, path, true); err != nil || got != want {
+		if got, err := ta.fallbackSecret(context.Background(), tg, "password", path, true); err != nil || got != want {
 			t.Errorf("password from %q = %q, %v, want %q", content, got, err, want)
 		}
 	}
@@ -509,6 +556,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Identity.NetworkDir = filepath.Join(root, "network")
 	s.Identity.Consumers = filepath.Join(root, "consumers.json")
 	s.Identity.SetHostname = func(string) error { return nil }
+	s.Identity.Config = filepath.Join(root, "state", "config")
 	writeFile(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(recorded))
 	section, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity.Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
@@ -533,14 +581,13 @@ func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, ar
 
 func TestApplyIdentityAndStatus(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
 	s, r := installedNode(t, ta, []byte(`{"hostname": "old"}`))
 	addr := ta.startNode(t, s)
 
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "chalkctl apply-identity n1 delivers it") || !strings.Contains(ta.stdout.String(), "var") {
+	if !strings.Contains(ta.stdout.String(), "config none (not the cluster definition's; chalkctl apply-identity n1 delivers it)") || !strings.Contains(ta.stdout.String(), "var") {
 		t.Errorf("status before = %q", ta.stdout)
 	}
 
@@ -552,8 +599,15 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking", "networkctl reload"}) {
 		t.Errorf("node ran %v", r.calls)
 	}
-	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); !bytes.Equal(got, current) {
-		t.Errorf("identity on the node = %s", got)
+	want, err := config.FromManifest(ta.manifest, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := store.Version(s.Identity.Config); err != nil || v != want.Version {
+		t.Errorf("config version on the node = %q, %v; want %s", v, err, want.Version)
+	}
+	if !strings.Contains(ta.stdout.String(), "n1 runs config "+want.Version) {
+		t.Errorf("stdout = %q", ta.stdout)
 	}
 
 	ta.stdout.Reset()
@@ -561,7 +615,7 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "platform metal (the cluster definition's)") {
+	if !strings.Contains(ta.stdout.String(), "platform metal (the cluster definition's)") || !strings.Contains(ta.stdout.String(), "config "+want.Version+" (the cluster definition's)") {
 		t.Errorf("status after = %q", ta.stdout)
 	}
 }
@@ -585,13 +639,21 @@ func TestApplyIdentityNamesResetCommand(t *testing.T) {
 }
 
 func TestEndpointNeedsAnAddress(t *testing.T) {
-	if _, _, err := (&cluster{}).endpoint("", nil, "n2", manifest.Identity{}); err == nil || !strings.Contains(err.Error(), "--endpoint") {
+	ta := newTestApp(t)
+	units := func(u map[string]string) {
+		ta.editManifest(t, func(m *manifest.Manifest) {
+			n := m.Nodes["n1"]
+			n.Identity.NetworkUnits = u
+			m.Nodes["n1"] = n
+		})
+	}
+	c := &cluster{manifest: ta.manifest}
+	units(map[string]string{})
+	if _, _, err := c.endpoint("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "--endpoint") {
 		t.Errorf("err = %v", err)
 	}
-	if got, _, _ := (&cluster{}).endpoint("", nil, "n1", manifest.Identity{Network: map[string]any{"networks": map[string]any{
-		"20-b": map[string]any{"address": []any{"10.0.1.5/24"}},
-		"10-a": map[string]any{"address": []any{"10.0.0.11/24"}},
-	}}}); got != "10.0.0.11" {
+	units(map[string]string{"20-b.network": "[Network]\nAddress=10.0.1.5/24\n", "10-a.network": "[Network]\nAddress=10.0.0.11/24\n"})
+	if got, _, _ := c.endpoint("", nil, "n1"); got != "10.0.0.11" {
 		t.Errorf("endpoint = %q, want the first network's address", got)
 	}
 }
@@ -719,7 +781,7 @@ func TestPasswordPromptConfirms(t *testing.T) {
 	tg := &target{cluster: &cluster{manifest: ta.manifest}, name: "n1", node: node, secrets: ta.secrets}
 
 	ta.answers = []string{"secret one", "secret one"}
-	if got, err := ta.fallbackSecret(context.Background(), tg, "", true); err != nil || got != "secret one" {
+	if got, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err != nil || got != "secret one" {
 		t.Errorf("password = %q, %v", got, err)
 	}
 	if len(ta.prompts) != 2 {
@@ -727,22 +789,26 @@ func TestPasswordPromptConfirms(t *testing.T) {
 	}
 
 	ta.prompts, ta.answers = nil, []string{"secret one", "secret on"}
-	if _, err := ta.fallbackSecret(context.Background(), tg, "", true); err == nil || !strings.Contains(err.Error(), "differ") {
+	if _, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Errorf("err = %v, want the typo noticed", err)
 	}
 
 	ta.prompts, ta.answers = nil, nil
-	if _, err := ta.fallbackSecret(context.Background(), tg, "", true); err == nil || !strings.Contains(err.Error(), "--password-file") {
+	if _, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err == nil || !strings.Contains(err.Error(), "--password-file") {
 		t.Errorf("err = %v, want --password-file suggested without a terminal", err)
 	}
 }
 
 // withPassword gives n1 the password fallback and the volume data, encrypted as given.
 func withPassword(t *testing.T, ta *testApp, encryption string) {
+	def := "[Partition]\nFormat=ext4\nLabel=data\nSizeMaxBytes=1G\nSizeMinBytes=1G\nType=63dd1eb4-1dd2-0d0b-0c1e-27c204214ec8\n"
+	if encryption == storage.EncryptionTPM2 {
+		def = "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=data\nSizeMaxBytes=1G\nSizeMinBytes=1G\nTPM2PCRs=7\nType=63dd1eb4-1dd2-0d0b-0c1e-27c204214ec8\n"
+	}
 	ta.editManifest(t, func(m *manifest.Manifest) {
 		n := m.Nodes["n1"]
 		n.Identity.Storage.Fallback = "password"
-		n.Identity.Storage.Disks[storage.SystemDisk].Repart["60-data.conf"] = "[Partition]\nLabel=data\n"
+		n.Identity.Storage.Disks[storage.SystemDisk].Repart["60-data.conf"] = def
 		n.Identity.Storage.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "data", Format: "ext4", MountPoint: "/srv/data", Encryption: encryption, Size: "1G"}
 		m.Nodes["n1"] = n
 	})

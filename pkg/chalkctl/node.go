@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +21,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -96,7 +95,7 @@ func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*targ
 	if err != nil {
 		return nil, err
 	}
-	addr, source, err := c.endpoint(n.endpoint, creds, name, node.Identity)
+	addr, source, err := c.endpoint(n.endpoint, creds, name)
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +147,8 @@ func (p pinning) dial(addr, source string, cert *tls.Certificate) (*client.Conn,
 // fallbackSecret returns the secret enrolled as the second keyslot of the node's encrypted
 // volumes: its derived recovery key, or the operator's password. A password typed on the
 // terminal is asked twice when confirm is set.
-func (a *app) fallbackSecret(ctx context.Context, t *target, passwordFile string, confirm bool) (string, error) {
-	switch t.node.Identity.Storage.Fallback {
+func (a *app) fallbackSecret(ctx context.Context, t *target, fallback, passwordFile string, confirm bool) (string, error) {
+	switch fallback {
 	case storage.FallbackNone:
 		return "", nil
 	case "recovery-key":
@@ -173,7 +172,7 @@ func (a *app) fallbackSecret(ctx context.Context, t *target, passwordFile string
 		}
 		return a.askPassword(ctx, t.name, confirm)
 	}
-	return "", fmt.Errorf("node %s has the unknown fallback %q", t.name, t.node.Identity.Storage.Fallback)
+	return "", fmt.Errorf("node %s has the unknown fallback %q", t.name, fallback)
 }
 
 func (a *app) askPassword(ctx context.Context, node string, confirm bool) (string, error) {
@@ -203,12 +202,13 @@ func (a *app) askPassword(ctx context.Context, node string, confirm bool) (strin
 	return password, nil
 }
 
-// fallbackFor returns the fallback secret when delivering the identity enrolls it: on an
-// encrypted volume the node does not have yet, or on the volume reset recreates. The node's
-// status says which volumes it has. A password typed on the terminal is confirmed: the node
-// checks it against its existing fallback keyslot only when it has one.
-func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, passwordFile, reset string) (string, error) {
-	if t.node.Identity.Storage.Fallback == storage.FallbackNone {
+// fallbackFor returns the fallback secret when delivering the config enrolls it: on an encrypted
+// volume the node does not have yet, or on the volume reset recreates. section is the storage the
+// config gives the node; the node's status says which volumes it has. A password typed on the
+// terminal is confirmed: the node checks it against its existing fallback keyslot only when it
+// has one.
+func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, section storage.Section, passwordFile, reset string) (string, error) {
+	if section.Fallback == storage.FallbackNone {
 		return "", nil
 	}
 	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
@@ -219,10 +219,10 @@ func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, pas
 	for _, v := range resp.Msg.Volumes {
 		existing = append(existing, v.Name)
 	}
-	if !fallbackNeeded(t.node.Identity.Storage, existing, reset) {
+	if !fallbackNeeded(section, existing, reset) {
 		return "", nil
 	}
-	return a.fallbackSecret(ctx, t, passwordFile, true)
+	return a.fallbackSecret(ctx, t, section.Fallback, passwordFile, true)
 }
 
 // fallbackNeeded tells whether the section enrolls the fallback keyslot on a volume besides the
@@ -237,12 +237,6 @@ func fallbackNeeded(section storage.Section, existing []string, reset string) bo
 		}
 	}
 	return false
-}
-
-// identityJSON is the identity as the node records it; Status compares its version.
-func identityJSON(n manifest.Node) (string, error) {
-	data, err := json.Marshal(n.Identity)
-	return string(data), err
 }
 
 // nodeError puts the node's name where the node's own messages say <node>.
@@ -313,47 +307,20 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
 	}
 
-	id, err := identityJSON(t.node)
-	if err != nil {
-		return err
-	}
-	nodeCert, err := pki.IssueNode(t.secrets.NodeCA, nodeNames(t), time.Now())
-	if err != nil {
-		return err
-	}
-	fallback, err := a.fallbackSecret(ctx, t, f.passwordFile, true)
-	if err != nil {
-		return err
-	}
-	share, err := kubernetesShare(t, time.Now())
-	if err != nil {
-		return err
-	}
-	header := &nodev1.InstallHeader{
-		Identity:        id,
-		NodeCertificate: []byte(nodeCert.Certificate),
-		NodeKey:         []byte(nodeCert.Key),
-		CaCertificate:   []byte(t.secrets.OSCABundle()),
-		FallbackSecret:  fallback,
-		WipeDisk:        f.wipeDisk,
-		KubernetesShare: share,
-	}
-
+	header := &nodev1.InstallHeader{CaCertificate: []byte(t.secrets.OSCABundle()), WipeDisk: f.wipeDisk}
 	var img *diskImage
+	var c contract
+	path := f.image
 	if !info.Msg.Installer {
 		// The node runs its image already, which must be of the node's platform.
 		if err := samePlatform(t, info.Msg.Platform); err != nil {
 			return err
 		}
+		if c, err = nodeContract(ctx, conn, t.name); err != nil {
+			return err
+		}
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
-		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
 	} else {
-		ref := t.node.Identity.Storage.Disks[storage.SystemDisk].Ref
-		header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
-			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
-			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
-		}}
-		path := f.image
 		if path == "" {
 			if path, err = a.buildImage(ctx, t.cluster, t.node.Role, t.node.Platform); err != nil {
 				return err
@@ -369,7 +336,38 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if err := checkInstallImage(t, img, f.signCert); err != nil {
 			return err
 		}
-		header.Image = img.header
+		// The installer runs another image than the one it installs, so it gets that image's
+		// contract with the config.
+		if c, err = imageContract(filepath.Dir(img.definitions)); err != nil {
+			return err
+		}
+		header.Image, header.Schemas, header.KubernetesCluster = img.header, c.files, c.kubernetes
+	}
+	d, err := configFor(t, c)
+	if err != nil {
+		return err
+	}
+	header.Config = d.Text
+	nodeCert, err := pki.IssueNode(t.secrets.NodeCA, nodeNames(t), time.Now())
+	if err != nil {
+		return err
+	}
+	header.NodeCertificate, header.NodeKey = []byte(nodeCert.Certificate), []byte(nodeCert.Key)
+	fallback := d.identity.Storage.Fallback
+	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile, true); err != nil {
+		return err
+	}
+	if header.KubernetesShare, err = kubernetesShare(t, time.Now()); err != nil {
+		return err
+	}
+	if img == nil {
+		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
+	} else {
+		ref := d.identity.Storage.Disks[storage.SystemDisk].Ref
+		header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
+			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
+			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
+		}}
 		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, path, img.info.ID(), img.info.Version(), img.size())
 	}
 
@@ -393,7 +391,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return fmt.Errorf("install %s: %w", t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
-	if t.node.Identity.Storage.Fallback == "recovery-key" {
+	if fallback == "recovery-key" {
 		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
 	}
 	return nil
@@ -572,11 +570,15 @@ func (a *app) applyIdentity(ctx context.Context, f applyIdentityFlags, pos []str
 	if err != nil {
 		return err
 	}
-	id, err := identityJSON(t.node)
+	c, err := nodeContract(ctx, conn, t.name)
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackFor(ctx, conn, t, f.passwordFile, "")
+	d, err := configFor(t, c)
+	if err != nil {
+		return err
+	}
+	fallback, err := a.fallbackFor(ctx, conn, t, d.identity.Storage, f.passwordFile, "")
 	if err != nil {
 		return err
 	}
@@ -589,7 +591,7 @@ func (a *app) applyIdentity(ctx context.Context, f applyIdentityFlags, pos []str
 			return fmt.Errorf("the role of %s has no Kubernetes", t.name)
 		}
 	}
-	resp, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: id, FallbackSecret: fallback, KubernetesShare: share}))
+	resp, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Config: d.Text, FallbackSecret: fallback, KubernetesShare: share}))
 	if err != nil {
 		return nodeError(err, t.name)
 	}
@@ -599,7 +601,7 @@ func (a *app) applyIdentity(ctx context.Context, f applyIdentityFlags, pos []str
 	for _, u := range resp.Msg.RestartedUnits {
 		fmt.Fprintf(a.stdout, "restarted %s\n", u)
 	}
-	fmt.Fprintf(a.stdout, "%s runs identity %s\n", t.name, identity.IdentityVersion([]byte(id)))
+	fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
 	return nil
 }
 
@@ -626,21 +628,25 @@ func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile strin
 		return err
 	}
 	if t.cluster.partial {
-		return errors.New("storage reset creates the volume as the node's identity defines it, which only the cluster definition gives; pass --flake or --manifest")
+		return errors.New("storage reset creates the volume as the node's config defines it, which only the cluster definition gives; pass --flake or --manifest")
 	}
 	conn, err := dialInstalled(t)
 	if err != nil {
 		return err
 	}
-	id, err := identityJSON(t.node)
+	c, err := nodeContract(ctx, conn, t.name)
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackFor(ctx, conn, t, passwordFile, pos[1])
+	d, err := configFor(t, c)
 	if err != nil {
 		return err
 	}
-	if _, err := conn.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: pos[1], Identity: id, FallbackSecret: fallback})); err != nil {
+	fallback, err := a.fallbackFor(ctx, conn, t, d.identity.Storage, passwordFile, pos[1])
+	if err != nil {
+		return err
+	}
+	if _, err := conn.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: pos[1], Config: d.Text, FallbackSecret: fallback})); err != nil {
 		return nodeError(err, t.name)
 	}
 	fmt.Fprintf(a.stdout, "volume %s of %s was wiped and created again\n", pos[1], t.name)
@@ -678,16 +684,21 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 	s := resp.Msg
 	state := "no cluster definition to compare it with"
 	if !t.cluster.partial {
-		id, err := identityJSON(t.node)
+		b, err := config.FromManifest(t.cluster.manifest, t.name)
 		if err != nil {
 			return err
 		}
 		state = "the cluster definition's"
-		if identity.IdentityVersion([]byte(id)) != s.IdentityVersion {
+		if b.Version != s.ConfigVersion {
 			state = "not the cluster definition's; chalkctl apply-identity " + t.name + " delivers it"
 		}
 	}
-	fmt.Fprintf(a.stdout, "identity %s (%s)\n", s.IdentityVersion, state)
+	version := s.ConfigVersion
+	if version == "" {
+		// A node installed before config documents runs an identity alone.
+		version = "none"
+	}
+	fmt.Fprintf(a.stdout, "config %s (%s)\n", version, state)
 	fmt.Fprintln(a.stdout, platformLine(t, s.Platform))
 	for _, line := range bootLines(s.Boot) {
 		fmt.Fprintln(a.stdout, line)

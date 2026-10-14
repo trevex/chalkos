@@ -148,7 +148,7 @@ func (a *app) deliverNodeCA(ctx context.Context, c *cluster, endpointFlag, name 
 	if err != nil {
 		return err
 	}
-	addr, source, err := c.endpoint(endpointFlag, nil, name, node.Identity)
+	addr, source, err := c.endpoint(endpointFlag, nil, name)
 	if err != nil {
 		return err
 	}
