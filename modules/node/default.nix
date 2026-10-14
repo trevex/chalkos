@@ -4,6 +4,7 @@
     ./settings.nix
     ./base
     ./runtime
+    ./kinds
     ./kernel.nix
     ./chalkd.nix
     ./time.nix

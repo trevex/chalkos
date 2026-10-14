@@ -1,10 +1,42 @@
 # Evaluation tests for config kinds: the schema converter and the chalkos.kinds option of images.
 # Returns lib.runTests failures, empty on success.
-{ lib }:
+{ lib, mkCluster }:
 let
   inherit (lib) mkOption types;
   schema = import ../../modules/node/kinds/schema.nix { inherit lib; };
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
+
+  # The worker image of a one-role cluster whose role carries the given NixOS modules.
+  image =
+    modules:
+    (mkCluster {
+      modules = [
+        {
+          chalkos.cluster = {
+            name = "t";
+            endpoint = "https://10.0.0.1:6443";
+          };
+          chalkos.roles.worker.nixosModules = modules;
+        }
+      ];
+    }).roles.worker.nixos.metal.config;
+
+  demoModule =
+    { chalkosLib, ... }:
+    {
+      chalkos.kinds.Demo = {
+        group = "demo.example.org";
+        version = "v1alpha1";
+        multiple = true;
+        spec.token = lib.mkOption {
+          type = lib.types.nullOr chalkosLib.types.secretRef;
+          default = null;
+        };
+      };
+    };
+  withDemo = image [ demoModule ];
+  # Forces the schemas an image ships, and with them the checks of its kinds' names.
+  schemasOf = config: config.system.build.chalkosSchemas.drvPath;
 
   # The spec schema of a kind with the given option declarations.
   specOf =
@@ -236,6 +268,73 @@ lib.runTests {
     expr = fails (specOf {
       x = "foo";
     });
+    expected = true;
+  };
+  testKindDir = {
+    expr = withDemo.chalkos.kinds.Demo.dir;
+    expected = "/run/chalkos/config/demo.example.org/Demo";
+  };
+  testKindMultipleDefaultsToFalse = {
+    expr =
+      (image [
+        {
+          chalkos.kinds.Single = {
+            group = "demo.example.org";
+            version = "v1";
+          };
+        }
+      ]).chalkos.kinds.Single.multiple;
+    expected = false;
+  };
+  testImageShipsSchemas = {
+    expr = "${withDemo.environment.etc."chalkos/schemas".source}";
+    expected = "${withDemo.system.build.chalkosSchemas}";
+  };
+  testKindsListed = {
+    expr = lib.elem {
+      apiVersion = "demo.example.org/v1alpha1";
+      kind = "Demo";
+      multiple = true;
+    } withDemo.system.build.chalkosKinds;
+    expected = true;
+  };
+  testLowerCaseKindFails = {
+    expr = fails (
+      schemasOf (image [
+        {
+          chalkos.kinds.demo = {
+            group = "demo.example.org";
+            version = "v1";
+          };
+        }
+      ])
+    );
+    expected = true;
+  };
+  testInvalidGroupFails = {
+    expr =
+      fails
+        (image [
+          {
+            chalkos.kinds.Demo = {
+              group = "Demo";
+              version = "v1";
+            };
+          }
+        ]).chalkos.kinds.Demo.group;
+    expected = true;
+  };
+  testInvalidVersionFails = {
+    expr =
+      fails
+        (image [
+          {
+            chalkos.kinds.Demo = {
+              group = "demo.example.org";
+              version = "1.0";
+            };
+          }
+        ]).chalkos.kinds.Demo.version;
     expected = true;
   };
 }

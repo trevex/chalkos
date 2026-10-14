@@ -783,7 +783,10 @@ in
 
   eval-kinds =
     let
-      failures = import ../test/nix/kinds.nix { inherit (pkgs) lib; };
+      failures = import ../test/nix/kinds.nix {
+        inherit (pkgs) lib;
+        inherit (self.lib) mkCluster;
+      };
     in
     if failures == [ ] then
       pkgs.runCommand "chalkos-eval-kinds-tests" { } "touch $out"
