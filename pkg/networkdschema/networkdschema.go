@@ -21,15 +21,21 @@ type Entry struct {
 	Key     string
 }
 
-var entryLine = regexp.MustCompile(`^([A-Za-z0-9-]+)\.([A-Za-z0-9-]+),`)
+var (
+	entryLine   = regexp.MustCompile(`^([A-Za-z0-9-]+)\.([A-Za-z0-9-]+),`)
+	commentLine = regexp.MustCompile(`^\s*/\*.*\*/\s*$`)
+)
 
 // Parse reads the entries of a gperf table: the lines after its first %% line that start with
-// Section.Key.
+// Section.Key. Any other body line must be blank or a /* … */ comment, so a change to gperf's own
+// table syntax is never mistaken for an empty table.
 func Parse(r io.Reader) ([]Entry, error) {
 	s := bufio.NewScanner(r)
 	body := false
+	lineNo := 0
 	var entries []Entry
 	for s.Scan() {
+		lineNo++
 		line := s.Text()
 		if strings.HasPrefix(line, "%%") {
 			if body {
@@ -41,8 +47,14 @@ func Parse(r io.Reader) ([]Entry, error) {
 		if !body {
 			continue
 		}
-		if m := entryLine.FindStringSubmatch(line); m != nil {
+		switch {
+		case entryLine.MatchString(line):
+			m := entryLine.FindStringSubmatch(line)
 			entries = append(entries, Entry{Section: m[1], Key: m[2]})
+		case strings.TrimSpace(line) == "", commentLine.MatchString(line):
+			// Blank and comment lines carry no entry.
+		default:
+			return nil, fmt.Errorf("line %d: neither a Section.Key entry, a comment nor blank: %q", lineNo, line)
 		}
 	}
 	if err := s.Err(); err != nil {
@@ -55,16 +67,27 @@ func Parse(r io.Reader) ([]Entry, error) {
 }
 
 // CamelCase spells a networkd name as documents do: its leading word or acronym in lower case,
-// the rest unchanged, so MACAddress becomes macAddress. An acronym followed by a one-letter
-// lower-case part, or by "sec", is lowered whole, so IPv6AcceptRA becomes ipv6AcceptRA, IPoIB
-// ipoIB and MACsec macsec. A dash separates words: SR-IOV becomes srIOV.
+// the rest unchanged, so MACAddress becomes macAddress and VLANId becomes vlanId. A dash is
+// removed before lowering, so SR-IOV becomes sriov and SR-IOVVirtualFunctions becomes
+// sriovVirtualFunctions. A version digit glues itself to the acronym before it, so IPv6AcceptRA
+// becomes ipv6AcceptRA and DHCPv4 becomes dhcpv4. IPoIB and MACsec are themselves the leading
+// token and lower whole regardless of what follows: IPoIB becomes ipoib and
+// MACsecReceiveAssociation becomes macsecReceiveAssociation.
 func CamelCase(name string) string {
-	parts := strings.Split(name, "-")
-	parts[0] = lowerLeading(parts[0])
-	return strings.Join(parts, "")
+	return lowerLeading(strings.ReplaceAll(name, "-", ""))
 }
 
+// mixedCasePrefixes are leading tokens that mix case on their own, so the general rule of
+// lowering all but the last capital of the leading run would cut them wrong.
+var mixedCasePrefixes = []string{"MACsec", "IPoIB"}
+
 func lowerLeading(word string) string {
+	for _, prefix := range mixedCasePrefixes {
+		if strings.HasPrefix(word, prefix) {
+			return strings.ToLower(prefix) + word[len(prefix):]
+		}
+	}
+
 	r := []rune(word)
 	n := 0
 	for n < len(r) && (unicode.IsUpper(r[n]) || unicode.IsDigit(r[n])) {
@@ -73,17 +96,14 @@ func lowerLeading(word string) string {
 	lower := n - 1
 	switch {
 	case n == len(r):
+		// The whole word is the acronym: DHCP, LLDP, L2TP.
 		lower = n
 	case n <= 1:
+		// A single leading capital starts an ordinary word: Name, Network.
 		lower = 1
-	default:
-		m := n
-		for m < len(r) && unicode.IsLower(r[m]) {
-			m++
-		}
-		if seg := string(r[n:m]); len(seg) == 1 || seg == "sec" {
-			lower = n
-		}
+	case r[n] == 'v' && n+1 < len(r) && unicode.IsDigit(r[n+1]):
+		// IPv4, IPv6, DHCPv4 and DHCPv6 are themselves lower case, version digit included.
+		lower = n
 	}
 	for i := 0; i < lower; i++ {
 		r[i] = unicode.ToLower(r[i])
@@ -91,9 +111,12 @@ func lowerLeading(word string) string {
 	return string(r)
 }
 
-// A key's value: networkd parses every value from text, and a key given as a list is written
-// once per element.
-var scalar = map[string]any{"type": []any{"string", "integer", "boolean"}}
+// scalarSchema is a key's value: networkd parses every value from text, and a key given as a
+// list is written once per element. It returns a fresh map each call, since callers embed it in
+// their own schema and must not share one map between keys.
+func scalarSchema() map[string]any {
+	return map[string]any{"type": []any{"string", "integer", "boolean"}}
+}
 
 func oneOrMany(item map[string]any) map[string]any {
 	return map[string]any{"anyOf": []any{item, map[string]any{"type": "array", "items": item}}}
@@ -139,7 +162,7 @@ func SpecSchema(entries []Entry) (map[string]any, error) {
 				return nil, fmt.Errorf("section %s: keys %s and %s are both %s in YAML", section, other, key, yamlKey)
 			}
 			keyOf[yamlKey] = key
-			prop := oneOrMany(scalar)
+			prop := oneOrMany(scalarSchema())
 			prop["x-chalkos-networkd-key"] = key
 			props[yamlKey] = prop
 		}

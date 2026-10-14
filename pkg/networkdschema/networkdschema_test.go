@@ -1,6 +1,7 @@
 package networkdschema
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,7 @@ func TestCamelCase(t *testing.T) {
 		"IPv6AcceptRA":             "ipv6AcceptRA",
 		"IPv4LL":                   "ipv4LL",
 		"DHCPv6PrefixDelegation":   "dhcpv6PrefixDelegation",
-		"IPoIB":                    "ipoIB",
+		"IPoIB":                    "ipoib",
 		"MACsec":                   "macsec",
 		"MACsecReceiveAssociation": "macsecReceiveAssociation",
 		"QDisc":                    "qDisc",
@@ -25,7 +26,10 @@ func TestCamelCase(t *testing.T) {
 		"L2MissNotification":       "l2MissNotification",
 		"TCP6SegmentationOffload":  "tcp6SegmentationOffload",
 		"UseDNS":                   "useDNS",
-		"SR-IOV":                   "srIOV",
+		"SR-IOV":                   "sriov",
+		"VLANId":                   "vlanId",
+		"IPDoNotFragment":          "ipDoNotFragment",
+		"SR-IOVVirtualFunctions":   "sriovVirtualFunctions",
 	} {
 		if got := CamelCase(name); got != want {
 			t.Errorf("CamelCase(%q) = %q, want %q", name, got, want)
@@ -75,6 +79,17 @@ func TestParseWithoutEntriesFails(t *testing.T) {
 	}
 }
 
+func TestParseRejectsMalformedLine(t *testing.T) {
+	bad := "%%\nNetwork.Address, config_parse_address, 0, 0\nthis is not an entry\n"
+	_, err := Parse(strings.NewReader(bad))
+	if err == nil {
+		t.Fatal("parsed a table with a malformed line")
+	}
+	if !strings.Contains(err.Error(), "3") {
+		t.Errorf("err = %v, want it to name line 3", err)
+	}
+}
+
 func TestSpecSchema(t *testing.T) {
 	entries, err := Parse(strings.NewReader(table))
 	if err != nil {
@@ -89,12 +104,17 @@ func TestSpecSchema(t *testing.T) {
 		t.Error("spec accepts unknown sections")
 	}
 	network := spec["properties"].(map[string]any)["network"].(map[string]any)
-	ref := network["anyOf"].([]any)[0].(map[string]any)["$ref"]
+	networkAnyOf := network["anyOf"].([]any)
+	ref := networkAnyOf[0].(map[string]any)["$ref"]
 	if ref != "#/$defs/Network" {
 		t.Errorf("network refers to %v", ref)
 	}
-	if _, ok := spec["properties"].(map[string]any)["srIOV"]; !ok {
-		t.Error("section SR-IOV is missing as srIOV")
+	wantManyNetwork := map[string]any{"type": "array", "items": map[string]any{"$ref": "#/$defs/Network"}}
+	if !reflect.DeepEqual(networkAnyOf[1], wantManyNetwork) {
+		t.Errorf("network's array branch = %v, want %v", networkAnyOf[1], wantManyNetwork)
+	}
+	if _, ok := spec["properties"].(map[string]any)["sriov"]; !ok {
+		t.Error("section SR-IOV is missing as sriov")
 	}
 	def := s["$defs"].(map[string]any)["Network"].(map[string]any)
 	if def["x-chalkos-networkd-section"] != "Network" || def["additionalProperties"] != false {
@@ -107,6 +127,15 @@ func TestSpecSchema(t *testing.T) {
 	ra := props["ipv6AcceptRA"].(map[string]any)
 	if ra["x-chalkos-networkd-key"] != "IPv6AcceptRA" {
 		t.Errorf("ipv6AcceptRA = %v", ra)
+	}
+	raAnyOf := ra["anyOf"].([]any)
+	wantScalar := map[string]any{"type": []any{"string", "integer", "boolean"}}
+	if !reflect.DeepEqual(raAnyOf[0], wantScalar) {
+		t.Errorf("ipv6AcceptRA's scalar branch = %v, want %v", raAnyOf[0], wantScalar)
+	}
+	wantManyScalar := map[string]any{"type": "array", "items": wantScalar}
+	if !reflect.DeepEqual(raAnyOf[1], wantManyScalar) {
+		t.Errorf("ipv6AcceptRA's array branch = %v, want %v", raAnyOf[1], wantManyScalar)
 	}
 }
 
