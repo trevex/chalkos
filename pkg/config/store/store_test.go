@@ -193,6 +193,19 @@ func TestRemoveTakesAnInterruptedWrite(t *testing.T) {
 	}
 }
 
+// TestRemoveWithoutASetTakesAnInterruptedWrite: a write interrupted before its link was renamed
+// into place leaves a directory and no set.
+func TestRemoveWithoutASetTakesAnInterruptedWrite(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	interrupted(t, dir)
+	if err := Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if l := leftovers(t, dir); len(l) != 0 {
+		t.Errorf("left %v", l)
+	}
+}
+
 func TestRemoveRefusesALinkItDidNotWrite(t *testing.T) {
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "config")

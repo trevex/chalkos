@@ -97,7 +97,8 @@ func Remove(dir string) error {
 	}
 	target, err := os.Readlink(dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+		// A write interrupted before it renamed its link into place leaves its directory alone.
+		return removeStale(dir, "")
 	}
 	if err != nil {
 		return err
