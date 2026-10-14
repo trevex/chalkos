@@ -234,6 +234,13 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 				add("%s: repart must not set %s; it comes from the typed options", at, k)
 			}
 		}
+		// A line break would end the key=value line and let the rest set keys or sections the
+		// typed options own.
+		for _, k := range repartKeys {
+			if strings.ContainsAny(k+v.spec.Repart[k], "\n\r") {
+				add("%s: repart %q: a key or value cannot contain a line break", at, k)
+			}
+		}
 		if v.ref == nil && v.spec.Size == nil {
 			filling = append(filling, v.name)
 		}

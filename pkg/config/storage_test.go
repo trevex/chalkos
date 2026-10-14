@@ -121,6 +121,24 @@ func TestReservedRepartKeysInKeyOrder(t *testing.T) {
 	}
 }
 
+func TestRepartRejectsLineBreaks(t *testing.T) {
+	for name, repart := range map[string]string{
+		"value": `{Weight: "10\nFormat=vfat"}`,
+		"key":   `{"Weight\r": "10"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, err := parseSet(t, minimal+"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\n"+
+				"spec: {size: 1G, repart: "+repart+"}\n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.storage(); err == nil || !strings.Contains(err.Error(), "Volume data: repart") || !strings.Contains(err.Error(), "line break") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
+
 func TestOwnDiskDefinitionMatchesNix(t *testing.T) {
 	s, err := parseSet(t, minimal+"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: longhorn}\n"+
 		"spec: {disk: {model: \"Samsung SSD 870*\", type: ssd}, format: xfs, mountPoint: /var/lib/longhorn}\n")
