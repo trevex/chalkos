@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"maps"
+	"slices"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -32,6 +33,7 @@ func (s *Schemas) Default(doc any) (any, error) {
 }
 
 func fill(sch *jsonschema.Schema, v any) any {
+	// A schema with $ref carries no other keyword of its own: the generators never emit both.
 	for sch.Ref != nil {
 		sch = sch.Ref
 	}
@@ -121,12 +123,7 @@ func hasType(t *jsonschema.Types, jsonType string) bool {
 	if t == nil {
 		return false
 	}
-	for _, s := range t.ToStrings() {
-		if s == jsonType {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(t.ToStrings(), jsonType)
 }
 
 func deepCopy(v any) any {

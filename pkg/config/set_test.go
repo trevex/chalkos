@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,17 @@ const builtinSchemas = "../../test/fixtures/kinds/builtin"
 func schemas(t *testing.T) *schema.Schemas {
 	t.Helper()
 	s, err := schema.LoadSchemas(builtinSchemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// imageSchemas loads the fixture image whose Demo kind declares a real secretRef field, the way
+// the converter emits one: nullable, so an unset token is the anyOf's "null" branch.
+func imageSchemas(t *testing.T) *schema.Schemas {
+	t.Helper()
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/image/schemas")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +93,32 @@ func TestNewSetDefaultsDocuments(t *testing.T) {
 	}
 }
 
+func TestOneFindsAnExtensionKindByName(t *testing.T) {
+	set := &Set{schemas: extraSchemaDir(t), docs: []Document{{
+		APIVersion: "extra.example.org/v1", Kind: "Extra", Name: "a",
+		Object: map[string]any{
+			"apiVersion": "extra.example.org/v1",
+			"kind":       "Extra",
+			"metadata":   map[string]any{"name": "a"},
+			"spec":       map[string]any{"data": map[string]any{}},
+		},
+	}}}
+	d, ok := set.One("Extra")
+	if !ok || d.Name != "a" {
+		t.Fatalf(`One("Extra") = %+v, %v`, d, ok)
+	}
+}
+
+func TestOneIsFalseForAMultipleKind(t *testing.T) {
+	s, err := parseSet(t, minimal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.One("Image"); ok {
+		t.Error(`One("Image") = true, want false: Image is a multiple kind`)
+	}
+}
+
 func TestNewSetRejects(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
 		"missing Cluster": {strings.Replace(minimal,
@@ -115,13 +154,68 @@ func TestResolveSecret(t *testing.T) {
 	}
 }
 
-func TestCheckSecretRefsFindsReferencesAtAnyDepth(t *testing.T) {
-	docs := []Document{{APIVersion: "x/v1", Kind: "X", Name: "a", Object: map[string]any{
-		"spec": map[string]any{"list": []any{map[string]any{"token": map[string]any{
-			"secretRef": map[string]any{"name": "missing", "key": "k"}}}}},
+func TestCheckSecretRefsFindsARealSecretRef(t *testing.T) {
+	docs := []Document{{APIVersion: "demo.example.org/v1alpha1", Kind: "Demo", Name: "a", Object: map[string]any{
+		"apiVersion": "demo.example.org/v1alpha1",
+		"kind":       "Demo",
+		"metadata":   map[string]any{"name": "a"},
+		"spec": map[string]any{"name": "a", "token": map[string]any{
+			"secretRef": map[string]any{"name": "missing", "key": "k"}}},
 	}}}
-	err := checkSecretRefs(docs, map[string]map[string]string{})
-	if err == nil || !strings.Contains(err.Error(), `X "a"`) || !strings.Contains(err.Error(), `Secret "missing"`) {
+	err := checkSecretRefs(docs, imageSchemas(t), map[string]map[string]string{})
+	if err == nil || !strings.Contains(err.Error(), `Demo "a"`) || !strings.Contains(err.Error(), `Secret "missing"`) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// extraSchemaDir writes a tiny, extension-like schema to a temp directory: its "data" field is a
+// bare object, with no properties of its own, so nothing beneath it ever carries
+// x-chalkos-secret-ref.
+func extraSchemaDir(t *testing.T) *schema.Schemas {
+	t.Helper()
+	dir := t.TempDir()
+	doc := `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "Extra",
+		"type": "object",
+		"properties": {
+			"apiVersion": {"const": "extra.example.org/v1"},
+			"kind": {"const": "Extra"},
+			"metadata": {
+				"type": "object",
+				"properties": {"name": {"type": "string"}},
+				"required": ["name"]
+			},
+			"spec": {
+				"type": "object",
+				"properties": {"data": {"type": "object"}},
+				"required": ["data"],
+				"additionalProperties": false
+			}
+		},
+		"required": ["apiVersion", "kind", "metadata", "spec"],
+		"additionalProperties": false,
+		"x-chalkos-kind": {"group": "extra.example.org", "version": "v1", "kind": "Extra", "multiple": false}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "extra.example.org_v1_Extra.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := schema.LoadSchemas(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestCheckSecretRefsIgnoresAnUnmarkedUserMapEntry(t *testing.T) {
+	docs := []Document{{APIVersion: "extra.example.org/v1", Kind: "Extra", Name: "a", Object: map[string]any{
+		"apiVersion": "extra.example.org/v1",
+		"kind":       "Extra",
+		"metadata":   map[string]any{"name": "a"},
+		"spec": map[string]any{"data": map[string]any{
+			"secretRef": map[string]any{"name": "missing", "key": "k"}}},
+	}}}
+	if err := checkSecretRefs(docs, extraSchemaDir(t), map[string]map[string]string{}); err != nil {
+		t.Fatalf("err = %v, want nil: the schema never marks spec.data as a secret reference", err)
 	}
 }
