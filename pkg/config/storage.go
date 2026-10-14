@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -227,8 +228,9 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 		if v.ref != nil && *v.ref == system {
 			add("%s: disk is the system disk; leave disk out to place the volume there", at)
 		}
-		for _, k := range reservedRepartKeys {
-			if _, ok := v.spec.Repart[k]; ok {
+		repartKeys := slices.Sorted(maps.Keys(v.spec.Repart))
+		for _, k := range repartKeys {
+			if slices.Contains(reservedRepartKeys, k) {
 				add("%s: repart must not set %s; it comes from the typed options", at, k)
 			}
 		}

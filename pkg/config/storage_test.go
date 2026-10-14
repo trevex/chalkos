@@ -105,3 +105,44 @@ func TestStorageVolumesOnSystemAndOwnDisk(t *testing.T) {
 		t.Errorf("seed = %s", sec.Disks["fast"].Seed)
 	}
 }
+
+func TestReservedRepartKeysInKeyOrder(t *testing.T) {
+	s, err := parseSet(t, minimal+"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\n"+
+		"spec: {size: 1G, repart: {Type: x, Label: y, Weight: \"10\"}}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.storage()
+	want := "invalid storage:\n" +
+		"- Volume data: repart must not set Label; it comes from the typed options\n" +
+		"- Volume data: repart must not set Type; it comes from the typed options"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err =\n%v\nwant\n%s", err, want)
+	}
+}
+
+func TestOwnDiskDefinitionMatchesNix(t *testing.T) {
+	s, err := parseSet(t, minimal+"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: longhorn}\n"+
+		"spec: {disk: {model: \"Samsung SSD 870*\", type: ssd}, format: xfs, mountPoint: /var/lib/longhorn}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec, err := s.storage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The homelab worker's longhorn definition, as the cluster definition rendered it.
+	want := "[Partition]\nEncrypt=tpm2\nFormat=xfs\nLabel=longhorn\nTPM2PCRs=7\nType=4e6bd13b-2e2a-03b6-3fc9-fc66eae45cba\n"
+	if got := sec.Disks["longhorn"].Repart; len(got) != 1 || got["10-longhorn.conf"] != want {
+		t.Errorf("repart = %q, want 10-longhorn.conf = %q", got, want)
+	}
+}
+
+func TestDefinitionEscapesEqualsInKeys(t *testing.T) {
+	size := "1G"
+	got := definition("data", "xfs", &size, "none", map[string]string{"A=B": "c"})
+	want := "[Partition]\nA\\=B=c\nFormat=xfs\nLabel=data\nSizeMaxBytes=1G\nSizeMinBytes=1G\nType=" + partitionType("data") + "\n"
+	if got != want {
+		t.Errorf("definition =\n%s\nwant\n%s", got, want)
+	}
+}
