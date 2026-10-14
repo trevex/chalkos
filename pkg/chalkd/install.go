@@ -33,12 +33,17 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if h == nil {
 		return nil, failed(connect.CodeInvalidArgument, "the first install message must be the header")
 	}
+	text, stored, err := s.installIdentity(h)
+	if err != nil {
+		return nil, err
+	}
 	var id manifest.Identity
-	if err := json.Unmarshal([]byte(h.Identity), &id); err != nil {
+	if err := json.Unmarshal([]byte(text), &id); err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
 	}
 	req := install.Request{
-		Identity:        []byte(h.Identity),
+		Identity:        []byte(text),
+		Config:          stored,
 		Section:         id.Storage,
 		Kubernetes:      id.Kubernetes,
 		NodeCertificate: h.NodeCertificate,
@@ -48,7 +53,6 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		KubernetesShare: h.KubernetesShare,
 	}
 
-	var err error
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
 		if s.Installer {

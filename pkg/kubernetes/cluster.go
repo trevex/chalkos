@@ -114,12 +114,22 @@ func ReadCluster(path string) (Cluster, error) {
 	if err != nil {
 		return Cluster{}, err
 	}
+	c, err := ParseCluster(data)
+	if err != nil {
+		return Cluster{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, nil
+}
+
+// ParseCluster parses and checks a cluster file's contents, such as an install header carries
+// for the image it installs.
+func ParseCluster(data []byte) (Cluster, error) {
 	var c Cluster
 	if err := json.Unmarshal(data, &c); err != nil {
-		return Cluster{}, fmt.Errorf("parse %s: %w", path, err)
+		return Cluster{}, fmt.Errorf("parse: %w", err)
 	}
 	if err := c.Validate(); err != nil {
-		return Cluster{}, fmt.Errorf("%s: %w", path, err)
+		return Cluster{}, err
 	}
 	return c, nil
 }

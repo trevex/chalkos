@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"connectrpc.com/connect"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -119,4 +123,81 @@ func (s *Server) applyConfig(ctx context.Context, next *store.Stored, schemas *s
 		}
 	}
 	return units, nil
+}
+
+// installIdentity returns the identity an install header delivers, as JSON, and the config set
+// the node keeps: the header's identity and no set, or the identity its config translates to for
+// the image installed, and that config. In place, that image is the running one; from the
+// installer, the header describes it.
+func (s *Server) installIdentity(h *nodev1.InstallHeader) (string, *store.Stored, error) {
+	switch {
+	case h.Config != "" && h.Identity != "":
+		return "", nil, failed(connect.CodeInvalidArgument, "the header delivers both config and an identity; deliver one of them")
+	case h.Config == "":
+		return h.Identity, nil, nil
+	}
+	var (
+		t       config.Target
+		schemas *schema.Schemas
+		err     error
+	)
+	switch {
+	case s.Installer:
+		t, schemas, err = headerTarget(h)
+	case len(h.Schemas) > 0 || len(h.KubernetesCluster) > 0:
+		err = failed(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or kubernetes.json")
+	default:
+		t, schemas, err = s.runningTarget()
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	c, err := configure(h.Config, schemas, t)
+	if err != nil {
+		return "", nil, err
+	}
+	return string(c.identity), &c.stored, nil
+}
+
+// headerTarget is the image an install from the installer writes, as its header describes it,
+// and the schemas the header carries for it.
+func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, error) {
+	if h.Image == nil {
+		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the installer needs the role image to write to the target disk")
+	}
+	if len(h.Schemas) == 0 {
+		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
+	}
+	schemas, err := schemasFrom(h.Schemas)
+	if err != nil {
+		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
+	}
+	t := config.Target{Role: h.Image.GetRole(), Platform: h.Image.GetPlatform()}
+	if len(h.KubernetesCluster) > 0 {
+		c, err := k8s.ParseCluster(h.KubernetesCluster)
+		if err != nil {
+			return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's kubernetes.json: %v", err)
+		}
+		t.Kubernetes = &c
+	}
+	return t, schemas, nil
+}
+
+// schemasFrom loads schemas a request carries by file name, as an image directory's schemas/
+// holds them.
+func schemasFrom(files map[string][]byte) (*schema.Schemas, error) {
+	dir, err := os.MkdirTemp("", "chalkd-schemas-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	for name, data := range files {
+		if name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".json") {
+			return nil, fmt.Errorf("%q is not the name of a schema file", name)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	return schema.LoadSchemas(dir)
 }
