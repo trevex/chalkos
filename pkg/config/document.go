@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"math"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -66,13 +68,7 @@ func Parse(r io.Reader) ([]Document, error) {
 		if !ok {
 			return nil, fmt.Errorf("document %d is not an object", i)
 		}
-		d := Document{Object: m}
-		d.APIVersion, _ = m["apiVersion"].(string)
-		d.Kind, _ = m["kind"].(string)
-		if md, ok := m["metadata"].(map[string]any); ok {
-			d.Name, _ = md["name"].(string)
-		}
-		docs = append(docs, d)
+		docs = append(docs, FromObject(m))
 	}
 }
 
@@ -192,3 +188,26 @@ func (d Document) decodeSpec(v any) error {
 }
 
 func (d Document) String() string { return fmt.Sprintf("%s %q", d.Kind, d.Name) }
+
+// FromObject is the document an object decoded from YAML or JSON holds, with its apiVersion,
+// kind and name read from the object.
+func FromObject(m map[string]any) Document {
+	d := Document{Object: m}
+	d.APIVersion, _ = m["apiVersion"].(string)
+	d.Kind, _ = m["kind"].(string)
+	if md, ok := m["metadata"].(map[string]any); ok {
+		d.Name, _ = md["name"].(string)
+	}
+	return d
+}
+
+// IsSecret tells whether d is a Secret, whose values reach only the units whose kinds reference
+// them.
+func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == "Secret" }
+
+// SortDocuments orders docs by apiVersion, kind and name.
+func SortDocuments(docs []Document) {
+	slices.SortStableFunc(docs, func(a, b Document) int {
+		return cmp.Or(cmp.Compare(a.APIVersion, b.APIVersion), cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Name, b.Name))
+	})
+}
