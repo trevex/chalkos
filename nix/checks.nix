@@ -815,6 +815,12 @@ in
         for k in $(jq -r '.kinds[] | "\(.apiVersion | sub("/"; "_"))_\(.kind).json"' $dir/metadata.json); do
           test -f $dir/schemas/$k || { echo "error: metadata.json lists $k, which schemas/ lacks" >&2; exit 1; }
         done
+        if [ -e $dir/kubernetes.json ]; then
+          echo "error: the test image runs no Kubernetes, but its directory has kubernetes.json" >&2
+          exit 1
+        fi
+        jq -e '.kind == "worker" and (.endpoint | startswith("https://"))' \
+          ${chalkPkgs.test-kubernetes-worker-image}/kubernetes.json
 
         schema=$dir/schemas/networkd.chalkos.dev_v1alpha1_Network.json
         cat > good.json <<'EOF'

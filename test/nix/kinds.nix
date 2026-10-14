@@ -576,4 +576,12 @@ lib.runTests {
     );
     expected = true;
   };
+  testKubernetesImageDirectoryHasClusterFile = {
+    expr = lib.hasInfix "$out/kubernetes.json" kubernetesImage.system.build.chalkosImage.buildCommand;
+    expected = true;
+  };
+  testImageDirectoryWithoutKubernetesHasNoClusterFile = {
+    expr = lib.hasInfix "kubernetes.json" plainImage.system.build.chalkosImage.buildCommand;
+    expected = false;
+  };
 }

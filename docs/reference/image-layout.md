@@ -159,11 +159,14 @@ x86-64 and `\EFI\BOOT\BOOTAA64.EFI` on arm64.
 ## Files on STATE
 
 STATE is mounted at `/state`. It holds what makes the node this node and nothing else. The
-`chalkd` and `kubernetes` directories are readable by root alone.
+`chalkd`, `kubernetes` and `config/secrets` directories are readable by root alone.
 
 | Path | Written by | What it holds |
 | --- | --- | --- |
 | `identity.json` | install, ApplyIdentity | The node's identity as delivered. |
+| `config/<group>/<Kind>/<name>.json` | install, ApplyIdentity | The node's config documents with their schemas' defaults filled in, when the node was delivered config rather than an identity; `identity.json` then holds what they translate to. `config` is a symbolic link to a directory beside it, which a new set replaces as a whole. |
+| `config/secrets/<name>.json` | install, ApplyIdentity | The config's `Secret` documents. |
+| `config/version` | install, ApplyIdentity | The SHA-256 of the config as delivered, which Status reports. |
 | `chalkd/node.pem` | install, renewal | The [node certificate](glossary.md#node-certificate)'s chain and its key in one file, so both are replaced together. |
 | `chalkd/ca.crt` | install, [rotation](glossary.md#rotation) | The certificates of the [OS CAs](glossary.md#os-ca) the node trusts, a bundle. |
 | `kubernetes/share.json` | install, rotation | The node's [Kubernetes share](glossary.md#kubernetes-share). |
@@ -184,7 +187,7 @@ A node whose STATE has no `installed` marker starts chalkd in
 ## Outputs of an image build
 
 `nix build .#chalkos.<cluster>.roles.<role>.images.<platform>` makes a directory of five
-entries:
+entries, six for a role with a Kubernetes kind:
 
 | Entry | What it is |
 | --- | --- |
@@ -193,6 +196,7 @@ entries:
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
 | `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, platform and the store's root hash, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
+| `kubernetes.json` | The image's Kubernetes settings, as it carries them in `/etc/chalkos/kubernetes/cluster.json`; only for a role with a Kubernetes kind. An install from the installer sends it, with `schemas`, so chalkd checks and translates the node's config for the image it writes. |
 
 The definitions of a role with the default sizes read:
 
@@ -231,8 +235,11 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster sets [`chalkos.cluster.osCA`](options.md#chalkosclusterosca). |
 | `/etc/chalkos/kubernetes/cluster.json` | The cluster's Kubernetes settings, on images of a role with a Kubernetes kind. |
+| `/etc/chalkos/consumers.json` | The units that read identity keys or config kinds, and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity as units read it. |
 | `/run/chalkos/credentials/<key>` | One file per identity key a unit reads. |
+| `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s excepted. |
+| `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
 | `/run/chalkos/chrony/identity.sources` | The time servers of the identity, for chrony. |
 | `/run/chalkos/kubernetes/manifests` | The static pods chalkd renders on a control plane. |
