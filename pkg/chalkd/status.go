@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,17 +16,12 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/store"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
 func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
-	data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the identity: %v", err)
-	}
-	resp.IdentityVersion = identity.IdentityVersion(data)
+	var err error
 	if resp.ConfigVersion, err = store.Version(s.Identity.Config); err != nil {
 		return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
 	}

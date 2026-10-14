@@ -188,7 +188,7 @@ func TestRenewalHookIsLogged(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	for _, value := range []string{"", "0", "1"} {
 		logged.Reset()
-		on := renewOnApplyIdentity(func(string) string { return value })
+		on := renewOnApplyConfig(func(string) string { return value })
 		if on != (value == "1") {
 			t.Errorf("%q: hook %v", value, on)
 		}

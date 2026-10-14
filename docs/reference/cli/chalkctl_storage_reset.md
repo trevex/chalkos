@@ -9,10 +9,10 @@ Wipe and recreate one volume
 
 ## Synopsis
 
-Wipes one volume of a node and creates it again, empty, the way the node's identity defines it.
-Its data is lost. A volume the identity encrypts is sealed to the TPM again and, unless the
+Wipes one volume of a node and creates it again, empty, the way the node's config defines it.
+Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
 node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
-A volume the identity leaves unencrypted is created without encryption. The command needs the
+A volume the config leaves unencrypted is created without encryption. The command needs the
 cluster definition, which defines the volume, and an admin client file or the secrets file. A
 node whose fallback is its recovery key needs the secrets file, from which the key is derived.
 

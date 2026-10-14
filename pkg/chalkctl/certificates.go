@@ -49,7 +49,7 @@ func (a *app) nodeRenew(ctx context.Context, n nodeCommand, pos []string) error 
 	if err != nil {
 		return err
 	}
-	if _, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{
+	if _, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{
 		NodeCertificate: []byte(cert.Certificate),
 		NodeKey:         []byte(cert.Key),
 	})); err != nil {
@@ -137,7 +137,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 		fmt.Fprintf(a.stdout, "%s renews node certificates with the new node CA\n", name)
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("the new node CA did not reach every control-plane node; deliver it with chalkctl apply-identity <node> --kubernetes-share --secrets %s: %s", f.out, strings.Join(failed, "; "))
+		return fmt.Errorf("the new node CA did not reach every control-plane node; deliver it with chalkctl apply-config <node> --kubernetes-share --secrets %s: %s", f.out, strings.Join(failed, "; "))
 	}
 	return nil
 }
@@ -160,6 +160,6 @@ func (a *app) deliverNodeCA(ctx context.Context, c *cluster, endpointFlag, name 
 	if err != nil {
 		return err
 	}
-	_, err = conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{KubernetesShare: share}))
+	_, err = conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
 	return nodeError(err, name)
 }

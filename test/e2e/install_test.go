@@ -63,16 +63,16 @@ func TestInstallInPlace(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	_, err = reader.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: "{}"}))
+	_, err = reader.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: "{}"}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("ApplyIdentity as a reader: %v, want permission denied", err)
+		t.Errorf("ApplyConfig as a reader: %v, want permission denied", err)
 	}
 
-	if out, err := chalkctl(t, n, "destructive", "apply-identity", "chalklab"); err == nil || !strings.Contains(out, "chalkctl storage reset chalklab var") {
-		t.Errorf("a destructive identity was not refused with the reset command: %v", err)
+	if out, err := chalkctl(t, n, "destructive", "apply-config", "chalklab"); err == nil || !strings.Contains(out, "chalkctl storage reset chalklab var") {
+		t.Errorf("destructive config was not refused with the reset command: %v", err)
 	}
-	if out, err := chalkctl(t, n, "added", "apply-identity", "chalklab"); err != nil || !strings.Contains(out, "volume extra: new volume on new disk extra") {
-		t.Fatalf("apply-identity: %v", err)
+	if out, err := chalkctl(t, n, "added", "apply-config", "chalklab"); err != nil || !strings.Contains(out, "volume extra: new volume on new disk extra") {
+		t.Fatalf("apply-config: %v", err)
 	}
 	out, err = chalkctl(t, n, "added", "status", "chalklab")
 	if err != nil || !strings.Contains(out, "(the cluster definition's)") || !regexp.MustCompile(`\s/srv/extra\s+mounted`).MatchString(out) {

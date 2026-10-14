@@ -33,13 +33,32 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if h == nil {
 		return nil, failed(connect.CodeInvalidArgument, "the first install message must be the header")
 	}
-	text, stored, err := s.installIdentity(h)
+	// The target must fit the mode before the config is translated for the image it names.
+	switch h.Target.(type) {
+	case *nodev1.InstallHeader_InPlace:
+		if s.Installer {
+			return nil, failed(connect.CodeFailedPrecondition, "the installer installs nodes onto a disk; name the target disk")
+		}
+		if h.Image != nil {
+			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its role image already")
+		}
+	case *nodev1.InstallHeader_Disk:
+		if !s.Installer {
+			return nil, failed(connect.CodeFailedPrecondition, "the node runs its role image already; install it in place")
+		}
+		if h.Image == nil {
+			return nil, failed(connect.CodeInvalidArgument, "the installer needs the role image to write to the target disk")
+		}
+	default:
+		return nil, failed(connect.CodeInvalidArgument, "the install header names no target")
+	}
+	text, stored, err := s.installConfig(h)
 	if err != nil {
 		return nil, err
 	}
 	var id manifest.Identity
 	if err := json.Unmarshal([]byte(text), &id); err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
+		return nil, failed(connect.CodeInternal, "parse the identity: %v", err)
 	}
 	req := install.Request{
 		Identity:        []byte(text),
@@ -52,35 +71,19 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		FallbackSecret:  h.FallbackSecret,
 		KubernetesShare: h.KubernetesShare,
 	}
-
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
-		if s.Installer {
-			return nil, failed(connect.CodeFailedPrecondition, "the installer installs nodes onto a disk; name the target disk")
-		}
-		if h.Image != nil {
-			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its role image already")
-		}
-		if err := s.checkImageOf(id.Cluster, id.Role, id.Platform); err != nil {
+		if err := s.checkClusterOf(id.Cluster); err != nil {
 			return nil, err
 		}
 		log.Print("installing in place")
 		err = s.InPlace(ctx, req)
 	case *nodev1.InstallHeader_Disk:
-		if !s.Installer {
-			return nil, failed(connect.CodeFailedPrecondition, "the node runs its role image already; install it in place")
-		}
 		d := target.Disk
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}
-		if h.Image == nil {
-			return nil, failed(connect.CodeInvalidArgument, "the installer needs the role image to write to the target disk")
-		}
 		img := imageHeader(h.Image)
-		if img.Cluster != id.Cluster || img.Role != id.Role {
-			return nil, failed(connect.CodeInvalidArgument, "the image is of the cluster %q and the role %q, but the identity names %q and %q", img.Cluster, img.Role, id.Cluster, id.Role)
-		}
-		if img.Platform != id.Platform {
-			return nil, failed(connect.CodeInvalidArgument, "the image is built for the platform %q, but the identity names %q", img.Platform, id.Platform)
+		if img.Cluster != id.Cluster {
+			return nil, failed(connect.CodeInvalidArgument, "the image is of the cluster %q, but the config names %q", img.Cluster, id.Cluster)
 		}
 		log.Printf("installing %q %q with the root hash %x onto %s", img.ImageID, img.Version, img.RootHash, ref)
 		err = s.FromParts(ctx, install.PartsRequest{
@@ -96,8 +99,6 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 			SystemDefinitions: h.SystemDefinitions,
 			WipeDisk:          h.WipeDisk,
 		})
-	default:
-		return nil, failed(connect.CodeInvalidArgument, "the install header names no target")
 	}
 	if err != nil {
 		log.Printf("install failed: %v", err)

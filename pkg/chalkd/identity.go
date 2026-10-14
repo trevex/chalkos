@@ -74,16 +74,12 @@ func parseIdentity(data string) (delivered, error) {
 	return delivered{data: []byte(data), cluster: id.Cluster, role: id.Role, platform: id.Platform, section: id.Storage, kubernetes: id.Kubernetes}, nil
 }
 
-// checkImageOf refuses an identity of another cluster or role than the running image's, which a
-// node would run under the wrong cluster definition, and one of another platform, which declares
-// the node a machine its image was not built for: changing a node's platform is a reinstall.
-func (s *Server) checkImageOf(cluster, role, platform string) error {
-	release := readOSRelease(s.Paths.OSRelease)
-	if cluster != release["CHALKOS_CLUSTER"] || role != release["CHALKOS_ROLE"] {
-		return failed(connect.CodeInvalidArgument, "the identity is of the cluster %q and the role %q, but the node's image is of %q and %q", cluster, role, release["CHALKOS_CLUSTER"], release["CHALKOS_ROLE"])
-	}
-	if platform != release["CHALKOS_PLATFORM"] {
-		return failed(connect.CodeInvalidArgument, "the identity names the platform %q, but the node's image is built for %q; changing a node's platform is a reinstall", platform, release["CHALKOS_PLATFORM"])
+// checkClusterOf refuses config of another cluster than the running image's, which the node
+// would run under the wrong cluster definition. The role and the platform are the image's own,
+// since config is translated for the image it runs on.
+func (s *Server) checkClusterOf(cluster string) error {
+	if image := readOSRelease(s.Paths.OSRelease)["CHALKOS_CLUSTER"]; cluster != image {
+		return failed(connect.CodeInvalidArgument, "the config is of the cluster %q, but the node's image is of %q", cluster, image)
 	}
 	return nil
 }
@@ -139,33 +135,41 @@ func (s *Server) classify(recorded, section storage.Section, pins storage.Pins) 
 	})...)
 }
 
-func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.ApplyIdentityRequest]) (*connect.Response[nodev1.ApplyIdentityResponse], error) {
+// applyRequest is an ApplyConfig request once its config is translated: the identity the node
+// runs from now on, empty to keep its own; the config set it keeps and the schemas that set was
+// checked against; and the rest of the request.
+type applyRequest struct {
+	identity string
+	next     *store.Stored
+	schemas  *schema.Schemas
+	msg      *nodev1.ApplyConfigRequest
+}
+
+func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := req.Msg
-	if m.Config != "" && m.Identity != "" {
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers both config and an identity; deliver one of them")
+	r := applyRequest{msg: req.Msg}
+	if req.Msg.Config != "" {
+		t, schemas, err := s.runningTarget()
+		if err != nil {
+			return nil, err
+		}
+		c, err := configure(req.Msg.Config, schemas, t)
+		if err != nil {
+			return nil, err
+		}
+		r.identity, r.next, r.schemas = string(c.identity), &c.stored, schemas
 	}
-	// Without an identity or config the node keeps its own, which the share is checked against.
-	keep := m.Identity == "" && m.Config == ""
+	return s.apply(ctx, r)
+}
+
+// apply delivers an ApplyConfig request whose config is translated; the caller holds s.mu.
+func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	m := r.msg
+	// Without config the node keeps its own, which the share is checked against.
+	keep := r.identity == ""
 	if keep && len(m.KubernetesShare) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers no identity, config, share, node certificate or OS CAs")
-	}
-	identity := m.Identity
-	// next is the config set the node keeps from now on: nil for an identity, after which the
-	// node keeps none.
-	var next *store.Stored
-	var schemas *schema.Schemas
-	if m.Config != "" {
-		t, running, err := s.runningTarget()
-		if err != nil {
-			return nil, err
-		}
-		c, err := configure(m.Config, running, t)
-		if err != nil {
-			return nil, err
-		}
-		identity, next, schemas = string(c.identity), &c.stored, running
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, share, node certificate or OS CAs")
 	}
 	// A node certificate is checked against the OS CAs the node trusts when it arrives.
 	if len(m.Trust) > 0 && len(m.NodeCertificate) > 0 {
@@ -175,6 +179,7 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	if err != nil {
 		return nil, err
 	}
+	identity := r.identity
 	if keep {
 		data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 		if err != nil {
@@ -186,9 +191,8 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	if err != nil {
 		return nil, err
 	}
-	// The node keeps its own identity, which may predate the fields.
 	if !keep {
-		if err := s.checkImageOf(d.cluster, d.role, d.platform); err != nil {
+		if err := s.checkClusterOf(d.cluster); err != nil {
 			return nil, err
 		}
 	}
@@ -230,7 +234,7 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 			}
 		}
 		if len(destructive) > 0 {
-			return nil, failed(connect.CodeFailedPrecondition, "the identity changes storage destructively: %s", strings.Join(destructive, "; "))
+			return nil, failed(connect.CodeFailedPrecondition, "the config changes storage destructively: %s", strings.Join(destructive, "; "))
 		}
 		if len(changes) > 0 {
 			if err := s.verifyFallback(ctx, recorded, d.section, pins, m.FallbackSecret); err != nil {
@@ -260,19 +264,19 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 	// a failure here finds the identity unchanged and would not restart Kubernetes again. A
 	// config that failed before it was stored is applied in full by the retry.
 	if !keep {
-		units, err := s.applyConfig(ctx, next, schemas)
+		units, err := s.applyConfig(ctx, r.next, r.schemas)
 		if err != nil {
 			return nil, err
 		}
 		restarted = append(restarted, units...)
 	}
 	restarted = append(restarted, kubernetesUnits...)
-	// Deliveries without an identity, as a rotation's, renew nothing: forced renewals would
+	// Deliveries without config, as a rotation's, renew nothing: forced renewals would
 	// restart the control plane's pods on top of the restarts the rotation waits for.
-	if s.RenewOnApplyIdentity && !keep {
+	if s.RenewOnApplyConfig && !keep {
 		s.forceRenewals()
 	}
-	resp := &nodev1.ApplyIdentityResponse{RestartedUnits: restarted}
+	resp := &nodev1.ApplyConfigResponse{RestartedUnits: restarted}
 	for _, c := range changes {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}
@@ -283,7 +287,7 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 // certificates at once.
 func (s *Server) forceRenewals() {
 	if s.Renewal != nil {
-		log.Print("renewing the node certificate, as this test image does after each identity")
+		log.Print("renewing the node certificate, as this test image does after each config")
 		s.Renewal.Force()
 	}
 	if s.Kubernetes != nil {
@@ -291,7 +295,7 @@ func (s *Server) forceRenewals() {
 		leaves := s.Kubernetes.leaves
 		s.Kubernetes.mu.Unlock()
 		if leaves != nil {
-			log.Print("renewing the control plane's certificates, as this test image does after each identity")
+			log.Print("renewing the control plane's certificates, as this test image does after each config")
 			leaves.Force()
 		}
 	}
@@ -597,22 +601,18 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := req.Msg
-	identity := m.Identity
-	switch {
-	case m.Config != "" && m.Identity != "":
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers both config and an identity; deliver one of them")
-	case m.Config != "":
-		t, schemas, err := s.runningTarget()
-		if err != nil {
-			return nil, err
-		}
-		c, err := configure(m.Config, schemas, t)
-		if err != nil {
-			return nil, err
-		}
-		identity = string(c.identity)
+	if m.Config == "" {
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, which defines the volume")
 	}
-	if err := s.resetVolume(ctx, m.Volume, identity, m.FallbackSecret); err != nil {
+	t, schemas, err := s.runningTarget()
+	if err != nil {
+		return nil, err
+	}
+	c, err := configure(m.Config, schemas, t)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.resetVolume(ctx, m.Volume, string(c.identity), m.FallbackSecret); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil
@@ -638,7 +638,7 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 	}
 	nv, ok := d.section.Volumes[name]
 	if !ok {
-		return failed(connect.CodeFailedPrecondition, "the identity no longer has volume %s; a reset recreates a volume, it does not remove one", name)
+		return failed(connect.CodeFailedPrecondition, "the config no longer has volume %s; a reset recreates a volume, it does not remove one", name)
 	}
 	if nv.Disk != v.Disk {
 		return failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
@@ -650,7 +650,7 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 		}
 	}
 	if len(others) > 0 {
-		return failed(connect.CodeFailedPrecondition, "the identity changes other volumes destructively too: %s", strings.Join(others, "; "))
+		return failed(connect.CodeFailedPrecondition, "the config changes other volumes destructively too: %s", strings.Join(others, "; "))
 	}
 	// Once deleted, the volume is created again like a new one.
 	without := recorded

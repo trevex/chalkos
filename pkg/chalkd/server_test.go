@@ -250,7 +250,7 @@ const (
 // deniedEverything is what a client without a role gets in normal mode.
 var deniedEverything = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
-	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied,
+	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied,
 	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodePermissionDenied,
 	"RenewNodeCertificate": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied,
 	"DrainNode": connect.CodePermissionDenied, "UncordonNode": connect.CodePermissionDenied,
@@ -260,7 +260,7 @@ var deniedEverything = map[string]connect.Code{
 // Kubernetes refuses after authorisation.
 var nodeRole = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
-	"ApplyIdentity": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
+	"ApplyConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
 	"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
 	"UncordonNode": connect.CodePermissionDenied,
 }
@@ -346,10 +346,10 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	case "Reboot":
 		_, err = c.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
-	case "ApplyIdentity":
-		_, err = c.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: "{}"}))
+	case "ApplyConfig":
+		_, err = c.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{}))
 	case "ResetVolume":
-		_, err = c.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data", Identity: "{}"}))
+		_, err = c.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data"}))
 	case "Contract":
 		_, err = c.Contract(ctx, connect.NewRequest(&nodev1.ContractRequest{}))
 	case "Disks":
@@ -403,17 +403,17 @@ func TestAuthorisation(t *testing.T) {
 	}{
 		{"normal", normal, true, map[string]map[string]connect.Code{
 			// The node has no Kubernetes: refusing EtcdMembers means the call got through.
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeFailedPrecondition, "EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied,
 				"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
 				"UncordonNode": connect.CodePermissionDenied},
 			// A request without a header is refused after authorisation.
-			pki.RoleOperator: {"Reboot": 0, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodePermissionDenied,
+			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodePermissionDenied,
 				"EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied,
 				"Upgrade": connect.CodeInvalidArgument, "DrainNode": connect.CodeFailedPrecondition, "UncordonNode": connect.CodeFailedPrecondition},
-			// The identity "{}" lacks a storage section and the node has no Kubernetes; refusing them
-			// means the call got through.
-			pki.RoleAdmin: {"ApplyIdentity": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition,
+			// An empty request and a reset without config are refused after authorisation, and the
+			// node has no Kubernetes; refusing them means the call got through.
+			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition,
 				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition, "RenewNodeCertificate": connect.CodePermissionDenied,
 				"RotationStep": connect.CodeFailedPrecondition},
 			// A certificate of the OS CA without a role's Organization grants nothing.
@@ -426,7 +426,7 @@ func TestAuthorisation(t *testing.T) {
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},
 			// A header without a target is refused after authorisation.
-			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeFailedPrecondition,
+			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeFailedPrecondition,
 				"UncordonNode": connect.CodeFailedPrecondition},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
@@ -554,9 +554,6 @@ func TestStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := resp.Msg
-	if got.IdentityVersion != identity.IdentityVersion([]byte(identityJSON)) {
-		t.Errorf("identity version = %s", got.IdentityVersion)
-	}
 	if got.ConfigVersion != "" {
 		t.Errorf("config version of a node without config = %q", got.ConfigVersion)
 	}
@@ -646,15 +643,15 @@ func TestRequestSizeLimit(t *testing.T) {
 	ctx := context.Background()
 
 	large := strings.Repeat("x", maxMessageBytes+1)
-	_, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: large}))
+	_, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: large}))
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("err = %v, want resource exhausted", err)
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v", r.calls)
 	}
-	// Below the limit, the request reaches the handler, which refuses what is not an identity.
-	_, err = conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: large[:maxMessageBytes-1024]}))
+	// Below the limit, the request reaches the handler, which refuses what is not config.
+	_, err = conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: large[:maxMessageBytes-1024]}))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("err = %v, want the handler's refusal", err)
 	}

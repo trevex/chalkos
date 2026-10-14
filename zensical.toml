@@ -54,7 +54,7 @@ nav = [
       "reference/cli/index.md",
       { "chalkctl" = [
         { "Overview" = "reference/cli/chalkctl.md" },
-        { "apply-identity" = "reference/cli/chalkctl_apply-identity.md" },
+        { "apply-config" = "reference/cli/chalkctl_apply-config.md" },
         { "bootstrap" = "reference/cli/chalkctl_bootstrap.md" },
         { "completion" = [
           { "Overview" = "reference/cli/chalkctl_completion.md" },

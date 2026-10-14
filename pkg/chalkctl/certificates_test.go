@@ -48,7 +48,7 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 	addr := ta.nodeWithCertificate(t, s, expired)
 
 	// Every other command verifies the node's certificate with its dates.
-	for _, cmd := range [][]string{{"status", "n1"}, {"apply-identity", "n1"}, {"reboot", "n1"}} {
+	for _, cmd := range [][]string{{"status", "n1"}, {"apply-config", "n1"}, {"reboot", "n1"}} {
 		if err := ta.run(context.Background(), ta.args(cmd, addr)); err == nil || !strings.Contains(err.Error(), "expired") {
 			t.Errorf("%s reached a node whose certificate expired: %v", cmd[0], err)
 		}

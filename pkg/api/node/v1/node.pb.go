@@ -843,8 +843,6 @@ func (*InstallRequest_Chunk) isInstallRequest_Message() {}
 
 type InstallHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The node's identity as the manifest renders it (JSON), including its storage section.
-	Identity string `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
 	// PEM certificate and key chalkd serves once the node is installed.
 	NodeCertificate []byte `protobuf:"bytes,2,opt,name=node_certificate,json=nodeCertificate,proto3" json:"node_certificate,omitempty"`
 	NodeKey         []byte `protobuf:"bytes,3,opt,name=node_key,json=nodeKey,proto3" json:"node_key,omitempty"`
@@ -874,7 +872,7 @@ type InstallHeader struct {
 	KubernetesShare []byte `protobuf:"bytes,11,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
 	// The node's config: YAML documents separated by ---. chalkd checks them as a set against the
 	// schemas of the image it installs, fills in their defaults, keeps them on STATE and translates
-	// them into the node's identity. Replaces identity; a header with both is refused.
+	// them into what the node applies at boot. Required.
 	Config string `protobuf:"bytes,12,opt,name=config,proto3" json:"config,omitempty"`
 	// The schemas of the image the installer writes, by file name, as its image directory's
 	// schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
@@ -915,13 +913,6 @@ func (x *InstallHeader) ProtoReflect() protoreflect.Message {
 // Deprecated: Use InstallHeader.ProtoReflect.Descriptor instead.
 func (*InstallHeader) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *InstallHeader) GetIdentity() string {
-	if x != nil {
-		return x.Identity
-	}
-	return ""
 }
 
 func (x *InstallHeader) GetNodeCertificate() []byte {
@@ -1432,12 +1423,9 @@ func (*InstallResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{15}
 }
 
-type ApplyIdentityRequest struct {
+type ApplyConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The node's identity as the manifest renders it (JSON); empty keeps the node's identity and
-	// storage, for a request that delivers only a share or a node certificate.
-	Identity string `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
-	// Enrolled on encrypted volumes the identity adds; required when it adds one and the node's
+	// Enrolled on encrypted volumes the config adds; required when it adds one and the node's
 	// fallback is not none.
 	FallbackSecret string `protobuf:"bytes,2,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	// A new Kubernetes share (JSON) replacing the node's, as InstallHeader carries it; empty
@@ -1452,27 +1440,27 @@ type ApplyIdentityRequest struct {
 	// plane's node CA. Not together with a node certificate.
 	Trust []byte `protobuf:"bytes,6,opt,name=trust,proto3" json:"trust,omitempty"`
 	// The node's config, as InstallHeader.config holds it, checked against the running image's
-	// schemas. It replaces the node's identity and its stored config as a whole. Not together with
-	// identity. An identity without config removes the node's stored config.
+	// schemas. It replaces the node's config as a whole. Empty keeps the node's config and
+	// storage, for a request that delivers only a share, a node certificate or OS CAs.
 	Config        string `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ApplyIdentityRequest) Reset() {
-	*x = ApplyIdentityRequest{}
+func (x *ApplyConfigRequest) Reset() {
+	*x = ApplyConfigRequest{}
 	mi := &file_chalkos_node_v1_node_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ApplyIdentityRequest) String() string {
+func (x *ApplyConfigRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ApplyIdentityRequest) ProtoMessage() {}
+func (*ApplyConfigRequest) ProtoMessage() {}
 
-func (x *ApplyIdentityRequest) ProtoReflect() protoreflect.Message {
+func (x *ApplyConfigRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_chalkos_node_v1_node_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1484,84 +1472,77 @@ func (x *ApplyIdentityRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ApplyIdentityRequest.ProtoReflect.Descriptor instead.
-func (*ApplyIdentityRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ApplyConfigRequest.ProtoReflect.Descriptor instead.
+func (*ApplyConfigRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *ApplyIdentityRequest) GetIdentity() string {
-	if x != nil {
-		return x.Identity
-	}
-	return ""
-}
-
-func (x *ApplyIdentityRequest) GetFallbackSecret() string {
+func (x *ApplyConfigRequest) GetFallbackSecret() string {
 	if x != nil {
 		return x.FallbackSecret
 	}
 	return ""
 }
 
-func (x *ApplyIdentityRequest) GetKubernetesShare() []byte {
+func (x *ApplyConfigRequest) GetKubernetesShare() []byte {
 	if x != nil {
 		return x.KubernetesShare
 	}
 	return nil
 }
 
-func (x *ApplyIdentityRequest) GetNodeCertificate() []byte {
+func (x *ApplyConfigRequest) GetNodeCertificate() []byte {
 	if x != nil {
 		return x.NodeCertificate
 	}
 	return nil
 }
 
-func (x *ApplyIdentityRequest) GetNodeKey() []byte {
+func (x *ApplyConfigRequest) GetNodeKey() []byte {
 	if x != nil {
 		return x.NodeKey
 	}
 	return nil
 }
 
-func (x *ApplyIdentityRequest) GetTrust() []byte {
+func (x *ApplyConfigRequest) GetTrust() []byte {
 	if x != nil {
 		return x.Trust
 	}
 	return nil
 }
 
-func (x *ApplyIdentityRequest) GetConfig() string {
+func (x *ApplyConfigRequest) GetConfig() string {
 	if x != nil {
 		return x.Config
 	}
 	return ""
 }
 
-type ApplyIdentityResponse struct {
+type ApplyConfigResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Storage changes that were applied.
 	Changes []*StorageChange `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
-	// Units restarted because identity keys or config kinds they read changed.
+	// Units restarted because config kinds they read, or the Kubernetes settings, changed.
 	RestartedUnits []string `protobuf:"bytes,2,rep,name=restarted_units,json=restartedUnits,proto3" json:"restarted_units,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
-func (x *ApplyIdentityResponse) Reset() {
-	*x = ApplyIdentityResponse{}
+func (x *ApplyConfigResponse) Reset() {
+	*x = ApplyConfigResponse{}
 	mi := &file_chalkos_node_v1_node_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ApplyIdentityResponse) String() string {
+func (x *ApplyConfigResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ApplyIdentityResponse) ProtoMessage() {}
+func (*ApplyConfigResponse) ProtoMessage() {}
 
-func (x *ApplyIdentityResponse) ProtoReflect() protoreflect.Message {
+func (x *ApplyConfigResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_chalkos_node_v1_node_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1573,19 +1554,19 @@ func (x *ApplyIdentityResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ApplyIdentityResponse.ProtoReflect.Descriptor instead.
-func (*ApplyIdentityResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ApplyConfigResponse.ProtoReflect.Descriptor instead.
+func (*ApplyConfigResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *ApplyIdentityResponse) GetChanges() []*StorageChange {
+func (x *ApplyConfigResponse) GetChanges() []*StorageChange {
 	if x != nil {
 		return x.Changes
 	}
 	return nil
 }
 
-func (x *ApplyIdentityResponse) GetRestartedUnits() []string {
+func (x *ApplyConfigResponse) GetRestartedUnits() []string {
 	if x != nil {
 		return x.RestartedUnits
 	}
@@ -1653,13 +1634,11 @@ func (x *StorageChange) GetDestructive() bool {
 }
 
 type ResetVolumeRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Volume string                 `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
-	// The node's identity as the manifest renders it (JSON); the volume is created as it defines.
-	Identity       string `protobuf:"bytes,2,opt,name=identity,proto3" json:"identity,omitempty"`
-	FallbackSecret string `protobuf:"bytes,3,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
-	// The node's config, as ApplyIdentityRequest.config holds it, checked against the running
-	// image's schemas; the volume is created as it defines. Not together with identity.
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Volume         string                 `protobuf:"bytes,1,opt,name=volume,proto3" json:"volume,omitempty"`
+	FallbackSecret string                 `protobuf:"bytes,3,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
+	// The node's config, as ApplyConfigRequest.config holds it, checked against the running
+	// image's schemas; the volume is created as it defines. Required.
 	Config        string `protobuf:"bytes,4,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1698,13 +1677,6 @@ func (*ResetVolumeRequest) Descriptor() ([]byte, []int) {
 func (x *ResetVolumeRequest) GetVolume() string {
 	if x != nil {
 		return x.Volume
-	}
-	return ""
-}
-
-func (x *ResetVolumeRequest) GetIdentity() string {
-	if x != nil {
-		return x.Identity
 	}
 	return ""
 }
@@ -1796,12 +1768,10 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 }
 
 type StatusResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// SHA-256 of the identity document the node runs, in lower-case hex.
-	IdentityVersion string          `protobuf:"bytes,1,opt,name=identity_version,json=identityVersion,proto3" json:"identity_version,omitempty"`
-	Disks           []*DiskStatus   `protobuf:"bytes,2,rep,name=disks,proto3" json:"disks,omitempty"`
-	Volumes         []*VolumeStatus `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
-	FailedUnits     []string        `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Disks       []*DiskStatus          `protobuf:"bytes,2,rep,name=disks,proto3" json:"disks,omitempty"`
+	Volumes     []*VolumeStatus        `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	FailedUnits []string               `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
 	// Absent on a node of a role without Kubernetes.
 	Kubernetes *KubernetesStatus `protobuf:"bytes,5,opt,name=kubernetes,proto3" json:"kubernetes,omitempty"`
 	// Every certificate the node holds or issues, with its expiry and what needs doing about it.
@@ -1816,7 +1786,7 @@ type StatusResponse struct {
 	Platform string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
 	// SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents
 	// in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
-	// its own SHA-256. Empty on a node that runs an identity without config.
+	// its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos.
 	ConfigVersion string `protobuf:"bytes,11,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1850,13 +1820,6 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *StatusResponse) GetIdentityVersion() string {
-	if x != nil {
-		return x.IdentityVersion
-	}
-	return ""
 }
 
 func (x *StatusResponse) GetDisks() []*DiskStatus {
@@ -3849,9 +3812,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0eInstallRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.InstallHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
-	"\amessage\"\xaa\x06\n" +
-	"\rInstallHeader\x12\x1a\n" +
-	"\bidentity\x18\x01 \x01(\tR\bidentity\x12)\n" +
+	"\amessage\"\x9e\x06\n" +
+	"\rInstallHeader\x12)\n" +
 	"\x10node_certificate\x18\x02 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
 	"\bnode_key\x18\x03 \x01(\fR\anodeKey\x12%\n" +
 	"\x0eca_certificate\x18\x04 \x01(\fR\rcaCertificate\x12'\n" +
@@ -3872,7 +3834,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01B\b\n" +
-	"\x06target\"\t\n" +
+	"\x06targetJ\x04\b\x01\x10\x02R\bidentity\"\t\n" +
 	"\aInPlace\"\x8b\x01\n" +
 	"\rDiskReference\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
@@ -3901,31 +3863,28 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ImageChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x11\n" +
-	"\x0fInstallResponse\"\xfa\x01\n" +
-	"\x14ApplyIdentityRequest\x12\x1a\n" +
-	"\bidentity\x18\x01 \x01(\tR\bidentity\x12'\n" +
+	"\x0fInstallResponse\"\xec\x01\n" +
+	"\x12ApplyConfigRequest\x12'\n" +
 	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\x12)\n" +
 	"\x10kubernetes_share\x18\x03 \x01(\fR\x0fkubernetesShare\x12)\n" +
 	"\x10node_certificate\x18\x04 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
 	"\bnode_key\x18\x05 \x01(\fR\anodeKey\x12\x14\n" +
 	"\x05trust\x18\x06 \x01(\fR\x05trust\x12\x16\n" +
-	"\x06config\x18\a \x01(\tR\x06config\"z\n" +
-	"\x15ApplyIdentityResponse\x128\n" +
+	"\x06config\x18\a \x01(\tR\x06configJ\x04\b\x01\x10\x02R\bidentity\"x\n" +
+	"\x13ApplyConfigResponse\x128\n" +
 	"\achanges\x18\x01 \x03(\v2\x1e.chalkos.node.v1.StorageChangeR\achanges\x12'\n" +
 	"\x0frestarted_units\x18\x02 \x03(\tR\x0erestartedUnits\"a\n" +
 	"\rStorageChange\x12\x16\n" +
 	"\x06volume\x18\x01 \x01(\tR\x06volume\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12 \n" +
-	"\vdestructive\x18\x03 \x01(\bR\vdestructive\"\x89\x01\n" +
+	"\vdestructive\x18\x03 \x01(\bR\vdestructive\"}\n" +
 	"\x12ResetVolumeRequest\x12\x16\n" +
-	"\x06volume\x18\x01 \x01(\tR\x06volume\x12\x1a\n" +
-	"\bidentity\x18\x02 \x01(\tR\bidentity\x12'\n" +
+	"\x06volume\x18\x01 \x01(\tR\x06volume\x12'\n" +
 	"\x0ffallback_secret\x18\x03 \x01(\tR\x0efallbackSecret\x12\x16\n" +
-	"\x06config\x18\x04 \x01(\tR\x06config\"\x15\n" +
+	"\x06config\x18\x04 \x01(\tR\x06configJ\x04\b\x02\x10\x03R\bidentity\"\x15\n" +
 	"\x13ResetVolumeResponse\"\x0f\n" +
-	"\rStatusRequest\"\xae\x04\n" +
-	"\x0eStatusResponse\x12)\n" +
-	"\x10identity_version\x18\x01 \x01(\tR\x0fidentityVersion\x121\n" +
+	"\rStatusRequest\"\x9b\x04\n" +
+	"\x0eStatusResponse\x121\n" +
 	"\x05disks\x18\x02 \x03(\v2\x1b.chalkos.node.v1.DiskStatusR\x05disks\x127\n" +
 	"\avolumes\x18\x03 \x03(\v2\x1d.chalkos.node.v1.VolumeStatusR\avolumes\x12!\n" +
 	"\ffailed_units\x18\x04 \x03(\tR\vfailedUnits\x12A\n" +
@@ -3938,7 +3897,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\x12\x1a\n" +
 	"\bplatform\x18\n" +
 	" \x01(\tR\bplatform\x12%\n" +
-	"\x0econfig_version\x18\v \x01(\tR\rconfigVersion\"\xd3\x01\n" +
+	"\x0econfig_version\x18\v \x01(\tR\rconfigVersionJ\x04\b\x01\x10\x02R\x10identity_version\"\xd3\x01\n" +
 	"\n" +
 	"BootStatus\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x14\n" +
@@ -4071,13 +4030,13 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	" ROTATION_STEP_LIST_TOKEN_SECRETS\x10\x02\x12#\n" +
 	"\x1fROTATION_STEP_REWRITE_ENCRYPTED\x10\x03\x12!\n" +
 	"\x1dROTATION_STEP_COUNT_ENCRYPTED\x10\x04\x12'\n" +
-	"#ROTATION_STEP_RENEW_KUBELET_SERVING\x10\x052\x90\f\n" +
+	"#ROTATION_STEP_RENEW_KUBELET_SERVING\x10\x052\x8a\f\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Info\x12\x1c.chalkos.node.v1.InfoRequest\x1a\x1d.chalkos.node.v1.InfoResponse\x12F\n" +
 	"\x05Disks\x12\x1d.chalkos.node.v1.DisksRequest\x1a\x1e.chalkos.node.v1.DisksResponse\x12O\n" +
 	"\bContract\x12 .chalkos.node.v1.ContractRequest\x1a!.chalkos.node.v1.ContractResponse\x12N\n" +
-	"\aInstall\x12\x1f.chalkos.node.v1.InstallRequest\x1a .chalkos.node.v1.InstallResponse(\x01\x12^\n" +
-	"\rApplyIdentity\x12%.chalkos.node.v1.ApplyIdentityRequest\x1a&.chalkos.node.v1.ApplyIdentityResponse\x12X\n" +
+	"\aInstall\x12\x1f.chalkos.node.v1.InstallRequest\x1a .chalkos.node.v1.InstallResponse(\x01\x12X\n" +
+	"\vApplyConfig\x12#.chalkos.node.v1.ApplyConfigRequest\x1a$.chalkos.node.v1.ApplyConfigResponse\x12X\n" +
 	"\vResetVolume\x12#.chalkos.node.v1.ResetVolumeRequest\x1a$.chalkos.node.v1.ResetVolumeResponse\x12I\n" +
 	"\x06Status\x12\x1e.chalkos.node.v1.StatusRequest\x1a\x1f.chalkos.node.v1.StatusResponse\x12E\n" +
 	"\x04Logs\x12\x1c.chalkos.node.v1.LogsRequest\x1a\x1d.chalkos.node.v1.LogsResponse0\x01\x12I\n" +
@@ -4126,8 +4085,8 @@ var file_chalkos_node_v1_node_proto_goTypes = []any{
 	(*ImagePart)(nil),                    // 16: chalkos.node.v1.ImagePart
 	(*ImageChunk)(nil),                   // 17: chalkos.node.v1.ImageChunk
 	(*InstallResponse)(nil),              // 18: chalkos.node.v1.InstallResponse
-	(*ApplyIdentityRequest)(nil),         // 19: chalkos.node.v1.ApplyIdentityRequest
-	(*ApplyIdentityResponse)(nil),        // 20: chalkos.node.v1.ApplyIdentityResponse
+	(*ApplyConfigRequest)(nil),           // 19: chalkos.node.v1.ApplyConfigRequest
+	(*ApplyConfigResponse)(nil),          // 20: chalkos.node.v1.ApplyConfigResponse
 	(*StorageChange)(nil),                // 21: chalkos.node.v1.StorageChange
 	(*ResetVolumeRequest)(nil),           // 22: chalkos.node.v1.ResetVolumeRequest
 	(*ResetVolumeResponse)(nil),          // 23: chalkos.node.v1.ResetVolumeResponse
@@ -4187,7 +4146,7 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	16, // 13: chalkos.node.v1.ImageHeader.hash_tree:type_name -> chalkos.node.v1.ImagePart
 	16, // 14: chalkos.node.v1.ImageHeader.uki:type_name -> chalkos.node.v1.ImagePart
 	16, // 15: chalkos.node.v1.ImageHeader.boot_loader:type_name -> chalkos.node.v1.ImagePart
-	21, // 16: chalkos.node.v1.ApplyIdentityResponse.changes:type_name -> chalkos.node.v1.StorageChange
+	21, // 16: chalkos.node.v1.ApplyConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
 	31, // 17: chalkos.node.v1.StatusResponse.disks:type_name -> chalkos.node.v1.DiskStatus
 	32, // 18: chalkos.node.v1.StatusResponse.volumes:type_name -> chalkos.node.v1.VolumeStatus
 	30, // 19: chalkos.node.v1.StatusResponse.kubernetes:type_name -> chalkos.node.v1.KubernetesStatus
@@ -4207,7 +4166,7 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	5,  // 33: chalkos.node.v1.NodeService.Disks:input_type -> chalkos.node.v1.DisksRequest
 	9,  // 34: chalkos.node.v1.NodeService.Contract:input_type -> chalkos.node.v1.ContractRequest
 	11, // 35: chalkos.node.v1.NodeService.Install:input_type -> chalkos.node.v1.InstallRequest
-	19, // 36: chalkos.node.v1.NodeService.ApplyIdentity:input_type -> chalkos.node.v1.ApplyIdentityRequest
+	19, // 36: chalkos.node.v1.NodeService.ApplyConfig:input_type -> chalkos.node.v1.ApplyConfigRequest
 	22, // 37: chalkos.node.v1.NodeService.ResetVolume:input_type -> chalkos.node.v1.ResetVolumeRequest
 	24, // 38: chalkos.node.v1.NodeService.Status:input_type -> chalkos.node.v1.StatusRequest
 	33, // 39: chalkos.node.v1.NodeService.Logs:input_type -> chalkos.node.v1.LogsRequest
@@ -4225,7 +4184,7 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	6,  // 51: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
 	10, // 52: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
 	18, // 53: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
-	20, // 54: chalkos.node.v1.NodeService.ApplyIdentity:output_type -> chalkos.node.v1.ApplyIdentityResponse
+	20, // 54: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
 	23, // 55: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
 	25, // 56: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
 	34, // 57: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse

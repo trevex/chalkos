@@ -16,13 +16,14 @@ or accepts any certificate with --insecure and prints the fingerprint it saw, wh
 against the console afterwards; the secrets go over a second connection pinned to that
 fingerprint.
 
-chalkctl sends the node its identity from the cluster definition, a node certificate, the OS CA,
-the secret of its encrypted volumes' second keyslot (its recovery key, or a password) and, on a
-Kubernetes role, its Kubernetes share. A node that runs its role image already installs in place.
-A node that runs the installer gets the role image of its platform as well: --image, or the image
-chalkctl builds from the flake, signed for Secure Boot with --sign-key and --sign-cert when
-given. The installer writes it to the disk the node's identity names: a disk on which blkid finds
-no signature, or one holding an unfinished install of the node's role, which it continues; any
+chalkctl sends the node its config, documents generated from the cluster definition and checked
+against the schemas of the image it installs, a node certificate, the OS CA, the secret of its
+encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes role,
+its Kubernetes share. A node that runs its role image already installs in place. A node that
+runs the installer gets the role image of its platform as well: --image, or the image chalkctl
+builds from the flake, signed for Secure Boot with --sign-key and --sign-cert when given. The
+installer writes it to the disk the node's SystemDisk names: a disk on which blkid finds no
+signature, or one holding an unfinished install of the node's role, which it continues; any
 other disk only with --wipe-disk. The node reboots into the installed image. The command needs
 the secrets file.
 

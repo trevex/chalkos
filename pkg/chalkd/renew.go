@@ -311,7 +311,7 @@ func jitter(d time.Duration) time.Duration {
 }
 
 // Force renews at once, whether the renewal is due or not. Only test images use it, through
-// Server.RenewOnApplyIdentity.
+// Server.RenewOnApplyConfig.
 func (r *Renewal) Force() {
 	select {
 	case r.force <- struct{}{}:

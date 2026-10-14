@@ -76,15 +76,24 @@ const (
 	testState   = "cryptsetup open --test-passphrase --key-slot=2 --key-file=- " + stateDevice
 )
 
-func apply(s *Server, identity, fallback string) (*nodev1.ApplyIdentityResponse, error) {
-	resp, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: identity, FallbackSecret: fallback}))
+func apply(s *Server, identity, fallback string) (*nodev1.ApplyConfigResponse, error) {
+	resp, err := deliver(context.Background(), s, identity, &nodev1.ApplyConfigRequest{FallbackSecret: fallback})
 	if err != nil {
 		return nil, err
 	}
 	return resp.Msg, nil
 }
 
-func TestApplyIdentityAddsVolume(t *testing.T) {
+// deliver runs what ApplyConfig runs once it has translated its config into identity, with the
+// rest of req; an empty identity keeps the node's. The storage and Kubernetes tests state the
+// identity exactly this way.
+func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.apply(ctx, applyRequest{identity: identity, msg: req})
+}
+
+func TestApplyConfigAddsVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	next := identityWith(section("", "ext4"))
 
@@ -131,7 +140,7 @@ func TestApplyIdentityAddsVolume(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityWithoutStorageChanges(t *testing.T) {
+func TestApplyConfigWithoutStorageChanges(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	if _, err := apply(s, identityWith(section("", "")), ""); err != nil {
 		t.Fatal(err)
@@ -141,7 +150,7 @@ func TestApplyIdentityWithoutStorageChanges(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityRefusesDestructiveChange(t *testing.T) {
+func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	withNodeCertificate(t, s)
 	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
@@ -157,33 +166,24 @@ func TestApplyIdentityRefusesDestructiveChange(t *testing.T) {
 	}
 }
 
-// TestApplyIdentityRefusesAnotherImage refuses an identity of another cluster, role or platform
-// than the running image's.
-func TestApplyIdentityRefusesAnotherImage(t *testing.T) {
-	for _, tc := range []struct{ identity, want string }{
-		{strings.Replace(identityWith(section("", "")), `"cluster": "lab"`, `"cluster": "prod"`, 1),
-			`the identity is of the cluster "prod" and the role "worker", but the node's image is of "lab" and "worker"`},
-		{strings.Replace(identityWith(section("", "")), `"role": "worker"`, `"role": "controlplane"`, 1),
-			`the identity is of the cluster "lab" and the role "controlplane", but the node's image is of "lab" and "worker"`},
-		{strings.Replace(identityWith(section("", "")), `"platform": "metal"`, `"platform": "kvm"`, 1),
-			`the identity names the platform "kvm", but the node's image is built for "metal"`},
-	} {
-		s, r := installedServer(t, section("", ""), false)
-		before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
-		_, err := apply(s, tc.identity, secret)
-		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("err = %v, want %q", err, tc.want)
-		}
-		if len(r.calls) != 0 {
-			t.Errorf("ran %v for a refused identity", r.calls)
-		}
-		if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
-			t.Error("recorded a refused identity")
-		}
+// TestApplyConfigRefusesAnotherCluster refuses config of another cluster than the running
+// image's.
+func TestApplyConfigRefusesAnotherCluster(t *testing.T) {
+	s, r := installedServer(t, section("", ""), false)
+	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+	_, err := apply(s, strings.Replace(identityWith(section("", "")), `"cluster": "lab"`, `"cluster": "prod"`, 1), secret)
+	if want := `the config is of the cluster "prod", but the node's image is of "lab"`; connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v for refused config", r.calls)
+	}
+	if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
+		t.Error("recorded a refused identity")
 	}
 }
 
-func TestApplyIdentityNeedsFallbackForEncryptedVolume(t *testing.T) {
+func TestApplyConfigNeedsFallbackForEncryptedVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	_, err := apply(s, identityWith(section("", "ext4")), "")
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "no fallback secret") {
@@ -220,8 +220,9 @@ func addPartition(t *testing.T, s *Server, disk, name, devnum, number, uuid, lin
 }
 
 func reset(s *Server, volume, identity string) error {
-	_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: volume, Identity: identity, FallbackSecret: secret}))
-	return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resetVolume(context.Background(), volume, identity, secret)
 }
 
 func TestResetVolume(t *testing.T) {
@@ -339,7 +340,7 @@ func invalidSections(t *testing.T) map[string]string {
 	}
 }
 
-func TestApplyIdentityRefusesInvalidSection(t *testing.T) {
+func TestApplyConfigRefusesInvalidSection(t *testing.T) {
 	for name, invalid := range invalidSections(t) {
 		t.Run(name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true)
@@ -454,7 +455,9 @@ func TestResetVolumeNeedsFallbackForEveryEncryptedVolume(t *testing.T) {
 		v.Encryption = storage.EncryptionNone
 		s.Volumes["extra"] = v
 	}), storage.EncryptionTPM2)
-	_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "extra", Identity: identityWith(next)}))
+	s.mu.Lock()
+	err := s.resetVolume(context.Background(), "extra", identityWith(next), "")
+	s.mu.Unlock()
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "volume data") || !strings.Contains(err.Error(), "no fallback secret") {
 		t.Fatalf("err = %v", err)
 	}
@@ -499,7 +502,7 @@ func mismatch(r *fakeRunner) {
 	r.rules = append([]rule{{prefix: "cryptsetup open --test-passphrase", err: &node.ToolError{Command: "cryptsetup open", Code: 2, Stderr: "No key available with this passphrase."}}}, r.rules...)
 }
 
-func TestApplyIdentityRefusesMismatchingFallbackSecret(t *testing.T) {
+func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 	mismatch(r)
@@ -518,7 +521,7 @@ func TestApplyIdentityRefusesMismatchingFallbackSecret(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityRefusesWhenTheCheckFails(t *testing.T) {
+func TestApplyConfigRefusesWhenTheCheckFails(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	r.rules = append([]rule{{prefix: "cryptsetup open", err: &node.ToolError{Command: "cryptsetup open", Code: 4, Stderr: "Device does not exist."}}}, r.rules...)
 	_, err := apply(s, identityWith(section("", "ext4")), secret)
@@ -633,7 +636,7 @@ func withNodeCertificate(t *testing.T, s *Server) pki.CertKey {
 	return nodeCA
 }
 
-func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
+func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	nodeCA := withNodeCertificate(t, s)
 	idPath := filepath.Join(s.Paths.StateDir, "identity.json")
@@ -644,14 +647,17 @@ func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	other, _ := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n2"}, time.Now())
-	for name, req := range map[string]*nodev1.ApplyIdentityRequest{
-		"nothing":                    {},
-		"another node's certificate": {NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)},
-		"another key":                {NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(other.Key)},
-		// Refused before the identity is applied.
-		"another node's with an identity": {Identity: identityWith(section("", "")), NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)},
+	for name, tc := range map[string]struct {
+		identity string
+		req      *nodev1.ApplyConfigRequest
+	}{
+		"nothing":                    {"", &nodev1.ApplyConfigRequest{}},
+		"another node's certificate": {"", &nodev1.ApplyConfigRequest{NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)}},
+		"another key":                {"", &nodev1.ApplyConfigRequest{NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(other.Key)}},
+		// Refused before the config is applied.
+		"another node's with config": {identityWith(section("", "")), &nodev1.ApplyConfigRequest{NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)}},
 	} {
-		_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(req))
+		_, err := deliver(context.Background(), s, tc.identity, tc.req)
 		if connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid_argument", name, err)
 		} else if strings.Contains(err.Error(), "PRIVATE KEY") {
@@ -662,7 +668,7 @@ func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
 		t.Fatalf("a refused request changed the certificate or ran %v", r.calls)
 	}
 
-	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
+	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{
 		NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key),
 	})); err != nil {
 		t.Fatal(err)
@@ -675,7 +681,7 @@ func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityReloadsTimeServers(t *testing.T) {
+func TestApplyConfigReloadsTimeServers(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	withTime := func(host string) string {
 		return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "` + host + `", "nts": true}]}}`
@@ -690,7 +696,7 @@ func TestApplyIdentityReloadsTimeServers(t *testing.T) {
 		return n
 	}
 	apply := func(id string) error {
-		_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: id}))
+		_, err := deliver(context.Background(), s, id, &nodev1.ApplyConfigRequest{})
 		return err
 	}
 	if err := apply(withTime("ptbtime1.ptb.de")); err != nil {

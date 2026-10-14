@@ -69,7 +69,7 @@ func (n *fakeNode) refuse() error {
 	return nil
 }
 
-func (n *fakeNode) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.ApplyIdentityRequest]) (*connect.Response[nodev1.ApplyIdentityResponse], error) {
+func (n *fakeNode) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if err := n.refuse(); err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (n *fakeNode) ApplyIdentity(ctx context.Context, req *connect.Request[nodev
 		}
 		n.kubeletClient = fingerprint(n.lab.t, issued)
 	}
-	return connect.NewResponse(&nodev1.ApplyIdentityResponse{}), nil
+	return connect.NewResponse(&nodev1.ApplyConfigResponse{}), nil
 }
 
 func (n *fakeNode) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {

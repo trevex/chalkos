@@ -415,7 +415,7 @@ lib.runTests {
   testRenewalHookOnTestImagesOnly = {
     expr =
       let
-        hook = c: c.systemd.services.chalkd.environment ? CHALKD_TEST_RENEW_ON_APPLY_IDENTITY;
+        hook = c: c.systemd.services.chalkd.environment ? CHALKD_TEST_RENEW_ON_APPLY_CONFIG;
       in
       {
         role = hook (role (cluster [ ]));

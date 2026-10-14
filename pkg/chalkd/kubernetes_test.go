@@ -297,7 +297,7 @@ func kubernetesIdentity(nodeName string) string {
 	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}, "storage": ` + section("", "") + `}`
 }
 
-func TestApplyIdentityDeliversShare(t *testing.T) {
+func TestApplyConfigDeliversShare(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, false)
 	share := testShare(t, k8s.KindWorker)
 	// STATE keeps the share as Encode writes it, not as it was delivered.
@@ -305,9 +305,7 @@ func TestApplyIdentityDeliversShare(t *testing.T) {
 	if err := json.Indent(&delivered, share, "", "  "); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
-		Identity: kubernetesIdentity("n1"), KubernetesShare: delivered.Bytes(),
-	}))
+	resp, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{KubernetesShare: delivered.Bytes()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +325,7 @@ func TestApplyIdentityDeliversShare(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityRefusesShare(t *testing.T) {
+func TestApplyConfigRefusesShare(t *testing.T) {
 	plain, _ := installedServer(t, section("", ""), false)
 	worker, r := kubernetesServer(t, k8s.KindWorker, false)
 	controlPlane, _ := kubernetesServer(t, k8s.KindControlPlane, false)
@@ -359,9 +357,7 @@ func TestApplyIdentityRefusesShare(t *testing.T) {
 		"no node name":               {worker, identityWith(section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
 		"a node CA of another OS CA": {controlPlane, kubernetesIdentity("n1"), foreignNodeCA, connect.CodeInvalidArgument},
 	} {
-		_, err := tc.s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
-			Identity: tc.identity, KubernetesShare: tc.share,
-		}))
+		_, err := deliver(context.Background(), tc.s, tc.identity, &nodev1.ApplyConfigRequest{KubernetesShare: tc.share})
 		if connect.CodeOf(err) != tc.code {
 			t.Errorf("%s: %v, want %v", name, err, tc.code)
 		}
@@ -495,14 +491,12 @@ func TestStatusEtcdDataMissing(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityRefusesShareOfAnotherKind(t *testing.T) {
+func TestApplyConfigRefusesShareOfAnotherKind(t *testing.T) {
 	for image, share := range map[string]string{k8s.KindWorker: k8s.KindControlPlane, k8s.KindControlPlane: k8s.KindWorker} {
 		s, r := kubernetesServer(t, image, false)
 		identity := filepath.Join(s.Paths.StateDir, "identity.json")
 		before, _ := os.ReadFile(identity)
-		_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
-			Identity: kubernetesIdentity("n1"), KubernetesShare: testShare(t, share),
-		}))
+		_, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{KubernetesShare: testShare(t, share)})
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
 			t.Errorf("%s share on a %s image: %v", share, image, err)
 		}
@@ -683,7 +677,7 @@ func TestCredentialIsShortLived(t *testing.T) {
 // A change of what the node's Kubernetes files are made from runs their preparation again,
 // which picks the node's address and fills the firewall's VXLAN chain, and restarts the kubelet.
 // The firewall itself is left alone, so a node whose firewall is disabled takes a new address.
-func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
+func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	const restart = "systemctl restart chalkos-kubernetes.service kubelet.service"
 	base := kubernetesIdentity("n1")
@@ -742,7 +736,7 @@ func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
 
 // A share delivered to a running control plane reaches its loop at once, which starts again
 // with it.
-func TestApplyIdentityRestartsControlPlaneLoopWithNewShare(t *testing.T) {
+func TestApplyConfigRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	k := s.Kubernetes
 	// Only a reload restarts the loop this quickly.
@@ -763,9 +757,7 @@ func TestApplyIdentityRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
-		Identity: kubernetesIdentity("n1"), KubernetesShare: replaced,
-	})); err != nil {
+	if _, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{KubernetesShare: replaced}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -779,7 +771,7 @@ func TestApplyIdentityRestartsControlPlaneLoopWithNewShare(t *testing.T) {
 }
 
 // A node that finds no address keeps the identity, runs no kubelet, and says why.
-func TestApplyIdentityReportsMissingAddress(t *testing.T) {
+func TestApplyConfigReportsMissingAddress(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	const reason = "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)"
 	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service", err: errors.New("exit status 1")}}, r.rules...)
@@ -791,7 +783,7 @@ func TestApplyIdentityReportsMissingAddress(t *testing.T) {
 }
 
 // A restart that fails says why: the preparation's reason, or else the restart's own error.
-func TestApplyIdentityReportsFailedRestart(t *testing.T) {
+func TestApplyConfigReportsFailedRestart(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, false)
 	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service", err: errors.New("exit status 1")}}, r.rules...)
 	otherKindsShare(t, s)
@@ -811,7 +803,7 @@ func TestApplyIdentityReportsFailedRestart(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityRefusesInvalidAddressSettings(t *testing.T) {
+func TestApplyConfigRefusesInvalidAddressSettings(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	for name, kubernetes := range map[string]string{
 		"nodeIPs":      `{"nodeName": "n1", "nodeIPs": ["192.168.100"]}`,
@@ -827,7 +819,7 @@ func TestApplyIdentityRefusesInvalidAddressSettings(t *testing.T) {
 	}
 }
 
-// Once chalkd stops, a Start or Reload that arrives meanwhile, as from ApplyIdentity, starts no
+// Once chalkd stops, a Start or Reload that arrives meanwhile, as from ApplyConfig, starts no
 // loop again.
 func TestStartAfterStopDoesNothing(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
@@ -873,7 +865,7 @@ func testNodeCA(t *testing.T) pki.CertKey {
 	return nodeCA
 }
 
-func TestApplyIdentityRecordsNodeCAWithoutRestarts(t *testing.T) {
+func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindControlPlane, true)
 	p := s.Kubernetes.Paths
 	current, err := knode.ReadShare(p)
@@ -887,7 +879,7 @@ func TestApplyIdentityRecordsNodeCAWithoutRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{KubernetesShare: data})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: data})); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := knode.ReadShare(p); err != nil || *got.NodeCA != nodeCA {
@@ -899,7 +891,7 @@ func TestApplyIdentityRecordsNodeCAWithoutRestarts(t *testing.T) {
 
 	// Any other change prepares the node's files again.
 	other := testShare(t, k8s.KindControlPlane)
-	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{KubernetesShare: other})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: other})); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {

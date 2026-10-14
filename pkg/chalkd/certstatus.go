@@ -268,7 +268,7 @@ func (k *Kubernetes) certificates(now time.Time) []*nodev1.CertificateStatus {
 			if n, err := k8s.ReadNode(k.Paths.NodeFile); err == nil {
 				name = n.Name
 			}
-			add("kubelet client", cert, "expired; deliver a new one with chalkctl apply-identity "+name+" --kubernetes-share")
+			add("kubelet client", cert, "expired; deliver a new one with chalkctl apply-config "+name+" --kubernetes-share")
 		}
 	}
 	if serving, err := readPEMCertificate(k.Paths.KubeletServing()); err == nil {

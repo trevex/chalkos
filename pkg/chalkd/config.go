@@ -142,18 +142,12 @@ func restartByHand(units []string) string {
 	return fmt.Sprintf("; the config is stored, so restart %s by hand once that is fixed", strings.Join(units, " "))
 }
 
-// installIdentity returns the identity an install header delivers, as JSON, and the config set
-// the node keeps: the header's identity and no set, or the identity its config translates to for
-// the image installed, and that config. In place, that image is the running one; from the
-// installer, the header describes it.
-func (s *Server) installIdentity(h *nodev1.InstallHeader) (string, *store.Stored, error) {
-	switch {
-	case h.Config != "" && h.Identity != "":
-		return "", nil, failed(connect.CodeInvalidArgument, "the header delivers both config and an identity; deliver one of them")
-	case h.Config == "" && h.Identity == "":
-		return "", nil, failed(connect.CodeInvalidArgument, "the header delivers no identity or config")
-	case h.Config == "":
-		return h.Identity, nil, nil
+// installConfig translates the config an install header delivers into the identity of the node
+// for the image installed, as JSON, and returns it with the config set the node keeps. In place,
+// that image is the running one; from the installer, the header describes it.
+func (s *Server) installConfig(h *nodev1.InstallHeader) (string, *store.Stored, error) {
+	if h.Config == "" {
+		return "", nil, failed(connect.CodeInvalidArgument, "the header delivers no config")
 	}
 	var (
 		t       config.Target

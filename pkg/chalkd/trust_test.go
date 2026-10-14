@@ -44,9 +44,9 @@ func asCaller(cert *x509.Certificate) context.Context {
 	return context.WithValue(context.Background(), peerKey{}, cert)
 }
 
-// TestApplyIdentityReplacesTheOSCAs checks that a node trusts the OS CAs delivered to it from
+// TestApplyConfigReplacesTheOSCAs checks that a node trusts the OS CAs delivered to it from
 // then on, without a restart, and refuses ones that would lock it or its caller out.
-func TestApplyIdentityReplacesTheOSCAs(t *testing.T) {
+func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	withNodeCertificate(t, s)
 	osCA, err := testOSCA()
@@ -80,16 +80,16 @@ func TestApplyIdentityReplacesTheOSCAs(t *testing.T) {
 
 	for name, tc := range map[string]struct {
 		caller *x509.Certificate
-		req    *nodev1.ApplyIdentityRequest
+		req    *nodev1.ApplyConfigRequest
 	}{
-		"the new OS CA alone, which the node's certificate does not chain to": {admin, &nodev1.ApplyIdentityRequest{Trust: []byte(next.Certificate)}},
-		"OS CAs without the caller's":                                         {nextAdmin, &nodev1.ApplyIdentityRequest{Trust: []byte(osCA.Certificate)}},
-		"a key":                                                               {admin, &nodev1.ApplyIdentityRequest{Trust: []byte(both + next.Key)}},
-		"a leaf":                                                              {admin, &nodev1.ApplyIdentityRequest{Trust: []byte(both + leaf.Certificate)}},
-		"a node CA as a root":                                                 {admin, &nodev1.ApplyIdentityRequest{Trust: []byte(both + testNodeCA(t).Certificate)}},
-		"OS CAs with a node certificate":                                      {admin, &nodev1.ApplyIdentityRequest{Trust: []byte(both), NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key)}},
+		"the new OS CA alone, which the node's certificate does not chain to": {admin, &nodev1.ApplyConfigRequest{Trust: []byte(next.Certificate)}},
+		"OS CAs without the caller's":                                         {nextAdmin, &nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)}},
+		"a key":                                                               {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + next.Key)}},
+		"a leaf":                                                              {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + leaf.Certificate)}},
+		"a node CA as a root":                                                 {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + testNodeCA(t).Certificate)}},
+		"OS CAs with a node certificate":                                      {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both), NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key)}},
 	} {
-		_, err := s.ApplyIdentity(asCaller(tc.caller), connect.NewRequest(tc.req))
+		_, err := s.ApplyConfig(asCaller(tc.caller), connect.NewRequest(tc.req))
 		if connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid_argument", name, err)
 		} else if strings.Contains(err.Error(), "PRIVATE KEY") || strings.Contains(err.Error(), "BEGIN") {
@@ -100,7 +100,7 @@ func TestApplyIdentityReplacesTheOSCAs(t *testing.T) {
 		t.Fatal("a refused request changed the OS CAs")
 	}
 
-	if _, err := s.ApplyIdentity(asCaller(admin), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(both)})); err != nil {
+	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(both)})); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "chalkd", CAFile)); string(got) != both || s.Certificate.OSCA() != both {
@@ -158,10 +158,10 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
 	write(t, s.Kubernetes.Paths.Share(), string(share))
 	_, admin := adminOf(t, osCA)
-	if _, err := s.ApplyIdentity(asCaller(admin), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(osCA.Certificate)})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
+	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
 		t.Errorf("OS CAs without the node CA's: %v, want a refusal naming the node CA", err)
 	}
-	if _, err := s.ApplyIdentity(asCaller(admin), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))})); err != nil {
+	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))})); err != nil {
 		t.Errorf("OS CAs with the node CA's: %v", err)
 	}
 }
@@ -329,9 +329,9 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 	if err := info(forInfo); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("Info on a connection of the old root: %v, want unauthenticated", err)
 	}
-	_, err = forApply.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(both)}))
+	_, err = forApply.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(both)}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Errorf("ApplyIdentity on a connection of the old root: %v, want unauthenticated", err)
+		t.Errorf("ApplyConfig on a connection of the old root: %v, want unauthenticated", err)
 	}
 	if got := s.Certificate.OSCA(); got != next.Certificate {
 		t.Error("a client of the old root brought it back")
@@ -370,7 +370,7 @@ func TestTrustNotRecordedIsAnInternalError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
-	_, err := s.ApplyIdentity(asCaller(admin), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}))
+	_, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}))
 	if connect.CodeOf(err) != connect.CodeInternal {
 		t.Errorf("%v, want internal", err)
 	}

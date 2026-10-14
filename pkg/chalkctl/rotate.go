@@ -300,9 +300,9 @@ func (r *rotation) call(name string, fn func(conn *client.Conn, t *target) error
 }
 
 // deliver sends a node what req carries.
-func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyIdentityRequest) error {
+func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyConfigRequest) error {
 	return r.call(name, func(conn *client.Conn, _ *target) error {
-		_, err := conn.ApplyIdentity(ctx, connect.NewRequest(req))
+		_, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
 		return err
 	})
 }
@@ -317,7 +317,7 @@ func (r *rotation) deliverShare(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	return r.deliver(ctx, name, &nodev1.ApplyIdentityRequest{KubernetesShare: share})
+	return r.deliver(ctx, name, &nodev1.ApplyConfigRequest{KubernetesShare: share})
 }
 
 // status reads a node's status.
@@ -456,7 +456,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 			return err
 		}
 		return r.eachNode(r.allNodes(), func(name string) error {
-			if err := r.deliver(ctx, name, &nodev1.ApplyIdentityRequest{Trust: []byte(bundle)}); err != nil {
+			if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{Trust: []byte(bundle)}); err != nil {
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to trust the OS CAs", func(st *nodev1.StatusResponse) error {
@@ -506,7 +506,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 			if err != nil {
 				return err
 			}
-			if err := r.deliver(ctx, name, &nodev1.ApplyIdentityRequest{NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key)}); err != nil {
+			if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key)}); err != nil {
 				return err
 			}
 			if err := r.waitStatus(ctx, name, "to serve a certificate of the new node CA", func(st *nodev1.StatusResponse) error {

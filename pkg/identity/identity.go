@@ -6,8 +6,6 @@ package identity
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,13 +23,6 @@ import (
 
 // Header marks the networkd units the loader writes, so it removes only its own.
 const Header = "# Written by chalkd from the node identity.\n"
-
-// IdentityVersion names an identity document by its SHA-256, so a client can tell whether a node
-// runs the identity it would deliver.
-func IdentityVersion(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
 
 // Consumer is a unit that reads config kinds, as /etc/chalkos/consumers.json records it.
 type Consumer struct {

@@ -22,11 +22,12 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-const installIdentity = `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "s", "repart": {}}}, "volumes": {}, "fallback": "recovery-key", "encryption": "tpm2"}}`
+// installConfig is baseConfig for a node whose system disk has the serial chalk-target.
+var installConfig = strings.Replace(baseConfig, "spec: {disk: {path: /dev/vda}}", "spec: {disk: {serial: chalk-target}}", 1)
 
 func header(target any) *nodev1.InstallHeader {
 	h := &nodev1.InstallHeader{
-		Identity:        installIdentity,
+		Config:          installConfig,
 		NodeCertificate: []byte("cert"),
 		NodeKey:         []byte("key"),
 		CaCertificate:   []byte("ca"),
@@ -71,7 +72,7 @@ func TestInstallInPlace(t *testing.T) {
 	if err := sendInstall(t, s, header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if string(got.Identity) != installIdentity || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
+	if got.Config == nil || got.Config.Version != hashOf(t, installConfig) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
 		got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request = %+v", got)
 	}
@@ -106,6 +107,7 @@ func TestInstallFromParts(t *testing.T) {
 	}
 	h.SystemDefinitions = map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}
 	h.WipeDisk = true
+	h.Schemas = fixtureSchemas(t)
 
 	if err := sendInstall(t, s, h, parts); err != nil {
 		t.Fatal(err)
@@ -147,48 +149,36 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 	}
 }
 
-// TestInstallImageOfTheIdentity refuses an image of another cluster, role or platform than the
-// identity's.
-func TestInstallImageOfTheIdentity(t *testing.T) {
-	for _, tc := range []struct {
-		cluster, role, platform, want string
-	}{
-		{"prod", "worker", "metal", `the image is of the cluster "prod" and the role "worker", but the identity names "lab" and "worker"`},
-		{"lab", "controlplane", "metal", `the image is of the cluster "lab" and the role "controlplane", but the identity names "lab" and "worker"`},
-		{"lab", "worker", "kvm", `the image is built for the platform "kvm", but the identity names "metal"`},
-	} {
-		s, _ := newTestServer(t, maintenance, vda)
-		s.Installer = true
-		s.FromParts = func(context.Context, install.PartsRequest) error {
-			t.Error("installed onto the disk")
-			return nil
-		}
-		h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}})
-		h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: tc.cluster, Role: tc.role, Platform: tc.platform}
-		if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("an image of %s, %s and %s: %v, want %q", tc.cluster, tc.role, tc.platform, err, tc.want)
-		}
+// TestInstallImageOfTheConfig refuses an image of another cluster than the config's.
+func TestInstallImageOfTheConfig(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	s.Installer = true
+	s.FromParts = func(context.Context, install.PartsRequest) error {
+		t.Error("installed onto the disk")
+		return nil
+	}
+	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}})
+	h.Schemas = fixtureSchemas(t)
+	h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: "prod", Role: "worker", Platform: "metal"}
+	want := `the image is of the cluster "prod", but the config names "lab"`
+	if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+		t.Errorf("an image of another cluster: %v, want %q", err, want)
 	}
 }
 
-// TestInstallInPlaceOfTheImage refuses to install in place an identity of another cluster, role or
-// platform than the running image's.
+// TestInstallInPlaceOfTheImage refuses to install config of another cluster than the running
+// image's in place.
 func TestInstallInPlaceOfTheImage(t *testing.T) {
-	for _, tc := range []struct{ cluster, role, platform, want string }{
-		{"prod", "worker", "metal", `the identity is of the cluster "prod" and the role "worker", but the node's image is of "lab" and "worker"`},
-		{"lab", "controlplane", "metal", `the identity is of the cluster "lab" and the role "controlplane", but the node's image is of "lab" and "worker"`},
-		{"lab", "worker", "kvm", `the identity names the platform "kvm", but the node's image is built for "metal"; changing a node's platform is a reinstall`},
-	} {
-		s, _ := newTestServer(t, maintenance, vda)
-		s.InPlace = func(context.Context, install.Request) error {
-			t.Error("installed in place")
-			return nil
-		}
-		h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
-		h.Identity = strings.NewReplacer(`"cluster": "lab"`, `"cluster": "`+tc.cluster+`"`, `"role": "worker"`, `"role": "`+tc.role+`"`, `"platform": "metal"`, `"platform": "`+tc.platform+`"`).Replace(installIdentity)
-		if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("an identity of %s, %s and %s: %v, want %q", tc.cluster, tc.role, tc.platform, err, tc.want)
-		}
+	s, _ := newTestServer(t, maintenance, vda)
+	s.InPlace = func(context.Context, install.Request) error {
+		t.Error("installed in place")
+		return nil
+	}
+	h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	h.Config = strings.Replace(installConfig, "metadata: {name: lab}", "metadata: {name: prod}", 1)
+	want := `the config is of the cluster "prod", but the node's image is of "lab"`
+	if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+		t.Errorf("config of another cluster: %v, want %q", err, want)
 	}
 }
 
@@ -257,7 +247,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
 	h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
-	h.Identity, h.Config = "", baseConfig
+	h.Config = baseConfig
 
 	if err := sendInstall(t, s, h, nil); err != nil {
 		t.Fatal(err)
@@ -284,7 +274,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 		return err
 	}
 	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
-	h.Identity, h.Config = "", workerConfig
+	h.Config = workerConfig
 	h.Schemas = fixtureSchemas(t)
 	h.KubernetesCluster = []byte(workerCluster)
 	h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64"}
@@ -307,7 +297,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 func TestInstallRefusesConfig(t *testing.T) {
 	schemas := fixtureSchemas(t)
 	fromInstaller := func(h *nodev1.InstallHeader) {
-		h.Identity, h.Config, h.Schemas = "", workerConfig, schemas
+		h.Config, h.Schemas = workerConfig, schemas
 		h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
 		h.Image = &nodev1.ImageHeader{Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal"}
 	}
@@ -316,19 +306,18 @@ func TestInstallRefusesConfig(t *testing.T) {
 		edit      func(*nodev1.InstallHeader)
 		want      string
 	}{
-		"with an identity": {false, func(h *nodev1.InstallHeader) { h.Config = baseConfig }, "both config and an identity"},
 		"invalid": {false, func(h *nodev1.InstallHeader) {
-			h.Identity, h.Config = "", strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {}", 1)
+			h.Config = strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {}", 1)
 		}, `Node "n1"`},
 		"in place with schemas": {false, func(h *nodev1.InstallHeader) {
-			h.Identity, h.Config, h.Schemas = "", baseConfig, map[string][]byte{"x.json": []byte("{}")}
+			h.Config, h.Schemas = baseConfig, map[string][]byte{"x.json": []byte("{}")}
 		}, "running image"},
 		"from the installer without schemas": {true, func(h *nodev1.InstallHeader) {
-			h.Identity, h.Config = "", baseConfig
+			h.Config = baseConfig
 			h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
 			h.Image = &nodev1.ImageHeader{Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal"}
 		}, "schemas"},
-		"neither an identity nor config": {false, func(h *nodev1.InstallHeader) { h.Identity = "" }, "the header delivers no identity or config"},
+		"without config": {false, func(h *nodev1.InstallHeader) { h.Config = "" }, "the header delivers no config"},
 		"from the installer with an invalid kubernetes.json": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
 			h.KubernetesCluster = []byte(`{"kind": "worker"`)

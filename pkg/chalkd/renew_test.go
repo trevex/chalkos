@@ -346,13 +346,13 @@ func TestIssueNodeCertificateLocallyOnControlPlanes(t *testing.T) {
 	}
 }
 
-// TestRenewOnApplyIdentity checks the test images' hook: with it, ApplyIdentity renews the node
+// TestRenewOnApplyConfig checks the test images' hook: with it, ApplyConfig renews the node
 // certificate though it is not due; without it, as on every other image, it does not.
-func TestRenewOnApplyIdentity(t *testing.T) {
+func TestRenewOnApplyConfig(t *testing.T) {
 	for _, hook := range []bool{false, true} {
 		s, _ := installedServer(t, section("", ""), false)
 		withNodeCertificate(t, s)
-		s.RenewOnApplyIdentity = hook
+		s.RenewOnApplyConfig = hook
 		issued := make(chan struct{}, 1)
 		s.Renewal = NewNodeRenewal(s.Certificate, func(context.Context, []byte) (string, error) {
 			issued <- struct{}{}
@@ -364,7 +364,7 @@ func TestRenewOnApplyIdentity(t *testing.T) {
 		done := make(chan struct{})
 		go func() { s.Renewal.Run(ctx); close(done) }()
 		// OS CAs alone, as a rotation delivers them, renew nothing.
-		if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
+		if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -373,17 +373,17 @@ func TestRenewOnApplyIdentity(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 		}
 		recorded, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
-		if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: string(recorded)})); err != nil {
+		if _, err := deliver(context.Background(), s, string(recorded), &nodev1.ApplyConfigRequest{}); err != nil {
 			t.Fatal(err)
 		}
 		select {
 		case <-issued:
 			if !hook {
-				t.Error("ApplyIdentity renewed the node certificate without the test hook")
+				t.Error("ApplyConfig renewed the node certificate without the test hook")
 			}
 		case <-time.After(time.Second):
 			if hook {
-				t.Error("ApplyIdentity did not renew the node certificate with the test hook")
+				t.Error("ApplyConfig did not renew the node certificate with the test hook")
 			}
 		}
 		cancel()
@@ -463,20 +463,20 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 }
 
 // On a control plane whose loop runs, the test images' hook renews the control plane's
-// certificates after ApplyIdentity too.
-func TestRenewOnApplyIdentityRenewsTheControlPlane(t *testing.T) {
+// certificates after ApplyConfig too.
+func TestRenewOnApplyConfigRenewsTheControlPlane(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	if _, err := bootstrap(s, context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	s.RenewOnApplyIdentity = true
+	s.RenewOnApplyConfig = true
 	apiServer := filepath.Join(s.Kubernetes.Paths.PKI, kpki.FileAPIServer)
 	before, err := os.ReadFile(apiServer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recorded, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
-	if _, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: string(recorded)})); err != nil {
+	if _, err := deliver(context.Background(), s, string(recorded), &nodev1.ApplyConfigRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the control plane's certificates to be renewed", func() bool {

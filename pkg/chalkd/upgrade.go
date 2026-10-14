@@ -94,7 +94,7 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, image io.Re
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
 		Architecture:  uki.GoArchitecture(runtime.GOARCH),
 		OpenPartition: upgrade.OpenPartition,
-		// ApplyIdentity and ResetVolume change the boot disk's partitions under the same lock.
+		// ApplyConfig and ResetVolume change the boot disk's partitions under the same lock.
 		TableLock: &s.mu,
 	}
 	return n.Install(ctx, h, image)

@@ -112,7 +112,7 @@ func (p Paths) KubeletServing() string {
 }
 
 // ErrNoShare means the node has no Kubernetes share yet.
-var ErrNoShare = errors.New("the node has no Kubernetes share; deliver one with chalkctl install or chalkctl apply-identity --kubernetes-share")
+var ErrNoShare = errors.New("the node has no Kubernetes share; deliver one with chalkctl install or chalkctl apply-config --kubernetes-share")
 
 // ReadShare reads the node's share from STATE.
 func ReadShare(p Paths) (kpki.Share, error) {

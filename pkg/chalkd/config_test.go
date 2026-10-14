@@ -158,8 +158,8 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	return s, r
 }
 
-func sendConfig(s *Server, text string) (*nodev1.ApplyIdentityResponse, error) {
-	resp, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Config: text}))
+func sendConfig(s *Server, text string) (*nodev1.ApplyConfigResponse, error) {
+	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: text}))
 	if err != nil {
 		return nil, err
 	}
@@ -257,40 +257,6 @@ func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	}
 	if v, _ := store.Version(s.Identity.Config); v != hashOf(t, baseConfig) {
 		t.Error("stored a refused config")
-	}
-}
-
-func TestApplyRefusesConfigWithIdentity(t *testing.T) {
-	s, r := configServer(t)
-	identityText := readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))
-	_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{Config: baseConfig, Identity: identityText}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "both config and an identity") {
-		t.Fatalf("err = %v", err)
-	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
-	}
-}
-
-// TestApplyIdentityRemovesStoredConfig: an identity carries no config set, so the node's stored
-// set goes, and the consumers of its kinds restart.
-func TestApplyIdentityRemovesStoredConfig(t *testing.T) {
-	s, _ := configServer(t)
-	resp, err := apply(s, readFile(t, filepath.Join(s.Paths.StateDir, "identity.json")), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(resp.RestartedUnits, []string{"demo"}) {
-		t.Errorf("restarted %v, want demo", resp.RestartedUnits)
-	}
-	if _, found, err := store.Read(s.Identity.Config); err != nil || found {
-		t.Errorf("the stored config remains: %v", err)
-	}
-	if entries, err := os.ReadDir(filepath.Join(s.Identity.RunDir, "credentials", "demo")); err != nil || len(entries) != 0 {
-		t.Errorf("demo's credentials = %v, %v; want an empty directory", entries, err)
-	}
-	if entries, err := os.ReadDir(filepath.Join(s.Identity.RunDir, "config")); err != nil || len(entries) != 0 {
-		t.Errorf("/run/chalkos/config = %v, %v; want an empty directory", entries, err)
 	}
 }
 

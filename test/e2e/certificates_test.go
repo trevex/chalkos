@@ -97,7 +97,7 @@ func renewed(t *testing.T, what, addr string, before *x509.Certificate, timeout 
 }
 
 // renewals renews w1's node certificate through cp1 and cp1's own certificates in place: the
-// test image renews them whenever an identity is delivered.
+// test image renews them whenever config is delivered.
 func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes map[string]*node, apiPort int) {
 	t.Helper()
 	w1, cp1 := nodes["w1"], nodes["cp1"]
@@ -105,7 +105,7 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chalkctl(t, w1, "base", "apply-identity", "w1"); err != nil {
+	if _, err := chalkctl(t, w1, "base", "apply-config", "w1"); err != nil {
 		t.Fatal(err)
 	}
 	renewed(t, "w1's node certificate renewed through cp1", w1.addr, w1Before, 2*time.Minute)
@@ -127,7 +127,7 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 		t.Fatal(err)
 	}
 	start := time.Now()
-	if _, err := chalkctl(t, cp1, "base", "apply-identity", "cp1"); err != nil {
+	if _, err := chalkctl(t, cp1, "base", "apply-config", "cp1"); err != nil {
 		t.Fatal(err)
 	}
 	renewed(t, "cp1's node certificate renewed", cp1.addr, cp1Before, 2*time.Minute)

@@ -38,7 +38,7 @@ argument after it is read as a positional argument.
 
 ## SEE ALSO
 
-* [chalkctl apply-identity](chalkctl_apply-identity.md)	 - Deliver a node's identity from the cluster definition
+* [chalkctl apply-config](chalkctl_apply-config.md)	 - Deliver a node's config from the cluster definition
 * [chalkctl bootstrap](chalkctl_bootstrap.md)	 - Initialise the cluster on a control plane
 * [chalkctl completion](chalkctl_completion.md)	 - Generate the autocompletion script for the specified shell
 * [chalkctl config](chalkctl_config.md)	 - Manage client files

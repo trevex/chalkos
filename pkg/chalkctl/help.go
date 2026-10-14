@@ -168,13 +168,14 @@ or accepts any certificate with --insecure and prints the fingerprint it saw, wh
 against the console afterwards; the secrets go over a second connection pinned to that
 fingerprint.
 
-chalkctl sends the node its identity from the cluster definition, a node certificate, the OS CA,
-the secret of its encrypted volumes' second keyslot (its recovery key, or a password) and, on a
-Kubernetes role, its Kubernetes share. A node that runs its role image already installs in place.
-A node that runs the installer gets the role image of its platform as well: --image, or the image
-chalkctl builds from the flake, signed for Secure Boot with --sign-key and --sign-cert when
-given. The installer writes it to the disk the node's identity names: a disk on which blkid finds
-no signature, or one holding an unfinished install of the node's role, which it continues; any
+chalkctl sends the node its config, documents generated from the cluster definition and checked
+against the schemas of the image it installs, a node certificate, the OS CA, the secret of its
+encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes role,
+its Kubernetes share. A node that runs its role image already installs in place. A node that
+runs the installer gets the role image of its platform as well: --image, or the image chalkctl
+builds from the flake, signed for Secure Boot with --sign-key and --sign-cert when given. The
+installer writes it to the disk the node's SystemDisk names: a disk on which blkid finds no
+signature, or one holding an unfinished install of the node's role, which it continues; any
 other disk only with --wipe-disk. The node reboots into the installed image. The command needs
 the secrets file.`
 
@@ -198,32 +199,35 @@ const disksExample = `  # The disks of an installed node.
   # The disks of a machine that booted the installer and is not in the cluster definition yet.
   chalkctl disks --endpoint 192.168.1.50 --insecure`
 
-const applyIdentityLong = `Delivers a node's identity from the cluster definition to the installed node: its hostname,
-networks, labels, taints, storage, time servers, Kubernetes settings (node name, addresses and
-subnets) and extensions. The node applies additive storage changes (a new volume, for example)
-while it runs. When the identity changes a volume destructively, the node refuses the whole
-identity and applies none of it; chalkctl storage reset recreates such a volume. Otherwise the
-node restarts the units that read what changed, and chalkctl prints the changes and the units.
---kubernetes-share also delivers a new Kubernetes share: for example a worker's new kubelet
-certificate. The command needs the secrets file.`
+const applyConfigLong = `Delivers a node's config to the installed node: the documents chalkctl generates from the
+cluster definition, which set its hostname, networks, storage, time servers, Kubernetes settings
+(labels, taints, addresses and subnets) and the documents of its extensions' kinds. chalkctl first
+asks the node for the schemas of the image it runs and checks that the documents give back what
+the cluster definition declares for the node. The node replaces its config as a whole, and
+applies additive storage changes (a new volume, for example) while it runs. When the config
+changes a volume destructively, the node refuses the whole config and applies none of it;
+chalkctl storage reset recreates such a volume. Otherwise the node restarts the units that read
+what changed, and chalkctl prints the changes and the units. --kubernetes-share also delivers a
+new Kubernetes share: for example a worker's new kubelet certificate. The command needs the
+secrets file.`
 
-const applyIdentityExample = `  # Apply w1's changed network and labels.
-  chalkctl apply-identity w1
+const applyConfigExample = `  # Apply w1's changed network and labels.
+  chalkctl apply-config w1
 
   # Give w1 a new kubelet certificate.
-  chalkctl apply-identity w1 --kubernetes-share`
+  chalkctl apply-config w1 --kubernetes-share`
 
-const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's identity defines it.
-Its data is lost. A volume the identity encrypts is sealed to the TPM again and, unless the
+const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's config defines it.
+Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
 node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
-A volume the identity leaves unencrypted is created without encryption. The command needs the
+A volume the config leaves unencrypted is created without encryption. The command needs the
 cluster definition, which defines the volume, and an admin client file or the secrets file. A
 node whose fallback is its recovery key needs the secrets file, from which the key is derived.`
 
 const resetVolumeExample = `  # Recreate the data volume of w1.
   chalkctl storage reset w1 data`
 
-const statusLong = `Shows an installed node's status: the identity it runs and whether it is the one the cluster
+const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the cluster
 definition gives; its platform; the image version it booted and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled
 back, with the journal of the boot that failed; its volumes and their state; Kubernetes; the

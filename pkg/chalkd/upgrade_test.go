@@ -173,7 +173,7 @@ func (w lockWatcher) Run(ctx context.Context, name string, args ...string) ([]by
 }
 
 // TestUpgradeSharesTheStorageLock reads the boot disk's partition table only while holding the
-// lock ApplyIdentity and ResetVolume change the node's storage under.
+// lock ApplyConfig and ResetVolume change the node's storage under.
 func TestUpgradeSharesTheStorageLock(t *testing.T) {
 	s, r := newTestServer(t, normal, vda)
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=worker\nCHALKOS_PLATFORM=metal\n")

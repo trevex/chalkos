@@ -226,7 +226,7 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 		return fmt.Errorf("resolve the system disk %s: %w", ref, err)
 	}
 	if system.Name != boot.Name {
-		return fmt.Errorf("the identity places the system on %s, but the node runs from %s; install it with the installer instead", system, boot)
+		return fmt.Errorf("the config places the system on %s, but the node runs from %s; install it with the installer instead", system, boot)
 	}
 	defs, err := readDefinitions(i.Definitions)
 	if err != nil {

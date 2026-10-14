@@ -579,7 +579,7 @@ func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, ar
 	return f.RunWithEnv(ctx, nil, name, args...)
 }
 
-func TestApplyIdentityAndStatus(t *testing.T) {
+func TestApplyConfigAndStatus(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{"hostname": "old"}`))
 	addr := ta.startNode(t, s)
@@ -587,13 +587,13 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "config none (not the cluster definition's; chalkctl apply-identity n1 delivers it)") || !strings.Contains(ta.stdout.String(), "var") {
+	if !strings.Contains(ta.stdout.String(), "config none (not the cluster definition's; chalkctl apply-config n1 delivers it)") || !strings.Contains(ta.stdout.String(), "var") {
 		t.Errorf("status before = %q", ta.stdout)
 	}
 
 	ta.stdout.Reset()
 	r.calls = nil
-	if err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking", "networkctl reload"}) {
@@ -620,7 +620,7 @@ func TestApplyIdentityAndStatus(t *testing.T) {
 	}
 }
 
-func TestApplyIdentityNamesResetCommand(t *testing.T) {
+func TestApplyConfigNamesResetCommand(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	// The node recorded VAR as xfs, so the definition's ext4 is a destructive change.
@@ -632,7 +632,7 @@ func TestApplyIdentityNamesResetCommand(t *testing.T) {
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(data))
 	addr := ta.startNode(t, s)
 
-	err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr))
+	err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "chalkctl storage reset n1 var") {
 		t.Fatalf("err = %v, want the reset command for n1", err)
 	}
@@ -814,7 +814,7 @@ func withPassword(t *testing.T, ta *testApp, encryption string) {
 	})
 }
 
-func TestApplyIdentityAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
+func TestApplyConfigAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	ta := newTestApp(t)
 	ta.editManifest(t, func(m *manifest.Manifest) {
 		n := m.Nodes["n1"]
@@ -825,7 +825,7 @@ func TestApplyIdentityAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	addr := ta.startNode(t, s)
 
 	// Nothing to enroll: the password is not asked for.
-	if err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if len(ta.prompts) != 0 {
@@ -837,7 +837,7 @@ func TestApplyIdentityAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	withPassword(t, ta, storage.EncryptionTPM2)
 	r.calls = nil
 	ta.answers = []string{"right", "wrong"}
-	err := ta.run(context.Background(), ta.args([]string{"apply-identity", "n1"}, addr))
+	err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Fatalf("err = %v, want the typo noticed", err)
 	}

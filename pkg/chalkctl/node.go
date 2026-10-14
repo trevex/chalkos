@@ -531,20 +531,20 @@ func size(bytes uint64) string {
 	return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0") + units[i]
 }
 
-type applyIdentityFlags struct {
+type applyConfigFlags struct {
 	node            nodeCommand
 	passwordFile    string
 	kubernetesShare bool
 }
 
-func (a *app) applyIdentityCommand() *cobra.Command {
-	var f applyIdentityFlags
+func (a *app) applyConfigCommand() *cobra.Command {
+	var f applyConfigFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "apply-identity <node>",
-		Short:   "Deliver a node's identity from the cluster definition",
-		Long:    applyIdentityLong,
-		Example: applyIdentityExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.applyIdentity(ctx, f, pos) })
+		Use:     "apply-config <node>",
+		Short:   "Deliver a node's config from the cluster definition",
+		Long:    applyConfigLong,
+		Example: applyConfigExample,
+	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.register(fs)
 	registerPasswordFile(fs, &f.passwordFile)
@@ -557,10 +557,10 @@ func registerPasswordFile(fs *pflag.FlagSet, p *string) {
 	fs.StringVar(p, "password-file", "", "file holding the password of a node whose fallback is a password")
 }
 
-func (a *app) applyIdentity(ctx context.Context, f applyIdentityFlags, pos []string) error {
+func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
 	n := f.node
 	if len(pos) != 1 {
-		return errors.New("usage: chalkctl apply-identity <node> [--kubernetes-share]")
+		return errors.New("usage: chalkctl apply-config <node> [--kubernetes-share]")
 	}
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
@@ -591,7 +591,7 @@ func (a *app) applyIdentity(ctx context.Context, f applyIdentityFlags, pos []str
 			return fmt.Errorf("the role of %s has no Kubernetes", t.name)
 		}
 	}
-	resp, err := conn.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Config: d.Text, FallbackSecret: fallback, KubernetesShare: share}))
+	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, KubernetesShare: share}))
 	if err != nil {
 		return nodeError(err, t.name)
 	}
@@ -690,7 +690,7 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 		}
 		state = "the cluster definition's"
 		if b.Version != s.ConfigVersion {
-			state = "not the cluster definition's; chalkctl apply-identity " + t.name + " delivers it"
+			state = "not the cluster definition's; chalkctl apply-config " + t.name + " delivers it"
 		}
 	}
 	version := s.ConfigVersion

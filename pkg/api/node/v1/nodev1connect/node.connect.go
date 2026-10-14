@@ -43,9 +43,8 @@ const (
 	NodeServiceContractProcedure = "/chalkos.node.v1.NodeService/Contract"
 	// NodeServiceInstallProcedure is the fully-qualified name of the NodeService's Install RPC.
 	NodeServiceInstallProcedure = "/chalkos.node.v1.NodeService/Install"
-	// NodeServiceApplyIdentityProcedure is the fully-qualified name of the NodeService's ApplyIdentity
-	// RPC.
-	NodeServiceApplyIdentityProcedure = "/chalkos.node.v1.NodeService/ApplyIdentity"
+	// NodeServiceApplyConfigProcedure is the fully-qualified name of the NodeService's ApplyConfig RPC.
+	NodeServiceApplyConfigProcedure = "/chalkos.node.v1.NodeService/ApplyConfig"
 	// NodeServiceResetVolumeProcedure is the fully-qualified name of the NodeService's ResetVolume RPC.
 	NodeServiceResetVolumeProcedure = "/chalkos.node.v1.NodeService/ResetVolume"
 	// NodeServiceStatusProcedure is the fully-qualified name of the NodeService's Status RPC.
@@ -93,12 +92,13 @@ type NodeServiceClient interface {
 	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
 	// continues when run again.
 	Install(context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse]
-	// ApplyIdentity replaces the identity of an installed node. Destructive storage changes are
-	// refused; additive ones are applied live.
-	ApplyIdentity(context.Context, *connect.Request[v1.ApplyIdentityRequest]) (*connect.Response[v1.ApplyIdentityResponse], error)
-	// ResetVolume wipes one volume and creates it again as the delivered identity defines it.
+	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
+	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
+	// applied live.
+	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
+	// ResetVolume wipes one volume and creates it again as the delivered config defines it.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
-	// Status reports the identity version, the storage, and failed units of an installed node.
+	// Status reports the config version, the storage, and failed units of an installed node.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Logs streams the journal of the current boot, or of one unit in it.
 	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogsResponse], error)
@@ -186,10 +186,10 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Install")),
 			connect.WithClientOptions(opts...),
 		),
-		applyIdentity: connect.NewClient[v1.ApplyIdentityRequest, v1.ApplyIdentityResponse](
+		applyConfig: connect.NewClient[v1.ApplyConfigRequest, v1.ApplyConfigResponse](
 			httpClient,
-			baseURL+NodeServiceApplyIdentityProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("ApplyIdentity")),
+			baseURL+NodeServiceApplyConfigProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("ApplyConfig")),
 			connect.WithClientOptions(opts...),
 		),
 		resetVolume: connect.NewClient[v1.ResetVolumeRequest, v1.ResetVolumeResponse](
@@ -279,7 +279,7 @@ type nodeServiceClient struct {
 	disks                *connect.Client[v1.DisksRequest, v1.DisksResponse]
 	contract             *connect.Client[v1.ContractRequest, v1.ContractResponse]
 	install              *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyIdentity        *connect.Client[v1.ApplyIdentityRequest, v1.ApplyIdentityResponse]
+	applyConfig          *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
 	resetVolume          *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
 	status               *connect.Client[v1.StatusRequest, v1.StatusResponse]
 	logs                 *connect.Client[v1.LogsRequest, v1.LogsResponse]
@@ -315,9 +315,9 @@ func (c *nodeServiceClient) Install(ctx context.Context) *connect.ClientStreamFo
 	return c.install.CallClientStream(ctx)
 }
 
-// ApplyIdentity calls chalkos.node.v1.NodeService.ApplyIdentity.
-func (c *nodeServiceClient) ApplyIdentity(ctx context.Context, req *connect.Request[v1.ApplyIdentityRequest]) (*connect.Response[v1.ApplyIdentityResponse], error) {
-	return c.applyIdentity.CallUnary(ctx, req)
+// ApplyConfig calls chalkos.node.v1.NodeService.ApplyConfig.
+func (c *nodeServiceClient) ApplyConfig(ctx context.Context, req *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error) {
+	return c.applyConfig.CallUnary(ctx, req)
 }
 
 // ResetVolume calls chalkos.node.v1.NodeService.ResetVolume.
@@ -400,12 +400,13 @@ type NodeServiceHandler interface {
 	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
 	// continues when run again.
 	Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
-	// ApplyIdentity replaces the identity of an installed node. Destructive storage changes are
-	// refused; additive ones are applied live.
-	ApplyIdentity(context.Context, *connect.Request[v1.ApplyIdentityRequest]) (*connect.Response[v1.ApplyIdentityResponse], error)
-	// ResetVolume wipes one volume and creates it again as the delivered identity defines it.
+	// ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
+	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
+	// applied live.
+	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
+	// ResetVolume wipes one volume and creates it again as the delivered config defines it.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
-	// Status reports the identity version, the storage, and failed units of an installed node.
+	// Status reports the config version, the storage, and failed units of an installed node.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Logs streams the journal of the current boot, or of one unit in it.
 	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error
@@ -489,10 +490,10 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Install")),
 		connect.WithHandlerOptions(opts...),
 	)
-	nodeServiceApplyIdentityHandler := connect.NewUnaryHandler(
-		NodeServiceApplyIdentityProcedure,
-		svc.ApplyIdentity,
-		connect.WithSchema(nodeServiceMethods.ByName("ApplyIdentity")),
+	nodeServiceApplyConfigHandler := connect.NewUnaryHandler(
+		NodeServiceApplyConfigProcedure,
+		svc.ApplyConfig,
+		connect.WithSchema(nodeServiceMethods.ByName("ApplyConfig")),
 		connect.WithHandlerOptions(opts...),
 	)
 	nodeServiceResetVolumeHandler := connect.NewUnaryHandler(
@@ -583,8 +584,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceContractHandler.ServeHTTP(w, r)
 		case NodeServiceInstallProcedure:
 			nodeServiceInstallHandler.ServeHTTP(w, r)
-		case NodeServiceApplyIdentityProcedure:
-			nodeServiceApplyIdentityHandler.ServeHTTP(w, r)
+		case NodeServiceApplyConfigProcedure:
+			nodeServiceApplyConfigHandler.ServeHTTP(w, r)
 		case NodeServiceResetVolumeProcedure:
 			nodeServiceResetVolumeHandler.ServeHTTP(w, r)
 		case NodeServiceStatusProcedure:
@@ -636,8 +637,8 @@ func (UnimplementedNodeServiceHandler) Install(context.Context, *connect.ClientS
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Install is not implemented"))
 }
 
-func (UnimplementedNodeServiceHandler) ApplyIdentity(context.Context, *connect.Request[v1.ApplyIdentityRequest]) (*connect.Response[v1.ApplyIdentityResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ApplyIdentity is not implemented"))
+func (UnimplementedNodeServiceHandler) ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ApplyConfig is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error) {

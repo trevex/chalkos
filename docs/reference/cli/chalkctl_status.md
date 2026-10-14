@@ -9,7 +9,7 @@ Show an installed node's status
 
 ## Synopsis
 
-Shows an installed node's status: the identity it runs and whether it is the one the cluster
+Shows an installed node's status: the config it runs and whether it is the one the cluster
 definition gives; its platform; the image version it booted and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled
 back, with the journal of the boot that failed; its volumes and their state; Kubernetes; the

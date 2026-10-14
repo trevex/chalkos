@@ -121,10 +121,10 @@ type Server struct {
 	Kubernetes *Kubernetes
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *Renewal
-	// RenewOnApplyIdentity renews the node certificate and the control plane's certificates after
-	// each ApplyIdentity that delivers an identity, due or not. Only test images set it, to renew
-	// within a test's time.
-	RenewOnApplyIdentity bool
+	// RenewOnApplyConfig renews the node certificate and the control plane's certificates after
+	// each ApplyConfig that delivers config, due or not. Only test images set it, to renew within
+	// a test's time.
+	RenewOnApplyConfig bool
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
@@ -149,7 +149,7 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceDisksProcedure:                {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
 	nodev1connect.NodeServiceContractProcedure:             {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
 	nodev1connect.NodeServiceInstallProcedure:              {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
-	nodev1connect.NodeServiceApplyIdentityProcedure:        {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceApplyConfigProcedure:          {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceResetVolumeProcedure:          {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceStatusProcedure:               {[]nodev1.Mode{normal}, pki.RoleReader},
 	nodev1connect.NodeServiceLogsProcedure:                 {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},

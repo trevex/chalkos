@@ -87,7 +87,7 @@ func newCommand(a *app) *cobra.Command {
 		a.recoveryKeyCommand(),
 		a.installCommand(),
 		a.disksCommand(),
-		a.applyIdentityCommand(),
+		a.applyConfigCommand(),
 		a.statusCommand(),
 		a.logsCommand(),
 		a.rebootCommand(),

@@ -46,7 +46,7 @@ in
     ];
     # chalkd is the only way to reach the node, so it never stops restarting.
     startLimitIntervalSec = 0;
-    # Tools Install, ApplyIdentity and ResetVolume run; repart formats with the mkfs tools, the
+    # Tools Install, ApplyConfig and ResetVolume run; repart formats with the mkfs tools, the
     # ESP of a disk the installer lays out with dosfstools.
     path = [
       config.systemd.package
