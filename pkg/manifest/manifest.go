@@ -64,6 +64,8 @@ type Node struct {
 	Role     string   `json:"role"`
 	Platform string   `json:"platform"`
 	Identity Identity `json:"identity"`
+	// Documents are the config documents the node's extensions add, each one JSON object.
+	Documents []json.RawMessage `json:"documents"`
 }
 
 // Identity is the node's identity without secrets, as delivered to the node.
@@ -83,8 +85,7 @@ type Identity struct {
 	Storage    storage.Section     `json:"storage"`
 	Kubernetes *KubernetesIdentity `json:"kubernetes"`
 	// Time is how the node keeps its clock.
-	Time       Time                       `json:"time"`
-	Extensions map[string]json.RawMessage `json:"extensions"`
+	Time Time `json:"time"`
 }
 
 // Time names the servers the node keeps its clock with.

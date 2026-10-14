@@ -21,6 +21,14 @@
     "cp1": {
       "role": "controlplane",
       "platform": "metal",
+      "documents": [
+        {
+          "apiVersion": "rack.example.org/v1alpha1",
+          "kind": "Rack",
+          "metadata": { "name": "rack" },
+          "spec": { "location": "rack-a/u12" }
+        }
+      ],
       "identity": {
         "hostname": "cp1",
         "cluster": "homelab",
@@ -63,13 +71,20 @@
             { "host": "ptbtime2.ptb.de", "nts": true, "port": null },
             { "host": "ptbtime3.ptb.de", "nts": true, "port": null }
           ]
-        },
-        "extensions": { "rack": { "location": "rack-a/u12" } }
+        }
       }
     },
     "w1": {
       "role": "worker",
       "platform": "metal",
+      "documents": [
+        {
+          "apiVersion": "rack.example.org/v1alpha1",
+          "kind": "Rack",
+          "metadata": { "name": "rack" },
+          "spec": { "location": "rack-a/u14" }
+        }
+      ],
       "identity": {
         "hostname": "w1",
         "cluster": "homelab",
@@ -110,8 +125,7 @@
             { "host": "ptbtime2.ptb.de", "nts": true, "port": null },
             { "host": "ptbtime3.ptb.de", "nts": true, "port": null }
           ]
-        },
-        "extensions": { "rack": { "location": "rack-a/u14" } }
+        }
       }
     }
   }

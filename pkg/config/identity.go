@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -32,7 +31,7 @@ var defaultTimeServers = []manifest.TimeServer{
 
 // Identity translates the set into the node's identity for the image t describes, as the cluster
 // definition rendered it, so every reader of the identity on the node keeps working. Extension
-// kinds stay in the set and do not reach the identity's extensions.
+// kinds stay in the set.
 func (s *Set) Identity(t Target) (manifest.Identity, error) {
 	cluster, _ := s.One("Cluster")
 	nodeDoc, _ := s.One("Node")
@@ -66,9 +65,6 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 		Taints:       []manifest.Taint{},
 		Storage:      sec,
 		Time:         manifest.Time{Servers: slices.Clone(defaultTimeServers)},
-		// Empty rather than nil, so the identity marshals with "extensions":{} as the cluster
-		// definition's does.
-		Extensions: map[string]json.RawMessage{},
 	}
 	if node.Hostname != nil {
 		id.Hostname = *node.Hostname

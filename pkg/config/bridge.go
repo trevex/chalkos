@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -70,6 +71,13 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 	objects = append(objects, networkDocs...)
 	if id.Kubernetes != nil {
 		objects = append(objects, kubeletObject(id))
+	}
+	for i, raw := range n.Documents {
+		doc, err := decodeObject(raw)
+		if err != nil {
+			return Bridged{}, fmt.Errorf("node %s: document %d of its extensions is not an object: %w", name, i+1, err)
+		}
+		objects = append(objects, doc)
 	}
 	return encode(objects)
 }
@@ -458,4 +466,18 @@ func sameKubernetes(want, got *manifest.KubernetesIdentity) bool {
 	}
 	return want.NodeName == got.NodeName && slices.Equal(want.NodeIPs, got.NodeIPs) &&
 		(want.ValidSubnets == nil) == (got.ValidSubnets == nil) && slices.Equal(want.ValidSubnets, got.ValidSubnets)
+}
+
+// decodeObject reads one JSON document with its numbers as written.
+func decodeObject(raw []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var o map[string]any
+	if err := dec.Decode(&o); err != nil {
+		return nil, err
+	}
+	if o == nil {
+		return nil, fmt.Errorf("null is not a document")
+	}
+	return o, nil
 }

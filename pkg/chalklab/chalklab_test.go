@@ -36,12 +36,12 @@ const labManifest = `{
   "nodes": {
     "cp1": {"role": "controlplane", "platform": "kvm", "identity": {"hostname": "cp1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7b:00:11"}, "address": ["192.168.123.11/24"]}}},
-      "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}},
+      "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
     "w1": {"role": "worker", "platform": "kvm", "identity": {"hostname": "w1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7B:00:12"}, "address": ["192.168.123.12/24"]}}},
-      "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}},
+      "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
     "m1": {"role": "worker", "platform": "metal", "identity": {"hostname": "m1", "platform": "metal",
-      "network": {}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}}
+      "network": {}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
   }
 }`
 

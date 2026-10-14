@@ -1088,7 +1088,7 @@ raw value *(read only)*
 
 
 
-Nodes of the cluster\. Extensions add their own per-node options to this submodule\.
+Nodes of the cluster\. Extensions add their own per-node options to this submodule, and the documents of their kinds to documents\.
 
 
 
@@ -1106,6 +1106,49 @@ attribute set of (submodule)
 *Declared by:*
  - [modules/cluster/options/kubernetes\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/kubernetes.nix)
  - [modules/cluster/options/storage\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/storage.nix)
+ - [modules/cluster/options/nodes\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/nodes.nix)
+
+
+
+### chalkos\.nodes\.\<name>\.documents
+
+
+
+Config documents of the node besides those chalkctl generates from its other options,
+each an attribute set of ` apiVersion `, ` kind `, ` metadata ` and ` spec `\. Extensions add
+the documents of the kinds their role modules declare under ` chalkos.kinds `; chalkctl
+and chalkd check them against the schemas of the node’s image\.
+
+
+
+*Type:*
+list of attribute set of anything
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  {
+    apiVersion = "rack.example.org/v1alpha1";
+    kind = "Rack";
+    metadata.name = "rack";
+    spec.location = "rack-a/u12";
+  }
+]
+
+```
+
+*Declared by:*
  - [modules/cluster/options/nodes\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/nodes.nix)
 
 

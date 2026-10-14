@@ -42,7 +42,7 @@ import (
 // Kubernetes.
 func upgradeManifest(controlPlanes int) string {
 	node := func(name, role string, n int) string {
-		return fmt.Sprintf(`%q: {"role": %q, "platform": "metal", "identity": {"hostname": %q, "platform": "metal", "network": {"networks": {"10-uplink": {"address": ["10.0.0.%d/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}}`, name, role, name, n)
+		return fmt.Sprintf(`%q: {"role": %q, "platform": "metal", "identity": {"hostname": %q, "platform": "metal", "network": {"networks": {"10-uplink": {"address": ["10.0.0.%d/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}`, name, role, name, n)
 	}
 	var nodes []string
 	for i := 1; i <= controlPlanes; i++ {

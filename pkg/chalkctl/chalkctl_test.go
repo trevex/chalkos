@@ -62,8 +62,7 @@ const testManifest = `{
           "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null}},
           "fallback": "recovery-key",
           "encryption": "tpm2"
-        },
-        "extensions": {}
+        }
       }
     }
   }

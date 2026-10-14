@@ -3,18 +3,6 @@
 let
   cfg = config.chalkos;
   storage = import ../storage.nix { inherit lib; };
-  coreNodeOptions = [
-    "role"
-    "platform"
-    "hostname"
-    "storage"
-    "network"
-    "labels"
-    "taints"
-    "kubernetes"
-    "time"
-    "_module"
-  ];
   strip = attrs: removeAttrs attrs [ "_module" ];
 
   renderStorage =
@@ -132,7 +120,7 @@ let
     ) (lib.filterAttrs (_: v: v.enable && v.format == "swap") n.storage.volumes);
 
   node = name: n: {
-    inherit (n) role platform;
+    inherit (n) role platform documents;
     identity = {
       inherit (n) hostname network labels;
       # The cluster, the role and the platform the node's image is built for: the installer refuses
@@ -163,7 +151,6 @@ let
           };
       # A node's own servers replace the cluster's.
       time.servers = map strip (if n.time.servers != null then n.time.servers else cfg.time.servers);
-      extensions = removeAttrs n coreNodeOptions;
     };
   };
 in

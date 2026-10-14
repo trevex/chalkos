@@ -1,7 +1,9 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // homelabManifest is the golden manifest of the homelab example.
@@ -22,6 +25,12 @@ func homelabManifest(t *testing.T) *manifest.Manifest {
 	m, err := manifest.Decode(f)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The fixture schemas lack the homelab image's Rack kind; the round trip over built images
+	// covers its documents.
+	for name, n := range m.Nodes {
+		n.Documents = nil
+		m.Nodes[name] = n
 	}
 	return m
 }
@@ -191,5 +200,60 @@ spec: {network: {address: [10.0.0.11/24, fd00::11/64]}}
 `)
 	if got, want := StaticAddresses(docs), []string{"10.0.0.11", "fd00::11", "10.0.1.5"}; !slices.Equal(got, want) {
 		t.Errorf("addresses = %v, want %v", got, want)
+	}
+}
+
+// fixtureSchemas compiles the schemas of the fixture directories together.
+func fixtureSchemas(t *testing.T, dirs ...string) *schema.Schemas {
+	t.Helper()
+	files := map[string][]byte{}
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			files[e.Name()] = data
+		}
+	}
+	s, err := schema.LoadFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestFromManifestAppendsDocuments(t *testing.T) {
+	m := homelabManifest(t)
+	n := m.Nodes["cp1"]
+	n.Documents = []json.RawMessage{
+		json.RawMessage(`{"apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "metadata": {"name": "one"},
+		  "spec": {"name": "first", "replicas": 3, "token": {"secretRef": {"name": "demo", "key": "token"}}}}`),
+		json.RawMessage(`{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Secret", "metadata": {"name": "demo"}, "spec": {"data": {"token": "s3cret"}}}`),
+	}
+	m.Nodes["cp1"] = n
+	b, err := FromManifest(m, "cp1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := fixtureSchemas(t, builtinSchemas, "../../test/fixtures/config/networkd/schemas", "../../test/fixtures/kinds/image/schemas")
+	if _, err := b.Check(n.Identity, s, homelabTarget(m, n)); err != nil {
+		t.Fatal(err)
+	}
+	last := b.Documents[len(b.Documents)-2:]
+	if last[0].Kind != "Demo" || last[1].Kind != "Secret" {
+		t.Fatalf("last documents = %s, %s; want the extension's", last[0], last[1])
+	}
+	if got := last[0].Object["spec"].(map[string]any)["replicas"]; got != json.Number("3") {
+		t.Errorf("replicas = %#v, want the number as written", got)
+	}
+	n.Documents = []json.RawMessage{json.RawMessage(`[1]`)}
+	m.Nodes["cp1"] = n
+	if _, err := FromManifest(m, "cp1"); err == nil || !strings.Contains(err.Error(), "document 1 of its extensions") {
+		t.Errorf("err = %v, want the document that is no object named", err)
 	}
 }

@@ -51,7 +51,20 @@ let
     {
       options.chalkos.nodes = lib.mkOption {
         type = lib.types.attrsOf (
-          lib.types.submodule { options.rack.location = lib.mkOption { type = lib.types.str; }; }
+          lib.types.submodule (
+            { config, ... }:
+            {
+              options.rack.location = lib.mkOption { type = lib.types.str; };
+              config.documents = [
+                {
+                  apiVersion = "rack.example.org/v1alpha1";
+                  kind = "Rack";
+                  metadata.name = "rack";
+                  spec.location = config.rack.location;
+                }
+              ];
+            }
+          )
         );
       };
     };
@@ -798,15 +811,28 @@ lib.runTests {
         nodeIPs = [ ];
         validSubnets = null;
       };
-      extensions = {
-        rack.location = "a1";
-      };
       time.servers = map (host: {
         inherit host;
         nts = true;
         port = null;
       }) defaultTimeServers;
     };
+  };
+  # An extension's per-node option reaches the node as a document of its kind.
+  testManifestDocuments = {
+    expr = twoNodes.manifest.nodes.n1.documents;
+    expected = [
+      {
+        apiVersion = "rack.example.org/v1alpha1";
+        kind = "Rack";
+        metadata.name = "rack";
+        spec.location = "a1";
+      }
+    ];
+  };
+  testManifestWithoutDocuments = {
+    expr = (storageCluster [ ]).manifest.nodes.n1.documents;
+    expected = [ ];
   };
   testNetworkUnits = {
     expr =

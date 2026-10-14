@@ -35,13 +35,16 @@ func TestDecodeGoldenManifest(t *testing.T) {
 		t.Errorf("w1 taints = %+v", w1.Identity.Taints)
 	}
 	var rack struct {
-		Location string `json:"location"`
+		Kind string `json:"kind"`
+		Spec struct {
+			Location string `json:"location"`
+		} `json:"spec"`
 	}
-	if err := json.Unmarshal(w1.Identity.Extensions["rack"], &rack); err != nil {
-		t.Fatalf("unmarshal rack extension: %v", err)
+	if len(w1.Documents) != 1 {
+		t.Fatalf("w1 documents = %s, want the Rack", w1.Documents)
 	}
-	if rack.Location != "rack-a/u14" {
-		t.Errorf("w1 rack extension location = %q", rack.Location)
+	if err := json.Unmarshal(w1.Documents[0], &rack); err != nil || rack.Kind != "Rack" || rack.Spec.Location != "rack-a/u14" {
+		t.Errorf("w1 rack document = %s, %v", w1.Documents[0], err)
 	}
 
 	if got := m.Nodes["cp1"].Identity.NetworkUnits["10-uplink.network"]; !strings.HasPrefix(got, "[Match]\nName=enp1s0\n") {

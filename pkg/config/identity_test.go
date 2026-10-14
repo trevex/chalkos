@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -87,8 +86,6 @@ func TestIdentityMatchesTheClusterDefinition(t *testing.T) {
 				t.Errorf("matched MAC addresses = %v, want %v", g, w)
 			}
 			got.Network, want.Network = nil, nil
-			// Extensions move to documents of their own kinds; the identity carries none.
-			want.Extensions = map[string]json.RawMessage{}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("identity =\n%+v\nwant\n%+v", got, want)
 			}
@@ -131,24 +128,6 @@ spec:
 	}}}
 	if !reflect.DeepEqual(id.Network, want) {
 		t.Errorf("network = %#v, want %#v", id.Network, want)
-	}
-}
-
-func TestIdentityMarshalsEmptyExtensions(t *testing.T) {
-	s, err := NewSet(mustParse(t, minimal), allSchemas(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := json.Marshal(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(b), `"extensions":{}`) {
-		t.Errorf("identity = %s, want \"extensions\":{}", b)
 	}
 }
 

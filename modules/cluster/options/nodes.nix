@@ -68,6 +68,26 @@ let
           default = null;
           description = "Time servers of this node, replacing `chalkos.time.servers`; null uses those.";
         };
+        documents = lib.mkOption {
+          type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
+          default = [ ];
+          example = lib.literalExpression ''
+            [
+              {
+                apiVersion = "rack.example.org/v1alpha1";
+                kind = "Rack";
+                metadata.name = "rack";
+                spec.location = "rack-a/u12";
+              }
+            ]
+          '';
+          description = ''
+            Config documents of the node besides those chalkctl generates from its other options,
+            each an attribute set of `apiVersion`, `kind`, `metadata` and `spec`. Extensions add
+            the documents of the kinds their role modules declare under `chalkos.kinds`; chalkctl
+            and chalkd check them against the schemas of the node's image.
+          '';
+        };
       };
     };
 in
@@ -75,6 +95,6 @@ in
   options.chalkos.nodes = lib.mkOption {
     type = lib.types.attrsOf (lib.types.submodule nodeModule);
     default = { };
-    description = "Nodes of the cluster. Extensions add their own per-node options to this submodule.";
+    description = "Nodes of the cluster. Extensions add their own per-node options to this submodule, and the documents of their kinds to documents.";
   };
 }

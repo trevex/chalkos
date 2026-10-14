@@ -32,10 +32,10 @@ const rotationManifest = `{
   "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
   "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}, "kind": "controlplane"}, "w": {"images": {"metal": "roles.w.images.metal"}, "kind": "worker"}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
   "nodes": {
-    "cp1": {"role": "cp", "identity": {"hostname": "cp1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}},
-    "cp2": {"role": "cp", "identity": {"hostname": "cp2", "network": {"networks": {"10-uplink": {"address": ["10.0.0.12/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}},
-    "w1": {"role": "w", "identity": {"hostname": "w1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.21/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}},
-    "n1": {"role": "plain", "identity": {"hostname": "n1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.31/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}, "extensions": {}}}
+    "cp1": {"role": "cp", "identity": {"hostname": "cp1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+    "cp2": {"role": "cp", "identity": {"hostname": "cp2", "network": {"networks": {"10-uplink": {"address": ["10.0.0.12/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+    "w1": {"role": "w", "identity": {"hostname": "w1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.21/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+    "n1": {"role": "plain", "identity": {"hostname": "n1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.31/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
   }
 }`
 
