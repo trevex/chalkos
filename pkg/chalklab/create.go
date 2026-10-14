@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/lab"
@@ -321,7 +322,11 @@ func labNodes(m *manifest.Manifest, named []string) ([]lab.LabNode, error) {
 		if n.Platform != platform {
 			return nil, fmt.Errorf("chalklab runs %s images, but %s is declared on %s (chalkos.nodes.%s.platform)", platform, name, n.Platform, name)
 		}
-		mac, err := labMAC(name, n.Identity)
+		b, err := config.FromManifest(m, name)
+		if err != nil {
+			return nil, err
+		}
+		mac, err := labMAC(name, b.Documents)
 		if err != nil {
 			return nil, err
 		}
@@ -334,11 +339,11 @@ func labNodes(m *manifest.Manifest, named []string) ([]lab.LabNode, error) {
 	return nodes, nil
 }
 
-// labMAC is the MAC address the lab gives a node's NIC on the lab network: the one address its
-// networks match by. The lab network carries the node's static addresses, as its definition
-// configures them; the user-mode NIC of each VM is configured by DHCP.
-func labMAC(name string, id manifest.Identity) (string, error) {
-	networks, _ := id.Network["networks"].(map[string]any)
+// labMAC is the MAC address the lab gives a node's NIC on the lab network: the one address the
+// node's Network documents match by. The lab network carries the node's static addresses, as its
+// definition configures them; the user-mode NIC of each VM is configured by DHCP.
+func labMAC(name string, docs []config.Document) (string, error) {
+	networks, _ := config.NetworkMap(docs)["networks"].(map[string]any)
 	var macs []string
 	for _, key := range slices.Sorted(maps.Keys(networks)) {
 		network, _ := networks[key].(map[string]any)

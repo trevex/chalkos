@@ -36,10 +36,10 @@ const labManifest = `{
   "nodes": {
     "cp1": {"role": "controlplane", "platform": "kvm", "identity": {"hostname": "cp1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7b:00:11"}, "address": ["192.168.123.11/24"]}}},
-      "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+      "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7b:00:11\n\n[Network]\nAddress=192.168.123.11/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
     "w1": {"role": "worker", "platform": "kvm", "identity": {"hostname": "w1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7B:00:12"}, "address": ["192.168.123.12/24"]}}},
-      "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+      "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7B:00:12\n\n[Network]\nAddress=192.168.123.12/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
     "m1": {"role": "worker", "platform": "metal", "identity": {"hostname": "m1", "platform": "metal",
       "network": {}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
   }
@@ -80,20 +80,23 @@ func TestLabNodes(t *testing.T) {
 	if _, err := labNodes(m, nil); err == nil || !strings.Contains(err.Error(), "m1 is declared on metal") {
 		t.Errorf("a lab of every node = %v, want m1 refused", err)
 	}
-	for name, network := range map[string]map[string]any{
-		"matches none":        {},
-		"matches several":     {"networks": map[string]any{"a": map[string]any{"matchConfig": map[string]any{"MACAddress": "52:54:00:00:00:01"}}, "b": map[string]any{"matchConfig": map[string]any{"MACAddress": "52:54:00:00:00:02"}}}},
-		"not one MAC address": {"networks": map[string]any{"a": map[string]any{"matchConfig": map[string]any{"MACAddress": "52:54:00:00:00:01 52:54:00:00:00:02"}}}},
+	for name, units := range map[string]map[string]string{
+		"matches none": {},
+		"matches several": {
+			"a.network": "[Match]\nMACAddress=52:54:00:00:00:01\n",
+			"b.network": "[Match]\nMACAddress=52:54:00:00:00:02\n",
+		},
+		"not one MAC address": {"a.network": "[Match]\nMACAddress=52:54:00:00:00:01 52:54:00:00:00:02\n"},
 	} {
 		n := m.Nodes["w1"]
-		n.Identity.Network = network
+		n.Identity.NetworkUnits = units
 		m.Nodes["w1"] = n
 		if _, err := labNodes(m, []string{"w1"}); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("a network that %s: %v", name, err)
 		}
 	}
 	n := m.Nodes["w1"]
-	n.Identity.Network = m.Nodes["cp1"].Identity.Network
+	n.Identity.NetworkUnits = m.Nodes["cp1"].Identity.NetworkUnits
 	m.Nodes["w1"] = n
 	if _, err := labNodes(m, []string{"cp1", "w1"}); err == nil || !strings.Contains(err.Error(), "the same MAC address") {
 		t.Errorf("two nodes of one MAC address: %v", err)
@@ -437,7 +440,7 @@ func TestWaitBootstrapPrintsTheStatus(t *testing.T) {
 		if args[0] != "status" || args[1] != "cp1" {
 			return errors.New("unexpected chalkctl " + strings.Join(args, " "))
 		}
-		_, err := io.WriteString(w, "identity abc (the cluster definition's)\n"+line+"\n")
+		_, err := io.WriteString(w, "config abc (the cluster definition's)\n"+line+"\n")
 		return err
 	}
 	if err := a.waitBootstrap(context.Background(), "cp1", "127.0.0.1:15001", nil); err != nil {
