@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -189,7 +187,7 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 	if len(h.Schemas) == 0 {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
 	}
-	schemas, err := schemasFrom(h.Schemas)
+	schemas, err := schema.LoadFiles(h.Schemas)
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
@@ -202,23 +200,4 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 		t.Kubernetes = &c
 	}
 	return t, schemas, nil
-}
-
-// schemasFrom loads schemas a request carries by file name, as an image directory's schemas/
-// holds them.
-func schemasFrom(files map[string][]byte) (*schema.Schemas, error) {
-	dir, err := os.MkdirTemp("", "chalkd-schemas-")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(dir)
-	for name, data := range files {
-		if name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".json") {
-			return nil, fmt.Errorf("%q is not the name of a schema file", name)
-		}
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
-			return nil, err
-		}
-	}
-	return schema.LoadSchemas(dir)
 }
