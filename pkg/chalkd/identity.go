@@ -596,28 +596,52 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte) (
 func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.ResetVolumeRequest]) (*connect.Response[nodev1.ResetVolumeResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	name := req.Msg.Volume
-	d, err := parseIdentity(req.Msg.Identity)
-	if err != nil {
+	m := req.Msg
+	identity := m.Identity
+	switch {
+	case m.Config != "" && m.Identity != "":
+		return nil, failed(connect.CodeInvalidArgument, "the request delivers both config and an identity; deliver one of them")
+	case m.Config != "":
+		t, schemas, err := s.runningTarget()
+		if err != nil {
+			return nil, err
+		}
+		c, err := configure(m.Config, schemas, t)
+		if err != nil {
+			return nil, err
+		}
+		identity = string(c.identity)
+	}
+	if err := s.resetVolume(ctx, m.Volume, identity, m.FallbackSecret); err != nil {
 		return nil, err
+	}
+	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil
+}
+
+// resetVolume wipes the volume name and creates it again as the identity defines it; the caller
+// holds s.mu.
+func (s *Server) resetVolume(ctx context.Context, name, identity, fallback string) error {
+	d, err := parseIdentity(identity)
+	if err != nil {
+		return err
 	}
 	recorded, pins, err := s.recorded()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	v, ok := recorded.Volumes[name]
 	if !ok {
-		return nil, failed(connect.CodeNotFound, "the node has no volume %s", name)
+		return failed(connect.CodeNotFound, "the node has no volume %s", name)
 	}
 	if name == storage.VarVolume {
-		return nil, failed(connect.CodeFailedPrecondition, "VAR holds the running node's data and cannot be reset while it runs")
+		return failed(connect.CodeFailedPrecondition, "VAR holds the running node's data and cannot be reset while it runs")
 	}
 	nv, ok := d.section.Volumes[name]
 	if !ok {
-		return nil, failed(connect.CodeFailedPrecondition, "the identity no longer has volume %s; a reset recreates a volume, it does not remove one", name)
+		return failed(connect.CodeFailedPrecondition, "the identity no longer has volume %s; a reset recreates a volume, it does not remove one", name)
 	}
 	if nv.Disk != v.Disk {
-		return nil, failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
+		return failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
 	}
 	var others []string
 	for _, c := range s.classify(recorded, d.section, pins) {
@@ -626,7 +650,7 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 		}
 	}
 	if len(others) > 0 {
-		return nil, failed(connect.CodeFailedPrecondition, "the identity changes other volumes destructively too: %s", strings.Join(others, "; "))
+		return failed(connect.CodeFailedPrecondition, "the identity changes other volumes destructively too: %s", strings.Join(others, "; "))
 	}
 	// Once deleted, the volume is created again like a new one.
 	without := recorded
@@ -637,19 +661,19 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 		}
 	}
 	// Every volume created after the deletion needs the secret, so check it before deleting.
-	if err := s.verifyFallback(ctx, without, d.section, pins, req.Msg.FallbackSecret); err != nil {
-		return nil, err
+	if err := s.verifyFallback(ctx, without, d.section, pins, fallback); err != nil {
+		return err
 	}
 
 	if err := s.deleteVolume(ctx, name, v, pins); err != nil {
-		return nil, err
+		return err
 	}
 	changes := storage.Classify(without, d.section)
-	if err := s.applyStorage(ctx, without, d.section, req.Msg.FallbackSecret, changes); err != nil {
-		return nil, err
+	if err := s.applyStorage(ctx, without, d.section, fallback, changes); err != nil {
+		return err
 	}
 	log.Printf("volume %s reset", name)
-	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil
+	return nil
 }
 
 // deleteVolume stops a volume's units, wipes its partition and deletes it, after checking the

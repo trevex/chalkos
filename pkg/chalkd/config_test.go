@@ -357,3 +357,18 @@ func TestStatusReportsConfigVersion(t *testing.T) {
 		t.Errorf("config version = %q, want the hash of the delivered documents", got)
 	}
 }
+
+// TestResetVolumeTakesConfig resets a volume as the delivered config defines it.
+func TestResetVolumeTakesConfig(t *testing.T) {
+	s, _ := configServer(t)
+	reset := func(text string) error {
+		_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data", Config: text, FallbackSecret: "x"}))
+		return err
+	}
+	if err := reset(baseConfig); connect.CodeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node has no volume data") {
+		t.Errorf("a volume the node lacks: %v", err)
+	}
+	if err := reset("kind: Nope\n"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("invalid config: %v", err)
+	}
+}

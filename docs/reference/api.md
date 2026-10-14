@@ -22,6 +22,7 @@ nodes call RenewNodeCertificate, with the node role.
 | ------ | ------- | -------- |
 | [Info](#method-info) | [InfoRequest](#message-inforequest) | [InfoResponse](#message-inforesponse) |
 | [Disks](#method-disks) | [DisksRequest](#message-disksrequest) | [DisksResponse](#message-disksresponse) |
+| [Contract](#method-contract) | [ContractRequest](#message-contractrequest) | [ContractResponse](#message-contractresponse) |
 | [Install](#method-install) | [stream InstallRequest](#message-installrequest) | [InstallResponse](#message-installresponse) |
 | [ApplyIdentity](#method-applyidentity) | [ApplyIdentityRequest](#message-applyidentityrequest) | [ApplyIdentityResponse](#message-applyidentityresponse) |
 | [ResetVolume](#method-resetvolume) | [ResetVolumeRequest](#message-resetvolumerequest) | [ResetVolumeResponse](#message-resetvolumeresponse) |
@@ -45,6 +46,12 @@ Info describes the node and the agent. Available in both modes to readers.
 ### Disks { #method-disks }
 
 Disks lists the node's disks and their partitions. Available in both modes to readers.
+
+### Contract { #method-contract }
+
+Contract returns the config contract of the image the node runs: the schemas of the config
+kinds it accepts and its kubernetes.json, which chalkctl checks config against before it
+delivers it. Available in both modes to readers.
 
 ### Install { #method-install }
 
@@ -202,6 +209,30 @@ No fields.
 | `problem` | `string` | Why a renewal fails, such as "renewal failing: <reason>; expires <date>", or a warning, such as "less than a third of its lifetime remains" or "node CA expires <date>; run chalkctl node-ca rotate"; empty when there is nothing to do. A command it advises names the node, or says <node> when the node cannot tell its name. |
 | `fingerprint` | `string` | The SHA-256 fingerprint of the certificate, and of the certificate that issued it when the node holds that one, in lower-case hex. |
 | `issuer` | `string` |  |
+
+### ContractRequest { #message-contractrequest }
+
+
+
+No fields.
+
+### ContractResponse { #message-contractresponse }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `schemas` | repeated [`ContractResponse.SchemasEntry`](#message-contractresponseschemasentry) | The image's schemas by file name, as /etc/chalkos/schemas holds them. |
+| `kubernetes_cluster` | `bytes` | The image's kubernetes.json; empty on an image without Kubernetes. |
+
+### ContractResponse.SchemasEntry { #message-contractresponseschemasentry }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `key` | `string` |  |
+| `value` | `bytes` |  |
 
 ### Disk { #message-disk }
 
@@ -546,6 +577,7 @@ No fields.
 | `volume` | `string` |  |
 | `identity` | `string` | The node's identity as the manifest renders it (JSON); the volume is created as it defines. |
 | `fallback_secret` | `string` |  |
+| `config` | `string` | The node's config, as ApplyIdentityRequest.config holds it, checked against the running image's schemas; the volume is created as it defines. Not together with identity. |
 
 ### ResetVolumeResponse { #message-resetvolumeresponse }
 

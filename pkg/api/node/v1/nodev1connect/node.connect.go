@@ -39,6 +39,8 @@ const (
 	NodeServiceInfoProcedure = "/chalkos.node.v1.NodeService/Info"
 	// NodeServiceDisksProcedure is the fully-qualified name of the NodeService's Disks RPC.
 	NodeServiceDisksProcedure = "/chalkos.node.v1.NodeService/Disks"
+	// NodeServiceContractProcedure is the fully-qualified name of the NodeService's Contract RPC.
+	NodeServiceContractProcedure = "/chalkos.node.v1.NodeService/Contract"
 	// NodeServiceInstallProcedure is the fully-qualified name of the NodeService's Install RPC.
 	NodeServiceInstallProcedure = "/chalkos.node.v1.NodeService/Install"
 	// NodeServiceApplyIdentityProcedure is the fully-qualified name of the NodeService's ApplyIdentity
@@ -82,6 +84,10 @@ type NodeServiceClient interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
+	// Contract returns the config contract of the image the node runs: the schemas of the config
+	// kinds it accepts and its kubernetes.json, which chalkctl checks config against before it
+	// delivers it. Available in both modes to readers.
+	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
 	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
@@ -166,6 +172,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+NodeServiceDisksProcedure,
 			connect.WithSchema(nodeServiceMethods.ByName("Disks")),
+			connect.WithClientOptions(opts...),
+		),
+		contract: connect.NewClient[v1.ContractRequest, v1.ContractResponse](
+			httpClient,
+			baseURL+NodeServiceContractProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Contract")),
 			connect.WithClientOptions(opts...),
 		),
 		install: connect.NewClient[v1.InstallRequest, v1.InstallResponse](
@@ -265,6 +277,7 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 type nodeServiceClient struct {
 	info                 *connect.Client[v1.InfoRequest, v1.InfoResponse]
 	disks                *connect.Client[v1.DisksRequest, v1.DisksResponse]
+	contract             *connect.Client[v1.ContractRequest, v1.ContractResponse]
 	install              *connect.Client[v1.InstallRequest, v1.InstallResponse]
 	applyIdentity        *connect.Client[v1.ApplyIdentityRequest, v1.ApplyIdentityResponse]
 	resetVolume          *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
@@ -290,6 +303,11 @@ func (c *nodeServiceClient) Info(ctx context.Context, req *connect.Request[v1.In
 // Disks calls chalkos.node.v1.NodeService.Disks.
 func (c *nodeServiceClient) Disks(ctx context.Context, req *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error) {
 	return c.disks.CallUnary(ctx, req)
+}
+
+// Contract calls chalkos.node.v1.NodeService.Contract.
+func (c *nodeServiceClient) Contract(ctx context.Context, req *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error) {
+	return c.contract.CallUnary(ctx, req)
 }
 
 // Install calls chalkos.node.v1.NodeService.Install.
@@ -373,6 +391,10 @@ type NodeServiceHandler interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
+	// Contract returns the config contract of the image the node runs: the schemas of the config
+	// kinds it accepts and its kubernetes.json, which chalkctl checks config against before it
+	// delivers it. Available in both modes to readers.
+	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
 	// tree, UKI and boot loader follow as chunks. An install the installer did not finish
@@ -453,6 +475,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		NodeServiceDisksProcedure,
 		svc.Disks,
 		connect.WithSchema(nodeServiceMethods.ByName("Disks")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nodeServiceContractHandler := connect.NewUnaryHandler(
+		NodeServiceContractProcedure,
+		svc.Contract,
+		connect.WithSchema(nodeServiceMethods.ByName("Contract")),
 		connect.WithHandlerOptions(opts...),
 	)
 	nodeServiceInstallHandler := connect.NewClientStreamHandler(
@@ -551,6 +579,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceInfoHandler.ServeHTTP(w, r)
 		case NodeServiceDisksProcedure:
 			nodeServiceDisksHandler.ServeHTTP(w, r)
+		case NodeServiceContractProcedure:
+			nodeServiceContractHandler.ServeHTTP(w, r)
 		case NodeServiceInstallProcedure:
 			nodeServiceInstallHandler.ServeHTTP(w, r)
 		case NodeServiceApplyIdentityProcedure:
@@ -596,6 +626,10 @@ func (UnimplementedNodeServiceHandler) Info(context.Context, *connect.Request[v1
 
 func (UnimplementedNodeServiceHandler) Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Disks is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Contract is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error) {

@@ -184,6 +184,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=worker\nCHALKOS_PLATFORM=metal\n")
+	writeSchemas(t, s.Identity.Schemas)
 	return s, r
 }
 
@@ -248,7 +249,7 @@ const (
 
 // deniedEverything is what a client without a role gets in normal mode.
 var deniedEverything = map[string]connect.Code{
-	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
+	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
 	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied,
 	"ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodePermissionDenied,
 	"RenewNodeCertificate": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied,
@@ -258,7 +259,7 @@ var deniedEverything = map[string]connect.Code{
 // nodeRole is what a node gets in normal mode: RenewNodeCertificate alone, which a node without
 // Kubernetes refuses after authorisation.
 var nodeRole = map[string]connect.Code{
-	"Info": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
+	"Info": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
 	"ApplyIdentity": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
 	"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
 	"UncordonNode": connect.CodePermissionDenied,
@@ -349,6 +350,8 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.ApplyIdentity(ctx, connect.NewRequest(&nodev1.ApplyIdentityRequest{Identity: "{}"}))
 	case "ResetVolume":
 		_, err = c.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data", Identity: "{}"}))
+	case "Contract":
+		_, err = c.Contract(ctx, connect.NewRequest(&nodev1.ContractRequest{}))
 	case "Disks":
 		_, err = c.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
 	case "Bootstrap":
@@ -400,7 +403,7 @@ func TestAuthorisation(t *testing.T) {
 	}{
 		{"normal", normal, true, map[string]map[string]connect.Code{
 			// The node has no Kubernetes: refusing EtcdMembers means the call got through.
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyIdentity": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeFailedPrecondition, "EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied,
 				"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
 				"UncordonNode": connect.CodePermissionDenied},
@@ -421,14 +424,14 @@ func TestAuthorisation(t *testing.T) {
 			pki.RoleNode: nodeRole,
 		}},
 		{"maintenance with OS CA", maintenance, true, map[string]map[string]connect.Code{
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Install": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeFailedPrecondition},
 			// A header without a target is refused after authorisation.
 			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "ApplyIdentity": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeFailedPrecondition, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeFailedPrecondition,
 				"UncordonNode": connect.CodeFailedPrecondition},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[string]map[string]connect.Code{
-			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0, "Disks": 0, "ResetVolume": connect.CodeFailedPrecondition},
+			"": {"Info": 0, "Install": connect.CodeInvalidArgument, "Reboot": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
