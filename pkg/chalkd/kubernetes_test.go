@@ -294,7 +294,7 @@ func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 
 // kubernetesIdentity is identityWith for the Kubernetes node nodeName.
 func kubernetesIdentity(nodeName string) string {
-	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "extensions": {"rack": {"location": "rack-a"}}, "kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}, "storage": ` + section("", "") + `}`
+	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}, "storage": ` + section("", "") + `}`
 }
 
 func TestApplyIdentityDeliversShare(t *testing.T) {
@@ -356,7 +356,7 @@ func TestApplyIdentityRefusesShare(t *testing.T) {
 		"no Kubernetes":              {plain, kubernetesIdentity("n1"), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
 		"broken share":               {worker, kubernetesIdentity("n1"), []byte(`{"kind": "worker"}`), connect.CodeInvalidArgument},
 		"another node's share":       {worker, kubernetesIdentity("n1"), testShareFor(t, k8s.KindWorker, "n2"), connect.CodeInvalidArgument},
-		"no node name":               {worker, identityWith("rack-a", section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
+		"no node name":               {worker, identityWith(section("", "")), testShare(t, k8s.KindWorker), connect.CodeInvalidArgument},
 		"a node CA of another OS CA": {controlPlane, kubernetesIdentity("n1"), foreignNodeCA, connect.CodeInvalidArgument},
 	} {
 		_, err := tc.s.ApplyIdentity(context.Background(), connect.NewRequest(&nodev1.ApplyIdentityRequest{
@@ -707,9 +707,6 @@ func TestApplyIdentityRestartsKubernetesOnChange(t *testing.T) {
 		// The recorded identity has no Kubernetes section yet.
 		{"kubernetes added", base, []string{restart}},
 		{"unchanged", base, nil},
-		{"extension", edit(func(id map[string]any) {
-			id["extensions"] = map[string]any{"rack": map[string]any{"location": "rack-b"}}
-		}), nil},
 		{"labels", edit(func(id map[string]any) { id["labels"] = map[string]any{"node.kubernetes.io/storage": "ssd"} }), []string{restart}},
 		{"taints", edit(func(id map[string]any) {
 			id["taints"] = []any{map[string]any{"key": "dedicated", "value": nil, "effect": "NoSchedule"}}

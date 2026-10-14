@@ -35,17 +35,6 @@ let
       config.chalkos.demo.enable = true;
     };
 
-  consumerModule = {
-    systemd.services.demo.serviceConfig.ExecStart = "/bin/true";
-    chalkos.node.consumers.demo.keys = [ "demo.key" ];
-  };
-  withConsumer = role (cluster [ { chalkos.roles.worker.nixosModules = [ consumerModule ]; } ]);
-  withOrphanConsumer = role (cluster [
-    {
-      chalkos.roles.worker.nixosModules = [ { chalkos.node.consumers.orphan.keys = [ "demo.key" ]; } ];
-    }
-  ]);
-
   rackExtension =
     { lib, ... }:
     {
@@ -503,31 +492,6 @@ lib.runTests {
           }
         ]).nodes;
     expected = true;
-  };
-  testConsumerLoadsCredential = {
-    expr = withConsumer.systemd.services.demo.serviceConfig.LoadCredential;
-    expected = [ "demo.key:/run/chalkos/credentials/demo.key" ];
-  };
-  testConsumersRecordedForChalkd = {
-    expr = builtins.fromJSON withConsumer.environment.etc."chalkos/consumers.json".text;
-    expected = {
-      demo = {
-        keys = [ "demo.key" ];
-        restartOnChange = true;
-      };
-    };
-  };
-  testConsumerWithServiceDoesNotWarn = {
-    expr = withConsumer.warnings;
-    expected = [ ];
-  };
-  testConsumerWithoutServiceWarns = {
-    expr = lib.any (lib.hasInfix "chalkos.node.consumers.orphan") withOrphanConsumer.warnings;
-    expected = true;
-  };
-  testNodeFilePath = {
-    expr = withConsumer.chalkos.node.file;
-    expected = "/run/chalkos/node.json";
   };
   # A role is built for each platform, metal and kvm unless a definition adds one; each image names
   # its platform in os-release and carries that platform's console and agents alone.

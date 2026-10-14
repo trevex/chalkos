@@ -240,7 +240,7 @@ func (s *Server) ApplyIdentity(ctx context.Context, req *connect.Request[nodev1.
 				return nil, err
 			}
 		}
-		if restarted, old, err = s.applyIdentity(ctx, d.data); err != nil {
+		if old, err = s.applyIdentity(ctx, d.data); err != nil {
 			return nil, err
 		}
 	}
@@ -528,22 +528,22 @@ func (s *Server) stopUnits(ctx context.Context, units []string) error {
 	return nil
 }
 
-// applyIdentity records the identity on STATE, applies it, and restarts the units that read
-// keys whose values changed. It returns them and the identity it replaced.
-func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]string, []byte, error) {
+// applyIdentity records the identity on STATE and applies it. It returns the identity it
+// replaced.
+func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]byte, error) {
 	path := filepath.Join(s.Paths.StateDir, "identity.json")
 	old, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, failed(connect.CodeInternal, "%v", err)
+		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	if err := install.WriteFile(path, data, 0o600); err != nil {
-		return nil, nil, failed(connect.CodeInternal, "record the identity: %v", err)
+		return nil, failed(connect.CodeInternal, "record the identity: %v", err)
 	}
 	if err := s.Identity.Apply(data); err != nil {
-		return nil, nil, failed(connect.CodeInternal, "apply the identity: %v", err)
+		return nil, failed(connect.CodeInternal, "apply the identity: %v", err)
 	}
 	if _, err := s.Run.Run(ctx, "networkctl", "reload"); err != nil {
-		return nil, nil, failed(connect.CodeInternal, "%v", err)
+		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	if identity.TimeChanged(old, data) {
 		// chrony reads the sources file again when it starts, so a chrony that is down misses
@@ -552,20 +552,7 @@ func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]string, []by
 			log.Printf("time servers: %v", err)
 		}
 	}
-	consumers, err := identity.ReadConsumers(s.Identity.Consumers)
-	if err != nil {
-		return nil, nil, failed(connect.CodeInternal, "%v", err)
-	}
-	units, err := identity.Restarts(consumers, old, data)
-	if err != nil {
-		return nil, nil, failed(connect.CodeInternal, "%v", err)
-	}
-	for _, unit := range units {
-		if _, err := s.Run.Run(ctx, "systemctl", "try-restart", unit); err != nil {
-			return nil, nil, failed(connect.CodeInternal, "restart %s: %v", unit, err)
-		}
-	}
-	return units, old, nil
+	return old, nil
 }
 
 // applyKubernetes records a delivered share and, when it or the node's Kubernetes identity

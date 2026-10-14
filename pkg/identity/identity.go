@@ -1,7 +1,7 @@
-// Package identity applies a node's identity on the node: it writes /run/chalkos/node.json, one
-// credential file per identity key that a unit reads, the networkd units and chrony's time
-// servers, and sets the hostname. It writes the node's stored config for the units that read
-// config kinds, and tells which units read keys or kinds that changed.
+// Package identity applies a node's identity on the node: it writes /run/chalkos/node.json, which
+// the node's Kubernetes side reads, the networkd units and chrony's time servers, and sets the
+// hostname. It writes the node's stored config for the units that read config kinds, and tells
+// which of them read kinds that changed.
 package identity
 
 import (
@@ -33,12 +33,10 @@ func IdentityVersion(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Consumer is a unit that reads identity keys or config kinds, as /etc/chalkos/consumers.json
-// records it.
+// Consumer is a unit that reads config kinds, as /etc/chalkos/consumers.json records it.
 type Consumer struct {
-	Keys []string `json:"keys"`
 	// Kinds are the config kinds the unit reads, by name.
-	Kinds           []string `json:"kinds,omitempty"`
+	Kinds           []string `json:"kinds"`
 	RestartOnChange bool     `json:"restartOnChange"`
 }
 
@@ -46,11 +44,11 @@ type Consumer struct {
 type Loader struct {
 	// Identity is the node's identity on STATE.
 	Identity string
-	// RunDir receives node.json and credentials/.
+	// RunDir receives node.json, config/ and credentials/.
 	RunDir string
 	// NetworkDir receives networkd units; units there take precedence over the image's.
 	NetworkDir string
-	// Consumers is the image's map of units to the keys they read.
+	// Consumers is the image's map of units to the config kinds they read.
 	Consumers string
 	// ChronySources receives the time servers as chrony's sources file; empty writes none.
 	ChronySources string
@@ -77,10 +75,9 @@ func Default() Loader {
 
 // identity holds the fields of the identity the loader needs.
 type identity struct {
-	Hostname     string                     `json:"hostname"`
-	NetworkUnits map[string]string          `json:"networkUnits"`
-	Extensions   map[string]json.RawMessage `json:"extensions"`
-	Time         manifest.Time              `json:"time"`
+	Hostname     string            `json:"hostname"`
+	NetworkUnits map[string]string `json:"networkUnits"`
+	Time         manifest.Time     `json:"time"`
 }
 
 // Load applies the identity recorded on STATE, then writes the node's stored config for its
@@ -135,14 +132,7 @@ func (l Loader) Apply(data []byte) error {
 	if err := json.Unmarshal(data, &id); err != nil {
 		return fmt.Errorf("parse the identity: %w", err)
 	}
-	consumers, err := ReadConsumers(l.Consumers)
-	if err != nil {
-		return err
-	}
 	if err := writeFile(filepath.Join(l.RunDir, "node.json"), data, 0o644); err != nil {
-		return err
-	}
-	if err := l.writeCredentials(data, consumers); err != nil {
 		return err
 	}
 	if err := l.writeNetworkUnits(id.NetworkUnits); err != nil {
@@ -163,77 +153,6 @@ func (l Loader) Apply(data []byte) error {
 		}
 	}
 	return nil
-}
-
-// writeCredentials writes one file per key a consumer reads, named like the key. Strings are
-// written as they are, other values as JSON. A key the identity lacks has no file, so the unit
-// fails to start rather than reading a stale value.
-func (l Loader) writeCredentials(data []byte, consumers map[string]Consumer) error {
-	dir := filepath.Join(l.RunDir, "credentials")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	keys := map[string]bool{}
-	for _, c := range consumers {
-		for _, k := range c.Keys {
-			keys[k] = true
-		}
-	}
-	for key := range keys {
-		if strings.ContainsRune(key, '/') || strings.HasPrefix(key, ".") {
-			return fmt.Errorf("invalid identity key %q", key)
-		}
-		path := filepath.Join(dir, key)
-		value, ok, err := Lookup(data, key)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return err
-			}
-			continue
-		}
-		if err := writeFile(path, value, 0o600); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Lookup returns the value of a dotted identity key: extension values such as "rack.location"
-// first, then the identity's own fields such as "hostname". Strings come back unquoted.
-func Lookup(data []byte, key string) (value []byte, ok bool, err error) {
-	var doc map[string]any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, false, fmt.Errorf("parse the identity: %w", err)
-	}
-	path := strings.Split(key, ".")
-	v, ok := walk(doc["extensions"], path)
-	if !ok {
-		v, ok = walk(doc, path)
-	}
-	if !ok {
-		return nil, false, nil
-	}
-	if s, isString := v.(string); isString {
-		return []byte(s), true, nil
-	}
-	out, err := json.Marshal(v)
-	return out, true, err
-}
-
-func walk(v any, path []string) (any, bool) {
-	for _, p := range path {
-		m, ok := v.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		if v, ok = m[p]; !ok {
-			return nil, false
-		}
-	}
-	return v, true
 }
 
 // writeNetworkUnits replaces the units written from an earlier identity.
@@ -281,33 +200,6 @@ func ReadConsumers(path string) (map[string]Consumer, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return consumers, nil
-}
-
-// Restarts returns the units to restart after the identity changed from old to new: those
-// that want restarts and read a key whose value differs.
-func Restarts(consumers map[string]Consumer, old, new []byte) ([]string, error) {
-	var units []string
-	for unit, c := range consumers {
-		if !c.RestartOnChange {
-			continue
-		}
-		for _, key := range c.Keys {
-			before, hadBefore, err := Lookup(old, key)
-			if err != nil {
-				return nil, err
-			}
-			after, hasAfter, err := Lookup(new, key)
-			if err != nil {
-				return nil, err
-			}
-			if hadBefore != hasAfter || !bytes.Equal(before, after) {
-				units = append(units, unit)
-				break
-			}
-		}
-	}
-	sort.Strings(units)
-	return units, nil
 }
 
 func writeFile(path string, data []byte, perm fs.FileMode) error {

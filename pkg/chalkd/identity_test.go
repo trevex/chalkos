@@ -41,8 +41,8 @@ func section(varSize, extraFormat string) string {
 	return `{"disks": {` + disks + `}, "volumes": {` + volumes + `}, "fallback": "recovery-key", "encryption": "tpm2"}`
 }
 
-func identityWith(rack, storageSection string) string {
-	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "extensions": {"rack": {"location": "` + rack + `"}}, "storage": ` + storageSection + `}`
+func identityWith(storageSection string) string {
+	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "storage": ` + storageSection + `}`
 }
 
 // installedServer is a normal-mode server whose STATE records the section and its pins.
@@ -56,8 +56,7 @@ func installedServer(t *testing.T, recorded string, extraPinned bool) (*Server, 
 		pins += `, "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "` + extraUUID + `"}}`
 	}
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {`+pins+`}}`)
-	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), identityWith("rack-a", recorded))
-	write(t, s.Identity.Consumers, `{"rack-location": {"keys": ["rack.location"], "restartOnChange": true}}`)
+	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), identityWith(recorded))
 	r.rules = []rule{
 		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
@@ -87,7 +86,7 @@ func apply(s *Server, identity, fallback string) (*nodev1.ApplyIdentityResponse,
 
 func TestApplyIdentityAddsVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	next := identityWith("rack-b", section("", "ext4"))
+	next := identityWith(section("", "ext4"))
 
 	resp, err := apply(s, next, secret)
 	if err != nil {
@@ -109,7 +108,6 @@ func TestApplyIdentityAddsVolume(t *testing.T) {
 		"systemctl daemon-reload",
 		"systemctl start systemd-cryptsetup@extra.service srv-extra.mount",
 		"networkctl reload",
-		"systemctl try-restart rack-location",
 	}
 	if !reflect.DeepEqual(r.calls, want) {
 		t.Errorf("commands:\n got: %s\nwant: %s", strings.Join(r.calls, "\n      "), strings.Join(want, "\n      "))
@@ -121,7 +119,7 @@ func TestApplyIdentityAddsVolume(t *testing.T) {
 		t.Errorf("the secret was not checked against STATE's password keyslot on standard input: %v", r.inputs)
 	}
 	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" || resp.Changes[0].Destructive ||
-		!reflect.DeepEqual(resp.RestartedUnits, []string{"rack-location"}) {
+		len(resp.RestartedUnits) != 0 {
 		t.Errorf("response = %+v", resp)
 	}
 	recorded, err := storage.ReadSection(filepath.Join(dir, "storage.json"))
@@ -131,17 +129,14 @@ func TestApplyIdentityAddsVolume(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(got) != next {
 		t.Errorf("identity on STATE = %s", got)
 	}
-	if got, _ := os.ReadFile(filepath.Join(s.Identity.RunDir, "credentials", "rack.location")); string(got) != "rack-b" {
-		t.Errorf("credential = %q", got)
-	}
 }
 
 func TestApplyIdentityWithoutStorageChanges(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	if _, err := apply(s, identityWith("rack-b", section("", "")), ""); err != nil {
+	if _, err := apply(s, identityWith(section("", "")), ""); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.calls, []string{"networkctl reload", "systemctl try-restart rack-location"}) {
+	if !reflect.DeepEqual(r.calls, []string{"networkctl reload"}) {
 		t.Errorf("commands = %v", r.calls)
 	}
 }
@@ -150,7 +145,7 @@ func TestApplyIdentityRefusesDestructiveChange(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	withNodeCertificate(t, s)
 	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
-	_, err := apply(s, identityWith("rack-b", section("1G", "")), secret)
+	_, err := apply(s, identityWith(section("1G", "")), secret)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl storage reset n1 var") {
 		t.Fatalf("err = %v, want a refusal naming the reset command", err)
 	}
@@ -166,11 +161,11 @@ func TestApplyIdentityRefusesDestructiveChange(t *testing.T) {
 // than the running image's.
 func TestApplyIdentityRefusesAnotherImage(t *testing.T) {
 	for _, tc := range []struct{ identity, want string }{
-		{strings.Replace(identityWith("rack-b", section("", "")), `"cluster": "lab"`, `"cluster": "prod"`, 1),
+		{strings.Replace(identityWith(section("", "")), `"cluster": "lab"`, `"cluster": "prod"`, 1),
 			`the identity is of the cluster "prod" and the role "worker", but the node's image is of "lab" and "worker"`},
-		{strings.Replace(identityWith("rack-b", section("", "")), `"role": "worker"`, `"role": "controlplane"`, 1),
+		{strings.Replace(identityWith(section("", "")), `"role": "worker"`, `"role": "controlplane"`, 1),
 			`the identity is of the cluster "lab" and the role "controlplane", but the node's image is of "lab" and "worker"`},
-		{strings.Replace(identityWith("rack-b", section("", "")), `"platform": "metal"`, `"platform": "kvm"`, 1),
+		{strings.Replace(identityWith(section("", "")), `"platform": "metal"`, `"platform": "kvm"`, 1),
 			`the identity names the platform "kvm", but the node's image is built for "metal"`},
 	} {
 		s, r := installedServer(t, section("", ""), false)
@@ -190,7 +185,7 @@ func TestApplyIdentityRefusesAnotherImage(t *testing.T) {
 
 func TestApplyIdentityNeedsFallbackForEncryptedVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	_, err := apply(s, identityWith("rack-a", section("", "ext4")), "")
+	_, err := apply(s, identityWith(section("", "ext4")), "")
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "no fallback secret") {
 		t.Fatalf("err = %v", err)
 	}
@@ -233,7 +228,7 @@ func TestResetVolume(t *testing.T) {
 	s, r := installedServer(t, section("", "ext4"), true)
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 
-	if err := reset(s, "extra", identityWith("rack-a", section("", "xfs"))); err != nil {
+	if err := reset(s, "extra", identityWith(section("", "xfs"))); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(s.Paths.StateDir, "storage")
@@ -272,10 +267,10 @@ func TestResetVolumeRefusals(t *testing.T) {
 		partitionOn string
 		want        string
 	}{
-		{"var", "var", identityWith("rack-a", section("1G", "ext4")), "vdb", "VAR"},
-		{"unknown volume", "nope", identityWith("rack-a", section("", "ext4")), "vdb", "no volume nope"},
-		{"other volumes change destructively", "extra", identityWith("rack-a", section("1G", "xfs")), "vdb", "other volumes"},
-		{"partition on another disk", "extra", identityWith("rack-a", section("", "xfs")), "vda", "refusing to touch it"},
+		{"var", "var", identityWith(section("1G", "ext4")), "vdb", "VAR"},
+		{"unknown volume", "nope", identityWith(section("", "ext4")), "vdb", "no volume nope"},
+		{"other volumes change destructively", "extra", identityWith(section("1G", "xfs")), "vdb", "other volumes"},
+		{"partition on another disk", "extra", identityWith(section("", "xfs")), "vda", "refusing to touch it"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true)
@@ -348,7 +343,7 @@ func TestApplyIdentityRefusesInvalidSection(t *testing.T) {
 	for name, invalid := range invalidSections(t) {
 		t.Run(name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true)
-			_, err := apply(s, identityWith("rack-b", invalid), secret)
+			_, err := apply(s, identityWith(invalid), secret)
 			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
 				t.Fatalf("err = %v", err)
 			}
@@ -364,7 +359,7 @@ func TestResetVolumeRefusesInvalidSection(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true)
 			partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
-			err := reset(s, "extra", identityWith("rack-a", invalid))
+			err := reset(s, "extra", identityWith(invalid))
 			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
 				t.Fatalf("err = %v", err)
 			}
@@ -393,7 +388,7 @@ func TestResetVolumeOnSystemDisk(t *testing.T) {
 		v.Format = "xfs"
 		s.Volumes["data"] = v
 	})
-	if err := reset(s, "data", identityWith("rack-a", next)); err != nil {
+	if err := reset(s, "data", identityWith(next)); err != nil {
 		t.Fatal(err)
 	}
 	for i, want := range []string{
@@ -411,7 +406,7 @@ func TestResetVolumeOnSystemDisk(t *testing.T) {
 
 func TestResetVolumeChecksPartUUID(t *testing.T) {
 	const other = "0f1e2d3c-4b5a-4968-8776-655443322110"
-	next := identityWith("rack-a", section("", "xfs"))
+	next := identityWith(section("", "xfs"))
 	for _, c := range []struct {
 		name  string
 		setUp func(t *testing.T) (*Server, *fakeRunner, string)
@@ -430,7 +425,7 @@ func TestResetVolumeChecksPartUUID(t *testing.T) {
 		}, "no recorded partition"},
 		{"system disk, partition with another PARTUUID", func(t *testing.T) (*Server, *fakeRunner, string) {
 			s, r := systemVolumeServer(t, other)
-			return s, r, identityWith("rack-a", withSystemVolume(t, section("", ""), storage.EncryptionTPM2))
+			return s, r, identityWith(withSystemVolume(t, section("", ""), storage.EncryptionTPM2))
 		}, "PARTUUID"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -459,7 +454,7 @@ func TestResetVolumeNeedsFallbackForEveryEncryptedVolume(t *testing.T) {
 		v.Encryption = storage.EncryptionNone
 		s.Volumes["extra"] = v
 	}), storage.EncryptionTPM2)
-	_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "extra", Identity: identityWith("rack-a", next)}))
+	_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "extra", Identity: identityWith(next)}))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "volume data") || !strings.Contains(err.Error(), "no fallback secret") {
 		t.Fatalf("err = %v", err)
 	}
@@ -471,7 +466,7 @@ func TestResetVolumeNeedsFallbackForEveryEncryptedVolume(t *testing.T) {
 func TestResetVolumeRefusesRemoval(t *testing.T) {
 	s, r := installedServer(t, section("", "ext4"), true)
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
-	err := reset(s, "extra", identityWith("rack-a", section("", "")))
+	err := reset(s, "extra", identityWith(section("", "")))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer has volume extra") {
 		t.Fatalf("err = %v", err)
 	}
@@ -508,7 +503,7 @@ func TestApplyIdentityRefusesMismatchingFallbackSecret(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 	mismatch(r)
-	_, err := apply(s, identityWith("rack-b", section("", "ext4")), "mistyped")
+	_, err := apply(s, identityWith(section("", "ext4")), "mistyped")
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the fallback secret does not match the node's existing fallback keyslot") {
 		t.Fatalf("err = %v", err)
 	}
@@ -526,7 +521,7 @@ func TestApplyIdentityRefusesMismatchingFallbackSecret(t *testing.T) {
 func TestApplyIdentityRefusesWhenTheCheckFails(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	r.rules = append([]rule{{prefix: "cryptsetup open", err: &node.ToolError{Command: "cryptsetup open", Code: 4, Stderr: "Device does not exist."}}}, r.rules...)
-	_, err := apply(s, identityWith("rack-b", section("", "ext4")), secret)
+	_, err := apply(s, identityWith(section("", "ext4")), secret)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || strings.Contains(err.Error(), secret) {
 		t.Fatalf("err = %v", err)
 	}
@@ -539,7 +534,7 @@ func TestResetVolumeRefusesMismatchingFallbackSecret(t *testing.T) {
 	s, r := installedServer(t, section("", "ext4"), true)
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 	mismatch(r)
-	err := reset(s, "extra", identityWith("rack-a", section("", "xfs")))
+	err := reset(s, "extra", identityWith(section("", "xfs")))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("err = %v", err)
 	}
@@ -576,9 +571,9 @@ func TestFallbackCheckDevice(t *testing.T) {
 			var err error
 			if c.reset {
 				partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
-				err = reset(s, "extra", identityWith("rack-a", c.next))
+				err = reset(s, "extra", identityWith(c.next))
 			} else {
-				_, err = apply(s, identityWith("rack-a", c.next), secret)
+				_, err = apply(s, identityWith(c.next), secret)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -654,7 +649,7 @@ func TestApplyIdentityDeliversNodeCertificateAlone(t *testing.T) {
 		"another node's certificate": {NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)},
 		"another key":                {NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(other.Key)},
 		// Refused before the identity is applied.
-		"another node's with an identity": {Identity: identityWith("rack-b", section("", "")), NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)},
+		"another node's with an identity": {Identity: identityWith(section("", "")), NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)},
 	} {
 		_, err := s.ApplyIdentity(context.Background(), connect.NewRequest(req))
 		if connect.CodeOf(err) != connect.CodeInvalidArgument {

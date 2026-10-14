@@ -521,7 +521,6 @@ lib.runTests {
   testKindConsumerRecordedForChalkd = {
     expr = (consumersOf withKindConsumer).bird;
     expected = {
-      keys = [ ];
       kinds = [
         "Demo"
         "Network"
@@ -553,28 +552,21 @@ lib.runTests {
     expr = fails (consumerOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
     expected = true;
   };
-  testConsumerOfKeysAndKindsFails = {
+  # Units read config kinds alone: there are no identity keys to read.
+  testDottedConsumersAreGone = {
     expr = fails (
       consumersOf (image [
-        demoModule
-        kindConsumerModule
-        { chalkos.node.consumers.bird.keys = [ "hostname" ]; }
-      ])
-    );
-    expected = true;
-  };
-  testConsumerNamedLikeAKeyFails = {
-    expr = fails (
-      consumersOf (image [
-        demoModule
-        kindConsumerModule
         {
-          systemd.services.other.serviceConfig.ExecStart = "/bin/true";
-          chalkos.node.consumers.other.keys = [ "bird" ];
+          systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
+          chalkos.node.consumers.bird.keys = [ "hostname" ];
         }
       ])
     );
     expected = true;
+  };
+  testNodeFileIsGone = {
+    expr = (image [ ]).chalkos ? node;
+    expected = false;
   };
   testKubernetesImageDirectoryHasClusterFile = {
     expr = lib.hasInfix "$out/kubernetes.json" kubernetesImage.system.build.chalkosImage.buildCommand;

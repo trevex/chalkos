@@ -129,8 +129,8 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	s, r := newTestServer(t, normal, vda, vdb)
 	writeSchemas(t, s.Identity.Schemas)
 	write(t, s.Identity.Consumers, `{
-	  "demo": {"keys": [], "kinds": ["Demo"], "restartOnChange": true},
-	  "timesync": {"keys": [], "kinds": ["TimeSync"], "restartOnChange": true}
+	  "demo": {"kinds": ["Demo"], "restartOnChange": true},
+	  "timesync": {"kinds": ["TimeSync"], "restartOnChange": true}
 	}`)
 	schemas, err := schema.LoadSchemas(s.Identity.Schemas)
 	if err != nil {

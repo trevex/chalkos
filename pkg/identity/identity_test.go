@@ -18,8 +18,7 @@ const nodeIdentity = `{
   "networkUnits": {"10-uplink.network": "[Match]\nName=enp1s0\n"},
   "labels": {"zone": "a"},
   "taints": [],
-  "storage": {},
-  "extensions": {"rack": {"location": "rack-a/u14", "slots": [1, 2]}}
+  "storage": {}
 }`
 
 func newTestLoader(t *testing.T) (Loader, *string) {
@@ -35,11 +34,7 @@ func newTestLoader(t *testing.T) (Loader, *string) {
 		Schemas:     filepath.Join(root, "etc", "schemas"),
 		SetHostname: func(name string) error { hostname = name; return nil },
 	}
-	write(t, l.Consumers, `{
-	  "rack-location": {"keys": ["rack.location"], "restartOnChange": true},
-	  "rack-slots": {"keys": ["rack.slots", "missing.key"], "restartOnChange": true},
-	  "labeller": {"keys": ["labels"], "restartOnChange": false}
-	}`)
+	write(t, l.Consumers, "{}")
 	return l, &hostname
 }
 
@@ -75,19 +70,6 @@ func TestLoad(t *testing.T) {
 	if got := read(t, filepath.Join(l.RunDir, "node.json")); got != nodeIdentity {
 		t.Errorf("node.json = %s", got)
 	}
-	creds := filepath.Join(l.RunDir, "credentials")
-	for key, want := range map[string]string{
-		"rack.location": "rack-a/u14",
-		"rack.slots":    "[1,2]",
-		"labels":        `{"zone":"a"}`,
-	} {
-		if got := read(t, filepath.Join(creds, key)); got != want {
-			t.Errorf("credential %s = %q, want %q", key, got, want)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(creds, "missing.key")); !os.IsNotExist(err) {
-		t.Errorf("wrote a credential for a key the identity lacks: %v", err)
-	}
 	if got := read(t, filepath.Join(l.NetworkDir, "10-uplink.network")); got != Header+"[Match]\nName=enp1s0\n" {
 		t.Errorf("uplink unit = %q", got)
 	}
@@ -112,52 +94,12 @@ func TestLoadWithoutIdentity(t *testing.T) {
 	}
 }
 
-func TestApplyRemovesCredentialOfRemovedKey(t *testing.T) {
-	l, _ := newTestLoader(t)
-	if err := l.Apply([]byte(nodeIdentity)); err != nil {
-		t.Fatal(err)
-	}
-	if err := l.Apply([]byte(`{"hostname": "w1", "extensions": {}}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(l.RunDir, "credentials", "rack.location")); !os.IsNotExist(err) {
-		t.Error("kept the credential of a key the identity no longer has")
-	}
-}
-
 func TestApplyRejectsUnitNames(t *testing.T) {
 	l, _ := newTestLoader(t)
 	for _, name := range []string{"../escape.network", "10-uplink.service"} {
 		err := l.Apply([]byte(`{"networkUnits": {"` + name + `": ""}}`))
 		if err == nil || !strings.Contains(err.Error(), "invalid networkd unit name") {
 			t.Errorf("%s: err = %v", name, err)
-		}
-	}
-}
-
-func TestRestarts(t *testing.T) {
-	l, _ := newTestLoader(t)
-	consumers, err := ReadConsumers(l.Consumers)
-	if err != nil {
-		t.Fatal(err)
-	}
-	moved := strings.Replace(nodeIdentity, "rack-a/u14", "rack-b/u2", 1)
-	relabelled := strings.Replace(nodeIdentity, `"zone": "a"`, `"zone": "b"`, 1)
-	for name, c := range map[string]struct {
-		new  string
-		want []string
-	}{
-		"unchanged":            {nodeIdentity, nil},
-		"key changed":          {moved, []string{"rack-location"}},
-		"no restart requested": {relabelled, nil},
-		"keys removed":         {`{"extensions": {}}`, []string{"rack-location", "rack-slots"}},
-	} {
-		got, err := Restarts(consumers, []byte(nodeIdentity), []byte(c.new))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s: restarts = %v, want %v", name, got, c.want)
 		}
 	}
 }
@@ -234,8 +176,8 @@ func TestLoadWritesConfig(t *testing.T) {
 	copySchemas(t, l.Schemas)
 	write(t, l.Identity, nodeIdentity)
 	write(t, l.Consumers, `{
-	  "demo": {"keys": [], "kinds": ["Demo"], "restartOnChange": true},
-	  "idle": {"keys": [], "kinds": ["Cluster"], "restartOnChange": true}
+	  "demo": {"kinds": ["Demo"], "restartOnChange": true},
+	  "idle": {"kinds": ["Cluster"], "restartOnChange": true}
 	}`)
 	docs, err := config.Parse(strings.NewReader(loaderConfig))
 	if err != nil {
@@ -268,7 +210,7 @@ func TestLoadWritesConfig(t *testing.T) {
 func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	l, _ := newTestLoader(t)
 	write(t, l.Identity, nodeIdentity)
-	write(t, l.Consumers, `{"demo": {"keys": [], "kinds": ["Demo"], "restartOnChange": true}}`)
+	write(t, l.Consumers, `{"demo": {"kinds": ["Demo"], "restartOnChange": true}}`)
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +224,6 @@ func TestKindRestarts(t *testing.T) {
 		"demo":    {Kinds: []string{"Demo"}, RestartOnChange: true},
 		"network": {Kinds: []string{"Network", "Link"}, RestartOnChange: true},
 		"quiet":   {Kinds: []string{"Demo"}, RestartOnChange: false},
-		"keys":    {Keys: []string{"hostname"}, RestartOnChange: true},
 	}
 	before := map[string]string{"Demo": "1", "Network": "2"}
 	for name, c := range map[string]struct {
@@ -298,5 +239,16 @@ func TestKindRestarts(t *testing.T) {
 		if got := KindRestarts(consumers, before, c.after); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: restarts = %v, want %v", name, got, c.want)
 		}
+	}
+}
+
+func TestApplyWritesNoKeyCredentials(t *testing.T) {
+	l, _ := newTestLoader(t)
+	write(t, l.Consumers, `{"report": {"keys": ["hostname"], "restartOnChange": true}}`)
+	if err := l.Apply([]byte(nodeIdentity)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(l.RunDir, "credentials", "hostname")); !os.IsNotExist(err) {
+		t.Errorf("wrote the credential of an identity key: %v", err)
 	}
 }

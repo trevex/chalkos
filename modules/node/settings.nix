@@ -11,8 +11,8 @@
         visible = false;
         default = throw ''
           config.chalkos.nodes is not available in a role image: one image serves every node of
-          the role. Read node-specific values at runtime through chalkos.node.file or
-          chalkos.node.consumers.
+          the role. Read node-specific values at runtime from config documents: declare a kind
+          under chalkos.kinds, and the unit that reads it under chalkos.consumers.
         '';
         defaultText = lib.literalMD "unavailable in role images";
         description = "Node definitions; available only in the cluster definition.";
@@ -53,10 +53,11 @@
     description = ''
       chalkos settings. Cluster-wide values (`chalkos.cluster`, `chalkos.secureBoot`,
       `chalkos.cni`, `chalkos.time` and feature namespaces) are set read-only from the cluster
-      definition; image options (`chalkos.debug`, `chalkos.disk`, `chalkos.kernel`, `chalkos.kinds`,
-      `chalkos.node`, `chalkos.platform`, `chalkos.role`, `chalkos.upgrade`) are declared by the
-      node modules. `debug`, `disk`, `kernel`, `kinds`, `node`, `nodes`, `platform`, `role` and
-      `upgrade` are therefore reserved and cannot be used as feature namespaces.
+      definition; image options (`chalkos.consumers`, `chalkos.debug`, `chalkos.disk`,
+      `chalkos.kernel`, `chalkos.kinds`, `chalkos.platform`, `chalkos.role`, `chalkos.upgrade`) are
+      declared by the node modules. `consumers`, `debug`, `disk`, `kernel`, `kinds`, `nodes`,
+      `platform`, `role` and `upgrade` are therefore reserved and cannot be used as feature
+      namespaces.
     '';
   };
 }
