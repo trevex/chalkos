@@ -104,6 +104,9 @@ func TestSpecSchema(t *testing.T) {
 		t.Error("spec accepts unknown sections")
 	}
 	network := spec["properties"].(map[string]any)["network"].(map[string]any)
+	if network["x-chalkos-networkd-section"] != "Network" {
+		t.Errorf("network's spec property x-chalkos-networkd-section = %v, want Network", network["x-chalkos-networkd-section"])
+	}
 	networkAnyOf := network["anyOf"].([]any)
 	ref := networkAnyOf[0].(map[string]any)["$ref"]
 	if ref != "#/$defs/Network" {

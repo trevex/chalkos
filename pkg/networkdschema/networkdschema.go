@@ -172,7 +172,12 @@ func SpecSchema(entries []Entry) (map[string]any, error) {
 			"additionalProperties":       false,
 			"x-chalkos-networkd-section": section,
 		}
-		specProps[yamlSection] = oneOrMany(map[string]any{"$ref": "#/$defs/" + section})
+		sectionProp := oneOrMany(map[string]any{"$ref": "#/$defs/" + section})
+		// The section name also sits next to this property's own anyOf, the way a key's
+		// x-chalkos-networkd-key sits next to its anyOf, so a renderer can map a YAML section
+		// name to its systemd section without resolving $ref.
+		sectionProp["x-chalkos-networkd-section"] = section
+		specProps[yamlSection] = sectionProp
 	}
 	return map[string]any{
 		"spec": map[string]any{
