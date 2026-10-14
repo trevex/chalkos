@@ -1,0 +1,82 @@
+// Package config reads a node's config documents, checks them as a set against the schemas of
+// the image they are meant for, and translates them into the node's identity.
+package config
+
+// API versions and kinds chalkos declares itself.
+const (
+	CoreAPI       = "chalkos.dev/v1alpha1"
+	StorageAPI    = "storage.chalkos.dev/v1alpha1"
+	TimeAPI       = "time.chalkos.dev/v1alpha1"
+	KubernetesAPI = "kubernetes.chalkos.dev/v1alpha1"
+	NetworkdAPI   = "networkd.chalkos.dev/v1alpha1"
+)
+
+// SecretRef names a key of a Secret document.
+type SecretRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+type nodeSpec struct {
+	Type     *string `json:"type"`
+	ImageRef string  `json:"imageRef"`
+	Hostname *string `json:"hostname"`
+}
+
+type secretSpec struct {
+	Data map[string]string `json:"data"`
+}
+
+// diskRef is a disk by path or by selector keys.
+type diskRef struct {
+	Path   *string `json:"path"`
+	Model  *string `json:"model"`
+	Serial *string `json:"serial"`
+	WWN    *string `json:"wwn"`
+	Size   *string `json:"size"`
+	Type   *string `json:"type"`
+}
+
+type systemDiskSpec struct {
+	Disk       diskRef `json:"disk"`
+	Encryption struct {
+		Mode     string `json:"mode"`
+		Fallback string `json:"fallback"`
+	} `json:"encryption"`
+	Var struct {
+		Size       *string `json:"size"`
+		Encryption struct {
+			Mode *string `json:"mode"`
+		} `json:"encryption"`
+	} `json:"var"`
+}
+
+type volumeSpec struct {
+	Disk       *diskRef `json:"disk"`
+	Size       *string  `json:"size"`
+	Format     *string  `json:"format"`
+	MountPoint *string  `json:"mountPoint"`
+	Encryption struct {
+		Mode *string `json:"mode"`
+	} `json:"encryption"`
+	Repart map[string]string `json:"repart"`
+}
+
+type timeSyncSpec struct {
+	Servers []struct {
+		Host string `json:"host"`
+		NTS  bool   `json:"nts"`
+		Port *int   `json:"port"`
+	} `json:"servers"`
+}
+
+type kubeletSpec struct {
+	Labels map[string]string `json:"labels"`
+	Taints []struct {
+		Key    string  `json:"key"`
+		Value  *string `json:"value"`
+		Effect string  `json:"effect"`
+	} `json:"taints"`
+	NodeIPs      []string `json:"nodeIPs"`
+	ValidSubnets []string `json:"validSubnets"`
+}
