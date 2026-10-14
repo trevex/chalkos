@@ -298,6 +298,49 @@ lib.runTests {
     } withDemo.system.build.chalkosKinds;
     expected = true;
   };
+  testNetworkdKindsListed = {
+    expr = lib.filter (
+      k: k.apiVersion == "networkd.chalkos.dev/v1alpha1"
+    ) withDemo.system.build.chalkosKinds;
+    expected =
+      map
+        (kind: {
+          apiVersion = "networkd.chalkos.dev/v1alpha1";
+          inherit kind;
+          multiple = true;
+        })
+        [
+          "Link"
+          "NetDev"
+          "Network"
+        ];
+  };
+  testNetworkdKindNameIsTaken = {
+    expr = fails (
+      schemasOf (image [
+        {
+          chalkos.kinds.Network = {
+            group = "demo.example.org";
+            version = "v1";
+          };
+        }
+      ])
+    );
+    expected = true;
+  };
+  testNetworkdGroupIsReserved = {
+    expr = fails (
+      schemasOf (image [
+        {
+          chalkos.kinds.Bridge = {
+            group = "networkd.chalkos.dev";
+            version = "v1alpha1";
+          };
+        }
+      ])
+    );
+    expected = true;
+  };
   testLowerCaseKindFails = {
     expr = fails (
       schemasOf (image [

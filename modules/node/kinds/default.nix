@@ -1,6 +1,7 @@
 # Config kinds: the documents an image accepts at runtime. Each kind of chalkos.kinds becomes a
 # JSON Schema in /etc/chalkos/schemas and in the image directory's schemas/, from which chalkctl
-# and chalkd validate a node's config documents.
+# and chalkd validate a node's config documents. networkd's Network, NetDev and Link come from the
+# image's systemd.
 {
   config,
   lib,
@@ -10,6 +11,58 @@
 let
   schema = import ./schema.nix { inherit lib; };
   cfg = config.chalkos.kinds;
+
+  # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
+  # so their schemas accept exactly the sections and keys its networkd does.
+  networkd = {
+    group = "networkd.chalkos.dev";
+    version = "v1alpha1";
+    kinds = [
+      "Link"
+      "NetDev"
+      "Network"
+    ];
+  };
+  networkdKind = kind: {
+    inherit kind;
+    inherit (networkd) group version;
+    multiple = true;
+  };
+  networkdSchemas = pkgs.stdenvNoCC.mkDerivation {
+    name = "chalkos-networkd-schemas";
+    inherit (config.systemd.package) src;
+    nativeBuildInputs = [
+      (pkgs.callPackage ../../../nix/chalkos-networkd-schema.nix { })
+      pkgs.jq
+    ];
+    dontConfigure = true;
+    buildPhase = ''
+      runHook preBuild
+      chalkos-networkd-schema \
+        src/network/networkd-network-gperf.gperf \
+        src/network/netdev/netdev-gperf.gperf \
+        src/udev/net/link-config-gperf.gperf \
+        specs
+      mkdir $out
+      ${lib.concatMapStrings (
+        kind:
+        let
+          k = networkdKind kind;
+          envelope = pkgs.writeText "${kind}-envelope.json" (
+            builtins.toJSON (schema.envelope (k // { spec = { }; }))
+          );
+        in
+        ''
+          jq --slurpfile s specs/${lib.toLower kind}.json \
+            '.properties.spec = $s[0].spec | ."$defs" = $s[0]."$defs"' \
+            ${envelope} > $out/${schema.fileName k}
+        ''
+      ) networkd.kinds}
+      runHook postBuild
+    '';
+    dontInstall = true;
+    dontFixup = true;
+  };
 
   kindModule =
     { name, config, ... }:
@@ -56,9 +109,15 @@ let
 
   # Kind names follow Kubernetes: upper camel case.
   badNames = lib.filter (kind: builtins.match "[A-Z][A-Za-z0-9]*" kind == null) (lib.attrNames cfg);
+  takenNames = lib.filter (kind: lib.elem kind networkd.kinds) (lib.attrNames cfg);
+  reservedGroups = lib.filter (kind: cfg.${kind}.group == networkd.group) (lib.attrNames cfg);
   kinds =
     if badNames != [ ] then
       throw "chalkos.kinds.${lib.head badNames}: a kind's name must match [A-Z][A-Za-z0-9]*, as Kubernetes kinds do"
+    else if takenNames != [ ] then
+      throw "chalkos.kinds.${lib.head takenNames}: the name is taken by chalkos's networkd kind of the same name"
+    else if reservedGroups != [ ] then
+      throw "chalkos.kinds.${lib.head reservedGroups}: the group ${networkd.group} is reserved for chalkos's networkd kinds"
     else
       lib.mapAttrsToList (kind: k: {
         inherit kind;
@@ -72,6 +131,7 @@ let
 
   schemas = pkgs.runCommand "chalkos-schemas" { } ''
     mkdir $out
+    cp ${networkdSchemas}/*.json $out/
     ${lib.concatMapStrings (k: ''
       cp ${pkgs.writeText (schema.fileName k) (builtins.toJSON (schema.kindSchema k))} $out/${schema.fileName k}
     '') kinds}
@@ -98,7 +158,7 @@ in
     system.build.chalkosKinds = map (k: {
       apiVersion = "${k.group}/${k.version}";
       inherit (k) kind multiple;
-    }) kinds;
+    }) (map networkdKind networkd.kinds ++ kinds);
     environment.etc."chalkos/schemas".source = schemas;
   };
 }
