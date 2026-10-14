@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -82,13 +83,72 @@ func TestIdentityMatchesTheClusterDefinition(t *testing.T) {
 			if !reflect.DeepEqual(got.StaticAddresses(), want.StaticAddresses()) {
 				t.Errorf("static addresses = %v, want %v", got.StaticAddresses(), want.StaticAddresses())
 			}
+			if g, w := macsOf(got), macsOf(want); !reflect.DeepEqual(g, w) {
+				t.Errorf("matched MAC addresses = %v, want %v", g, w)
+			}
 			got.Network, want.Network = nil, nil
-			// Extensions move to documents of their own kinds.
-			want.Extensions = nil
+			// Extensions move to documents of their own kinds; the identity carries none.
+			want.Extensions = map[string]json.RawMessage{}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("identity =\n%+v\nwant\n%+v", got, want)
 			}
 		})
+	}
+}
+
+// macsOf returns the MAC address each network of the identity matches, by network name: the part
+// of the network map besides its addresses that Go reads.
+func macsOf(id manifest.Identity) map[string]any {
+	out := map[string]any{}
+	networks, _ := id.Network["networks"].(map[string]any)
+	for name, n := range networks {
+		network, _ := n.(map[string]any)
+		match, _ := network["matchConfig"].(map[string]any)
+		out[name] = match["MACAddress"]
+	}
+	return out
+}
+
+func TestIdentityCarriesTheMatchedMAC(t *testing.T) {
+	s, err := NewSet(mustParse(t, minimal+`---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lab}
+spec:
+  match: {macAddress: "52:54:00:7b:00:11"}
+  network: {address: [10.0.0.11/24]}
+`), allSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"networks": map[string]any{"10-lab": map[string]any{
+		"address":     []any{"10.0.0.11/24"},
+		"matchConfig": map[string]any{"MACAddress": "52:54:00:7b:00:11"},
+	}}}
+	if !reflect.DeepEqual(id.Network, want) {
+		t.Errorf("network = %#v, want %#v", id.Network, want)
+	}
+}
+
+func TestIdentityMarshalsEmptyExtensions(t *testing.T) {
+	s, err := NewSet(mustParse(t, minimal), allSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"extensions":{}`) {
+		t.Errorf("identity = %s, want \"extensions\":{}", b)
 	}
 }
 

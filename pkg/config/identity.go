@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -65,6 +66,9 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 		Taints:       []manifest.Taint{},
 		Storage:      sec,
 		Time:         manifest.Time{Servers: slices.Clone(defaultTimeServers)},
+		// Empty rather than nil, so the identity marshals with "extensions":{} as the cluster
+		// definition's does.
+		Extensions: map[string]json.RawMessage{},
 	}
 	if node.Hostname != nil {
 		id.Hostname = *node.Hostname
