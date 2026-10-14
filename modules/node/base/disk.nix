@@ -82,6 +82,16 @@ let
           ${config.system.build.uki}/${config.system.boot.loader.ukiFile} "$ukis" "$storeSize" "$storeVeritySize" "$espSize"
         touch $out
       '';
+  # What chalkctl reads about an image before it validates config or installs it; the root hash
+  # is added from systemd-repart's output once the image is built.
+  metadata = pkgs.writeText "chalkos-metadata.json" (
+    builtins.toJSON {
+      schemaVersion = 0;
+      inherit (config.system.image) id version;
+      platform = config.chalkos.platform.name;
+      kinds = config.system.build.chalkosKinds;
+    }
+  );
 in
 {
   imports = [ "${modulesPath}/image/repart.nix" ];
@@ -248,10 +258,20 @@ in
     # with them, so they travel with the image.
     environment.etc."chalkos/repart.d".source = systemDefinitions;
     system.build.chalkosImageFits = fits;
-    system.build.chalkosImage = pkgs.runCommand "${config.image.repart.name}-image" { inherit fits; } ''
-      mkdir $out
-      ln -s ${config.system.build.image}/* $out/
-      ln -s ${systemDefinitions} $out/repart.d
-    '';
+    system.build.chalkosImage =
+      pkgs.runCommand "${config.image.repart.name}-image"
+        {
+          inherit fits;
+          nativeBuildInputs = [ pkgs.jq ];
+        }
+        ''
+          mkdir $out
+          ln -s ${config.system.build.image}/* $out/
+          ln -s ${systemDefinitions} $out/repart.d
+          ln -s ${config.system.build.chalkosSchemas} $out/schemas
+          jq --slurpfile repart ${config.system.build.image}/repart-output.json \
+            '. + { rootHash: ([$repart[0][] | .roothash // empty] | first) }' \
+            ${metadata} > $out/metadata.json
+        '';
   };
 }

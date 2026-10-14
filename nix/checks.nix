@@ -792,4 +792,49 @@ in
       pkgs.runCommand "chalkos-eval-kinds-tests" { } "touch $out"
     else
       throw "kind evaluation tests failed:\n${pkgs.lib.generators.toPretty { } failures}";
+
+  # An image directory describes itself and carries schemas that accept a real Network document
+  # and reject a misspelled key.
+  image-contract =
+    pkgs.runCommand "chalkos-image-contract"
+      {
+        nativeBuildInputs = [
+          pkgs.jq
+          pkgs.check-jsonschema
+        ];
+      }
+      ''
+        dir=${chalkPkgs.test-image}
+        jq -e '
+          .schemaVersion == 0
+          and .id == "chalkos"
+          and .platform == "metal"
+          and (.rootHash | test("^[0-9a-f]{64}$"))
+          and ([.kinds[].kind] | index("Network") != null)
+        ' $dir/metadata.json
+        for k in $(jq -r '.kinds[] | "\(.apiVersion | sub("/"; "_"))_\(.kind).json"' $dir/metadata.json); do
+          test -f $dir/schemas/$k || { echo "error: metadata.json lists $k, which schemas/ lacks" >&2; exit 1; }
+        done
+
+        schema=$dir/schemas/networkd.chalkos.dev_v1alpha1_Network.json
+        cat > good.json <<'EOF'
+        {
+          "apiVersion": "networkd.chalkos.dev/v1alpha1",
+          "kind": "Network",
+          "metadata": { "name": "10-uplink" },
+          "spec": {
+            "match": { "name": "enp1s0" },
+            "network": { "address": ["10.0.0.11/24"], "gateway": "10.0.0.1", "ipv6AcceptRA": false },
+            "route": [ { "destination": "10.1.0.0/16", "gateway": "10.0.0.254" } ]
+          }
+        }
+        EOF
+        check-jsonschema --schemafile $schema good.json
+        jq '.spec.network.gatway = "10.0.0.1"' good.json > typo.json
+        if check-jsonschema --schemafile $schema typo.json; then
+          echo "error: the Network schema accepted the misspelled key gatway" >&2
+          exit 1
+        fi
+        touch $out
+      '';
 }
