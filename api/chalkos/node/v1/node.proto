@@ -195,6 +195,17 @@ message InstallHeader {
   // certificate and a kubelet client certificate for a worker. Empty for a role without
   // Kubernetes.
   bytes kubernetes_share = 11;
+  // The node's config: YAML documents separated by ---. chalkd checks them as a set against the
+  // schemas of the image it installs, fills in their defaults, keeps them on STATE and translates
+  // them into the node's identity. Replaces identity; a header with both is refused.
+  string config = 12;
+  // The schemas of the image the installer writes, by file name, as its image directory's
+  // schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
+  // the running image's.
+  map<string, bytes> schemas = 13;
+  // The kubernetes.json of the image the installer writes, as its image directory holds it;
+  // empty for an image without Kubernetes. Installer only.
+  bytes kubernetes_cluster = 14;
 }
 
 message InPlace {}
@@ -263,12 +274,16 @@ message ApplyIdentityRequest {
   // empty keeps the node's. They must verify the node's certificate, the caller's and a control
   // plane's node CA. Not together with a node certificate.
   bytes trust = 6;
+  // The node's config, as InstallHeader.config holds it, checked against the running image's
+  // schemas. It replaces the node's identity and its stored config as a whole. Not together with
+  // identity. An identity without config removes the node's stored config.
+  string config = 7;
 }
 
 message ApplyIdentityResponse {
   // Storage changes that were applied.
   repeated StorageChange changes = 1;
-  // Units restarted because identity keys they read changed.
+  // Units restarted because identity keys or config kinds they read changed.
   repeated string restarted_units = 2;
 }
 
@@ -307,6 +322,10 @@ message StatusResponse {
   BootStatus boot = 9;
   // The platform the running image was built for.
   string platform = 10;
+  // SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents
+  // in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
+  // its own SHA-256. Empty on a node that runs an identity without config.
+  string config_version = 11;
 }
 
 message BootStatus {

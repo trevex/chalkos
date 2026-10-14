@@ -151,6 +151,7 @@ a node cordoned otherwise as it is.
 | `node_certificate` | `bytes` | A new node certificate for the node, followed by the certificate of the node CA that issued it (PEM), and its key, which chalkd serves from then on; empty keeps the node's. |
 | `node_key` | `bytes` |  |
 | `trust` | `bytes` | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
+| `config` | `string` | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's identity and its stored config as a whole. Not together with identity. An identity without config removes the node's stored config. |
 
 ### ApplyIdentityResponse { #message-applyidentityresponse }
 
@@ -159,7 +160,7 @@ a node cordoned otherwise as it is.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `changes` | repeated [`StorageChange`](#message-storagechange) | Storage changes that were applied. |
-| `restarted_units` | repeated `string` | Units restarted because identity keys they read changed. |
+| `restarted_units` | repeated `string` | Units restarted because identity keys or config kinds they read changed. |
 
 ### BootStatus { #message-bootstatus }
 
@@ -428,6 +429,18 @@ No fields.
 | `wipe_disk` | `bool` | Let the installer replace whatever the target disk holds, including an installed node. |
 | `system_definitions` | repeated [`InstallHeader.SystemDefinitionsEntry`](#message-installheadersystemdefinitionsentry) | The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each role chooses its partition sizes, so the installer's own may not fit. |
 | `kubernetes_share` | `bytes` | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for a role without Kubernetes. |
+| `config` | `string` | The node's config: YAML documents separated by ---. chalkd checks them as a set against the schemas of the image it installs, fills in their defaults, keeps them on STATE and translates them into the node's identity. Replaces identity; a header with both is refused. |
+| `schemas` | repeated [`InstallHeader.SchemasEntry`](#message-installheaderschemasentry) | The schemas of the image the installer writes, by file name, as its image directory's schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses the running image's. |
+| `kubernetes_cluster` | `bytes` | The kubernetes.json of the image the installer writes, as its image directory holds it; empty for an image without Kubernetes. Installer only. |
+
+### InstallHeader.SchemasEntry { #message-installheaderschemasentry }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `key` | `string` |  |
+| `value` | `bytes` |  |
 
 ### InstallHeader.SystemDefinitionsEntry { #message-installheadersystemdefinitionsentry }
 
@@ -582,6 +595,7 @@ No fields.
 | `trust` | repeated [`TrustStatus`](#message-truststatus) | What the node trusts and issues with, by fingerprint. |
 | `boot` | [`BootStatus`](#message-bootstatus) | The image the node booted, and what upgrades installed beside it. |
 | `platform` | `string` | The platform the running image was built for. |
+| `config_version` | `string` | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs an identity without config. |
 
 ### StorageChange { #message-storagechange }
 
