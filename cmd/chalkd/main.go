@@ -38,7 +38,7 @@ const usage = `usage: chalkd <command>
 
 commands:
   serve                            serve the node API
-  load-identity                    apply the identity recorded on STATE
+  load-identity                    apply the identity and the config recorded on STATE
   health [--wait SECONDS] [--ignore-unit UNIT]...
                                    check whether this boot is healthy; with --wait, check until
                                    it is, and reboot after an unhealthy boot of an image the

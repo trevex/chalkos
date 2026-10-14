@@ -7,6 +7,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 )
 
 const nodeIdentity = `{
@@ -28,6 +31,8 @@ func newTestLoader(t *testing.T) (Loader, *string) {
 		RunDir:      filepath.Join(root, "run", "chalkos"),
 		NetworkDir:  filepath.Join(root, "run", "systemd", "network"),
 		Consumers:   filepath.Join(root, "etc", "consumers.json"),
+		Config:      filepath.Join(root, "state", "config"),
+		Schemas:     filepath.Join(root, "etc", "schemas"),
 		SetHostname: func(name string) error { hostname = name; return nil },
 	}
 	write(t, l.Consumers, `{
@@ -195,5 +200,103 @@ func TestTimeChanged(t *testing.T) {
 	}
 	if !TimeChanged(a, c) || !TimeChanged(nil, a) {
 		t.Error("other servers did not change")
+	}
+}
+
+const loaderConfig = `
+apiVersion: demo.example.org/v1alpha1
+kind: Demo
+metadata: {name: one}
+spec: {name: first, token: {secretRef: {name: demo, key: token}}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: demo}
+spec: {data: {token: s3cret}}
+`
+
+// copySchemas copies the fixture schemas of the built-in kinds and the Demo kind into dir.
+func copySchemas(t *testing.T, dir string) {
+	t.Helper()
+	for _, src := range []string{"../../test/fixtures/kinds/builtin", "../../test/fixtures/kinds/image/schemas"} {
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			write(t, filepath.Join(dir, e.Name()), read(t, filepath.Join(src, e.Name())))
+		}
+	}
+}
+
+func TestLoadWritesConfig(t *testing.T) {
+	l, _ := newTestLoader(t)
+	copySchemas(t, l.Schemas)
+	write(t, l.Identity, nodeIdentity)
+	write(t, l.Consumers, `{
+	  "demo": {"keys": [], "kinds": ["Demo"], "restartOnChange": true},
+	  "idle": {"keys": [], "kinds": ["Cluster"], "restartOnChange": true}
+	}`)
+	docs, err := config.Parse(strings.NewReader(loaderConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(l.Config, store.Stored{Documents: docs, Version: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := l.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(l.RunDir, "node.json")); got != nodeIdentity {
+		t.Errorf("node.json = %s", got)
+	}
+	if got := read(t, filepath.Join(l.RunDir, "config", "demo.example.org", "Demo", "one.json")); !strings.Contains(got, `"name":"first"`) {
+		t.Errorf("Demo = %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(l.RunDir, "config", "chalkos.dev", "Secret")); !os.IsNotExist(err) {
+		t.Error("wrote the Secret below /run/chalkos/config")
+	}
+	if got := read(t, filepath.Join(l.RunDir, "credentials", "demo", "demo.token")); got != "s3cret" {
+		t.Errorf("credential = %q", got)
+	}
+	if entries, err := os.ReadDir(filepath.Join(l.RunDir, "credentials", "idle")); err != nil || len(entries) != 0 {
+		t.Errorf("idle's credentials = %v, %v; want an empty directory", entries, err)
+	}
+}
+
+func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
+	l, _ := newTestLoader(t)
+	write(t, l.Identity, nodeIdentity)
+	write(t, l.Consumers, `{"demo": {"keys": [], "kinds": ["Demo"], "restartOnChange": true}}`)
+	if err := l.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(l.RunDir, "credentials", "demo")); err != nil || len(entries) != 0 {
+		t.Errorf("demo's credentials = %v, %v; want an empty directory", entries, err)
+	}
+}
+
+func TestKindRestarts(t *testing.T) {
+	consumers := map[string]Consumer{
+		"demo":    {Kinds: []string{"Demo"}, RestartOnChange: true},
+		"network": {Kinds: []string{"Network", "Link"}, RestartOnChange: true},
+		"quiet":   {Kinds: []string{"Demo"}, RestartOnChange: false},
+		"keys":    {Keys: []string{"hostname"}, RestartOnChange: true},
+	}
+	before := map[string]string{"Demo": "1", "Network": "2"}
+	for name, c := range map[string]struct {
+		after map[string]string
+		want  []string
+	}{
+		"unchanged":    {map[string]string{"Demo": "1", "Network": "2"}, nil},
+		"kind changed": {map[string]string{"Demo": "3", "Network": "2"}, []string{"demo"}},
+		"kind removed": {map[string]string{"Demo": "1"}, []string{"network"}},
+		"kind added":   {map[string]string{"Demo": "1", "Network": "2", "Link": "4"}, []string{"network"}},
+		"all removed":  {map[string]string{}, []string{"demo", "network"}},
+	} {
+		if got := KindRestarts(consumers, before, c.after); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: restarts = %v, want %v", name, got, c.want)
+		}
 	}
 }
