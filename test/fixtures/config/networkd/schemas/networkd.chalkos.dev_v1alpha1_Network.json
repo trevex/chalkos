@@ -1,0 +1,351 @@
+{
+  "$defs": {
+    "Address": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Address"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "Address"
+    },
+    "Match": {
+      "additionalProperties": false,
+      "properties": {
+        "macAddress": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "MACAddress"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Name"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "Match"
+    },
+    "Network": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Address"
+        },
+        "dhcp": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "DHCP"
+        },
+        "dns": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "DNS"
+        },
+        "gateway": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Gateway"
+        },
+        "ipv6AcceptRA": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "IPv6AcceptRA"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "Network"
+    },
+    "Route": {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Destination"
+        },
+        "gateway": {
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Gateway"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "Route"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "networkd.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Network"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Address"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/Address"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "Address"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Match"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/Match"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "Match"
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Network"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/Network"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "Network"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Route"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/Route"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "Route"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Network",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "networkd.chalkos.dev",
+    "kind": "Network",
+    "multiple": true,
+    "version": "v1alpha1"
+  }
+}
