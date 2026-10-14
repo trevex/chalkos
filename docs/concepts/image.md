@@ -45,7 +45,7 @@ profile:
   a password or an SSH key.
 - The image avoids Perl and keeps interpreters out where it can.
 
-What a node must keep goes to two partitions: STATE for its [identity](../reference/glossary.md#identity), certificates and Kubernetes
+What a node must keep goes to two partitions: STATE for its [config](../reference/glossary.md#config), certificates and Kubernetes
 secrets, and VAR at `/var` for etcd, containerd, the kubelet and logs.
 [Storage and encryption](storage.md) describes both.
 

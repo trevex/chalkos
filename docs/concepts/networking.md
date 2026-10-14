@@ -6,7 +6,7 @@ description: "Node addresses, dual stack, the VIP and packet filtering with nfta
 # Networking
 
 A chalkos node configures its interfaces with systemd-networkd from its
-[identity](../reference/glossary.md#identity), picks one address per IP family for Kubernetes,
+[config](../reference/glossary.md#config), picks one address per IP family for Kubernetes,
 and filters traffic with nftables. Control planes can share a virtual IP, the
 [VIP](../reference/glossary.md#vip), that one healthy control plane holds at a time, and flannel
 connects pods across nodes with VXLAN.
@@ -16,9 +16,11 @@ connects pods across nodes with VXLAN.
 A node's `network` in the [cluster definition](../reference/glossary.md#cluster-definition) is systemd-networkd configuration in the shape of
 NixOS's `systemd.network` options: `networks`, `netdevs` and `links`. chalkos renders it into unit
 files with the role image's own NixOS renderer, so a unit means on the node what it means on
-NixOS, and the node's identity carries the files. At every boot `chalkos-identity.service` writes
-them from the identity on [STATE](../reference/glossary.md#state) to `/run/systemd/network`,
-where they take precedence over the image's.
+NixOS. chalkctl reads each unit back into a `Network`, `NetDev` or `Link` document of the node's
+config, whose sections and keys are networkd's in camelCase, and checks that the document
+renders back into the same unit, as chalkd renders it on the node. At every boot `chalkos-identity.service` writes the units from the config
+on [STATE](../reference/glossary.md#state) to `/run/systemd/network`, where they take precedence
+over the image's.
 
 ```nix
 chalkos.nodes.cp1.network.networks."10-uplink" = {
@@ -29,9 +31,9 @@ chalkos.nodes.cp1.network.networks."10-uplink" = {
 ```
 
 The image brings one unit of its own, NixOS's `99-ethernet-default-dhcp`, which runs DHCP on every
-physical Ethernet interface that no earlier unit matches. A node whose identity declares no
+physical Ethernet interface that no earlier unit matches. A node whose config declares no
 network therefore still comes up with DHCP. A changed network reaches a running node with
-[`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md).
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md).
 
 ## Which addresses does a node use for Kubernetes?
 

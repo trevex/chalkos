@@ -45,7 +45,7 @@ kubelet.
 The kubelet's configuration comes from Nix and is the same on every node of the image:
 webhook authentication and authorisation, no anonymous access and no read-only port, the systemd
 cgroup driver, and `rotateCertificates` with `serverTLSBootstrap`. What differs per node comes from
-the node's [identity](../reference/glossary.md#identity) as flags: the node name, its addresses,
+the node's [config](../reference/glossary.md#config) as flags: the node name, its addresses,
 its labels and its taints. A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule`
 unless [`chalkos.cluster.kubernetes.allowSchedulingOnControlPlanes`](../reference/options.md#chalkosclusterkubernetesallowschedulingoncontrolplanes)
 is set. [`chalkos.cluster.kubernetes.extraArgs.kubelet`](../reference/options.md#chalkosclusterkubernetesextraargskubelet)
@@ -200,7 +200,7 @@ Other states name what the node waits for or why it stopped:
 
 | State | Meaning |
 | --- | --- |
-| `no share` | The node holds no Kubernetes share yet; it gets one at install or with `chalkctl apply-identity --kubernetes-share` |
+| `no share` | The node holds no Kubernetes share yet; it gets one at install or with `chalkctl apply-config --kubernetes-share` |
 | `preparing` | The preparation of the node's addresses, certificates and kubelet flags runs |
 | `waiting for bootstrap or for the cluster at <endpoint>` | A control plane that found no cluster to join yet |
 | `joining the cluster at <endpoint>: <step>` | A join that runs, with its step or its last error |

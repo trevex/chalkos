@@ -132,9 +132,9 @@ node CA, from issuing itself an admin certificate.
 
 | Role | May call |
 | --- | --- |
-| [reader](../reference/glossary.md#reader) | Info, Disks, Status, Logs, EtcdMembers |
+| [reader](../reference/glossary.md#reader) | Info, Disks, Contract, Status, Logs, EtcdMembers |
 | [operator](../reference/glossary.md#operator) | What a reader may, and Reboot, Upgrade, DrainNode, UncordonNode |
-| [admin](../reference/glossary.md#admin) | Every method except RenewNodeCertificate: also Install, ApplyIdentity, ResetVolume, Bootstrap, EtcdRemoveMember, EtcdLeave, RotationStep |
+| [admin](../reference/glossary.md#admin) | Every method except RenewNodeCertificate: also Install, ApplyConfig, ResetVolume, Bootstrap, EtcdRemoveMember, EtcdLeave, RotationStep |
 | `node` | RenewNodeCertificate alone, on control planes |
 
 Each role allows what the roles above it in the table allow; `node` is apart and allows only its
@@ -170,7 +170,7 @@ chalkctl config new --name=grafana --role=reader --ttl=720h --out=grafana.json
 Commands that accept both take the client file `--config` names, else the secrets file `--secrets`
 names, else the client file `$CHALKOSCONFIG` names, else a secrets file in the flake directory,
 else `~/.config/chalkos/config`. chalkctl refuses a client file whose certificate expired and
-warns during its last 30 days. Installing nodes, delivering [identities](../reference/glossary.md#identity), issuing kubeconfigs and
+warns during its last 30 days. Installing nodes, delivering [config](../reference/glossary.md#config), issuing kubeconfigs and
 rotations need the secrets file, because they issue certificates or deliver keys.
 
 ## How is a node in maintenance mode trusted?
@@ -189,7 +189,7 @@ With `--fingerprint`, chalkctl compares the certificate with the fingerprint rea
 console before it sends anything. With `--insecure`, it accepts whatever certificate the node
 presents and prints its fingerprint, which the operator compares with the console afterwards: trust
 on first use. chalkctl then opens a second connection pinned to that fingerprint and sends the
-secrets over it, so the identity, the node certificate and the Kubernetes share go to the machine
+secrets over it, so the config, the node certificate and the Kubernetes share go to the machine
 whose fingerprint was printed. Every command that reaches a node in maintenance mode accepts
 `--insecure`.
 

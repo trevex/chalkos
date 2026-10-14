@@ -124,7 +124,7 @@ These limits hold in the current code, grouped by area.
   only. The code reads arm64's partition types and boot loader name, but no arm64 image is built
   or tested.
 - Changing a node's [platform](../reference/glossary.md#platform) is a reinstall: chalkd
-  refuses an [identity](../reference/glossary.md#identity) or an image of another platform than the one it runs.
+  refuses an [identity](../reference/glossary.md#config) or an image of another platform than the one it runs.
 - CI builds and publishes the documentation alone. The flake checks, with their VM tests, run on
   a developer's machine, because they need `/dev/kvm`.
 - The documentation is not versioned; it describes `main`.

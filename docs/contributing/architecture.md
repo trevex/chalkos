@@ -16,7 +16,7 @@ Go code never evaluates Nix itself. The [cluster definition](../reference/glossa
 
 - The [manifest](../reference/glossary.md#manifest), which `mkCluster` generates as
   `chalkos.<cluster>.manifest`: the cluster's settings, the roles' image paths and every node's
-  [identity](../reference/glossary.md#identity). chalkctl and [chalklab](../reference/glossary.md#chalklab) read the cluster through
+  [identity](../reference/glossary.md#config). chalkctl and [chalklab](../reference/glossary.md#chalklab) read the cluster through
   it alone, decoded by `pkg/manifest`.
 - A node's identity, the manifest's entry for that node, which chalkctl delivers to [chalkd](../reference/glossary.md#chalkd) and
   chalkd keeps on [STATE](../reference/glossary.md#state).

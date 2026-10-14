@@ -164,7 +164,7 @@ chalkctl builds the node's role image for its role and platform from the flake (
 prints its progress first), signs the image's UKI and boot loader with the db key, and checks
 them against [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
 when the cluster definition sets it. It then sends the node its
-[identity](../reference/glossary.md#identity), a [node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
+[identity](../reference/glossary.md#config), a [node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
 second keyslot and, on a Kubernetes role, the node's
 [Kubernetes share](../reference/glossary.md#kubernetes-share), followed by the image's store,
 hash tree, UKI and boot loader. It does not send the whole raw image, only the compressed store

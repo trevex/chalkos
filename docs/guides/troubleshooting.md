@@ -50,7 +50,7 @@ Read it from the top:
 
 | Line | Says | When it is wrong |
 | --- | --- | --- |
-| `identity` | The version of the [identity](../reference/glossary.md#identity) the node runs, and whether it is the cluster definition's. | `not the cluster definition's; chalkctl apply-identity w1 delivers it`: the definition changed since the last delivery. |
+| `identity` | The version of the [identity](../reference/glossary.md#config) the node runs, and whether it is the cluster definition's. | `not the cluster definition's; chalkctl apply-config w1 delivers it`: the definition changed since the last delivery. |
 | `platform` | The platform the image was built for. | A mismatch with the definition: changing a node's platform is a reinstall. |
 | `image` | The [image version](../reference/glossary.md#image-version) booted, its boot entry, and `not found healthy yet` while the [health check](../reference/glossary.md#health-check) runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
 | `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
@@ -139,7 +139,7 @@ selector and the addresses the node has. The node waited
 by default, for an address that matches its fixed `nodeIPs` or its `validSubnets`, and found
 none, so it runs neither the kubelet nor static pods. Check the node's network definition and
 DHCP, and that the subnets list the network the node is on. Then deliver a corrected definition
-with `chalkctl apply-identity <node>`, or reboot once the network is right.
+with `chalkctl apply-config <node>`, or reboot once the network is right.
 
 A control plane that lost an address it was pinned to says `pinned address ... is not present`
 instead; see [Recover a node](recover-node.md#a-control-plane-cannot-rejoin-etcd).

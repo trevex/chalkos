@@ -1,6 +1,6 @@
 ---
 title: "The cluster definition"
-description: "Flakes, roles, nodes and platforms, and how chalkos evaluates them into images and identities"
+description: "Flakes, roles, nodes and platforms, and how chalkos evaluates them into images and config documents"
 ---
 
 # The cluster definition
@@ -156,8 +156,9 @@ A [node](../reference/glossary.md#node) is a machine of the cluster under
 | [`time.servers`](../reference/options.md#chalkosnodestimeservers) | the cluster's | Time servers that replace the cluster's |
 
 A node's name is its name in Kubernetes too, which its kubelet certificate carries. Changing a
-node's role or platform means installing it again: the node refuses an image or identity of
-another role or platform than the image it runs.
+node's role or platform means installing it again: the node refuses an image of another role or
+platform than the image it runs, and chalkctl refuses to deliver config to a node whose image
+has another role or platform than the definition gives it.
 
 ## What is a platform?
 
@@ -191,7 +192,8 @@ under the same names: everything under `chalkos` except `nodes`, `roles`, `platf
 
 Node values do not exist in layer 2. `config.chalkos.nodes` throws inside a role image with an
 error that says so, because the same image runs on every node of the role. A module that needs a
-node's value reads it at runtime, from the [identity](#what-does-a-node-receive-at-runtime).
+node's value reads it at runtime, from the node's
+[config documents](#what-does-a-node-receive-at-runtime).
 
 The flowchart shows both layers and where their results go.
 
@@ -202,7 +204,7 @@ flowchart LR
     layer2 -->|nix build| images["Role images"]
     layer1 --> manifest["Manifest"]
     manifest -->|nix eval| chalkctl
-    chalkctl -->|install, apply-identity| state["Identity on STATE"]
+    chalkctl -->|install, apply-config| state["Config on STATE"]
 ```
 
 The installer is a layer 2 system too, built from the node modules, the cluster's settings and
@@ -245,110 +247,149 @@ $ nix eval --json .#chalkos.homelab.manifest | jq '{schemaVersion, cluster, role
 ```
 
 Besides these, it holds `secureBoot.signerCertificate` and, under `nodes`, each node's role,
-platform and identity. A role's images are attribute paths relative to the cluster, which
-chalkctl builds when a command needs an image. While `schemaVersion` is 0 the format may change
-between chalkos versions, which matters only to tools other than chalkctl and chalklab.
+platform, identity and documents. The identity is what layer 1 renders from the node's options:
+hostname, network units, storage, Kubernetes and time settings. The documents are the config
+documents its extensions add. chalkctl generates the node's config from both. A role's images are
+attribute paths relative to the cluster, which chalkctl builds when a command needs an image.
+While `schemaVersion` is 0 the format may change between chalkos versions, which matters only to
+tools other than chalkctl and chalklab.
 
 `chalkctl --manifest=<file>` reads a manifest from a file instead of evaluating the flake. It
 cannot build images then, so commands that need one take `--image`.
 
 ## What does a node receive at runtime?
 
-A node's [identity](../reference/glossary.md#identity) is its part of the manifest: everything
-about the node, without secrets. The homelab's `cp1`, in part:
+A node receives its [config](../reference/glossary.md#config): a set of documents in the style
+of Kubernetes objects, each with an `apiVersion`, a `kind`, a `metadata.name` and a `spec`.
+chalkctl generates them from the node's entry in the manifest: a `Cluster`; an `Image` named
+`<role>-<platform>`; a `Node`; a `TimeSync`; a `SystemDisk` and a `Volume` per volume; a
+`Network`, `NetDev` or `Link` per networkd unit; a `Kubelet` on a Kubernetes role; and the
+documents the node's extensions add. The homelab's `cp1`, in part:
 
-```console
-$ nix eval --json .#chalkos.homelab.manifest.nodes.cp1.identity \
-  | jq '{cluster, role, platform, hostname, networkUnits, kubernetes, extensions}'
-{
-  "cluster": "homelab",
-  "role": "controlplane",
-  "platform": "metal",
-  "hostname": "cp1",
-  "networkUnits": {
-    "10-uplink.network": "[Match]\nName=enp1s0\n\n[Network]\nAddress=10.0.0.11/24\nGateway=10.0.0.1\n\n"
-  },
-  "kubernetes": {
-    "nodeIPs": [
-      "10.0.0.11"
-    ],
-    "nodeName": "cp1",
-    "validSubnets": null
-  },
-  "extensions": {
-    "rack": {
-      "location": "rack-a/u12"
-    }
-  }
-}
+```yaml
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: cp1}
+spec: {imageRef: controlplane-metal, type: controlplane}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: enp1s0}
+  network: {address: 10.0.0.11/24, gateway: 10.0.0.1}
+---
+apiVersion: rack.example.org/v1alpha1
+kind: Rack
+metadata: {name: rack}
+spec: {location: rack-a/u12}
 ```
 
-Layer 1 renders the node's network into unit files with the role image's own networkd renderer,
-so a unit means on the node exactly what it would mean in NixOS. The storage section, left out
-above, holds the node's disks with their repart definitions and its volumes.
+Layer 1 renders the node's network with the role image's own networkd renderer, so a unit means
+on the node exactly what it would mean in NixOS; chalkctl reads each unit back into a document,
+with sections and keys in camelCase.
 
-chalkctl delivers the identity at install, and later with
-[`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md); the secrets travel
-beside it in the same request, never in the identity. [chalkd](../reference/glossary.md#chalkd)
-keeps the identity on [STATE](../reference/glossary.md#state) as `identity.json`. At every boot,
-`chalkos-identity.service` applies it before the network starts:
+Before it sends anything, chalkctl checks the documents against the image they are for: the
+image directory's schemas when it installs from the installer, and otherwise those of the image
+the node runs, which the node returns with the image's cluster, role and platform through its
+[Contract](../reference/api.md#method-contract) method. chalkctl refuses an image of another
+cluster, role or platform than the cluster definition gives the node. It then translates the
+documents as chalkd does and refuses to deliver them unless they give back what the cluster
+definition declares for the node, so the config a node applies matches its definition.
 
-- it writes the whole identity to `/run/chalkos/node.json`, which
-  [`chalkos.node.file`](../reference/options.md#chalkosnodefile) names;
+chalkctl delivers the config at install, and later with
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md); the node's certificates and
+secrets travel beside it in the same request. [chalkd](../reference/glossary.md#chalkd) checks
+the documents again, fills in the schemas' defaults and keeps them on
+[STATE](../reference/glossary.md#state). At every boot, `chalkos-identity.service` applies them
+before the network starts:
+
 - it writes the networkd units to `/run/systemd/network`, where they take precedence over the
   image's;
 - it writes the time servers for chrony and sets the hostname;
-- it writes one file per key a service reads to `/run/chalkos/credentials/`.
+- it writes each document, `Secret`s excepted, to `/run/chalkos/config/<group>/<Kind>/<name>.json`;
+- it writes, for each service that reads config kinds, the values the `secretRef` fields of those
+  kinds name to `/run/chalkos/credentials/<unit>/`.
 
-A service that needs a node's value declares the keys it reads under
-[`chalkos.node.consumers`](../reference/options.md#chalkosnodeconsumers). Each key becomes a
-systemd credential of the same name, read from `$CREDENTIALS_DIRECTORY` or `%d` in the unit. A
-key is a dotted path, looked up in the identity's `extensions` first and then in the identity
-itself, so `rack.location` and `hostname` both work. When `chalkctl apply-identity` changes a
-key's value, chalkd restarts the units that read it, unless they set `restartOnChange = false`.
+A service that needs a node's value declares the kinds it reads under
+[`chalkos.consumers`](../reference/options.md#chalkosconsumers). It reads their documents from
+`/run/chalkos/config`, or from the kind's [`dir`](../reference/options.md#chalkoskindsdir), and the
+secrets they reference as its systemd credentials `secret_<secret>.<key>`. When
+`chalkctl apply-config` changes a document of one of its kinds, or a `Secret` one of them
+references, chalkd restarts the service, unless it sets
+[`restartOnChange = false`](../reference/options.md#chalkosconsumersrestartonchange).
 
-[`chalkctl status`](../reference/cli/chalkctl_status.md) shows whether a node runs the identity
-the cluster definition gives, by comparing the SHA-256 of the identity it would deliver with the
-node's.
+[`chalkctl status`](../reference/cli/chalkctl_status.md) shows whether a node runs the config the
+cluster definition gives, by comparing the SHA-256 of the documents it would deliver with the
+version the node reports.
 
 ## How does an extension add options?
 
 An [extension](../reference/glossary.md#extension) is a cluster module that declares options
 under a namespace of its own, optionally adds per-node options and contributes NixOS modules to
-roles. chalkos's own features, such as `chalkos.cni`, use the same mechanism. The homelab's rack
-extension records where each node is mounted and hands the value to a service on that node:
+roles. chalkos's own features, such as `chalkos.cni`, use the same mechanism. An extension that
+hands a node's value to a service declares a config kind in its role modules, and its per-node
+option adds a document of that kind. The homelab's rack extension records where each node is
+mounted and hands the value to a service on that node:
 
 ```nix title="extensions/rack.nix"
 { config, lib, ... }:
+let
+  inherit (config.chalkos.rack) enable;
+in
 {
   options.chalkos.rack.enable = lib.mkEnableOption "rack position reporting";
 
   options.chalkos.nodes = lib.mkOption {
     type = lib.types.attrsOf (
-      lib.types.submodule {
-        options.rack.location = lib.mkOption {
-          type = lib.types.str;
-          example = "rack-a/u12";
-          description = "Rack and height unit the node is mounted in.";
-        };
-      }
+      lib.types.submodule (
+        { config, ... }:
+        {
+          options.rack.location = lib.mkOption {
+            type = lib.types.str;
+            example = "rack-a/u12";
+            description = "Rack and height unit the node is mounted in.";
+          };
+          # The node's position travels in its config as a document of the Rack kind.
+          config.documents = lib.mkIf enable [
+            {
+              apiVersion = "rack.example.org/v1alpha1";
+              kind = "Rack";
+              metadata.name = "rack";
+              spec.location = config.rack.location;
+            }
+          ];
+        }
+      )
     );
   };
 
-  config = lib.mkIf config.chalkos.rack.enable {
+  config = lib.mkIf enable {
     chalkos.roles = lib.genAttrs [ "controlplane" "worker" ] (_: {
       nixosModules = [
         (
-          { pkgs, ... }:
+          { config, pkgs, ... }:
           {
+            chalkos.kinds.Rack = {
+              group = "rack.example.org";
+              version = "v1alpha1";
+              spec.location = lib.mkOption {
+                type = lib.types.nonEmptyStr;
+                example = "rack-a/u12";
+                description = "Rack and height unit the node is mounted in.";
+              };
+            };
+            # chalkd writes the node's Rack below the kind's dir and restarts the unit when it
+            # changes.
+            chalkos.consumers.rack-location.kinds = [ "Rack" ];
             systemd.services.rack-location = {
               wantedBy = [ "multi-user.target" ];
               serviceConfig = {
                 Type = "oneshot";
-                ExecStart = "${pkgs.coreutils}/bin/cat %d/rack.location";
+                RemainAfterExit = true;
+                ExecStart = "${lib.getExe pkgs.jq} -r .spec.location ${config.chalkos.kinds.Rack.dir}/rack.json";
               };
             };
-            chalkos.node.consumers.rack-location.keys = [ "rack.location" ];
           }
         )
       ];
@@ -361,15 +402,19 @@ The three parts reach the node by different paths:
 
 - `chalkos.rack.enable` is a cluster setting, so every image of the cluster can read it as
   `config.chalkos.rack.enable`.
-- `chalkos.nodes.<node>.rack.location` is a per-node option. Every node option that chalkos does
-  not declare itself lands in the identity's `extensions`, here as `rack.location`.
-- The role module runs a unit that reads the value as a credential, and chalkd restarts it when
-  the value changes.
+- `chalkos.nodes.<node>.rack.location` is a per-node option. It adds a `Rack` document to the
+  node's [`documents`](../reference/options.md#chalkosnodesdocuments), which chalkctl delivers
+  with the documents it generates.
+- The role module declares the kind `Rack` under
+  [`chalkos.kinds`](../reference/options.md#chalkoskinds), so the image accepts its documents, and
+  runs a unit that reads the node's `Rack` from the kind's `dir`. chalkd restarts the unit when the
+  document changes.
 
 A namespace must not collide with a name chalkos declares under `chalkos`. In the cluster
 definition those are `cluster`, `cni`, `installer`, `manifest`, `nodes`, `platforms`, `roles`,
-`secureBoot`, `time` and `warnings`; inside images `debug`, `disk`, `kernel`, `kinds`, `node`,
-`platform`, `role` and `upgrade` are taken too.
+`secureBoot`, `time` and `warnings`; inside images `consumers`, `debug`, `disk`, `kernel`,
+`kinds`, `platform`, `role` and `upgrade` are taken too. A kind's group must be a DNS name
+outside `chalkos.dev`, which chalkos keeps for its own kinds.
 
 ## Where does the OS CA come from?
 
@@ -392,10 +437,13 @@ copies a flake's tracked files.
 ## Limits
 
 - One image serves every node of a role and platform, so anything that differs between two
-  nodes must travel in the identity. A per-node kernel parameter or package is a role or platform
-  of its own.
-- The identity carries data, not code. A new service, or a change to how a service reads its
-  value, is an image change and an [upgrade](upgrades.md).
+  nodes must travel in the node's config. A per-node kernel parameter or package is a role or
+  platform of its own.
+- Config carries data, not code. A new service, or a change to how a service reads its value, is
+  an image change and an [upgrade](upgrades.md).
+- A `Secret` document reaches the node through `documents` like any other, so its values are in
+  the manifest and in the Nix store. The node keeps them out of `/run/chalkos/config`, but the
+  cluster definition offers no way to keep them out of the store.
 - `chalkos.secureBoot.enrollment` and `chalkos.secureBoot.require` are declared and appear in the
   options reference, but nothing reads them yet: chalkos does not enrol Secure Boot keys.
 - The manifest's format is unstable while `schemaVersion` is 0.

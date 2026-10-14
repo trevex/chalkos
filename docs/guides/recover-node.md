@@ -34,7 +34,7 @@ of `state`, and later of `var` and of each encrypted volume. The
 
 The node stays at the prompt; it does not fall back to
 [maintenance mode](../reference/glossary.md#maintenance-mode), because that would let anyone
-with physical access give it a new [identity](../reference/glossary.md#identity). A boot that waits at the prompt also never
+with physical access give it a new [identity](../reference/glossary.md#config). A boot that waits at the prompt also never
 reaches the [health check](../reference/glossary.md#health-check): after an upgrade, the node
 stays in that boot until you unlock it or reset the machine, and only then does the boot loader
 try the new image again or fall back.
@@ -122,13 +122,13 @@ STATE, which it received at install. When that one expired too, the kubelet cann
 ```text
 certificates:
   ...
-  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl apply-identity w1 --kubernetes-share
+  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl apply-config w1 --kubernetes-share
 ```
 
 Deliver a new share with a new kubelet certificate:
 
 ```sh
-chalkctl apply-identity w1 --kubernetes-share
+chalkctl apply-config w1 --kubernetes-share
 ```
 
 ## A control plane cannot rejoin etcd
@@ -148,7 +148,7 @@ quorum guard on these commands. They need an admin client file or the secrets fi
 
 ## A storage change is refused
 
-`chalkctl apply-identity` fails with `the identity changes storage destructively: ...`, and the
+`chalkctl apply-config` fails with `the identity changes storage destructively: ...`, and the
 node keeps its previous identity in full. The change shrinks, reformats, re-encrypts, moves or
 removes a volume, which would lose its data. Reset that one volume with
 `chalkctl storage reset <node> <volume>`, which deletes its data, then deliver the identity
@@ -219,7 +219,7 @@ its management is gone for good:
 
 | Still works | Gone |
 | --- | --- |
-| Commands with existing client files, within their roles: status, logs, disks, reboot, upgrade, bootstrap, the etcd commands, and storage reset where no TPM-encrypted volume is created: on nodes whose fallback is not the recovery key, or of a volume without encryption | Installing or reinstalling a node, `apply-identity` |
+| Commands with existing client files, within their roles: status, logs, disks, reboot, upgrade, bootstrap, the etcd commands, and storage reset where no TPM-encrypted volume is created: on nodes whose fallback is not the recovery key, or of a volume without encryption | Installing or reinstalling a node, `apply-config` |
 | Node certificate renewal by the control planes, until the [node CA](../reference/glossary.md#node-ca) expires | `chalkctl node renew`, `node-ca rotate` and every `rotate` |
 | Kubelet certificate renewal | New client files and kubeconfigs |
 | Existing kubeconfigs, until they expire | Recovery keys: a node whose TPM stops unsealing cannot be unlocked |

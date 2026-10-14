@@ -52,7 +52,7 @@ through its [manifest](#manifest), installs, upgrades and operates nodes through
 ## chalkd { #chalkd }
 
 The agent on every node. It serves the [node API](api.md) on TCP port 50000 over mutual TLS,
-installs and upgrades the node, applies its [identity](#identity), runs the Kubernetes control
+installs and upgrades the node, applies its [identity](#config), runs the Kubernetes control
 plane and decides whether a boot is healthy. See [Architecture](../concepts/architecture.md).
 
 ## chalklab { #chalklab }
@@ -155,7 +155,7 @@ within [`chalkos.upgrade.healthTimeout`](options.md#chalkosupgradehealthtimeout)
 
 A node's part of the cluster definition, without secrets: hostname, network units, labels,
 taints, storage, platform, time servers and extension values. chalkctl delivers it at install
-and with [`chalkctl apply-identity`](cli/chalkctl_apply-identity.md); chalkd keeps it on
+and with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd keeps it on
 [STATE](#state) and applies it at every boot. See
 [The cluster definition](../concepts/cluster-definition.md).
 
@@ -163,7 +163,7 @@ and with [`chalkctl apply-identity`](cli/chalkctl_apply-identity.md); chalkd kee
 
 A role image: one unsigned raw disk image per [role](#role) and [platform](#platform), with the
 ESP and slot A filled. Every node of that role and platform boots the same image; what differs
-between nodes travels in their [identity](#identity). See [The image](../concepts/image.md).
+between nodes travels in their [identity](#config). See [The image](../concepts/image.md).
 
 ## Image version { #image-version }
 

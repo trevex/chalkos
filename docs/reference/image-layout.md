@@ -55,7 +55,7 @@ system region.
 A volume with a disk of its own is the only partition on that disk, from the definition
 `10-<name>`. The system region's definitions are the same files the image ships in
 `/etc/chalkos/repart.d`; VAR's and the volumes' come from the node's
-[identity](glossary.md#identity) and are kept on STATE.
+[identity](glossary.md#config) and are kept on STATE.
 
 The "Created by" column names the first writer of each partition:
 
@@ -69,7 +69,7 @@ The "Created by" column names the first writer of each partition:
   itself. In place, chalkd recreates STATE when its contents do not match the node's encryption
   policy (an unencrypted STATE for `mode = "none"`). In both flows it then creates VAR and the
   volumes.
-- Identity: [`chalkctl apply-identity`](cli/chalkctl_apply-identity.md) creates volumes added
+- Identity: [`chalkctl apply-config`](cli/chalkctl_apply-config.md) creates volumes added
   to a node's storage and grows those whose size grew. At every boot, `chalkos-storage` in the
   initrd applies the storage section recorded on STATE again.
 
@@ -163,10 +163,10 @@ STATE is mounted at `/state`. It holds what makes the node this node and nothing
 
 | Path | Written by | What it holds |
 | --- | --- | --- |
-| `identity.json` | install, ApplyIdentity | The node's identity as delivered. |
-| `config/<group>/<Kind>/<name>.json` | install, ApplyIdentity | The node's config documents with their schemas' defaults filled in, when the node was delivered config rather than an identity; `identity.json` then holds what they translate to. `config` is a symbolic link to a directory beside it, which a new set replaces as a whole. |
-| `config/secrets/<name>.json` | install, ApplyIdentity | The config's `Secret` documents. |
-| `config/version` | install, ApplyIdentity | The SHA-256 of the config as delivered, which Status reports. |
+| `identity.json` | install, ApplyConfig | The node's identity as delivered. |
+| `config/<group>/<Kind>/<name>.json` | install, ApplyConfig | The node's config documents with their schemas' defaults filled in, when the node was delivered config rather than an identity; `identity.json` then holds what they translate to. `config` is a symbolic link to a directory beside it, which a new set replaces as a whole. |
+| `config/secrets/<name>.json` | install, ApplyConfig | The config's `Secret` documents. |
+| `config/version` | install, ApplyConfig | The SHA-256 of the config as delivered, which Status reports. |
 | `chalkd/node.pem` | install, renewal | The [node certificate](glossary.md#node-certificate)'s chain and its key in one file, so both are replaced together. |
 | `chalkd/ca.crt` | install, [rotation](glossary.md#rotation) | The certificates of the [OS CAs](glossary.md#os-ca) the node trusts, a bundle. |
 | `kubernetes/share.json` | install, rotation | The node's [Kubernetes share](glossary.md#kubernetes-share). |
@@ -176,7 +176,7 @@ STATE is mounted at `/state`. It holds what makes the node this node and nothing
 | `kubernetes/etcd-initialised` | chalkd | etcd answered ready after the bootstrap, so its data exists. |
 | `kubernetes/etcd-initial-cluster` | chalkd | etcd's initial cluster when the node joined an existing one. |
 | `kubernetes/left` | EtcdLeave | The node left etcd; it joins again only once reinstalled. |
-| `storage/storage.json` | install, ApplyIdentity | The node's storage section. |
+| `storage/storage.json` | install, ApplyConfig | The node's storage section. |
 | `storage/disks.json` | chalkos-storage, chalkd | The disks the section's names were pinned to, and the PARTUUID of each volume. |
 | `storage/disks/<disk>/*.conf` | chalkos-storage, chalkd | The repart definitions of each disk, from the storage section. |
 | `installed` | install | The marker that the node is installed, written last. |

@@ -135,7 +135,7 @@ one marked `(issues)`. A certificate line carries a note when something needs do
 | `less than a tenth of its lifetime remains, though the kubelet renews it itself` | A kubelet certificate close to its end |
 | `<CA> expires <date>` | A CA in its last year, the node CA in its last 18 months with `run chalkctl node-ca rotate` |
 | `expired`, `<CA> expired <date>` | A certificate or CA past its end |
-| `expired; deliver a new one with chalkctl apply-identity <node> --kubernetes-share` | A worker's kubelet client certificate when the one the kubelet renewed was lost with VAR and the one its Kubernetes share holds has expired too; the note names the node |
+| `expired; deliver a new one with chalkctl apply-config <node> --kubernetes-share` | A worker's kubelet client certificate when the one the kubelet renewed was lost with VAR and the one its Kubernetes share holds has expired too; the note names the node |
 
 The node CA is reported six months earlier than the other CAs because no node certificate outlives
 it, so the certificates it issues get shorter in its last year.
@@ -166,11 +166,11 @@ its network path could receive the new certificate instead. That is inherent to 
 node; a node that renews before expiry never needs it.
 
 A worker that lost VAR falls back to the kubelet certificate in its share, which may have expired
-since install. [`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md) with
+since install. [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) with
 `--kubernetes-share` delivers a new one:
 
 ```sh
-chalkctl apply-identity <node> --kubernetes-share
+chalkctl apply-config <node> --kubernetes-share
 ```
 
 ## How is a CA or key rotated?

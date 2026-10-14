@@ -83,8 +83,8 @@ read-only option. Settings belong in the cluster definition, so every image agre
 A role module cannot read `config.chalkos.nodes`. Evaluating it fails with
 `config.chalkos.nodes is not available in a role image: one image serves every node of the role`,
 because an image is built once for all nodes of its role and platform. Per-node values travel in
-the node's [identity](../reference/glossary.md#identity), which [chalkd](../reference/glossary.md#chalkd) applies at boot and on
-[`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md). A unit reads them in one
+the node's [identity](../reference/glossary.md#config), which [chalkd](../reference/glossary.md#chalkd) applies at boot and on
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A unit reads them in one
 of two ways:
 
 - The whole identity, without secrets, is at
@@ -160,7 +160,7 @@ namespace of its own and adds modules to roles. A per-node option is declared on
 ```
 
 Import the file in the cluster definition, set `chalkos.site.enable = true`, and give each worker
-`site.name`. A change of a node's `site.name` needs no new image: `chalkctl apply-identity <node>`
+`site.name`. A change of a node's `site.name` needs no new image: `chalkctl apply-config <node>`
 delivers it, and chalkd restarts `site-name.service`. The namespace must not be a name chalkos
 declares under `chalkos`, in the cluster definition or inside images;
 [The cluster definition](../concepts/cluster-definition.md#how-does-an-extension-add-options) lists

@@ -48,8 +48,9 @@ definition in two layers.
 The first layer is the cluster itself: the options under `chalkos.*` that declare the cluster's
 settings, its roles, its [platforms](../reference/glossary.md#platform) and its
 [nodes](../reference/glossary.md#node). This layer produces the manifest, a JSON document with
-the cluster's settings, the attribute path of every role's images and each node's
-[identity](../reference/glossary.md#identity).
+the cluster's settings, the attribute path of every role's images and each node's identity and
+extension documents, from which chalkctl generates the node's
+[config](../reference/glossary.md#config).
 
 The second layer is one NixOS system per role and platform. Each is built from chalkos's node
 modules, the cluster's settings as read-only options, the platform's modules and the role's own
@@ -61,19 +62,19 @@ from the node modules and the cluster's settings, and belongs to no role or plat
 
 What Nix decides at build time and what reaches a node at runtime:
 
-| Decided at build time, in the image | Delivered at runtime, in the identity |
+| Decided at build time, in the image | Delivered at runtime, in the config |
 | --- | --- |
 | Kernel, kernel modules and initrd | Hostname |
 | NixOS services and the role's modules | systemd-networkd units |
 | Kubernetes version and the control plane's flags | Kubernetes node name, addresses, labels and taints |
 | Cluster name, endpoint and the [OS CA](../reference/glossary.md#os-ca) for maintenance mode | Storage: system disk, VAR, volumes and encryption |
 | Partition sizes of the system region | Time servers |
-| Boot tries and health timeout | Values of [extensions](../reference/glossary.md#extension) |
+| Boot tries and health timeout | Documents of the kinds [extensions](../reference/glossary.md#extension) declare |
 
 The split keeps one image per role and platform, so a cluster of fifty
 [workers](../reference/glossary.md#worker) builds and signs one worker image. A change in the left
 column is an [upgrade](upgrades.md); a change in the right column is delivered with
-[`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md) and needs no reboot. A
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and needs no reboot. A
 storage change that would destroy data, such as a volume moved to another disk, is refused there
 and needs [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md).
 
@@ -91,7 +92,7 @@ chalkctl authenticates in one of two ways:
 
 - With the [secrets file](../reference/glossary.md#secrets-file), which holds every CA key of the
   cluster. chalkctl signs itself a short-lived admin certificate from it for each run. Installs,
-  identity changes and [rotations](../reference/glossary.md#rotation) need it.
+  config changes and [rotations](../reference/glossary.md#rotation) need it.
 - With a [client file](../reference/glossary.md#client-file), which holds one certificate of the
   [reader](../reference/glossary.md#reader), [operator](../reference/glossary.md#operator) or
   [admin](../reference/glossary.md#admin) role. Upgrades, reboots, status and logs work with one,
@@ -108,7 +109,7 @@ boots each node and installs it with chalkctl. A
 A node runs its role image from a read-only store checked by
 [dm-verity](../reference/glossary.md#dm-verity), with its root file system in memory. What it
 writes goes to two encrypted partitions:
-[STATE](../reference/glossary.md#state), 128 MiB by default, which holds the node's identity,
+[STATE](../reference/glossary.md#state), 128 MiB by default, which holds the node's config,
 certificates and Kubernetes secrets, and [VAR](../reference/glossary.md#var), mounted at `/var`,
 which holds etcd, containerd, the kubelet and logs. [The image](image.md) describes the disk;
 [Storage and encryption](storage.md) describes STATE and VAR.
@@ -119,7 +120,7 @@ These units do chalkos's work at every boot:
 | --- | --- | --- |
 | `chalkos-state.service` | initrd | Unlocks and mounts STATE, with the TPM or with the second key the console asks for |
 | `chalkos-storage.service` | initrd | Creates the volumes recorded on STATE and mounts VAR |
-| `chalkos-identity.service` | before networkd | Applies the identity on STATE: hostname, network units, time servers, `/run/chalkos/node.json` |
+| `chalkos-identity.service` | before networkd | Applies the config on STATE: hostname, network units, time servers, the documents in `/run/chalkos/config` and the secrets their consumers read |
 | `chalkd.service` | after the network | Serves the node API and carries out its requests |
 | `chalkos-kubernetes.service` | on Kubernetes roles, once the network is online | Waits for the node's addresses and prepares its Kubernetes certificates, kubeconfigs and kubelet flags |
 | `chalkos-health.service` | only on a boot that systemd-boot counts | Decides whether a new image is healthy |
@@ -208,7 +209,7 @@ that fingerprint. With `--fingerprint` the first connection is pinned already an
 On a node that runs its role image, the install happens in place: chalkctl sends no image. chalkd
 recreates STATE if its encryption differs from the node's storage settings, opens it, creates
 VAR and the volumes, enrols the second keyslot of every encrypted volume unless the fallback is
-`none`, writes the identity and certificates, gives the [ESP](../reference/glossary.md#esp) a random
+`none`, writes the config and certificates, gives the [ESP](../reference/glossary.md#esp) a random
 partition UUID and writes the `installed` marker.
 
 On a node that runs the installer, chalkctl also sends the role image of the node's platform, in
@@ -222,22 +223,23 @@ sequenceDiagram
     participant disk as Target disk and TPM
     participant fw as Firmware
     chalkd-->>chalkd: console shows fingerprint and addresses
-    chalkctl->>chalkd: Install header: identity, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
+    chalkctl->>chalkd: Install header: config, the image's schemas, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
     chalkd->>disk: check the disk is empty or an unfinished install
     chalkd->>disk: lay out ESP, slot A, slot B and STATE with systemd-repart, STATE sealed to PCR 7
     chalkctl->>chalkd: store and hash tree
     chalkd->>disk: write slot A, verify it against the root hash, activate it
     chalkctl->>chalkd: UKI and boot loader
     chalkd->>disk: check the UKI, write it to the ESP
-    chalkd->>disk: open STATE, create VAR, enrol the fallback key, write the identity
+    chalkd->>disk: open STATE, create VAR, enrol the fallback key, write the config
     chalkd->>disk: write the boot loader
     chalkd->>fw: add a boot entry and set BootNext
     chalkd->>disk: write the installed marker
     chalkd-->>chalkctl: done, rebooting
 ```
 
-Before anything is written, the installer checks that the image belongs to the identity's cluster,
-role and platform and to the machine's architecture. With Secure Boot enforced, it also checks the
+Before anything is written, the installer checks the config against the image's schemas,
+translates it for the image's role and platform, and checks that the image belongs to the
+config's cluster and to the machine's architecture. With Secure Boot enforced, it also checks the
 [UKI](../reference/glossary.md#uki)'s and the boot loader's signatures against the firmware's
 [db and dbx](../reference/glossary.md#db-and-dbx), as the firmware will at the next boot. The
 installer takes a disk on which blkid finds no signature, or one holding an unfinished install of
@@ -251,7 +253,7 @@ about 300 MiB for a Kubernetes role, instead of the multi-gigabyte raw image.
 ### First boot in normal mode
 
 The node reboots into its role image. The initrd unseals STATE and VAR with the TPM,
-`chalkos-identity.service` applies the identity, and chalkd finds the `installed` marker and
+`chalkos-identity.service` applies the config, and chalkd finds the `installed` marker and
 starts in normal mode with the node certificate from STATE.
 
 ### Joining Kubernetes

@@ -39,7 +39,7 @@ A [role](../reference/glossary.md#role), such as `controlplane` or `worker`, is 
 with its own NixOS modules. Nix builds one [image](../reference/glossary.md#image) per role and
 [platform](../reference/glossary.md#platform) (`metal` or `kvm`), and every node of that role
 and platform boots the same image. What differs between nodes is their
-[identity](../reference/glossary.md#identity): hostname, network, labels, taints, storage and
+[identity](../reference/glossary.md#config): hostname, network, labels, taints, storage and
 time servers, without secrets. chalkctl delivers it at install, and chalkd applies it at every
 boot. See [The image](../concepts/image.md).
 

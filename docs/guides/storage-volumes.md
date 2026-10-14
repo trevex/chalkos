@@ -12,7 +12,7 @@ their own, encrypted or not, formatted and mounted or left raw. This guide decla
 them to a running node, and recreates a volume when a change cannot be applied in place.
 
 Volumes are created with systemd-repart: by [chalkd](../reference/glossary.md#chalkd) at install and
-when [`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md) delivers a change, and
+when [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers a change, and
 by `chalkos-storage.service` in the initrd at every boot. repart only ever adds partitions or grows
 them. A change that would shrink, reformat, re-encrypt or move a volume is refused until you reset
 that volume, which deletes its data.
@@ -20,7 +20,7 @@ that volume, which deletes its data.
 ## Before you begin
 
 - The [cluster definition](../reference/glossary.md#cluster-definition) and its [secrets file](../reference/glossary.md#secrets-file):
-  `chalkctl apply-identity` needs the secrets file.
+  `chalkctl apply-config` needs the secrets file.
 - For a node that is installed, a reader [client file](../reference/glossary.md#client-file) or
   the secrets file to list its disks, and an admin client file or the secrets file to reset a
   volume.
@@ -133,7 +133,7 @@ shows:
 
 A selector must match exactly one disk. When it matches none or several, chalkd names the disks it
 found, `no disk matches ...` or `2 disks match ..., refusing to choose`, and does not create the
-volume: `chalkctl apply-identity` fails with the message, and at boot the node starts without
+volume: `chalkctl apply-config` fails with the message, and at boot the node starts without
 the volume. Once a reference found its disk, chalkd pins the disk on [STATE](../reference/glossary.md#state) by its WWN, serial
 number and path, and finds it by the strongest of those from then on, even when the device names
 change.
@@ -205,10 +205,10 @@ systemd-repart gives it on an existing partition, which for most keys is none.
 ## Apply the change
 
 Check the definition first: an invalid storage section stops evaluation with every problem
-listed under `chalkos.nodes.<node>.storage is invalid`. Then deliver the node's [identity](../reference/glossary.md#identity):
+listed under `chalkos.nodes.<node>.storage is invalid`. Then deliver the node's [identity](../reference/glossary.md#config):
 
 ```console
-$ chalkctl apply-identity w1
+$ chalkctl apply-config w1
 volume scratch: new volume
 w1 runs identity 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
 ```
@@ -254,7 +254,7 @@ volume scratch of w1 was wiped and created again
 
 An encrypted volume is sealed to the TPM again and gets its fallback keyslot back, so the command
 needs the secrets file for a node whose fallback is its recovery key, and the password for one
-whose fallback is a password. Once the reset is done, run `chalkctl apply-identity` for the rest
+whose fallback is a password. Once the reset is done, run `chalkctl apply-config` for the rest
 of the identity.
 
 A reset recreates a volume in place. It refuses VAR, which the running node uses, a volume the

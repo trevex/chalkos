@@ -10,7 +10,7 @@ chalkos nodes run as KVM virtual machines from the `kvm`
 like a physical machine. This guide builds a node's role image for `kvm`, signs it, turns it into
 a VM disk, creates the VM under plain QEMU, libvirt or Proxmox, and installs the node in place:
 the VM boots its own role image into [maintenance mode](../reference/glossary.md#maintenance-mode)
-and [`chalkctl install`](../reference/cli/chalkctl_install.md) gives it its [identity](../reference/glossary.md#identity) and secrets,
+and [`chalkctl install`](../reference/cli/chalkctl_install.md) gives it its [identity](../reference/glossary.md#config) and secrets,
 without an installer. The VM's disk is the node's system disk, so nothing else on the hypervisor
 changes. For a local test cluster, [chalklab](../reference/glossary.md#chalklab) does all of this
 for you; this guide is for hypervisors you run yourself.

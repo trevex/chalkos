@@ -30,7 +30,7 @@ must agree on them. VAR follows on the system disk and fills the rest of it by d
 go on the system disk after VAR, or each on a disk of its own.
 [Image and partition layout](../reference/image-layout.md) shows the partition map.
 
-STATE is small and holds what makes the node itself: its [identity](../reference/glossary.md#identity),
+STATE is small and holds what makes the node itself: its [config](../reference/glossary.md#config),
 its [node certificate](../reference/glossary.md#node-certificate) and key, the OS CAs it trusts, its
 [Kubernetes share](../reference/glossary.md#kubernetes-share), its storage section with the disks
 it pinned, its etcd markers and pinned addresses on a [control plane](../reference/glossary.md#control-plane), and the marker that the node
@@ -161,8 +161,9 @@ disks hold nothing that a reinstall would lose.
 
 ## How does storage change after install?
 
-[`chalkctl apply-identity`](../reference/cli/chalkctl_apply-identity.md) delivers a changed storage
-section to the running node, which compares it with the section on STATE volume by volume.
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers changed storage
+documents to the running node, which translates them into a storage section and compares it with
+the section on STATE volume by volume.
 Additive changes keep every byte of existing data, and the node applies them while it runs:
 
 - a new volume, on the system disk or a new disk;
@@ -176,10 +177,10 @@ Destructive changes need a volume to be wiped:
 - a smaller size, or a filling volume given a fixed size;
 - a changed disk reference that resolves to another physical disk than the pinned one.
 
-When the section changes any volume destructively, the node refuses the whole identity and applies
+When the section changes any volume destructively, the node refuses the whole config and applies
 none of it, naming each volume and the command that recreates it.
 [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) wipes one volume and creates
-it again, empty, as the identity defines it, sealed to the TPM again and with its fallback keyslot.
+it again, empty, as the config defines it, sealed to the TPM again and with its fallback keyslot.
 Its data is lost:
 
 ```sh

@@ -40,7 +40,7 @@ flowchart LR
 3. The UKI's stub starts the kernel with the initrd and command line the UKI carries, so both are
    covered by its signature.
 4. The initrd opens the store and the node's partitions, as a later section describes.
-5. Stage 2 applies the node's identity, starts the network and starts chalkd.
+5. Stage 2 applies the node's config, starts the network and starts chalkd.
 
 ## How does systemd-boot choose an entry?
 
@@ -81,8 +81,8 @@ The initrd prepares the root file system in four steps.
 
 Stage 2 starts the node's own services in order:
 
-1. `chalkos-identity.service` applies the [identity](../reference/glossary.md#identity) on STATE
-   before networkd starts: hostname, network units, time servers and the values services read.
+1. `chalkos-identity.service` applies the [config](../reference/glossary.md#config) on STATE
+   before networkd starts: hostname, network units, time servers and the documents services read.
 2. systemd-networkd brings up the network.
 3. chalkd starts. It finds the `installed` marker on STATE and serves in
    [normal mode](../reference/glossary.md#normal-mode), or finds none and serves in
@@ -143,7 +143,7 @@ Kubernetes:
 | --- | --- |
 | [Control plane](../reference/glossary.md#control-plane) that is an [etcd member](../reference/glossary.md#etcd-member) | its local etcd member answers, its API server is ready and its kubelet's `/healthz` answers |
 | [Worker](../reference/glossary.md#worker) | its kubelet's `/healthz` answers and its Node is registered |
-| Node without Kubernetes, or not yet part of a cluster | its identity was applied and no unit of the boot failed |
+| Node without Kubernetes, or not yet part of a cluster | its config was applied and no unit of the boot failed |
 
 A Kubernetes node whose preparation failed is unhealthy. "No unit failed" counts the units that
 `multi-user.target` and `sysinit.target` pull in; jobs that timers and sockets start do not count,

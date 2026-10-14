@@ -91,7 +91,7 @@ cp3 renews node certificates with the new node CA
 Certificates of the old node CA stay valid until they expire, because they chain to the same OS
 CA; nodes pick up certificates of the new one at their next renewal. A control plane that was
 unreachable gets the new node CA later with
-`chalkctl apply-identity <node> --kubernetes-share`, as the command's error says.
+`chalkctl apply-config <node> --kubernetes-share`, as the command's error says.
 
 ## Choose what to rotate
 

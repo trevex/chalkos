@@ -176,7 +176,7 @@ The output follows the life of a node:
 
 1. Nix builds one [image](../reference/glossary.md#image) per role for the `kvm` platform. Both
    nodes of a role would boot the same image; what differs between them travels separately as
-   their [identity](../reference/glossary.md#identity).
+   their [identity](../reference/glossary.md#config).
 2. chalklab creates Secure Boot keys for this lab, enrols them in the firmware of the virtual
    machines and signs copies of the images with them.
 3. Each virtual machine boots its image in
