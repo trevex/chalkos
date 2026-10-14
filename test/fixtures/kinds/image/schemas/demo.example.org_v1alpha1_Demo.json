@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Demo",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "const": "demo.example.org/v1alpha1" },
+    "kind": { "const": "Demo" },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "mode": { "enum": ["fast", "safe"], "default": "safe" },
+        "name": { "type": "string", "description": "Name of the demo." },
+        "replicas": { "type": "integer", "minimum": 0, "maximum": 255, "default": 1 },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [],
+          "examples": [["edge"]]
+        },
+        "token": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "secretRef": {
+                  "type": "object",
+                  "properties": {
+                    "key": { "type": "string", "minLength": 1 },
+                    "name": { "type": "string", "minLength": 1 }
+                  },
+                  "required": ["key", "name"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["secretRef"],
+              "additionalProperties": false,
+              "x-chalkos-secret-ref": true
+            },
+            { "type": "null" }
+          ],
+          "default": null
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "x-chalkos-kind": { "group": "demo.example.org", "kind": "Demo", "multiple": true, "version": "v1alpha1" }
+}

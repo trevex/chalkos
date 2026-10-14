@@ -780,4 +780,13 @@ in
       pkgs.runCommand "chalkos-eval-tests" { } "touch $out"
     else
       throw "evaluation tests failed:\n${pkgs.lib.generators.toPretty { } failures}";
+
+  eval-kinds =
+    let
+      failures = import ../test/nix/kinds.nix { inherit (pkgs) lib; };
+    in
+    if failures == [ ] then
+      pkgs.runCommand "chalkos-eval-kinds-tests" { } "touch $out"
+    else
+      throw "kind evaluation tests failed:\n${pkgs.lib.generators.toPretty { } failures}";
 }
