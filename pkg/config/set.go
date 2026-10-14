@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/schema"
@@ -61,13 +60,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 			return nil, fmt.Errorf("no %s: a node's config holds one %s", k.kind, k.kind)
 		}
 	}
-	sort.SliceStable(set.docs, func(i, j int) bool {
-		a, b := set.docs[i], set.docs[j]
-		if a.APIVersion+a.Kind != b.APIVersion+b.Kind {
-			return a.APIVersion+a.Kind < b.APIVersion+b.Kind
-		}
-		return a.Name < b.Name
-	})
+	SortDocuments(set.docs)
 	var node nodeSpec
 	n, _ := set.One("Node")
 	if err := n.decodeSpec(&node); err != nil {
