@@ -49,6 +49,8 @@ type Schemas struct {
 	// kinds is in the order LoadSchemas read the directory, which os.ReadDir sorts by name.
 	kinds   []Kind
 	schemas map[Kind]*jsonschema.Schema
+	// raw holds each kind's schema document as its file holds it, for readers of annotations.
+	raw map[Kind]any
 }
 
 // LoadSchemas compiles every *.json file in dir and builds the kind list from each file's
@@ -62,7 +64,7 @@ func LoadSchemas(dir string) (*Schemas, error) {
 	}
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
-	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}}
+	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -88,6 +90,7 @@ func LoadSchemas(dir string) (*Schemas, error) {
 			return nil, fmt.Errorf("schema of %s %s: %w", k.APIVersion, k.Kind, err)
 		}
 		ss.schemas[key(k.APIVersion, k.Kind)] = s
+		ss.raw[key(k.APIVersion, k.Kind)] = doc
 		ss.kinds = append(ss.kinds, k)
 	}
 	return ss, nil
