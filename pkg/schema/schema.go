@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 )
 
 // metadataVersion is the version of metadata.json this package reads.
@@ -56,10 +57,6 @@ func Load(dir string) (*Image, error) {
 	if md.SchemaVersion != metadataVersion {
 		return nil, fmt.Errorf("%s: metadata schemaVersion %d is not supported; this chalkos reads version %d", dir, md.SchemaVersion, metadataVersion)
 	}
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, err
-	}
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
 	img := &Image{Metadata: md, schemas: map[Kind]*jsonschema.Schema{}}
@@ -68,8 +65,8 @@ func Load(dir string) (*Image, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s: apiVersion %q of kind %s has no group", dir, k.APIVersion, k.Kind)
 		}
-		path := filepath.Join(abs, "schemas", group+"_"+version+"_"+k.Kind+".json")
-		s, err := c.Compile(path)
+		name := group + "_" + version + "_" + k.Kind + ".json"
+		s, err := compileSchema(c, filepath.Join(dir, "schemas", name), name)
 		if err != nil {
 			return nil, fmt.Errorf("schema of %s %s: %w", k.APIVersion, k.Kind, err)
 		}
@@ -78,30 +75,122 @@ func Load(dir string) (*Image, error) {
 	return img, nil
 }
 
+// compileSchema reads and compiles the schema at path. Its identity inside the compiler, needed
+// to resolve its internal $refs, is id, a URL built from the schema's file name alone: jsonschema
+// otherwise treats the filesystem path itself as a URL, which misreads or rejects a path whose
+// directory contains '%', '#' or '?'. Errors still name the real path.
+func compileSchema(c *jsonschema.Compiler, path, name string) (*jsonschema.Schema, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	doc, err := jsonschema.UnmarshalJSON(f)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	id := "chalkos:///schemas/" + name
+	if err := c.AddResource(id, doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	s, err := c.Compile(id)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return s, nil
+}
+
 // The lookup key ignores Multiple, which the schema does not depend on.
 func key(apiVersion, kind string) Kind {
 	return Kind{APIVersion: apiVersion, Kind: kind}
 }
 
-// Validate checks a document, decoded by jsonschema.UnmarshalJSON, against the schema of its
-// apiVersion and kind.
+// Validate checks a document — decoded JSON such as jsonschema.UnmarshalJSON returns, which keeps
+// numbers exact — against the schema of its apiVersion and kind.
 func (i *Image) Validate(doc any) error {
 	m, ok := doc.(map[string]any)
 	if !ok {
 		return errors.New("a config document must be an object")
 	}
 	apiVersion, _ := m["apiVersion"].(string)
-	kind, _ := m["kind"].(string)
-	s, ok := i.schemas[key(apiVersion, kind)]
+	docKind, _ := m["kind"].(string)
+	s, ok := i.schemas[key(apiVersion, docKind)]
 	if !ok {
-		return fmt.Errorf("image %s %s does not accept kind %q of apiVersion %q", i.Metadata.ID, i.Metadata.Version, kind, apiVersion)
+		return fmt.Errorf("image %s %s does not accept kind %q of apiVersion %q", i.Metadata.ID, i.Metadata.Version, docKind, apiVersion)
 	}
 	if err := s.Validate(doc); err != nil {
 		name := ""
 		if md, ok := m["metadata"].(map[string]any); ok {
 			name, _ = md["name"].(string)
 		}
-		return fmt.Errorf("%s %q: %w", kind, name, err)
+		return fmt.Errorf("%s %q: %s", docKind, name, explain(err))
 	}
 	return nil
+}
+
+// explain renders a schema validation error as its leaf causes alone, one per line, dropping the
+// "jsonschema validation failed with ..." header the library puts on every error, and the
+// allOf/anyOf/$ref nodes that group the causes without saying anything of their own.
+func explain(err error) string {
+	verr, ok := err.(*jsonschema.ValidationError)
+	if !ok {
+		return err.Error()
+	}
+	var lines []string
+	for _, leaf := range leafCauses(verr) {
+		lines = append(lines, "- "+leaf.Error())
+	}
+	return strings.Join(lines, "\n")
+}
+
+// leafCauses walks e's causes down to the assertions that actually failed. For an anyOf — the
+// shape networkd's "one or many" sections and chalkos's optional secretRef both use — a branch
+// that fails only because the instance has the wrong JSON type is noise once another branch fails
+// for a more specific reason, so it is dropped; if every branch merely disagrees on type, all of
+// them are kept, since none says more than that.
+func leafCauses(e *jsonschema.ValidationError) []*jsonschema.ValidationError {
+	if len(e.Causes) == 0 {
+		return []*jsonschema.ValidationError{e}
+	}
+	causes := e.Causes
+	if _, ok := e.ErrorKind.(*kind.AnyOf); ok {
+		if better := dropTypeMismatches(causes); better != nil {
+			causes = better
+		}
+	}
+	var leaves []*jsonschema.ValidationError
+	for _, c := range causes {
+		leaves = append(leaves, leafCauses(c)...)
+	}
+	return leaves
+}
+
+// dropTypeMismatches returns the branches of an anyOf that are not a bare "wrong JSON type"
+// failure, or nil when that is none of the branches or all of them, telling the caller to keep
+// every branch as it is.
+func dropTypeMismatches(causes []*jsonschema.ValidationError) []*jsonschema.ValidationError {
+	var kept []*jsonschema.ValidationError
+	for _, c := range causes {
+		if isBareTypeMismatch(c) {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	if len(kept) == 0 || len(kept) == len(causes) {
+		return nil
+	}
+	return kept
+}
+
+// isBareTypeMismatch reports whether e says only that the instance has the wrong JSON type. A
+// schema reached through $ref, as networkd's section definitions are, wraps that same verdict in
+// a kind.Reference, so the check follows a single-cause chain of those too.
+func isBareTypeMismatch(e *jsonschema.ValidationError) bool {
+	if _, ok := e.ErrorKind.(*kind.Type); ok {
+		return len(e.Causes) == 0
+	}
+	if _, ok := e.ErrorKind.(*kind.Reference); ok && len(e.Causes) == 1 {
+		return isBareTypeMismatch(e.Causes[0])
+	}
+	return false
 }

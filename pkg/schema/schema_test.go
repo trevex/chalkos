@@ -55,6 +55,43 @@ func TestLoadFailsOnMissingSchema(t *testing.T) {
 	}
 }
 
+// A mount or an image's build directory may contain characters, such as '%', '#' and '?', that
+// are meaningful in a URL. Load must not mistake the directory for one.
+func TestLoadFromDirWithURLMetacharacters(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "d #1 100%?")
+	if err := copyDir(fixture, dir); err != nil {
+		t.Fatal(err)
+	}
+	img, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := decode(t, `{
+		"apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "metadata": {"name": "a"},
+		"spec": {"name": "x"}
+	}`)
+	if err := img.Validate(doc); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, strings.TrimPrefix(path, src))
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
+}
+
 func TestValidateAcceptsDocument(t *testing.T) {
 	img, err := Load(fixture)
 	if err != nil {
@@ -109,6 +146,9 @@ func TestValidateRejects(t *testing.T) {
 			err := img.Validate(decode(t, tc.doc))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), "jsonschema validation failed") {
+				t.Errorf("err = %v, want the library's header stripped", err)
 			}
 		})
 	}
