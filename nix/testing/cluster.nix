@@ -2,6 +2,7 @@
 # chalkctl. Each role has a node standing for the VM that runs it.
 { self, pkgs }:
 let
+  inherit (pkgs) lib;
   secrets = import ./secrets.nix { inherit pkgs; };
   # The registry the Kubernetes test serves on the host, as the VMs reach it through their
   # user-mode NIC.
@@ -189,10 +190,48 @@ let
       };
     };
   };
+  # The test cluster with the modules given, as each manifest of CHALKLAB_MANIFESTS defines it.
+  clusterOf = modules: self.lib.mkCluster { modules = [ definition ] ++ modules; };
   manifestOf =
-    name: modules:
-    pkgs.writeText "${name}.json" (
-      builtins.toJSON (self.lib.mkCluster { modules = [ definition ] ++ modules; }).manifest
+    name: modules: pkgs.writeText "${name}.json" (builtins.toJSON (clusterOf modules).manifest);
+  # A new encrypted volume on an empty disk: an additive change.
+  added = [
+    {
+      chalkos.nodes.chalklab.storage.volumes.extra = {
+        disk.serial = "chalk-extra";
+        mountPoint = "/srv/extra";
+      };
+    }
+  ];
+  # VAR with a fixed size where it filled its disk: a destructive change.
+  destructive = [ { chalkos.nodes.chalklab.storage.var.size = "1G"; } ];
+  # What an image accepts as config, as its image directory holds it: its schemas and its
+  # kubernetes.json, without building the image.
+  contractOf =
+    nixos:
+    let
+      kubernetes = nixos.config.environment.etc."chalkos/kubernetes/cluster.json".source or null;
+    in
+    pkgs.runCommand "chalkos-contract" { } ''
+      mkdir $out
+      ln -s ${nixos.config.system.build.chalkosSchemas} $out/schemas
+      ${lib.optionalString (kubernetes != null) "ln -s ${kubernetes} $out/kubernetes.json"}
+    '';
+  # A cluster's manifest, with the contract of each image its nodes run by role and platform.
+  bridgeOf =
+    c:
+    pkgs.linkFarm "chalkos-bridge-${c.manifest.cluster.name}" (
+      {
+        "manifest.json" = pkgs.writeText "manifest.json" (builtins.toJSON c.manifest);
+      }
+      // lib.listToAttrs (
+        map (
+          n:
+          lib.nameValuePair "contracts/${n.role}-${n.platform}" (
+            contractOf c.roles.${n.role}.nixos.${n.platform}
+          )
+        ) (lib.attrValues c.manifest.nodes)
+      )
     );
   cluster = self.lib.mkCluster {
     modules = [
@@ -259,18 +298,27 @@ in
   manifests = pkgs.linkFarm "chalkos-test-manifests" {
     "base.json" = manifestOf "base" [ ];
     # A new encrypted volume on an empty disk: an additive change.
-    "added.json" = manifestOf "added" [
-      {
-        chalkos.nodes.chalklab.storage.volumes.extra = {
-          disk.serial = "chalk-extra";
-          mountPoint = "/srv/extra";
-        };
-      }
-    ];
+    "added.json" = manifestOf "added" added;
     # VAR with a fixed size where it filled its disk: a destructive change.
-    "destructive.json" = manifestOf "destructive" [
-      { chalkos.nodes.chalklab.storage.var.size = "1G"; }
-    ];
+    "destructive.json" = manifestOf "destructive" destructive;
     "ha.json" = pkgs.writeText "ha.json" (builtins.toJSON haCluster.manifest);
+  };
+  # Every manifest the repository has, each with the contracts of its images, for the test that
+  # chalkctl's documents give back each node's identity.
+  bridge = pkgs.linkFarm "chalkos-test-bridge" {
+    homelab = bridgeOf (self.lib.mkCluster { modules = [ ../../examples/homelab/cluster.nix ]; });
+    base = bridgeOf (clusterOf [ ]);
+    added = bridgeOf (clusterOf added);
+    destructive = bridgeOf (clusterOf destructive);
+    ha = bridgeOf haCluster;
+    lab = bridgeOf (
+      self.lib.mkCluster {
+        modules = [
+          ../../templates/lab/cluster.nix
+          # The template's own secrets.pub.json is written by chalkctl gen secrets.
+          { chalkos.cluster.osCA = lib.mkForce "${secrets}/secrets.pub.json"; }
+        ];
+      }
+    );
   };
 }

@@ -2,10 +2,13 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -255,5 +258,66 @@ func TestFromManifestAppendsDocuments(t *testing.T) {
 	m.Nodes["cp1"] = n
 	if _, err := FromManifest(m, "cp1"); err == nil || !strings.Contains(err.Error(), "document 1 of its extensions") {
 		t.Errorf("err = %v, want the document that is no object named", err)
+	}
+}
+
+// TestBridgeGivesBackEveryManifest generates the config of every node of every manifest the
+// repository has, which CHALKOS_TEST_BRIDGE holds with the contract of each image their nodes run,
+// and checks that each gives back the node's identity on that image.
+func TestBridgeGivesBackEveryManifest(t *testing.T) {
+	root := os.Getenv("CHALKOS_TEST_BRIDGE")
+	if root == "" {
+		t.Skip("CHALKOS_TEST_BRIDGE is not set; the go-unit check sets it")
+	}
+	sets, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := 0
+	for _, set := range sets {
+		dir := filepath.Join(root, set.Name())
+		f, err := os.Open(filepath.Join(dir, "manifest.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := manifest.Decode(f)
+		f.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", set.Name(), err)
+		}
+		names := make([]string, 0, len(m.Nodes))
+		for name := range m.Nodes {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			n := m.Nodes[name]
+			nodes++
+			t.Run(set.Name()+"/"+name, func(t *testing.T) {
+				contract := filepath.Join(dir, "contracts", n.Role+"-"+n.Platform)
+				s, err := schema.LoadSchemas(filepath.Join(contract, "schemas"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				target := Target{Role: n.Role, Platform: n.Platform}
+				c, err := kubernetes.ReadCluster(filepath.Join(contract, "kubernetes.json"))
+				switch {
+				case err == nil:
+					target.Kubernetes = &c
+				case !errors.Is(err, fs.ErrNotExist):
+					t.Fatal(err)
+				}
+				b, err := FromManifest(m, name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := b.Check(n.Identity, s, target); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+	if nodes == 0 {
+		t.Fatalf("%s holds no node", root)
 	}
 }
