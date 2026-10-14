@@ -2755,6 +2755,164 @@ list of (one of “can”, “filesystems”, “gpu”, “industrial”, “in
 
 
 
+### chalkos\.kinds
+
+
+
+Config kinds the image accepts, by kind name\. A node’s config is a set of documents of
+these kinds; chalkctl and chalkd validate each against the kind’s schema\.
+
+
+
+*Type:*
+attribute set of (submodule)
+
+
+
+*Default:*
+
+```nix
+{ }
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.dir
+
+
+
+Directory on the running node that holds the node’s documents of the kind, one JSON file per document\.
+
+
+
+*Type:*
+string *(read only)*
+
+
+
+*Default:*
+
+```nix
+"/run/chalkos/config/${group}/<kind>"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.group
+
+
+
+API group of the kind: a DNS name its author controls, as for Kubernetes custom resources\.
+
+
+
+*Type:*
+string matching the pattern \[a-z0-9](\[-a-z0-9]\*\[a-z0-9])?(\\\.\[a-z0-9](\[-a-z0-9]\*\[a-z0-9])?)+
+
+
+
+*Example:*
+
+```nix
+"bgp.example.org"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.multiple
+
+
+
+Whether a node’s config may hold more than one document of the kind\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.spec
+
+
+
+Option declarations of the document’s ` spec `, as under a module’s ` options `\. They are
+converted into the kind’s JSON Schema: an option without a default is required, and
+` description `, ` default ` and ` example ` carry over\.
+
+
+
+*Type:*
+attribute set of raw value
+
+
+
+*Default:*
+
+```nix
+{ }
+```
+
+
+
+*Example:*
+
+```nix
+{
+  asn = lib.mkOption { type = lib.types.ints.u32; description = "Local AS number."; };
+}
+
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.version
+
+
+
+API version of the kind\. An incompatible change to the spec is a new version\.
+
+
+
+*Type:*
+string matching the pattern v\[0-9]+((alpha|beta)\[0-9]+)?
+
+
+
+*Example:*
+
+```nix
+"v1alpha1"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
 ### chalkos\.node\.consumers
 
 

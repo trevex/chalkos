@@ -183,7 +183,7 @@ A node whose STATE has no `installed` marker starts chalkd in
 
 ## Outputs of an image build
 
-`nix build .#chalkos.<cluster>.roles.<role>.images.<platform>` makes a directory of three
+`nix build .#chalkos.<cluster>.roles.<role>.images.<platform>` makes a directory of five
 entries:
 
 | Entry | What it is |
@@ -191,6 +191,8 @@ entries:
 | `chalkos_<version>.raw` | The raw disk image: the ESP and slot A, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash. `chalkctl sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, platform and the store's root hash, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). |
+| `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
 
 The definitions of a role with the default sizes read:
 
@@ -226,6 +228,7 @@ another disk carrying the same image or the same labels for its own.
 | `/state` | STATE. |
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
+| `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster sets [`chalkos.cluster.osCA`](options.md#chalkosclusterosca). |
 | `/etc/chalkos/kubernetes/cluster.json` | The cluster's Kubernetes settings, on images of a role with a Kubernetes kind. |
 | `/run/chalkos/node.json` | The node's identity as units read it. |

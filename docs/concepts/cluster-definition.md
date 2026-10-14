@@ -368,8 +368,8 @@ The three parts reach the node by different paths:
 
 A namespace must not collide with a name chalkos declares under `chalkos`. In the cluster
 definition those are `cluster`, `cni`, `installer`, `manifest`, `nodes`, `platforms`, `roles`,
-`secureBoot`, `time` and `warnings`; inside images `debug`, `disk`, `kernel`, `node`, `platform`,
-`role` and `upgrade` are taken too.
+`secureBoot`, `time` and `warnings`; inside images `debug`, `disk`, `kernel`, `kinds`, `node`,
+`platform`, `role` and `upgrade` are taken too.
 
 ## Where does the OS CA come from?
 
