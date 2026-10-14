@@ -83,6 +83,12 @@ let
           default = false;
           description = "Whether a node's config may hold more than one document of the kind.";
         };
+        builtin = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          internal = true;
+          description = "Whether chalkos declares the kind itself; only such kinds may use the groups chalkos.dev and *.chalkos.dev.";
+        };
         spec = lib.mkOption {
           type = lib.types.attrsOf lib.types.raw;
           default = { };
@@ -111,6 +117,11 @@ let
   badNames = lib.filter (kind: builtins.match "[A-Z][A-Za-z0-9]*" kind == null) (lib.attrNames cfg);
   takenNames = lib.filter (kind: lib.elem kind networkd.kinds) (lib.attrNames cfg);
   reservedGroups = lib.filter (kind: cfg.${kind}.group == networkd.group) (lib.attrNames cfg);
+  chalkosGroups = lib.filter (
+    kind:
+    !cfg.${kind}.builtin
+    && (cfg.${kind}.group == "chalkos.dev" || lib.hasSuffix ".chalkos.dev" cfg.${kind}.group)
+  ) (lib.attrNames cfg);
   kinds =
     if badNames != [ ] then
       throw "chalkos.kinds.${lib.head badNames}: a kind's name must match [A-Z][A-Za-z0-9]*, as Kubernetes kinds do"
@@ -118,6 +129,8 @@ let
       throw "chalkos.kinds.${lib.head takenNames}: the name is taken by chalkos's networkd kind of the same name"
     else if reservedGroups != [ ] then
       throw "chalkos.kinds.${lib.head reservedGroups}: the group ${networkd.group} is reserved for chalkos's networkd kinds"
+    else if chalkosGroups != [ ] then
+      throw "chalkos.kinds.${lib.head chalkosGroups}: the groups chalkos.dev and *.chalkos.dev are reserved for chalkos's own kinds"
     else
       lib.mapAttrsToList (kind: k: {
         inherit kind;
@@ -138,6 +151,8 @@ let
   '';
 in
 {
+  imports = [ ./builtin.nix ];
+
   options.chalkos = lib.mkOption {
     type = lib.types.submodule {
       options.kinds = lib.mkOption {

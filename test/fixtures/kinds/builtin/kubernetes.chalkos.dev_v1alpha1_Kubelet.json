@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "kubernetes.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Kubelet"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Kubernetes labels applied to the node.",
+          "type": "object"
+        },
+        "nodeIPs": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply."
+        },
+        "taints": {
+          "default": [],
+          "description": "Kubernetes taints applied to the node.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "effect": {
+                "description": "What happens to pods that do not tolerate the taint.",
+                "enum": [
+                  "NoSchedule",
+                  "PreferNoSchedule",
+                  "NoExecute"
+                ]
+              },
+              "key": {
+                "description": "Taint key.",
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Taint value; null for a taint without a value."
+              }
+            },
+            "required": [
+              "effect",
+              "key"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "validSubnets": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Subnets the node picks its address from instead of the cluster's; null uses those."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Kubelet",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "kubernetes.chalkos.dev",
+    "kind": "Kubelet",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Image"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "rootHash": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[0-9a-f]{64})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Root hash of the image's store, which the source must have; null accepts any."
+        },
+        "source": {
+          "description": "Where the image is: a directory of an image build.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Image",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "chalkos.dev",
+    "kind": "Image",
+    "multiple": true,
+    "version": "v1alpha1"
+  }
+}

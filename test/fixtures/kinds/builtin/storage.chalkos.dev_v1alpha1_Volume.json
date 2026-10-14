@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "storage.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Volume"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "disk": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "model": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Glob the disk's model matches, such as `Samsung SSD 870*`."
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(?:/dev/.+)$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Path of the disk below /dev, such as /dev/disk/by-id/…; excludes the selector keys."
+                },
+                "serial": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "The disk's serial number."
+                },
+                "size": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(?:(<|<=|=|>=|>)? *[0-9]+[KMGTP]?)$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Comparison the disk's size meets, such as `>= 1T`."
+                },
+                "type": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "nvme",
+                        "ssd",
+                        "hdd"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Kind of disk."
+                },
+                "wwn": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "The disk's World Wide Name."
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Disk the volume occupies on its own; null places it on the system disk."
+        },
+        "encryption": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "tpm2",
+                    "none"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Overrides the node's encryption mode for this volume."
+            }
+          },
+          "type": "object"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "enum": [
+                "ext4",
+                "xfs",
+                "btrfs",
+                "swap"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "ext4",
+          "description": "File system of the volume; null leaves a raw block device."
+        },
+        "mountPoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the volume is mounted; null leaves it unmounted."
+        },
+        "repart": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options.",
+          "type": "object"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[0-9]+[KMGTP]?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Size of the volume; null fills the remaining space on its disk."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Volume",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "storage.chalkos.dev",
+    "kind": "Volume",
+    "multiple": true,
+    "version": "v1alpha1"
+  }
+}

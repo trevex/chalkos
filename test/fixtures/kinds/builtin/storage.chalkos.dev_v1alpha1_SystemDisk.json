@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "storage.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "SystemDisk"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "disk": {
+          "additionalProperties": false,
+          "description": "Disk holding the system region and VAR.",
+          "properties": {
+            "model": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Glob the disk's model matches, such as `Samsung SSD 870*`."
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:/dev/.+)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Path of the disk below /dev, such as /dev/disk/by-id/…; excludes the selector keys."
+            },
+            "serial": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The disk's serial number."
+            },
+            "size": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:(<|<=|=|>=|>)? *[0-9]+[KMGTP]?)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Comparison the disk's size meets, such as `>= 1T`."
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "nvme",
+                    "ssd",
+                    "hdd"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Kind of disk."
+            },
+            "wwn": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The disk's World Wide Name."
+            }
+          },
+          "type": "object"
+        },
+        "encryption": {
+          "additionalProperties": false,
+          "properties": {
+            "fallback": {
+              "default": "recovery-key",
+              "description": "Second keyslot asked for on the console when TPM2 unsealing fails.",
+              "enum": [
+                "recovery-key",
+                "password",
+                "none"
+              ]
+            },
+            "mode": {
+              "default": "tpm2",
+              "description": "Encryption of STATE, VAR and volumes: `tpm2` seals a LUKS2 key to PCR 7, `none` uses no encryption.",
+              "enum": [
+                "tpm2",
+                "none"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "var": {
+          "additionalProperties": false,
+          "properties": {
+            "encryption": {
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "tpm2",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Overrides the node's encryption mode for VAR."
+                }
+              },
+              "type": "object"
+            },
+            "size": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:[0-9]+[KMGTP]?)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Size of VAR; null fills the remaining space on the system disk."
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "disk"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "SystemDisk",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "storage.chalkos.dev",
+    "kind": "SystemDisk",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}

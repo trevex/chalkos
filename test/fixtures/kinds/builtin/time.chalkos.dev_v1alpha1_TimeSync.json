@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "time.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "TimeSync"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "servers": {
+          "default": [
+            {
+              "host": "ptbtime1.ptb.de"
+            },
+            {
+              "host": "ptbtime2.ptb.de"
+            },
+            {
+              "host": "ptbtime3.ptb.de"
+            }
+          ],
+          "description": "Time servers the node synchronises its clock with, authenticated with NTS unless `nts = false`.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "host": {
+                "description": "Host name or address of the time server.",
+                "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9.:-]*)$",
+                "type": "string"
+              },
+              "nts": {
+                "default": true,
+                "description": "Authenticate the server with Network Time Security (NTS).",
+                "type": "boolean"
+              },
+              "port": {
+                "anyOf": [
+                  {
+                    "maximum": 65535,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "UDP port of the server's NTP; null is NTP's port, 123."
+              }
+            },
+            "required": [
+              "host"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "TimeSync",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "time.chalkos.dev",
+    "kind": "TimeSync",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}

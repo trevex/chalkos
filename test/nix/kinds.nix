@@ -38,6 +38,50 @@ let
   # Forces the schemas an image ships, and with them the checks of its kinds' names.
   schemasOf = config: config.system.build.chalkosSchemas.drvPath;
 
+  # The worker image of a cluster with a Kubernetes worker role and no extra modules.
+  kubernetesImage =
+    (mkCluster {
+      modules = [
+        {
+          chalkos.cluster = {
+            name = "t";
+            endpoint = "https://10.0.0.1:6443";
+          };
+          chalkos.roles.worker.kubernetes.kind = "worker";
+        }
+      ];
+    }).roles.worker.nixos.metal.config;
+  # The image of a role without Kubernetes.
+  plainImage =
+    (mkCluster {
+      modules = [
+        {
+          chalkos.cluster = {
+            name = "t";
+            endpoint = "https://10.0.0.1:6443";
+          };
+          chalkos.roles.worker.kubernetes.kind = null;
+        }
+      ];
+    }).roles.worker.nixos.metal.config;
+  kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
+  builtinFixture =
+    file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));
+  builtinSchema =
+    kind:
+    let
+      k = kubernetesImage.chalkos.kinds.${kind};
+    in
+    schema.kindSchema {
+      inherit kind;
+      inherit (k)
+        group
+        version
+        multiple
+        spec
+        ;
+    };
+
   # The spec schema of a kind with the given option declarations.
   specOf =
     spec:
@@ -378,6 +422,74 @@ lib.runTests {
             };
           }
         ]).chalkos.kinds.Demo.version;
+    expected = true;
+  };
+  testBuiltinKindsOfKubernetesImage = {
+    expr = lib.sort lib.lessThan (kindNames kubernetesImage);
+    expected = [
+      "Cluster"
+      "Image"
+      "Kubelet"
+      "Link"
+      "NetDev"
+      "Network"
+      "Node"
+      "Secret"
+      "SystemDisk"
+      "TimeSync"
+      "Volume"
+    ];
+  };
+  testImageWithoutKubernetesHasNoKubelet = {
+    expr = lib.elem "Kubelet" (kindNames plainImage);
+    expected = false;
+  };
+  testBuiltinSchemasMatchFixtures = {
+    expr = map (kind: builtinSchema kind) [
+      "Cluster"
+      "Image"
+      "Kubelet"
+      "Node"
+      "Secret"
+      "SystemDisk"
+      "TimeSync"
+      "Volume"
+    ];
+    expected = map builtinFixture [
+      "chalkos.dev_v1alpha1_Cluster.json"
+      "chalkos.dev_v1alpha1_Image.json"
+      "kubernetes.chalkos.dev_v1alpha1_Kubelet.json"
+      "chalkos.dev_v1alpha1_Node.json"
+      "chalkos.dev_v1alpha1_Secret.json"
+      "storage.chalkos.dev_v1alpha1_SystemDisk.json"
+      "time.chalkos.dev_v1alpha1_TimeSync.json"
+      "storage.chalkos.dev_v1alpha1_Volume.json"
+    ];
+  };
+  testReservedGroupFails = {
+    expr = fails (
+      schemasOf (image [
+        {
+          chalkos.kinds.Mine = {
+            group = "extra.chalkos.dev";
+            version = "v1";
+          };
+        }
+      ])
+    );
+    expected = true;
+  };
+  testBuiltinNameIsTaken = {
+    expr =
+      fails
+        (image [
+          {
+            chalkos.kinds.Node = {
+              group = "demo.example.org";
+              version = "v1";
+            };
+          }
+        ]).chalkos.kinds.Node.group;
     expected = true;
   };
 }

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Node"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Host name set at boot; null uses the node's name."
+        },
+        "imageRef": {
+          "description": "Name of the Image document of the image the node runs.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "controlplane",
+                "worker"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the node is in Kubernetes; null on an image without Kubernetes."
+        }
+      },
+      "required": [
+        "imageRef"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Node",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "chalkos.dev",
+    "kind": "Node",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}
