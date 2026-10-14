@@ -18,6 +18,27 @@ let
       ];
     };
   };
+  # chalklab's Greeting, and the Secret its token names.
+  greeting = message: [
+    {
+      apiVersion = "greeting.example.org/v1alpha1";
+      kind = "Greeting";
+      metadata.name = "hello";
+      spec = {
+        inherit message;
+        token.secretRef = {
+          name = "greeting";
+          key = "token";
+        };
+      };
+    }
+    {
+      apiVersion = "chalkos.dev/v1alpha1";
+      kind = "Secret";
+      metadata.name = "greeting";
+      spec.data.token = "s3cret";
+    }
+  ];
   definition = {
     chalkos.cluster = {
       name = "chalklab";
@@ -52,11 +73,15 @@ let
     # The default layout: VAR fills the system disk.
     chalkos.roles.test = {
       kubernetes.kind = null;
-      nixosModules = [ ../../modules/testing/test-image.nix ];
+      nixosModules = [
+        ../../modules/testing/test-image.nix
+        ../../modules/testing/greeting.nix
+      ];
     };
     chalkos.nodes.chalklab = {
       role = "test";
       storage.system.disk = "/dev/vda";
+      documents = greeting "hello";
     };
     # A node the installer installs onto the disk with this serial.
     chalkos.nodes.chalklab-target = {
@@ -194,12 +219,16 @@ let
   clusterOf = modules: self.lib.mkCluster { modules = [ definition ] ++ modules; };
   manifestOf =
     name: modules: pkgs.writeText "${name}.json" (builtins.toJSON (clusterOf modules).manifest);
-  # A new encrypted volume on an empty disk: an additive change.
+  # A new encrypted volume on an empty disk: an additive change. The Greeting changes too, so its
+  # consumer restarts.
   added = [
     {
-      chalkos.nodes.chalklab.storage.volumes.extra = {
-        disk.serial = "chalk-extra";
-        mountPoint = "/srv/extra";
+      chalkos.nodes.chalklab = {
+        storage.volumes.extra = {
+          disk.serial = "chalk-extra";
+          mountPoint = "/srv/extra";
+        };
+        documents = lib.mkForce (greeting "hello again");
       };
     }
   ];
