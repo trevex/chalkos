@@ -59,7 +59,7 @@ spec:
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "[Network]\nDHCP=no\nDNS=1.1.1.1\nDNS=9.9.9.9\nIPv6AcceptRA=no\n\n" +
+	want := "[Network]\nDHCP=no\nDNS=1.1.1.1\nDNS=9.9.9.9\nIPv6AcceptRA=false\n\n" +
 		"[Route]\nDestination=10.1.0.0/16\nGateway=10.0.0.254\n\n" +
 		"[Route]\nDestination=10.2.0.0/16\nGateway=10.0.0.253\n\n"
 	if units["20-lan.network"] != want {
@@ -110,10 +110,56 @@ spec:
 `)
 	m := networkMap(docs)
 	nets := m["networks"].(map[string]any)["10-a"].(map[string]any)
-	if got := nets["address"].([]any); len(got) != 2 || got[0] != "10.0.0.11/24" || got[1] != "fd00::11/64" {
+	// Only [Network] Address= counts, as the cluster definition's static addresses read it.
+	if got := nets["address"].([]any); len(got) != 1 || got[0] != "10.0.0.11/24" {
 		t.Errorf("address = %v", got)
 	}
 	if mac := nets["matchConfig"].(map[string]any)["MACAddress"]; mac != "52:54:00:7b:00:11" {
 		t.Errorf("MACAddress = %v", mac)
+	}
+}
+
+func TestRenderBoolsAsNixOSDoes(t *testing.T) {
+	docs := networkDocs(t, `
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: a}
+spec:
+  network: {ipv6AcceptRA: true}
+`)
+	units, err := renderNetworkUnits(docs, networkSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "[Network]\nIPv6AcceptRA=true\n\n"; units["a.network"] != want {
+		t.Errorf("unit = %q, want %q", units["a.network"], want)
+	}
+}
+
+func TestNetworkMapWithoutAddressIsEmpty(t *testing.T) {
+	docs := networkDocs(t, `
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-dhcp}
+spec:
+  match: {name: enp1s0}
+  network: {dhcp: "yes"}
+`)
+	nets := networkMap(docs)["networks"].(map[string]any)["10-dhcp"].(map[string]any)
+	if got, ok := nets["address"].([]any); !ok || got == nil || len(got) != 0 {
+		t.Errorf("address = %#v, want []", nets["address"])
+	}
+	if _, ok := nets["matchConfig"]; ok {
+		t.Errorf("matchConfig = %v, want none", nets["matchConfig"])
+	}
+}
+
+func TestNetworkMapJoinsAListOfMACs(t *testing.T) {
+	docs := []Document{{APIVersion: NetworkdAPI, Kind: "Network", Name: "a", Object: map[string]any{
+		"spec": map[string]any{"match": map[string]any{"macAddress": []any{"52:54:00:00:00:01", "52:54:00:00:00:02"}}},
+	}}}
+	nets := networkMap(docs)["networks"].(map[string]any)["a"].(map[string]any)
+	if mac := nets["matchConfig"].(map[string]any)["MACAddress"]; mac != "52:54:00:00:00:01 52:54:00:00:00:02" {
+		t.Errorf("MACAddress = %#v", mac)
 	}
 }

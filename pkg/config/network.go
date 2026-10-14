@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/schema"
@@ -110,10 +111,8 @@ func unitValue(v any) (string, error) {
 		}
 		return v, nil
 	case bool:
-		if v {
-			return "yes", nil
-		}
-		return "no", nil
+		// As NixOS's systemd-lib toOption renders a bool.
+		return strconv.FormatBool(v), nil
 	case json.Number:
 		return v.String(), nil
 	default:
@@ -137,8 +136,10 @@ func dig(m map[string]any, path ...string) map[string]any {
 }
 
 // networkMap is what Go reads of the node's network besides its units, in the shape the
-// cluster definition delivered: each Network document's addresses, from [Network]'s Address= and
-// [Address] sections, and the MAC address its [Match] names.
+// cluster definition delivered: each Network document's [Network] Address= values, the only
+// addresses the cluster definition counted as static, so a node's default nodeIPs and certificate
+// names stay what they were; and the MAC address its [Match] names, several joined by spaces
+// as networkd writes them.
 func networkMap(docs []Document) map[string]any {
 	networks := map[string]any{}
 	for _, d := range docs {
@@ -146,21 +147,16 @@ func networkMap(docs []Document) map[string]any {
 			continue
 		}
 		spec, _ := d.Object["spec"].(map[string]any)
-		var addrs []any
+		addrs := []any{}
 		for _, n := range oneOrMany(spec["network"]) {
 			if m, ok := n.(map[string]any); ok {
-				addrs = append(addrs, oneOrManyNonNil(m["address"])...)
-			}
-		}
-		for _, a := range oneOrMany(spec["address"]) {
-			if m, ok := a.(map[string]any); ok {
 				addrs = append(addrs, oneOrManyNonNil(m["address"])...)
 			}
 		}
 		entry := map[string]any{"address": addrs}
 		for _, m := range oneOrMany(spec["match"]) {
 			if mm, ok := m.(map[string]any); ok && mm["macAddress"] != nil {
-				entry["matchConfig"] = map[string]any{"MACAddress": mm["macAddress"]}
+				entry["matchConfig"] = map[string]any{"MACAddress": joinValues(mm["macAddress"])}
 			}
 		}
 		networks[d.Name] = entry
@@ -173,4 +169,17 @@ func oneOrManyNonNil(v any) []any {
 		return nil
 	}
 	return oneOrMany(v)
+}
+
+// joinValues joins a list of strings with spaces and returns any other value unchanged.
+func joinValues(v any) any {
+	list, ok := v.([]any)
+	if !ok {
+		return v
+	}
+	parts := make([]string, 0, len(list))
+	for _, item := range list {
+		parts = append(parts, fmt.Sprint(item))
+	}
+	return strings.Join(parts, " ")
 }
