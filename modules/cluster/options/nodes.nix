@@ -85,7 +85,8 @@ let
             Config documents of the node besides those chalkctl generates from its other options,
             each an attribute set of `apiVersion`, `kind`, `metadata` and `spec`. Extensions add
             the documents of the kinds their role modules declare under `chalkos.kinds`; chalkctl
-            and chalkd check them against the schemas of the node's image.
+            and chalkd check them against the schemas of the node's image. Values are serialised to
+            JSON, so a path becomes the path of its copy in the Nix store, not the text of the file.
           '';
         };
       };
@@ -95,6 +96,6 @@ in
   options.chalkos.nodes = lib.mkOption {
     type = lib.types.attrsOf (lib.types.submodule nodeModule);
     default = { };
-    description = "Nodes of the cluster. Extensions add their own per-node options to this submodule, and the documents of their kinds to documents.";
+    description = "Nodes of the cluster. Extensions add their own per-node options to this submodule, and the documents of their kinds to `documents`.";
   };
 }

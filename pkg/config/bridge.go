@@ -23,6 +23,11 @@ type Bridged struct {
 	Text string
 	// Version is the hash of the documents Text holds, as chalkd computes it from the text.
 	Version string
+
+	// node is the node's name, and extensions the number of documents at the end of Documents
+	// that chalkos.nodes.<node>.documents added.
+	node       string
+	extensions int
 }
 
 // FromManifest generates a node's config from the manifest: Cluster, Image, Node, TimeSync,
@@ -79,7 +84,12 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		}
 		objects = append(objects, doc)
 	}
-	return encode(objects)
+	b, err := encode(objects)
+	if err != nil {
+		return Bridged{}, err
+	}
+	b.node, b.extensions = name, len(n.Documents)
+	return b, nil
 }
 
 func object(apiVersion, kind, name string, spec map[string]any) map[string]any {
@@ -417,6 +427,13 @@ func StaticAddresses(docs []Document) []string {
 func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (manifest.Identity, error) {
 	set, err := NewSet(b.Documents, s)
 	if err != nil {
+		// The generated documents form a set by themselves, so when they still do, the
+		// extensions' documents broke it: a kind or name the generated ones hold already, or a
+		// document the image does not accept.
+		generated := b.Documents[:len(b.Documents)-b.extensions]
+		if _, genErr := NewSet(generated, s); b.extensions > 0 && genErr == nil {
+			return manifest.Identity{}, fmt.Errorf("chalkos.nodes.%s.documents: %w", b.node, err)
+		}
 		return manifest.Identity{}, err
 	}
 	got, err := set.Identity(t)

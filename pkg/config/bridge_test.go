@@ -282,6 +282,78 @@ func TestFromManifestAppendsDocuments(t *testing.T) {
 	if _, err := FromManifest(m, "cp1"); err == nil || !strings.Contains(err.Error(), "document 1 of its extensions") {
 		t.Errorf("err = %v, want the document that is no object named", err)
 	}
+	n.Documents = []json.RawMessage{json.RawMessage(`{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Secret", "metadata": {"name": "demo"}, "spec": {"data": {}}}`), json.RawMessage(`null`)}
+	m.Nodes["cp1"] = n
+	if _, err := FromManifest(m, "cp1"); err == nil || !strings.Contains(err.Error(), "node cp1: document 2 of its extensions") || !strings.Contains(err.Error(), "null") {
+		t.Errorf("err = %v, want the null document refused by node and index", err)
+	}
+}
+
+// TestCheckRefusesExtensionsThatCollide refuses extension documents that repeat a kind the image
+// accepts once, such as a second Node or Rack, and says they came from the node's documents.
+func TestCheckRefusesExtensionsThatCollide(t *testing.T) {
+	const rack = `{"apiVersion": "rack.example.org/v1alpha1", "kind": "Rack", "metadata": {"name": "rack"}, "spec": {"location": "rack-a/u12"}}`
+	dir := t.TempDir()
+	// The Rack kind as the homelab's role images declare it: one per node.
+	if err := os.WriteFile(filepath.Join(dir, "rack.example.org_v1alpha1_Rack.json"), []byte(`{
+	  "$schema": "https://json-schema.org/draft/2020-12/schema", "title": "Rack", "type": "object",
+	  "properties": {
+	    "apiVersion": {"const": "rack.example.org/v1alpha1"}, "kind": {"const": "Rack"},
+	    "metadata": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false},
+	    "spec": {"type": "object", "properties": {"location": {"type": "string", "minLength": 1}}, "required": ["location"], "additionalProperties": false}
+	  },
+	  "required": ["apiVersion", "kind", "metadata", "spec"], "additionalProperties": false,
+	  "x-chalkos-kind": {"group": "rack.example.org", "kind": "Rack", "multiple": false, "version": "v1alpha1"}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := fixtureSchemas(t, builtinSchemas, "../../test/fixtures/config/networkd/schemas", dir)
+	for name, tc := range map[string]struct {
+		docs []string
+		want string
+	}{
+		"a second Node": {
+			docs: []string{`{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Node", "metadata": {"name": "other"}, "spec": {"imageRef": "controlplane-metal"}}`},
+			want: "more than one Node",
+		},
+		"a second Rack of the same name": {
+			docs: []string{rack, rack},
+			want: "more than one Rack",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := homelabManifest(t)
+			n := m.Nodes["cp1"]
+			for _, d := range tc.docs {
+				n.Documents = append(n.Documents, json.RawMessage(d))
+			}
+			m.Nodes["cp1"] = n
+			b, err := FromManifest(m, "cp1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = b.Check(n.Identity, s, homelabTarget(m, n))
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "chalkos.nodes.cp1.documents") {
+				t.Errorf("err = %v, want %q from chalkos.nodes.cp1.documents", err, tc.want)
+			}
+		})
+	}
+	// One Rack is accepted; a generated document that breaks the set is not blamed on them.
+	m := homelabManifest(t)
+	n := m.Nodes["cp1"]
+	n.Documents = []json.RawMessage{json.RawMessage(rack)}
+	m.Nodes["cp1"] = n
+	b, err := FromManifest(m, "cp1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Check(n.Identity, s, homelabTarget(m, n)); err != nil {
+		t.Fatal(err)
+	}
+	b.Documents = slices.DeleteFunc(slices.Clone(b.Documents), func(d Document) bool { return d.Kind == "SystemDisk" })
+	if _, err := b.Check(n.Identity, s, homelabTarget(m, n)); err == nil || strings.Contains(err.Error(), "documents") {
+		t.Errorf("err = %v, want the missing SystemDisk not blamed on the node's documents", err)
+	}
 }
 
 // TestBridgeGivesBackEveryManifest generates the config of every node of every manifest the
