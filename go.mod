@@ -6,6 +6,7 @@ require (
 	connectrpc.com/connect v1.21.0
 	filippo.io/age v1.3.2
 	github.com/google/go-containerregistry v0.22.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	go.etcd.io/etcd/api/v3 v3.7.2
