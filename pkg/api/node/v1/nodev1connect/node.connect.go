@@ -83,9 +83,11 @@ type NodeServiceClient interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
-	// Contract returns the config contract of the image the node runs: the schemas of the config
-	// kinds it accepts and its kubernetes.json, which chalkctl checks config against before it
-	// delivers it. Available in both modes to readers.
+	// Contract returns the config contract of the image the node runs: the cluster, role and
+	// platform it was built for, the schemas of the config kinds it accepts and its
+	// kubernetes.json, which chalkctl checks config against before it delivers it. The installer
+	// refuses it: config is for the image it installs, whose contract comes with that image.
+	// Available in both modes to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
@@ -391,9 +393,11 @@ type NodeServiceHandler interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
-	// Contract returns the config contract of the image the node runs: the schemas of the config
-	// kinds it accepts and its kubernetes.json, which chalkctl checks config against before it
-	// delivers it. Available in both modes to readers.
+	// Contract returns the config contract of the image the node runs: the cluster, role and
+	// platform it was built for, the schemas of the config kinds it accepts and its
+	// kubernetes.json, which chalkctl checks config against before it delivers it. The installer
+	// refuses it: config is for the image it installs, whose contract comes with that image.
+	// Available in both modes to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash

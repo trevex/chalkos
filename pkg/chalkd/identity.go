@@ -41,8 +41,6 @@ const cryptsetupPath = "systemd-cryptsetup"
 type delivered struct {
 	data       []byte
 	cluster    string
-	role       string
-	platform   string
 	section    storage.Section
 	kubernetes *manifest.KubernetesIdentity
 }
@@ -71,7 +69,7 @@ func parseIdentity(data string) (delivered, error) {
 			return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
 		}
 	}
-	return delivered{data: []byte(data), cluster: id.Cluster, role: id.Role, platform: id.Platform, section: id.Storage, kubernetes: id.Kubernetes}, nil
+	return delivered{data: []byte(data), cluster: id.Cluster, section: id.Storage, kubernetes: id.Kubernetes}, nil
 }
 
 // checkClusterOf refuses config of another cluster than the running image's, which the node
@@ -140,7 +138,7 @@ func (s *Server) classify(recorded, section storage.Section, pins storage.Pins) 
 // checked against; and the rest of the request.
 type applyRequest struct {
 	identity string
-	next     *store.Stored
+	next     store.Stored
 	schemas  *schema.Schemas
 	msg      *nodev1.ApplyConfigRequest
 }
@@ -158,7 +156,7 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 		if err != nil {
 			return nil, err
 		}
-		r.identity, r.next, r.schemas = string(c.identity), &c.stored, schemas
+		r.identity, r.next, r.schemas = string(c.identity), c.stored, schemas
 	}
 	return s.apply(ctx, r)
 }

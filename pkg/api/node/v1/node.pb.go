@@ -711,8 +711,12 @@ type ContractResponse struct {
 	Schemas map[string][]byte `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The image's kubernetes.json; empty on an image without Kubernetes.
 	KubernetesCluster []byte `protobuf:"bytes,2,opt,name=kubernetes_cluster,json=kubernetesCluster,proto3" json:"kubernetes_cluster,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The cluster, role and platform the image was built for, as its os-release names them.
+	Cluster       string `protobuf:"bytes,3,opt,name=cluster,proto3" json:"cluster,omitempty"`
+	Role          string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	Platform      string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ContractResponse) Reset() {
@@ -757,6 +761,27 @@ func (x *ContractResponse) GetKubernetesCluster() []byte {
 		return x.KubernetesCluster
 	}
 	return nil
+}
+
+func (x *ContractResponse) GetCluster() string {
+	if x != nil {
+		return x.Cluster
+	}
+	return ""
+}
+
+func (x *ContractResponse) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *ContractResponse) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
 }
 
 type InstallRequest struct {
@@ -3802,10 +3827,13 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x12\n" +
 	"\x04uuid\x18\x06 \x01(\tR\x04uuid\x12\x18\n" +
 	"\acontent\x18\a \x01(\tR\acontent\"\x11\n" +
-	"\x0fContractRequest\"\xc7\x01\n" +
+	"\x0fContractRequest\"\x91\x02\n" +
 	"\x10ContractResponse\x12H\n" +
 	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12-\n" +
-	"\x12kubernetes_cluster\x18\x02 \x01(\fR\x11kubernetesCluster\x1a:\n" +
+	"\x12kubernetes_cluster\x18\x02 \x01(\fR\x11kubernetesCluster\x12\x18\n" +
+	"\acluster\x18\x03 \x01(\tR\acluster\x12\x12\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\x12\x1a\n" +
+	"\bplatform\x18\x05 \x01(\tR\bplatform\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\x8a\x01\n" +

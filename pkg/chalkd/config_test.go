@@ -18,6 +18,8 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
 // baseConfig is a node of the test server's image, a worker of the cluster lab without
@@ -336,5 +338,62 @@ func TestResetVolumeTakesConfig(t *testing.T) {
 	}
 	if err := reset("kind: Nope\n"); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("invalid config: %v", err)
+	}
+}
+
+// extraConfig is baseConfig with the volume extra on a disk of its own, in the format given.
+func extraConfig(format string) string {
+	return baseConfig + `---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: extra}
+spec: {disk: {serial: chalk-extra}, format: ` + format + `, mountPoint: /srv/extra}
+`
+}
+
+// TestResetVolumeThroughConfig resets a volume through the RPC, as the delivered config
+// defines it.
+func TestResetVolumeThroughConfig(t *testing.T) {
+	s, r := configServer(t)
+	schemas, err := schema.LoadSchemas(s.Identity.Schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := configure(extraConfig("ext4"), schemas, config.Target{Role: "worker", Platform: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id manifest.Identity
+	if err := json.Unmarshal(c.identity, &id); err != nil {
+		t.Fatal(err)
+	}
+	section, err := json.Marshal(id.Storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(s.Paths.StateDir, "storage")
+	write(t, filepath.Join(dir, "storage.json"), string(section))
+	write(t, filepath.Join(dir, "disks.json"), `{"disks": {
+	  "system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}},
+	  "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "`+extraUUID+`"}}}}`)
+	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(c.identity))
+	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+	r.rules = []rule{
+		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
+		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
+		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
+		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
+		{prefix: "cryptsetup luksDump --dump-json-metadata", out: luksDump},
+	}
+
+	if _, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "extra", Config: extraConfig("xfs"), FallbackSecret: secret})); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(r.calls, "wipefs --all /dev/vdb1") || !contains(r.calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
+		t.Errorf("the volume was not wiped and created again: %v", r.calls)
+	}
+	recorded, err := storage.ReadSection(filepath.Join(dir, "storage.json"))
+	if err != nil || recorded.Volumes["extra"].Format != "xfs" {
+		t.Errorf("recorded volume extra = %+v, %v; want it in the config's xfs", recorded.Volumes["extra"], err)
 	}
 }

@@ -17,9 +17,11 @@ service NodeService {
   rpc Info(InfoRequest) returns (InfoResponse);
   // Disks lists the node's disks and their partitions. Available in both modes to readers.
   rpc Disks(DisksRequest) returns (DisksResponse);
-  // Contract returns the config contract of the image the node runs: the schemas of the config
-  // kinds it accepts and its kubernetes.json, which chalkctl checks config against before it
-  // delivers it. Available in both modes to readers.
+  // Contract returns the config contract of the image the node runs: the cluster, role and
+  // platform it was built for, the schemas of the config kinds it accepts and its
+  // kubernetes.json, which chalkctl checks config against before it delivers it. The installer
+  // refuses it: config is for the image it installs, whose contract comes with that image.
+  // Available in both modes to readers.
   rpc Contract(ContractRequest) returns (ContractResponse);
   // Install turns a node in maintenance mode into an installed node and reboots it. The first
   // message carries the header; when the node is the installer, the image's store data, hash
@@ -169,6 +171,10 @@ message ContractResponse {
   map<string, bytes> schemas = 1;
   // The image's kubernetes.json; empty on an image without Kubernetes.
   bytes kubernetes_cluster = 2;
+  // The cluster, role and platform the image was built for, as its os-release names them.
+  string cluster = 3;
+  string role = 4;
+  string platform = 5;
 }
 
 message InstallRequest {

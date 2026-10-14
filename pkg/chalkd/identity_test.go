@@ -13,7 +13,9 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
@@ -86,11 +88,20 @@ func apply(s *Server, identity, fallback string) (*nodev1.ApplyConfigResponse, e
 
 // deliver runs what ApplyConfig runs once it has translated its config into identity, with the
 // rest of req; an empty identity keeps the node's. The storage and Kubernetes tests state the
-// identity exactly this way.
+// identity exactly this way. The config set does not matter to them, so the node keeps an empty
+// one, checked against the image's schemas.
 func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	r := applyRequest{identity: identity, msg: req}
+	if identity != "" {
+		schemas, err := schema.LoadSchemas(s.Identity.Schemas)
+		if err != nil {
+			return nil, err
+		}
+		r.next, r.schemas = store.Stored{Version: "empty"}, schemas
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.apply(ctx, applyRequest{identity: identity, msg: req})
+	return s.apply(ctx, r)
 }
 
 func TestApplyConfigAddsVolume(t *testing.T) {

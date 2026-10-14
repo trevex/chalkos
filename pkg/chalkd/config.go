@@ -60,7 +60,7 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (configure
 func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	schemas, err := schema.LoadSchemas(s.Identity.Schemas)
 	if err != nil {
-		return config.Target{}, nil, failed(connect.CodeInternal, "read the image's schemas: %v", err)
+		return config.Target{}, nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
 	}
 	release := readOSRelease(s.Paths.OSRelease)
 	t := config.Target{Role: release["CHALKOS_ROLE"], Platform: release["CHALKOS_PLATFORM"]}
@@ -74,45 +74,31 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	return t, schemas, nil
 }
 
-// applyConfig keeps next as the node's config set, or removes the node's set when next is nil,
-// writes it for its consumers and restarts those whose kinds changed: a kind changes when one of
-// its documents does, or a Secret one of them references. schemas are the running image's; nil
-// loads them when needed. It returns the restarted units.
-func (s *Server) applyConfig(ctx context.Context, next *store.Stored, schemas *schema.Schemas) ([]string, error) {
+// applyConfig keeps next as the node's config set, writes it for its consumers and restarts
+// those whose kinds changed: a kind changes when one of its documents does, or a Secret one of
+// them references. schemas are the running image's, which next was checked against. It returns
+// the restarted units.
+func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *schema.Schemas) ([]string, error) {
 	dir := s.Identity.Config
-	prev, found, err := store.Read(dir)
+	prev, _, err := store.Read(dir)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "read the stored config: %v", err)
-	}
-	if next == nil && !found {
-		return nil, nil
-	}
-	if schemas == nil {
-		if schemas, err = schema.LoadSchemas(s.Identity.Schemas); err != nil {
-			return nil, failed(connect.CodeInternal, "read the image's schemas: %v", err)
-		}
 	}
 	before, err := config.KindHashes(prev.Documents, schemas)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "hash the stored config: %v", err)
 	}
-	after := map[string]string{}
-	if next != nil {
-		if after, err = config.KindHashes(next.Documents, schemas); err != nil {
-			return nil, failed(connect.CodeInternal, "hash the config: %v", err)
-		}
+	after, err := config.KindHashes(next.Documents, schemas)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "hash the config: %v", err)
 	}
 	consumers, err := identity.ReadConsumers(s.Identity.Consumers)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	units := identity.KindRestarts(consumers, before, after)
-	if next != nil {
-		if err := store.Write(dir, *next); err != nil {
-			return nil, failed(connect.CodeInternal, "store the config: %v", err)
-		}
-	} else if err := store.Remove(dir); err != nil {
-		return nil, failed(connect.CodeInternal, "remove the stored config: %v", err)
+	if err := store.Write(dir, next); err != nil {
+		return nil, failed(connect.CodeInternal, "store the config: %v", err)
 	}
 	// From here on STATE holds the new set, so a retry compares it with itself and restarts
 	// nothing. A failure therefore names the units that still need a restart, rather than

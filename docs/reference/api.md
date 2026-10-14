@@ -49,9 +49,11 @@ Disks lists the node's disks and their partitions. Available in both modes to re
 
 ### Contract { #method-contract }
 
-Contract returns the config contract of the image the node runs: the schemas of the config
-kinds it accepts and its kubernetes.json, which chalkctl checks config against before it
-delivers it. Available in both modes to readers.
+Contract returns the config contract of the image the node runs: the cluster, role and
+platform it was built for, the schemas of the config kinds it accepts and its
+kubernetes.json, which chalkctl checks config against before it delivers it. The installer
+refuses it: config is for the image it installs, whose contract comes with that image.
+Available in both modes to readers.
 
 ### Install { #method-install }
 
@@ -224,6 +226,9 @@ No fields.
 | ----- | ---- | ----------- |
 | `schemas` | repeated [`ContractResponse.SchemasEntry`](#message-contractresponseschemasentry) | The image's schemas by file name, as /etc/chalkos/schemas holds them. |
 | `kubernetes_cluster` | `bytes` | The image's kubernetes.json; empty on an image without Kubernetes. |
+| `cluster` | `string` | The cluster, role and platform the image was built for, as its os-release names them. |
+| `role` | `string` |  |
+| `platform` | `string` |  |
 
 ### ContractResponse.SchemasEntry { #message-contractresponseschemasentry }
 
