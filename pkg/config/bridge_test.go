@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/networkdschema"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -125,7 +127,7 @@ func TestCheckNamesWhatDiffers(t *testing.T) {
 	want.Hostname = "other"
 	want.NetworkUnits = map[string]string{"10-uplink.network": "[Match]\nName=enp2s0\n"}
 	_, err = b.Check(want, allSchemas(t), homelabTarget(m, n))
-	for _, s := range []string{"hostname", "network units"} {
+	for _, s := range []string{"hostname", "network unit 10-uplink.network: [Match] Name=", "network unit 10-uplink.network: 1 [Network] sections instead of 0"} {
 		if err == nil || !strings.Contains(err.Error(), s) {
 			t.Errorf("err = %v, want it to name the %s", err, s)
 		}
@@ -144,6 +146,20 @@ func TestPassthrough(t *testing.T) {
 	}
 	if _, err := passthrough("[Other]\nx=1\n"); err == nil {
 		t.Error("a definition of another section was read")
+	}
+}
+
+func TestFromManifestRefusesRepeatedRepartKeys(t *testing.T) {
+	m := homelabManifest(t)
+	n := m.Nodes["w1"]
+	d := n.Identity.Storage.Disks["longhorn"]
+	d.Repart = map[string]string{"10-longhorn.conf": d.Repart["10-longhorn.conf"] + "CopyFiles=/a\nCopyFiles=/b\n"}
+	n.Identity.Storage.Disks = maps.Clone(n.Identity.Storage.Disks)
+	n.Identity.Storage.Disks["longhorn"] = d
+	m.Nodes["w1"] = n
+	_, err := FromManifest(m, "w1")
+	if want := "volume longhorn: repart key CopyFiles has several values; a Volume takes one value per key"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
 	}
 }
 
@@ -183,6 +199,13 @@ func TestSameINI(t *testing.T) {
 		{"[A]\nx=1\n", "[A]\nx=2\n", false},
 		{"[A]\nx=1\nx=1\n", "[A]\nx=1\n", false},
 		{"[A]\nx=1\n", "[A]\nx=1\n[A]\n", false},
+		// The order of a key's values is kept: networkd tries DNS servers in order.
+		{"[Network]\nDNS=10.0.0.1\nDNS=10.0.0.2\n", "[Network]\nDNS=10.0.0.2\nDNS=10.0.0.1\n", false},
+		{"[Network]\nDNS=10.0.0.1\nAddress=10.0.0.5/24\nDNS=10.0.0.2\n", "[Network]\nAddress=10.0.0.5/24\nDNS=10.0.0.1\nDNS=10.0.0.2\n", true},
+		// Repeated sections keep their order among themselves, not among other sections.
+		{"[Route]\nDestination=10.1.0.0/16\n\n[Route]\nDestination=10.2.0.0/16\n", "[Route]\nDestination=10.2.0.0/16\n\n[Route]\nDestination=10.1.0.0/16\n", false},
+		{"[Route]\nDestination=10.1.0.0/16\n\n[Network]\nDNS=10.0.0.1\n\n[Route]\nDestination=10.2.0.0/16\n",
+			"[Network]\nDNS=10.0.0.1\n\n[Route]\nDestination=10.1.0.0/16\n\n[Route]\nDestination=10.2.0.0/16\n", true},
 	} {
 		if got := sameINI(c.a, c.b); got != c.same {
 			t.Errorf("sameINI(%q, %q) = %v", c.a, c.b, got)
@@ -319,5 +342,245 @@ func TestBridgeGivesBackEveryManifest(t *testing.T) {
 	}
 	if nodes == 0 {
 		t.Fatalf("%s holds no node", root)
+	}
+}
+
+// cloneIdentity copies an identity deeply, so a test changes its copy alone.
+func cloneIdentity(t *testing.T, id manifest.Identity) manifest.Identity {
+	t.Helper()
+	b, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out manifest.Identity
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestCheckNamesEachField(t *testing.T) {
+	m := homelabManifest(t)
+	for name, c := range map[string]struct {
+		node   string
+		change func(id *manifest.Identity)
+		want   string
+	}{
+		"volume encryption": {"w1", func(id *manifest.Identity) {
+			v := id.Storage.Volumes["longhorn"]
+			v.Encryption = "none"
+			id.Storage.Volumes["longhorn"] = v
+		}, "volume longhorn: encryption tpm2 instead of none"},
+		"seed": {"w1", func(id *manifest.Identity) {
+			d := id.Storage.Disks["longhorn"]
+			d.Seed = "00000000-0000-0000-0000-000000000000"
+			id.Storage.Disks["longhorn"] = d
+		}, "disk longhorn: seed 7dc5cf32-67a9-6501-acce-377a47f9df6c instead of 00000000-0000-0000-0000-000000000000"},
+		"repart": {"w1", func(id *manifest.Identity) {
+			d := id.Storage.Disks["longhorn"]
+			d.Repart["10-longhorn.conf"] += "Weight=1000\n"
+			id.Storage.Disks["longhorn"] = d
+		}, "disk longhorn: 10-longhorn.conf: [Partition] Weight= (none) instead of 1000"},
+		"validSubnets": {"cp1", func(id *manifest.Identity) {
+			id.Kubernetes.ValidSubnets = []string{}
+		}, "kubernetes validSubnets null instead of []"},
+		"nodeIPs": {"cp1", func(id *manifest.Identity) {
+			id.Kubernetes.NodeIPs = []string{"10.0.0.12"}
+		}, "kubernetes nodeIPs [10.0.0.11] instead of [10.0.0.12]"},
+		"time server port": {"cp1", func(id *manifest.Identity) {
+			id.Time.Servers[0].Port = 123
+		}, "time server 1 (ptbtime1.ptb.de): port 0 instead of 123"},
+		"time server nts": {"cp1", func(id *manifest.Identity) {
+			id.Time.Servers[1].NTS = false
+		}, "time server 2 (ptbtime2.ptb.de): nts true instead of false"},
+		"MAC": {"cp1", func(id *manifest.Identity) {
+			n := id.Network["networks"].(map[string]any)["10-uplink"].(map[string]any)
+			n["matchConfig"] = map[string]any{"MACAddress": "52:54:00:12:34:56"}
+		}, "network 10-uplink: matched MAC address (none) instead of 52:54:00:12:34:56"},
+		"static addresses": {"cp1", func(id *manifest.Identity) {
+			n := id.Network["networks"].(map[string]any)["10-uplink"].(map[string]any)
+			n["address"] = []any{"10.0.0.12/24"}
+		}, "static addresses [10.0.0.11] instead of [10.0.0.12]"},
+		"labels": {"w1", func(id *manifest.Identity) {
+			id.Labels["node.kubernetes.io/storage"] = "hdd"
+		}, `label node.kubernetes.io/storage: "ssd" instead of "hdd"`},
+		"taints": {"w1", func(id *manifest.Identity) {
+			id.Taints[0].Effect = "NoExecute"
+		}, "taints"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			n := m.Nodes[c.node]
+			b, err := FromManifest(m, c.node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := cloneIdentity(t, n.Identity)
+			c.change(&want)
+			_, err = b.Check(want, allSchemas(t), homelabTarget(m, n))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want it to say %q", err, c.want)
+			}
+			if strings.Contains(err.Error(), "; ") {
+				t.Errorf("err = %v, want one difference", err)
+			}
+		})
+	}
+}
+
+// bridgeSchemas are the built-in kinds' schemas and the networkd kinds', generated from a few
+// sections and keys of each.
+func bridgeSchemas(t *testing.T) *schema.Schemas {
+	t.Helper()
+	files := map[string][]byte{}
+	entries, err := os.ReadDir(builtinSchemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		data, err := os.ReadFile(filepath.Join(builtinSchemas, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[e.Name()] = data
+	}
+	template, err := os.ReadFile("../../test/fixtures/config/networkd/schemas/networkd.chalkos.dev_v1alpha1_Network.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for kind, keys := range map[string][]string{
+		"Network": {"Match.Name", "Match.MACAddress", "Network.Address", "Network.DNS", "Network.Gateway", "Network.VLAN", "Route.Destination", "Route.Gateway"},
+		"NetDev":  {"Match.Host", "NetDev.Name", "NetDev.Kind", "VLAN.Id"},
+		"Link":    {"Match.MACAddress", "Link.Name"},
+	} {
+		var entries []networkdschema.Entry
+		for _, k := range keys {
+			section, key, _ := strings.Cut(k, ".")
+			entries = append(entries, networkdschema.Entry{Section: section, Key: key})
+		}
+		spec, err := networkdschema.SpecSchema(entries)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var s map[string]any
+		if err := json.Unmarshal(template, &s); err != nil {
+			t.Fatal(err)
+		}
+		s["title"] = kind
+		s["properties"].(map[string]any)["kind"] = map[string]any{"const": kind}
+		s["properties"].(map[string]any)["spec"] = spec["spec"]
+		s["$defs"] = spec["$defs"]
+		s["x-chalkos-kind"].(map[string]any)["kind"] = kind
+		data, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files["networkd.chalkos.dev_v1alpha1_"+kind+".json"] = data
+	}
+	s, err := schema.LoadFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// bridgeBase is a node on an image without Kubernetes, which each round trip adds documents to.
+const bridgeBase = `apiVersion: chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: lab}
+spec: {}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: img}
+spec: {source: /images/plain}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: n1}
+spec: {imageRef: img}
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec: {disk: {path: /dev/vda}, encryption: {mode: tpm2, fallback: recovery-key}, var: {size: 10G}}
+`
+
+func TestFromManifestRoundTrips(t *testing.T) {
+	s := bridgeSchemas(t)
+	target := Target{Role: "plain", Platform: "kvm"}
+	for name, extra := range map[string]string{
+		"raw volume": `apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: raw}
+spec: {format: null, size: 1G}
+`,
+		"encryption override": `apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: plain}
+spec: {size: 2G, mountPoint: /srv, encryption: {mode: none}}
+`,
+		"repart passthrough": `apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: data}
+spec: {disk: {serial: ABC123}, format: xfs, repart: {Weight: "2000", "Padding=x": "1", CopyBlocks: auto}}
+`,
+		"netdev and link": `apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-lan}
+spec: {match: {macAddress: "52:54:00:12:34:56"}, link: {name: lan0}}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-vlan10}
+spec: {netDev: {name: vlan10, kind: vlan}, vlan: {id: 10}}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lan}
+spec: {match: {macAddress: "52:54:00:12:34:56"}, network: {vlan: vlan10, dns: [10.0.0.2, 10.0.0.1]}}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-vlan10}
+spec: {match: {name: vlan10}, network: {address: 10.0.10.5/24}}
+`,
+		"repeated routes": `apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: enp1s0}
+  network: {address: [10.0.0.5/24, fd00::5/64], gateway: 10.0.0.1}
+  route:
+    - {destination: 10.2.0.0/16, gateway: 10.0.0.254}
+    - {destination: 10.1.0.0/16, gateway: 10.0.0.253}
+`,
+		"time server with a port": `apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec: {servers: [{host: ntp.example.org, nts: false, port: 4460}, {host: nts.example.org, nts: true}]}
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			set, err := NewSet(mustParse(t, bridgeBase+"---\n"+extra), s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id, err := set.Identity(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := &manifest.Manifest{
+				Cluster: manifest.Cluster{Name: "lab"},
+				Roles:   map[string]manifest.Role{"plain": {Images: map[string]string{"kvm": "roles.plain.images.kvm"}}},
+				Nodes:   map[string]manifest.Node{"n1": {Role: "plain", Platform: "kvm", Identity: id}},
+			}
+			b, err := FromManifest(m, "n1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := b.Check(id, s, target); err != nil {
+				t.Fatalf("%v\ndocuments:\n%s", err, b.Text)
+			}
+		})
 	}
 }

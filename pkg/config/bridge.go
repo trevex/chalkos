@@ -161,7 +161,7 @@ func storageObjects(sec storage.Section) ([]map[string]any, error) {
 		}
 		repart, err := passthrough(def)
 		if err != nil {
-			return nil, fmt.Errorf("volume %s: %s: %w", name, file, err)
+			return nil, fmt.Errorf("volume %s: %w", name, err)
 		}
 		if len(repart) > 0 {
 			spec["repart"] = repart
@@ -187,21 +187,25 @@ func diskObject(ref storage.Ref) map[string]any {
 
 // passthrough returns the keys of a volume's repart definition that its typed fields do not
 // render: all but the reserved keys, and TPM2PCRs too when the volume is encrypted with the
-// TPM, which sets it.
+// TPM, which sets it. A Volume's repart holds one value per key, so a key the definition repeats,
+// as the cluster definition renders a list, is refused rather than cut to its last value.
 func passthrough(def string) (map[string]any, error) {
 	sections, err := parseINI(def)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("its repart definition: %w", err)
 	}
 	out := map[string]any{}
 	for _, s := range sections {
 		if s.name != "Partition" {
-			return nil, fmt.Errorf("section [%s] is not [Partition]", s.name)
+			return nil, fmt.Errorf("its repart definition has the section [%s], not [Partition]", s.name)
 		}
 		encrypted := slices.Contains(s.entries, [2]string{"Encrypt", "tpm2"})
 		for _, e := range s.entries {
 			if slices.Contains(reservedRepartKeys, e[0]) || encrypted && e[0] == "TPM2PCRs" {
 				continue
+			}
+			if _, ok := out[e[0]]; ok {
+				return nil, fmt.Errorf("repart key %s has several values; a Volume takes one value per key", e[0])
 			}
 			out[e[0]] = e[1]
 		}
@@ -329,28 +333,75 @@ func cutKey(line string) (key, value string, ok bool) {
 	return "", "", false
 }
 
-// sameINI tells whether two files hold the same sections with the same lines, in any order.
-func sameINI(a, b string) bool {
-	sa, errA := parseINI(a)
-	sb, errB := parseINI(b)
-	if errA != nil || errB != nil {
-		return a == b
+// sameINI tells whether two files mean the same, as iniDiff compares them.
+func sameINI(a, b string) bool { return len(iniDiff(a, b)) == 0 }
+
+// iniDiff names how the file got differs from want. The order of different keys and of
+// differently named sections does not count, but the order of a key's values and of the sections
+// of one name does: networkd tries DNS= servers in order, and repeated sections such as [Route]
+// keep the order they are written in.
+func iniDiff(want, got string) []string {
+	ws, errW := parseINI(want)
+	gs, errG := parseINI(got)
+	if errW != nil || errG != nil {
+		if want == got {
+			return nil
+		}
+		return []string{fmt.Sprintf("%q instead of %q", got, want)}
 	}
-	return slices.Equal(iniLines(sa), iniLines(sb))
+	wb, gb := sectionsByName(ws), sectionsByName(gs)
+	var diffs []string
+	for _, name := range sortedUnion(wb, gb) {
+		w, g := wb[name], gb[name]
+		if len(w) != len(g) {
+			diffs = append(diffs, fmt.Sprintf("%d [%s] sections instead of %d", len(g), name, len(w)))
+			continue
+		}
+		for i := range w {
+			at := "[" + name + "]"
+			if len(w) > 1 {
+				at = fmt.Sprintf("[%s] %d", name, i+1)
+			}
+			for _, key := range sortedUnion(w[i], g[i]) {
+				if !slices.Equal(w[i][key], g[i][key]) {
+					diffs = append(diffs, fmt.Sprintf("%s %s= %s instead of %s", at, key, iniValues(g[i][key]), iniValues(w[i][key])))
+				}
+			}
+		}
+	}
+	return diffs
 }
 
-func iniLines(sections []iniSection) []string {
-	out := make([]string, 0, len(sections))
+// sectionsByName groups sections by name, in the order of the file, each as its keys' values in
+// the order of the file.
+func sectionsByName(sections []iniSection) map[string][]map[string][]string {
+	out := map[string][]map[string][]string{}
 	for _, s := range sections {
-		lines := make([]string, 0, len(s.entries))
+		keys := map[string][]string{}
 		for _, e := range s.entries {
-			lines = append(lines, e[0]+"="+e[1])
+			keys[e[0]] = append(keys[e[0]], e[1])
 		}
-		sort.Strings(lines)
-		out = append(out, "["+s.name+"]\n"+strings.Join(lines, "\n"))
+		out[s.name] = append(out[s.name], keys)
 	}
-	sort.Strings(out)
 	return out
+}
+
+func iniValues(values []string) string {
+	if len(values) == 0 {
+		return "(none)"
+	}
+	return strings.Join(values, ", ")
+}
+
+func sortedUnion[V any](a, b map[string]V) []string {
+	keys := slices.Collect(maps.Keys(a))
+	for k := range b {
+		if _, ok := a[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // StaticAddresses returns the addresses Set.Identity counts as the node's static ones, in network
@@ -379,12 +430,13 @@ func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (man
 }
 
 // identityDiff names what of got differs from want, compared by meaning: unit files and repart
-// definitions as sections of lines in any order, and of the network map only what Go reads, the
-// static addresses and the MAC address each network matches.
+// definitions with iniDiff, and of the network map only what Go reads, the static addresses and
+// the MAC address each network matches. Each difference names the field, and the volume, disk,
+// file, section or key it is in.
 func identityDiff(want, got manifest.Identity) []string {
 	var diffs []string
 	differ := func(what string, w, g any) {
-		diffs = append(diffs, fmt.Sprintf("%s %+v instead of %+v", what, g, w))
+		diffs = append(diffs, fmt.Sprintf("%s %v instead of %v", what, g, w))
 	}
 	if want.Hostname != got.Hostname {
 		differ("hostname", want.Hostname, got.Hostname)
@@ -395,28 +447,41 @@ func identityDiff(want, got manifest.Identity) []string {
 	if w, g := want.StaticAddresses(), got.StaticAddresses(); !slices.Equal(w, g) {
 		differ("static addresses", w, g)
 	}
-	if w, g := matchedMACs(want), matchedMACs(got); !maps.Equal(w, g) {
-		differ("matched MAC addresses", w, g)
+	wm, gm := matchedMACs(want), matchedMACs(got)
+	for _, name := range sortedUnion(wm, gm) {
+		if wm[name] != gm[name] {
+			differ("network "+name+": matched MAC address", orNone(wm[name]), orNone(gm[name]))
+		}
 	}
-	if !sameFiles(want.NetworkUnits, got.NetworkUnits) {
-		differ("network units", want.NetworkUnits, got.NetworkUnits)
-	}
-	if !maps.Equal(want.Labels, got.Labels) {
-		differ("labels", want.Labels, got.Labels)
+	diffs = append(diffs, fileDiffs("network unit ", want.NetworkUnits, got.NetworkUnits)...)
+	for _, key := range sortedUnion(want.Labels, got.Labels) {
+		w, wok := want.Labels[key]
+		g, gok := got.Labels[key]
+		if w != g || wok != gok {
+			diffs = append(diffs, fmt.Sprintf("label %s: %s instead of %s", key, labelValue(g, gok), labelValue(w, wok)))
+		}
 	}
 	if !slices.Equal(want.Taints, got.Taints) {
-		differ("taints", want.Taints, got.Taints)
+		diffs = append(diffs, fmt.Sprintf("taints %+v instead of %+v", got.Taints, want.Taints))
 	}
-	if !sameStorage(want.Storage, got.Storage) {
-		differ("storage", want.Storage, got.Storage)
-	}
-	if !sameKubernetes(want.Kubernetes, got.Kubernetes) {
-		differ("kubernetes", want.Kubernetes, got.Kubernetes)
-	}
-	if !slices.Equal(want.Time.Servers, got.Time.Servers) {
-		differ("time servers", want.Time.Servers, got.Time.Servers)
-	}
+	diffs = append(diffs, storageDiffs(want.Storage, got.Storage)...)
+	diffs = append(diffs, kubernetesDiffs(want.Kubernetes, got.Kubernetes)...)
+	diffs = append(diffs, timeDiffs(want.Time.Servers, got.Time.Servers)...)
 	return diffs
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
+}
+
+func labelValue(v string, ok bool) string {
+	if !ok {
+		return "(none)"
+	}
+	return fmt.Sprintf("%q", v)
 }
 
 func matchedMACs(id manifest.Identity) map[string]string {
@@ -432,40 +497,132 @@ func matchedMACs(id manifest.Identity) map[string]string {
 	return out
 }
 
-// sameFiles compares files by name, each with sameINI.
-func sameFiles(want, got map[string]string) bool {
-	if len(want) != len(got) {
-		return false
-	}
-	for name, w := range want {
-		if g, ok := got[name]; !ok || !sameINI(w, g) {
-			return false
+// fileDiffs compares files by name, each with iniDiff, and names each difference after prefix
+// and the file.
+func fileDiffs(prefix string, want, got map[string]string) []string {
+	var diffs []string
+	for _, name := range sortedUnion(want, got) {
+		w, wok := want[name]
+		g, gok := got[name]
+		switch {
+		case !gok:
+			diffs = append(diffs, prefix+name+": missing")
+		case !wok:
+			diffs = append(diffs, prefix+name+": unexpected")
+		default:
+			for _, d := range iniDiff(w, g) {
+				diffs = append(diffs, prefix+name+": "+d)
+			}
 		}
 	}
-	return true
+	return diffs
 }
 
-func sameStorage(want, got storage.Section) bool {
-	if want.Encryption != got.Encryption || want.Fallback != got.Fallback || !maps.Equal(want.Volumes, got.Volumes) || len(want.Disks) != len(got.Disks) {
-		return false
-	}
-	for name, w := range want.Disks {
-		g, ok := got.Disks[name]
-		if !ok || w.Ref != g.Ref || w.Seed != g.Seed || !sameFiles(w.Repart, g.Repart) {
-			return false
+func storageDiffs(want, got storage.Section) []string {
+	var diffs []string
+	differ := func(what string, w, g string) {
+		if w != g {
+			diffs = append(diffs, fmt.Sprintf("%s %s instead of %s", what, orNull(g), orNull(w)))
 		}
 	}
-	return true
+	differ("storage encryption", want.Encryption, got.Encryption)
+	differ("storage fallback", want.Fallback, got.Fallback)
+	for _, name := range sortedUnion(want.Volumes, got.Volumes) {
+		w, wok := want.Volumes[name]
+		g, gok := got.Volumes[name]
+		at := "volume " + name + ": "
+		switch {
+		case !gok:
+			diffs = append(diffs, at+"missing")
+		case !wok:
+			diffs = append(diffs, at+"unexpected")
+		default:
+			differ(at+"disk", w.Disk, g.Disk)
+			differ(at+"label", w.Label, g.Label)
+			differ(at+"format", w.Format, g.Format)
+			differ(at+"mountPoint", w.MountPoint, g.MountPoint)
+			differ(at+"encryption", w.Encryption, g.Encryption)
+			differ(at+"size", w.Size, g.Size)
+		}
+	}
+	for _, name := range sortedUnion(want.Disks, got.Disks) {
+		w, wok := want.Disks[name]
+		g, gok := got.Disks[name]
+		at := "disk " + name + ": "
+		switch {
+		case !gok:
+			diffs = append(diffs, at+"missing")
+		case !wok:
+			diffs = append(diffs, at+"unexpected")
+		default:
+			if w.Ref != g.Ref {
+				diffs = append(diffs, fmt.Sprintf("%sref %s instead of %s", at, g.Ref, w.Ref))
+			}
+			differ(at+"seed", w.Seed, g.Seed)
+			diffs = append(diffs, fileDiffs(at, w.Repart, g.Repart)...)
+		}
+	}
+	return diffs
 }
 
-// sameKubernetes compares the Kubernetes sections; nil validSubnets, which use the cluster's,
+// orNull shows an empty storage field as the null it stands for.
+func orNull(s string) string {
+	if s == "" {
+		return "null"
+	}
+	return s
+}
+
+// kubernetesDiffs compares the Kubernetes sections; nil validSubnets, which use the cluster's,
 // differ from empty ones.
-func sameKubernetes(want, got *manifest.KubernetesIdentity) bool {
-	if want == nil || got == nil {
-		return want == got
+func kubernetesDiffs(want, got *manifest.KubernetesIdentity) []string {
+	switch {
+	case want == nil && got == nil:
+		return nil
+	case want == nil:
+		return []string{"kubernetes settings, which the identity has none of"}
+	case got == nil:
+		return []string{"no kubernetes settings, which the identity has"}
 	}
-	return want.NodeName == got.NodeName && slices.Equal(want.NodeIPs, got.NodeIPs) &&
-		(want.ValidSubnets == nil) == (got.ValidSubnets == nil) && slices.Equal(want.ValidSubnets, got.ValidSubnets)
+	var diffs []string
+	if want.NodeName != got.NodeName {
+		diffs = append(diffs, fmt.Sprintf("kubernetes nodeName %s instead of %s", got.NodeName, want.NodeName))
+	}
+	if !slices.Equal(want.NodeIPs, got.NodeIPs) {
+		diffs = append(diffs, fmt.Sprintf("kubernetes nodeIPs %v instead of %v", got.NodeIPs, want.NodeIPs))
+	}
+	if (want.ValidSubnets == nil) != (got.ValidSubnets == nil) || !slices.Equal(want.ValidSubnets, got.ValidSubnets) {
+		diffs = append(diffs, fmt.Sprintf("kubernetes validSubnets %s instead of %s", subnets(got.ValidSubnets), subnets(want.ValidSubnets)))
+	}
+	return diffs
+}
+
+func subnets(s []string) string {
+	if s == nil {
+		return "null"
+	}
+	return fmt.Sprint(s)
+}
+
+func timeDiffs(want, got []manifest.TimeServer) []string {
+	if len(want) != len(got) {
+		return []string{fmt.Sprintf("time servers %+v instead of %+v", got, want)}
+	}
+	var diffs []string
+	for i, w := range want {
+		g := got[i]
+		at := fmt.Sprintf("time server %d (%s): ", i+1, w.Host)
+		if w.Host != g.Host {
+			diffs = append(diffs, fmt.Sprintf("%shost %s instead of %s", at, g.Host, w.Host))
+		}
+		if w.Port != g.Port {
+			diffs = append(diffs, fmt.Sprintf("%sport %d instead of %d", at, g.Port, w.Port))
+		}
+		if w.NTS != g.NTS {
+			diffs = append(diffs, fmt.Sprintf("%snts %t instead of %t", at, g.NTS, w.NTS))
+		}
+	}
+	return diffs
 }
 
 // decodeObject reads one JSON document with its numbers as written.
