@@ -2543,7 +2543,92 @@ null
 The options the node modules declare in each role image. The cluster's settings appear in a
 role image under the same names as in the cluster definition, read-only.
 
+### chalkos\.consumers
+
+Services, by name, that read config kinds\.
+
+
+
+*Type:*
+attribute set of (submodule)
+
+
+
+*Default:*
+
+```nix
+{ }
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.consumers\.\<name>\.kinds
+
+
+
+Config kinds the unit reads, by name: attributes of ` chalkos.kinds `, or networkd’s
+` Network `, ` NetDev ` and ` Link `\. The documents of a kind of ` chalkos.kinds ` are in its
+` dir `, networkd’s below ` /run/chalkos/config/networkd.chalkos.dev `\. The values their
+` secretRef ` fields name are the unit’s credentials ` secret_<secret>.<key> `\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "BGPPeering"
+]
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.consumers\.\<name>\.restartOnChange
+
+
+
+Restart the unit when a document of one of its kinds changes, or a Secret one of them references\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+true
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
 ### chalkos\.debug\.tools
+
+
 
 Add coreutils, grep, sed, findutils, procps, iproute2 and util-linux to the system path,
 and crictl on roles with Kubernetes; systemd, bash, less, nftables and kmod are on it

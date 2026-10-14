@@ -1,6 +1,6 @@
-# chalkd, the node agent, and the unit that applies the node's identity at boot. Images built for
-# a cluster with an OS CA carry it, so chalkd in maintenance mode only accepts the cluster's
-# clients.
+# chalkd, the node agent, and the unit that applies the node's identity and config at boot. Images
+# built for a cluster with an OS CA carry it, so chalkd in maintenance mode only accepts the
+# cluster's clients.
 {
   config,
   lib,
@@ -13,7 +13,7 @@ let
 in
 {
   systemd.services.chalkos-identity = {
-    description = "Apply the node identity";
+    description = "Apply the node identity and config";
     wantedBy = [ "sysinit.target" ];
     # STATE is mounted by the initrd; networkd and every service that reads a credential come
     # later.

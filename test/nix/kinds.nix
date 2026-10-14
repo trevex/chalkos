@@ -35,6 +35,28 @@ let
       };
     };
   withDemo = image [ demoModule ];
+  # A unit that reads the Demo kind and networkd's Network.
+  kindConsumerModule = {
+    systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
+    chalkos.consumers.bird.kinds = [
+      "Demo"
+      "Network"
+    ];
+  };
+  withKindConsumer = image [
+    demoModule
+    kindConsumerModule
+  ];
+  consumersOf = config: builtins.fromJSON config.environment.etc."chalkos/consumers.json".text;
+  consumerOf =
+    kinds:
+    image [
+      demoModule
+      {
+        systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
+        chalkos.consumers.bird.kinds = kinds;
+      }
+    ];
   # Forces the schemas an image ships, and with them the checks of its kinds' names.
   schemasOf = config: config.system.build.chalkosSchemas.drvPath;
 
@@ -490,6 +512,68 @@ lib.runTests {
             };
           }
         ]).chalkos.kinds.Node.group;
+    expected = true;
+  };
+  testKindConsumerLoadsItsSecrets = {
+    expr = withKindConsumer.systemd.services.bird.serviceConfig.LoadCredential;
+    expected = [ "secret:/run/chalkos/credentials/bird" ];
+  };
+  testKindConsumerRecordedForChalkd = {
+    expr = (consumersOf withKindConsumer).bird;
+    expected = {
+      keys = [ ];
+      kinds = [
+        "Demo"
+        "Network"
+      ];
+      restartOnChange = true;
+    };
+  };
+  testKindConsumerWithServiceDoesNotWarn = {
+    expr = withKindConsumer.warnings;
+    expected = [ ];
+  };
+  testKindConsumerWithoutServiceWarns = {
+    expr =
+      lib.any (lib.hasInfix "chalkos.consumers.orphan")
+        (image [
+          { chalkos.consumers.orphan.kinds = [ "Network" ]; }
+        ]).warnings;
+    expected = true;
+  };
+  testKindConsumerOfUnknownKindFails = {
+    expr = fails (consumersOf (consumerOf [ "Nope" ]));
+    expected = true;
+  };
+  testKindConsumerOfSecretFails = {
+    expr = fails (consumersOf (consumerOf [ "Secret" ]));
+    expected = true;
+  };
+  testUnknownKindFailsTheUnits = {
+    expr = fails (consumerOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
+    expected = true;
+  };
+  testConsumerOfKeysAndKindsFails = {
+    expr = fails (
+      consumersOf (image [
+        demoModule
+        kindConsumerModule
+        { chalkos.node.consumers.bird.keys = [ "hostname" ]; }
+      ])
+    );
+    expected = true;
+  };
+  testConsumerNamedLikeAKeyFails = {
+    expr = fails (
+      consumersOf (image [
+        demoModule
+        kindConsumerModule
+        {
+          systemd.services.other.serviceConfig.ExecStart = "/bin/true";
+          chalkos.node.consumers.other.keys = [ "bird" ];
+        }
+      ])
+    );
     expected = true;
   };
 }
