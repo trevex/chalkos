@@ -100,7 +100,8 @@ exposes the images of its test cluster, defined in `nix/testing/cluster.nix`, as
 nix build .#test-image
 ```
 
-The result is a directory with the raw image, `repart-output.json` and `repart.d`, as
+The result is a directory with the raw image, `repart-output.json`, `repart.d`, `metadata.json`
+and `schemas`, as
 [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build) lists.
 
 ## Run the Go tests
