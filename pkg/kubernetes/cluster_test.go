@@ -145,6 +145,20 @@ func TestClusterValidate(t *testing.T) {
 		"validSubnets": func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
 		"timeout":      func(c *Cluster) { c.NodeIP.Timeout = -1 },
 		"flannel MTU":  func(c *Cluster) { c.Flannel = &Flannel{MTU: -1} },
+		// Pods get 50 less than flannel's MTU, which must leave them IPv4's minimum of 576, or
+		// IPv6's of 1280 with IPv6 in use (clusterJSON lists no families, so IPv4 alone).
+		"flannel MTU below IPv4's minimum": func(c *Cluster) { c.Flannel = &Flannel{MTU: 625} },
+		"flannel MTU below IPv6's minimum": func(c *Cluster) {
+			c.IPFamilies = []string{"ipv4", "ipv6"}
+			c.Flannel = &Flannel{MTU: 1329}
+		},
+		// The kubelet's flags travel in an environment file, split at whitespace.
+		"kubelet flag with a space": func(c *Cluster) {
+			c.ExtraArgs = map[string]map[string]string{"kubelet": {"node-labels": "a=b c=d"}}
+		},
+		"kubelet flag with a newline": func(c *Cluster) {
+			c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2\nX=1"}}
+		},
 		// These flags decide who may do what; chalkos sets them.
 		"authorization-mode": func(c *Cluster) {
 			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"authorization-mode": "AlwaysAllow"}}
@@ -164,6 +178,22 @@ func TestClusterValidate(t *testing.T) {
 		if err := c.Validate(); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+func TestClusterValidateFlannelMinimums(t *testing.T) {
+	c, err := ReadCluster(writeFile(t, clusterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Flannel = &Flannel{MTU: 626}
+	if err := c.Validate(); err != nil {
+		t.Errorf("IPv4's minimum: %v", err)
+	}
+	c.IPFamilies = []string{"ipv4", "ipv6"}
+	c.Flannel = &Flannel{MTU: 1330}
+	if err := c.Validate(); err != nil {
+		t.Errorf("IPv6's minimum: %v", err)
 	}
 }
 

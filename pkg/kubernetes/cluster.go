@@ -1,16 +1,18 @@
-// Package kubernetes describes a chalkos node's Kubernetes cluster as its image records it in
-// /etc/chalkos/kubernetes/cluster.json, and the node itself as its identity names it.
+// Package kubernetes describes a chalkos node's Kubernetes cluster, as chalkd builds it from the
+// node's config and its image's facts, and the node itself as its identity names it.
 package kubernetes
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"net/url"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/manifest"
@@ -51,8 +53,8 @@ type Cluster struct {
 	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
 	VIP VIP `json:"vip"`
-	// ExtraArgs are flags of the control-plane components by component name, such as
-	// kube-apiserver, without leading dashes.
+	// ExtraArgs are flags of the components by component name, such as kube-apiserver or
+	// kubelet, without leading dashes.
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
 	Images    Images                       `json:"images"`
 }
@@ -100,12 +102,16 @@ type VIP struct {
 	Interface string `json:"interface"`
 }
 
-// Images are the control plane's images.
+// Images are the images the cluster's components run from: the control plane's static pods and
+// the addons chalkd applies. Flannel is empty without flannel.
 type Images struct {
 	Etcd                  string `json:"etcd"`
 	KubeAPIServer         string `json:"kubeAPIServer"`
 	KubeControllerManager string `json:"kubeControllerManager"`
 	KubeScheduler         string `json:"kubeScheduler"`
+	KubeProxy             string `json:"kubeProxy"`
+	CoreDNS               string `json:"coredns"`
+	Flannel               string `json:"flannel"`
 }
 
 // ReadCluster reads and checks the image's cluster file.
@@ -161,11 +167,14 @@ func (c Cluster) Validate() error {
 	if c.NodeIP.Timeout < 0 {
 		return fmt.Errorf("nodeIP: the timeout %d is negative", c.NodeIP.Timeout)
 	}
-	if c.Flannel != nil && c.Flannel.MTU < 0 {
-		return fmt.Errorf("flannel: the MTU %d is negative", c.Flannel.MTU)
+	if err := c.validateKubeletFlags(); err != nil {
+		return err
 	}
 	families, err := c.Families()
 	if err != nil {
+		return err
+	}
+	if err := c.validateFlannel(families); err != nil {
 		return err
 	}
 	for _, f := range families {
@@ -202,6 +211,34 @@ func (c Cluster) Validate() error {
 	host, _ := c.EndpointHost()
 	if ip, err := netip.ParseAddr(host); err == nil && !slices.Contains(vips, ip.Unmap()) {
 		return fmt.Errorf("vip: the endpoint %s is none of the virtual addresses", c.Endpoint)
+	}
+	return nil
+}
+
+// validateKubeletFlags refuses kubelet flags holding whitespace: they reach the kubelet through
+// KUBELET_ARGS in an environment file, which splits them there.
+func (c Cluster) validateKubeletFlags() error {
+	flags := c.ExtraArgs["kubelet"]
+	for _, name := range slices.Sorted(maps.Keys(flags)) {
+		if name == "" || strings.ContainsAny(name+flags[name], " \t\r\n") {
+			return fmt.Errorf("extraArgs: kubelet --%s=%q: the kubelet's flags cannot hold whitespace", name, flags[name])
+		}
+	}
+	return nil
+}
+
+// validateFlannel checks flannel's MTU: pods get 50 less, which must leave them their family's
+// minimum MTU, IPv6's 1280 when IPv6 is in use and IPv4's 576 otherwise.
+func (c Cluster) validateFlannel(families []nodeip.Family) error {
+	if c.Flannel == nil || c.Flannel.MTU == 0 {
+		return nil
+	}
+	name, minimum := "IPv4", 576
+	if slices.Contains(families, nodeip.IPv6) {
+		name, minimum = "IPv6", 1280
+	}
+	if c.Flannel.MTU < minimum+50 {
+		return fmt.Errorf("flannel: the MTU %d is below the minimum of %d: pods get 50 less, and %s needs an MTU of at least %d", c.Flannel.MTU, minimum+50, name, minimum)
 	}
 	return nil
 }
