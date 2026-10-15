@@ -4,9 +4,7 @@ package apply
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -21,19 +19,6 @@ import (
 
 // FieldManager owns the fields chalkd applies.
 const FieldManager = "chalkd"
-
-// ReadManifests reads the image's list of objects, as Nix renders it.
-func ReadManifests(path string) ([]map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var objects []map[string]any
-	if err := json.Unmarshal(data, &objects); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return objects, nil
-}
 
 // Applier applies objects with server-side apply.
 type Applier struct {

@@ -114,7 +114,7 @@ type Images struct {
 	Flannel               string `json:"flannel"`
 }
 
-// ReadCluster reads and checks the image's cluster file.
+// ReadCluster reads and checks a cluster file.
 func ReadCluster(path string) (Cluster, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

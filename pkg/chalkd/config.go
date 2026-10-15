@@ -49,6 +49,12 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (configure
 	if err != nil {
 		return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
 	}
+	if t.Kubernetes != nil {
+		// The image's facts come from its cluster.json, which an install header carries too.
+		if err := set.CheckKubernetes(t.Kubernetes.Image()); err != nil {
+			return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
+		}
+	}
 	data, err := json.Marshal(id)
 	if err != nil {
 		return configured{}, failed(connect.CodeInternal, "encode the identity: %v", err)

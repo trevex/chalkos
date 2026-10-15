@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -165,7 +166,7 @@ func TestRestartAddons(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Kubernetes.Manifests, `[
+	s.Kubernetes.Objects = objectsOf(t, `[
 	  {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "coredns", "namespace": "kube-system"}},
 	  {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "coredns", "namespace": "kube-system"}},
 	  {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "kube-flannel-ds", "namespace": "kube-flannel"}}
@@ -440,7 +441,7 @@ func TestRestartAddonsDoesNotWaitForWhatNeverRollsOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Kubernetes.Manifests, `[
+	s.Kubernetes.Objects = objectsOf(t, `[
 	  {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "on-delete", "namespace": "apps"}},
 	  {"apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": {"name": "on-delete", "namespace": "apps"}},
 	  {"apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": {"name": "partitioned", "namespace": "apps"}},
@@ -478,4 +479,14 @@ func TestRestartAddonsDoesNotWaitForWhatNeverRollsOut(t *testing.T) {
 	if !slices.Equal(resp.NotWaited, want) {
 		t.Errorf("not waited for %v, want %v", resp.NotWaited, want)
 	}
+}
+
+// objectsOf is an Objects hook that returns the objects of the JSON list.
+func objectsOf(t *testing.T, list string) func(k8s.Cluster) ([]map[string]any, error) {
+	t.Helper()
+	var objects []map[string]any
+	if err := json.Unmarshal([]byte(list), &objects); err != nil {
+		t.Fatal(err)
+	}
+	return func(k8s.Cluster) ([]map[string]any, error) { return objects, nil }
 }

@@ -3060,10 +3060,8 @@ lib.runTests {
               2379
               2380
             ];
-        # The built-in objects, then the cluster's own.
-        manifests =
-          builtins.fromJSON config.environment.etc."chalkos/kubernetes/manifests.json".text
-          == c.cluster.kubernetes.addons ++ c.cluster.manifests;
+        # chalkd renders the addons and reads the manifests from the config.
+        manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
         etcdDir = lib.elem "d /var/lib/etcd 0700 root root -" config.systemd.tmpfiles.rules;
       };
     expected = {
@@ -3078,7 +3076,7 @@ lib.runTests {
       apiServer = "registry.k8s.io/kube-apiserver:v1.37.1";
       firewall = true;
       workerFirewall = false;
-      manifests = true;
+      manifests = false;
       etcdDir = true;
     };
   };

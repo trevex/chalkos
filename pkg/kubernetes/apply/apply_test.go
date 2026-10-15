@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -146,17 +144,6 @@ func TestWaitReady(t *testing.T) {
 	}
 	if !f.ready {
 		t.Error("returned before /readyz answered ok")
-	}
-}
-
-func TestReadManifests(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "manifests.json")
-	if err := os.WriteFile(path, []byte(`[{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "apps"}}]`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	objects, err := ReadManifests(path)
-	if err != nil || len(objects) != 1 || objects[0]["kind"] != "Namespace" {
-		t.Fatalf("ReadManifests() = %v, %v", objects, err)
 	}
 }
 

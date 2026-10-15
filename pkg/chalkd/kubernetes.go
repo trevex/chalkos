@@ -26,7 +26,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -37,8 +40,12 @@ import (
 // Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
 type Kubernetes struct {
 	Paths knode.Paths
-	// Manifests is the image's list of objects the control plane applies.
-	Manifests string
+	// Config is the node's config set on STATE, whose Manifest documents the control plane
+	// applies after chalkos's addons.
+	Config string
+	// Objects returns the objects the control plane applies for the cluster: chalkos's addons,
+	// then those of the Manifest documents. Tests replace it.
+	Objects func(c k8s.Cluster) ([]map[string]any, error)
 	// ControlPlane runs on a bootstrapped control-plane node until ctx ends or it fails: it
 	// applies the manifests, calls applied with their number once that succeeded, and approves
 	// kubelet serving certificates. Tests replace it.
@@ -139,7 +146,8 @@ func (k *Kubernetes) LeavesProblem() string {
 
 // NewKubernetes returns the Kubernetes side of a node with the default paths.
 func NewKubernetes() *Kubernetes {
-	k := &Kubernetes{Paths: knode.DefaultPaths(), Manifests: "/etc/chalkos/kubernetes/manifests.json"}
+	k := &Kubernetes{Paths: knode.DefaultPaths(), Config: "/state/config"}
+	k.Objects = k.objects
 	k.ControlPlane = k.runControlPlane
 	k.Node = k.node
 	k.EtcdEndpoints = k.etcdEndpoints
@@ -501,7 +509,7 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 		return err
 	}
 	for {
-		n, err := k.applyOnce(ctx, cfg)
+		n, err := k.applyOnce(ctx, c, cfg)
 		if err == nil {
 			log.Printf("kubernetes: applied %s", count(n, "object"))
 			applied(n)
@@ -522,7 +530,7 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 	return ctx.Err()
 }
 
-func (k *Kubernetes) applyOnce(ctx context.Context, cfg *rest.Config) (int, error) {
+func (k *Kubernetes) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Config) (int, error) {
 	if err := kapply.WaitReady(ctx, cfg); err != nil {
 		return 0, err
 	}
@@ -530,7 +538,7 @@ func (k *Kubernetes) applyOnce(ctx context.Context, cfg *rest.Config) (int, erro
 	if err := knode.MarkEtcdInitialised(k.Paths, time.Now()); err != nil {
 		return 0, fmt.Errorf("record that etcd is initialised: %w", err)
 	}
-	objects, err := kapply.ReadManifests(k.Manifests)
+	objects, err := k.Objects(c)
 	if err != nil {
 		return 0, err
 	}
@@ -542,6 +550,24 @@ func (k *Kubernetes) applyOnce(ctx context.Context, cfg *rest.Config) (int, erro
 		return 0, err
 	}
 	return len(objects), nil
+}
+
+// objects are chalkos's addons for the cluster, then the objects of the node's Manifest
+// documents.
+func (k *Kubernetes) objects(c k8s.Cluster) ([]map[string]any, error) {
+	objects, err := addons.Render(c)
+	if err != nil {
+		return nil, fmt.Errorf("render chalkos's addons: %w", err)
+	}
+	stored, _, err := store.Read(k.Config)
+	if err != nil {
+		return nil, fmt.Errorf("read the stored config: %w", err)
+	}
+	manifests, err := config.ManifestObjectsOf(stored.Documents)
+	if err != nil {
+		return nil, err
+	}
+	return append(objects, manifests...), nil
 }
 
 // node reads the node's Node object with the kubelet's credentials, which may read their own

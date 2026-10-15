@@ -138,7 +138,7 @@ func health(args []string) error {
 		return err
 	}
 	var k *chalkd.Kubernetes
-	if _, err := os.Stat(knode.DefaultPaths().Cluster); err == nil {
+	if _, err := os.Stat(knode.DefaultPaths().Image); err == nil {
 		k = chalkd.NewKubernetes()
 	}
 	h := chalkd.DefaultHealth(k)
@@ -327,8 +327,8 @@ func serve() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	// Images of a role with Kubernetes carry the cluster file.
-	if _, err := os.Stat(knode.DefaultPaths().Cluster); err == nil && creds.mode == nodev1.Mode_MODE_NORMAL {
+	// Images with Kubernetes carry its facts; the cluster comes from the node's config.
+	if _, err := os.Stat(knode.DefaultPaths().Image); err == nil && creds.mode == nodev1.Mode_MODE_NORMAL {
 		srv.Kubernetes = chalkd.NewKubernetes()
 		srv.Kubernetes.Start()
 		// On every way out the node releases the VIPs, which must not stay on a node whose chalkd

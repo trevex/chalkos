@@ -24,7 +24,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -76,7 +75,7 @@ func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.R
 	}
 	switch step {
 	case nodev1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
-		resp.Restarted, resp.NotWaited, err = k.restartAddons(ctx, client, share.CABundle())
+		resp.Restarted, resp.NotWaited, err = k.restartAddons(ctx, c, client, share.CABundle())
 	case nodev1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS:
 		resp.TokenSecrets, err = tokenSecrets(ctx, client)
 	case nodev1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
@@ -124,8 +123,8 @@ func (w workload) String() string { return w.namespace + "/" + w.kind + "/" + w.
 // their namespaces, and the step ends once they rolled out. A workload whose rollout does not
 // complete by itself, such as one that updates its pods only when they are deleted, is restarted
 // and returned in notWaited instead of being waited for.
-func (k *Kubernetes) restartAddons(ctx context.Context, client kubernetes.Interface, bundle string) (restarted, notWaited []string, err error) {
-	objects, err := kapply.ReadManifests(k.Manifests)
+func (k *Kubernetes) restartAddons(ctx context.Context, c k8s.Cluster, client kubernetes.Interface, bundle string) (restarted, notWaited []string, err error) {
+	objects, err := k.Objects(c)
 	if err != nil {
 		return nil, nil, err
 	}

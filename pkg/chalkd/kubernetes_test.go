@@ -28,6 +28,8 @@ import (
 	"k8s.io/client-go/rest"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
@@ -53,7 +55,8 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 			KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
 			EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 		},
-		Manifests:    filepath.Join(root, "etc", "manifests.json"),
+		Config:       filepath.Join(root, "state", "config"),
+		Objects:      func(k8s.Cluster) ([]map[string]any, error) { return nil, errors.New("no objects in this test") },
 		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
 		Node:         func(context.Context) (*corev1.Node, error) { return readyNode(), nil },
 		// No cluster answers at the endpoint.
@@ -457,10 +460,14 @@ func TestEtcdInitialisedAfterReadiness(t *testing.T) {
 	k := s.Kubernetes
 	var ready atomic.Bool
 	cfg := readyServer(t, &ready)
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	if _, err := k.applyOnce(ctx, cfg); err == nil {
+	if _, err := k.applyOnce(ctx, c, cfg); err == nil {
 		t.Fatal("applied without a ready API server")
 	}
 	if initialised, err := knode.EtcdInitialised(k.Paths); err != nil || initialised {
@@ -468,9 +475,9 @@ func TestEtcdInitialisedAfterReadiness(t *testing.T) {
 	}
 
 	ready.Store(true)
-	// The manifests do not exist, so applying fails after the API server answered ready.
-	if _, err := k.applyOnce(context.Background(), cfg); err == nil {
-		t.Fatal("applied manifests that do not exist")
+	// The objects fail, so applying fails after the API server answered ready.
+	if _, err := k.applyOnce(context.Background(), c, cfg); err == nil {
+		t.Fatal("applied objects that fail")
 	}
 	if initialised, err := knode.EtcdInitialised(k.Paths); err != nil || !initialised {
 		t.Errorf("after readiness: initialised = %v, %v", initialised, err)
@@ -1029,5 +1036,35 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 	case <-stopped:
 	case <-time.After(10 * time.Second):
 		t.Error("the loops did not stop once the renewal ended")
+	}
+}
+
+// TestObjectsAreTheAddonsThenTheManifests: chalkd applies the addons it renders for the cluster,
+// then the objects of the stored Manifest documents.
+func TestObjectsAreTheAddonsThenTheManifests(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
+	k := NewKubernetes()
+	k.Config = s.Kubernetes.Config
+	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := config.Parse(strings.NewReader(`apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Manifest
+metadata: {name: apps}
+spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(k.Config, store.Stored{Documents: docs, Version: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	objects, err := k.Objects(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(objects); n < 2 || objects[0]["kind"] != "ClusterRoleBinding" || objects[n-1]["kind"] != "Namespace" {
+		t.Errorf("objects = %v", objects)
 	}
 }

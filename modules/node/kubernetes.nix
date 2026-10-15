@@ -214,9 +214,6 @@ in
       "chalkos/kubernetes/cluster.json".text = builtins.toJSON clusterFile;
       "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
     }
-    // lib.optionalAttrs controlPlane {
-      "chalkos/kubernetes/manifests.json".text = builtins.toJSON (k.addons ++ cluster.manifests);
-    }
     // lib.mapAttrs' (
       registry: mirrors:
       lib.nameValuePair "containerd/certs.d/${registry}/hosts.toml" { text = hostsToml registry mirrors; }

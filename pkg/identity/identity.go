@@ -1,7 +1,7 @@
 // Package identity applies a node's identity on the node: it writes /run/chalkos/node.json, which
 // the node's Kubernetes side reads, the networkd units and chrony's time servers, and sets the
-// hostname. It writes the node's stored config for the units that read config kinds, and tells
-// which of them read kinds that changed.
+// hostname. It writes the node's stored config for the units that read config kinds, and the
+// Kubernetes cluster it describes for chalkd, and tells which of them read kinds that changed.
 package identity
 
 import (
@@ -16,7 +16,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -45,22 +47,29 @@ type Loader struct {
 	ChronySources string
 	// Config is the node's config set on STATE, and Schemas the image's schemas, which tell the
 	// secretRef fields of its documents.
-	Config      string
-	Schemas     string
-	SetHostname func(string) error
+	Config  string
+	Schemas string
+	// KubernetesImage is the image's Kubernetes facts, absent on an image without Kubernetes;
+	// ClusterFile receives the cluster the config gives on it, which chalkd's Kubernetes side
+	// reads.
+	KubernetesImage string
+	ClusterFile     string
+	SetHostname     func(string) error
 }
 
 // Default applies the identity on the running node.
 func Default() Loader {
 	return Loader{
-		Identity:      "/state/identity.json",
-		RunDir:        "/run/chalkos",
-		NetworkDir:    "/run/systemd/network",
-		Consumers:     "/etc/chalkos/consumers.json",
-		ChronySources: "/run/chalkos/chrony/identity.sources",
-		Config:        "/state/config",
-		Schemas:       "/etc/chalkos/schemas",
-		SetHostname:   func(name string) error { return syscall.Sethostname([]byte(name)) },
+		Identity:        "/state/identity.json",
+		RunDir:          "/run/chalkos",
+		NetworkDir:      "/run/systemd/network",
+		Consumers:       "/etc/chalkos/consumers.json",
+		ChronySources:   "/run/chalkos/chrony/identity.sources",
+		Config:          "/state/config",
+		Schemas:         "/etc/chalkos/schemas",
+		KubernetesImage: "/etc/chalkos/kubernetes/image.json",
+		ClusterFile:     "/run/chalkos/kubernetes/cluster.json",
+		SetHostname:     func(name string) error { return syscall.Sethostname([]byte(name)) },
 	}
 }
 
@@ -92,7 +101,8 @@ func (l Loader) Load() error {
 // secretRefs name below RunDir/credentials/<unit>. It does not check the set against the image's
 // schemas again: chalkd stored it only once it passed, and a schema that changed since must not
 // keep the node from booting. A node without a set gets empty directories, so its units load
-// their credentials all the same.
+// their credentials all the same. On an image with Kubernetes it then writes the cluster the set
+// gives, and removes it for a node without a set.
 func (l Loader) LoadConfig() error {
 	stored, found, err := store.Read(l.Config)
 	if err != nil {
@@ -112,7 +122,68 @@ func (l Loader) LoadConfig() error {
 			return fmt.Errorf("read the image's schemas: %w", err)
 		}
 	}
-	return store.WriteRuntime(l.RunDir, stored.Documents, schemas, kinds)
+	if err := store.WriteRuntime(l.RunDir, stored.Documents, schemas, kinds); err != nil {
+		return err
+	}
+	var c *kubernetes.Cluster
+	if found {
+		if c, err = l.Cluster(stored.Documents); err != nil {
+			// No Kubernetes side runs on settings the config does not give.
+			if _, rerr := l.WriteCluster(nil); rerr != nil {
+				return errors.Join(err, rerr)
+			}
+			return fmt.Errorf("the node's Kubernetes settings: %w; deliver config with a Kubernetes document with chalkctl apply-config", err)
+		}
+	}
+	_, err = l.WriteCluster(c)
+	return err
+}
+
+// Cluster returns the Kubernetes cluster docs give on this image, from the image's facts and the
+// documents' settings; nil on an image without Kubernetes.
+func (l Loader) Cluster(docs []config.Document) (*kubernetes.Cluster, error) {
+	if l.KubernetesImage == "" {
+		return nil, nil
+	}
+	img, err := kubernetes.ReadImage(l.KubernetesImage)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c, err := config.ClusterOf(docs, img)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// WriteCluster writes c as the node's cluster file, or removes the file for nil, and reports
+// whether its content changed.
+func (l Loader) WriteCluster(c *kubernetes.Cluster) (bool, error) {
+	if l.ClusterFile == "" {
+		return false, nil
+	}
+	old, err := os.ReadFile(l.ClusterFile)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	if c == nil {
+		if err := os.Remove(l.ClusterFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return false, err
+		}
+		return old != nil, nil
+	}
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	data = append(data, '\n')
+	if bytes.Equal(old, data) {
+		return false, nil
+	}
+	return true, writeFile(l.ClusterFile, data, 0o644)
 }
 
 // Apply writes what the identity determines and sets the hostname.

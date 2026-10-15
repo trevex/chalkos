@@ -234,11 +234,17 @@ const workerCluster = `{"kind": "worker", "endpoint": "https://192.168.100.11:64
   "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`
 
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.
-var workerConfig = strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {type: worker, imageRef: metal}", 1) + `---
+var workerConfig = strings.Replace(strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {type: worker, imageRef: metal}", 1),
+	"metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: \"https://192.168.100.11:6443\"}", 1) + `---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubelet
 metadata: {name: kubelet}
 spec: {nodeIPs: [192.168.100.21]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec: {}
 `
 
 func TestInstallInPlaceWithConfig(t *testing.T) {

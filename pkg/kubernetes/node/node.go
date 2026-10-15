@@ -35,8 +35,10 @@ type Paths struct {
 	// State is the Kubernetes directory on STATE, holding the share and the bootstrap and etcd
 	// markers.
 	State string
-	// Cluster is the image's cluster file.
+	// Cluster is the cluster chalkd builds from the node's config and image.
 	Cluster string
+	// Image is the image's Kubernetes facts; it exists exactly on images with Kubernetes.
+	Image string
 	// NodeFile is the node's identity without secrets.
 	NodeFile string
 	// Run receives the kubelet's files, the certificates and the static pods.
@@ -53,7 +55,8 @@ type Paths struct {
 func DefaultPaths() Paths {
 	return Paths{
 		State:      "/state/kubernetes",
-		Cluster:    "/etc/chalkos/kubernetes/cluster.json",
+		Cluster:    "/run/chalkos/kubernetes/cluster.json",
+		Image:      "/etc/chalkos/kubernetes/image.json",
 		NodeFile:   "/run/chalkos/node.json",
 		Run:        "/run/chalkos/kubernetes",
 		PKI:        manifests.PKIDir,
@@ -263,7 +266,7 @@ func marked(path string) (bool, error) {
 	return false, err
 }
 
-// Load reads the node's share, its image's cluster file and its identity, and checks they
+// Load reads the node's share, its cluster file and its identity, and checks they
 // belong together.
 func Load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
 	share, err := ReadShare(p)
