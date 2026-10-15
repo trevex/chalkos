@@ -275,10 +275,12 @@ a cluster setting, not a role:
 }
 ```
 
-The [control planes](../reference/glossary.md#control-plane) apply them with server-side apply after chalkos's own objects, at bootstrap
-and at every boot. They travel inside the images, so new objects arrive with an upgrade of the
-control planes. Only control-plane images carry the list, so a change to it gives the roles of
-kind `controlplane` a new image and leaves the other roles' images as they are.
+The [control planes](../reference/glossary.md#control-plane) apply them with server-side apply
+after chalkos's own objects, at bootstrap and at every boot. They travel in the nodes'
+[config](../reference/glossary.md#config) as `Manifest` documents, which chalkctl generates from
+the setting, so a change to the list leaves the images as they are and reaches the nodes with
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A control plane applies the
+new list at its next boot, or right away when the same config changes its Kubernetes cluster.
 
 ## What a role may not change
 

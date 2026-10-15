@@ -33,6 +33,29 @@ A [role](../reference/glossary.md#role) decides what its nodes are in Kubernetes
 | `worker` (default) | containerd and the kubelet |
 | `null` | No Kubernetes at all; the image leaves it out |
 
+## Where do a node's Kubernetes settings come from?
+
+The image fixes what it ships: the Kubernetes release, the images of its components and the pod
+network, recorded in `/etc/chalkos/kubernetes/image.json`. The rest of the cluster's settings reach
+the node as its [config](../reference/glossary.md#config): chalkctl generates the node's
+`Kubernetes`, `Flannel`, `RegistryMirror` and `Manifest` documents from the
+[cluster definition](../reference/glossary.md#cluster-definition), and
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers them. chalkd builds
+the node's cluster from its `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and
+`image.json` into `/run/chalkos/kubernetes/cluster.json`, at boot and on every apply. On an image
+with Kubernetes, the node's config must hold a `Kubernetes` document, or chalkd fails at boot.
+
+A changed cluster restarts `chalkos-kubernetes.service` and `kubelet.service`, and chalkd on a
+control plane starts its Kubernetes work again, so the static pods and add-ons follow the new
+settings. Some settings are fixed once the cluster exists: the address families of
+[`ipFamilies`](../reference/options.md#chalkosclusterkubernetesipfamilies), the pod ranges of
+[`podCIDRs`](../reference/options.md#chalkosclusterkubernetespodcidrsipv4), the service ranges of
+[`serviceCIDRs`](../reference/options.md#chalkosclusterkubernetesservicecidrsipv4) and the
+addresses of [`dnsIPs`](../reference/options.md#chalkosclusterkubernetesdnsipsipv4), because the
+certificates, etcd and the ranges the control plane allocated were made for them. On a node that
+holds a [Kubernetes share](../reference/glossary.md#kubernetes-share), `chalkctl apply-config`
+refuses config that changes them; changing them takes reinstalling the nodes into a new cluster.
+
 ## What runs on every node?
 
 containerd and the kubelet run as systemd units from the image. Before the kubelet starts,
@@ -42,11 +65,13 @@ kubelet's kubeconfig and per-node flags below `/run/chalkos/kubernetes`. A node 
 [Kubernetes share](../reference/glossary.md#kubernetes-share), which is not installed yet, runs no
 kubelet.
 
-The kubelet's configuration comes from Nix and is the same on every node of the image:
-webhook authentication and authorisation, no anonymous access and no read-only port, the systemd
-cgroup driver, and `rotateCertificates` with `serverTLSBootstrap`. What differs per node comes from
-the node's [config](../reference/glossary.md#config) as flags: the node name, its addresses,
-its labels and its taints. A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule`
+chalkd renders the kubelet's configuration from the node's cluster into
+`/run/chalkos/kubernetes/kubelet/config.json`, the same on every node of the cluster: webhook
+authentication and authorisation, no anonymous access and no read-only port, the systemd cgroup
+driver, the cluster's DNS address and domain, and `rotateCertificates` with `serverTLSBootstrap`.
+What differs per node comes from the node's [config](../reference/glossary.md#config) as flags,
+which the kubelet gets in `$KUBELET_ARGS`: the node name, its addresses, its labels and its taints.
+A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule`
 unless [`chalkos.cluster.kubernetes.allowSchedulingOnControlPlanes`](../reference/options.md#chalkosclusterkubernetesallowschedulingoncontrolplanes)
 is set. [`chalkos.cluster.kubernetes.extraArgs.kubelet`](../reference/options.md#chalkosclusterkubernetesextraargskubelet)
 adds flags.
@@ -154,7 +179,9 @@ request pending. [Certificates](certificates.md) lists every certificate and its
 ## What does the control plane apply?
 
 After the API server is ready, chalkd applies a list of objects with server-side apply, as field
-manager `chalkd`, taking over fields other managers changed, so the image's objects always win:
+manager `chalkd`, taking over fields other managers changed, so chalkos's objects always win.
+chalkd renders the first four from the node's cluster, and the last are the objects of the node's
+`Manifest` documents:
 
 1. RBAC: `chalkos:cluster-admins` bound to `cluster-admin` for admin kubeconfigs, the binding that
    lets kubelets renew their own client certificates, and the API server's access to kubelets.
@@ -164,10 +191,11 @@ manager `chalkd`, taking over fields other managers changed, so the image's obje
 4. CoreDNS, at the primary family's address of
    [`dnsIPs`](../reference/options.md#chalkosclusterkubernetesdnsipsipv4).
 5. The objects of [`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests),
-   in their order.
+   in their order, which chalkctl turns into the node's `Manifest` documents.
 
 chalkd applies the list at bootstrap and again on every bootstrapped control plane each time it
-starts, so an image upgrade rolls out changed add-ons without a separate step. Then it runs the
+starts its Kubernetes work, at boot and after the node's cluster changed, so an image upgrade or a
+changed config rolls out changed add-ons without a separate step. Then it runs the
 approver of kubelet serving certificates.
 
 ```nix
@@ -219,6 +247,8 @@ Other states name what the node waits for or why it stopped:
 
 - An object removed from `chalkos.cluster.manifests` is not deleted from the cluster; delete it
   with kubectl.
+- A config that changes only the `Manifest` documents is applied at the control planes' next
+  boot; `chalkctl apply-config` reapplies only a changed Kubernetes cluster at once.
 - chalkos has no etcd backup or restore command. etcd's data lives only on the control planes'
   VAR partitions.
 - The API server on a control plane uses only its own etcd member. When that member is unhealthy,

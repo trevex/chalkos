@@ -196,7 +196,7 @@ entries, six for a role with a Kubernetes kind:
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
 | `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, platform and the store's root hash, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
-| `kubernetes.json` | The image's Kubernetes settings, as it carries them in `/etc/chalkos/kubernetes/cluster.json`; only for a role with a Kubernetes kind. An install from the installer sends it, with `schemas`, so chalkd checks and translates the node's config for the image it writes. |
+| `kubernetes.json` | The image's Kubernetes settings, as it carries them in `/etc/chalkos/kubernetes/cluster.json`; only for a role with a Kubernetes kind. An install from the installer sends it, with `schemas`, so chalkd checks and translates the node's config for the image it writes, and chalkctl checks that the config's Kubernetes settings are the image's. |
 
 The definitions of a role with the default sizes read:
 
@@ -234,16 +234,18 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/repart.d` | The system region's definitions. |
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster sets [`chalkos.cluster.osCA`](options.md#chalkosclusterosca). |
-| `/etc/chalkos/kubernetes/cluster.json` | The cluster's Kubernetes settings, on images of a role with a Kubernetes kind. |
+| `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images of a role with a Kubernetes kind. chalkd builds the node's cluster from it and the node's config. |
+| `/etc/chalkos/kubernetes/cluster.json` | The cluster's Kubernetes settings the image was built with, which chalkctl checks the node's config against. |
 | `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
+| `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and `image.json` at boot and on every apply. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s excepted, which chalkcfg prints. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
 | `/run/chalkos/chrony/identity.sources` | The time servers of the config, for chrony. |
 | `/run/chalkos/kubernetes/manifests` | The static pods chalkd renders on a control plane. |
 | `/run/chalkos/kubernetes/pki` | The control plane's certificates and kubeconfigs. |
-| `/run/chalkos/kubernetes/kubelet` | The kubelet's `kubeconfig`, `flags` and `ca.crt`. |
+| `/run/chalkos/kubernetes/kubelet` | The kubelet's `kubeconfig`, `config.json`, `flags` and `ca.crt`. |
 | `/run/chalkos/kubernetes/node-ip` | The addresses the node picked this boot, the primary family's first. |
 | `/run/chalkos/kubernetes/vxlan` | The addresses and source ranges the firewall's VXLAN rule accepts. |
 | `/var/lib/etcd` | etcd's data on a control plane. |

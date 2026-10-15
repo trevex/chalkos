@@ -12,7 +12,7 @@ page is for changing it.
 
 ## Where do Nix and Go meet?
 
-Go code never evaluates Nix itself. The [cluster definition](../reference/glossary.md#cluster-definition) reaches it as JSON, in three forms:
+Go code never evaluates Nix itself. The [cluster definition](../reference/glossary.md#cluster-definition) reaches it as JSON, in four forms:
 
 - The [manifest](../reference/glossary.md#manifest), which `mkCluster` generates as
   `chalkos.<cluster>.manifest`: the cluster's settings, the roles' image paths, every node's
@@ -24,9 +24,14 @@ Go code never evaluates Nix itself. The [cluster definition](../reference/glossa
   to [chalkd](../reference/glossary.md#chalkd) and chalkd keeps on
   [STATE](../reference/glossary.md#state). chalkd translates them back into the identity it
   applies.
+- The node's Kubernetes cluster, which chalkd builds from the `Kubernetes` and `Flannel`
+  documents and the image's `image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
+  chalkos's add-ons (RBAC, kube-proxy, flannel, CoreDNS) and the kubelet's configuration from it
+  in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the
+  `Manifest` documents after the add-ons.
 - Files the [role](../reference/glossary.md#role) image carries in `/etc/chalkos`, written by
-  the node modules: the cluster's Kubernetes settings in `kubernetes/cluster.json`, the
-  manifests chalkd applies in `kubernetes/manifests.json`, the system region's repart
+  the node modules: what the image fixes about Kubernetes in `kubernetes/image.json`, the
+  Kubernetes settings it was built with in `kubernetes/cluster.json`, the system region's repart
   definitions in `repart.d`, the [OS CA](../reference/glossary.md#os-ca) certificate in
   `os-ca.crt`, the JSON Schemas of the config kinds the image accepts in `schemas` and the
   units that read them in `consumers.json`; and the image's own description in
