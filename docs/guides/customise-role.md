@@ -280,7 +280,8 @@ after chalkos's own objects, at bootstrap and at every boot. They travel in the 
 [config](../reference/glossary.md#config) as `Manifest` documents, which chalkctl generates from
 the setting, so a change to the list leaves the images as they are and reaches the nodes with
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A control plane applies the
-new list at its next boot, or right away when the same config changes its Kubernetes cluster.
+changed list at once, without restarting a unit. An object removed from the list stays in the
+cluster; delete it with kubectl.
 
 ## What a role may not change
 

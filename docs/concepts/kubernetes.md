@@ -97,12 +97,17 @@ requests only to `/livez`, `/readyz` and `/healthz`, has bootstrap-token authent
 encrypts Secrets in etcd with the cluster's encryption key. The controller-manager runs without the
 bootstrap-signer and token-cleaner controllers, since nothing uses bootstrap tokens.
 [`chalkos.cluster.kubernetes.extraArgs`](../reference/options.md#chalkosclusterkubernetesextraargskube-apiserver)
-adds or overrides flags per component, except the API server's `anonymous-auth`,
-`authentication-config`, `authorization-mode` and `enable-bootstrap-token-auth`, which decide who
-may do what, and the kubelet's `anonymous-auth`, `authorization-mode`, `cert-dir`, `client-ca-file`,
-`config`, `hostname-override`, `kubeconfig`, `node-ip` and `read-only-port`, which set where it finds
-its configuration and credentials, the node's name and addresses, and who may use its API.
-These flags are refused.
+adds or overrides flags per component, named without their leading dashes, except the API
+server's `anonymous-auth`, `authentication-config`, `authorization-mode` and
+`enable-bootstrap-token-auth`, which decide who may do what, and the kubelet's `anonymous-auth`,
+`authentication-token-webhook`, `authorization-mode`, `bootstrap-kubeconfig`, `cert-dir`,
+`client-ca-file`, `config`, `config-dir`, `hostname-override`, `kubeconfig`, `node-ip`,
+`node-labels`, `pod-manifest-path`, `read-only-port`, `register-with-taints`,
+`rotate-certificates`, `tls-cert-file` and `tls-private-key-file`, which set where it finds its
+configuration, credentials and static pods, the node's name, addresses, labels and taints, and who
+may use its API. These flags are refused, also spelt with `_` for `-`, which the components accept.
+A node's labels and taints come from
+[`chalkos.nodes.<name>.labels`](../reference/options.md#chalkosnodeslabels) and `taints`.
 
 ## How does a cluster start?
 
@@ -194,9 +199,11 @@ chalkd renders the first four from the node's cluster, and the last are the obje
    in their order, which chalkctl turns into the node's `Manifest` documents.
 
 chalkd applies the list at bootstrap and again on every bootstrapped control plane each time it
-starts its Kubernetes work, at boot and after the node's cluster changed, so an image upgrade or a
-changed config rolls out changed add-ons without a separate step. Then it runs the
-approver of kubelet serving certificates.
+starts its Kubernetes work: at boot, after the node's cluster changed, and when
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers changed `Manifest`
+documents, which restarts no unit. An image upgrade or a changed config therefore rolls out changed
+add-ons without a separate step. An object a `Manifest` document no longer holds is not deleted.
+Then chalkd runs the approver of kubelet serving certificates.
 
 ```nix
 chalkos.cluster.manifests = [
@@ -247,8 +254,6 @@ Other states name what the node waits for or why it stopped:
 
 - An object removed from `chalkos.cluster.manifests` is not deleted from the cluster; delete it
   with kubectl.
-- A config that changes only the `Manifest` documents is applied at the control planes' next
-  boot; `chalkctl apply-config` reapplies only a changed Kubernetes cluster at once.
 - chalkos has no etcd backup or restore command. etcd's data lives only on the control planes'
   VAR partitions.
 - The API server on a control plane uses only its own etcd member. When that member is unhealthy,
