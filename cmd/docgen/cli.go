@@ -31,8 +31,8 @@ func writeCLI(roots []*cobra.Command, dir, config string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	index := frontMatter("Command line", "The commands of chalkctl and chalklab") +
-		"# Command line\n\nchalkos has two command line tools. Their pages are generated from their help.\n\n"
+	index := frontMatter("Command line", "The commands of chalkctl, chalklab and chalkcfg") +
+		"# Command line\n\nchalkos has three command line tools: chalkctl and chalklab run on an operator's machine, chalkcfg on a node. Their pages are generated from their help.\n\n"
 	nav := []string{fmt.Sprintf("{ %q = [", "Command line"), fmt.Sprintf("  %q,", navPrefix+"index.md")}
 	for _, root := range roots {
 		index += fmt.Sprintf("- [%s](%s): %s\n", root.Name(), pageName(root), root.Short)
@@ -43,7 +43,7 @@ func writeCLI(roots []*cobra.Command, dir, config string) error {
 			nav = append(nav, "  "+line)
 		}
 	}
-	index += "\nEvery command shows its description, examples and flags with `--help`, and `completion` writes a shell completion script.\n"
+	index += "\nEvery command shows its description, examples and flags with `--help`. chalkctl's and chalklab's `completion` writes a shell completion script.\n"
 	nav = append(nav, "] },")
 	if err := os.WriteFile(filepath.Join(dir, "index.md"), []byte(index), 0o644); err != nil {
 		return err
@@ -54,8 +54,8 @@ func writeCLI(roots []*cobra.Command, dir, config string) error {
 // writePages writes the page of cmd and of each command below it.
 func writePages(cmd *cobra.Command, dir string) error {
 	cmd.DisableAutoGenTag = true
-	// chalkctl and chalklab run a command that holds subcommands only to fail with its usage, so
-	// its page lists the subcommands without a usage line of its own.
+	// chalkctl, chalklab and chalkcfg run a command that holds subcommands only to fail with its
+	// usage, so its page lists the subcommands without a usage line of its own.
 	if cmd.HasAvailableSubCommands() {
 		cmd.Run, cmd.RunE = nil, nil
 	}

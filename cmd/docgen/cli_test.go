@@ -96,12 +96,20 @@ func TestMarkdownKeepsCode(t *testing.T) {
 	}
 }
 
-// The programs' pages hold every command a user can run.
+// The programs' pages hold every command a user can run; chalkcfg, which runs on nodes without
+// logins, has no completion command.
 func TestProgramsHaveCompletion(t *testing.T) {
+	var names []string
 	for _, root := range programs() {
-		if cmd, _, err := root.Find([]string{"completion", "bash"}); err != nil || cmd.Name() != "bash" {
-			t.Errorf("%s has no completion command: %v", root.Name(), err)
+		names = append(names, root.Name())
+		cmd, _, err := root.Find([]string{"completion", "bash"})
+		has := err == nil && cmd.Name() == "bash"
+		if has == root.CompletionOptions.DisableDefaultCmd {
+			t.Errorf("%s: completion command %v, disabled %v", root.Name(), has, root.CompletionOptions.DisableDefaultCmd)
 		}
+	}
+	if got := strings.Join(names, " "); got != "chalkctl chalklab chalkcfg" {
+		t.Errorf("programs = %s", got)
 	}
 }
 
@@ -122,9 +130,21 @@ func TestGroupPageHasNoUsageLine(t *testing.T) {
 // The completion command's page describes it in the site's words instead of cobra's.
 func TestCompletionDescribed(t *testing.T) {
 	for _, root := range programs() {
+		if root.CompletionOptions.DisableDefaultCmd {
+			continue
+		}
 		cmd, _, _ := root.Find([]string{"completion"})
 		if strings.Contains(cmd.Long, "autocompletion") || !strings.Contains(cmd.Long, root.Name()+"'s commands") || !strings.Contains(cmd.Example, root.Name()+" completion bash") {
 			t.Errorf("%s completion has cobra's description or no example:\n%s\n%s", root.Name(), cmd.Long, cmd.Example)
+		}
+	}
+}
+
+// chalkcfg's root keeps its own description.
+func TestChalkcfgRootDescribed(t *testing.T) {
+	for _, root := range programs() {
+		if root.Name() == "chalkcfg" && strings.Contains(root.Long, "completes") {
+			t.Errorf("chalkcfg's description is the completion command's:\n%s", root.Long)
 		}
 	}
 }

@@ -18,8 +18,8 @@ import (
 // also one with attributes alone, counts as shell, as cobra's pages write them.
 var shellLanguages = []string{"", "sh", "bash", "shell", "zsh", "console", "shell-session"}
 
-// check finds the chalkctl and chalklab commands in the shell code blocks of the Markdown files
-// under dir, but not under dir/superpowers, and returns an error naming each one that runs a
+// check finds the chalkctl, chalklab and chalkcfg commands in the shell code blocks of the Markdown
+// files under dir, but not under dir/superpowers, and returns an error naming each one that runs a
 // command or passes a flag the programs do not have. newRoots returns fresh command trees, as
 // parsing changes a tree's flags.
 func check(newRoots func() []*cobra.Command, dir string) error {
@@ -51,7 +51,7 @@ func check(newRoots func() []*cobra.Command, dir string) error {
 		return err
 	}
 	if len(problems) > 0 {
-		return errors.New("commands in the documentation that chalkctl and chalklab do not have:\n" + strings.Join(problems, "\n"))
+		return errors.New("commands in the documentation that chalkctl, chalklab and chalkcfg do not have:\n" + strings.Join(problems, "\n"))
 	}
 	return nil
 }
@@ -120,17 +120,18 @@ func shellBlocks(path string) ([]block, error) {
 	return blocks, scanner.Err()
 }
 
-// invocation is a command line that runs chalkctl or chalklab: the program and its arguments.
+// invocation is a command line that runs chalkctl, chalklab or chalkcfg: the program and its
+// arguments.
 type invocation struct {
 	line int
 	args []string
 }
 
 // programNames are the programs whose commands are checked.
-var programNames = []string{"chalkctl", "chalklab"}
+var programNames = []string{"chalkctl", "chalklab", "chalkcfg"}
 
-// invocations returns the chalkctl and chalklab command lines of a block. Lines continued with a
-// backslash are joined, and a $ prompt is dropped; in a console block, only lines with a $
+// invocations returns the chalkctl, chalklab and chalkcfg command lines of a block. Lines continued
+// with a backslash are joined, and a $ prompt is dropped; in a console block, only lines with a $
 // prompt are commands, and the lines they continue on may start with a > prompt.
 func invocations(b block) []invocation {
 	var invs []invocation
@@ -194,8 +195,9 @@ var wrappers = map[string]wrapper{
 	"exec":    {valued: []string{"-a"}},
 }
 
-// program returns chalkctl's or chalklab's name and arguments when cmd runs one of them: directly,
-// after variables set for it, through a wrapper, with nix run from a flake or in nix develop.
+// program returns the name of one of programNames and its arguments when cmd runs one of them:
+// directly, after variables set for it, through a wrapper, with nix run from a flake or in nix
+// develop.
 func program(cmd []string) []string {
 	for len(cmd) > 0 {
 		w := cmd[0]

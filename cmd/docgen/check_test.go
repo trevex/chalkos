@@ -153,3 +153,15 @@ func TestCombinedShortFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckChalkcfg(t *testing.T) {
+	if err := checkInvocation(programs(), []string{"chalkcfg", "get", "Rack", "rack", "-o", "json"}); err != nil {
+		t.Errorf("chalkcfg get: %v", err)
+	}
+	if err := checkInvocation(programs(), []string{"chalkcfg", "get", "--outptu", "json"}); err == nil || !strings.Contains(err.Error(), "chalkcfg get has no flag --outptu") {
+		t.Errorf("err = %v", err)
+	}
+	if got := program([]string{"chalkcfg", "get"}); len(got) != 2 || got[0] != "chalkcfg" {
+		t.Errorf("program = %v, want chalkcfg's command", got)
+	}
+}

@@ -116,6 +116,10 @@ nav = [
         { "start" = "reference/cli/chalklab_start.md" },
         { "status" = "reference/cli/chalklab_status.md" },
       ] },
+      { "chalkcfg" = [
+        { "Overview" = "reference/cli/chalkcfg.md" },
+        { "get" = "reference/cli/chalkcfg_get.md" },
+      ] },
     ] },
     # END docgen cli
     { "Cluster and node options" = "reference/options.md" },
