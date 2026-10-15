@@ -99,7 +99,8 @@ extension's own. chalkctl generates them from the [cluster definition](#cluster-
 checks them against the node's image's [contract](#contract) and delivers them at install and
 with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd checks them again, keeps
 them on [STATE](#state) and applies them at every boot. Secrets travel as `Secret` documents and
-reach only the services that read the kinds referencing them. See
+reach only the services that read the kinds referencing them; one set in the cluster definition
+also puts its values in the manifest and the Nix store. See
 [The cluster definition](../concepts/cluster-definition.md).
 
 ## Config document { #config-document }

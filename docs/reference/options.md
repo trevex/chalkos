@@ -1119,6 +1119,7 @@ each an attribute set of ` apiVersion `, ` kind `, ` metadata ` and ` spec `\. E
 the documents of the kinds their role modules declare under ` chalkos.kinds `; chalkctl
 and chalkd check them against the schemas of the node’s image\. Values are serialised to
 JSON, so a path becomes the path of its copy in the Nix store, not the text of the file\.
+A ` Secret ` document here puts its values in the manifest and the Nix store\.
 
 
 

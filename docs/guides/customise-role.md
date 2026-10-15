@@ -110,7 +110,9 @@ A kind's [`dir`](../reference/options.md#chalkoskindsdir) is the directory of it
 file per document named after it. Evaluating the image fails when a unit names a kind the image
 does not declare. A `secretRef` field of a kind the unit reads names a key of a `Secret` document;
 the unit reads its value as the systemd credential `secret_<secret>.<key>`, in
-`$CREDENTIALS_DIRECTORY` or `%d`, and the value never appears below `/run/chalkos/config`. Set
+`$CREDENTIALS_DIRECTORY` or `%d`, and the value never appears below `/run/chalkos/config`. A
+`Secret` document set in `chalkos.nodes.<n>.documents` still puts its values in the manifest
+and the Nix store. Set
 [`restartOnChange`](../reference/options.md#chalkosconsumersrestartonchange) to `false` for a
 unit that rereads its documents itself.
 
