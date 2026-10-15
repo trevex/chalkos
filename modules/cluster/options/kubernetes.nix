@@ -9,26 +9,29 @@ let
   inherit (lib) mkOption types;
   pkgs = nixpkgs.legacyPackages.${config.chalkos.cluster.system};
   flags = types.attrsOf types.str;
-  # Extra flags of a component, refusing those chalkos sets. The components take _ for -, so a
-  # protected flag is refused in either spelling, and a name with its leading dashes would be read
-  # as another flag.
+  # Extra flags of a component, refusing those chalkos sets. Flags reach the components as
+  # --name=value, so a name is letters, digits, _, . and -, not starting with -: one holding = or
+  # whitespace, or with its leading dashes, would set another flag than it names. The components
+  # take _ for -, so a protected flag is refused in either spelling.
   flagsOf =
     component: protected:
     mkOption {
       type = flags;
       default = { };
-      description = "Extra flags of ${component}, without the leading dashes; they override chalkos's own.";
+      description = "Extra flags of ${component}, named without the leading dashes with letters, digits, `_`, `.` and `-`; they override chalkos's own.";
       apply =
         flags:
         let
           names = lib.attrNames flags;
-          dashed = lib.filter (lib.hasPrefix "-") names;
+          invalid = lib.filter (name: builtins.match "[A-Za-z0-9][A-Za-z0-9_.-]*" name == null) names;
           overriding = lib.filter (
             name: lib.elem (builtins.replaceStrings [ "_" ] [ "-" ] name) protected
           ) names;
         in
-        if dashed != [ ] then
-          throw "chalkos.cluster.kubernetes.extraArgs.${component}: give ${lib.concatStringsSep ", " dashed} without the leading dashes"
+        if invalid != [ ] then
+          throw "chalkos.cluster.kubernetes.extraArgs.${component}: ${
+            lib.concatMapStringsSep ", " builtins.toJSON invalid
+          } is not a flag's name: give letters, digits, _, . and -, without the leading dashes"
         else if overriding != [ ] then
           throw "chalkos.cluster.kubernetes.extraArgs.${component} cannot override ${lib.concatStringsSep ", " overriding}: chalkos sets them"
         else
@@ -775,7 +778,7 @@ in
         in
         option
         // {
-          description = "Extra flags of the kubelet, without the leading dashes; they override chalkos's own. The node's labels and taints come from `chalkos.nodes.<name>.labels` and `taints`.";
+          description = "Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`; they override chalkos's own. The node's labels and taints come from `chalkos.nodes.<name>.labels` and `taints`.";
           apply =
             flags:
             let

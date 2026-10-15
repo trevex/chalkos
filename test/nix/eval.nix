@@ -3489,6 +3489,40 @@ lib.runTests {
       dashed = true;
     };
   };
+  # Flags reach the components as --name=value, so a name with its dashes, an = or whitespace
+  # would set another flag than it names, such as a protected one.
+  testExtraArgsRefuseOtherNames = {
+    expr =
+      let
+        clusterFile =
+          component: flags:
+          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.${component} = flags; } ]))
+          .environment.etc."chalkos/kubernetes/cluster.json".text;
+        components = [
+          "etcd"
+          "kube-apiserver"
+          "kube-controller-manager"
+          "kube-scheduler"
+          "kubelet"
+        ];
+        names = [
+          "--v"
+          "-v"
+          ""
+          "register-with-taints=dedicated"
+          "kubeconfig=/var/lib/x"
+          "v 2"
+          ".v"
+        ];
+      in
+      lib.concatMap (
+        component:
+        map (name: "${component} ${name}") (
+          lib.filter (name: !fails (clusterFile component { ${name} = "2"; })) names
+        )
+      ) components;
+    expected = [ ];
+  };
   testAPIServerExtraArgsCannotOverrideAuthentication = {
     expr =
       let

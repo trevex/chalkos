@@ -216,12 +216,15 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "Kubelet document") {
 		t.Errorf("node_labels: err = %v, want the labels' document named", err)
 	}
-	// Names with their dashes would be read as another flag.
-	for _, component := range []string{"kubelet", "etcd"} {
-		c := valid
-		c.ExtraArgs = map[string]map[string]string{component: {"--v": "2"}}
-		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "without the leading dashes") {
-			t.Errorf("%s --v: err = %v", component, err)
+	// Flags reach the components as --name=value: a name with its dashes, an = or whitespace would
+	// set another flag than it names, such as a protected one.
+	for _, component := range []string{"etcd", "kube-apiserver", "kube-controller-manager", "kube-scheduler", "kubelet"} {
+		for _, name := range []string{"--v", "-v", "", "register-with-taints=dedicated", "kubeconfig=/var/lib/x", "v 2", "v\t", ".v"} {
+			c := valid
+			c.ExtraArgs = map[string]map[string]string{component: {name: "2"}}
+			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "a flag's name is letters, digits") {
+				t.Errorf("%s %q: err = %v", component, name, err)
+			}
 		}
 	}
 	// Other flags, and the protected flags of other components, are the cluster's.

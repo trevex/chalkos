@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -159,15 +160,19 @@ var ProtectedKubeletFlags = []string{
 // anonymous_auth sets --anonymous-auth.
 func flagName(name string) string { return strings.ReplaceAll(name, "_", "-") }
 
-// validateExtraArgs refuses flag names with their leading dashes, which the components would
-// read as another flag, and the protected flags, in any spelling the components accept.
+// flagNamePattern is what a flag's name may be. Flags reach the components as --name=value, so
+// a name holding = or whitespace, or starting with -, would set another flag than it names.
+var flagNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+// validateExtraArgs refuses flag names other than flagNamePattern allows, and the protected
+// flags, in any spelling the components accept.
 func (c Cluster) validateExtraArgs() error {
 	protected := map[string][]string{"kube-apiserver": ProtectedAPIServerFlags, "kubelet": ProtectedKubeletFlags}
 	for _, component := range slices.Sorted(maps.Keys(c.ExtraArgs)) {
 		flags := c.ExtraArgs[component]
 		for _, name := range slices.Sorted(maps.Keys(flags)) {
-			if strings.HasPrefix(name, "-") {
-				return fmt.Errorf("extraArgs: %s flag %q: give the name without the leading dashes", component, name)
+			if !flagNamePattern.MatchString(name) {
+				return fmt.Errorf("extraArgs: %s flag %q: a flag's name is letters, digits, _, . and -, without the leading dashes", component, name)
 			}
 			if !slices.Contains(protected[component], flagName(name)) {
 				continue

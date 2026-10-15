@@ -97,16 +97,16 @@ requests only to `/livez`, `/readyz` and `/healthz`, has bootstrap-token authent
 encrypts Secrets in etcd with the cluster's encryption key. The controller-manager runs without the
 bootstrap-signer and token-cleaner controllers, since nothing uses bootstrap tokens.
 [`chalkos.cluster.kubernetes.extraArgs`](../reference/options.md#chalkosclusterkubernetesextraargskube-apiserver)
-adds or overrides flags per component, named without their leading dashes, except the API
-server's `anonymous-auth`, `authentication-config`, `authorization-mode` and
-`enable-bootstrap-token-auth`, which decide who may do what, and the kubelet's `anonymous-auth`,
-`authentication-token-webhook`, `authorization-mode`, `bootstrap-kubeconfig`, `cert-dir`,
-`client-ca-file`, `config`, `config-dir`, `hostname-override`, `kubeconfig`, `node-ip`,
-`node-labels`, `pod-manifest-path`, `read-only-port`, `register-with-taints`,
-`rotate-certificates`, `tls-cert-file` and `tls-private-key-file`, which set where it finds its
-configuration, credentials and static pods, the node's name, addresses, labels and taints, and who
-may use its API. These flags are refused, also spelt with `_` for `-`, which the components accept.
-A node's labels and taints come from
+adds or overrides flags per component, named without their leading dashes with letters, digits,
+`_`, `.` and `-`, except the API server's `anonymous-auth`, `authentication-config`,
+`authorization-mode` and `enable-bootstrap-token-auth`, which decide who may do what, and the
+kubelet's `anonymous-auth`, `authentication-token-webhook`, `authorization-mode`,
+`bootstrap-kubeconfig`, `cert-dir`, `client-ca-file`, `config`, `config-dir`, `hostname-override`,
+`kubeconfig`, `node-ip`, `node-labels`, `pod-manifest-path`, `read-only-port`,
+`register-with-taints`, `rotate-certificates`, `tls-cert-file` and `tls-private-key-file`, which set
+where it finds its configuration, credentials and static pods, the node's name, addresses, labels
+and taints, and who may use its API. These flags are refused, also spelt with `_` for `-`, which the
+components accept. A node's labels and taints come from
 [`chalkos.nodes.<name>.labels`](../reference/options.md#chalkosnodeslabels) and `taints`.
 
 ## How does a cluster start?

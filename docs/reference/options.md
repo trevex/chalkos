@@ -155,7 +155,7 @@ string
 
 
 
-Extra flags of etcd, without the leading dashes; they override chalkos’s own\.
+Extra flags of etcd, named without the leading dashes with letters, digits, ` _ `, ` . ` and ` - `; they override chalkos’s own\.
 
 
 
@@ -179,7 +179,7 @@ attribute set of string
 
 
 
-Extra flags of kube-apiserver, without the leading dashes; they override chalkos’s own\.
+Extra flags of kube-apiserver, named without the leading dashes with letters, digits, ` _ `, ` . ` and ` - `; they override chalkos’s own\.
 
 
 
@@ -203,7 +203,7 @@ attribute set of string
 
 
 
-Extra flags of kube-controller-manager, without the leading dashes; they override chalkos’s own\.
+Extra flags of kube-controller-manager, named without the leading dashes with letters, digits, ` _ `, ` . ` and ` - `; they override chalkos’s own\.
 
 
 
@@ -227,7 +227,7 @@ attribute set of string
 
 
 
-Extra flags of kube-scheduler, without the leading dashes; they override chalkos’s own\.
+Extra flags of kube-scheduler, named without the leading dashes with letters, digits, ` _ `, ` . ` and ` - `; they override chalkos’s own\.
 
 
 
@@ -251,7 +251,7 @@ attribute set of string
 
 
 
-Extra flags of the kubelet, without the leading dashes; they override chalkos’s own\. The node’s labels and taints come from ` chalkos.nodes.<name>.labels ` and ` taints `\.
+Extra flags of the kubelet, named without the leading dashes with letters, digits, ` _ `, ` . ` and ` - `; they override chalkos’s own\. The node’s labels and taints come from ` chalkos.nodes.<name>.labels ` and ` taints `\.
 
 
 
