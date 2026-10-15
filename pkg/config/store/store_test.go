@@ -122,25 +122,6 @@ func TestReadWithoutSet(t *testing.T) {
 	}
 }
 
-func TestRemove(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "config")
-	if err := Write(dir, Stored{Documents: parse(t, set), Version: "v1"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := Remove(dir); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
-		t.Errorf("the set remains: %v", err)
-	}
-	if l := leftovers(t, dir); len(l) != 0 {
-		t.Errorf("left %v", l)
-	}
-	if err := Remove(dir); err != nil {
-		t.Errorf("removing no set: %v", err)
-	}
-}
-
 func TestWriteRefusesANameThatIsNoFileName(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "config")
 	d := config.FromObject(map[string]any{"apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "metadata": map[string]any{"name": "../escape"}})
@@ -179,56 +160,6 @@ func TestReadIgnoresAnInterruptedWrite(t *testing.T) {
 	}
 }
 
-func TestRemoveTakesAnInterruptedWrite(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "config")
-	if err := Write(dir, Stored{Documents: parse(t, set), Version: "v1"}); err != nil {
-		t.Fatal(err)
-	}
-	interrupted(t, dir)
-	if err := Remove(dir); err != nil {
-		t.Fatal(err)
-	}
-	if l := leftovers(t, dir); len(l) != 0 {
-		t.Errorf("left %v", l)
-	}
-}
-
-// TestRemoveWithoutASetTakesAnInterruptedWrite: a write interrupted before its link was renamed
-// into place leaves a directory and no set.
-func TestRemoveWithoutASetTakesAnInterruptedWrite(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "config")
-	interrupted(t, dir)
-	if err := Remove(dir); err != nil {
-		t.Fatal(err)
-	}
-	if l := leftovers(t, dir); len(l) != 0 {
-		t.Errorf("left %v", l)
-	}
-}
-
-func TestRemoveRefusesALinkItDidNotWrite(t *testing.T) {
-	parent := t.TempDir()
-	dir := filepath.Join(parent, "config")
-	other := filepath.Join(parent, "other")
-	if err := os.Mkdir(other, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, target := range []string{"other", other} {
-		if err := os.Symlink(target, dir); err != nil {
-			t.Fatal(err)
-		}
-		if err := Remove(dir); err == nil {
-			t.Errorf("removed a link to %s", target)
-		}
-		if _, err := os.Stat(other); err != nil {
-			t.Errorf("removed %s: %v", other, err)
-		}
-		if err := os.Remove(dir); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 func TestRefusesADirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "config")
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -237,9 +168,6 @@ func TestRefusesADirectory(t *testing.T) {
 	want := dir + " is a directory, not a config link"
 	if err := Write(dir, Stored{Documents: parse(t, set), Version: "v1"}); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("write: %v", err)
-	}
-	if err := Remove(dir); err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("remove: %v", err)
 	}
 	if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
 		t.Errorf("the directory changed: %v", err)

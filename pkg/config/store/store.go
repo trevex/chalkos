@@ -88,33 +88,6 @@ func Version(dir string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// Remove removes the set kept in dir: the link first, so the whole set is gone at once, then the
-// directory it named and any an interrupted write left. It refuses a link to anything but a
-// directory the store writes next to dir, so it never removes a directory it did not write.
-func Remove(dir string) error {
-	if err := checkLink(dir); err != nil {
-		return err
-	}
-	target, err := os.Readlink(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		// A write interrupted before it renamed its link into place leaves its directory alone.
-		return removeStale(dir, "")
-	}
-	if err != nil {
-		return err
-	}
-	if target != filepath.Base(target) || !strings.HasPrefix(target, "."+filepath.Base(dir)+"-") {
-		return fmt.Errorf("%s links to %s, not to a config set kept next to it", dir, target)
-	}
-	if err := os.Remove(dir); err != nil {
-		return err
-	}
-	if err := syncDir(filepath.Dir(dir)); err != nil {
-		return err
-	}
-	return removeStale(dir, "")
-}
-
 // replace fills a new directory next to dir and makes dir, a symbolic link, name it, then removes
 // the directory dir named before and any an interrupted replace left. Renaming a link over
 // another is atomic where renaming a directory over a non-empty one is impossible, so a reader
