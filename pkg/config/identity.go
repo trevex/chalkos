@@ -17,8 +17,8 @@ type Target struct {
 	// Role and Platform are the image's, as its os-release names them.
 	Role     string
 	Platform string
-	// Kubernetes is the image's /etc/chalkos/kubernetes/cluster.json; nil on an image without
-	// Kubernetes.
+	// Kubernetes is the image's /etc/chalkos/kubernetes/cluster.json, which names the kind of
+	// node the image is built for and its facts; nil on an image without Kubernetes.
 	Kubernetes *kubernetes.Cluster
 }
 
@@ -84,7 +84,15 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 		}
 	}
 	if t.Kubernetes != nil {
-		if err := s.kubelet(&id, nodeDoc.Name, *t.Kubernetes); err != nil {
+		// The node's addresses follow the families of the Kubernetes document. A set without one
+		// is translated with the image's, and refused where its cluster is built.
+		c := *t.Kubernetes
+		if _, ok := s.One("Kubernetes"); ok {
+			if c, err = s.Cluster(t.Kubernetes.Image()); err != nil {
+				return manifest.Identity{}, err
+			}
+		}
+		if err := s.kubelet(&id, nodeDoc.Name, c); err != nil {
 			return manifest.Identity{}, err
 		}
 	}

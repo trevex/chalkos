@@ -2,6 +2,8 @@
 // the image they are meant for, and translates them into the node's identity.
 package config
 
+import "github.com/trevex/chalkos/pkg/kubernetes"
+
 // API versions and kinds chalkos declares itself.
 const (
 	CoreAPI       = "chalkos.dev/v1alpha1"
@@ -68,6 +70,7 @@ type timeSyncSpec struct {
 		NTS  bool   `json:"nts"`
 		Port *int   `json:"port"`
 	} `json:"servers"`
+	DHCP bool `json:"dhcp"`
 }
 
 type kubeletSpec struct {
@@ -79,4 +82,40 @@ type kubeletSpec struct {
 	} `json:"taints"`
 	NodeIPs      []string `json:"nodeIPs"`
 	ValidSubnets []string `json:"validSubnets"`
+}
+
+type clusterSpec struct {
+	Endpoint *string `json:"endpoint"`
+}
+
+type kubernetesSpec struct {
+	Domain                         string                       `json:"domain"`
+	AllowSchedulingOnControlPlanes bool                         `json:"allowSchedulingOnControlPlanes"`
+	IPFamilies                     []string                     `json:"ipFamilies"`
+	PodCIDRs                       kubernetes.ByFamily[string]  `json:"podCIDRs"`
+	ServiceCIDRs                   kubernetes.ByFamily[string]  `json:"serviceCIDRs"`
+	DNSIPs                         kubernetes.ByFamily[*string] `json:"dnsIPs"`
+	NodeCIDRMaskSizes              kubernetes.ByFamily[int]     `json:"nodeCIDRMaskSizes"`
+	NodeIP                         kubernetes.NodeIP            `json:"nodeIP"`
+	VXLANSourceSubnets             []string                     `json:"vxlanSourceSubnets"`
+	VIP                            struct {
+		Addresses []string `json:"addresses"`
+		Mode      string   `json:"mode"`
+		Interface *string  `json:"interface"`
+	} `json:"vip"`
+	ExtraArgs map[string]map[string]string `json:"extraArgs"`
+}
+
+type flannelSpec struct {
+	MTU *int `json:"mtu"`
+}
+
+type registryMirrorSpec struct {
+	Registry       string   `json:"registry"`
+	Mirrors        []string `json:"mirrors"`
+	AllowPlainHTTP bool     `json:"allowPlainHTTP"`
+}
+
+type manifestSpec struct {
+	Objects []map[string]any `json:"objects"`
 }
