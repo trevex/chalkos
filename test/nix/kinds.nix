@@ -86,6 +86,20 @@ let
         }
       ];
     }).roles.worker.nixos.metal.config;
+  # The installer of a one-role cluster.
+  installer =
+    (mkCluster {
+      modules = [
+        {
+          chalkos.cluster = {
+            name = "t";
+            endpoint = "https://10.0.0.1:6443";
+          };
+          chalkos.roles.worker = { };
+        }
+      ];
+    }).installer.nixos.config;
+  hasChalkcfg = packages: lib.any (p: lib.getName p == "chalkcfg") packages;
   kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
   builtinFixture =
     file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));
@@ -517,6 +531,19 @@ lib.runTests {
   testKindConsumerLoadsItsSecrets = {
     expr = withKindConsumer.systemd.services.bird.serviceConfig.LoadCredential;
     expected = [ "secret:/run/chalkos/credentials/bird" ];
+  };
+  # A shell on a node queries the config with chalkcfg; the installer has no config to query.
+  testRoleImageHasChalkcfg = {
+    expr = hasChalkcfg (image [ ]).environment.systemPackages;
+    expected = true;
+  };
+  testInstallerHasNoChalkcfg = {
+    expr = hasChalkcfg installer.environment.systemPackages;
+    expected = false;
+  };
+  testKindConsumerHasChalkcfgOnPath = {
+    expr = hasChalkcfg withKindConsumer.systemd.services.bird.path;
+    expected = true;
   };
   testKindConsumerRecordedForChalkd = {
     expr = (consumersOf withKindConsumer).bird;

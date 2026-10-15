@@ -72,6 +72,7 @@ in
 
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
   chalkd = pkgs.callPackage ./chalkd.nix { };
+  chalkcfg = pkgs.callPackage ./chalkcfg.nix { };
 
   test-image = testing.cluster.roles.test.images.metal;
   # The repart definitions of the test role's system region, which its image ships.

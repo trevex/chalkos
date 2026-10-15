@@ -1,8 +1,15 @@
 # Runtime access to config: units declare the config kinds they read. chalkd writes the node's
 # documents of those kinds below /run/chalkos/config, the values their secretRef fields name into
-# the unit's credentials, and restarts the unit when one of its kinds changes.
-{ config, lib, ... }:
+# the unit's credentials, and restarts the unit when one of its kinds changes. chalkcfg prints the
+# documents, on the system path of role images and on the PATH of every consumer.
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
+  chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
   consumers = config.chalkos.consumers;
   consumer = lib.types.submodule {
     options = {
@@ -79,7 +86,11 @@ in
     # the directory, empty or not, for every consumer.
     systemd.services = lib.mapAttrs (unit: _: {
       serviceConfig.LoadCredential = [ "secret:/run/chalkos/credentials/${unit}" ];
+      path = [ chalkcfg ];
     }) checkedConsumers;
+
+    # The installer belongs to no role and never has config to query.
+    environment.systemPackages = lib.mkIf (config.chalkos.role.name != null) [ chalkcfg ];
 
     environment.etc."chalkos/consumers.json".text = builtins.toJSON (
       lib.mapAttrs (_: c: { inherit (c) kinds restartOnChange; }) checkedConsumers
