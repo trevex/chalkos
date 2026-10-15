@@ -737,7 +737,21 @@ in
       };
       kube-controller-manager = flagsOf "kube-controller-manager";
       kube-scheduler = flagsOf "kube-scheduler";
-      kubelet = flagsOf "the kubelet";
+      kubelet = flagsOf "the kubelet" // {
+        # The flags reach the kubelet through an environment variable that ExecStart splits at
+        # whitespace, read from an environment file that drops backslashes.
+        apply =
+          flags:
+          let
+            bad = lib.filter (
+              name: name == "" || builtins.match "[^[:space:]\\\\]*" (name + flags.${name}) == null
+            ) (lib.attrNames flags);
+          in
+          if bad == [ ] then
+            flags
+          else
+            throw "chalkos.cluster.kubernetes.extraArgs.kubelet: ${lib.concatStringsSep ", " bad} cannot hold whitespace or backslashes";
+      };
     };
     images = {
       etcd = mkOption {

@@ -3458,6 +3458,46 @@ lib.runTests {
       other = false;
     };
   };
+  # The kubelet's flags reach it through an environment variable that ExecStart splits at
+  # whitespace, read from an environment file that drops backslashes.
+  testKubeletExtraArgsRefuseWhitespaceAndBackslashes = {
+    expr =
+      let
+        clusterFile =
+          flags:
+          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ]))
+          .environment.etc."chalkos/kubernetes/cluster.json".text;
+      in
+      {
+        space = fails (clusterFile {
+          node-labels = "a=b c=d";
+        });
+        tab = fails (clusterFile {
+          v = "2\t";
+        });
+        newline = fails (clusterFile {
+          v = "2\nX=1";
+        });
+        backslash = fails (clusterFile {
+          node-labels = "a=b\\c";
+        });
+        nameWithSpace = fails (clusterFile {
+          "v 2" = "2";
+        });
+        other = fails (clusterFile {
+          v = "2";
+          node-labels = "a=b,c=d";
+        });
+      };
+    expected = {
+      space = true;
+      tab = true;
+      newline = true;
+      backslash = true;
+      nameWithSpace = true;
+      other = false;
+    };
+  };
   # VXLAN is accepted only to the addresses chalkd picks: its preparation fills a table of its own
   # that marks such packets, and the firewall accepts the mark. The firewall runs on nftables and
   # its reloads replace its own table only.

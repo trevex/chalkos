@@ -46,11 +46,23 @@ func ParseImage(data []byte) (Image, error) {
 	return img, img.Validate()
 }
 
-// Validate checks that the image names a release, and a flannel image exactly when flannel is
-// its pod network.
+// Validate checks that the image names a release, the images of the control plane, kube-proxy
+// and CoreDNS, and a flannel image exactly when flannel is its pod network.
 func (img Image) Validate() error {
 	if img.Version == "" {
 		return errors.New("no Kubernetes version")
+	}
+	for _, i := range []struct{ name, ref string }{
+		{"etcd", img.Images.Etcd},
+		{"kubeAPIServer", img.Images.KubeAPIServer},
+		{"kubeControllerManager", img.Images.KubeControllerManager},
+		{"kubeScheduler", img.Images.KubeScheduler},
+		{"kubeProxy", img.Images.KubeProxy},
+		{"coredns", img.Images.CoreDNS},
+	} {
+		if i.ref == "" {
+			return fmt.Errorf("no %s image", i.name)
+		}
 	}
 	switch img.CNI {
 	case CNIFlannel:

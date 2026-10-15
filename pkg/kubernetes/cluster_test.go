@@ -152,12 +152,17 @@ func TestClusterValidate(t *testing.T) {
 			c.IPFamilies = []string{"ipv4", "ipv6"}
 			c.Flannel = &Flannel{MTU: 1329}
 		},
-		// The kubelet's flags travel in an environment file, split at whitespace.
+		// The kubelet's flags reach it through an environment variable that ExecStart splits at
+		// whitespace.
 		"kubelet flag with a space": func(c *Cluster) {
 			c.ExtraArgs = map[string]map[string]string{"kubelet": {"node-labels": "a=b c=d"}}
 		},
 		"kubelet flag with a newline": func(c *Cluster) {
 			c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2\nX=1"}}
+		},
+		// systemd's environment files drop backslashes.
+		"kubelet flag with a backslash": func(c *Cluster) {
+			c.ExtraArgs = map[string]map[string]string{"kubelet": {"node-labels": `a=b\c`}}
 		},
 		// These flags decide who may do what; chalkos sets them.
 		"authorization-mode": func(c *Cluster) {

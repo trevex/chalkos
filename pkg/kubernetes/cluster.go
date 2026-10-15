@@ -215,13 +215,14 @@ func (c Cluster) Validate() error {
 	return nil
 }
 
-// validateKubeletFlags refuses kubelet flags holding whitespace: they reach the kubelet through
-// KUBELET_ARGS in an environment file, which splits them there.
+// validateKubeletFlags refuses kubelet flags holding whitespace or backslashes: they reach the
+// kubelet through KUBELET_ARGS, which systemd reads from an environment file, dropping
+// backslashes, and ExecStart splits at whitespace where it expands the unbraced variable.
 func (c Cluster) validateKubeletFlags() error {
 	flags := c.ExtraArgs["kubelet"]
 	for _, name := range slices.Sorted(maps.Keys(flags)) {
-		if name == "" || strings.ContainsAny(name+flags[name], " \t\r\n") {
-			return fmt.Errorf("extraArgs: kubelet --%s=%q: the kubelet's flags cannot hold whitespace", name, flags[name])
+		if name == "" || strings.ContainsAny(name+flags[name], " \t\r\n\\") {
+			return fmt.Errorf("extraArgs: kubelet --%s=%q: the kubelet's flags cannot hold whitespace or backslashes", name, flags[name])
 		}
 	}
 	return nil
