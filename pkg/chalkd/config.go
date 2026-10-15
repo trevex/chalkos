@@ -126,7 +126,7 @@ func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *sc
 	var pending []string
 	var errs []error
 	for _, unit := range units {
-		if _, err := s.Run.Run(ctx, "systemctl", "try-restart", unit); err != nil {
+		if err := s.restartConsumer(ctx, unit); err != nil {
 			pending = append(pending, unit)
 			errs = append(errs, fmt.Errorf("restart %s: %w", unit, err))
 		}
@@ -135,6 +135,25 @@ func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *sc
 		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), restartByHand(pending))
 	}
 	return units, nil
+}
+
+// restartConsumer restarts a unit that reads the config if it runs, or ran and stays active. A
+// unit that failed, such as one that found no document of its kind at boot, is started again
+// too: the new config may be what it lacked, and try-restart leaves a failed unit alone. A unit
+// that never started, or was stopped, stays so.
+func (s *Server) restartConsumer(ctx context.Context, unit string) error {
+	out, err := s.Run.Run(ctx, "systemctl", "show", "--property=ActiveState", "--value", unit)
+	if err != nil || strings.TrimSpace(string(out)) != "failed" {
+		_, err := s.Run.Run(ctx, "systemctl", "try-restart", unit)
+		return err
+	}
+	// The failures that put it in its state count against its start limit, which would refuse
+	// the restart.
+	if _, err := s.Run.Run(ctx, "systemctl", "reset-failed", unit); err != nil {
+		return err
+	}
+	_, err = s.Run.Run(ctx, "systemctl", "restart", unit)
+	return err
 }
 
 // restartByHand tells the operator which units read a config they have not loaded yet.

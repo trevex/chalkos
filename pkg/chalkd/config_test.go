@@ -176,7 +176,7 @@ func TestApplyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"networkctl reload", "systemctl try-restart demo"}; !slices.Equal(r.calls, want) {
+	if want := []string{"networkctl reload", "systemctl show --property=ActiveState --value demo", "systemctl try-restart demo"}; !slices.Equal(r.calls, want) {
 		t.Errorf("commands = %v, want %v", r.calls, want)
 	}
 	if !slices.Equal(resp.RestartedUnits, []string{"demo"}) || len(resp.Changes) != 0 {
@@ -287,6 +287,34 @@ func TestApplyConfigRefusesAMalformedClusterFile(t *testing.T) {
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v", r.calls)
+	}
+}
+
+// TestApplyConfigStartsFailedConsumers: a consumer that failed, such as one that found no
+// document of its kind at boot, is started again with the new config, which try-restart would not
+// do. One that is active or inactive is try-restarted, so a stopped unit stays stopped.
+func TestApplyConfigStartsFailedConsumers(t *testing.T) {
+	for state, want := range map[string][]string{
+		"failed":   {"systemctl reset-failed demo", "systemctl restart demo"},
+		"active":   {"systemctl try-restart demo"},
+		"inactive": {"systemctl try-restart demo"},
+	} {
+		t.Run(state, func(t *testing.T) {
+			s, r := configServer(t)
+			r.rules = append(r.rules, rule{prefix: "systemctl show --property=ActiveState --value demo", out: state + "\n"})
+			if _, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1)); err != nil {
+				t.Fatal(err)
+			}
+			var restarts []string
+			for _, c := range r.calls {
+				if strings.HasPrefix(c, "systemctl ") && !strings.HasPrefix(c, "systemctl show ") {
+					restarts = append(restarts, c)
+				}
+			}
+			if !slices.Equal(restarts, want) {
+				t.Errorf("commands = %v, want %v", restarts, want)
+			}
+		})
 	}
 }
 
