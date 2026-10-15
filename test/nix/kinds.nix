@@ -102,7 +102,7 @@ let
     }).installer.nixos.config;
   hasChalkcfg = packages: lib.any (p: lib.getName p == "chalkcfg") packages;
   # The options of the Peering kind: a nested group, a nullOr submodule, a list of submodules,
-  # an attribute set and a secretRef.
+  # attribute sets of submodules and of strings, and a secretRef.
   peeringSpec = secretRef: {
     asn = mkOption { type = types.ints.u32; };
     peer.address = mkOption { type = types.str; };
@@ -120,6 +120,10 @@ let
     neighbours = mkOption {
       type = types.listOf (types.submodule { options.address = mkOption { type = types.str; }; });
       default = [ ];
+    };
+    pools = mkOption {
+      type = types.attrsOf (types.submodule { options.cidr = mkOption { type = types.str; }; });
+      default = { };
     };
     labels = mkOption {
       type = types.attrsOf types.str;
@@ -699,9 +703,35 @@ lib.runTests {
     expr = resolvePeering "spec.labels.zone";
     expected.jsonpath = "{.spec.labels.zone}";
   };
+  # client-go's jsonpath takes [*] for lists only; .* takes every value of an object.
   testGetAttrsOfAll = {
     expr = resolvePeering "spec.labels.*";
-    expected.jsonpath = "{.spec.labels[*]}";
+    expected.jsonpath = "{.spec.labels.*}";
+  };
+  testGetAttrsOfSubmoduleAll = {
+    expr = (getPeering { path = "spec.pools.*.cidr"; }).args;
+    expected = "get Peering -o 'jsonpath={.spec.pools.*.cidr}'";
+  };
+  testGetAttrsOfKeyWithSlashColonAndDigits = {
+    expr = map resolvePeering [
+      "spec.labels.zone/a"
+      "spec.labels.a:b"
+      "spec.labels.0"
+    ];
+    expected = [
+      { jsonpath = "{.spec.labels['zone/a']}"; }
+      { jsonpath = "{.spec.labels['a:b']}"; }
+      { jsonpath = "{.spec.labels['0']}"; }
+    ];
+  };
+  # client-go's jsonpath does not quote within ['…'], so it misreads keys with these characters.
+  testGetKeyWithSpaceFails = {
+    expr = resolvePeering "spec.labels.a b";
+    expected.error = "the key a b cannot be addressed by a jsonpath; use output with a go-template";
+  };
+  testGetKeyWithAtFails = {
+    expr = resolvePeering "spec.labels.a@b";
+    expected.error = "the key a@b cannot be addressed by a jsonpath; use output with a go-template";
   };
   testGetSecretRef = {
     expr = resolvePeering "spec.token.secretRef.name";
@@ -726,13 +756,40 @@ lib.runTests {
       }).args;
     expected = "get Peering uplink -o json";
   };
-  testGetQuotesTheName = {
-    expr = (getPeering { name = "a b"; }).args;
-    expected = "get Peering 'a b'";
+  # chalkcfg reads only names that follow metadata.name's pattern.
+  testGetDottedName = {
+    expr = (getPeering { name = "uplink.a-1"; }).args;
+    expected = "get Peering uplink.a-1";
+  };
+  testGetInvalidNameFails = {
+    expr =
+      map
+        (
+          name:
+          fails (getPeering {
+            inherit name;
+          })
+        )
+        [
+          "a b"
+          "Uplink"
+          "-a"
+          "a."
+          "../x"
+          ""
+        ];
+    expected = [
+      true
+      true
+      true
+      true
+      true
+      true
+    ];
   };
   testGetUnknownFieldListsFields = {
     expr = resolvePeering "spec.asnn";
-    expected.error = "spec has no field asnn; its fields are asn, labels, neighbours, peer, timers, token";
+    expected.error = "spec has no field asnn; its fields are asn, labels, neighbours, peer, pools, timers, token";
   };
   testGetUnknownTopField = {
     expr = resolvePeering "status";
@@ -752,7 +809,7 @@ lib.runTests {
   };
   testGetUnquotableKey = {
     expr = resolvePeering "spec.labels.it's";
-    expected.error = "jsonpath cannot name the field it's";
+    expected.error = "the key it's cannot be addressed by a jsonpath; use output with a go-template";
   };
   testGetInvalidPathFails = {
     expr = fails (getPeering {

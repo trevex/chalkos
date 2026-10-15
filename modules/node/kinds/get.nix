@@ -41,13 +41,30 @@ let
     };
   };
 
+  # Characters client-go's jsonpath misreads within ['…']: it has no quoting there, so it splits or
+  # rejects a name holding any of them. Other names, with a dash, slash, colon or leading digit,
+  # work.
+  unaddressable = [
+    "'"
+    "\\"
+    "@"
+    "$"
+    ","
+    "["
+    "]"
+    "{"
+    "}"
+  ];
+
   # A field in jsonpath: .name, or ['name'] for a name that is no identifier, such as a key with a
-  # dash. null for a name jsonpath cannot quote.
+  # dash. null for a name jsonpath cannot address.
   field =
     s:
     if builtins.match "[A-Za-z_][A-Za-z0-9_]*" s != null then
       ".${s}"
-    else if lib.hasInfix "'" s || lib.hasInfix "]" s || lib.hasInfix "\\" s then
+    else if
+      lib.any (c: lib.hasInfix c s) unaddressable || builtins.match ".*[[:space:]].*" s != null
+    then
       null
     else
       "['${s}']";
@@ -65,7 +82,7 @@ let
         below =
           next: fragment:
           if fragment == null then
-            { error = "jsonpath cannot name the field ${s}"; }
+            { error = "the key ${s} cannot be addressed by a jsonpath; use output with a go-template"; }
           else
             let
               rest = walk next here (lib.tail segments);
@@ -88,7 +105,8 @@ let
         else
           { error = "${where} is a list: follow it with * or an index such as 0, not ${s}"; }
       else if node ? attrs then
-        below node.attrs (if s == "*" then "[*]" else field s)
+        # [*] would fail on an object; .* takes its values, in no particular order.
+        below node.attrs (if s == "*" then ".*" else field s)
       else
         { error = "${where} holds a ${node.value} and has no fields"; };
 in
@@ -118,7 +136,9 @@ rec {
       fail = msg: throw "chalkos.kinds.${kind}.get: ${msg}";
       resolved = resolve spec path;
       format =
-        if path != null && output != null then
+        if name != null && builtins.match "[a-z0-9]([-a-z0-9.]*[a-z0-9])?" name == null then
+          fail "the name \"${name}\" is no document name: chalkcfg reads names that match ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$, as metadata.name does"
+        else if path != null && output != null then
           fail "give a path or an output, not both"
         else if path != null then
           if resolved ? error then

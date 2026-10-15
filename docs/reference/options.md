@@ -2932,14 +2932,24 @@ string *(read only)*
 
 
 Builds a shell command that prints the node’s documents of the kind with chalkcfg\.
-` name ` picks one document; without it the command prints every document of the kind,
-one line each\. ` path ` prints one field, such as ` spec.location `: fields separated by
-dots, ` * ` or an index for the elements of a list, and a key or ` * ` for the values of an
-attribute set\. The path must follow the kind’s options, or the evaluation fails and
-lists the fields where it went wrong\. ` output ` passes ` json `, ` yaml `,
-` jsonpath=<expression> ` or ` go-template=<template> ` instead of a path\. Run the command
-from a shell script, such as ` pkgs.writeShellScript `, since systemd expands ` $ ` and ` % `
-in ` ExecStart= ` itself\.
+` name ` picks one document, and must be a document name such as ` rack `; without it the
+command prints every document of the kind, one line each\. ` path ` prints one field, such
+as ` spec.location `: fields separated by dots, ` * ` or an index for the elements of a
+list, and a key or ` * ` for the values of an attribute set\. The path must follow the
+kind’s options, or the evaluation fails and lists the fields where it went wrong\.
+` output ` passes ` json `, ` yaml `, ` jsonpath=<expression> ` or ` go-template=<template> `
+instead of a path\. Run the command from a shell script, such as
+` pkgs.writeShellScript `, since systemd expands ` $ ` and ` % ` in ` ExecStart= ` itself\.
+
+A path is checked against the kind’s options, not against the documents\. Where a
+document’s value is null or missing, or its list is shorter than the index, the
+command exits with status 1; without ` name `, one such document fails the whole
+command\. ` * ` over an attribute set prints the values in no particular order; for a
+stable order, use an ` output ` such as
+` go-template={{range $k, $v := .spec.labels}}{{$k}}={{$v}} {{end}} `, which goes
+through the keys sorted\. A path cannot address a key that contains ` . `, whitespace or
+one of ` ' `, ` \ `, ` @ `, ` $ `, ` , `, ` [ `, ` ] `, ` { ` and ` } `; the evaluation fails on such a
+key, and a go-template ` output ` reads it instead\.
 
 
 

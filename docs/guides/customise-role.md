@@ -121,6 +121,13 @@ does not have, and the message lists the fields at that point:
 chalkos.kinds.Node.get: the path "spec.typ" does not follow the kind's options: spec has no field typ; its fields are hostname, imageRef, type
 ```
 
+The check covers the kind's options, not the documents. A document whose value at the path is
+null or missing, or whose list is shorter than the index, makes the command exit with status 1,
+and without `name` one such document fails the whole command. `*` over an attribute set prints
+its values in no particular order; a `go-template` output that ranges over the keys prints them
+sorted. A key that contains `.`, whitespace or one of `'`, `\`, `@`, `$`, `,`, `[`, `]`, `{` and
+`}` cannot be part of a path, and only a `go-template` output reads it.
+
 Run the command from a shell script, as `pkgs.writeShellScript` makes one, because systemd
 expands `$` and `%` in `ExecStart=` itself. A kind the image declares but the node has no
 document of gives empty output and exit status 0, so the unit also runs on nodes without one;
