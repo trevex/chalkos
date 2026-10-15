@@ -28,11 +28,20 @@ const (
 
 // Manifest describes a cluster: its API endpoint, the role images, and every node.
 type Manifest struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Cluster       Cluster         `json:"cluster"`
-	SecureBoot    SecureBoot      `json:"secureBoot"`
-	Roles         map[string]Role `json:"roles"`
-	Nodes         map[string]Node `json:"nodes"`
+	SchemaVersion int        `json:"schemaVersion"`
+	Cluster       Cluster    `json:"cluster"`
+	SecureBoot    SecureBoot `json:"secureBoot"`
+	// Kubernetes and Flannel are the specs of the Kubernetes and Flannel documents of every node
+	// with Kubernetes, as the cluster definition renders them; Flannel is null without flannel.
+	// They are carried as they are, and checked against an image's schemas once they are
+	// documents.
+	Kubernetes json.RawMessage   `json:"kubernetes"`
+	Flannel    json.RawMessage   `json:"flannel"`
+	Registries Registries        `json:"registries"`
+	Manifests  []json.RawMessage `json:"manifests"`
+	Time       ClusterTime       `json:"time"`
+	Roles      map[string]Role   `json:"roles"`
+	Nodes      map[string]Node   `json:"nodes"`
 }
 
 // Cluster identifies the cluster and its Kubernetes API server.
@@ -46,6 +55,23 @@ type SecureBoot struct {
 	// SignerCertificate is the PEM certificate of the db key that signs the images' UKIs; empty
 	// when the cluster definition names none.
 	SignerCertificate string `json:"signerCertificate"`
+}
+
+// Registries are the mirrors of container registries, by registry host.
+type Registries struct {
+	Mirrors        map[string][]string `json:"mirrors"`
+	AllowPlainHTTP bool                `json:"allowPlainHTTP"`
+}
+
+// ClusterTime is how every node keeps its clock beyond its servers.
+type ClusterTime struct {
+	// DHCPServers adds the time servers DHCP announces.
+	DHCPServers bool `json:"dhcpServers"`
+}
+
+// IsNull tells whether a raw section is absent or null.
+func IsNull(raw json.RawMessage) bool {
+	return len(raw) == 0 || string(raw) == "null"
 }
 
 // Role is a node role; all nodes of a role on a platform run the same image.

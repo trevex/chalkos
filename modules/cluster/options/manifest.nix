@@ -2,6 +2,7 @@
 { config, lib, ... }:
 let
   cfg = config.chalkos;
+  k = cfg.cluster.kubernetes;
   storage = import ../storage.nix { inherit lib; };
   strip = attrs: removeAttrs attrs [ "_module" ];
 
@@ -169,6 +170,27 @@ in
         null
       else
         builtins.readFile cfg.secureBoot.signerCertificate;
+    # The spec of every Kubernetes node's Kubernetes document, as the cluster's options give it,
+    # and of its Flannel document, null without flannel.
+    kubernetes = {
+      inherit (k)
+        domain
+        allowSchedulingOnControlPlanes
+        ipFamilies
+        podCIDRs
+        serviceCIDRs
+        dnsIPs
+        nodeCIDRMaskSizes
+        vxlanSourceSubnets
+        extraArgs
+        ;
+      nodeIP = { inherit (k.nodeIP) validSubnets timeout; };
+      vip = { inherit (k.vip) addresses mode interface; };
+    };
+    flannel = if cfg.cni.provider == "flannel" then { inherit (cfg.cni.flannel) mtu; } else null;
+    registries = { inherit (cfg.cluster.registries) mirrors allowPlainHTTP; };
+    inherit (cfg.cluster) manifests;
+    time = { inherit (cfg.time) dhcpServers; };
     # Relative to the cluster's attribute, which only the evaluating CLI knows; the flake may
     # expose the cluster under any name.
     roles = lib.mapAttrs (role: r: {

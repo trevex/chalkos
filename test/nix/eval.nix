@@ -798,6 +798,53 @@ lib.runTests {
     expr = (storageCluster [ ]).manifest.nodes.n1.documents;
     expected = [ ];
   };
+  # The cluster-wide settings chalkctl turns into each node's Kubernetes, Flannel, RegistryMirror,
+  # Manifest and TimeSync documents.
+  testManifestCarriesTheClusterSettings = {
+    expr =
+      let
+        m =
+          (cluster [
+            {
+              chalkos.cluster.kubernetes.vip.addresses = [ "10.0.0.1" ];
+              chalkos.cluster.registries.mirrors."docker.io" = [ "https://mirror.example" ];
+              chalkos.cluster.manifests = [
+                {
+                  apiVersion = "v1";
+                  kind = "Namespace";
+                  metadata.name = "apps";
+                }
+              ];
+              chalkos.cni.flannel.mtu = 1430;
+              chalkos.time.dhcpServers = true;
+            }
+          ]).manifest;
+      in
+      {
+        inherit (m.kubernetes) domain ipFamilies;
+        vip = m.kubernetes.vip.addresses;
+        dnsIP = m.kubernetes.dnsIPs.ipv4;
+        kubeletFlags = m.kubernetes.extraArgs.kubelet;
+        inherit (m) flannel registries time;
+        manifests = map (o: o.metadata.name) m.manifests;
+        noFlannel = (cluster [ { chalkos.cni.provider = "none"; } ]).manifest.flannel;
+      };
+    expected = {
+      domain = "cluster.local";
+      ipFamilies = [ "ipv4" ];
+      vip = [ "10.0.0.1" ];
+      dnsIP = "10.96.0.10";
+      kubeletFlags = { };
+      flannel.mtu = 1430;
+      registries = {
+        mirrors."docker.io" = [ "https://mirror.example" ];
+        allowPlainHTTP = false;
+      };
+      time.dhcpServers = true;
+      manifests = [ "apps" ];
+      noFlannel = null;
+    };
+  };
   testNetworkUnits = {
     expr =
       (networkCluster {

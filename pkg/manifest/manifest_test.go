@@ -199,3 +199,23 @@ func TestTimeServerNTSDefault(t *testing.T) {
 		t.Error("accepted an unknown field of a time server")
 	}
 }
+
+func TestDecodeClusterSettings(t *testing.T) {
+	m, err := Decode(strings.NewReader(`{"schemaVersion": 0, "cluster": {"name": "lab"},
+	  "kubernetes": {"domain": "lab.local"}, "flannel": null,
+	  "registries": {"mirrors": {"docker.io": ["https://m.example"]}, "allowPlainHTTP": false},
+	  "manifests": [{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "apps"}}],
+	  "time": {"dhcpServers": true}, "roles": {}, "nodes": {}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(m.Kubernetes) != `{"domain": "lab.local"}` || !IsNull(m.Flannel) || len(m.Manifests) != 1 ||
+		m.Registries.Mirrors["docker.io"][0] != "https://m.example" || !m.Time.DHCPServers {
+		t.Errorf("manifest = %+v", m)
+	}
+	// An older manifest has none of these.
+	m, err = Decode(strings.NewReader(`{"schemaVersion": 0, "cluster": {"name": "lab"}, "roles": {}, "nodes": {}}`))
+	if err != nil || !IsNull(m.Kubernetes) || !IsNull(m.Flannel) {
+		t.Fatalf("older manifest: %+v, %v", m, err)
+	}
+}
