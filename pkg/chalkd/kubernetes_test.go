@@ -1318,3 +1318,37 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
 	}
 }
+
+// Objects that fail to apply, such as a bad Manifest document's, leave the approver of kubelet
+// serving certificates running while the apply retries.
+func TestApproverRunsWhileObjectsFail(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
+	k := s.Kubernetes
+	var ready atomic.Bool
+	ready.Store(true)
+	cfg := readyServer(t, &ready)
+	c, err := k8s.ReadCluster(k.Paths.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approving := make(chan struct{})
+	k.Approve = func(ctx context.Context, _ *rest.Config) {
+		close(approving)
+		<-ctx.Done()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() {
+		served <- k.serveControlPlane(ctx, c, cfg, func(int) { t.Error("applied objects that fail") })
+	}()
+	select {
+	case <-approving:
+	case <-time.After(time.Minute):
+		t.Fatal("the approver did not start")
+	}
+	cancel()
+	if err := <-served; !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v", err)
+	}
+}

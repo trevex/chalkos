@@ -92,6 +92,9 @@ type Kubernetes struct {
 	ControlPlaneState func(ctx context.Context, c k8s.Cluster, share kpki.Share) string
 	// APIClient reaches the node's own API server with chalkd's credential. Tests replace it.
 	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
+	// Approve approves kubelet serving certificates with the API server at cfg until ctx ends; nil
+	// runs chalkd's approver. Tests replace it.
+	Approve func(ctx context.Context, cfg *rest.Config)
 	// RotationPoll is the time between two looks at what a rotation step waits for; zero means
 	// two seconds.
 	RotationPoll time.Duration
@@ -503,8 +506,9 @@ func (k *Kubernetes) setPinProblem(problem string) {
 	k.pinProblem = problem
 }
 
-// runControlPlane waits for the local API server, applies the manifests until that succeeds,
-// and then approves kubelet serving certificates. chalkd's credential exists only in memory.
+// runControlPlane waits for the local API server, then approves kubelet serving certificates and
+// applies the control plane's objects until that succeeds. chalkd's credential exists only in
+// memory.
 func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, applied func(n int)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -522,6 +526,23 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 	if err != nil {
 		return err
 	}
+	return k.serveControlPlane(ctx, c, cfg, applied)
+}
+
+// serveControlPlane approves kubelet serving certificates once the API server is ready and,
+// independently, applies the control plane's objects until that succeeds, so objects that fail,
+// such as a Manifest document's, leave kubelets their serving certificates. It runs until ctx
+// ends.
+func (k *Kubernetes) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.Config, applied func(n int)) error {
+	approve := k.Approve
+	if approve == nil {
+		approve = approveServing
+	}
+	go func() {
+		if kapply.WaitReady(ctx, cfg) == nil {
+			approve(ctx, cfg)
+		}
+	}()
 	for {
 		n, err := k.applyOnce(ctx, c, cfg)
 		if err == nil {
@@ -536,12 +557,18 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 		case <-time.After(10 * time.Second):
 		}
 	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// approveServing approves kubelet serving certificates until ctx ends.
+func approveServing(ctx context.Context, cfg *rest.Config) {
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		return err
+		log.Printf("kubernetes: approve kubelet serving certificates: %v", err)
+		return
 	}
 	(&kapply.Approver{Client: client}).Run(ctx, 10*time.Second)
-	return ctx.Err()
 }
 
 func (k *Kubernetes) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Config) (int, error) {

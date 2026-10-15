@@ -289,8 +289,8 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
 	var kubernetesUnits []string
+	act := keepLoops
 	if s.Kubernetes != nil {
-		var act loopAction
 		if kubernetesUnits, act, err = s.applyKubernetes(ctx, old, d.data, share, clusterChanged); err != nil {
 			return nil, err
 		}
@@ -299,10 +299,6 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		if act == keepLoops && manifestsChanged && cluster.Kind == k8s.KindControlPlane {
 			act = reloadLoops
 		}
-		// The loops read the control plane's objects from the stored config, so they start again
-		// once it is stored, and also when storing it failed, as the cluster or share they read
-		// is in place already.
-		defer s.Kubernetes.act(act)
 	}
 	// The config comes last: identity.json is on STATE once applyIdentity ran, so a retry after
 	// a failure here finds the identity unchanged and would not restart Kubernetes again. A
@@ -310,13 +306,19 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if !keep {
 		units, err := s.applyConfig(ctx, r.next, r.schemas)
 		if err != nil {
+			// The cluster or share the loops read is in place already.
+			s.actOnLoops(act)
 			return nil, err
 		}
 		restarted = append(restarted, units...)
 	}
 	restarted = append(restarted, kubernetesUnits...)
+	// The loops read the control plane's objects from the stored config, so they start again
+	// once it is stored.
+	s.actOnLoops(act)
 	// Deliveries without config, as a rotation's, renew nothing: forced renewals would
-	// restart the control plane's pods on top of the restarts the rotation waits for.
+	// restart the control plane's pods on top of the restarts the rotation waits for. They come
+	// after the loops started again, which would end a renewal under way.
 	if s.RenewOnApplyConfig && !keep {
 		s.forceRenewals()
 	}
@@ -988,4 +990,11 @@ func (s *Server) onlyNodeCAChanges(delivered []byte) bool {
 	a, errA := current.Encode()
 	b, errB := next.Encode()
 	return errA == nil && errB == nil && bytes.Equal(a, b)
+}
+
+// actOnLoops does what a delivery asks of the Kubernetes loops, on a node with Kubernetes.
+func (s *Server) actOnLoops(a loopAction) {
+	if s.Kubernetes != nil {
+		s.Kubernetes.act(a)
+	}
 }
