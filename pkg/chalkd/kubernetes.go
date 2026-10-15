@@ -362,8 +362,9 @@ func (k *Kubernetes) Restart() {
 	k.Start()
 }
 
-// Reload makes a running control-plane loop start again with the share STATE holds now, or
-// starts the loop when the node is a bootstrapped control plane.
+// Reload makes a running control-plane loop start again with the share and the config STATE
+// holds now, which applies the control plane's objects again, or starts the loop when the node
+// is a bootstrapped control plane.
 func (k *Kubernetes) Reload() {
 	k.mu.Lock()
 	started, reload := k.started, k.reload
@@ -410,7 +411,7 @@ func (k *Kubernetes) superviseControlPlane(ctx context.Context, applied func(n i
 			return
 		}
 		if reloaded {
-			log.Print("kubernetes: the node's share changed; starting the control plane's loop again")
+			log.Print("kubernetes: the node's share or config changed; starting the control plane's loop again")
 			backoff = first
 			continue
 		}

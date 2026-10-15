@@ -98,7 +98,11 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	}
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
-	kubernetesImage(t, s, "worker", s.Kubernetes.Paths.Cluster)
+	// The image's cluster file and the one chalkd writes from the node's config are apart, as
+	// on a node.
+	kubernetesImage(t, s, "worker", filepath.Join(root, "image-cluster.json"))
+	s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
+	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))
 	return s, r
 }
 

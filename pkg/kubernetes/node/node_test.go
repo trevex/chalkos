@@ -1247,7 +1247,10 @@ func TestPrepareWritesTheKubeletConfig(t *testing.T) {
 			} `json:"x509"`
 		} `json:"authentication"`
 	}
-	data, _ := os.ReadFile(p.KubeletConfig())
+	data, err := os.ReadFile(p.KubeletConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}

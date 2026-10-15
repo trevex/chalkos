@@ -1232,3 +1232,89 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 		t.Errorf("events = %v", got)
 	}
 }
+
+// Without a stored cluster there is nothing to compare with: the image's own cluster file agrees
+// with the config in the image's facts alone.
+func TestApplyConfigFirstClusterIsNotCompared(t *testing.T) {
+	s, _ := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, withKubernetesSpec("{podCIDRs: {ipv4: 10.245.0.0/16}}")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Ranges and addresses compare as what they denote, not as they are spelt.
+func TestApplyConfigComparesRangesCanonically(t *testing.T) {
+	s, _ := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, withKubernetesSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:96::/108"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sendConfig(s, withKubernetesSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:96:0::/108"}, dnsIPs: {ipv6: "fd00:10:96:0::a"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := sendConfig(s, withKubernetesSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:97::/108"}}`))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "serviceCIDRs") {
+		t.Errorf("another range: err = %v", err)
+	}
+}
+
+// A control plane applies the objects of changed Manifest documents at once, without restarting
+// a unit, from the config stored by then.
+func TestApplyConfigAppliesChangedManifests(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindControlPlane)
+	k := s.Kubernetes
+	p := k.Paths
+	ips, err := knode.ReadNodeIPs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := knode.WritePin(p, ips); err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Bootstrapped(), "")
+	k.Config = s.Identity.Config
+	k.Objects = k.objects
+	applied := make(chan string, 10)
+	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+		c, err := k8s.ReadCluster(p.Cluster)
+		if err != nil {
+			return err
+		}
+		objects, err := k.Objects(c)
+		if err != nil {
+			return err
+		}
+		last, _ := objects[len(objects)-1]["metadata"].(map[string]any)
+		applied <- fmt.Sprint(last["name"])
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	config := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
+	if _, err := sendConfig(s, config); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-applied; got != "kube-dns" {
+		t.Errorf("applied up to %s, want chalkos's addons alone", got)
+	}
+
+	r.calls = nil
+	resp, err := sendConfig(s, config+`---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Manifest
+metadata: {name: apps}
+spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-applied:
+		if got != "apps" {
+			t.Errorf("applied up to %s, want the Manifest's namespace", got)
+		}
+	case <-time.After(time.Minute):
+		t.Fatal("the changed Manifest documents were not applied")
+	}
+	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.calls, func(c string) bool { return strings.HasPrefix(c, "systemctl restart") }) {
+		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	}
+}

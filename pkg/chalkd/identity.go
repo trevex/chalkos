@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,6 +21,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
@@ -198,7 +200,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	// the stored config's; nil on an image without Kubernetes or without new config. The stored
 	// set is replaced last, so a retry after a failed restart still finds the cluster changed.
 	var cluster *k8s.Cluster
-	clusterChanged := false
+	clusterChanged, manifestsChanged := false, false
 	if !keep {
 		if err := s.checkClusterOf(d.cluster); err != nil {
 			return nil, err
@@ -208,8 +210,8 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
 			}
 			if cluster != nil {
-				prev, err := s.storedCluster()
-				if err != nil {
+				var prev *k8s.Cluster
+				if prev, manifestsChanged, err = s.storedKubernetes(r.next.Documents); err != nil {
 					return nil, err
 				}
 				if err := s.checkFixed(prev, cluster); err != nil {
@@ -288,9 +290,19 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	}
 	var kubernetesUnits []string
 	if s.Kubernetes != nil {
-		if kubernetesUnits, err = s.applyKubernetes(ctx, old, d.data, share, clusterChanged); err != nil {
+		var act loopAction
+		if kubernetesUnits, act, err = s.applyKubernetes(ctx, old, d.data, share, clusterChanged); err != nil {
 			return nil, err
 		}
+		// A control plane applies the objects of changed Manifest documents at once, as its loop
+		// does whenever it starts.
+		if act == keepLoops && manifestsChanged && cluster.Kind == k8s.KindControlPlane {
+			act = reloadLoops
+		}
+		// The loops read the control plane's objects from the stored config, so they start again
+		// once it is stored, and also when storing it failed, as the cluster or share they read
+		// is in place already.
+		defer s.Kubernetes.act(act)
 	}
 	// The config comes last: identity.json is on STATE once applyIdentity ran, so a retry after
 	// a failure here finds the identity unchanged and would not restart Kubernetes again. A
@@ -591,27 +603,50 @@ func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]byte, error)
 	return old, nil
 }
 
+// loopAction is what a delivery asks of the Kubernetes loops once it is stored.
+type loopAction int
+
+const (
+	keepLoops loopAction = iota
+	// reloadLoops starts the control plane's loop again, which applies the control plane's
+	// objects and reads the share.
+	reloadLoops
+	// restartLoops starts every loop again, which reads the cluster.
+	restartLoops
+)
+
+// act does what a delivery asks of the loops.
+func (k *Kubernetes) act(a loopAction) {
+	switch a {
+	case restartLoops:
+		k.Restart()
+	case reloadLoops:
+		k.Reload()
+	}
+}
+
 // applyKubernetes records a delivered share and, when it, the node's Kubernetes identity or its
-// cluster changed, prepares the node's Kubernetes files again and restarts what reads them; a
-// changed cluster starts the Kubernetes loops again too. It returns the restarted units.
-func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, clusterChanged bool) ([]string, error) {
+// cluster changed, prepares the node's Kubernetes files again and restarts what reads them. It
+// returns the restarted units and what the loops must do: a changed cluster starts them all
+// again, a share the control plane's loop.
+func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, clusterChanged bool) ([]string, loopAction, error) {
 	before, errBefore := k8s.ParseNode(old)
 	after, errAfter := k8s.ParseNode(data)
 	// An identity that does not parse counts as changed, unless it is the same.
 	changed := clusterChanged || !bytes.Equal(old, data) && (errBefore != nil || errAfter != nil || !reflect.DeepEqual(before, after))
 	if share == nil && !changed {
-		return nil, nil
+		return nil, keepLoops, nil
 	}
 	if share != nil {
 		nodeCAOnly := !changed && s.onlyNodeCAChanges(share)
 		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
-			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
+			return nil, keepLoops, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
 		}
 		// The node CA is read from the share whenever a node certificate is issued; nothing else
 		// uses it, so a new one restarts nothing.
 		if nodeCAOnly {
 			log.Print("recorded the delivered share, which differs at most in the node CA; nothing restarts")
-			return nil, nil
+			return nil, keepLoops, nil
 		}
 	}
 	// The node's address, the firewall's VXLAN rule, the kubelet's credentials and flags and the
@@ -619,35 +654,47 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, c
 	units := []string{"chalkos-kubernetes.service", "kubelet.service"}
 	if _, err := s.Run.Run(ctx, "systemctl", append([]string{"restart"}, units...)...); err != nil {
 		if problem, perr := preparation(s.Kubernetes.Paths); perr == nil && problem != "" && problem != preparing {
-			return nil, failed(connect.CodeFailedPrecondition, "the node runs no kubelet: %s", problem)
+			return nil, keepLoops, failed(connect.CodeFailedPrecondition, "the node runs no kubelet: %s", problem)
 		}
-		return nil, failed(connect.CodeInternal, "restart %s: %v", strings.Join(units, " "), err)
+		return nil, keepLoops, failed(connect.CodeInternal, "restart %s: %v", strings.Join(units, " "), err)
 	}
 	switch {
 	case clusterChanged:
-		s.Kubernetes.Restart()
+		return units, restartLoops, nil
 	case share != nil:
-		s.Kubernetes.Reload()
+		return units, reloadLoops, nil
 	}
-	return units, nil
+	return units, keepLoops, nil
 }
 
-// storedCluster is the cluster the stored config set gives on this image; nil without a set, or
-// for a set that gives none, as one stored before the image had Kubernetes settings.
-func (s *Server) storedCluster() (*k8s.Cluster, error) {
+// storedKubernetes compares the stored config set with next on this image: it returns the
+// cluster the stored set gives, nil without a set or for a set that gives none, as one stored
+// before the image had Kubernetes settings, and whether the objects of next's Manifest
+// documents differ from the stored set's.
+func (s *Server) storedKubernetes(next []config.Document) (*k8s.Cluster, bool, error) {
 	stored, found, err := store.Read(s.Identity.Config)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the stored config: %v", err)
+		return nil, false, failed(connect.CodeInternal, "read the stored config: %v", err)
 	}
+	was, errWas := config.ManifestObjectsOf(stored.Documents)
+	gets, errGets := config.ManifestObjectsOf(next)
+	manifestsChanged := errWas != nil || errGets != nil || !sameJSON(was, gets)
 	if !found {
-		return nil, nil
+		return nil, manifestsChanged, nil
 	}
 	c, err := s.Identity.Cluster(stored.Documents)
 	if err != nil {
 		log.Printf("the stored config gives no Kubernetes cluster: %v", err)
-		return nil, nil
+		return nil, manifestsChanged, nil
 	}
-	return c, nil
+	return c, manifestsChanged, nil
+}
+
+// sameJSON reports whether a and b encode to the same JSON.
+func sameJSON(a, b any) bool {
+	ja, errA := json.Marshal(a)
+	jb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ja, jb)
 }
 
 // sameCluster reports whether two clusters are equal as their cluster files hold them.
@@ -655,34 +702,23 @@ func sameCluster(a, b *k8s.Cluster) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	ja, errA := json.Marshal(a)
-	jb, errB := json.Marshal(b)
-	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+	return sameJSON(a, b)
 }
 
 // checkFixed refuses config that changes, on a node holding a Kubernetes share, a setting fixed
 // once the cluster exists: its address families and its pod, service and DNS addresses, for
 // which its certificates, etcd and the ranges the control plane allocated were made. prev is
-// the stored config's cluster; without one, the image's settings stand in, which the config the
-// node was installed with agreed with.
+// the stored config's cluster. Without one, as on a node whose stored config predates its
+// image's Kubernetes settings, there is nothing to compare with: the image's own cluster file
+// agrees with the config only in the image's facts, not in these settings.
 func (s *Server) checkFixed(prev, next *k8s.Cluster) error {
-	if next == nil {
+	if prev == nil || next == nil {
 		return nil
 	}
 	if _, err := os.Stat(s.Kubernetes.Paths.Share()); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	} else if err != nil {
 		return failed(connect.CodeInternal, "%v", err)
-	}
-	if prev == nil {
-		c, err := k8s.ReadCluster(s.Paths.KubernetesCluster)
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return failed(connect.CodeInternal, "%v", err)
-		}
-		prev = &c
 	}
 	pf, _ := prev.Families()
 	nf, _ := next.Families()
@@ -691,9 +727,9 @@ func (s *Server) checkFixed(prev, next *k8s.Cluster) error {
 		was, gets any
 	}{
 		{"ipFamilies", pf, nf},
-		{"podCIDRs", prev.PodCIDRs, next.PodCIDRs},
-		{"serviceCIDRs", prev.ServiceCIDRs, next.ServiceCIDRs},
-		{"dnsIPs", prev.DNSIPs, next.DNSIPs},
+		{"podCIDRs", canonical(prev.PodCIDRs, canonicalPrefix), canonical(next.PodCIDRs, canonicalPrefix)},
+		{"serviceCIDRs", canonical(prev.ServiceCIDRs, canonicalPrefix), canonical(next.ServiceCIDRs, canonicalPrefix)},
+		{"dnsIPs", canonical(prev.DNSIPs, canonicalAddress), canonical(next.DNSIPs, canonicalAddress)},
 	}
 	for _, f := range fixed {
 		if !reflect.DeepEqual(f.was, f.gets) {
@@ -703,6 +739,29 @@ func (s *Server) checkFixed(prev, next *k8s.Cluster) error {
 		}
 	}
 	return nil
+}
+
+// canonical writes each family's value as form does, so that spellings of one range or address,
+// such as fd00:0::/108 and fd00::/108, compare equal.
+func canonical(v k8s.ByFamily[string], form func(string) string) k8s.ByFamily[string] {
+	return k8s.ByFamily[string]{IPv4: form(v.IPv4), IPv6: form(v.IPv6)}
+}
+
+// canonicalPrefix is a range in its canonical form, its address masked; one that does not parse stays
+// as it is.
+func canonicalPrefix(s string) string {
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p.Masked().String()
+	}
+	return s
+}
+
+// canonicalAddress is an address in its canonical form; one that does not parse stays as it is.
+func canonicalAddress(s string) string {
+	if a, err := netip.ParseAddr(s); err == nil {
+		return a.String()
+	}
+	return s
 }
 
 func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.ResetVolumeRequest]) (*connect.Response[nodev1.ResetVolumeResponse], error) {
