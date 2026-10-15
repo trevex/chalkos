@@ -3248,65 +3248,53 @@ lib.runTests {
       scrubUnit = true;
     };
   };
-  testRegistryMirrors = {
-    expr =
-      let
-        etc =
-          (role (cluster [
-            {
-              chalkos.cluster.registries.allowPlainHTTP = true;
-              chalkos.cluster.registries.mirrors = {
-                "docker.io" = [
-                  "http://10.0.2.100:5000"
-                  "https://mirror.example.com"
-                ];
-                "ghcr.io" = [ "http://10.0.2.100:5000" ];
-              };
-            }
-          ])).environment.etc;
-      in
-      {
-        docker = etc."containerd/certs.d/docker.io/hosts.toml".text;
-        ghcr = etc."containerd/certs.d/ghcr.io/hosts.toml".text;
+  # Mirrors come from the RegistryMirror documents, written to /run before containerd starts.
+  testRegistryMirrorsFromConfig =
+    let
+      config = role (cluster [
+        { chalkos.cluster.registries.mirrors."docker.io" = [ "https://mirror.example" ]; }
+      ]);
+      unit = config.systemd.services.chalkos-registry-mirrors;
+      consumers = builtins.fromJSON config.environment.etc."chalkos/consumers.json".text;
+    in
+    {
+      expr = {
+        baked = lib.any (lib.hasPrefix "containerd/certs.d") (lib.attrNames config.environment.etc);
+        configPath =
+          config.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.images".registry.config_path;
+        consumer = consumers.chalkos-registry-mirrors.kinds;
+        beforeContainerd =
+          lib.elem "containerd.service" unit.before && lib.elem "containerd.service" unit.wantedBy;
+        afterConfig = lib.elem "chalkos-identity.service" unit.after;
       };
-    expected = {
-      docker = ''
-        server = "https://registry-1.docker.io"
-
-        [host."http://10.0.2.100:5000"]
-          capabilities = ["pull", "resolve"]
-
-        [host."https://mirror.example.com"]
-          capabilities = ["pull", "resolve"]
-      '';
-      ghcr = ''
-        server = "https://ghcr.io"
-
-        [host."http://10.0.2.100:5000"]
-          capabilities = ["pull", "resolve"]
-      '';
+      expected = {
+        baked = false;
+        configPath = "/run/containerd/certs.d";
+        consumer = [ "RegistryMirror" ];
+        beforeContainerd = true;
+        afterConfig = true;
+      };
     };
-  };
   testRegistryMirrorsRequireHTTPS = {
     expr =
       let
-        hostsToml =
+        # The cluster option refuses plain mirrors when the cluster is evaluated.
+        mirrors =
           registries:
-          (role (cluster [ { chalkos.cluster = { inherit registries; }; } ]))
-          .environment.etc."containerd/certs.d/docker.io/hosts.toml".text;
+          (cluster [ { chalkos.cluster = { inherit registries; }; } ]).manifest.registries.mirrors;
       in
       {
-        plain = fails (hostsToml {
+        plain = fails (mirrors {
           mirrors."docker.io" = [
             "https://mirror.example.com"
             "http://10.0.2.100:5000"
           ];
         });
-        allowed = fails (hostsToml {
+        allowed = fails (mirrors {
           allowPlainHTTP = true;
           mirrors."docker.io" = [ "http://10.0.2.100:5000" ];
         });
-        https = fails (hostsToml {
+        https = fails (mirrors {
           mirrors."docker.io" = [ "https://mirror.example.com" ];
         });
       };

@@ -441,6 +441,50 @@ in
         touch $out
       '';
 
+  # The script that writes containerd's hosts.toml files, with the output chalkcfg's template
+  # gives for two RegistryMirror documents.
+  registry-mirrors =
+    let
+      documents = pkgs.writeText "mirrors" ''
+        === docker.io
+        server = "https://registry-1.docker.io"
+
+        [host."https://mirror.example"]
+          capabilities = ["pull", "resolve"]
+
+        === localhost:5000
+        server = "https://localhost:5000"
+
+        [host."http://10.0.2.100:5000"]
+          capabilities = ["pull", "resolve"]
+
+      '';
+      script =
+        command:
+        lib.getExe (
+          pkgs.callPackage ../modules/node/registry-mirrors.nix {
+            mirrorsCommand = command;
+            certsDir = "certs.d";
+          }
+        );
+    in
+    pkgs.runCommand "chalkos-registry-mirrors" { } ''
+      set -euo pipefail
+      mkdir -p certs.d/stale
+      ${script "cat ${documents}"}
+      [ "$(ls certs.d)" = "$(printf 'docker.io\nlocalhost:5000')" ] || { ls certs.d; exit 1; }
+      grep -qx 'server = "https://registry-1.docker.io"' certs.d/docker.io/hosts.toml
+      grep -qx '\[host."http://10.0.2.100:5000"\]' certs.d/localhost:5000/hosts.toml
+      # A failing command leaves the mirrors as they were.
+      if ${script "false"}; then echo "a failing command succeeded" >&2; exit 1; fi
+      [ -e certs.d/docker.io/hosts.toml ]
+      # No documents, no mirrors, and no directory left behind.
+      ${script "true"}
+      [ -z "$(ls certs.d)" ]
+      if ls -A | grep -q "^\.certs\.d\."; then ls -A; exit 1; fi
+      touch $out
+    '';
+
   # The worker's kernel module tree, and one with the gpu group: a module outside a role's groups
   # is not in its tree, and neither a name the kernel does not know, a directory without modules,
   # a module the image loads but its tree lacks, nor one whose dependency the tree lacks gets past
