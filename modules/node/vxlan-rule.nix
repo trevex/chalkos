@@ -7,7 +7,8 @@
 # the table only marks VXLAN packets sent to the node's addresses, and the firewall accepts
 # packets carrying the mark (see kubernetes.nix). The table is not the firewall's: reloading the
 # firewall leaves it alone. With source ranges it also drops the VXLAN pods send through the node
-# to them, whatever the file holds.
+# to them, whatever the file holds: the pod and source ranges come from rangesCommand, which
+# prints "pods <range>" for each family's pod range and "source <range>" for each source range.
 {
   lib,
   writeShellApplication,
@@ -17,37 +18,11 @@
   lockFile ? "/run/chalkos-vxlan-rule.lock",
   # The packet mark bit the firewall accepts.
   mark,
-  # The cluster's pod ranges and vxlanSourceSubnets.
-  podCIDRs,
-  sourceSubnets,
+  # Prints the cluster's ranges: "pods <range>" and "source <range>" lines.
+  rangesCommand,
 }:
 let
   clear = "meta mark & ${mark} == ${mark} meta mark set meta mark ^ ${mark}";
-  # The node masquerades what pods send to other nodes behind its own address, which is in the
-  # source ranges, so pods could send VXLAN the other nodes take as this node's. The chain drops
-  # it as the node forwards it, per family. flannel's own VXLAN is the node's, not forwarded.
-  familyOf = range: if lib.hasInfix ":" range then "ip6" else "ip";
-  forwardRules = lib.concatMap (
-    family:
-    let
-      pods = lib.filter (r: familyOf r == family) podCIDRs;
-      sources = lib.filter (r: familyOf r == family) sourceSubnets;
-      set = ranges: "{ ${lib.concatStringsSep ", " ranges} }";
-    in
-    lib.optional (
-      pods != [ ] && sources != [ ]
-    ) "${family} saddr ${set pods} ${family} daddr ${set sources} udp dport 8472 drop"
-  ) (lib.unique (map familyOf podCIDRs));
-  forwardChain = lib.concatMapStrings (line: "echo ${lib.escapeShellArg line}\n") (
-    lib.optionals (forwardRules != [ ]) (
-      [
-        "  chain forward {"
-        "    type filter hook forward priority filter; policy accept;"
-      ]
-      ++ map (rule: "    ${rule}") forwardRules
-      ++ [ "  }" ]
-    )
-  );
 in
 writeShellApplication {
   name = "chalkos-vxlan-rule";
@@ -57,39 +32,6 @@ writeShellApplication {
   ];
   text = ''
     families=(ip ${lib.optionalString ipv6 "ip6"})
-
-    # The table, replaced in one transaction, with the rules given. Its input chain runs before
-    # the firewall's, which drops what it does not accept, and first clears the mark, so only
-    # these rules set it whatever ran earlier; its clear chain runs after the firewall's, so the
-    # mark never outlives it: not on packets the firewall accepted before looking at it, such as
-    # those on lo or of established connections, nor on the packets VXLAN carries.
-    table() {
-      echo "table inet chalkos-vxlan"
-      echo "delete table inet chalkos-vxlan"
-      echo "table inet chalkos-vxlan {"
-      echo "  chain input {"
-      echo "    type filter hook input priority filter - 1; policy accept;"
-      echo "    ${clear}"
-      for rule in "$@"; do
-        echo "    $rule"
-      done
-      echo "  }"
-      echo "  chain clear {"
-      echo "    type filter hook input priority filter + 1; policy accept;"
-      echo "    ${clear}"
-      echo "  }"
-      ${forwardChain}
-      echo "}"
-    }
-    # Should anything fail before the table is written, taking the lock or reading the file, it is
-    # emptied, or removed should that fail too: no rule of an earlier run stays.
-    written=false
-    trap '"$written" || table | nft -f - || nft delete table inet chalkos-vxlan' EXIT
-
-    # The preparation runs this before and after it picks the node's addresses: one run at a time,
-    # so the last one sees the file as it is now.
-    exec 9>>${lib.escapeShellArg lockFile}
-    flock 9
 
     # Whether the string is four decimal octets. Leading zeros are refused: nft may read them as
     # octal.
@@ -142,6 +84,95 @@ writeShellApplication {
       fi
     }
 
+    # The nft family of a range in CIDR notation of a family in use, or nothing.
+    range_family() {
+      local family length longest=128
+      [[ "$1" == */* ]] || return 0
+      length=''${1##*/}
+      family=$(family_of "''${1%/*}")
+      if [ "$family" = ip ]; then
+        longest=32
+      fi
+      if [ -n "$family" ] && [[ "$length" =~ ^(0|[1-9][0-9]{0,2})$ ]] && ((length <= longest)) &&
+        [[ " ''${families[*]} " == *" $family "* ]]; then
+        echo "$family"
+      fi
+    }
+
+    # The node masquerades what pods send to other nodes behind its own address, which is in the
+    # source ranges, so pods could send VXLAN the other nodes take as this node's. The chain
+    # drops it as the node forwards it, per family. flannel's own VXLAN is the node's, not
+    # forwarded. The ranges are read on every run, whatever the file holds, so the chain stands
+    # as long as the cluster has them.
+    forward=()
+    declare -A pod_ranges=() source_ranges=()
+    # The command may quote a template, whose variables start with $.
+    # shellcheck disable=SC2016
+    if ranges=$(${rangesCommand}); then
+      while read -r what range rest; do
+        [ -n "$what" ] || continue
+        family=$(range_family "$range")
+        if [ -z "$family" ] || [ -n "$rest" ] || ! [[ "$what" == pods || "$what" == source ]]; then
+          echo "chalkos-vxlan-rule: the cluster's ranges hold \"$what $range $rest\"; pods' VXLAN is not dropped" >&2
+          pod_ranges=()
+          source_ranges=()
+          break
+        fi
+        if [ "$what" = pods ]; then
+          pod_ranges[$family]+="''${pod_ranges[$family]:+, }$range"
+        else
+          source_ranges[$family]+="''${source_ranges[$family]:+, }$range"
+        fi
+      done <<<"$ranges"
+    else
+      echo "chalkos-vxlan-rule: the cluster's ranges are unknown; pods' VXLAN is not dropped" >&2
+    fi
+    for family in "''${!pod_ranges[@]}"; do
+      if [ -n "''${source_ranges[$family]:-}" ]; then
+        forward+=("$family saddr { ''${pod_ranges[$family]} } $family daddr { ''${source_ranges[$family]} } udp dport 8472 drop")
+      fi
+    done
+
+    # The table, replaced in one transaction, with the rules given. Its input chain runs before
+    # the firewall's, which drops what it does not accept, and first clears the mark, so only
+    # these rules set it whatever ran earlier; its clear chain runs after the firewall's, so the
+    # mark never outlives it: not on packets the firewall accepted before looking at it, such as
+    # those on lo or of established connections, nor on the packets VXLAN carries.
+    table() {
+      echo "table inet chalkos-vxlan"
+      echo "delete table inet chalkos-vxlan"
+      echo "table inet chalkos-vxlan {"
+      echo "  chain input {"
+      echo "    type filter hook input priority filter - 1; policy accept;"
+      echo "    ${clear}"
+      for rule in "$@"; do
+        echo "    $rule"
+      done
+      echo "  }"
+      echo "  chain clear {"
+      echo "    type filter hook input priority filter + 1; policy accept;"
+      echo "    ${clear}"
+      echo "  }"
+      if [ "''${#forward[@]}" -gt 0 ]; then
+        echo "  chain forward {"
+        echo "    type filter hook forward priority filter; policy accept;"
+        for rule in "''${forward[@]}"; do
+          echo "    $rule"
+        done
+        echo "  }"
+      fi
+      echo "}"
+    }
+    # Should anything fail before the table is written, taking the lock or reading the file, it is
+    # emptied, or removed should that fail too: no rule of an earlier run stays.
+    written=false
+    trap '"$written" || table | nft -f - || nft delete table inet chalkos-vxlan' EXIT
+
+    # The preparation runs this before and after it picks the node's addresses: one run at a time,
+    # so the last one sees the file as it is now.
+    exec 9>>${lib.escapeShellArg lockFile}
+    flock 9
+
     rules=()
     status=0
     if [ "$#" -eq 1 ] && [ -e "$1" ]; then
@@ -152,15 +183,8 @@ writeShellApplication {
       for line in "''${lines[@]}"; do
         read -r kind address mode rest <<<"$line" || true
         if [ "$kind" = source ] && [ -z "$mode" ] && [ "$line" = "source $address" ]; then
-          # A range: an address and a prefix length no longer than the family's addresses.
-          length=''${address##*/}
-          family=$(family_of "''${address%/*}")
-          longest=128
-          if [ "$family" = ip ]; then
-            longest=32
-          fi
-          if [ -n "$family" ] && [[ "$address" == */* ]] && [[ "$length" =~ ^(0|[1-9][0-9]{0,2})$ ]] &&
-            ((length <= longest)) && [[ " ''${families[*]} " == *" $family "* ]]; then
+          family=$(range_family "$address")
+          if [ -n "$family" ]; then
             sources[$family]+="''${sources[$family]:+, }$address"
             continue
           fi

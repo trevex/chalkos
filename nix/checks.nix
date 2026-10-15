@@ -106,17 +106,23 @@ in
         (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm.config;
       # The script NixOS runs to load and reload the firewall.
       firewall = builtins.elemAt worker.systemd.services.nftables.serviceConfig.ExecReload 1;
+      # The ranges as the node's Kubernetes document gives them: the pod range of each family,
+      # then the source ranges.
       script =
         sourceSubnets:
         lib.getExe (
           pkgs.callPackage ../modules/node/vxlan-rule.nix {
             lockFile = "vxlan.lock";
             mark = "0x01000000";
-            podCIDRs = [
-              "10.244.0.0/16"
-              "fd00:10:244::/56"
-            ];
-            inherit sourceSubnets;
+            rangesCommand = "printf '%s\\n' ${
+              lib.escapeShellArgs (
+                [
+                  "pods 10.244.0.0/16"
+                  "pods fd00:10:244::/56"
+                ]
+                ++ map (r: "source ${r}") sourceSubnets
+              )
+            }";
           }
         );
       rule = script [
@@ -125,6 +131,14 @@ in
       ];
       # The script of a cluster without source ranges.
       anySource = script [ ];
+      # The script when the ranges cannot be read.
+      noRanges = lib.getExe (
+        pkgs.callPackage ../modules/node/vxlan-rule.nix {
+          lockFile = "vxlan.lock";
+          mark = "0x01000000";
+          rangesCommand = "false";
+        }
+      );
     in
     pkgs.runCommand "chalkos-vxlan-rule"
       {
@@ -310,6 +324,12 @@ in
         forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without source ranges"
         forwarded fd00::12 8472 || fail "a pod's IPv6 VXLAN was dropped without source ranges"
         holding "$v4$v6"
+        # Ranges that cannot be read drop nothing, and say so.
+        ${noRanges} vxlan >/dev/null 2>no-ranges.log
+        grep -q "the cluster's ranges are unknown" no-ranges.log || fail "no warning without ranges"
+        forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without ranges"
+        holding "$v4$v6"
+        if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range after the ranges came back"; fi
 
         # A reload of the firewall replaces its own table alone.
         nft add table ip kube-proxy

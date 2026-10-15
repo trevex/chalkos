@@ -34,8 +34,13 @@ let
   vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
     ipv6 = config.networking.enableIPv6;
     mark = vxlanMark;
-    podCIDRs = lib.attrValues (ofFamilies k.podCIDRs);
-    sourceSubnets = k.vxlanSourceSubnets;
+    # Each family's pod range, then the source ranges, from the node's Kubernetes document.
+    rangesCommand = config.chalkos.kinds.Kubernetes.get {
+      output = ''
+        go-template={{$s := .spec}}{{range $s.ipFamilies}}pods {{index $s.podCIDRs .}}
+        {{end}}{{range $s.vxlanSourceSubnets}}source {{.}}
+        {{end}}'';
+    };
   };
 
   # The reference plugins the cluster names (chalkos.cni.plugins), and with flannel its own plugin.
