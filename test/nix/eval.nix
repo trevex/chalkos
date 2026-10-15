@@ -369,13 +369,23 @@ lib.runTests {
             && lib.elem "multi-user.target" c.systemd.services.chalkos-chrony-dhcp.wantedBy
             && lib.elem "systemd-networkd.service" c.systemd.services.chalkos-chrony-dhcp.after;
           dhcpDir = lib.elem "d /run/chalkos/chrony-dhcp 0755 root root - -" c.systemd.tmpfiles.rules;
+          dhcpConsumer =
+            (builtins.fromJSON c.environment.etc."chalkos/consumers.json".text).chalkos-chrony-dhcp.kinds;
+          dhcpReadsConfig = lib.hasInfix "chalkcfg get TimeSync" c.systemd.services.chalkos-chrony-dhcp.script;
+          # Active after it ran, so chalkd's try-restart runs it again; a link's change restarts it.
+          dhcpRerunsOnChange =
+            c.systemd.services.chalkos-chrony-dhcp.serviceConfig.RemainAfterExit
+            && c.systemd.paths.chalkos-chrony-dhcp.pathConfig.Unit == "chalkos-chrony-dhcp-links.service"
+            && lib.hasSuffix "systemctl restart chalkos-chrony-dhcp.service" c.systemd.services.chalkos-chrony-dhcp-links.serviceConfig.ExecStart;
           chalkdHasChronyc = lib.elem c.services.chrony.package c.systemd.services.chalkd.path;
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
         };
       in
       {
         default = summary (image [ ]);
-        dhcp = summary (image [ { chalkos.time.dhcpServers = true; } ]);
+        # The units are always there; TimeSync.spec.dhcp decides at runtime.
+        sameWithDhcpOption =
+          summary (image [ { chalkos.time.dhcpServers = true; } ]) == summary (image [ ]);
       };
     expected =
       let
@@ -388,27 +398,25 @@ lib.runTests {
             1
             3
           ];
-          sourcedirs = [ "sourcedir /run/chalkos/chrony" ];
+          sourcedirs = [
+            "sourcedir /run/chalkos/chrony"
+            "sourcedir /run/chalkos/chrony-dhcp"
+          ];
           certTimeCheck = true;
           ntsDump = true;
-          dhcpPath = false;
-          dhcpAtBoot = false;
-          dhcpDir = false;
+          dhcpPath = true;
+          dhcpAtBoot = true;
+          dhcpDir = true;
+          dhcpConsumer = [ "TimeSync" ];
+          dhcpReadsConfig = true;
+          dhcpRerunsOnChange = true;
           chalkdHasChronyc = true;
           chalkdProtectsClock = true;
         };
       in
       {
         default = base;
-        dhcp = base // {
-          sourcedirs = [
-            "sourcedir /run/chalkos/chrony"
-            "sourcedir /run/chalkos/chrony-dhcp"
-          ];
-          dhcpPath = true;
-          dhcpAtBoot = true;
-          dhcpDir = true;
-        };
+        sameWithDhcpOption = true;
       };
   };
   # The renewal hook of chalkd exists on the test image alone.

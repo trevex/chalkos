@@ -1,8 +1,8 @@
 # The node's clock, kept by chrony. Certificates are checked against it, so chrony steps a clock
 # that is off at boot instead of slewing it for hours; until then chalkd and the control plane
-# may refuse certificates that are valid. The servers come with the node's identity, which
-# chalkd's identity loader writes to a sources file: one image serves nodes with different
-# servers.
+# may refuse certificates that are valid. The servers come with the node's config, which chalkd's
+# identity loader writes to a sources file, and so does whether the servers DHCP announces count:
+# one image serves nodes with different servers.
 {
   config,
   lib,
@@ -14,7 +14,7 @@ let
   sources = "/run/chalkos/chrony";
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
-  dhcp = config.chalkos.time.dhcpServers or false;
+  dhcpEnabled = config.chalkos.kinds.TimeSync.get { path = "spec.dhcp"; };
 in
 {
   services.chrony = {
@@ -29,7 +29,7 @@ in
     };
     extraConfig = ''
       sourcedir ${sources}
-      ${lib.optionalString dhcp "sourcedir ${dhcpSources}"}
+      sourcedir ${dhcpSources}
       # A clock far off at boot would fail the NTS servers' certificates; their time check is
       # skipped until the clock was first set.
       nocerttimecheck 1
@@ -41,16 +41,30 @@ in
 
   systemd.tmpfiles.rules = [
     "d ${sources} 0755 root root - -"
-  ]
-  ++ lib.optional dhcp "d ${dhcpSources} 0755 root root - -";
+    "d ${dhcpSources} 0755 root root - -"
+  ];
 
-  # The servers DHCP announced, from networkd's state of each link: once networkd runs at boot,
-  # and whenever that state changes.
-  systemd.paths.chalkos-chrony-dhcp = lib.mkIf dhcp {
+  # The servers DHCP announced, from networkd's state of each link, when the node's TimeSync takes
+  # them: once networkd runs at boot, whenever that state changes, and when the TimeSync changes.
+  # The service stays active after it ran, so chalkd's try-restart runs it again when the
+  # TimeSync changes. A path unit does not start an active service again, so a change of the
+  # links' state restarts it.
+  chalkos.consumers.chalkos-chrony-dhcp.kinds = [ "TimeSync" ];
+  systemd.paths.chalkos-chrony-dhcp = {
     wantedBy = [ "multi-user.target" ];
-    pathConfig.PathChanged = "/run/systemd/netif/links";
+    pathConfig = {
+      PathChanged = "/run/systemd/netif/links";
+      Unit = "chalkos-chrony-dhcp-links.service";
+    };
   };
-  systemd.services.chalkos-chrony-dhcp = lib.mkIf dhcp {
+  systemd.services.chalkos-chrony-dhcp-links = {
+    description = "Pass the time servers DHCP announced to chrony after a link changed";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${config.systemd.package}/bin/systemctl restart chalkos-chrony-dhcp.service";
+    };
+  };
+  systemd.services.chalkos-chrony-dhcp = {
     description = "Pass the time servers DHCP announced to chrony";
     wantedBy = [ "multi-user.target" ];
     after = [
@@ -62,15 +76,22 @@ in
       pkgs.gnused
       package
     ];
-    serviceConfig.Type = "oneshot";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
     script = ''
+      # No TimeSync, or one chalkcfg cannot read, takes no servers from DHCP.
+      dhcp=$(${dhcpEnabled} 2>/dev/null) || dhcp=false
       tmp=$(mktemp ${dhcpSources}/.dhcp.XXXXXX)
-      for link in /run/systemd/netif/links/*; do
-        [ -f "$link" ] || continue
-        for server in $(sed -n 's/^NTP=//p' "$link"); do
-          echo "server $server iburst"
-        done
-      done | sort -u > "$tmp"
+      if [ "$dhcp" = true ]; then
+        for link in /run/systemd/netif/links/*; do
+          [ -f "$link" ] || continue
+          for server in $(sed -n 's/^NTP=//p' "$link"); do
+            echo "server $server iburst"
+          done
+        done | sort -u > "$tmp"
+      fi
       mv "$tmp" ${dhcpSources}/dhcp.sources
       chronyc reload sources || true
     '';
