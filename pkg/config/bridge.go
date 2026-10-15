@@ -324,6 +324,7 @@ func kubernetesObjects(m *manifest.Manifest) ([]map[string]any, error) {
 			return nil, fmt.Errorf("the manifest's kubernetes section: %w", err)
 		}
 	}
+	dropUnusedFamilies(spec)
 	objects := []map[string]any{object(KubernetesAPI, "Kubernetes", "kubernetes", spec)}
 	if !manifest.IsNull(m.Flannel) {
 		f, err := decodeObject(m.Flannel)
@@ -334,7 +335,8 @@ func kubernetesObjects(m *manifest.Manifest) ([]map[string]any, error) {
 	}
 	names := map[string]string{}
 	for _, registry := range slices.Sorted(maps.Keys(m.Registries.Mirrors)) {
-		name := strings.ReplaceAll(strings.ToLower(registry), ":", "-")
+		// An IPv6 host such as [fd00::1]:5000 becomes fd00--1-5000.
+		name := strings.NewReplacer("[", "", "]", "", ":", "-").Replace(strings.ToLower(registry))
 		if !documentName.MatchString(name) {
 			return nil, fmt.Errorf("the registry %q gives no document name: write its host in lower case", registry)
 		}
@@ -360,6 +362,28 @@ func kubernetesObjects(m *manifest.Manifest) ([]map[string]any, error) {
 		objects = append(objects, object(KubernetesAPI, "Manifest", "manifests", map[string]any{"objects": list}))
 	}
 	return objects, nil
+}
+
+// dropUnusedFamilies removes the per-family values of the families a Kubernetes spec does not
+// use, and empty DNS addresses. The cluster options check the values of the families in use
+// alone, so the others may be anything, such as an empty range, which the kind refuses; the
+// document leaves them to the kind's defaults, which nothing reads.
+func dropUnusedFamilies(spec map[string]any) {
+	used := []any{"ipv4"}
+	if families, ok := spec["ipFamilies"].([]any); ok && len(families) > 0 {
+		used = families
+	}
+	for _, key := range []string{"podCIDRs", "serviceCIDRs", "dnsIPs", "nodeCIDRMaskSizes"} {
+		byFamily, ok := spec[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		for family, v := range byFamily {
+			if !slices.Contains(used, any(family)) || (key == "dnsIPs" && v == "") {
+				delete(byFamily, family)
+			}
+		}
+	}
 }
 
 // documentName is the pattern of metadata.name.

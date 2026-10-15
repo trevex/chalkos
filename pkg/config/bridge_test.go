@@ -673,6 +673,9 @@ func TestFromManifestKubernetesDocuments(t *testing.T) {
 	m.Registries = manifest.Registries{Mirrors: map[string][]string{
 		"docker.io":      {"https://mirror.example"},
 		"localhost:5000": {"http://10.0.2.100:5000"},
+		// An IPv6 registry and mirror, and a mirror without a scheme, which containerd takes as
+		// https.
+		"[fd00::1]:5000": {"http://[fd00::2]:5000", "mirror.lan:5000"},
 	}, AllowPlainHTTP: true}
 	m.Manifests = []json.RawMessage{json.RawMessage(`{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "apps"}}`)}
 	m.Time.DHCPServers = true
@@ -684,7 +687,7 @@ func TestFromManifestKubernetesDocuments(t *testing.T) {
 	for _, d := range b.Documents {
 		names[d.Kind] = append(names[d.Kind], d.Name)
 	}
-	if !slices.Equal(names["RegistryMirror"], []string{"docker.io", "localhost-5000"}) || !slices.Equal(names["Manifest"], []string{"manifests"}) {
+	if !slices.Equal(names["RegistryMirror"], []string{"fd00--1-5000", "docker.io", "localhost-5000"}) || !slices.Equal(names["Manifest"], []string{"manifests"}) {
 		t.Errorf("documents = %v", names)
 	}
 	if _, err := b.Check(m.Nodes["w1"].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes["w1"])); err != nil {
@@ -694,6 +697,23 @@ func TestFromManifestKubernetesDocuments(t *testing.T) {
 	m.Registries.Mirrors["localhost-5000"] = []string{"https://other.example"}
 	if _, err := FromManifest(m, "w1"); err == nil || !strings.Contains(err.Error(), `both be the RegistryMirror "localhost-5000"`) {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// TestFromManifestDropsUnusedFamilies: the cluster options check the ranges of the families in
+// use alone, so a single-stack manifest may hold anything for the other family; its documents
+// leave those values to the kind's defaults.
+func TestFromManifestDropsUnusedFamilies(t *testing.T) {
+	m := homelabManifest(t)
+	m.Kubernetes = json.RawMessage(`{"ipFamilies": ["ipv4"],
+		"podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": ""}, "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": ""},
+		"dnsIPs": {"ipv4": "10.96.0.10", "ipv6": ""}, "nodeCIDRMaskSizes": {"ipv4": 24, "ipv6": 0}}`)
+	b, err := FromManifest(m, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Check(m.Nodes["w1"].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes["w1"])); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -11,6 +11,10 @@ let
   inherit (lib) mkOption types;
   kubernetesKind = config.chalkos.role.kubernetes.kind;
   flannel = config.chalkos.cni.provider == "flannel";
+  # A host as registries are named: a DNS name, an IPv4 address or an IPv6 address in brackets.
+  # The closing bracket stays unescaped: POSIX ERE has no \], and a lone ] is literal in ERE,
+  # ECMA-262 and Go alike.
+  host = "([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:.]+])";
   inherit ((import ./schema.nix { inherit lib; }).types) kubernetesObject;
   # An option per address family, as the cluster's ranges are given.
   perFamily =
@@ -396,19 +400,21 @@ in
       multiple = true;
       spec = {
         registry = mkOption {
-          type = types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]+)?";
+          type = types.strMatching "${host}(:[0-9]+)?";
           example = "docker.io";
-          description = "Host of the registry as image references name it, with its port unless it is 443.";
+          description = "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets.";
         };
         mirrors = mkOption {
-          type = types.nonEmptyListOf (types.strMatching "https?://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+");
+          type = types.nonEmptyListOf (
+            types.strMatching "(https?://)?${host}(:[0-9]+)?(/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]*)?"
+          );
           example = [ "https://mirror.example.com" ];
-          description = "Mirrors of the registry, which containerd tries in order before the registry itself.";
+          description = "Mirrors of the registry, which containerd tries in order before the registry itself: URLs, or hosts with an optional port, which containerd reaches with HTTPS.";
         };
         allowPlainHTTP = mkOption {
           type = types.bool;
           default = false;
-          description = "Allow http:// mirrors. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.";
+          description = "Allow mirrors that are not https:// URLs. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.";
         };
       };
     };

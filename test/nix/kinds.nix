@@ -555,6 +555,62 @@ lib.runTests {
     expected = [ ];
   };
   # Flannel is a kind only where flannel is the pod network.
+  # Registries and mirrors as containerd takes them: IPv6 hosts in brackets, and mirrors without a
+  # scheme, which containerd reaches with https.
+  testRegistryMirrorHosts =
+    let
+      spec = kubernetesImage.chalkos.kinds.RegistryMirror.spec;
+      registry = spec.registry.type.check;
+      mirror = spec.mirrors.type.nestedTypes.elemType.check;
+    in
+    {
+      expr = {
+        registries = map registry [
+          "docker.io"
+          "localhost:5000"
+          "[fd00::1]:5000"
+          "[fd00::1]"
+        ];
+        badRegistries = map registry [
+          "https://docker.io"
+          "[fd00::1"
+          "docker.io/library"
+        ];
+        mirrors = map mirror [
+          "https://mirror.example.com"
+          "http://[fd00::1]:5000"
+          "mirror.lan:5000"
+          "[fd00::1]:5000"
+        ];
+        badMirrors = map mirror [
+          "ftp://mirror.example.com"
+          "mirror lan"
+        ];
+      };
+      expected = {
+        registries = [
+          true
+          true
+          true
+          true
+        ];
+        badRegistries = [
+          false
+          false
+          false
+        ];
+        mirrors = [
+          true
+          true
+          true
+          true
+        ];
+        badMirrors = [
+          false
+          false
+        ];
+      };
+    };
   testFlannelKindFollowsTheProvider = {
     expr = lib.elem "Flannel" (
       kindNames
