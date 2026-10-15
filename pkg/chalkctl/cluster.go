@@ -174,10 +174,7 @@ func (c *cluster) endpoint(flagValue string, creds *credentials, node string) (a
 			return addr, "the client file " + creds.configPath, nil
 		}
 	}
-	addrs, err := c.addresses(node)
-	if err != nil {
-		return "", "", err
-	}
+	addrs := c.addresses(node)
 	if len(addrs) == 0 {
 		return "", "", fmt.Errorf("node %s has no static address; pass --endpoint", node)
 	}
@@ -194,13 +191,14 @@ func (c *cluster) endpoint(flagValue string, creds *credentials, node string) (a
 // addresses returns a node's static addresses: those of the documents chalkctl delivers to it,
 // or the client file's for a cluster known from one alone. The documents give them without the
 // schemas of the node's image, which chalkctl can only ask the node for once it has reached it.
-func (c *cluster) addresses(name string) ([]string, error) {
-	if c.partial {
-		return c.manifest.Nodes[name].Identity.StaticAddresses(), nil
+// When chalkctl cannot generate the node's documents, the identity the cluster definition
+// renders gives the same addresses, so the node stays reachable, to status among others, which
+// reports why.
+func (c *cluster) addresses(name string) []string {
+	if !c.partial {
+		if b, err := config.FromManifest(c.manifest, name); err == nil {
+			return config.StaticAddresses(b.Documents)
+		}
 	}
-	b, err := config.FromManifest(c.manifest, name)
-	if err != nil {
-		return nil, err
-	}
-	return config.StaticAddresses(b.Documents), nil
+	return c.manifest.Nodes[name].Identity.StaticAddresses()
 }

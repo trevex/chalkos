@@ -25,6 +25,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
@@ -1320,5 +1321,31 @@ func TestStatusWithoutTheDefinitionsConfig(t *testing.T) {
 	out := ta.stdout.String()
 	if !strings.Contains(out, "config none (cannot generate the cluster definition's config: ") || !strings.Contains(out, "platform metal") || !strings.Contains(out, "var") {
 		t.Errorf("status = %q", out)
+	}
+}
+
+// TestAddressesWithoutTheDefinitionsConfig finds a node whose config chalkctl cannot generate at
+// the static address the cluster definition renders for it, so commands still reach it and a
+// client file still names it.
+func TestAddressesWithoutTheDefinitionsConfig(t *testing.T) {
+	ta := newTestApp(t)
+	ta.editManifest(t, func(m *manifest.Manifest) {
+		n := m.Nodes["n1"]
+		n.Identity.NetworkUnits = map[string]string{"10-uplink.conf": "[Network]\nAddress=10.0.0.11/24\n"}
+		m.Nodes["n1"] = n
+	})
+	if _, err := config.FromManifest(ta.manifest, "n1"); err == nil {
+		t.Fatal("the bridge generated config from a unit it should refuse")
+	}
+	c := &cluster{manifest: ta.manifest}
+	if addr, source, err := c.endpoint("", nil, "n1"); err != nil || addr != "10.0.0.11" || source != "the cluster definition" {
+		t.Errorf("endpoint = %q, %q, %v; want the definition's 10.0.0.11", addr, source, err)
+	}
+	out := filepath.Join(ta.dir, "alice.json")
+	if err := ta.run(context.Background(), []string{"config", "new", "--name", "alice", "--role", "reader", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir}); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := client.ReadConfig(out); err != nil || f.Nodes["n1"] != "10.0.0.11" {
+		t.Errorf("client file nodes = %v, %v", f.Nodes, err)
 	}
 }
