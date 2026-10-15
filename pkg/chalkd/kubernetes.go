@@ -104,13 +104,15 @@ type Kubernetes struct {
 
 	mu sync.Mutex
 	// ctx ends the loops; cancel ends it when chalkd stops. vipDone is closed once the VIP
-	// election ended and released the VIPs, joinDone once the join's loop ended and leavesDone
-	// once the renewal of the control plane's certificates ended.
-	ctx        context.Context
-	cancel     context.CancelFunc
-	vipDone    chan struct{}
-	joinDone   chan struct{}
-	leavesDone chan struct{}
+	// election ended and released the VIPs, joinDone once the join's loop ended, leavesDone
+	// once the renewal of the control plane's certificates ended and controlPlaneDone once the
+	// control plane's loop ended.
+	ctx              context.Context
+	cancel           context.CancelFunc
+	vipDone          chan struct{}
+	joinDone         chan struct{}
+	leavesDone       chan struct{}
+	controlPlaneDone chan struct{}
 	// joining is set while the join's loop runs; joinStep is what it does or why it failed last,
 	// and joinWaiting is set while it finds no cluster.
 	joining     bool
@@ -225,8 +227,8 @@ func (k *Kubernetes) Stop() {
 // control plane's certificates, which renders the static pods, ended. Start starts them again.
 func (k *Kubernetes) stopLoops() {
 	k.mu.Lock()
-	cancel, vipDone, joinDone, leavesDone := k.cancel, k.vipDone, k.joinDone, k.leavesDone
-	k.ctx, k.cancel, k.vipDone, k.joinDone, k.leavesDone = nil, nil, nil, nil, nil
+	cancel, vipDone, joinDone, leavesDone, controlPlaneDone := k.cancel, k.vipDone, k.joinDone, k.leavesDone, k.controlPlaneDone
+	k.ctx, k.cancel, k.vipDone, k.joinDone, k.leavesDone, k.controlPlaneDone = nil, nil, nil, nil, nil, nil
 	// The next start runs the loops afresh and closes a channel of its own once they applied the
 	// manifests.
 	k.started, k.joining, k.done = false, false, nil
@@ -234,7 +236,7 @@ func (k *Kubernetes) stopLoops() {
 	if cancel != nil {
 		cancel()
 	}
-	for what, done := range map[string]chan struct{}{"the VIP election": vipDone, "the join": joinDone, "the certificate renewal": leavesDone} {
+	for what, done := range map[string]chan struct{}{"the VIP election": vipDone, "the join": joinDone, "the certificate renewal": leavesDone, "the control plane's loop": controlPlaneDone} {
 		if done == nil {
 			continue
 		}
@@ -312,14 +314,18 @@ func (k *Kubernetes) startLocked() chan struct{} {
 		close(done)
 	}(k.leaves, k.leavesDone)
 	var once sync.Once
-	go k.superviseControlPlane(ctx, func(n int) {
-		once.Do(func() {
-			k.mu.Lock()
-			k.count = n
-			k.mu.Unlock()
-			close(done)
-		})
-	}, k.reload)
+	k.controlPlaneDone = make(chan struct{})
+	go func(supervised chan struct{}) {
+		defer close(supervised)
+		k.superviseControlPlane(ctx, func(n int) {
+			once.Do(func() {
+				k.mu.Lock()
+				k.count = n
+				k.mu.Unlock()
+				close(done)
+			})
+		}, k.reload)
+	}(k.controlPlaneDone)
 	return done
 }
 

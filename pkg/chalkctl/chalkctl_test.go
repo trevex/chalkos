@@ -1350,3 +1350,14 @@ func TestAddressesWithoutTheDefinitionsConfig(t *testing.T) {
 		t.Errorf("client file nodes = %v, %v", f.Nodes, err)
 	}
 }
+
+// kubernetesImage gives the node s the running image of a role of the kind: its cluster file at
+// cluster and its Kubernetes facts.
+func kubernetesImage(t *testing.T, s *chalkd.Server, kind, cluster string) {
+	t.Helper()
+	s.Paths.KubernetesCluster = cluster
+	writeFile(t, cluster, clusterFile(kind))
+	s.Identity.KubernetesImage = filepath.Join(t.TempDir(), "image.json")
+	writeFile(t, s.Identity.KubernetesImage, `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
+	  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`)
+}

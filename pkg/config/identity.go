@@ -20,6 +20,9 @@ type Target struct {
 	// Kubernetes is the image's /etc/chalkos/kubernetes/cluster.json, which names the kind of
 	// node the image is built for and its facts; nil on an image without Kubernetes.
 	Kubernetes *kubernetes.Cluster
+	// Image is the image's Kubernetes facts, which its Kubernetes documents are checked against;
+	// nil on an image without Kubernetes.
+	Image *kubernetes.Image
 }
 
 // defaultTimeServers are the servers of a set without a TimeSync, the TimeSync kind's default.

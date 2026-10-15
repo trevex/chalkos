@@ -360,10 +360,11 @@ func TestLoadWithoutSetOrKubernetesRemovesTheCluster(t *testing.T) {
 	if err := os.Remove(l.KubernetesImage); err != nil {
 		t.Fatal(err)
 	}
+	write(t, l.ClusterFile, "{}")
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(l.ClusterFile); !os.IsNotExist(err) {
-		t.Errorf("without Kubernetes: wrote the cluster file: %v", err)
+		t.Errorf("without Kubernetes: kept the cluster file: %v", err)
 	}
 }

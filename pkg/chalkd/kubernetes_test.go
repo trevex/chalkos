@@ -1076,17 +1076,14 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	}
 }
 
-// clusterServer is a configured worker with a share whose loader writes the cluster from the
-// image facts and the delivered config into its Kubernetes side's cluster file.
-func clusterServer(t *testing.T) (*Server, *fakeRunner) {
+// clusterServer is a configured node of the kind with a share whose loader writes the cluster
+// from the image facts and the delivered config into its Kubernetes side's cluster file.
+func clusterServer(t *testing.T, kind string) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := configServer(t)
-	addKubernetes(t, s, k8s.KindWorker, true)
-	s.Identity.KubernetesImage = filepath.Join(t.TempDir(), "image.json")
+	addKubernetes(t, s, kind, true)
 	s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
-	write(t, s.Identity.KubernetesImage, `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
-	  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`)
-	write(t, s.Paths.KubernetesCluster, workerCluster)
+	kubernetesImage(t, s, strings.Replace(workerCluster, `"kind": "worker"`, `"kind": "`+kind+`"`, 1))
 	return s, r
 }
 
@@ -1097,7 +1094,7 @@ func withKubernetesSpec(spec string) string {
 }
 
 func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
-	s, r := clusterServer(t)
+	s, r := clusterServer(t, k8s.KindWorker)
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -1128,20 +1125,110 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 	}
 }
 
-func TestApplyConfigRefusesOtherFamilies(t *testing.T) {
-	s, r := clusterServer(t)
+// A restart that failed once the cluster file was written restarts again on a retry: the stored
+// config, which the retry compares with, is still the one before.
+func TestApplyConfigRetriesAFailedClusterRestart(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	r.calls = nil
-	_, err := sendConfig(s, withKubernetesSpec("{ipFamilies: [ipv4, ipv6]}"))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "ipFamilies") {
-		t.Fatalf("err = %v", err)
+	next := withKubernetesSpec("{domain: lab.local}")
+	r.rules = []rule{{prefix: "systemctl restart chalkos-kubernetes.service", err: errors.New("exit status 1")}}
+	if _, err := sendConfig(s, next); err == nil {
+		t.Fatal("a failed restart was not reported")
 	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
+	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
+		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
 	}
-	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); len(c.IPFamilies) != 1 {
-		t.Errorf("ipFamilies = %v", c.IPFamilies)
+	r.rules, r.calls = nil, nil
+	resp, err := sendConfig(s, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(resp.RestartedUnits, "kubelet.service") || !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("the retry restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	}
+}
+
+// The settings a cluster's certificates, etcd and allocated ranges were made for are refused,
+// also when the node's cluster file is missing, as after a boot whose loader failed.
+func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
+	for field, spec := range map[string]string{
+		"ipFamilies":   "{ipFamilies: [ipv4, ipv6]}",
+		"podCIDRs":     "{podCIDRs: {ipv4: 10.245.0.0/16}}",
+		"serviceCIDRs": "{serviceCIDRs: {ipv4: 10.97.0.0/16}}",
+		"dnsIPs":       "{dnsIPs: {ipv4: 10.96.0.53}}",
+	} {
+		t.Run(field, func(t *testing.T) {
+			s, r := clusterServer(t, k8s.KindWorker)
+			if _, err := sendConfig(s, workerConfig); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(s.Kubernetes.Paths.Cluster); err != nil {
+				t.Fatal(err)
+			}
+			r.calls = nil
+			_, err := sendConfig(s, withKubernetesSpec(spec))
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cluster's "+field+" from") {
+				t.Fatalf("err = %v", err)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("ran %v", r.calls)
+			}
+			if exists(s.Kubernetes.Paths.Cluster) {
+				t.Error("wrote the refused cluster")
+			}
+		})
+	}
+}
+
+// A changed cluster starts a control plane's loop again once the one before ended.
+func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
+	s, _ := clusterServer(t, k8s.KindControlPlane)
+	k := s.Kubernetes
+	p := k.Paths
+	ips, err := knode.ReadNodeIPs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := knode.WritePin(p, ips); err != nil {
+		t.Fatal(err)
+	}
+	write(t, p.Bootstrapped(), "")
+	var mu sync.Mutex
+	var events []string
+	record := func(e string) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, e)
+	}
+	seen := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(events)
+	}
+	k.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
+		record("start")
+		applied(1)
+		<-ctx.Done()
+		// A loop that takes a while to end must have ended before the next starts.
+		time.Sleep(50 * time.Millisecond)
+		record("end")
+		return ctx.Err()
+	}
+	k.Start()
+	eventually(t, "the first loop", func() bool { return len(seen()) == 1 })
+
+	config := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
+	if _, err := sendConfig(s, config); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
+	if _, err := sendConfig(s, strings.Replace(config, "spec: {}", "spec: {domain: lab.local}", 1)); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })
+	if got := seen(); !slices.Equal(got, []string{"start", "end", "start", "end", "start"}) {
+		t.Errorf("events = %v", got)
 	}
 }

@@ -132,7 +132,7 @@ func (l Loader) LoadConfig() error {
 			if _, rerr := l.WriteCluster(nil); rerr != nil {
 				return errors.Join(err, rerr)
 			}
-			return fmt.Errorf("the node's Kubernetes settings: %w; deliver config with a Kubernetes document with chalkctl apply-config", err)
+			return fmt.Errorf("the node runs no Kubernetes: its stored config gives no Kubernetes cluster for this image: %w; deliver config that does with chalkctl apply-config", err)
 		}
 	}
 	_, err = l.WriteCluster(c)

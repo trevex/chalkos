@@ -50,8 +50,10 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (configure
 		return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
 	}
 	if t.Kubernetes != nil {
-		// The image's facts come from its cluster.json, which an install header carries too.
-		if err := set.CheckKubernetes(t.Kubernetes.Image()); err != nil {
+		if t.Image == nil {
+			return configured{}, failed(connect.CodeInternal, "the image has Kubernetes but no Kubernetes facts")
+		}
+		if err := set.CheckKubernetes(*t.Image); err != nil {
 			return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
 		}
 	}
@@ -76,6 +78,15 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 		t.Kubernetes = &c
 	case !errors.Is(err, fs.ErrNotExist):
 		return config.Target{}, nil, failed(connect.CodeInternal, "%v", err)
+	}
+	if t.Kubernetes != nil {
+		// The facts the node builds its cluster from at boot, so the config is checked against
+		// exactly those.
+		img, err := k8s.ReadImage(s.Identity.KubernetesImage)
+		if err != nil {
+			return config.Target{}, nil, failed(connect.CodeInternal, "the image's Kubernetes facts: %v", err)
+		}
+		t.Image = &img
 	}
 	return t, schemas, nil
 }
@@ -183,7 +194,9 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 		if err != nil {
 			return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's kubernetes.json: %v", err)
 		}
-		t.Kubernetes = &c
+		// The header carries no image.json; its cluster.json holds the same facts.
+		img := c.Image()
+		t.Kubernetes, t.Image = &c, &img
 	}
 	return t, schemas, nil
 }

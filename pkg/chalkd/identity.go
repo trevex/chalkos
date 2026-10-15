@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -85,8 +84,9 @@ func (s *Server) checkClusterOf(cluster string) error {
 
 // kubernetesShare validates a delivered share for the node the identity names, a node CA in it
 // against the OS CAs osCA, and returns it as STATE keeps it, in its canonical encoding; nil when
-// none was delivered.
-func (s *Server) kubernetesShare(d delivered, data []byte, osCA string) ([]byte, error) {
+// none was delivered. cluster is the one the config of the same request gives, nil without
+// config, when the node's cluster file is read instead.
+func (s *Server) kubernetesShare(d delivered, data []byte, osCA string, cluster *k8s.Cluster) ([]byte, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
@@ -97,10 +97,14 @@ func (s *Server) kubernetesShare(d delivered, data []byte, osCA string) ([]byte,
 	if err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "%v", err)
 	}
-	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
-	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "the node's image has no Kubernetes: %v", err)
+	if cluster == nil {
+		c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
+		if err != nil {
+			return nil, failed(connect.CodeInvalidArgument, "the node has no Kubernetes cluster: %v", err)
+		}
+		cluster = &c
 	}
+	c := cluster
 	if share.Kind != c.Kind {
 		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's image is for %s nodes", share.Kind, c.Kind)
 	}
@@ -190,9 +194,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
-	// The cluster the config gives, checked before anything changes; nil on an image without
-	// Kubernetes or without new config.
+	// The cluster the config gives, checked before anything changes, and whether it differs from
+	// the stored config's; nil on an image without Kubernetes or without new config. The stored
+	// set is replaced last, so a retry after a failed restart still finds the cluster changed.
 	var cluster *k8s.Cluster
+	clusterChanged := false
 	if !keep {
 		if err := s.checkClusterOf(d.cluster); err != nil {
 			return nil, err
@@ -201,12 +207,19 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			if cluster, err = s.Identity.Cluster(r.next.Documents); err != nil {
 				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
 			}
-			if err := s.checkFamilies(cluster); err != nil {
-				return nil, err
+			if cluster != nil {
+				prev, err := s.storedCluster()
+				if err != nil {
+					return nil, err
+				}
+				if err := s.checkFixed(prev, cluster); err != nil {
+					return nil, err
+				}
+				clusterChanged = !sameCluster(prev, cluster)
 			}
 		}
 	}
-	share, err := s.kubernetesShare(d, m.KubernetesShare, osCA)
+	share, err := s.kubernetesShare(d, m.KubernetesShare, osCA, cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +243,6 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	}
 	var changes []storage.Change
 	var restarted []string
-	clusterChanged := false
 	old := d.data
 	if !keep {
 		recorded, pins, err := s.recorded()
@@ -259,9 +271,13 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		if cluster != nil {
-			if clusterChanged, err = s.Identity.WriteCluster(cluster); err != nil {
+			// A cluster file that differs from the stored config's, as one a failed boot left
+			// missing, counts as changed too.
+			written, err := s.Identity.WriteCluster(cluster)
+			if err != nil {
 				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
 			}
+			clusterChanged = clusterChanged || written
 		}
 	}
 	if len(m.NodeCertificate) > 0 {
@@ -616,9 +632,40 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, c
 	return units, nil
 }
 
-// checkFamilies refuses config that changes the address families of a node holding a Kubernetes
-// share: its certificates, etcd and the ranges the control plane allocated were made for them.
-func (s *Server) checkFamilies(next *k8s.Cluster) error {
+// storedCluster is the cluster the stored config set gives on this image; nil without a set, or
+// for a set that gives none, as one stored before the image had Kubernetes settings.
+func (s *Server) storedCluster() (*k8s.Cluster, error) {
+	stored, found, err := store.Read(s.Identity.Config)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "read the stored config: %v", err)
+	}
+	if !found {
+		return nil, nil
+	}
+	c, err := s.Identity.Cluster(stored.Documents)
+	if err != nil {
+		log.Printf("the stored config gives no Kubernetes cluster: %v", err)
+		return nil, nil
+	}
+	return c, nil
+}
+
+// sameCluster reports whether two clusters are equal as their cluster files hold them.
+func sameCluster(a, b *k8s.Cluster) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	ja, errA := json.Marshal(a)
+	jb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+}
+
+// checkFixed refuses config that changes, on a node holding a Kubernetes share, a setting fixed
+// once the cluster exists: its address families and its pod, service and DNS addresses, for
+// which its certificates, etcd and the ranges the control plane allocated were made. prev is
+// the stored config's cluster; without one, the image's settings stand in, which the config the
+// node was installed with agreed with.
+func (s *Server) checkFixed(prev, next *k8s.Cluster) error {
 	if next == nil {
 		return nil
 	}
@@ -627,17 +674,33 @@ func (s *Server) checkFamilies(next *k8s.Cluster) error {
 	} else if err != nil {
 		return failed(connect.CodeInternal, "%v", err)
 	}
-	prev, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
+	if prev == nil {
+		c, err := k8s.ReadCluster(s.Paths.KubernetesCluster)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return failed(connect.CodeInternal, "%v", err)
+		}
+		prev = &c
 	}
 	pf, _ := prev.Families()
 	nf, _ := next.Families()
-	if !slices.Equal(pf, nf) {
-		return failed(connect.CodeFailedPrecondition, "the config changes the cluster's ipFamilies from %v to %v; they are fixed when the cluster is created, so keep them, or reinstall the node into a new cluster", pf, nf)
+	fixed := []struct {
+		field     string
+		was, gets any
+	}{
+		{"ipFamilies", pf, nf},
+		{"podCIDRs", prev.PodCIDRs, next.PodCIDRs},
+		{"serviceCIDRs", prev.ServiceCIDRs, next.ServiceCIDRs},
+		{"dnsIPs", prev.DNSIPs, next.DNSIPs},
+	}
+	for _, f := range fixed {
+		if !reflect.DeepEqual(f.was, f.gets) {
+			was, _ := json.Marshal(f.was)
+			gets, _ := json.Marshal(f.gets)
+			return failed(connect.CodeFailedPrecondition, "the config changes the cluster's %s from %s to %s; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster", f.field, was, gets)
+		}
 	}
 	return nil
 }

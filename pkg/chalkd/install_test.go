@@ -233,6 +233,21 @@ const workerCluster = `{"kind": "worker", "endpoint": "https://192.168.100.11:64
   "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
   "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`
 
+// testImage is the image.json of workerCluster's image.
+const testImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
+  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`
+
+// kubernetesImage gives s's running image Kubernetes: the cluster file, workerCluster unless
+// given, and its facts.
+func kubernetesImage(t *testing.T, s *Server, cluster string) {
+	t.Helper()
+	if cluster == "" {
+		cluster = workerCluster
+	}
+	write(t, s.Paths.KubernetesCluster, cluster)
+	write(t, s.Identity.KubernetesImage, testImage)
+}
+
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.
 var workerConfig = strings.Replace(strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {type: worker, imageRef: metal}", 1),
 	"metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: \"https://192.168.100.11:6443\"}", 1) + `---

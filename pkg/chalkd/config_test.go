@@ -265,7 +265,7 @@ func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 // TestApplyConfigOnAKubernetesImage translates config with the running image's kubernetes.json.
 func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 	s, _ := configServer(t)
-	write(t, s.Paths.KubernetesCluster, workerCluster)
+	kubernetesImage(t, s, "")
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
