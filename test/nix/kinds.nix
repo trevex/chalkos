@@ -544,6 +544,11 @@ lib.runTests {
     expr = fails (consumersOf (consumerOf [ "Nope" ]));
     expected = true;
   };
+  # A consumer reads at least one kind; one of none would load credentials no one writes.
+  testKindConsumerOfNoKindsFails = {
+    expr = fails (consumersOf (consumerOf [ ]));
+    expected = true;
+  };
   testKindConsumerOfSecretFails = {
     expr = fails (consumersOf (consumerOf [ "Secret" ]));
     expected = true;

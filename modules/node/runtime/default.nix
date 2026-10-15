@@ -7,13 +7,13 @@ let
   consumer = lib.types.submodule {
     options = {
       kinds = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
+        type = lib.types.nonEmptyListOf lib.types.str;
         example = [ "BGPPeering" ];
         description = ''
-          Config kinds the unit reads, by name: attributes of `chalkos.kinds`, or networkd's
-          `Network`, `NetDev` and `Link`. The documents of a kind of `chalkos.kinds` are in its
-          `dir`, networkd's below `/run/chalkos/config/networkd.chalkos.dev`. The values their
-          `secretRef` fields name are the unit's credentials `secret_<secret>.<key>`.
+          Config kinds the unit reads, at least one, by name: attributes of `chalkos.kinds`, or
+          networkd's `Network`, `NetDev` and `Link`. The documents of a kind of `chalkos.kinds` are
+          in its `dir`, networkd's below `/run/chalkos/config/networkd.chalkos.dev`. The values
+          their `secretRef` fields name are the unit's credentials `secret_<secret>.<key>`.
         '';
       };
       restartOnChange = lib.mkOption {

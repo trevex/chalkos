@@ -104,9 +104,7 @@ func (l Loader) LoadConfig() error {
 	}
 	kinds := map[string][]string{}
 	for unit, c := range consumers {
-		if len(c.Kinds) > 0 {
-			kinds[unit] = c.Kinds
-		}
+		kinds[unit] = c.Kinds
 	}
 	var schemas *schema.Schemas
 	if found {

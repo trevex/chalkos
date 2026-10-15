@@ -2615,23 +2615,15 @@ attribute set of (submodule)
 
 
 
-Config kinds the unit reads, by name: attributes of ` chalkos.kinds `, or networkd’s
-` Network `, ` NetDev ` and ` Link `\. The documents of a kind of ` chalkos.kinds ` are in its
-` dir `, networkd’s below ` /run/chalkos/config/networkd.chalkos.dev `\. The values their
-` secretRef ` fields name are the unit’s credentials ` secret_<secret>.<key> `\.
+Config kinds the unit reads, at least one, by name: attributes of ` chalkos.kinds `, or
+networkd’s ` Network `, ` NetDev ` and ` Link `\. The documents of a kind of ` chalkos.kinds ` are
+in its ` dir `, networkd’s below ` /run/chalkos/config/networkd.chalkos.dev `\. The values
+their ` secretRef ` fields name are the unit’s credentials ` secret_<secret>.<key> `\.
 
 
 
 *Type:*
-list of string
-
-
-
-*Default:*
-
-```nix
-[ ]
-```
+non-empty (list of string)
 
 
 
