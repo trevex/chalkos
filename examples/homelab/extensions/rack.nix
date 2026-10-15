@@ -46,15 +46,21 @@ in
                 description = "Rack and height unit the node is mounted in.";
               };
             };
-            # chalkd writes the node's Rack below the kind's dir and restarts the unit when it
-            # changes.
+            # chalkd writes the node's Rack below /run/chalkos/config and restarts the unit when
+            # it changes.
             chalkos.consumers.rack-location.kinds = [ "Rack" ];
             systemd.services.rack-location = {
               wantedBy = [ "multi-user.target" ];
               serviceConfig = {
                 Type = "oneshot";
                 RemainAfterExit = true;
-                ExecStart = "${lib.getExe pkgs.jq} -r .spec.location ${config.chalkos.kinds.Rack.dir}/rack.json";
+                # A path the kind lacks fails the image's evaluation.
+                ExecStart = pkgs.writeShellScript "rack-location" (
+                  config.chalkos.kinds.Rack.get {
+                    name = "rack";
+                    path = "spec.location";
+                  }
+                );
               };
             };
           }

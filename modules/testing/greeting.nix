@@ -1,6 +1,6 @@
-# Test-only: a config kind and a unit that reads it, for the install test. A Greeting holds a
-# message and a token from a Secret; chalktest-greeting logs the message and the start of the
-# token's SHA-256, and chalkd restarts it when the Greeting or its Secret changes.
+# Test-only: a config kind and a unit that reads it with chalkcfg, for the install test. A Greeting
+# holds a message and a token from a Secret; chalktest-greeting logs the message and the start of
+# the token's SHA-256, and chalkd restarts it when the Greeting or its Secret changes.
 {
   config,
   lib,
@@ -8,6 +8,9 @@
   chalkosLib,
   ...
 }:
+let
+  greeting = config.chalkos.kinds.Greeting;
+in
 {
   chalkos.kinds.Greeting = {
     group = "greeting.example.org";
@@ -34,18 +37,15 @@
       ExecStart = lib.getExe (
         pkgs.writeShellApplication {
           name = "chalktest-greeting";
-          runtimeInputs = [
-            pkgs.coreutils
-            pkgs.jq
-          ];
+          runtimeInputs = [ pkgs.coreutils ];
+          # A node has at most one Greeting. Without one, chalkcfg prints nothing and succeeds.
           text = ''
-            for doc in ${config.chalkos.kinds.Greeting.dir}/*.json; do
-              [[ -e $doc ]] || continue
-              message=$(jq -r .spec.message "$doc")
-              ref=$(jq -r '.spec.token.secretRef | "\(.name).\(.key)"' "$doc")
-              token=$(sha256sum < "$CREDENTIALS_DIRECTORY/secret_$ref" | cut -c1-16)
-              echo "greeting $message, token $token"
-            done
+            message=$(${greeting.get { path = "spec.message"; }})
+            [[ -n $message ]] || exit 0
+            secret=$(${greeting.get { path = "spec.token.secretRef.name"; }})
+            key=$(${greeting.get { path = "spec.token.secretRef.key"; }})
+            token=$(sha256sum < "$CREDENTIALS_DIRECTORY/secret_$secret.$key" | cut -c1-16)
+            echo "greeting $message, token $token"
           '';
         }
       );

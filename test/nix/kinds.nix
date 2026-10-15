@@ -773,6 +773,11 @@ lib.runTests {
     });
     expected = true;
   };
+  # The homelab's unit reads the node's Rack with chalkcfg, by a path the evaluation checked.
+  testHomelabRackReadsWithChalkcfg = {
+    expr = lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" homelab.systemd.services.rack-location.serviceConfig.ExecStart.text;
+    expected = true;
+  };
   testBuiltinKindHasGet = {
     expr = lib.hasSuffix "/bin/chalkcfg get Node -o 'jsonpath={.spec.type}'" (
       kubernetesImage.chalkos.kinds.Node.get { path = "spec.type"; }
