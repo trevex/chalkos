@@ -349,6 +349,13 @@ func (k *Kubernetes) controlPlaneRenewal() *Renewal {
 	})
 }
 
+// Restart starts the loops again, as after the cluster's settings changed: the VIP election,
+// the join and the control plane's loop read them when they start.
+func (k *Kubernetes) Restart() {
+	k.stopLoops()
+	k.Start()
+}
+
 // Reload makes a running control-plane loop start again with the share STATE holds now, or
 // starts the loop when the node is a bootstrapped control plane.
 func (k *Kubernetes) Reload() {

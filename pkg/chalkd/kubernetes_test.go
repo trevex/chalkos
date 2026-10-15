@@ -44,6 +44,14 @@ import (
 func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := installedServer(t, section("", ""), false)
+	addKubernetes(t, s, kind, share)
+	return s, r
+}
+
+// addKubernetes gives s the Kubernetes side of a node of the kind with the files chalkd reads;
+// with a share when share is set.
+func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
+	t.Helper()
 	root := t.TempDir()
 	s.Kubernetes = &Kubernetes{
 		Paths: knode.Paths{
@@ -80,7 +88,6 @@ func kubernetesServer(t *testing.T, kind string, share bool) (*Server, *fakeRunn
 			t.Fatal(err)
 		}
 	}
-	return s, r
 }
 
 // readyNode is a Ready Node with the pod ranges.
@@ -1066,5 +1073,75 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	}
 	if n := len(objects); n < 2 || objects[0]["kind"] != "ClusterRoleBinding" || objects[n-1]["kind"] != "Namespace" {
 		t.Errorf("objects = %v", objects)
+	}
+}
+
+// clusterServer is a configured worker with a share whose loader writes the cluster from the
+// image facts and the delivered config into its Kubernetes side's cluster file.
+func clusterServer(t *testing.T) (*Server, *fakeRunner) {
+	t.Helper()
+	s, r := configServer(t)
+	addKubernetes(t, s, k8s.KindWorker, true)
+	s.Identity.KubernetesImage = filepath.Join(t.TempDir(), "image.json")
+	s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
+	write(t, s.Identity.KubernetesImage, `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
+	  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`)
+	write(t, s.Paths.KubernetesCluster, workerCluster)
+	return s, r
+}
+
+// withKubernetesSpec is workerConfig with the Kubernetes document's spec given.
+func withKubernetesSpec(spec string) string {
+	return strings.Replace(workerConfig, "kind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}",
+		"kind: Kubernetes\nmetadata: {name: kubernetes}\nspec: "+spec, 1)
+}
+
+func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
+	s, r := clusterServer(t)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
+	if err != nil || c.Domain != "cluster.local" || c.Images.KubeProxy != "p" {
+		t.Fatalf("cluster = %+v, %v", c, err)
+	}
+
+	// The same config changes no cluster and restarts nothing.
+	r.calls = nil
+	resp, err := sendConfig(s, workerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(resp.RestartedUnits, "kubelet.service") {
+		t.Errorf("restarted %v for the same cluster", resp.RestartedUnits)
+	}
+
+	r.calls = nil
+	if resp, err = sendConfig(s, withKubernetesSpec("{domain: lab.local}")); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
+		t.Errorf("domain = %q", c.Domain)
+	}
+	if !slices.Contains(resp.RestartedUnits, "kubelet.service") || !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	}
+}
+
+func TestApplyConfigRefusesOtherFamilies(t *testing.T) {
+	s, r := clusterServer(t)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	r.calls = nil
+	_, err := sendConfig(s, withKubernetesSpec("{ipFamilies: [ipv4, ipv6]}"))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "ipFamilies") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
+	}
+	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); len(c.IPFamilies) != 1 {
+		t.Errorf("ipFamilies = %v", c.IPFamilies)
 	}
 }

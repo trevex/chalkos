@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -189,9 +190,20 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
+	// The cluster the config gives, checked before anything changes; nil on an image without
+	// Kubernetes or without new config.
+	var cluster *k8s.Cluster
 	if !keep {
 		if err := s.checkClusterOf(d.cluster); err != nil {
 			return nil, err
+		}
+		if s.Kubernetes != nil {
+			if cluster, err = s.Identity.Cluster(r.next.Documents); err != nil {
+				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
+			}
+			if err := s.checkFamilies(cluster); err != nil {
+				return nil, err
+			}
 		}
 	}
 	share, err := s.kubernetesShare(d, m.KubernetesShare, osCA)
@@ -218,6 +230,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	}
 	var changes []storage.Change
 	var restarted []string
+	clusterChanged := false
 	old := d.data
 	if !keep {
 		recorded, pins, err := s.recorded()
@@ -245,6 +258,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		if old, err = s.applyIdentity(ctx, d.data); err != nil {
 			return nil, err
 		}
+		if cluster != nil {
+			if clusterChanged, err = s.Identity.WriteCluster(cluster); err != nil {
+				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
+			}
+		}
 	}
 	if len(m.NodeCertificate) > 0 {
 		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
@@ -254,7 +272,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	}
 	var kubernetesUnits []string
 	if s.Kubernetes != nil {
-		if kubernetesUnits, err = s.applyKubernetes(ctx, old, d.data, share); err != nil {
+		if kubernetesUnits, err = s.applyKubernetes(ctx, old, d.data, share, clusterChanged); err != nil {
 			return nil, err
 		}
 	}
@@ -557,14 +575,14 @@ func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]byte, error)
 	return old, nil
 }
 
-// applyKubernetes records a delivered share and, when it or the node's Kubernetes identity
-// changed, prepares the node's Kubernetes files again and restarts what reads them. It returns
-// the restarted units.
-func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte) ([]string, error) {
+// applyKubernetes records a delivered share and, when it, the node's Kubernetes identity or its
+// cluster changed, prepares the node's Kubernetes files again and restarts what reads them; a
+// changed cluster starts the Kubernetes loops again too. It returns the restarted units.
+func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, clusterChanged bool) ([]string, error) {
 	before, errBefore := k8s.ParseNode(old)
 	after, errAfter := k8s.ParseNode(data)
 	// An identity that does not parse counts as changed, unless it is the same.
-	changed := !bytes.Equal(old, data) && (errBefore != nil || errAfter != nil || !reflect.DeepEqual(before, after))
+	changed := clusterChanged || !bytes.Equal(old, data) && (errBefore != nil || errAfter != nil || !reflect.DeepEqual(before, after))
 	if share == nil && !changed {
 		return nil, nil
 	}
@@ -589,10 +607,39 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte) (
 		}
 		return nil, failed(connect.CodeInternal, "restart %s: %v", strings.Join(units, " "), err)
 	}
-	if share != nil {
+	switch {
+	case clusterChanged:
+		s.Kubernetes.Restart()
+	case share != nil:
 		s.Kubernetes.Reload()
 	}
 	return units, nil
+}
+
+// checkFamilies refuses config that changes the address families of a node holding a Kubernetes
+// share: its certificates, etcd and the ranges the control plane allocated were made for them.
+func (s *Server) checkFamilies(next *k8s.Cluster) error {
+	if next == nil {
+		return nil
+	}
+	if _, err := os.Stat(s.Kubernetes.Paths.Share()); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return failed(connect.CodeInternal, "%v", err)
+	}
+	prev, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return failed(connect.CodeInternal, "%v", err)
+	}
+	pf, _ := prev.Families()
+	nf, _ := next.Families()
+	if !slices.Equal(pf, nf) {
+		return failed(connect.CodeFailedPrecondition, "the config changes the cluster's ipFamilies from %v to %v; they are fixed when the cluster is created, so keep them, or reinstall the node into a new cluster", pf, nf)
+	}
+	return nil
 }
 
 func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.ResetVolumeRequest]) (*connect.Response[nodev1.ResetVolumeResponse], error) {
