@@ -623,6 +623,9 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 	if err != nil {
 		return err
 	}
+	if err := s.checkClusterOf(d.cluster); err != nil {
+		return err
+	}
 	recorded, pins, err := s.recorded()
 	if err != nil {
 		return err
