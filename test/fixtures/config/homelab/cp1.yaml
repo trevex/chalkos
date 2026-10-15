@@ -30,3 +30,8 @@ metadata: {name: 10-uplink}
 spec:
   match: {name: enp1s0}
   network: {address: [10.0.0.11/24], gateway: 10.0.0.1}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec: {}

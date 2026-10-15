@@ -34,3 +34,8 @@ metadata: {name: kubelet}
 spec:
   labels: {node.kubernetes.io/storage: ssd}
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec: {}

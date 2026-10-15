@@ -215,8 +215,17 @@ let
       };
     };
   };
-  # The test cluster with the modules given, as each manifest of CHALKLAB_MANIFESTS defines it.
-  clusterOf = modules: self.lib.mkCluster { modules = [ definition ] ++ modules; };
+  # The test cluster with the modules given, as each manifest of CHALKLAB_MANIFESTS defines it,
+  # with the mirrors its Kubernetes images are built with.
+  clusterOf =
+    modules:
+    self.lib.mkCluster {
+      modules = [
+        definition
+        mirrored
+      ]
+      ++ modules;
+    };
   manifestOf =
     name: modules: pkgs.writeText "${name}.json" (builtins.toJSON (clusterOf modules).manifest);
   # A new encrypted volume on an empty disk: an additive change. The Greeting changes too, so its

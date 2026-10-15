@@ -40,9 +40,16 @@ func homelabManifest(t *testing.T) *manifest.Manifest {
 	return m
 }
 
-// homelabTarget is the image of a homelab node, as far as the fixture schemas describe it.
-func homelabTarget(m *manifest.Manifest, n manifest.Node) Target {
-	return Target{Role: n.Role, Platform: n.Platform, Kubernetes: &kubernetes.Cluster{Kind: m.Roles[n.Role].Kind}}
+// homelabTarget is the image of a homelab node: the fixture schemas and the homelab's
+// cluster.json for the node's kind.
+func homelabTarget(t *testing.T, m *manifest.Manifest, n manifest.Node) Target {
+	t.Helper()
+	c, err := kubernetes.ReadCluster("../../test/fixtures/config/homelab/kubernetes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Kind = m.Roles[n.Role].Kind
+	return Target{Role: n.Role, Platform: n.Platform, Kubernetes: &c}
 }
 
 func TestFromManifestGivesBackTheHomelab(t *testing.T) {
@@ -53,7 +60,7 @@ func TestFromManifestGivesBackTheHomelab(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := b.Check(n.Identity, allSchemas(t), homelabTarget(m, n)); err != nil {
+			if _, err := b.Check(n.Identity, allSchemas(t), homelabTarget(t, m, n)); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -77,6 +84,8 @@ func TestFromManifestDocuments(t *testing.T) {
 		`storage.chalkos.dev/v1alpha1 SystemDisk "system"`,
 		`storage.chalkos.dev/v1alpha1 Volume "longhorn"`,
 		`kubernetes.chalkos.dev/v1alpha1 Kubelet "kubelet"`,
+		`kubernetes.chalkos.dev/v1alpha1 Kubernetes "kubernetes"`,
+		`kubernetes.chalkos.dev/v1alpha1 Flannel "flannel"`,
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("documents =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -126,7 +135,7 @@ func TestCheckNamesWhatDiffers(t *testing.T) {
 	want := n.Identity
 	want.Hostname = "other"
 	want.NetworkUnits = map[string]string{"10-uplink.network": "[Match]\nName=enp2s0\n"}
-	_, err = b.Check(want, allSchemas(t), homelabTarget(m, n))
+	_, err = b.Check(want, allSchemas(t), homelabTarget(t, m, n))
 	for _, s := range []string{"hostname", "network unit 10-uplink.network: [Match] Name=", "network unit 10-uplink.network: 1 [Network] sections instead of 0"} {
 		if err == nil || !strings.Contains(err.Error(), s) {
 			t.Errorf("err = %v, want it to name the %s", err, s)
@@ -267,7 +276,7 @@ func TestFromManifestAppendsDocuments(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := fixtureSchemas(t, builtinSchemas, "../../test/fixtures/config/networkd/schemas", "../../test/fixtures/kinds/image/schemas")
-	if _, err := b.Check(n.Identity, s, homelabTarget(m, n)); err != nil {
+	if _, err := b.Check(n.Identity, s, homelabTarget(t, m, n)); err != nil {
 		t.Fatal(err)
 	}
 	last := b.Documents[len(b.Documents)-2:]
@@ -332,7 +341,7 @@ func TestCheckRefusesExtensionsThatCollide(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = b.Check(n.Identity, s, homelabTarget(m, n))
+			_, err = b.Check(n.Identity, s, homelabTarget(t, m, n))
 			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "chalkos.nodes.cp1.documents") {
 				t.Errorf("err = %v, want %q from chalkos.nodes.cp1.documents", err, tc.want)
 			}
@@ -347,11 +356,11 @@ func TestCheckRefusesExtensionsThatCollide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Check(n.Identity, s, homelabTarget(m, n)); err != nil {
+	if _, err := b.Check(n.Identity, s, homelabTarget(t, m, n)); err != nil {
 		t.Fatal(err)
 	}
 	b.Documents = slices.DeleteFunc(slices.Clone(b.Documents), func(d Document) bool { return d.Kind == "SystemDisk" })
-	if _, err := b.Check(n.Identity, s, homelabTarget(m, n)); err == nil || strings.Contains(err.Error(), "documents") {
+	if _, err := b.Check(n.Identity, s, homelabTarget(t, m, n)); err == nil || strings.Contains(err.Error(), "documents") {
 		t.Errorf("err = %v, want the missing SystemDisk not blamed on the node's documents", err)
 	}
 }
@@ -488,7 +497,7 @@ func TestCheckNamesEachField(t *testing.T) {
 			}
 			want := cloneIdentity(t, n.Identity)
 			c.change(&want)
-			_, err = b.Check(want, allSchemas(t), homelabTarget(m, n))
+			_, err = b.Check(want, allSchemas(t), homelabTarget(t, m, n))
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want it to say %q", err, c.want)
 			}
@@ -654,5 +663,51 @@ spec: {servers: [{host: ntp.example.org, nts: false, port: 4460}, {host: nts.exa
 				t.Fatalf("%v\ndocuments:\n%s", err, b.Text)
 			}
 		})
+	}
+}
+
+// TestFromManifestKubernetesDocuments: registries become RegistryMirrors named after them, the
+// cluster's manifests one Manifest, and every TimeSync carries the DHCP flag.
+func TestFromManifestKubernetesDocuments(t *testing.T) {
+	m := homelabManifest(t)
+	m.Registries = manifest.Registries{Mirrors: map[string][]string{
+		"docker.io":      {"https://mirror.example"},
+		"localhost:5000": {"http://10.0.2.100:5000"},
+	}, AllowPlainHTTP: true}
+	m.Manifests = []json.RawMessage{json.RawMessage(`{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "apps"}}`)}
+	m.Time.DHCPServers = true
+	b, err := FromManifest(m, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string][]string{}
+	for _, d := range b.Documents {
+		names[d.Kind] = append(names[d.Kind], d.Name)
+	}
+	if !slices.Equal(names["RegistryMirror"], []string{"docker.io", "localhost-5000"}) || !slices.Equal(names["Manifest"], []string{"manifests"}) {
+		t.Errorf("documents = %v", names)
+	}
+	if _, err := b.Check(m.Nodes["w1"].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes["w1"])); err != nil {
+		t.Fatal(err)
+	}
+	// Two registries that would share a document name.
+	m.Registries.Mirrors["localhost-5000"] = []string{"https://other.example"}
+	if _, err := FromManifest(m, "w1"); err == nil || !strings.Contains(err.Error(), `both be the RegistryMirror "localhost-5000"`) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// TestCheckComparesTheClusterWithTheImage: a manifest whose Kubernetes settings differ from the
+// image's is refused, naming the setting.
+func TestCheckComparesTheClusterWithTheImage(t *testing.T) {
+	m := homelabManifest(t)
+	m.Kubernetes = json.RawMessage(`{"domain": "lab.local"}`)
+	b, err := FromManifest(m, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = b.Check(m.Nodes["w1"].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes["w1"]))
+	if err == nil || !strings.Contains(err.Error(), "kubernetes domain lab.local instead of cluster.local") {
+		t.Fatalf("err = %v", err)
 	}
 }

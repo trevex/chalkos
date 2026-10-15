@@ -1,0 +1,51 @@
+{
+  "allowSchedulingOnControlPlanes": false,
+  "dnsIPs": {
+    "ipv4": "10.96.0.10"
+  },
+  "domain": "cluster.local",
+  "endpoint": "https://10.0.0.11:6443",
+  "extraArgs": {
+    "etcd": {},
+    "kube-apiserver": {},
+    "kube-controller-manager": {},
+    "kube-scheduler": {},
+    "kubelet": {}
+  },
+  "flannel": {
+    "mtu": 0
+  },
+  "images": {
+    "coredns": "registry.k8s.io/coredns/coredns:v1.14.6",
+    "etcd": "registry.k8s.io/etcd:3.7.0-0",
+    "flannel": "ghcr.io/flannel-io/flannel:v0.28.9",
+    "kubeAPIServer": "registry.k8s.io/kube-apiserver:v1.37.1",
+    "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1",
+    "kubeProxy": "registry.k8s.io/kube-proxy:v1.37.1",
+    "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1"
+  },
+  "ipFamilies": [
+    "ipv4"
+  ],
+  "kind": "worker",
+  "nodeCIDRMaskSizes": {
+    "ipv4": 24
+  },
+  "nodeIP": {
+    "timeout": 300,
+    "validSubnets": []
+  },
+  "podCIDRs": {
+    "ipv4": "10.244.0.0/16"
+  },
+  "serviceCIDRs": {
+    "ipv4": "10.96.0.0/12"
+  },
+  "version": "1.37.1",
+  "vip": {
+    "addresses": [],
+    "interface": null,
+    "mode": "l2"
+  },
+  "vxlanSourceSubnets": []
+}

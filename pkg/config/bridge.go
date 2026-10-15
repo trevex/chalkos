@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/networkdschema"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -28,14 +31,21 @@ type Bridged struct {
 	// that chalkos.nodes.<node>.documents added.
 	node       string
 	extensions int
+	// kubernetes is whether the node's image runs Kubernetes, and registries, manifests and
+	// dhcp the manifest's values its documents must give back.
+	kubernetes bool
+	registries manifest.Registries
+	manifests  []json.RawMessage
+	dhcp       bool
 }
 
 // FromManifest generates a node's config from the manifest: Cluster, Image, Node, TimeSync,
 // SystemDisk and Volume, Network, NetDev and Link, and Kubelet documents mapped back from the
-// identity the cluster definition rendered, then the documents the node's extensions add. The
-// Image is named <role>-<platform>, and its source is the flake attribute path the manifest
-// gives the role's image of the platform. Check tells whether the documents give back that
-// identity.
+// identity the cluster definition rendered; on a node with Kubernetes the Kubernetes, Flannel,
+// RegistryMirror and Manifest documents of the manifest's cluster-wide settings; then the
+// documents the node's extensions add. The Image is named <role>-<platform>, and its source is the
+// flake attribute path the manifest gives the role's image of the platform. Check tells whether
+// the documents give back that identity, and the image's Kubernetes settings.
 func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 	n, ok := m.Nodes[name]
 	if !ok {
@@ -62,7 +72,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		object(CoreAPI, "Cluster", m.Cluster.Name, cluster),
 		object(CoreAPI, "Image", image, map[string]any{"source": role.Images[n.Platform]}),
 		object(CoreAPI, "Node", name, node),
-		object(TimeAPI, "TimeSync", "time", map[string]any{"servers": timeServers(id.Time.Servers)}),
+		object(TimeAPI, "TimeSync", "time", map[string]any{"servers": timeServers(id.Time.Servers), "dhcp": m.Time.DHCPServers}),
 	}
 	storageDocs, err := storageObjects(id.Storage)
 	if err != nil {
@@ -77,6 +87,13 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 	if id.Kubernetes != nil {
 		objects = append(objects, kubeletObject(id))
 	}
+	if role.Kind != "" {
+		docs, err := kubernetesObjects(m)
+		if err != nil {
+			return Bridged{}, err
+		}
+		objects = append(objects, docs...)
+	}
 	for i, raw := range n.Documents {
 		doc, err := decodeObject(raw)
 		if err != nil {
@@ -89,6 +106,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		return Bridged{}, err
 	}
 	b.node, b.extensions = name, len(n.Documents)
+	b.kubernetes, b.registries, b.manifests, b.dhcp = role.Kind != "", m.Registries, m.Manifests, m.Time.DHCPServers
 	return b, nil
 }
 
@@ -294,6 +312,59 @@ func kubeletObject(id manifest.Identity) map[string]any {
 	return object(KubernetesAPI, "Kubelet", "kubelet", spec)
 }
 
+// kubernetesObjects maps the manifest's cluster-wide settings to the Kubernetes, Flannel,
+// RegistryMirror and Manifest documents of a node with Kubernetes. A manifest without a
+// kubernetes section gets the kind's defaults; one Manifest holds the cluster's manifests in
+// order, and none is emitted for an empty list.
+func kubernetesObjects(m *manifest.Manifest) ([]map[string]any, error) {
+	spec := map[string]any{}
+	if !manifest.IsNull(m.Kubernetes) {
+		var err error
+		if spec, err = decodeObject(m.Kubernetes); err != nil {
+			return nil, fmt.Errorf("the manifest's kubernetes section: %w", err)
+		}
+	}
+	objects := []map[string]any{object(KubernetesAPI, "Kubernetes", "kubernetes", spec)}
+	if !manifest.IsNull(m.Flannel) {
+		f, err := decodeObject(m.Flannel)
+		if err != nil {
+			return nil, fmt.Errorf("the manifest's flannel section: %w", err)
+		}
+		objects = append(objects, object(KubernetesAPI, "Flannel", "flannel", f))
+	}
+	names := map[string]string{}
+	for _, registry := range slices.Sorted(maps.Keys(m.Registries.Mirrors)) {
+		name := strings.ReplaceAll(strings.ToLower(registry), ":", "-")
+		if !documentName.MatchString(name) {
+			return nil, fmt.Errorf("the registry %q gives no document name: write its host in lower case", registry)
+		}
+		if other, ok := names[name]; ok {
+			return nil, fmt.Errorf("the registries %s and %s would both be the RegistryMirror %q", other, registry, name)
+		}
+		names[name] = registry
+		objects = append(objects, object(KubernetesAPI, "RegistryMirror", name, map[string]any{
+			"registry":       registry,
+			"mirrors":        stringList(m.Registries.Mirrors[registry]),
+			"allowPlainHTTP": m.Registries.AllowPlainHTTP,
+		}))
+	}
+	if len(m.Manifests) > 0 {
+		list := make([]any, 0, len(m.Manifests))
+		for i, raw := range m.Manifests {
+			o, err := decodeObject(raw)
+			if err != nil {
+				return nil, fmt.Errorf("manifest %d of the cluster: %w", i+1, err)
+			}
+			list = append(list, o)
+		}
+		objects = append(objects, object(KubernetesAPI, "Manifest", "manifests", map[string]any{"objects": list}))
+	}
+	return objects, nil
+}
+
+// documentName is the pattern of metadata.name.
+var documentName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+
 func stringList(values []string) []any {
 	out := make([]any, 0, len(values))
 	for _, v := range values {
@@ -424,6 +495,8 @@ func StaticAddresses(docs []Document) []string {
 // Check translates the documents for the image t describes, with its schemas, and requires the
 // identity the cluster definition rendered for the node, so chalkctl never delivers config that
 // means something else on the node than the definition says. It returns the translated identity.
+// On an image with Kubernetes it also requires the image's Kubernetes settings and the manifest's
+// registries, manifests and DHCP flag.
 func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (manifest.Identity, error) {
 	set, err := NewSet(b.Documents, s)
 	if err != nil {
@@ -440,10 +513,122 @@ func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (man
 	if err != nil {
 		return manifest.Identity{}, err
 	}
-	if diffs := identityDiff(want, got); len(diffs) > 0 {
+	diffs := identityDiff(want, got)
+	more, err := b.kubernetesDiffs(set, t)
+	if err != nil {
+		return manifest.Identity{}, err
+	}
+	diffs = append(diffs, more...)
+	if len(diffs) > 0 {
 		return manifest.Identity{}, fmt.Errorf("the config generated from the cluster definition does not give back its identity: %s", strings.Join(diffs, "; "))
 	}
 	return got, nil
+}
+
+// kubernetesDiffs names how the documents' Kubernetes settings differ from the image's
+// cluster.json, and their registries, manifests and DHCP flag from the manifest's.
+func (b Bridged) kubernetesDiffs(set *Set, t Target) ([]string, error) {
+	var diffs []string
+	dhcp, err := set.TimeDHCP()
+	if err != nil {
+		return nil, err
+	}
+	if dhcp != b.dhcp {
+		diffs = append(diffs, fmt.Sprintf("time dhcp %t instead of %t", dhcp, b.dhcp))
+	}
+	if t.Kubernetes == nil || !b.kubernetes {
+		return diffs, nil
+	}
+	c, err := set.Cluster(t.Kubernetes.Image())
+	if err != nil {
+		return nil, err
+	}
+	diffs = append(diffs, clusterDiffs(*t.Kubernetes, c)...)
+	got, err := set.RegistryMirrors()
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]Registry{}
+	for registry, mirrors := range b.registries.Mirrors {
+		want[registry] = Registry{Mirrors: mirrors, AllowPlainHTTP: b.registries.AllowPlainHTTP}
+	}
+	for _, registry := range sortedUnion(want, got) {
+		w, wok := want[registry]
+		g, gok := got[registry]
+		if wok != gok || !slices.Equal(w.Mirrors, g.Mirrors) || w.AllowPlainHTTP != g.AllowPlainHTTP {
+			diffs = append(diffs, fmt.Sprintf("registry %s: mirrors %v, plain HTTP %t instead of %v, %t", registry, g.Mirrors, g.AllowPlainHTTP, w.Mirrors, w.AllowPlainHTTP))
+		}
+	}
+	objects, err := set.ManifestObjects()
+	if err != nil {
+		return nil, err
+	}
+	if !sameObjects(b.manifests, objects) {
+		diffs = append(diffs, fmt.Sprintf("%d manifest objects that differ from the cluster's %d", len(objects), len(b.manifests)))
+	}
+	return diffs, nil
+}
+
+// sameObjects compares the manifest's objects with the documents', as JSON.
+func sameObjects(raw []json.RawMessage, objects []map[string]any) bool {
+	if len(raw) != len(objects) {
+		return false
+	}
+	for i := range raw {
+		var w, g any
+		data, err := json.Marshal(objects[i])
+		if err != nil || json.Unmarshal(raw[i], &w) != nil || json.Unmarshal(data, &g) != nil || !reflect.DeepEqual(w, g) {
+			return false
+		}
+	}
+	return true
+}
+
+// clusterDiffs names the settings in which got, the cluster the documents give, differs from
+// want, the image's: those of the cluster's families alone, with empty lists and maps the same
+// as none. The release and images are the image's in both.
+func clusterDiffs(want, got kubernetes.Cluster) []string {
+	var diffs []string
+	differ := func(what string, same bool, w, g any) {
+		if !same {
+			diffs = append(diffs, fmt.Sprintf("kubernetes %s %v instead of %v", what, g, w))
+		}
+	}
+	differ("kind", want.Kind == got.Kind, want.Kind, got.Kind)
+	differ("endpoint", want.Endpoint == got.Endpoint, want.Endpoint, got.Endpoint)
+	differ("domain", want.Domain == got.Domain, want.Domain, got.Domain)
+	differ("allowSchedulingOnControlPlanes", want.AllowSchedulingOnControlPlanes == got.AllowSchedulingOnControlPlanes,
+		want.AllowSchedulingOnControlPlanes, got.AllowSchedulingOnControlPlanes)
+	wf, _ := want.Families()
+	gf, _ := got.Families()
+	differ("ipFamilies", slices.Equal(wf, gf), wf, gf)
+	for _, f := range wf {
+		differ("podCIDRs."+string(f), want.PodCIDRs.Of(f) == got.PodCIDRs.Of(f), want.PodCIDRs.Of(f), got.PodCIDRs.Of(f))
+		differ("serviceCIDRs."+string(f), want.ServiceCIDRs.Of(f) == got.ServiceCIDRs.Of(f), want.ServiceCIDRs.Of(f), got.ServiceCIDRs.Of(f))
+		differ("dnsIPs."+string(f), want.DNSIPs.Of(f) == got.DNSIPs.Of(f), want.DNSIPs.Of(f), got.DNSIPs.Of(f))
+		differ("nodeCIDRMaskSizes."+string(f), want.NodeCIDRMaskSizes.Of(f) == got.NodeCIDRMaskSizes.Of(f),
+			want.NodeCIDRMaskSizes.Of(f), got.NodeCIDRMaskSizes.Of(f))
+	}
+	differ("nodeIP.validSubnets", slices.Equal(want.NodeIP.ValidSubnets, got.NodeIP.ValidSubnets), want.NodeIP.ValidSubnets, got.NodeIP.ValidSubnets)
+	differ("nodeIP.timeout", want.NodeIP.Timeout == got.NodeIP.Timeout, want.NodeIP.Timeout, got.NodeIP.Timeout)
+	differ("vxlanSourceSubnets", slices.Equal(want.VXLANSourceSubnets, got.VXLANSourceSubnets), want.VXLANSourceSubnets, got.VXLANSourceSubnets)
+	differ("vip.addresses", slices.Equal(want.VIP.Addresses, got.VIP.Addresses), want.VIP.Addresses, got.VIP.Addresses)
+	if len(want.VIP.Addresses) > 0 {
+		differ("vip.mode", want.VIP.Mode == got.VIP.Mode, want.VIP.Mode, got.VIP.Mode)
+		differ("vip.interface", want.VIP.Interface == got.VIP.Interface, want.VIP.Interface, got.VIP.Interface)
+	}
+	for _, component := range sortedUnion(want.ExtraArgs, got.ExtraArgs) {
+		differ("extraArgs."+component, maps.Equal(want.ExtraArgs[component], got.ExtraArgs[component]), want.ExtraArgs[component], got.ExtraArgs[component])
+	}
+	differ("flannel", reflect.DeepEqual(want.Flannel, got.Flannel), flannelText(want.Flannel), flannelText(got.Flannel))
+	return diffs
+}
+
+func flannelText(f *kubernetes.Flannel) string {
+	if f == nil {
+		return "none"
+	}
+	return fmt.Sprintf("mtu %d", f.MTU)
 }
 
 // identityDiff names what of got differs from want, compared by meaning: unit files and repart
