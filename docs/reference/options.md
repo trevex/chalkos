@@ -2927,6 +2927,45 @@ string *(read only)*
 
 
 
+### chalkos\.kinds\.\<name>\.get
+
+
+
+Builds a shell command that prints the node’s documents of the kind with chalkcfg\.
+` name ` picks one document; without it the command prints every document of the kind,
+one line each\. ` path ` prints one field, such as ` spec.location `: fields separated by
+dots, ` * ` or an index for the elements of a list, and a key or ` * ` for the values of an
+attribute set\. The path must follow the kind’s options, or the evaluation fails and
+lists the fields where it went wrong\. ` output ` passes ` json `, ` yaml `,
+` jsonpath=<expression> ` or ` go-template=<template> ` instead of a path\. Run the command
+from a shell script, such as ` pkgs.writeShellScript `, since systemd expands ` $ ` and ` % `
+in ` ExecStart= ` itself\.
+
+
+
+*Type:*
+function that evaluates to a(n) string *(read only)*
+
+
+
+*Default:*
+a function of ` { name ? null, path ? null, output ? null } `
+
+
+
+*Example:*
+
+```nix
+config.chalkos.kinds.Rack.get { name = "rack"; path = "spec.location"; }
+# "/nix/store/…-chalkcfg-0.1.0/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'"
+
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
 ### chalkos\.kinds\.\<name>\.group
 
 

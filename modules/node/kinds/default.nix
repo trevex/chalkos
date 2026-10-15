@@ -1,7 +1,10 @@
 # Config kinds: the documents an image accepts at runtime. Each kind of chalkos.kinds becomes a
 # JSON Schema in /etc/chalkos/schemas and in the image directory's schemas/, from which chalkctl
 # and chalkd validate a node's config documents. networkd's Network, NetDev and Link come from the
-# image's systemd.
+# image's systemd. Each kind of chalkos.kinds has a get function that builds chalkcfg commands;
+# networkd's kinds have none, because their schemas exist only once systemd's tables are built and
+# a section of theirs may be an object or a list, so a path through them cannot be checked during
+# evaluation.
 {
   config,
   lib,
@@ -10,6 +13,8 @@
 }:
 let
   schema = import ./schema.nix { inherit lib; };
+  getLib = import ./get.nix { inherit lib; };
+  chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
   cfg = config.chalkos.kinds;
 
   # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
@@ -109,6 +114,31 @@ let
           default = "/run/chalkos/config/${config.group}/${name}";
           defaultText = lib.literalExpression ''"/run/chalkos/config/''${group}/<kind>"'';
           description = "Directory on the running node that holds the node's documents of the kind, one JSON file per document.";
+        };
+        get = lib.mkOption {
+          type = lib.types.functionTo lib.types.str;
+          readOnly = true;
+          default = getLib.command {
+            inherit chalkcfg;
+            kind = name;
+            inherit (config) spec;
+          };
+          defaultText = lib.literalMD "a function of `{ name ? null, path ? null, output ? null }`";
+          example = lib.literalExpression ''
+            config.chalkos.kinds.Rack.get { name = "rack"; path = "spec.location"; }
+            # "/nix/store/…-chalkcfg-0.1.0/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'"
+          '';
+          description = ''
+            Builds a shell command that prints the node's documents of the kind with chalkcfg.
+            `name` picks one document; without it the command prints every document of the kind,
+            one line each. `path` prints one field, such as `spec.location`: fields separated by
+            dots, `*` or an index for the elements of a list, and a key or `*` for the values of an
+            attribute set. The path must follow the kind's options, or the evaluation fails and
+            lists the fields where it went wrong. `output` passes `json`, `yaml`,
+            `jsonpath=<expression>` or `go-template=<template>` instead of a path. Run the command
+            from a shell script, such as `pkgs.writeShellScript`, since systemd expands `$` and `%`
+            in `ExecStart=` itself.
+          '';
         };
       };
     };

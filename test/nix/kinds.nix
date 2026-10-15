@@ -4,6 +4,7 @@
 let
   inherit (lib) mkOption types;
   schema = import ../../modules/node/kinds/schema.nix { inherit lib; };
+  getLib = import ../../modules/node/kinds/get.nix { inherit lib; };
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 
   # The worker image of a one-role cluster whose role carries the given NixOS modules.
@@ -100,6 +101,62 @@ let
       ];
     }).installer.nixos.config;
   hasChalkcfg = packages: lib.any (p: lib.getName p == "chalkcfg") packages;
+  # The options of the Peering kind: a nested group, a nullOr submodule, a list of submodules,
+  # an attribute set and a secretRef.
+  peeringSpec = secretRef: {
+    asn = mkOption { type = types.ints.u32; };
+    peer.address = mkOption { type = types.str; };
+    timers = mkOption {
+      type = types.nullOr (
+        types.submodule {
+          options.hold = mkOption {
+            type = types.int;
+            default = 90;
+          };
+        }
+      );
+      default = null;
+    };
+    neighbours = mkOption {
+      type = types.listOf (types.submodule { options.address = mkOption { type = types.str; }; });
+      default = [ ];
+    };
+    labels = mkOption {
+      type = types.attrsOf types.str;
+      default = { };
+    };
+    token = mkOption {
+      type = types.nullOr secretRef;
+      default = null;
+    };
+  };
+  withPeering = image [
+    (
+      { chalkosLib, ... }:
+      {
+        chalkos.kinds.Peering = {
+          group = "bgp.example.org";
+          version = "v1alpha1";
+          multiple = true;
+          spec = peeringSpec chalkosLib.types.secretRef;
+        };
+      }
+    )
+  ];
+  # The arguments of the command get builds, and whether it runs the image's chalkcfg.
+  getPeering =
+    args:
+    let
+      words = lib.splitString " " (withPeering.chalkos.kinds.Peering.get args);
+    in
+    {
+      chalkcfg =
+        lib.hasSuffix "/bin/chalkcfg" (lib.head words) && lib.hasPrefix "/nix/store/" (lib.head words);
+      args = lib.concatStringsSep " " (lib.tail words);
+    };
+  resolvePeering = getLib.resolve (peeringSpec schema.types.secretRef);
+  homelab =
+    (mkCluster { modules = [ ../../examples/homelab/cluster.nix ]; }).roles.worker.nixos.metal.config;
   kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
   builtinFixture =
     file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));
@@ -607,5 +664,119 @@ lib.runTests {
   testImageDirectoryWithoutKubernetesHasNoClusterFile = {
     expr = lib.hasInfix "kubernetes.json" plainImage.system.build.chalkosImage.buildCommand;
     expected = false;
+  };
+  testGetPath = {
+    expr = getPeering {
+      name = "uplink";
+      path = "spec.asn";
+    };
+    expected = {
+      chalkcfg = true;
+      args = "get Peering uplink -o 'jsonpath={.spec.asn}'";
+    };
+  };
+  testGetNestedGroup = {
+    expr = (getPeering { path = "spec.peer.address"; }).args;
+    expected = "get Peering -o 'jsonpath={.spec.peer.address}'";
+  };
+  testGetNullOrSubmodule = {
+    expr = resolvePeering "spec.timers.hold";
+    expected.jsonpath = "{.spec.timers.hold}";
+  };
+  testGetListElements = {
+    expr = (getPeering { path = "spec.neighbours.*.address"; }).args;
+    expected = "get Peering -o 'jsonpath={.spec.neighbours[*].address}'";
+  };
+  testGetListIndex = {
+    expr = resolvePeering "spec.neighbours.0.address";
+    expected.jsonpath = "{.spec.neighbours[0].address}";
+  };
+  testGetAttrsOfKey = {
+    expr = resolvePeering "spec.labels.zone-a";
+    expected.jsonpath = "{.spec.labels['zone-a']}";
+  };
+  testGetAttrsOfIdentifierKey = {
+    expr = resolvePeering "spec.labels.zone";
+    expected.jsonpath = "{.spec.labels.zone}";
+  };
+  testGetAttrsOfAll = {
+    expr = resolvePeering "spec.labels.*";
+    expected.jsonpath = "{.spec.labels[*]}";
+  };
+  testGetSecretRef = {
+    expr = resolvePeering "spec.token.secretRef.name";
+    expected.jsonpath = "{.spec.token.secretRef.name}";
+  };
+  testGetMetadataName = {
+    expr = resolvePeering "metadata.name";
+    expected.jsonpath = "{.metadata.name}";
+  };
+  testGetWithoutPath = {
+    expr = getPeering { };
+    expected = {
+      chalkcfg = true;
+      args = "get Peering";
+    };
+  };
+  testGetOutput = {
+    expr =
+      (getPeering {
+        name = "uplink";
+        output = "json";
+      }).args;
+    expected = "get Peering uplink -o json";
+  };
+  testGetQuotesTheName = {
+    expr = (getPeering { name = "a b"; }).args;
+    expected = "get Peering 'a b'";
+  };
+  testGetUnknownFieldListsFields = {
+    expr = resolvePeering "spec.asnn";
+    expected.error = "spec has no field asnn; its fields are asn, labels, neighbours, peer, timers, token";
+  };
+  testGetUnknownTopField = {
+    expr = resolvePeering "status";
+    expected.error = "the document has no field status; its fields are apiVersion, kind, metadata, spec";
+  };
+  testGetBelowValue = {
+    expr = resolvePeering "spec.peer.address.port";
+    expected.error = "spec.peer.address holds a string and has no fields";
+  };
+  testGetListNeedsIndex = {
+    expr = resolvePeering "spec.neighbours.address";
+    expected.error = "spec.neighbours is a list: follow it with * or an index such as 0, not address";
+  };
+  testGetEmptyField = {
+    expr = resolvePeering "spec..asn";
+    expected.error = "the path has an empty field name";
+  };
+  testGetUnquotableKey = {
+    expr = resolvePeering "spec.labels.it's";
+    expected.error = "jsonpath cannot name the field it's";
+  };
+  testGetInvalidPathFails = {
+    expr = fails (getPeering {
+      path = "spec.asnn";
+    });
+    expected = true;
+  };
+  testGetPathAndOutputFail = {
+    expr = fails (getPeering {
+      path = "spec.asn";
+      output = "json";
+    });
+    expected = true;
+  };
+  testGetUnknownOutputFails = {
+    expr = fails (getPeering {
+      output = "xml";
+    });
+    expected = true;
+  };
+  testBuiltinKindHasGet = {
+    expr = lib.hasSuffix "/bin/chalkcfg get Node -o 'jsonpath={.spec.type}'" (
+      kubernetesImage.chalkos.kinds.Node.get { path = "spec.type"; }
+    );
+    expected = true;
   };
 }
