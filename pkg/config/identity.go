@@ -84,12 +84,13 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 		}
 	}
 	if t.Kubernetes != nil {
-		// The node's addresses follow the families of the Kubernetes document. A set without one
-		// is translated with the image's, and refused where its cluster is built.
+		// The node's addresses follow the families and nodeIP.validSubnets of the Kubernetes
+		// document. A set without one is translated with the image's, and refused where its
+		// cluster is built.
 		c := *t.Kubernetes
 		if _, ok := s.One("Kubernetes"); ok {
 			if c, err = s.Cluster(t.Kubernetes.Image()); err != nil {
-				return manifest.Identity{}, err
+				return manifest.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
 			}
 		}
 		if err := s.kubelet(&id, nodeDoc.Name, c); err != nil {

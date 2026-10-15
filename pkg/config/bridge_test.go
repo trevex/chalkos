@@ -679,19 +679,22 @@ func TestFromManifestKubernetesDocuments(t *testing.T) {
 	}, AllowPlainHTTP: true}
 	m.Manifests = []json.RawMessage{json.RawMessage(`{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "apps"}}`)}
 	m.Time.DHCPServers = true
-	b, err := FromManifest(m, "w1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := map[string][]string{}
-	for _, d := range b.Documents {
-		names[d.Kind] = append(names[d.Kind], d.Name)
-	}
-	if !slices.Equal(names["RegistryMirror"], []string{"fd00--1-5000", "docker.io", "localhost-5000"}) || !slices.Equal(names["Manifest"], []string{"manifests"}) {
-		t.Errorf("documents = %v", names)
-	}
-	if _, err := b.Check(m.Nodes["w1"].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes["w1"])); err != nil {
-		t.Fatal(err)
+	// Only control planes apply the cluster's manifests, so workers do not get them.
+	for node, manifests := range map[string][]string{"w1": nil, "cp1": {"manifests"}} {
+		b, err := FromManifest(m, node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := map[string][]string{}
+		for _, d := range b.Documents {
+			names[d.Kind] = append(names[d.Kind], d.Name)
+		}
+		if !slices.Equal(names["RegistryMirror"], []string{"fd00--1-5000", "docker.io", "localhost-5000"}) || !slices.Equal(names["Manifest"], manifests) {
+			t.Errorf("%s: documents = %v", node, names)
+		}
+		if _, err := b.Check(m.Nodes[node].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes[node])); err != nil {
+			t.Fatalf("%s: %v", node, err)
+		}
 	}
 	// Two registries that would share a document name.
 	m.Registries.Mirrors["localhost-5000"] = []string{"https://other.example"}
@@ -729,5 +732,60 @@ func TestCheckComparesTheClusterWithTheImage(t *testing.T) {
 	_, err = b.Check(m.Nodes["w1"].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes["w1"]))
 	if err == nil || !strings.Contains(err.Error(), "kubernetes domain lab.local instead of cluster.local") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestCheckNamesTheDifferingManifestObject: a manifest object the documents do not give back is
+// named by its place and its kind and name.
+func TestCheckNamesTheDifferingManifestObject(t *testing.T) {
+	m := homelabManifest(t)
+	m.Manifests = []json.RawMessage{
+		json.RawMessage(`{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "apps"}}`),
+		json.RawMessage(`{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "big"}, "data": {}, "n": 9007199254740993}`),
+	}
+	b, err := FromManifest(m, "cp1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := m.Nodes["cp1"]
+	// Numbers beyond float64's precision survive the round trip.
+	if _, err := b.Check(n.Identity, allSchemas(t), homelabTarget(t, m, n)); err != nil {
+		t.Fatal(err)
+	}
+	b.manifests = slices.Clone(b.manifests)
+	b.manifests[1] = json.RawMessage(`{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "big"}, "data": {}, "n": 9007199254740992}`)
+	_, err = b.Check(n.Identity, allSchemas(t), homelabTarget(t, m, n))
+	if err == nil || !strings.Contains(err.Error(), "manifest object 2 (ConfigMap big) differs from the cluster's") {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.HasPrefix(err.Error(), "the config generated from the cluster definition does not give back the definition's ") {
+		t.Errorf("err = %v", err)
+	}
+	b.manifests = b.manifests[:1]
+	if _, err = b.Check(n.Identity, allSchemas(t), homelabTarget(t, m, n)); err == nil || !strings.Contains(err.Error(), "2 manifest objects instead of 1") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestCheckComparesExtraArgs: the components' extra flags, the kubelet's among them, reach the
+// documents and must equal the image's.
+func TestCheckComparesExtraArgs(t *testing.T) {
+	m := homelabManifest(t)
+	m.Kubernetes = json.RawMessage(`{"extraArgs": {"kubelet": {"v": "2"}, "kube-apiserver": {"audit-log-maxage": "7"}}}`)
+	for _, node := range []string{"w1", "cp1"} {
+		n := m.Nodes[node]
+		b, err := FromManifest(m, node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := homelabTarget(t, m, n)
+		target.Kubernetes.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2"}, "kube-apiserver": {"audit-log-maxage": "7"}}
+		if _, err := b.Check(n.Identity, allSchemas(t), target); err != nil {
+			t.Fatalf("%s: %v", node, err)
+		}
+		target.Kubernetes.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"audit-log-maxage": "7"}}
+		if _, err := b.Check(n.Identity, allSchemas(t), target); err == nil || !strings.Contains(err.Error(), "kubernetes extraArgs.kubelet map[v:2] instead of map[]") {
+			t.Fatalf("%s: err = %v", node, err)
+		}
 	}
 }

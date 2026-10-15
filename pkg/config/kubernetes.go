@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
 // docsOf returns the documents of a kind among docs.
@@ -32,8 +33,10 @@ func single(docs []Document, apiVersion, kind string) (Document, bool) {
 
 // ClusterOf builds the Kubernetes cluster a node's documents give on an image with the facts img:
 // its kind from the Node's type, its endpoint from the Cluster, its settings from the Kubernetes
-// document and, on a flannel image, flannel's from the Flannel document, and checks it. docs
-// carry their schema defaults, as a Set and the stored config do.
+// document and, on a flannel image, flannel's from the Flannel document, and checks it. It holds
+// the per-family values of the cluster's families alone, as the image's cluster.json does, and
+// each error names the document whose setting fails. docs carry their schema defaults, as a Set
+// and the stored config do.
 func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error) {
 	nodeDoc, ok := single(docs, CoreAPI, "Node")
 	if !ok {
@@ -85,6 +88,13 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 		VIP:                kubernetes.VIP{Addresses: k.VIP.Addresses, Mode: k.VIP.Mode, Interface: deref(k.VIP.Interface)},
 		ExtraArgs:          k.ExtraArgs,
 	}
+	if _, err := c.EndpointHost(); err != nil {
+		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", clusterDoc, err)
+	}
+	if err := c.Validate(); err != nil {
+		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
+	}
+	keepFamilies(&c)
 	if img.CNI == kubernetes.CNIFlannel {
 		c.Flannel = &kubernetes.Flannel{}
 		if d, ok := single(docs, KubernetesAPI, "Flannel"); ok {
@@ -95,12 +105,33 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 			if f.MTU != nil {
 				c.Flannel.MTU = *f.MTU
 			}
+			// The cluster without flannel is valid by now, so what fails is the Flannel
+			// document's MTU, checked against the Kubernetes document's families.
+			if err := c.Validate(); err != nil {
+				return kubernetes.Cluster{}, fmt.Errorf("%s: %w", d, err)
+			}
 		}
 	}
-	if err := c.Validate(); err != nil {
-		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
-	}
 	return c, nil
+}
+
+// keepFamilies clears the per-family values of the families the cluster does not use, as the
+// image's cluster.json leaves them out, so a cluster built from documents equals the image's.
+func keepFamilies(c *kubernetes.Cluster) {
+	families, err := c.Families()
+	if err != nil {
+		return
+	}
+	for _, f := range []nodeip.Family{nodeip.IPv4, nodeip.IPv6} {
+		if slices.Contains(families, f) {
+			continue
+		}
+		if f == nodeip.IPv4 {
+			c.PodCIDRs.IPv4, c.ServiceCIDRs.IPv4, c.DNSIPs.IPv4, c.NodeCIDRMaskSizes.IPv4 = "", "", "", 0
+		} else {
+			c.PodCIDRs.IPv6, c.ServiceCIDRs.IPv6, c.DNSIPs.IPv6, c.NodeCIDRMaskSizes.IPv6 = "", "", "", 0
+		}
+	}
 }
 
 // dnsIP is the DNS address given, or the 10th address of the service range, which kubeadm gives

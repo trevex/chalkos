@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"errors"
@@ -175,13 +176,16 @@ func keyText(n *yaml.Node) string {
 	return n.ShortTag()
 }
 
-// decodeSpec decodes the document's spec into v.
+// decodeSpec decodes the document's spec into v. Numbers in untyped fields stay json.Number,
+// exact as written, such as those of the Kubernetes objects a Manifest carries.
 func (d Document) decodeSpec(v any) error {
 	b, err := json.Marshal(d.Object["spec"])
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(b, v); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("%s %q: %w", d.Kind, d.Name, err)
 	}
 	return nil

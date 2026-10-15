@@ -21,6 +21,8 @@ import (
 type fakeAPIServer struct {
 	mu      sync.Mutex
 	applied []string
+	// bodies are the bodies of the requests that apply objects.
+	bodies  []string
 	widgets bool
 	ready   bool
 }
@@ -71,6 +73,7 @@ func (f *fakeAPIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.applied = append(f.applied, r.URL.Path)
+		f.bodies = append(f.bodies, string(body))
 		if strings.HasSuffix(r.URL.Path, "/customresourcedefinitions/widgets.example.com") {
 			f.widgets = true
 		}
@@ -154,5 +157,23 @@ func TestReadManifests(t *testing.T) {
 	objects, err := ReadManifests(path)
 	if err != nil || len(objects) != 1 || objects[0]["kind"] != "Namespace" {
 		t.Fatalf("ReadManifests() = %v, %v", objects, err)
+	}
+}
+
+// Numbers decoded as json.Number, as config documents hold them, reach the API server with the
+// digits they were written with, even beyond float64's precision.
+func TestApplyKeepsNumbers(t *testing.T) {
+	f, cfg := startAPIServer(t)
+	a, err := NewApplier(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects := []map[string]any{{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "big"},
+		"n": json.Number("9007199254740993"), "f": json.Number("1.50")}}
+	if err := a.Apply(context.Background(), objects); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.bodies) != 1 || !strings.Contains(f.bodies[0], `"n":9007199254740993`) || !strings.Contains(f.bodies[0], `"f":1.50`) {
+		t.Errorf("bodies = %q", f.bodies)
 	}
 }

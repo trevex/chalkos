@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -33,12 +35,16 @@ func TestClusterFromDefaults(t *testing.T) {
 	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.Version != "1.37.1" || c.Images.KubeProxy != "p" {
 		t.Errorf("cluster = %+v", c)
 	}
-	if c.Domain != "cluster.local" || c.PodCIDRs.IPv4 != "10.244.0.0/16" || c.NodeCIDRMaskSizes.IPv6 != 64 || c.NodeIP.Timeout != 300 || c.VIP.Mode != "l2" {
+	if c.Domain != "cluster.local" || c.PodCIDRs.IPv4 != "10.244.0.0/16" || c.NodeCIDRMaskSizes.IPv4 != 24 || c.NodeIP.Timeout != 300 || c.VIP.Mode != "l2" {
 		t.Errorf("defaults = %+v", c)
 	}
 	// The DNS address defaults to the 10th address of each service range.
-	if c.DNSIPs.IPv4 != "10.96.0.10" || c.DNSIPs.IPv6 != "fd00:10:96::a" {
-		t.Errorf("dnsIPs = %+v", c.DNSIPs)
+	dual, err := kubernetesSet(t, "{ipFamilies: [ipv4, ipv6]}", "").Cluster(testImage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dual.DNSIPs.IPv4 != "10.96.0.10" || dual.DNSIPs.IPv6 != "fd00:10:96::a" || dual.NodeCIDRMaskSizes.IPv6 != 64 {
+		t.Errorf("dual stack = %+v", dual)
 	}
 	// A flannel image without a Flannel document takes the interface's MTU.
 	if c.Flannel == nil || c.Flannel.MTU != 0 {
@@ -107,12 +113,14 @@ func TestRegistryMirrors(t *testing.T) {
 	if len(got) != 2 || got["docker.io"].Mirrors[1] != "https://b.example" || !got["localhost:5000"].AllowPlainHTTP {
 		t.Errorf("mirrors = %+v", got)
 	}
-	for name, more := range map[string]string{
-		"plain HTTP": mirror("local", "localhost:5000", "[http://10.0.2.100:5000]", false),
-		"twice":      mirror("a", "docker.io", "[https://a.example]", false) + mirror("b", "docker.io", "[https://b.example]", false),
+	for name, tc := range map[string]struct{ more, want string }{
+		"plain HTTP": {mirror("local", "localhost:5000", "[http://10.0.2.100:5000]", false),
+			`RegistryMirror "local": the mirror http://10.0.2.100:5000 is not an https:// URL`},
+		"twice": {mirror("a", "docker.io", "[https://a.example]", false) + mirror("b", "docker.io", "[https://b.example]", false),
+			`RegistryMirror "a" and RegistryMirror "b" both mirror docker.io`},
 	} {
-		if _, err := kubernetesSet(t, "{}", more).RegistryMirrors(); err == nil {
-			t.Errorf("%s: accepted", name)
+		if _, err := kubernetesSet(t, "{}", tc.more).RegistryMirrors(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
 		}
 	}
 }
@@ -155,5 +163,78 @@ func TestIdentityTakesTheDocumentsFamilies(t *testing.T) {
 	_, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker, Version: "1.37.1"}})
 	if err == nil || !strings.Contains(err.Error(), "an ipv4 address, but the cluster's ipFamilies are [ ipv6 ]") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// The cluster holds the values of its families alone, as the image's cluster.json does.
+func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
+	c, err := kubernetesSet(t, `{podCIDRs: {ipv6: "fd00:1::/56"}, serviceCIDRs: {ipv6: "fd00:2::/112"},
+  dnsIPs: {ipv6: "fd00:2::b"}, nodeCIDRMaskSizes: {ipv6: 60}}`, "").Cluster(testImage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := kubernetes.ByFamily[string]{IPv4: "10.244.0.0/16"}
+	if c.PodCIDRs != want || c.ServiceCIDRs.IPv6 != "" || c.DNSIPs != (kubernetes.ByFamily[string]{IPv4: "10.96.0.10"}) ||
+		c.NodeCIDRMaskSizes != (kubernetes.ByFamily[int]{IPv4: 24}) {
+		t.Errorf("cluster = %+v", c)
+	}
+}
+
+// The homelab worker's documents give exactly its image's cluster.json.
+func TestClusterIsTheImagesClusterFile(t *testing.T) {
+	want, err := kubernetes.ReadCluster("../../test/fixtures/config/homelab/kubernetes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := homelabSet(t, "w1").Cluster(want.Image())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("cluster =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
+	c, err := kubernetesSet(t, `{dnsIPs: {ipv4: 10.96.0.53}, vip: {addresses: [10.0.0.10], interface: lan0}}`, "").Cluster(testImage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DNSIPs.IPv4 != "10.96.0.53" || c.VIP.Interface != "lan0" || c.VIP.Mode != "l2" {
+		t.Errorf("cluster = %+v", c)
+	}
+}
+
+// Errors name the document that holds the setting.
+func TestClusterNamesTheDocument(t *testing.T) {
+	endpoint := strings.Replace(minimal, "spec: {}", `spec: {endpoint: "https://:6443"}`, 1) +
+		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n"
+	s, err := NewSet(mustParse(t, endpoint), allSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Cluster "lab": endpoint`) {
+		t.Errorf("endpoint: err = %v", err)
+	}
+	s = kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: flannel}\nspec: {mtu: 600}\n")
+	if _, err := s.Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Flannel "flannel": flannel: the MTU 600`) {
+		t.Errorf("mtu: err = %v", err)
+	}
+}
+
+// Manifest objects keep their numbers as written, so applying them sends the same digits.
+func TestManifestObjectsKeepNumbers(t *testing.T) {
+	s := kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Manifest\nmetadata: {name: m}\n"+
+		"spec: {objects: [{apiVersion: v1, kind: ConfigMap, metadata: {name: c}, data: {}, big: 9007199254740993, f: 1.5}]}\n")
+	objects, err := s.ManifestObjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(objects[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"big":9007199254740993`) || !strings.Contains(string(data), `"f":1.5`) {
+		t.Errorf("object = %s", data)
 	}
 }

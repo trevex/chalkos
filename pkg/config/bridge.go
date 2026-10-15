@@ -31,12 +31,14 @@ type Bridged struct {
 	// that chalkos.nodes.<node>.documents added.
 	node       string
 	extensions int
-	// kubernetes is whether the node's image runs Kubernetes, and registries, manifests and
-	// dhcp the manifest's values its documents must give back.
-	kubernetes bool
-	registries manifest.Registries
-	manifests  []json.RawMessage
-	dhcp       bool
+	// kubernetes is whether the node's image runs Kubernetes, controlPlane whether it is a
+	// control plane, which alone gets the manifests, and registries, manifests and dhcp the
+	// manifest's values its documents must give back.
+	kubernetes   bool
+	controlPlane bool
+	registries   manifest.Registries
+	manifests    []json.RawMessage
+	dhcp         bool
 }
 
 // FromManifest generates a node's config from the manifest: Cluster, Image, Node, TimeSync,
@@ -88,7 +90,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		objects = append(objects, kubeletObject(id))
 	}
 	if role.Kind != "" {
-		docs, err := kubernetesObjects(m)
+		docs, err := kubernetesObjects(m, role.Kind == manifest.KindControlPlane)
 		if err != nil {
 			return Bridged{}, err
 		}
@@ -106,7 +108,8 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		return Bridged{}, err
 	}
 	b.node, b.extensions = name, len(n.Documents)
-	b.kubernetes, b.registries, b.manifests, b.dhcp = role.Kind != "", m.Registries, m.Manifests, m.Time.DHCPServers
+	b.kubernetes, b.controlPlane = role.Kind != "", role.Kind == manifest.KindControlPlane
+	b.registries, b.manifests, b.dhcp = m.Registries, m.Manifests, m.Time.DHCPServers
 	return b, nil
 }
 
@@ -314,9 +317,10 @@ func kubeletObject(id manifest.Identity) map[string]any {
 
 // kubernetesObjects maps the manifest's cluster-wide settings to the Kubernetes, Flannel,
 // RegistryMirror and Manifest documents of a node with Kubernetes. A manifest without a
-// kubernetes section gets the kind's defaults; one Manifest holds the cluster's manifests in
-// order, and none is emitted for an empty list.
-func kubernetesObjects(m *manifest.Manifest) ([]map[string]any, error) {
+// kubernetes section gets the kind's defaults. Only control planes apply the cluster's manifests,
+// so only they get the Manifest, which holds them in order; none is emitted for an empty list.
+// Workers thus neither store the objects, Secrets among them, nor carry them in every message.
+func kubernetesObjects(m *manifest.Manifest, controlPlane bool) ([]map[string]any, error) {
 	spec := map[string]any{}
 	if !manifest.IsNull(m.Kubernetes) {
 		var err error
@@ -350,7 +354,7 @@ func kubernetesObjects(m *manifest.Manifest) ([]map[string]any, error) {
 			"allowPlainHTTP": m.Registries.AllowPlainHTTP,
 		}))
 	}
-	if len(m.Manifests) > 0 {
+	if controlPlane && len(m.Manifests) > 0 {
 		list := make([]any, 0, len(m.Manifests))
 		for i, raw := range m.Manifests {
 			o, err := decodeObject(raw)
@@ -538,20 +542,21 @@ func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (man
 		return manifest.Identity{}, err
 	}
 	diffs := identityDiff(want, got)
-	more, err := b.kubernetesDiffs(set, t)
+	more, err := b.clusterSettingsDiffs(set, t)
 	if err != nil {
 		return manifest.Identity{}, err
 	}
 	diffs = append(diffs, more...)
 	if len(diffs) > 0 {
-		return manifest.Identity{}, fmt.Errorf("the config generated from the cluster definition does not give back its identity: %s", strings.Join(diffs, "; "))
+		return manifest.Identity{}, fmt.Errorf("the config generated from the cluster definition does not give back the definition's identity, Kubernetes settings, registries, manifests and time settings for the node: %s", strings.Join(diffs, "; "))
 	}
 	return got, nil
 }
 
-// kubernetesDiffs names how the documents' Kubernetes settings differ from the image's
-// cluster.json, and their registries, manifests and DHCP flag from the manifest's.
-func (b Bridged) kubernetesDiffs(set *Set, t Target) ([]string, error) {
+// clusterSettingsDiffs names how the documents' Kubernetes settings differ from the image's
+// cluster.json, and their registries, manifests and DHCP flag from the manifest's; a worker's
+// documents hold no manifests.
+func (b Bridged) clusterSettingsDiffs(set *Set, t Target) ([]string, error) {
 	var diffs []string
 	dhcp, err := set.TimeDHCP()
 	if err != nil {
@@ -565,12 +570,12 @@ func (b Bridged) kubernetesDiffs(set *Set, t Target) ([]string, error) {
 	}
 	c, err := set.Cluster(t.Kubernetes.Image())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
 	}
 	diffs = append(diffs, clusterDiffs(*t.Kubernetes, c)...)
 	got, err := set.RegistryMirrors()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("the registry mirrors the documents give: %w", err)
 	}
 	want := map[string]Registry{}
 	for registry, mirrors := range b.registries.Mirrors {
@@ -585,27 +590,53 @@ func (b Bridged) kubernetesDiffs(set *Set, t Target) ([]string, error) {
 	}
 	objects, err := set.ManifestObjects()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("the manifests the documents give: %w", err)
 	}
-	if !sameObjects(b.manifests, objects) {
-		diffs = append(diffs, fmt.Sprintf("%d manifest objects that differ from the cluster's %d", len(objects), len(b.manifests)))
+	var manifests []json.RawMessage
+	if b.controlPlane {
+		manifests = b.manifests
+	}
+	if d := manifestDiff(manifests, objects); d != "" {
+		diffs = append(diffs, d)
 	}
 	return diffs, nil
 }
 
-// sameObjects compares the manifest's objects with the documents', as JSON.
-func sameObjects(raw []json.RawMessage, objects []map[string]any) bool {
+// manifestDiff names how the documents' manifest objects differ from the manifest's: their
+// number, or the first object that differs, by its place and its kind and name. Both sides are
+// compared as JSON with numbers exact as written.
+func manifestDiff(raw []json.RawMessage, objects []map[string]any) string {
 	if len(raw) != len(objects) {
-		return false
+		return fmt.Sprintf("%d manifest objects instead of %d", len(objects), len(raw))
 	}
 	for i := range raw {
-		var w, g any
+		w, errW := decodeJSON(raw[i])
 		data, err := json.Marshal(objects[i])
-		if err != nil || json.Unmarshal(raw[i], &w) != nil || json.Unmarshal(data, &g) != nil || !reflect.DeepEqual(w, g) {
-			return false
+		if err != nil {
+			return fmt.Sprintf("manifest object %d: %v", i+1, err)
+		}
+		g, errG := decodeJSON(data)
+		if errW != nil || errG != nil || !reflect.DeepEqual(w, g) {
+			return fmt.Sprintf("manifest object %d (%s) differs from the cluster's", i+1, objectName(w))
 		}
 	}
-	return true
+	return ""
+}
+
+// decodeJSON decodes a JSON value with its numbers as written.
+func decodeJSON(data []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var v any
+	err := dec.Decode(&v)
+	return v, err
+}
+
+// objectName is a Kubernetes object's kind and name.
+func objectName(v any) string {
+	o, _ := v.(map[string]any)
+	meta, _ := o["metadata"].(map[string]any)
+	return fmt.Sprintf("%v %v", o["kind"], meta["name"])
 }
 
 // clusterDiffs names the settings in which got, the cluster the documents give, differs from
