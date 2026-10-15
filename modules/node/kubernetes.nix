@@ -57,6 +57,7 @@ let
         done
       '';
 
+  # The kubelet's configuration as chalkd writes it, for the test that compares the two.
   kubeletConfig = {
     apiVersion = "kubelet.config.k8s.io/v1beta1";
     kind = "KubeletConfiguration";
@@ -212,7 +213,6 @@ in
     environment.etc = {
       "chalkos/kubernetes/cluster.json".text = builtins.toJSON clusterFile;
       "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
-      "chalkos/kubernetes/kubelet.json".text = builtins.toJSON kubeletConfig;
     }
     // lib.optionalAttrs controlPlane {
       "chalkos/kubernetes/manifests.json".text = builtins.toJSON (k.addons ++ cluster.manifests);
@@ -283,16 +283,15 @@ in
       ];
       serviceConfig = {
         EnvironmentFile = "${run}/kubelet/flags";
-        ExecStart = lib.concatStringsSep " " (
-          [
-            "${kubelet}/bin/kubelet"
-            "--config=/etc/chalkos/kubernetes/kubelet.json"
-            "--kubeconfig=${run}/kubelet/kubeconfig"
-            "--cert-dir=/var/lib/kubelet/pki"
-            "$KUBELET_ARGS"
-          ]
-          ++ lib.mapAttrsToList (name: value: "--${name}=${value}") k.extraArgs.kubelet
-        );
+        # chalkd's preparation writes the configuration and the flags, the cluster's extra flags
+        # of the kubelet last.
+        ExecStart = lib.concatStringsSep " " [
+          "${kubelet}/bin/kubelet"
+          "--config=${run}/kubelet/config.json"
+          "--kubeconfig=${run}/kubelet/kubeconfig"
+          "--cert-dir=/var/lib/kubelet/pki"
+          "$KUBELET_ARGS"
+        ];
         Restart = "always";
         RestartSec = 10;
       };

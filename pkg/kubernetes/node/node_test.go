@@ -3,6 +3,7 @@ package node
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"net"
@@ -1217,5 +1218,31 @@ func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
 	}
 	if got := currentClient(t, p); got == old || got != *share.Kubelet {
 		t.Error("the kubelet kept its client certificate of the CA that no longer issues")
+	}
+}
+
+func TestKubeletFlagsEndWithTheExtraFlags(t *testing.T) {
+	c := kubernetes.Cluster{Kind: kubernetes.KindWorker, ExtraArgs: map[string]map[string]string{
+		"kubelet": {"v": "2", "max-pods": "50"}, "kube-apiserver": {"v": "4"},
+	}}
+	got := KubeletFlags(c, kubernetes.Node{Name: "w1"})
+	// Sorted, after chalkos's own, so they override them.
+	if want := []string{"--hostname-override=w1", "--max-pods=50", "--v=2"}; !slices.Equal(got, want) {
+		t.Errorf("flags = %v, want %v", got, want)
+	}
+}
+
+func TestPrepareWritesTheKubeletConfig(t *testing.T) {
+	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	if err := Prepare(p, now, onNode("192.168.100.11"), nil); err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(readFile(t, p.KubeletConfig())), &config); err != nil {
+		t.Fatal(err)
+	}
+	if config["clusterDomain"] != "cluster.local" || config["clusterDNS"].([]any)[0] != "10.96.0.10" ||
+		config["staticPodPath"] != p.Manifests() || config["authentication"].(map[string]any)["x509"].(map[string]any)["clientCAFile"] != filepath.Join(p.KubeletDir(), "ca.crt") {
+		t.Errorf("config = %v", config)
 	}
 }

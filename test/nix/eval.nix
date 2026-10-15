@@ -1775,8 +1775,7 @@ lib.runTests {
               dnsIPs
               nodeCIDRMaskSizes
               ;
-            clusterDNS =
-              (builtins.fromJSON config.environment.etc."chalkos/kubernetes/kubelet.json".text).clusterDNS;
+            clusterDNS = config.system.build.chalkosKubeletConfig.clusterDNS;
             dnsService = {
               inherit ((named "Service" "kube-dns").spec) clusterIP ipFamilyPolicy ipFamilies;
             };
@@ -3368,7 +3367,7 @@ lib.runTests {
             };
           }
         ]);
-        kubelet = builtins.fromJSON config.environment.etc."chalkos/kubernetes/kubelet.json".text;
+        kubelet = config.system.build.chalkosKubeletConfig;
       in
       {
         inherit (kubelet)
@@ -3392,7 +3391,15 @@ lib.runTests {
           "kernel.keys.root_maxkeys"
           "kernel.keys.root_maxbytes"
         ] config.boot.kernel.sysctl;
-        extraArg = lib.hasSuffix "$KUBELET_ARGS --v=2" config.systemd.services.kubelet.serviceConfig.ExecStart;
+        # chalkd adds the kubelet's flags to KUBELET_ARGS, and its configuration lives in /run.
+        extraArg =
+          (builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text).extraArgs.kubelet
+          == {
+            v = "2";
+          }
+          && lib.hasSuffix "$KUBELET_ARGS" config.systemd.services.kubelet.serviceConfig.ExecStart
+          && lib.hasInfix "--config=/run/chalkos/kubernetes/kubelet/config.json" config.systemd.services.kubelet.serviceConfig.ExecStart
+          && !(config.environment.etc ? "chalkos/kubernetes/kubelet.json");
         noFullPackage =
           !lib.hasInfix "-kubernetes-1.37.1/" config.systemd.services.kubelet.serviceConfig.ExecStart;
       };

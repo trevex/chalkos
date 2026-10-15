@@ -6,10 +6,12 @@ package node
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"net"
 	"net/netip"
 	"os"
@@ -100,6 +102,9 @@ func (p Paths) Joining() string { return filepath.Join(p.State, "joining") }
 
 // Kubeconfig is the kubelet's kubeconfig, which chalkd also reads the Node with.
 func (p Paths) Kubeconfig() string { return filepath.Join(p.KubeletDir(), "kubeconfig") }
+
+// KubeletConfig is the kubelet's configuration file.
+func (p Paths) KubeletConfig() string { return filepath.Join(p.KubeletDir(), "config.json") }
 
 // KubeletClient is the file the kubelet's certificate store keeps its current client certificate
 // in; it is a link to the newest one. KubeletServing is that of its serving certificate.
@@ -614,9 +619,14 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	if err := os.MkdirAll(p.KubeletDir(), 0o755); err != nil {
 		return err
 	}
+	config, err := json.Marshal(KubeletConfig(p, c))
+	if err != nil {
+		return err
+	}
 	for name, data := range map[string][]byte{
-		"ca.crt": []byte(share.CABundle()),
-		"flags":  []byte("KUBELET_ARGS=" + strings.Join(KubeletFlags(c, n), " ") + "\n"),
+		"ca.crt":      []byte(share.CABundle()),
+		"flags":       []byte("KUBELET_ARGS=" + strings.Join(KubeletFlags(c, n), " ") + "\n"),
+		"config.json": config,
 	} {
 		if err := install.WriteFile(filepath.Join(p.KubeletDir(), name), data, 0o644); err != nil {
 			return err
@@ -650,7 +660,38 @@ func prepare(p Paths, now time.Time, resolve Resolver) error {
 	return RenderStaticPods(p)
 }
 
-// KubeletFlags are the kubelet's node-specific flags: its name, addresses, labels and taints.
+// KubeletConfig is the kubelet's configuration for the cluster.
+func KubeletConfig(p Paths, c kubernetes.Cluster) map[string]any {
+	return map[string]any{
+		"apiVersion": "kubelet.config.k8s.io/v1beta1",
+		"kind":       "KubeletConfiguration",
+		"authentication": map[string]any{
+			"anonymous": map[string]any{"enabled": false},
+			"webhook":   map[string]any{"enabled": true},
+			"x509":      map[string]any{"clientCAFile": filepath.Join(p.KubeletDir(), "ca.crt")},
+		},
+		"authorization": map[string]any{"mode": "Webhook"},
+		"readOnlyPort":  0,
+		"tlsMinVersion": "VersionTLS12",
+		// The kubelet refuses to start unless the kernel tunables hold its values, rather than
+		// changing them itself.
+		"protectKernelDefaults":    true,
+		"cgroupDriver":             "systemd",
+		"clusterDNS":               []any{c.DNSIPs.Of(c.Primary())},
+		"clusterDomain":            c.Domain,
+		"containerRuntimeEndpoint": "unix:///run/containerd/containerd.sock",
+		// The client certificate from chalkos is renewed by the kubelet; the serving certificate
+		// is requested from the cluster and approved by chalkd on the control plane.
+		"rotateCertificates": true,
+		"serverTLSBootstrap": true,
+		"staticPodPath":      p.Manifests(),
+		// The stub resolver at 127.0.0.53 is unreachable from pods.
+		"resolvConf": "/run/systemd/resolve/resolv.conf",
+	}
+}
+
+// KubeletFlags are the kubelet's node-specific flags: its name, addresses, labels and taints, then
+// the cluster's extra flags of the kubelet, which override them.
 // Control-plane nodes are tainted unless the cluster allows workloads on them.
 func KubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 	flags := []string{"--hostname-override=" + n.Name}
@@ -682,6 +723,10 @@ func KubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 	}
 	if len(taints) > 0 {
 		flags = append(flags, "--register-with-taints="+strings.Join(taints, ","))
+	}
+	extra := c.ExtraArgs["kubelet"]
+	for _, name := range slices.Sorted(maps.Keys(extra)) {
+		flags = append(flags, "--"+name+"="+extra[name])
 	}
 	return flags
 }
