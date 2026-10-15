@@ -86,6 +86,9 @@ func TestClusterRejects(t *testing.T) {
 		"overlapping ranges": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
 			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {podCIDRs: {ipv4: 10.96.0.0/16}}\n",
 			`Kubernetes "k": podCIDRs.ipv4 10.96.0.0/16 and serviceCIDRs.ipv4 10.96.0.0/12 overlap`},
+		"protected kubelet flag": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
+			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {extraArgs: {kubelet: {anonymous-auth: \"true\"}}}\n",
+			`Kubernetes "k": extraArgs: kubelet --anonymous-auth is set by chalkos and cannot be overridden`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := NewSet(mustParse(t, tc.yaml), allSchemas(t))

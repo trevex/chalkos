@@ -74,7 +74,10 @@ bootstrap-signer and token-cleaner controllers, since nothing uses bootstrap tok
 [`chalkos.cluster.kubernetes.extraArgs`](../reference/options.md#chalkosclusterkubernetesextraargskube-apiserver)
 adds or overrides flags per component, except the API server's `anonymous-auth`,
 `authentication-config`, `authorization-mode` and `enable-bootstrap-token-auth`, which decide who
-may do what and are refused.
+may do what, and the kubelet's `anonymous-auth`, `authorization-mode`, `cert-dir`, `client-ca-file`,
+`config`, `hostname-override`, `kubeconfig`, `node-ip` and `read-only-port`, which set where it finds
+its configuration and credentials, the node's name and addresses, and who may use its API.
+These flags are refused.
 
 ## How does a cluster start?
 

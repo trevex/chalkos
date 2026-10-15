@@ -144,12 +144,25 @@ func ParseCluster(data []byte) (Cluster, error) {
 // extra flags must not override them.
 var ProtectedAPIServerFlags = []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"}
 
+// ProtectedKubeletFlags are the kubelet's flags chalkos sets: where it finds its configuration,
+// credentials and certificates, the node's name and addresses, and who may use its API. Extra
+// flags come last on the kubelet's command line, so they would override them.
+var ProtectedKubeletFlags = []string{
+	"anonymous-auth", "authorization-mode", "cert-dir", "client-ca-file", "config", "hostname-override",
+	"kubeconfig", "node-ip", "read-only-port",
+}
+
 // Validate checks the kind, the endpoint, the address families and their ranges, how nodes pick
 // their address, the VIPs and the extra flags.
 func (c Cluster) Validate() error {
 	for _, flag := range ProtectedAPIServerFlags {
 		if _, ok := c.ExtraArgs["kube-apiserver"][flag]; ok {
 			return fmt.Errorf("extraArgs: kube-apiserver --%s is set by chalkos and cannot be overridden", flag)
+		}
+	}
+	for _, flag := range ProtectedKubeletFlags {
+		if _, ok := c.ExtraArgs["kubelet"][flag]; ok {
+			return fmt.Errorf("extraArgs: kubelet --%s is set by chalkos and cannot be overridden", flag)
 		}
 	}
 	if c.Kind != KindControlPlane && c.Kind != KindWorker {

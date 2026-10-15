@@ -3426,6 +3426,55 @@ lib.runTests {
       noFullPackage = true;
     };
   };
+  # The kubelet's extra flags come after chalkos's own, so they cannot override where it finds its
+  # configuration and credentials, the node's name and addresses, or who may use its API.
+  testKubeletExtraArgsCannotOverrideProtectedFlags = {
+    expr =
+      let
+        clusterFile =
+          flags:
+          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ]))
+          .environment.etc."chalkos/kubernetes/cluster.json".text;
+        protected = [
+          "anonymous-auth"
+          "authorization-mode"
+          "cert-dir"
+          "client-ca-file"
+          "config"
+          "hostname-override"
+          "kubeconfig"
+          "node-ip"
+          "read-only-port"
+        ];
+      in
+      lib.genAttrs protected (
+        flag:
+        fails (clusterFile {
+          ${flag} = "x";
+        })
+      )
+      // {
+        other = fails (clusterFile {
+          v = "2";
+          max-pods = "50";
+        });
+      };
+    expected =
+      lib.genAttrs [
+        "anonymous-auth"
+        "authorization-mode"
+        "cert-dir"
+        "client-ca-file"
+        "config"
+        "hostname-override"
+        "kubeconfig"
+        "node-ip"
+        "read-only-port"
+      ] (_: true)
+      // {
+        other = false;
+      };
+  };
   testAPIServerExtraArgsCannotOverrideAuthentication = {
     expr =
       let

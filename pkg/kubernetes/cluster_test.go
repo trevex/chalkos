@@ -186,6 +186,32 @@ func TestClusterValidate(t *testing.T) {
 	}
 }
 
+// The kubelet's extra flags come after chalkos's own, so they would override where it finds its
+// configuration and credentials, the node's name and addresses, and who may use its API.
+func TestClusterValidateRefusesProtectedKubeletFlags(t *testing.T) {
+	valid, err := ReadCluster(writeFile(t, clusterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{
+		"config", "kubeconfig", "cert-dir", "hostname-override", "node-ip", "anonymous-auth",
+		"authorization-mode", "client-ca-file", "read-only-port",
+	} {
+		c := valid
+		c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", flag: "x"}}
+		err := c.Validate()
+		if want := "extraArgs: kubelet --" + flag + " is set by chalkos and cannot be overridden"; err == nil || err.Error() != want {
+			t.Errorf("%s: err = %v, want %s", flag, err, want)
+		}
+	}
+	// Other flags, and the protected flags of other components, are the cluster's.
+	c := valid
+	c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", "max-pods": "50"}, "kube-scheduler": {"config": "/x"}}
+	if err := c.Validate(); err != nil {
+		t.Errorf("accepted flags refused: %v", err)
+	}
+}
+
 func TestClusterValidateFlannelMinimums(t *testing.T) {
 	c, err := ReadCluster(writeFile(t, clusterJSON))
 	if err != nil {

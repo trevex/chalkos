@@ -739,18 +739,34 @@ in
       kube-scheduler = flagsOf "kube-scheduler";
       kubelet = flagsOf "the kubelet" // {
         # The flags reach the kubelet through an environment variable that ExecStart splits at
-        # whitespace, read from an environment file that drops backslashes.
+        # whitespace, read from an environment file that drops backslashes. They come after
+        # chalkos's own, so those that would override where the kubelet finds its configuration
+        # and credentials, the node's name and addresses, or who may use its API are refused, here
+        # and by chalkd.
         apply =
           flags:
           let
             bad = lib.filter (
               name: name == "" || builtins.match "[^[:space:]\\\\]*" (name + flags.${name}) == null
             ) (lib.attrNames flags);
+            protected = lib.intersectLists (lib.attrNames flags) [
+              "anonymous-auth"
+              "authorization-mode"
+              "cert-dir"
+              "client-ca-file"
+              "config"
+              "hostname-override"
+              "kubeconfig"
+              "node-ip"
+              "read-only-port"
+            ];
           in
-          if bad == [ ] then
-            flags
+          if bad != [ ] then
+            throw "chalkos.cluster.kubernetes.extraArgs.kubelet: ${lib.concatStringsSep ", " bad} cannot hold whitespace or backslashes"
+          else if protected != [ ] then
+            throw "chalkos.cluster.kubernetes.extraArgs.kubelet cannot override ${lib.concatStringsSep ", " protected}: chalkos sets them"
           else
-            throw "chalkos.cluster.kubernetes.extraArgs.kubelet: ${lib.concatStringsSep ", " bad} cannot hold whitespace or backslashes";
+            flags;
       };
     };
     images = {
