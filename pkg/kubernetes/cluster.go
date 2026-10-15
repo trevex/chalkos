@@ -55,7 +55,8 @@ type Cluster struct {
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
 	VIP VIP `json:"vip"`
 	// ExtraArgs are flags of the components by component name, such as kube-apiserver or
-	// kubelet, without leading dashes.
+	// kubelet. Their names are letters, digits, _, . and -, starting with a letter or digit, without
+	// the leading dashes; the protected flags are refused.
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
 	Images    Images                       `json:"images"`
 }

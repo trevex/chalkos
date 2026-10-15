@@ -782,12 +782,12 @@ in
           apply =
             flags:
             let
-              bad = lib.filter (
-                name: name == "" || builtins.match "[^[:space:]\\\\]*" (name + flags.${name}) == null
-              ) (lib.attrNames flags);
+              bad = lib.filter (name: builtins.match "[^[:space:]\\\\]*" flags.${name} == null) (
+                lib.attrNames flags
+              );
             in
             if bad != [ ] then
-              throw "chalkos.cluster.kubernetes.extraArgs.kubelet: ${lib.concatStringsSep ", " bad} cannot hold whitespace or backslashes"
+              throw "chalkos.cluster.kubernetes.extraArgs.kubelet: the values of ${lib.concatStringsSep ", " bad} cannot hold whitespace or backslashes"
             else
               option.apply flags;
         };

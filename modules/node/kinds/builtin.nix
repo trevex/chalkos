@@ -39,7 +39,7 @@ let
     mkOption {
       type = types.attrsOf types.str;
       default = { };
-      description = "Extra flags of ${component}, without the leading dashes; they override chalkos's own.";
+      description = "Extra flags of ${component}, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.";
     };
 
   size = types.strMatching "[0-9]+[KMGTP]?";

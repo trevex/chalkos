@@ -75,7 +75,7 @@
                 "type": "string"
               },
               "default": {},
-              "description": "Extra flags of etcd, without the leading dashes; they override chalkos's own.",
+              "description": "Extra flags of etcd, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.",
               "type": "object"
             },
             "kube-apiserver": {
@@ -83,7 +83,7 @@
                 "type": "string"
               },
               "default": {},
-              "description": "Extra flags of the API server, without the leading dashes; they override chalkos's own.",
+              "description": "Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.",
               "type": "object"
             },
             "kube-controller-manager": {
@@ -91,7 +91,7 @@
                 "type": "string"
               },
               "default": {},
-              "description": "Extra flags of the controller-manager, without the leading dashes; they override chalkos's own.",
+              "description": "Extra flags of the controller-manager, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.",
               "type": "object"
             },
             "kube-scheduler": {
@@ -99,7 +99,7 @@
                 "type": "string"
               },
               "default": {},
-              "description": "Extra flags of the scheduler, without the leading dashes; they override chalkos's own.",
+              "description": "Extra flags of the scheduler, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.",
               "type": "object"
             },
             "kubelet": {
@@ -107,7 +107,7 @@
                 "type": "string"
               },
               "default": {},
-              "description": "Extra flags of the kubelet, without the leading dashes; they override chalkos's own.",
+              "description": "Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.",
               "type": "object"
             }
           },

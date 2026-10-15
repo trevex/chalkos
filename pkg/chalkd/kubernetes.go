@@ -539,8 +539,12 @@ func (k *Kubernetes) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *
 		approve = approveServing
 	}
 	go func() {
-		if kapply.WaitReady(ctx, cfg) == nil {
+		err := kapply.WaitReady(ctx, cfg)
+		switch {
+		case err == nil:
 			approve(ctx, cfg)
+		case ctx.Err() == nil:
+			log.Printf("kubernetes: approve kubelet serving certificates: %v", err)
 		}
 	}()
 	for {
