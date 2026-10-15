@@ -180,6 +180,10 @@ in
     ];
 
     system.build.chalkosCNIPlugins = cniPlugins;
+    # The objects and the kubelet configuration as the cluster definition renders them, which
+    # chalkd renders from the node's config; tests compare the two.
+    system.build.chalkosAddons = k.addons;
+    system.build.chalkosKubeletConfig = kubeletConfig;
 
     # containerd runs the CNI plugins, and portmap programs nftables with nft.
     systemd.services.containerd.path = [ pkgs.nftables ];
