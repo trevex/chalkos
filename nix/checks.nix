@@ -485,6 +485,82 @@ in
       touch $out
     '';
 
+  # The control-plane ports with the worker's firewall, in a network namespace: a peer connects to
+  # 6443, 2379 and 2380, which the firewall accepts once the script marked them for a control
+  # plane, and refuses again on a worker.
+  controlplane-ports =
+    let
+      worker =
+        (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm.config;
+      firewall = builtins.elemAt worker.systemd.services.nftables.serviceConfig.ExecReload 1;
+      script = lib.getExe (
+        pkgs.callPackage ../modules/node/controlplane-ports.nix {
+          typeCommand = "cat type";
+          etcdDir = "etcd";
+          mark = "0x02000000";
+        }
+      );
+    in
+    pkgs.runCommand "chalkos-controlplane-ports"
+      {
+        nativeBuildInputs = [
+          pkgs.nftables
+          pkgs.iproute2
+          pkgs.util-linux
+          pkgs.socat
+        ];
+      }
+      ''
+        cat >test.sh <<'TEST'
+        set -euo pipefail
+        fail() {
+          echo "error: $*" >&2
+          nft list ruleset >&2
+          exit 1
+        }
+        # This namespace is the node; the peer gets one of its own.
+        ip link set lo up
+        unshare -n sh -c 'touch peer-ready; exec sleep 600' &
+        peer=$!
+        until [ -e peer-ready ]; do sleep 0.1; done
+        on_peer() { nsenter -t "$peer" -n "$@"; }
+        ip link add v0 type veth peer name v1 netns "$peer"
+        ip addr add 10.0.0.11/24 dev v0
+        ip link set v0 up
+        on_peer ip link set lo up
+        on_peer ip addr add 10.0.0.12/24 dev v1
+        on_peer ip link set v1 up
+
+        # The firewall as NixOS loads it, with the state file it keeps in /var/lib/nftables here.
+        sed "s|/var/lib/nftables/deletions.nft|$PWD/deletions.nft|" ${firewall} >firewall.nft
+        touch deletions.nft
+        nft -f firewall.nft
+        for port in 6443 2379 2380; do
+          socat TCP-LISTEN:$port,fork,reuseaddr /dev/null &
+        done
+        sleep 0.5
+        reaches() { on_peer socat -u /dev/null TCP:10.0.0.11:$1,connect-timeout=1; }
+
+        if reaches 6443; then fail "6443 open without the table"; fi
+        echo controlplane >type
+        ${script}
+        [ -d etcd ] && [ "$(stat -c %a etcd)" = 700 ] || fail "no etcd directory"
+        for port in 6443 2379 2380; do
+          reaches $port || fail "$port refused on a control plane"
+        done
+        # The firewall's reload leaves the table alone.
+        nft -f firewall.nft
+        reaches 6443 || fail "6443 refused after the firewall's reload"
+        echo worker >type
+        ${script}
+        if reaches 6443; then fail "6443 open on a worker"; fi
+        # A worker without the table stays one.
+        ${script}
+        TEST
+        unshare -rn bash test.sh
+        touch $out
+      '';
+
   # The worker's kernel module tree, and one with the gpu group: a module outside a role's groups
   # is not in its tree, and neither a name the kernel does not know, a directory without modules,
   # a module the image loads but its tree lacks, nor one whose dependency the tree lacks gets past

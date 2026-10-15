@@ -20,7 +20,6 @@ let
   primary = builtins.head k.ipFamilies;
   # The entries of the families in use.
   ofFamilies = byFamily: lib.genAttrs k.ipFamilies (family: byFamily.${family});
-  controlPlane = kind == "controlplane";
   flannel = config.chalkos.cni.provider == "flannel";
 
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
@@ -133,6 +132,14 @@ let
       output = "go-template=${mirrorsTemplate}";
     };
   };
+
+  # A packet mark bit of the control plane's ports, which chalkos-controlplane sets; kube-proxy
+  # (0x4000, 0x8000), flannel and the VXLAN rule leave it alone.
+  controlPlaneMark = "0x02000000";
+  controlPlanePorts = pkgs.callPackage ./controlplane-ports.nix {
+    typeCommand = config.chalkos.kinds.Node.get { path = "spec.type"; };
+    mark = controlPlaneMark;
+  };
 in
 {
   config = lib.mkMerge [
@@ -141,6 +148,7 @@ in
     {
       chalkos.consumers = lib.mkIf (kind != null) {
         chalkos-registry-mirrors.kinds = [ "RegistryMirror" ];
+        chalkos-controlplane.kinds = [ "Node" ];
       };
     }
     (lib.mkIf (kind != null) {
@@ -240,8 +248,7 @@ in
 
       systemd.tmpfiles.rules = [
         "d /var/lib/cni/net.d 0755 root root -"
-      ]
-      ++ lib.optional controlPlane "d /var/lib/etcd 0700 root root -";
+      ];
 
       # The node's addresses have settled. A unit that configures or announces addresses, such as a
       # routing daemon's, orders itself before the target and is wanted by it; the preparation picks
@@ -314,29 +321,44 @@ in
         startLimitIntervalSec = 0;
       };
 
-      networking.firewall = {
-        # etcd's clients and peers on the other control-plane nodes need 2379 and 2380; etcd accepts
-        # only certificates of its CA there. Known limitation: the ports are open to every source,
-        # not only to the cluster's node addresses.
-        allowedTCPPorts = [
-          10250
-        ]
-        ++ lib.optionals controlPlane [
-          6443
-          2379
-          2380
+      systemd.services.chalkos-controlplane = {
+        description = "Open the control plane's ports by the node's type";
+        wantedBy = [ "multi-user.target" ];
+        after = [
+          "chalkos-identity.service"
+          "nftables.service"
+          "local-fs.target"
         ];
+        before = [
+          "chalkos-kubernetes.service"
+          "kubelet.service"
+        ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          ExecStart = lib.getExe controlPlanePorts;
+        };
+      };
+
+      networking.firewall = {
+        allowedTCPPorts = [ 10250 ];
         allowedTCPPortRanges = [
           {
             from = 30000;
             to = 32767;
           }
         ];
-        # Accept the VXLAN packets chalkos-vxlan marked. The table clears the mark after this chain,
-        # so neither these packets nor those they carry keep it.
-        extraInputRules = lib.mkIf flannel ''
-          udp dport 8472 meta mark & ${vxlanMark} == ${vxlanMark} accept
-        '';
+        # Accept what chalkos-controlplane and chalkos-vxlan marked. Their tables clear the marks
+        # after this chain, so neither these packets nor those they carry keep them. etcd's
+        # clients and peers on the other control-plane nodes need 2379 and 2380; etcd accepts only
+        # certificates of its CA there. Known limitation: the ports are open to every source, not
+        # only to the cluster's node addresses.
+        extraInputRules = lib.concatStringsSep "\n" (
+          [
+            "tcp dport { 6443, 2379, 2380 } meta mark & ${controlPlaneMark} == ${controlPlaneMark} accept"
+          ]
+          ++ lib.optional flannel "udp dport 8472 meta mark & ${vxlanMark} == ${vxlanMark} accept"
+        );
       };
     })
   ];

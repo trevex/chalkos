@@ -3046,23 +3046,23 @@ lib.runTests {
           nodeCIDRMaskSizes
           ;
         apiServer = clusterFile.images.kubeAPIServer;
-        # The API server, and etcd's clients and peers on the other control-plane nodes, which
-        # etcd authenticates by its CA.
-        firewall = lib.all (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
+        # The images no longer differ: Node.spec.type opens the API server's and etcd's ports,
+        # which etcd authenticates by its CA, and makes etcd's directory at runtime.
+        firewall = lib.any (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
           6443
           2379
           2380
         ];
-        workerFirewall =
-          lib.any (port: lib.elem port (role (cluster [ ])).networking.firewall.allowedTCPPorts)
-            [
-              6443
-              2379
-              2380
-            ];
+        markedPorts = lib.hasInfix "tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept" config.networking.firewall.extraInputRules;
         # chalkd renders the addons and reads the manifests from the config.
         manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
         etcdDir = lib.elem "d /var/lib/etcd 0700 root root -" config.systemd.tmpfiles.rules;
+        consumer =
+          (builtins.fromJSON config.environment.etc."chalkos/consumers.json".text).chalkos-controlplane.kinds;
+        beforeKubernetes = lib.all (u: lib.elem u config.systemd.services.chalkos-controlplane.before) [
+          "chalkos-kubernetes.service"
+          "kubelet.service"
+        ];
       };
     expected = {
       kind = "controlplane";
@@ -3074,10 +3074,12 @@ lib.runTests {
       dnsIPs.ipv4 = "10.96.0.10";
       nodeCIDRMaskSizes.ipv4 = 24;
       apiServer = "registry.k8s.io/kube-apiserver:v1.37.1";
-      firewall = true;
-      workerFirewall = false;
+      firewall = false;
+      markedPorts = true;
       manifests = false;
-      etcdDir = true;
+      etcdDir = false;
+      consumer = [ "Node" ];
+      beforeKubernetes = true;
     };
   };
   testWorkerImageHasNoManifests = {
@@ -3088,10 +3090,13 @@ lib.runTests {
       {
         manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
         apiServerPort = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
+        # The control plane's rule, which only a control plane's table makes match.
+        markedPorts = lib.hasInfix "6443" config.networking.firewall.extraInputRules;
       };
     expected = {
       manifests = false;
       apiServerPort = false;
+      markedPorts = true;
     };
   };
   # One directory with the plugins the cluster names, copied out of nixpkgs's packages: those
