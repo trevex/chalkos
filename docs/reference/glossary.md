@@ -42,6 +42,14 @@ The one-time start of a cluster's etcd on its first [control plane](#control-pla
 or holds etcd data, so a cluster is never initialised twice; further control planes join on
 their own. See [Kubernetes on chalkos](../concepts/kubernetes.md).
 
+## chalkcfg { #chalkcfg }
+
+The command on every node that prints the node's [config documents](#config-document) from
+`/run/chalkos/config`, by kind and name, as names, JSON, YAML, a jsonpath expression or a Go
+template. It has no network access and never prints `Secret`s. A role module builds its commands
+with [`chalkos.kinds.<Kind>.get`](options.md#chalkoskindsget), which checks a path against the
+kind's options when the image is evaluated. See [its commands](cli/chalkcfg.md).
+
 ## chalkctl { #chalkctl }
 
 The command-line client of chalkos. It reads the [cluster definition](#cluster-definition)

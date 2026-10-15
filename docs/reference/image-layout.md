@@ -232,12 +232,12 @@ another disk carrying the same image or the same labels for its own.
 | `/state` | STATE. |
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
-| `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts. |
+| `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster sets [`chalkos.cluster.osCA`](options.md#chalkosclusterosca). |
 | `/etc/chalkos/kubernetes/cluster.json` | The cluster's Kubernetes settings, on images of a role with a Kubernetes kind. |
 | `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
-| `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s excepted. |
+| `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s excepted, which chalkcfg prints. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
 | `/run/chalkos/chrony/identity.sources` | The time servers of the config, for chrony. |

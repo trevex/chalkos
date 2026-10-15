@@ -312,9 +312,11 @@ before the network starts:
   kinds name to `/run/chalkos/credentials/<unit>/`.
 
 A service that needs a node's value declares the kinds it reads under
-[`chalkos.consumers`](../reference/options.md#chalkosconsumers). It reads their documents from
-`/run/chalkos/config`, or from the kind's [`dir`](../reference/options.md#chalkoskindsdir), and the
-secrets they reference as its systemd credentials `secret_<secret>.<key>`. When
+[`chalkos.consumers`](../reference/options.md#chalkosconsumers). It reads their documents with
+[chalkcfg](../reference/glossary.md#chalkcfg), whose commands
+[`chalkos.kinds.<Kind>.get`](../reference/options.md#chalkoskindsget) builds with a path the
+evaluation checks against the kind's options, or as files below `/run/chalkos/config`. It reads
+the secrets they reference as its systemd credentials `secret_<secret>.<key>`. When
 `chalkctl apply-config` changes a document of one of its kinds, or a `Secret` one of them
 references, chalkd restarts the service, unless it sets
 [`restartOnChange = false`](../reference/options.md#chalkosconsumersrestartonchange).
@@ -379,15 +381,21 @@ in
                 description = "Rack and height unit the node is mounted in.";
               };
             };
-            # chalkd writes the node's Rack below the kind's dir and restarts the unit when it
-            # changes.
+            # chalkd writes the node's Rack below /run/chalkos/config and restarts the unit when
+            # it changes.
             chalkos.consumers.rack-location.kinds = [ "Rack" ];
             systemd.services.rack-location = {
               wantedBy = [ "multi-user.target" ];
               serviceConfig = {
                 Type = "oneshot";
                 RemainAfterExit = true;
-                ExecStart = "${lib.getExe pkgs.jq} -r .spec.location ${config.chalkos.kinds.Rack.dir}/rack.json";
+                # A path the kind lacks fails the image's evaluation.
+                ExecStart = pkgs.writeShellScript "rack-location" (
+                  config.chalkos.kinds.Rack.get {
+                    name = "rack";
+                    path = "spec.location";
+                  }
+                );
               };
             };
           }
@@ -407,8 +415,8 @@ The three parts reach the node by different paths:
   with the documents it generates.
 - The role module declares the kind `Rack` under
   [`chalkos.kinds`](../reference/options.md#chalkoskinds), so the image accepts its documents, and
-  runs a unit that reads the node's `Rack` from the kind's `dir`. chalkd restarts the unit when the
-  document changes.
+  runs a unit that prints the node's `Rack` with `chalkos.kinds.Rack.get`, whose path
+  `spec.location` the evaluation checks. chalkd restarts the unit when the document changes.
 
 A namespace must not collide with a name chalkos declares under `chalkos`. In the cluster
 definition those are `cluster`, `cni`, `installer`, `manifest`, `nodes`, `platforms`, `roles`,

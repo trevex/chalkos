@@ -88,29 +88,59 @@ the node's [config](../reference/glossary.md#config), documents that
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A unit reads the documents of
 the kinds it names under [`chalkos.consumers`](../reference/options.md#chalkosconsumers): chalkd
 writes them to `/run/chalkos/config/<group>/<Kind>/<name>.json` and restarts the unit when one of
-them changes. The node's `Node` document gives its hostname, for example:
+them changes. The node's `Node` document gives its type, for example:
 
 ```nix
-{ config, lib, pkgs, ... }:
+{ config, pkgs, ... }:
 {
-  systemd.services.hostname-report = {
+  systemd.services.node-type = {
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";
       # Active after it ran, so the restart on a change runs it again.
       RemainAfterExit = true;
-      ExecStart = "${lib.getExe pkgs.jq} -r '.spec.hostname // .metadata.name' ${config.chalkos.kinds.Node.dir}/*.json";
+      ExecStart = pkgs.writeShellScript "node-type" ''
+        echo "this node is a $(${config.chalkos.kinds.Node.get { path = "spec.type"; }})"
+      '';
     };
   };
-  chalkos.consumers.hostname-report.kinds = [ "Node" ];
+  chalkos.consumers.node-type.kinds = [ "Node" ];
 }
 ```
 
-A kind's [`dir`](../reference/options.md#chalkoskindsdir) is the directory of its documents, one
-file per document named after it. Evaluating the image fails when a unit names a kind the image
-does not declare. A `secretRef` field of a kind the unit reads names a key of a `Secret` document;
-the unit reads its value as the systemd credential `secret_<secret>.<key>`, in
-`$CREDENTIALS_DIRECTORY` or `%d`, and the value never appears below `/run/chalkos/config`. A
+[`chalkos.kinds.<Kind>.get`](../reference/options.md#chalkoskindsget) returns a
+[chalkcfg](../reference/glossary.md#chalkcfg) command, here
+`/nix/store/…/bin/chalkcfg get Node -o 'jsonpath={.spec.type}'`, which prints the field for each
+document of the kind, one per line. `name` picks one document, and `output` asks for `json`,
+`yaml`, `jsonpath=<expression>` or `go-template=<template>` in place of a `path`. A path follows
+the kind's options: fields separated by dots, `*` or an index for the elements of a list, and a
+key or `*` for the values of an attribute set. Evaluating the image fails on a path the kind
+does not have, and the message lists the fields at that point:
+
+```text
+chalkos.kinds.Node.get: the path "spec.typ" does not follow the kind's options: spec has no field typ; its fields are hostname, imageRef, type
+```
+
+Run the command from a shell script, as `pkgs.writeShellScript` makes one, because systemd
+expands `$` and `%` in `ExecStart=` itself. A kind the image declares but the node has no
+document of gives empty output and exit status 0, so the unit also runs on nodes without one;
+[`chalkcfg get`](../reference/cli/chalkcfg_get.md) lists the exit statuses. The documents are
+also files, one per document below the kind's
+[`dir`](../reference/options.md#chalkoskindsdir).
+
+networkd's `Network`, `NetDev` and `Link` have no `get`. A section of theirs may be an object or
+a list, and their schemas come from systemd's tables at build time, so a path through them
+cannot be checked when the image is evaluated. chalkcfg is on the `PATH` of every unit under
+`chalkos.consumers`, so such a unit runs it directly:
+
+```sh
+chalkcfg get Network -o json
+```
+
+Evaluating the image fails when a unit names a kind the image does not declare. A `secretRef`
+field of a kind the unit reads names a key of a `Secret` document; the unit reads its value as
+the systemd credential `secret_<secret>.<key>`, in `$CREDENTIALS_DIRECTORY` or `%d`. chalkcfg
+never prints `Secret`s, and their values never appear below `/run/chalkos/config`. A
 `Secret` document set in `chalkos.nodes.<n>.documents` still puts its values in the manifest
 and the Nix store. Set
 [`restartOnChange`](../reference/options.md#chalkosconsumersrestartonchange) to `false` for a
@@ -175,7 +205,12 @@ in
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
-              ExecStart = "${lib.getExe pkgs.jq} -r .spec.name ${config.chalkos.kinds.Site.dir}/site.json";
+              ExecStart = pkgs.writeShellScript "site-name" (
+                config.chalkos.kinds.Site.get {
+                  name = "site";
+                  path = "spec.name";
+                }
+              );
             };
           };
         }

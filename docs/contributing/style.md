@@ -7,9 +7,9 @@ description: "How chalkos documentation is written: voice, words, headings, code
 
 This guide holds the rules every hand-written page of the chalkos documentation follows. Each
 rule has a reason, so a case the guide does not cover can be decided the same way. The
-generated reference pages are written in their sources (command help in `pkg/chalkctl/help.go`
-and `pkg/chalklab/help.go`, option descriptions in `modules/`, comments in
-`api/chalkos/node/v1/node.proto`), and the voice and word rules apply there too.
+generated reference pages are written in their sources (command help in `pkg/chalkctl/help.go`,
+`pkg/chalklab/help.go` and `pkg/chalkcfg/help.go`, option descriptions in `modules/`, comments
+in `api/chalkos/node/v1/node.proto`), and the voice and word rules apply there too.
 
 ## Who reads these pages?
 
@@ -80,8 +80,8 @@ item or table cell; a heading does that job.
 - British spelling with -ise: customise, initialise, behaviour, licence as a noun. Upstream
   names keep theirs (`Authorization`, `ConditionVirtualization`).
 - No serial comma, unless a list item contains "and": "erofs, dm-verity and the UKI".
-- chalkos is always lower case, also at the start of a sentence. chalkd, chalkctl and chalklab
-  are names in prose; in code font only as part of a command or a path.
+- chalkos is always lower case, also at the start of a sentence. chalkd, chalkctl, chalklab and
+  chalkcfg are names in prose; in code font only as part of a command or a path.
 - Keep upstream capitalisation: Kubernetes, etcd, containerd, kubelet, systemd, systemd-boot,
   Nix, NixOS, erofs, dm-verity, Secure Boot, TPM, UEFI, Proxmox, libvirt, QEMU.
 - chalkos's own terms: STATE and VAR in capitals, A/B, UKI, OS CA, node CA, db and dbx, PCR 7.
@@ -171,11 +171,12 @@ the line and indent the continuation by two spaces.
 ### Every command must exist
 
 `docgen check`, part of the `docs` check, reads every fenced block without a language or in
-`sh`, `bash`, `shell`, `zsh`, `console` or `shell-session`, and fails on a `chalkctl` or
-`chalklab` command, subcommand or flag that does not exist, on a single-dash long flag and on a
-flag missing its value. It strips `$ ` prompts and follows `sudo`, `env`, `nix run ... --` and
-`nix develop -c`. Positional arguments and flag values are not checked. A page that shows a
-command another way, in prose for example, is not checked, so show commands in blocks.
+`sh`, `bash`, `shell`, `zsh`, `console` or `shell-session`, and fails on a `chalkctl`,
+`chalklab` or `chalkcfg` command, subcommand or flag that does not exist, on a single-dash long
+flag and on a flag missing its value. It strips `$ ` prompts and follows `sudo`, `env`,
+`nix run ... --` and `nix develop -c`. Positional arguments and flag values are not checked. A
+page that shows a command another way, in prose for example, is not checked, so show commands in
+blocks.
 
 ### Placeholders
 
@@ -299,9 +300,10 @@ From a page outside `reference/`, prefix the paths with `../reference/`.
 
 `docs/reference/cli/`, `docs/reference/options.md`, `docs/reference/api.md` and the navigation
 between `# BEGIN docgen cli` and `# END docgen cli` in `zensical.toml` are generated. Change
-their sources instead (command help in `pkg/chalkctl/help.go` and `pkg/chalklab/help.go`,
-option descriptions in `modules/`, comments in `api/chalkos/node/v1/node.proto`), then run
-`nix run .#docgen` and commit both. The `docs-generated` check fails when they differ.
+their sources instead (command help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go` and
+`pkg/chalkcfg/help.go`, option descriptions in `modules/`, comments in
+`api/chalkos/node/v1/node.proto`), then run `nix run .#docgen` and commit both. The
+`docs-generated` check fails when they differ.
 
 ### Outside the site
 

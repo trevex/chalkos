@@ -8,7 +8,7 @@ description: "Commands, options, the node API and the layout of images, ports an
 Most reference pages are generated from the code, so they describe what the code does;
 `nix run .#docgen` writes them, and the `docs-generated` check fails when they are out of date.
 
-- [Command line](cli/index.md): every command of `chalkctl` and `chalklab`, from their help.
+- [Command line](cli/index.md): every command of `chalkctl`, `chalklab` and `chalkcfg`, from their help.
 - [Cluster and node options](options.md): the options of a cluster definition and of role images.
 - [Node API](api.md): the API chalkd serves on every node.
 
