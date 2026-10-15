@@ -1234,15 +1234,33 @@ func TestKubeletFlagsEndWithTheExtraFlags(t *testing.T) {
 
 func TestPrepareWritesTheKubeletConfig(t *testing.T) {
 	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	if err := Prepare(p, now, onNode("192.168.100.11"), nil); err != nil {
+	if err := Prepare(p, now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	var config map[string]any
-	if err := json.Unmarshal([]byte(readFile(t, p.KubeletConfig())), &config); err != nil {
+	var config struct {
+		ClusterDomain  string   `json:"clusterDomain"`
+		ClusterDNS     []string `json:"clusterDNS"`
+		StaticPodPath  string   `json:"staticPodPath"`
+		Authentication struct {
+			X509 struct {
+				ClientCAFile string `json:"clientCAFile"`
+			} `json:"x509"`
+		} `json:"authentication"`
+	}
+	data, _ := os.ReadFile(p.KubeletConfig())
+	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
-	if config["clusterDomain"] != "cluster.local" || config["clusterDNS"].([]any)[0] != "10.96.0.10" ||
-		config["staticPodPath"] != p.Manifests() || config["authentication"].(map[string]any)["x509"].(map[string]any)["clientCAFile"] != filepath.Join(p.KubeletDir(), "ca.crt") {
-		t.Errorf("config = %v", config)
+	if config.ClusterDomain != "cluster.local" {
+		t.Errorf("clusterDomain = %q", config.ClusterDomain)
+	}
+	if !slices.Equal(config.ClusterDNS, []string{"10.96.0.10"}) {
+		t.Errorf("clusterDNS = %v", config.ClusterDNS)
+	}
+	if config.StaticPodPath != p.Manifests() {
+		t.Errorf("staticPodPath = %q, want %q", config.StaticPodPath, p.Manifests())
+	}
+	if want := filepath.Join(p.KubeletDir(), "ca.crt"); config.Authentication.X509.ClientCAFile != want {
+		t.Errorf("clientCAFile = %q, want %q", config.Authentication.X509.ClientCAFile, want)
 	}
 }

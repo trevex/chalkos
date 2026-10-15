@@ -356,6 +356,20 @@ in
     added = bridgeOf (clusterOf added);
     destructive = bridgeOf (clusterOf destructive);
     ha = bridgeOf haCluster;
+    # The testing cluster with what the others leave at their defaults, for the parity tests: IPv6
+    # primary in dual stack, another cluster domain and no pod network of chalkos's.
+    variant = bridgeOf (clusterOf [
+      {
+        chalkos.cluster.kubernetes = {
+          ipFamilies = lib.mkForce [
+            "ipv6"
+            "ipv4"
+          ];
+          domain = "chalklab.example";
+        };
+        chalkos.cni.provider = "none";
+      }
+    ]);
     lab = bridgeOf (
       self.lib.mkCluster {
         modules = [

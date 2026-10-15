@@ -31,7 +31,8 @@ func decode(data []byte) (any, error) {
 }
 
 // normalized is v as JSON decodes it, with strings that hold a JSON object decoded too, as
-// ConfigMaps carry configuration files: key order and spacing do not count.
+// ConfigMaps carry configuration files: key order and spacing do not count. A decoded string
+// stays marked as one, so a string never equals an object.
 func normalized(t *testing.T, v any) any {
 	t.Helper()
 	data, err := json.Marshal(v)
@@ -58,7 +59,7 @@ func decodeStrings(v any) any {
 	case string:
 		if strings.HasPrefix(x, "{") {
 			if o, err := decode([]byte(x)); err == nil {
-				return decodeStrings(o)
+				return map[string]any{"$json": decodeStrings(o)}
 			}
 		}
 	}
