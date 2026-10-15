@@ -187,26 +187,46 @@ func TestClusterValidate(t *testing.T) {
 }
 
 // The kubelet's extra flags come after chalkos's own, so they would override where it finds its
-// configuration and credentials, the node's name and addresses, and who may use its API.
-func TestClusterValidateRefusesProtectedKubeletFlags(t *testing.T) {
+// configuration and credentials, the node's name, addresses, labels and taints, and who may use
+// its API. The components take _ for -, so the names are refused in either spelling.
+func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	valid, err := ReadCluster(writeFile(t, clusterJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, flag := range []string{
-		"config", "kubeconfig", "cert-dir", "hostname-override", "node-ip", "anonymous-auth",
-		"authorization-mode", "client-ca-file", "read-only-port",
-	} {
+	for _, flag := range ProtectedKubeletFlags {
+		for _, name := range []string{flag, strings.ReplaceAll(flag, "-", "_")} {
+			c := valid
+			c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", name: "x"}}
+			err := c.Validate()
+			if want := "extraArgs: kubelet --" + name + " is set by chalkos and cannot be overridden"; err == nil || !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("%s: err = %v, want %s", name, err, want)
+			}
+		}
+	}
+	for _, name := range []string{"anonymous_auth", "authorization-mode", "enable_bootstrap-token_auth"} {
 		c := valid
-		c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", flag: "x"}}
-		err := c.Validate()
-		if want := "extraArgs: kubelet --" + flag + " is set by chalkos and cannot be overridden"; err == nil || err.Error() != want {
-			t.Errorf("%s: err = %v, want %s", flag, err, want)
+		c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "kube-apiserver --"+name+" is set by chalkos") {
+			t.Errorf("kube-apiserver %s: err = %v", name, err)
+		}
+	}
+	c := valid
+	c.ExtraArgs = map[string]map[string]string{"kubelet": {"node_labels": "a=b"}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "Kubelet document") {
+		t.Errorf("node_labels: err = %v, want the labels' document named", err)
+	}
+	// Names with their dashes would be read as another flag.
+	for _, component := range []string{"kubelet", "etcd"} {
+		c := valid
+		c.ExtraArgs = map[string]map[string]string{component: {"--v": "2"}}
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "without the leading dashes") {
+			t.Errorf("%s --v: err = %v", component, err)
 		}
 	}
 	// Other flags, and the protected flags of other components, are the cluster's.
-	c := valid
-	c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", "max-pods": "50"}, "kube-scheduler": {"config": "/x"}}
+	c = valid
+	c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", "max-pods": "50", "max_open_files": "100"}, "kube-scheduler": {"config": "/x"}}
 	if err := c.Validate(); err != nil {
 		t.Errorf("accepted flags refused: %v", err)
 	}

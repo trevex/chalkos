@@ -3427,7 +3427,8 @@ lib.runTests {
     };
   };
   # The kubelet's extra flags come after chalkos's own, so they cannot override where it finds its
-  # configuration and credentials, the node's name and addresses, or who may use its API.
+  # configuration, credentials and static pods, the node's name, addresses, labels and taints, or
+  # who may use its API. The kubelet takes _ for -, so either spelling is refused.
   testKubeletExtraArgsCannotOverrideProtectedFlags = {
     expr =
       let
@@ -3437,43 +3438,56 @@ lib.runTests {
           .environment.etc."chalkos/kubernetes/cluster.json".text;
         protected = [
           "anonymous-auth"
+          "authentication-token-webhook"
           "authorization-mode"
+          "bootstrap-kubeconfig"
           "cert-dir"
           "client-ca-file"
           "config"
+          "config-dir"
           "hostname-override"
           "kubeconfig"
           "node-ip"
+          "node-labels"
+          "pod-manifest-path"
           "read-only-port"
+          "register-with-taints"
+          "rotate-certificates"
+          "tls-cert-file"
+          "tls-private-key-file"
         ];
+        underscored = map (builtins.replaceStrings [ "-" ] [ "_" ]) protected;
       in
-      lib.genAttrs protected (
+      lib.filter (
         flag:
-        fails (clusterFile {
+        !fails (clusterFile {
           ${flag} = "x";
         })
-      )
-      // {
+      ) (protected ++ underscored);
+    expected = [ ];
+  };
+  testKubeletExtraArgsAcceptOtherFlags = {
+    expr =
+      let
+        clusterFile =
+          flags:
+          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ]))
+          .environment.etc."chalkos/kubernetes/cluster.json".text;
+      in
+      {
         other = fails (clusterFile {
           v = "2";
           max-pods = "50";
+          max_open_files = "100";
+        });
+        dashed = fails (clusterFile {
+          "--v" = "2";
         });
       };
-    expected =
-      lib.genAttrs [
-        "anonymous-auth"
-        "authorization-mode"
-        "cert-dir"
-        "client-ca-file"
-        "config"
-        "hostname-override"
-        "kubeconfig"
-        "node-ip"
-        "read-only-port"
-      ] (_: true)
-      // {
-        other = false;
-      };
+    expected = {
+      other = false;
+      dashed = true;
+    };
   };
   testAPIServerExtraArgsCannotOverrideAuthentication = {
     expr =
@@ -3500,6 +3514,9 @@ lib.runTests {
         bootstrapTokens = fails (clusterFile {
           enable-bootstrap-token-auth = "true";
         });
+        underscored = fails (clusterFile {
+          anonymous_auth = "true";
+        });
         other = fails (clusterFile {
           audit-log-maxage = "30";
         });
@@ -3509,6 +3526,7 @@ lib.runTests {
       anonymous = true;
       authenticationConfig = true;
       bootstrapTokens = true;
+      underscored = true;
       other = false;
     };
   };
@@ -3524,7 +3542,7 @@ lib.runTests {
       in
       {
         space = fails (clusterFile {
-          node-labels = "a=b c=d";
+          eviction-hard = "a=b c=d";
         });
         tab = fails (clusterFile {
           v = "2\t";
@@ -3533,14 +3551,14 @@ lib.runTests {
           v = "2\nX=1";
         });
         backslash = fails (clusterFile {
-          node-labels = "a=b\\c";
+          eviction-hard = "a=b\\c";
         });
         nameWithSpace = fails (clusterFile {
           "v 2" = "2";
         });
         other = fails (clusterFile {
           v = "2";
-          node-labels = "a=b,c=d";
+          eviction-hard = "a=b,c=d";
         });
       };
     expected = {

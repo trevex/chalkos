@@ -9,12 +9,30 @@ let
   inherit (lib) mkOption types;
   pkgs = nixpkgs.legacyPackages.${config.chalkos.cluster.system};
   flags = types.attrsOf types.str;
+  # Extra flags of a component, refusing those chalkos sets. The components take _ for -, so a
+  # protected flag is refused in either spelling, and a name with its leading dashes would be read
+  # as another flag.
   flagsOf =
-    component:
+    component: protected:
     mkOption {
       type = flags;
       default = { };
       description = "Extra flags of ${component}, without the leading dashes; they override chalkos's own.";
+      apply =
+        flags:
+        let
+          names = lib.attrNames flags;
+          dashed = lib.filter (lib.hasPrefix "-") names;
+          overriding = lib.filter (
+            name: lib.elem (builtins.replaceStrings [ "_" ] [ "-" ] name) protected
+          ) names;
+        in
+        if dashed != [ ] then
+          throw "chalkos.cluster.kubernetes.extraArgs.${component}: give ${lib.concatStringsSep ", " dashed} without the leading dashes"
+        else if overriding != [ ] then
+          throw "chalkos.cluster.kubernetes.extraArgs.${component} cannot override ${lib.concatStringsSep ", " overriding}: chalkos sets them"
+        else
+          flags;
     };
 
   # The node's static addresses in network name order, without their prefix lengths.
@@ -717,57 +735,59 @@ in
       };
     };
     extraArgs = {
-      etcd = flagsOf "etcd";
-      kube-apiserver = flagsOf "kube-apiserver" // {
-        # These flags decide who may do what; chalkos sets them and chalkd refuses overrides.
-        apply =
-          flags:
-          let
-            protected = lib.intersectLists (lib.attrNames flags) [
-              "anonymous-auth"
-              "authentication-config"
-              "authorization-mode"
-              "enable-bootstrap-token-auth"
-            ];
-          in
-          if protected == [ ] then
-            flags
-          else
-            throw "chalkos.cluster.kubernetes.extraArgs.kube-apiserver cannot override ${lib.concatStringsSep ", " protected}: chalkos sets them";
-      };
-      kube-controller-manager = flagsOf "kube-controller-manager";
-      kube-scheduler = flagsOf "kube-scheduler";
-      kubelet = flagsOf "the kubelet" // {
-        # The flags reach the kubelet through an environment variable that ExecStart splits at
-        # whitespace, read from an environment file that drops backslashes. They come after
-        # chalkos's own, so those that would override where the kubelet finds its configuration
-        # and credentials, the node's name and addresses, or who may use its API are refused, here
-        # and by chalkd.
-        apply =
-          flags:
-          let
-            bad = lib.filter (
-              name: name == "" || builtins.match "[^[:space:]\\\\]*" (name + flags.${name}) == null
-            ) (lib.attrNames flags);
-            protected = lib.intersectLists (lib.attrNames flags) [
-              "anonymous-auth"
-              "authorization-mode"
-              "cert-dir"
-              "client-ca-file"
-              "config"
-              "hostname-override"
-              "kubeconfig"
-              "node-ip"
-              "read-only-port"
-            ];
-          in
-          if bad != [ ] then
-            throw "chalkos.cluster.kubernetes.extraArgs.kubelet: ${lib.concatStringsSep ", " bad} cannot hold whitespace or backslashes"
-          else if protected != [ ] then
-            throw "chalkos.cluster.kubernetes.extraArgs.kubelet cannot override ${lib.concatStringsSep ", " protected}: chalkos sets them"
-          else
-            flags;
-      };
+      etcd = flagsOf "etcd" [ ];
+      # These flags decide who may do what; chalkos sets them and chalkd refuses overrides.
+      kube-apiserver = flagsOf "kube-apiserver" [
+        "anonymous-auth"
+        "authentication-config"
+        "authorization-mode"
+        "enable-bootstrap-token-auth"
+      ];
+      kube-controller-manager = flagsOf "kube-controller-manager" [ ];
+      kube-scheduler = flagsOf "kube-scheduler" [ ];
+      # The flags reach the kubelet through an environment variable that ExecStart splits at
+      # whitespace, read from an environment file that drops backslashes. They come after
+      # chalkos's own, so those that would override where the kubelet finds its configuration,
+      # credentials and static pods, the node's name, addresses, labels and taints, or who may use
+      # its API are refused, here and by chalkd.
+      kubelet =
+        let
+          option = flagsOf "kubelet" [
+            "anonymous-auth"
+            "authentication-token-webhook"
+            "authorization-mode"
+            "bootstrap-kubeconfig"
+            "cert-dir"
+            "client-ca-file"
+            "config"
+            "config-dir"
+            "hostname-override"
+            "kubeconfig"
+            "node-ip"
+            "node-labels"
+            "pod-manifest-path"
+            "read-only-port"
+            "register-with-taints"
+            "rotate-certificates"
+            "tls-cert-file"
+            "tls-private-key-file"
+          ];
+        in
+        option
+        // {
+          description = "Extra flags of the kubelet, without the leading dashes; they override chalkos's own. The node's labels and taints come from `chalkos.nodes.<name>.labels` and `taints`.";
+          apply =
+            flags:
+            let
+              bad = lib.filter (
+                name: name == "" || builtins.match "[^[:space:]\\\\]*" (name + flags.${name}) == null
+              ) (lib.attrNames flags);
+            in
+            if bad != [ ] then
+              throw "chalkos.cluster.kubernetes.extraArgs.kubelet: ${lib.concatStringsSep ", " bad} cannot hold whitespace or backslashes"
+            else
+              option.apply flags;
+        };
     };
     images = {
       etcd = mkOption {

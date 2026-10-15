@@ -251,7 +251,7 @@ attribute set of string
 
 
 
-Extra flags of the kubelet, without the leading dashes; they override chalkos’s own\.
+Extra flags of the kubelet, without the leading dashes; they override chalkos’s own\. The node’s labels and taints come from ` chalkos.nodes.<name>.labels ` and ` taints `\.
 
 
 

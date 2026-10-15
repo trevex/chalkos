@@ -145,25 +145,48 @@ func ParseCluster(data []byte) (Cluster, error) {
 var ProtectedAPIServerFlags = []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"}
 
 // ProtectedKubeletFlags are the kubelet's flags chalkos sets: where it finds its configuration,
-// credentials and certificates, the node's name and addresses, and who may use its API. Extra
-// flags come last on the kubelet's command line, so they would override them.
+// credentials, certificates and static pods, the node's name, addresses, labels and taints, and
+// who may use its API. Extra flags come last on the kubelet's command line, so they would
+// override them.
 var ProtectedKubeletFlags = []string{
-	"anonymous-auth", "authorization-mode", "cert-dir", "client-ca-file", "config", "hostname-override",
-	"kubeconfig", "node-ip", "read-only-port",
+	"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
+	"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override", "kubeconfig", "node-ip",
+	"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
+	"tls-cert-file", "tls-private-key-file",
+}
+
+// flagName is a flag's name as the Kubernetes components read it: they take _ for -, so
+// anonymous_auth sets --anonymous-auth.
+func flagName(name string) string { return strings.ReplaceAll(name, "_", "-") }
+
+// validateExtraArgs refuses flag names with their leading dashes, which the components would
+// read as another flag, and the protected flags, in any spelling the components accept.
+func (c Cluster) validateExtraArgs() error {
+	protected := map[string][]string{"kube-apiserver": ProtectedAPIServerFlags, "kubelet": ProtectedKubeletFlags}
+	for _, component := range slices.Sorted(maps.Keys(c.ExtraArgs)) {
+		flags := c.ExtraArgs[component]
+		for _, name := range slices.Sorted(maps.Keys(flags)) {
+			if strings.HasPrefix(name, "-") {
+				return fmt.Errorf("extraArgs: %s flag %q: give the name without the leading dashes", component, name)
+			}
+			if !slices.Contains(protected[component], flagName(name)) {
+				continue
+			}
+			err := fmt.Errorf("extraArgs: %s --%s is set by chalkos and cannot be overridden", component, name)
+			if component == "kubelet" && (flagName(name) == "node-labels" || flagName(name) == "register-with-taints") {
+				err = fmt.Errorf("%w; give the node's labels and taints in its Kubelet document", err)
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 // Validate checks the kind, the endpoint, the address families and their ranges, how nodes pick
 // their address, the VIPs and the extra flags.
 func (c Cluster) Validate() error {
-	for _, flag := range ProtectedAPIServerFlags {
-		if _, ok := c.ExtraArgs["kube-apiserver"][flag]; ok {
-			return fmt.Errorf("extraArgs: kube-apiserver --%s is set by chalkos and cannot be overridden", flag)
-		}
-	}
-	for _, flag := range ProtectedKubeletFlags {
-		if _, ok := c.ExtraArgs["kubelet"][flag]; ok {
-			return fmt.Errorf("extraArgs: kubelet --%s is set by chalkos and cannot be overridden", flag)
-		}
+	if err := c.validateExtraArgs(); err != nil {
+		return err
 	}
 	if c.Kind != KindControlPlane && c.Kind != KindWorker {
 		return fmt.Errorf("unknown kind %q", c.Kind)
