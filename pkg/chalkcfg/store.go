@@ -41,7 +41,7 @@ type kindInfo struct {
 // names are no document's, and could reach outside the kind's directory.
 var namePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
-var errSecret = errors.New("chalkcfg does not read Secrets: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
+var errSecret = errors.New("Secrets are never printed: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
 
 // readDir is os.ReadDir with a directory that does not exist read as empty: a node without config
 // has no /run/chalkos/config, and a test may have no schemas.
@@ -182,4 +182,20 @@ func readObject(path string) (map[string]any, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return obj, nil
+}
+
+// resolve returns s with its config directory resolved to the directory it links to. chalkd
+// replaces the config by pointing /run/chalkos/config at a new directory and removing the old
+// one, so a command that resolved the link once reads the kinds and documents of one config, and
+// not the kinds of one and the documents of the next. A missing config directory stays as it is.
+func (s store) resolve() (store, error) {
+	dir, err := filepath.EvalSymlinks(s.config)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s, nil
+	}
+	if err != nil {
+		return store{}, err
+	}
+	s.config = dir
+	return s, nil
 }

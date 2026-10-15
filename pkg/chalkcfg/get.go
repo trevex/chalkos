@@ -23,6 +23,10 @@ func getCommand(s store) *cobra.Command {
 			if len(args) > 2 {
 				return fmt.Errorf("%w: get takes at most a kind and a name", errUsage)
 			}
+			s, err := s.resolve()
+			if err != nil {
+				return err
+			}
 			if len(args) == 0 {
 				if format != "" {
 					return fmt.Errorf("%w: --output needs a kind", errUsage)

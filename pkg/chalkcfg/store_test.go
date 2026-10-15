@@ -22,8 +22,8 @@ func writeFile(t *testing.T, path, data string) {
 }
 
 // testNode is a node's config directory and its image's schemas, laid out as chalkd and the image
-// lay them out. The node has two Peers and a Rack. The image also declares Site, of which the node
-// has no document, and Secret.
+// lay them out. The node has two Peers, backup with neighbors, and a Rack. The image also declares
+// Site, of which the node has no document, and Secret.
 func testNode(t *testing.T) store {
 	t.Helper()
 	dir := t.TempDir()
@@ -41,7 +41,7 @@ func testNode(t *testing.T) store {
 	writeFile(t, filepath.Join(s.config, "bgp.example.org", "Peer", "uplink.json"),
 		`{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"uplink"},"spec":{"asn":4200000001,"port":179,"tags":["a","b"],"labels":{"zone-a":"z1"}}}`+"\n")
 	writeFile(t, filepath.Join(s.config, "bgp.example.org", "Peer", "backup.json"),
-		`{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"backup"},"spec":{"asn":4200000002,"port":1790,"tags":[],"labels":{}}}`+"\n")
+		`{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"backup"},"spec":{"asn":4200000002,"port":1790,"tags":[],"labels":{},"neighbors":[{"ip":"10.0.0.1","asn":65001},{"ip":"10.0.0.2","asn":65002}]}}`+"\n")
 	return s
 }
 
@@ -108,7 +108,7 @@ func TestDocumentsRefused(t *testing.T) {
 		{"Rack", "other", `the node has no Rack named "other"`},
 		{"Rack", "../Rack/rack", `the node has no Rack named "../Rack/rack"`},
 		{"Site", "main", `the node has no Site named "main"`},
-		{"Secret", "", "chalkcfg does not read Secrets"},
+		{"Secret", "", "Secrets are never printed"},
 	} {
 		_, err := s.documents(c.kind, c.name)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -147,5 +147,38 @@ func TestWithoutConfig(t *testing.T) {
 	s.config = filepath.Join(t.TempDir(), "none")
 	if docs, err := s.documents("Rack", ""); err != nil || len(docs) != 0 {
 		t.Errorf("Rack = %v, %v; want no documents", docs, err)
+	}
+}
+
+// A store resolved once keeps reading the config it resolved while chalkd replaces the config.
+func TestResolve(t *testing.T) {
+	s := testNode(t)
+	first, second := s.config+"-a", s.config+"-b"
+	if err := os.Rename(s.config, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(first), s.config); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(s.config); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(second), s.config); err != nil {
+		t.Fatal(err)
+	}
+	if docs, err := r.documents("Rack", "rack"); err != nil || len(docs) != 1 {
+		t.Errorf("Rack rack = %v, %v; want the document of the config resolved", docs, err)
+	}
+
+	s.config = filepath.Join(t.TempDir(), "none")
+	if r, err := s.resolve(); err != nil || r.config != s.config {
+		t.Errorf("resolve without config = %+v, %v", r, err)
 	}
 }

@@ -42,6 +42,14 @@ func TestGet(t *testing.T) {
 		{[]string{"get", "Peer", "uplink", "-o", "yaml"}, "apiVersion: bgp.example.org/v1alpha1\nkind: Peer\nmetadata:\n  name: uplink\nspec:\n  asn: 4200000001\n  labels:\n    zone-a: z1\n  port: 179\n  tags:\n    - a\n    - b\n"},
 		{[]string{"get", "Site", "-o", "yaml"}, "items: []\nkind: List\n"},
 		{[]string{"get", "Site", "-o", "jsonpath={.spec}"}, ""},
+		// A range ends with each document, so the next document starts its own.
+		{[]string{"get", "Peer", "-o", "jsonpath={range .spec.tags[*]}{@} {end}"}, "\na b \n"},
+		// Numbers compare as numbers in filters and templates.
+		{[]string{"get", "Peer", "backup", "-o", "jsonpath={.spec.neighbors[?(@.asn==65001)].ip}"}, "10.0.0.1\n"},
+		{[]string{"get", "Peer", "backup", "-o", "jsonpath={.spec.neighbors[?(@.asn>65001)].ip}"}, "10.0.0.2\n"},
+		{[]string{"get", "Peer", "-o", "go-template={{if eq .spec.port 179}}{{.metadata.name}}{{end}}"}, "\nuplink\n"},
+		{[]string{"get", "Peer", "-o", "go-template={{if gt .spec.asn 4200000001}}{{.metadata.name}}{{end}}"}, "backup\n\n"},
+		{[]string{"get", "Peer", "uplink", "-o", "go-template={{index .spec.labels \"zone-a\"}} {{index .spec.tags 1}}"}, "z1 b\n"},
 	} {
 		out, errOut, status := run(t, s, c.args...)
 		if status != 0 || out != c.want {
@@ -94,10 +102,12 @@ func TestGetFails(t *testing.T) {
 	}{
 		{[]string{"get", "Nope"}, 1, "chalkcfg: the image declares no kind Nope; it declares Peer, Rack, Site\n"},
 		{[]string{"get", "Rack", "other"}, 1, `chalkcfg: the node has no Rack named "other"` + "\n"},
-		{[]string{"get", "Secret"}, 1, "chalkcfg does not read Secrets"},
+		{[]string{"get", "Secret"}, 1, "chalkcfg: Secrets are never printed: a service gets"},
 		{[]string{"get", "Rack", "rack", "-o", "jsonpath={.spec.nope}"}, 1, "chalkcfg: Rack rack: nope is not found\n"},
 		{[]string{"get", "Rack", "rack", "-o", "jsonpath={.spec["}, 1, "chalkcfg: the jsonpath expression {.spec[: unterminated array\n"},
 		{[]string{"get", "Rack", "rack", "-o", "go-template={{.spec.nope}}"}, 1, `map has no entry for key "nope"`},
+		{[]string{"get", "Rack", "rack", "-o", "go-template={{index .spec \"nope\"}}"}, 1, `map has no entry for key "nope"`},
+		{[]string{"get", "Peer", "uplink", "-o", "go-template={{index .spec.tags 2}}"}, 1, "index out of range: 2"},
 		{[]string{"get", "Rack", "rack", "-o", "go-template={{"}, 1, "chalkcfg: the template:"},
 		{[]string{"get", "Rack", "rack", "-o", "xml"}, 2, `unknown output format "xml"`},
 		{[]string{"get", "Rack", "rack", "extra"}, 2, "get takes at most a kind and a name"},
@@ -132,5 +142,23 @@ func TestNoCompletion(t *testing.T) {
 	root.InitDefaultCompletionCmd()
 	if cmd, _, err := root.Find([]string{"completion"}); err == nil && cmd != root {
 		t.Error("chalkcfg has a completion command")
+	}
+}
+
+// YAML numbers keep an integer's digits, and a float written with an exponent gets a point, which
+// YAML 1.1 needs to read it as a float.
+func TestYAMLNumbers(t *testing.T) {
+	dec := json.NewDecoder(strings.NewReader(`{"a":1e3,"b":2.5,"c":1E-7,"d":12345678901234567890,"e":-0.5e10}`))
+	dec.UseNumber()
+	var obj map[string]any
+	if err := dec.Decode(&obj); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := (output{format: "yaml"}).write(&buf, []document{{kind: "X", name: "x", object: obj}}, true); err != nil {
+		t.Fatal(err)
+	}
+	if want := "a: 1000.0\nb: 2.5\nc: 1.0e-07\nd: 12345678901234567890\ne: -5.0e+09\n"; buf.String() != want {
+		t.Errorf("YAML = %q, want %q", buf.String(), want)
 	}
 }
