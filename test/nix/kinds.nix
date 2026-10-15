@@ -525,12 +525,16 @@ lib.runTests {
     expr = lib.sort lib.lessThan (kindNames kubernetesImage);
     expected = [
       "Cluster"
+      "Flannel"
       "Image"
       "Kubelet"
+      "Kubernetes"
       "Link"
+      "Manifest"
       "NetDev"
       "Network"
       "Node"
+      "RegistryMirror"
       "Secret"
       "SystemDisk"
       "TimeSync"
@@ -541,12 +545,85 @@ lib.runTests {
     expr = lib.elem "Kubelet" (kindNames plainImage);
     expected = false;
   };
+  testImageWithoutKubernetesHasNoKubernetesKinds = {
+    expr = lib.intersectLists [
+      "Flannel"
+      "Kubernetes"
+      "Manifest"
+      "RegistryMirror"
+    ] (kindNames plainImage);
+    expected = [ ];
+  };
+  # Flannel is a kind only where flannel is the pod network.
+  testFlannelKindFollowsTheProvider = {
+    expr = lib.elem "Flannel" (
+      kindNames
+        (mkCluster {
+          modules = [
+            {
+              chalkos.cluster = {
+                name = "t";
+                endpoint = "https://10.0.0.1:6443";
+              };
+              chalkos.cni.provider = "none";
+              chalkos.roles.worker.kubernetes.kind = "worker";
+            }
+          ];
+        }).roles.worker.nixos.metal.config
+    );
+    expected = false;
+  };
+  # A Kubernetes object: an object with apiVersion, kind and metadata, and any other field.
+  testKubernetesObjectSchema = {
+    expr = propOf schema.types.kubernetesObject;
+    expected = {
+      type = "object";
+      properties = {
+        apiVersion = {
+          type = "string";
+          minLength = 1;
+        };
+        kind = {
+          type = "string";
+          minLength = 1;
+        };
+        metadata.type = "object";
+      };
+      required = [
+        "apiVersion"
+        "kind"
+        "metadata"
+      ];
+      "x-chalkos-kubernetes-object" = true;
+    };
+  };
+  # Extensions declare no raw objects.
+  testKubernetesObjectIsNotPublic = {
+    expr =
+      (image [
+        (
+          { chalkosLib, ... }:
+          {
+            chalkos.kinds.Demo = {
+              group = "demo.example.org";
+              version = "v1alpha1";
+              spec.x = mkOption { type = chalkosLib.types.kubernetesObject or null; };
+            };
+          }
+        )
+      ]).chalkos.kinds.Demo.spec.x.type;
+    expected = null;
+  };
   testBuiltinSchemasMatchFixtures = {
     expr = map (kind: builtinSchema kind) [
       "Cluster"
+      "Flannel"
       "Image"
       "Kubelet"
+      "Kubernetes"
+      "Manifest"
       "Node"
+      "RegistryMirror"
       "Secret"
       "SystemDisk"
       "TimeSync"
@@ -554,9 +631,13 @@ lib.runTests {
     ];
     expected = map builtinFixture [
       "chalkos.dev_v1alpha1_Cluster.json"
+      "kubernetes.chalkos.dev_v1alpha1_Flannel.json"
       "chalkos.dev_v1alpha1_Image.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubelet.json"
+      "kubernetes.chalkos.dev_v1alpha1_Kubernetes.json"
+      "kubernetes.chalkos.dev_v1alpha1_Manifest.json"
       "chalkos.dev_v1alpha1_Node.json"
+      "kubernetes.chalkos.dev_v1alpha1_RegistryMirror.json"
       "chalkos.dev_v1alpha1_Secret.json"
       "storage.chalkos.dev_v1alpha1_SystemDisk.json"
       "time.chalkos.dev_v1alpha1_TimeSync.json"

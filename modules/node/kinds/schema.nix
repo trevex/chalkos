@@ -94,6 +94,27 @@ let
     in
     if n == "chalkosSecretRef" then
       secretRefSchema
+    else if n == "chalkosKubernetesObject" then
+      {
+        type = "object";
+        properties = {
+          apiVersion = {
+            type = "string";
+            minLength = 1;
+          };
+          kind = {
+            type = "string";
+            minLength = 1;
+          };
+          metadata.type = "object";
+        };
+        required = [
+          "apiVersion"
+          "kind"
+          "metadata"
+        ];
+        "x-chalkos-kubernetes-object" = true;
+      }
     else if n == "str" then
       { type = "string"; }
     else if n == "nonEmptyStr" then
@@ -219,6 +240,13 @@ rec {
       name = "chalkosSecretRef";
       description = "reference to a key of a Secret";
     };
+
+  # A Kubernetes object, which the control planes apply as it is. Built-in kinds alone use it:
+  # chalkosLib.types does not offer it, as extensions get no raw schemas.
+  types.kubernetesObject = lib.types.attrsOf lib.types.anything // {
+    name = "chalkosKubernetesObject";
+    description = "Kubernetes object";
+  };
 
   # The schema of a whole document of a kind, around the schema of its spec.
   envelope =

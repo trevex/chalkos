@@ -1,6 +1,7 @@
 # The kinds every image accepts: the cluster and node a config belongs to, the image the node
-# runs, secrets, storage, time and, on images with Kubernetes, the kubelet's node settings. chalkd
-# translates them into the node's identity.
+# runs, secrets, storage, time and, on images with Kubernetes, the cluster's Kubernetes settings,
+# registry mirrors and manifests and the kubelet's node settings. chalkd translates them into the
+# node's identity and its Kubernetes cluster.
 {
   config,
   lib,
@@ -9,6 +10,33 @@
 let
   inherit (lib) mkOption types;
   kubernetesKind = config.chalkos.role.kubernetes.kind;
+  flannel = config.chalkos.cni.provider == "flannel";
+  inherit ((import ./schema.nix { inherit lib; }).types) kubernetesObject;
+  # An option per address family, as the cluster's ranges are given.
+  perFamily =
+    {
+      type,
+      description,
+      ipv4,
+      ipv6,
+    }:
+    {
+      ipv4 = mkOption {
+        inherit type description;
+        default = ipv4;
+      };
+      ipv6 = mkOption {
+        inherit type description;
+        default = ipv6;
+      };
+    };
+  flags =
+    component:
+    mkOption {
+      type = types.attrsOf types.str;
+      default = { };
+      description = "Extra flags of ${component}, without the leading dashes; they override chalkos's own.";
+    };
 
   size = types.strMatching "[0-9]+[KMGTP]?";
   mode = types.enum [
@@ -232,14 +260,21 @@ in
       };
     };
     TimeSync = builtin "time.chalkos.dev" // {
-      spec.servers = mkOption {
-        type = types.listOf timeServer;
-        default = map (n: { host = "ptbtime${toString n}.ptb.de"; }) [
-          1
-          2
-          3
-        ];
-        description = "Time servers the node synchronises its clock with, authenticated with NTS unless `nts = false`.";
+      spec = {
+        servers = mkOption {
+          type = types.listOf timeServer;
+          default = map (n: { host = "ptbtime${toString n}.ptb.de"; }) [
+            1
+            2
+            3
+          ];
+          description = "Time servers the node synchronises its clock with, authenticated with NTS unless `nts = false`.";
+        };
+        dhcp = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Also synchronise with the time servers the network announces through DHCP, which are not authenticated.";
+        };
       };
     };
   }
@@ -266,6 +301,131 @@ in
           default = null;
           description = "Subnets the node picks its address from instead of the cluster's; null uses those.";
         };
+      };
+    };
+    Kubernetes = builtin "kubernetes.chalkos.dev" // {
+      spec = {
+        domain = mkOption {
+          type = types.nonEmptyStr;
+          default = "cluster.local";
+          description = "DNS domain of the cluster.";
+        };
+        allowSchedulingOnControlPlanes = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Let workloads run on control-plane nodes, which are otherwise tainted.";
+        };
+        ipFamilies = mkOption {
+          type = types.nonEmptyListOf (
+            types.enum [
+              "ipv4"
+              "ipv6"
+            ]
+          );
+          default = [ "ipv4" ];
+          description = "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.";
+        };
+        podCIDRs = perFamily {
+          type = types.nonEmptyStr;
+          description = "Address range of the family's pods; each node gets a part of it.";
+          ipv4 = "10.244.0.0/16";
+          ipv6 = "fd00:10:244::/56";
+        };
+        serviceCIDRs = perFamily {
+          type = types.nonEmptyStr;
+          description = "Address range of the family's services, at most 2^20 addresses.";
+          ipv4 = "10.96.0.0/12";
+          ipv6 = "fd00:10:96::/112";
+        };
+        dnsIPs = perFamily {
+          type = types.nullOr types.nonEmptyStr;
+          description = "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's.";
+          ipv4 = null;
+          ipv6 = null;
+        };
+        nodeCIDRMaskSizes = perFamily {
+          type = types.ints.between 1 128;
+          description = "Prefix length of each node's part of the family's pod range.";
+          ipv4 = 24;
+          ipv6 = 64;
+        };
+        nodeIP = {
+          validSubnets = mkOption {
+            type = types.listOf types.nonEmptyStr;
+            default = [ ];
+            description = "Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot; a leading `!` excludes one. Empty takes any global unicast address.";
+          };
+          timeout = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Seconds a node waits at boot for its address.";
+          };
+        };
+        vxlanSourceSubnets = mkOption {
+          type = types.listOf types.nonEmptyStr;
+          default = [ ];
+          description = "Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source.";
+        };
+        vip = {
+          addresses = mkOption {
+            type = types.listOf types.nonEmptyStr;
+            default = [ ];
+            description = "Virtual addresses of the API server, at most one per family; empty means no virtual IP.";
+          };
+          mode = mkOption {
+            type = types.enum [ "l2" ];
+            default = "l2";
+            description = "How the holder announces the addresses.";
+          };
+          interface = mkOption {
+            type = types.nullOr types.nonEmptyStr;
+            default = null;
+            description = "Interface the addresses are added to; null means the one holding the node's address of their family.";
+          };
+        };
+        extraArgs = {
+          etcd = flags "etcd";
+          kube-apiserver = flags "the API server";
+          kube-controller-manager = flags "the controller-manager";
+          kube-scheduler = flags "the scheduler";
+          kubelet = flags "the kubelet";
+        };
+      };
+    };
+    RegistryMirror = builtin "kubernetes.chalkos.dev" // {
+      multiple = true;
+      spec = {
+        registry = mkOption {
+          type = types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]+)?";
+          example = "docker.io";
+          description = "Host of the registry as image references name it, with its port unless it is 443.";
+        };
+        mirrors = mkOption {
+          type = types.nonEmptyListOf (types.strMatching "https?://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+");
+          example = [ "https://mirror.example.com" ];
+          description = "Mirrors of the registry, which containerd tries in order before the registry itself.";
+        };
+        allowPlainHTTP = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Allow http:// mirrors. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.";
+        };
+      };
+    };
+    Manifest = builtin "kubernetes.chalkos.dev" // {
+      multiple = true;
+      spec.objects = mkOption {
+        type = types.listOf kubernetesObject;
+        description = "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Manifest documents in the order of their names.";
+      };
+    };
+  }
+  // lib.optionalAttrs (kubernetesKind != null && flannel) {
+    Flannel = builtin "kubernetes.chalkos.dev" // {
+      spec.mtu = mkOption {
+        type = types.nullOr types.ints.positive;
+        default = null;
+        description = "MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address.";
       };
     };
   };

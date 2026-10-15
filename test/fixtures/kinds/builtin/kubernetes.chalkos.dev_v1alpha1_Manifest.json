@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "kubernetes.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Manifest"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "objects": {
+          "description": "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Manifest documents in the order of their names.",
+          "items": {
+            "properties": {
+              "apiVersion": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "apiVersion",
+              "kind",
+              "metadata"
+            ],
+            "type": "object",
+            "x-chalkos-kubernetes-object": true
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "objects"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Manifest",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "kubernetes.chalkos.dev",
+    "kind": "Manifest",
+    "multiple": true,
+    "version": "v1alpha1"
+  }
+}

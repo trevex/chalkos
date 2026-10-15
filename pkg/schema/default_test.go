@@ -42,7 +42,7 @@ func TestDefaultKeepsGivenValuesAndFillsListItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(got.(map[string]any)["spec"])
-	if want := `{"servers":[{"host":"ntp.lan","nts":false,"port":null}]}`; string(b) != want {
+	if want := `{"dhcp":false,"servers":[{"host":"ntp.lan","nts":false,"port":null}]}`; string(b) != want {
 		t.Errorf("spec = %s, want %s", b, want)
 	}
 }

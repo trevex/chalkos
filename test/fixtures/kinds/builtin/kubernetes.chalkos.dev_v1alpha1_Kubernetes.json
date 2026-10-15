@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "kubernetes.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Kubernetes"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "allowSchedulingOnControlPlanes": {
+          "default": false,
+          "description": "Let workloads run on control-plane nodes, which are otherwise tainted.",
+          "type": "boolean"
+        },
+        "dnsIPs": {
+          "additionalProperties": false,
+          "properties": {
+            "ipv4": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's."
+            },
+            "ipv6": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's."
+            }
+          },
+          "type": "object"
+        },
+        "domain": {
+          "default": "cluster.local",
+          "description": "DNS domain of the cluster.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "extraArgs": {
+          "additionalProperties": false,
+          "properties": {
+            "etcd": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "description": "Extra flags of etcd, without the leading dashes; they override chalkos's own.",
+              "type": "object"
+            },
+            "kube-apiserver": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "description": "Extra flags of the API server, without the leading dashes; they override chalkos's own.",
+              "type": "object"
+            },
+            "kube-controller-manager": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "description": "Extra flags of the controller-manager, without the leading dashes; they override chalkos's own.",
+              "type": "object"
+            },
+            "kube-scheduler": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "description": "Extra flags of the scheduler, without the leading dashes; they override chalkos's own.",
+              "type": "object"
+            },
+            "kubelet": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "description": "Extra flags of the kubelet, without the leading dashes; they override chalkos's own.",
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "ipFamilies": {
+          "default": [
+            "ipv4"
+          ],
+          "description": "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.",
+          "items": {
+            "enum": [
+              "ipv4",
+              "ipv6"
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "nodeCIDRMaskSizes": {
+          "additionalProperties": false,
+          "properties": {
+            "ipv4": {
+              "default": 24,
+              "description": "Prefix length of each node's part of the family's pod range.",
+              "maximum": 128,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "ipv6": {
+              "default": 64,
+              "description": "Prefix length of each node's part of the family's pod range.",
+              "maximum": 128,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "nodeIP": {
+          "additionalProperties": false,
+          "properties": {
+            "timeout": {
+              "default": 300,
+              "description": "Seconds a node waits at boot for its address.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "validSubnets": {
+              "default": [],
+              "description": "Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot; a leading `!` excludes one. Empty takes any global unicast address.",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "podCIDRs": {
+          "additionalProperties": false,
+          "properties": {
+            "ipv4": {
+              "default": "10.244.0.0/16",
+              "description": "Address range of the family's pods; each node gets a part of it.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "ipv6": {
+              "default": "fd00:10:244::/56",
+              "description": "Address range of the family's pods; each node gets a part of it.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "serviceCIDRs": {
+          "additionalProperties": false,
+          "properties": {
+            "ipv4": {
+              "default": "10.96.0.0/12",
+              "description": "Address range of the family's services, at most 2^20 addresses.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "ipv6": {
+              "default": "fd00:10:96::/112",
+              "description": "Address range of the family's services, at most 2^20 addresses.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "vip": {
+          "additionalProperties": false,
+          "properties": {
+            "addresses": {
+              "default": [],
+              "description": "Virtual addresses of the API server, at most one per family; empty means no virtual IP.",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "interface": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Interface the addresses are added to; null means the one holding the node's address of their family."
+            },
+            "mode": {
+              "default": "l2",
+              "description": "How the holder announces the addresses.",
+              "enum": [
+                "l2"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "vxlanSourceSubnets": {
+          "default": [],
+          "description": "Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Kubernetes",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "kubernetes.chalkos.dev",
+    "kind": "Kubernetes",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}

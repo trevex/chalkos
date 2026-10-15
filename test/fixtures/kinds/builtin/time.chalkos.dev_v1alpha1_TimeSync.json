@@ -24,6 +24,11 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
+        "dhcp": {
+          "default": false,
+          "description": "Also synchronise with the time servers the network announces through DHCP, which are not authenticated.",
+          "type": "boolean"
+        },
         "servers": {
           "default": [
             {
