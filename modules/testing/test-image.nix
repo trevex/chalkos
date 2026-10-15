@@ -22,6 +22,6 @@
   # The platform puts the console on the first serial port, where the tests read the facts.
   boot.kernelParams = [ "quiet" ];
 
-  # Certificates last a year; a test renews them by delivering the identity, due or not.
+  # Certificates last a year; a test renews them by delivering config, due or not.
   systemd.services.chalkd.environment.CHALKD_TEST_RENEW_ON_APPLY_CONFIG = "1";
 }

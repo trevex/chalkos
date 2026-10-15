@@ -22,7 +22,7 @@ import (
 
 // TestInstallInPlace installs the test image where it runs and checks the installed node: VAR
 // is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
-// certificates of the OS CA and honours their roles, and identities apply additive storage
+// certificates of the OS CA and honours their roles, and config applies additive storage
 // changes live and refuse destructive ones. An extension kind reaches its consumer with its
 // secret, and an apply that changes it restarts the consumer.
 func TestInstallInPlace(t *testing.T) {
