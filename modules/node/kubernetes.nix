@@ -100,12 +100,21 @@ let
     # The nodes check that their addresses suit flannel.
     flannel = if flannel then { mtu = lib.defaultTo 0 config.chalkos.cni.flannel.mtu; } else null;
     vip = { inherit (k.vip) addresses mode interface; };
-    extraArgs = removeAttrs k.extraArgs [ "kubelet" ];
+    extraArgs = k.extraArgs;
+    inherit (imageFile) images;
+  };
+
+  # Read by chalkd with the node's config: what the image fixes about Kubernetes.
+  imageFile = {
+    version = k.package.version;
+    cni = config.chalkos.cni.provider;
     images = {
-      inherit (k.images) etcd;
+      inherit (k.images) etcd coredns;
       kubeAPIServer = "registry.k8s.io/kube-apiserver:v${k.package.version}";
       kubeControllerManager = "registry.k8s.io/kube-controller-manager:v${k.package.version}";
       kubeScheduler = "registry.k8s.io/kube-scheduler:v${k.package.version}";
+      kubeProxy = "registry.k8s.io/kube-proxy:v${k.package.version}";
+      flannel = if flannel then config.chalkos.cni.flannel.image else "";
     };
   };
 
@@ -198,6 +207,7 @@ in
 
     environment.etc = {
       "chalkos/kubernetes/cluster.json".text = builtins.toJSON clusterFile;
+      "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
       "chalkos/kubernetes/kubelet.json".text = builtins.toJSON kubeletConfig;
     }
     // lib.optionalAttrs controlPlane {

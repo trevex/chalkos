@@ -3272,6 +3272,43 @@ lib.runTests {
       https = false;
     };
   };
+  # The image's build-time facts, which chalkd reads with the node's config; cluster.json names
+  # the same ones until the role images go.
+  testImageFacts =
+    let
+      config = role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet.v = "2"; } ]);
+      image = builtins.fromJSON config.environment.etc."chalkos/kubernetes/image.json".text;
+      clusterFile = builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text;
+      noFlannel =
+        builtins.fromJSON
+          (role (cluster [ { chalkos.cni.provider = "none"; } ]))
+          .environment.etc."chalkos/kubernetes/image.json".text;
+    in
+    {
+      expr = {
+        inherit (image) version cni;
+        inherit (image.images) kubeProxy coredns flannel;
+        same = image.images == clusterFile.images && image.version == clusterFile.version;
+        kubeletFlags = clusterFile.extraArgs.kubelet;
+        noFlannel = {
+          inherit (noFlannel) cni;
+          inherit (noFlannel.images) flannel;
+        };
+      };
+      expected = {
+        version = "1.37.1";
+        cni = "flannel";
+        kubeProxy = "registry.k8s.io/kube-proxy:v1.37.1";
+        coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
+        flannel = "ghcr.io/flannel-io/flannel:v0.28.9";
+        same = true;
+        kubeletFlags.v = "2";
+        noFlannel = {
+          cni = "none";
+          flannel = "";
+        };
+      };
+    };
   testKubeletConfiguration = {
     expr =
       let
