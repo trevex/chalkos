@@ -24,7 +24,7 @@ You need:
   [Plan a production cluster](production-cluster.md) helps decide what goes into it.
 - The cluster's [secrets file](../reference/glossary.md#secrets-file), written once with
   [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md), and
-  `chalkos.osCA` set to its public part,
+  [`osCA`](../reference/options.md#osca) set to its public part,
   `./secrets.pub.json`, committed to the flake. The images then carry the cluster's
   [OS CA](../reference/glossary.md#os-ca), so a machine in
   [maintenance mode](../reference/glossary.md#maintenance-mode) accepts only your chalkctl.

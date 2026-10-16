@@ -284,10 +284,10 @@ Commands, options and API methods link to their generated page on first use per 
 
   | Option | Link |
   | --- | --- |
-  | `chalkos.cluster.endpoint` | `options.md#chalkosclusterendpoint` |
-  | `chalkos.nodes.<name>.storage.system.disk` | `options.md#chalkosnodesstoragesystemdisk` |
-  | `chalkos.time.servers.*.nts` | `options.md#chalkostimeserversnts` |
-  | `chalkos.cluster.kubernetes.extraArgs.kube-apiserver` | `options.md#chalkosclusterkubernetesextraargskube-apiserver` |
+  | `osCA` | `options.md#osca` |
+  | `variants.<name>.modules` | `options.md#variantsmodules` |
+  | `chalkos.consumers.<name>.restartOnChange` | `options.md#chalkosconsumersrestartonchange` |
+  | `chalkos.kubernetes.images.etcd` | `options.md#chalkoskubernetesimagesetcd` |
 
 - An API anchor is a prefix and the name in lower case, with dots removed: `method-` for
   methods (`api.md#method-upgrade`), `message-` for messages

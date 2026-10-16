@@ -195,7 +195,7 @@ chalkctl gen secrets --recipient=<admin-recipient> --recipient=<backup-recipient
 ```
 
 The command writes `secrets.age` and `secrets.pub.json`, the public half, which
-`chalkos.osCA` names so the images trust
+[`osCA`](../reference/options.md#osca) names so the images trust
 the OS CA. To decrypt the file, chalkctl tries `~/.config/chalkos/age.key`, `~/.ssh/id_ed25519`
 and `~/.ssh/id_rsa`, or the files `--identity` names; a plugin identity file goes there too.
 `--plaintext` writes `secrets.json` unencrypted, for a file protected by other means.
@@ -272,7 +272,7 @@ Nodes pull the control plane's images, flannel and CoreDNS from their upstream r
 `chalkos.cluster.registries.mirrors`
 puts HTTPS mirrors in front of a registry host; containerd tries them in order and falls back
 to the registry. A cluster without internet access needs every image in a mirror, including
-those `chalkos.cluster.kubernetes.images`
+those [`chalkos.kubernetes.images`](../reference/options.md#chalkoskubernetesimagesetcd)
 names.
 
 ```nix title="cluster.nix"

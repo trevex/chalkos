@@ -233,7 +233,7 @@ another disk carrying the same image or the same labels for its own.
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
-| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster definition sets `chalkos.osCA`. |
+| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with [`osCA`](options.md#osca). |
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images of a role with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
 | `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |

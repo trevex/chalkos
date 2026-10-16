@@ -10,6 +10,45 @@ platform, and the installer. The NixOS modules of a variant set the options of i
 NixOS systems with chalkos's node modules. This page is generated from those modules with
 nixosOptionsDoc; each option links to its declaration.
 
+A flake calls it and exposes the images to build:
+
+```nix title="flake.nix"
+{
+  inputs.chalkos.url = "github:trevex/chalkos";
+
+  outputs =
+    { chalkos, ... }:
+    let
+      images = chalkos.lib.mkImages {
+        osCA = ./secrets.pub.json;
+        platforms = [ "metal" "kvm" ];
+        # Every variant's images carry these.
+        modules = [ ./site.nix ];
+        variants = {
+          node = { };
+          storage = {
+            kubernetes = false;
+            modules = [ ./storage.nix ];
+          };
+        };
+        installer.modules = [ ./installer-network.nix ];
+      };
+    in
+    {
+      packages.x86_64-linux = images.images // { inherit (images) installer; };
+    };
+}
+```
+
+It returns:
+
+- `images.<variant>-<platform>`: the image directory of a variant on a platform, such as
+  `images.node-metal`, each built only when asked for.
+- `installer`: the installer, a raw image and a hybrid ISO in one directory, which installs
+  images of every platform.
+- `nixos.<variant>-<platform>` and `nixos.installer`: the evaluated NixOS systems, to read an
+  image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
+
 ## mkImages arguments
 
 ### installer\.modules
@@ -242,6 +281,21 @@ attribute set of (submodule)
 {
   node = { };
 }
+```
+
+
+
+*Example:*
+
+```nix
+{
+  node = { };
+  storage = {
+    kubernetes = false;
+    modules = [ ./storage.nix ];
+  };
+}
+
 ```
 
 *Declared by:*

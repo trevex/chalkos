@@ -215,8 +215,8 @@ different root hash is refused. See [Upgrades](../concepts/upgrades.md).
 ## Installer { #installer }
 
 An image that always boots into [maintenance mode](#maintenance-mode) and writes a role image to
-a disk of the machine. It is built as a raw image and a hybrid ISO from
-`chalkos.installer`, and serves every role and platform.
+a disk of the machine. It is built as a raw image and a hybrid ISO by mkImages, with
+[`installer.modules`](options.md#installermodules), and serves every role and platform.
 See [Architecture](../concepts/architecture.md).
 
 ## Kind { #kind }
@@ -308,7 +308,7 @@ after a change to Secure Boot. See [Security model](../concepts/security.md).
 ## Platform { #platform }
 
 The kind of machine an image is built for, such as `metal` or `kvm`, defined as NixOS modules
-under `chalkos.platforms`. Each role gets one image per platform,
+under [`platforms`](options.md#platforms). Each role gets one image per platform,
 so only the images for a platform carry its drivers and agents. See
 [The cluster definition](../concepts/cluster-definition.md).
 
@@ -328,7 +328,7 @@ file never changes, and
 ## Role { #role }
 
 The unit an [image](#image) is built for: the NixOS modules its nodes run, declared under
-`chalkos.roles` with storage defaults and whether its images run
+[`chalkos.roles`](options.md#variants) with storage defaults and whether its images run
 Kubernetes. Each role becomes one image per platform. Control planes and workers of a role boot the
 same image; each node's kind makes it one or the other. See
 [The cluster definition](../concepts/cluster-definition.md). A role's images have the role's name as

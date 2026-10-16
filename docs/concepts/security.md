@@ -17,7 +17,7 @@ A node's trust rests on four anchors:
 | Anchor | Where it lives | What it vouches for |
 | --- | --- | --- |
 | The db signing certificate | The firmware's [db](../reference/glossary.md#db-and-dbx) | The boot loader and the [UKI](../reference/glossary.md#uki), and through the UKI the whole [store](../reference/glossary.md#store) |
-| The [OS CA](../reference/glossary.md#os-ca) | The [secrets file](../reference/glossary.md#secrets-file); its certificate is in every image built with `chalkos.osCA` | Every node certificate and client certificate of the node API |
+| The [OS CA](../reference/glossary.md#os-ca) | The [secrets file](../reference/glossary.md#secrets-file); its certificate is in every image built with [`osCA`](../reference/options.md#osca) | Every node certificate and client certificate of the node API |
 | The Kubernetes, front-proxy and etcd CAs | The secrets file; a [control plane](../reference/glossary.md#control-plane) holds them in its [Kubernetes share](../reference/glossary.md#kubernetes-share) | The control plane's certificates, the kubelets' and admin kubeconfigs |
 | The [TPM](../reference/glossary.md#tpm) | The machine | That the node booted under the same Secure Boot state it was installed under |
 
@@ -203,7 +203,7 @@ whose fingerprint was printed. Every command that reaches a node in maintenance 
 `--insecure`.
 
 The node in turn decides whom it accepts. An image built with
-`chalkos.osCA`, a role image or the
+[`osCA`](../reference/options.md#osca), a role image or the
 cluster's [installer](../reference/glossary.md#installer), accepts in maintenance mode only
 clients with a certificate of that OS CA, so only the holder of the secrets file or a client file
 can install it. An image built without one accepts any client as an admin until it is installed.

@@ -191,7 +191,7 @@ The build fails when such a module depends on one the kernel does not have.
 A role applies to every node of that role, wherever it runs. Settings that belong to a kind of
 machine instead, such as the drivers and firmware of one server model, its serial console or a
 vendor's agent, belong in a platform. chalkos defines `metal` and `kvm`;
-`chalkos.platforms` adds to them or defines another:
+[`platforms`](../reference/options.md#platforms) adds to them or defines another:
 
 ```nix title="cluster.nix"
 {

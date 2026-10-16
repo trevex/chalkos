@@ -142,6 +142,15 @@ in
         }
       );
       default.node = { };
+      example = lib.literalExpression ''
+        {
+          node = { };
+          storage = {
+            kubernetes = false;
+            modules = [ ./storage.nix ];
+          };
+        }
+      '';
       apply = checkNames "variants";
       description = ''
         Variants of the cluster's images, by name: each is built for every platform as

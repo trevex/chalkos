@@ -7,7 +7,7 @@ description: "Add NixOS modules, packages, kernel modules and manifests to a rol
 
 A [role](../reference/glossary.md#role)'s image is built from chalkos's node modules, its
 [platform](../reference/glossary.md#platform)'s modules and the role's own NixOS modules, which
-you add with `chalkos.roles.<role>.nixosModules`.
+you add with [`variants.<name>.modules`](../reference/options.md#variantsmodules).
 They can add packages, services, kernel modules and anything else a NixOS module sets, within
 the limits an image-based node sets. Every node of the role runs the same image, so a role module
 sees the cluster's settings but no single node's; per-node values reach a unit at runtime. A

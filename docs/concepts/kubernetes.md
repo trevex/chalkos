@@ -16,11 +16,11 @@ join etcd on their own, and chalkd applies the cluster's add-ons at every boot.
 ## Which Kubernetes does a node run?
 
 One Kubernetes version per image:
-`chalkos.cluster.kubernetes.package`,
+[`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage),
 nixpkgs's `kubernetes` by default. Nodes run its kubelet; the control plane runs the upstream
 images of the same version from `registry.k8s.io`, so a node's kubelet and control plane always run
 the same version. etcd, the pause image and CoreDNS have their own images under
-`chalkos.cluster.kubernetes.images`.
+[`chalkos.kubernetes.images`](../reference/options.md#chalkoskubernetesimagesetcd).
 A Kubernetes upgrade is therefore an image [upgrade](../reference/glossary.md#upgrade), rolled
 through the cluster like any other, as [Upgrades](upgrades.md) describes.
 
@@ -30,7 +30,7 @@ definition decides what it is in Kubernetes. The kind reaches the node in its co
 the same image. A node keeps its type once it holds its
 [Kubernetes share](../reference/glossary.md#kubernetes-share): chalkd refuses config that changes
 it, because the share holds certificates for that kind. A role with
-`kubernetes.enable` false runs no
+[`kubernetes.enable`](../reference/options.md#chalkoskubernetesenable) false runs no
 Kubernetes:
 
 | Kind | Runs |

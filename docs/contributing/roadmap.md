@@ -26,9 +26,9 @@ enforced, but it writes no Secure Boot variables. Only [chalklab](../reference/g
 The plan keeps the Secure Boot keys in the cluster's
 [secrets file](../reference/glossary.md#secrets-file) and lets [chalkd](../reference/glossary.md#chalkd) apply variable updates
 that chalkctl signs beforehand, so a node never holds a key that could sign for the firmware.
-`chalkos.secureBoot.enrollment`
-and `chalkos.secureBoot.require` are
-declared for this and appear on the options page, but nothing reads them yet.
+How enrolment runs and whether a node refuses to install without Secure Boot have no setting
+yet: the cluster definition's `chalkos.secureBoot.enrollment` and `chalkos.secureBoot.require`,
+which nothing read, go with the cluster definition.
 
 ### OCI publishing and pulls
 

@@ -128,10 +128,10 @@ in
 A role is the unit an image is built for: the NixOS modules its nodes run. Every node of a role
 on one platform boots the same image, whatever its Kubernetes kind. A role declares:
 
-- `nixosModules`, plain NixOS modules added
+- [`nixosModules`](../reference/options.md#variantsmodules), plain NixOS modules added
   to the role's images, for a GPU driver, a monitoring agent or extra kernel
   [module groups](../reference/glossary.md#module-group);
-- `kubernetes.enable`, whether its
+- [`kubernetes.enable`](../reference/options.md#chalkoskubernetesenable), whether its
   images run Kubernetes (the default); each node's
   `kubernetes.kind` makes it a control
   plane or a worker;
@@ -170,7 +170,7 @@ becomes its next boot.
 ## What is a platform?
 
 A platform is the kind of machine an image runs on, declared under
-`chalkos.platforms` as a list of NixOS modules that
+[`platforms`](../reference/options.md#platforms) as a list of NixOS modules that
 every role image for it carries before the role's own. chalkos defines two:
 
 - `metal`: the base kernel module groups, with the console on the screen and the first serial
@@ -215,7 +215,7 @@ flowchart LR
 ```
 
 The installer is a layer 2 system too, built from the node modules, the cluster's settings and
-`chalkos.installer.nixosModules`, with no
+[`installer.modules`](../reference/options.md#installermodules), with no
 role or platform.
 
 ## What is the manifest?
@@ -430,7 +430,7 @@ DNS name outside `chalkos.dev`, which chalkos keeps for its own kinds.
 
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) writes the cluster's
 [secrets file](../reference/glossary.md#secrets-file) and its public part, `secrets.pub.json`.
-`chalkos.osCA` points to the public part, which holds
+[`osCA`](../reference/options.md#osca) points to the public part, which holds
 certificates and no keys, so it belongs in the repository. It is an input of the images: the role
 images and the installer carry its [OS CA](../reference/glossary.md#os-ca), so chalkd in
 [maintenance mode](../reference/glossary.md#maintenance-mode) accepts only clients with a
