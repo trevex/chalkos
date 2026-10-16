@@ -255,6 +255,57 @@ lib.runTests {
       setting = false;
     };
   };
+  # A cluster's runtime settings reach its nodes as config, so two clusters that differ in every
+  # one of them build the same role images and installer.
+  testImagesAreClusterAgnostic = {
+    expr =
+      let
+        other = mkCluster {
+          modules = [
+            {
+              chalkos.cluster = {
+                name = "u";
+                endpoint = "https://[fd00::10]:6443";
+                kubernetes = {
+                  ipFamilies = [ "ipv6" ];
+                  domain = "u.example";
+                  allowSchedulingOnControlPlanes = true;
+                  vip.addresses = [ "fd00::10" ];
+                  vxlanSourceSubnets = [ "fd00:100::/64" ];
+                  extraArgs.kubelet.v = "2";
+                };
+                registries.mirrors."docker.io" = [ "https://mirror.example" ];
+                manifests = [
+                  {
+                    apiVersion = "v1";
+                    kind = "Namespace";
+                    metadata.name = "apps";
+                  }
+                ];
+              };
+              chalkos.time = {
+                servers = [ { host = "ntp.example"; } ];
+                dhcpServers = true;
+              };
+              chalkos.cni.flannel.mtu = 1430;
+              chalkos.roles.worker = { };
+            }
+          ];
+        };
+        base = cluster [ ];
+        same = f: f base == f other;
+      in
+      {
+        metal = same (c: c.roles.worker.images.metal.drvPath);
+        kvm = same (c: c.roles.worker.images.kvm.drvPath);
+        installer = same (c: c.installer.image.drvPath);
+      };
+    expected = {
+      metal = true;
+      kvm = true;
+      installer = true;
+    };
+  };
   testOSCARefusesOlderSecrets = {
     expr =
       let
