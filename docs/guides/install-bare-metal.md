@@ -127,7 +127,7 @@ chalkctl disks --address=<address> --fingerprint=<fingerprint> --secrets=secrets
 ```
 
 `--secrets` gives chalkctl the certificate the installer asks for; a machine that is not in the
-cluster definition yet is reached at `--address` alone. The output has one line per disk, with
+inventory yet is reached at `--address` alone. The output has one line per disk, with
 its device, size, type (`nvme`, `ssd` or `hdd`), model, serial number, WWN and use, and one
 indented line per partition. The installer's own medium shows the use `boot`.
 
@@ -161,10 +161,9 @@ chalkctl install cp1 --address=<address> --fingerprint=<fingerprint> \
   --sign-key=db.key --sign-cert=db.crt
 ```
 
-chalkctl builds the node's role image for its role and platform from the flake (`nix build`
-prints its progress first), signs the image's UKI and boot loader with the db key, and checks
-them against [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
-when the cluster definition sets it. It then sends the node its
+chalkctl takes the image its `Image` document names, built beforehand with `nix build`, signs
+the image's UKI and boot loader with the db key, and checks them against the certificate
+`--sign-cert` names. It then sends the node its
 [config](../reference/glossary.md#config), checked against the image's schemas, a [node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
 second keyslot and, on a Kubernetes role, the node's
 [Kubernetes share](../reference/glossary.md#kubernetes-share), followed by the image's store,
@@ -196,7 +195,7 @@ On the machine, the installer:
 The machine reboots into its role image. The new boot entry comes first in the boot order, so the
 stick may stay in; remove it before the next install elsewhere. After the reboot the node runs in
 [normal mode](../reference/glossary.md#normal-mode) with the network of its config, and
-chalkctl reaches it at its first static address, or at `--address`.
+chalkctl reaches it at the address the inventory names, or at `--address`.
 
 `--fingerprint` is the way to pin the node. When reading the console is impractical, `--insecure`
 accepts any certificate and prints the fingerprint it saw, which you then compare with the
@@ -316,7 +315,7 @@ chalkctl reports the installer's refusal as its error. The common ones:
 | --- | --- |
 | `the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate` | The installer was built before the OS CA was rotated, or from another cluster's `secrets.pub.json`. Build and sign it again from the current one. |
 | `Secure Boot would refuse the UKI: ...` | The installer checked the UKI against the machine's db and dbx: the image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign with the enrolled key, or enrol its certificate. |
-| `Secure Boot would refuse the image's UKI: ...` or `... boot loader: ...` | chalkctl checked the UKI and the boot loader against `signerCertificate` before sending anything: `--sign-key` was left out, so the image is unsigned, or it is another key than the one the cluster definition names. |
+| `Secure Boot would refuse the image's UKI: ...` or `... boot loader: ...` | chalkctl checked the UKI and the boot loader against the certificate `--sign-cert` names before sending anything: `--sign-key` was left out, so the image is unsigned, or the image is signed with another key. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
 | The first boot asks for a recovery key | The installer and the role image were signed with different keys, or Secure Boot changed between install and boot. Type the key `chalkctl recovery-key <node>` prints. The prompt returns at every boot until the node is reinstalled from an installer signed with the role images' key, as [Recover a node](recover-node.md#the-console-asks-for-a-passphrase-at-boot) describes. |
 

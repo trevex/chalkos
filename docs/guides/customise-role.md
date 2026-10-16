@@ -335,15 +335,16 @@ root hash. Set `system.image.version` in the role's modules, within the rules
 }
 ```
 
-Then build the images and upgrade the nodes with
+Then build the images where the nodes' `Image` documents point, and upgrade the nodes with
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), signed with the cluster's [db](../reference/glossary.md#db-and-dbx) key:
 
 ```sh
 chalkctl upgrade --nodes=w1,w2 --sign-key=db.key --sign-cert=db.crt
 ```
 
-Without `--nodes`, every node of the cluster gets its role's image; nodes already running it are
-skipped. [Upgrade a cluster](upgrade-cluster.md) covers the run, rollbacks and downtime.
+Without `--nodes`, every node of the inventory gets the image its `Image` names; nodes already
+running it are skipped. [Upgrade a cluster](upgrade-cluster.md) covers the run, rollbacks and
+downtime.
 
 ## Check that it worked
 

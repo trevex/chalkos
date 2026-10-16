@@ -54,8 +54,8 @@ machine, matched by the MAC address of its port:
 Import the file from the cluster definition, next to your other modules. The options are NixOS's
 [`systemd.network`](https://nixos.org/manual/nixos/stable/options#opt-systemd.network.networks)
 options, the same shape as a node's `network`. Giving a machine the address its node will have
-after the install lets chalkctl reach it without `--address`, at the node's first static
-address.
+after the install lets chalkctl reach it without `--address`, at the address the inventory names
+for the node.
 
 ## Put the installer on a VLAN
 

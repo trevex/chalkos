@@ -57,23 +57,15 @@ of the cluster accepts, and any image signed with it unlocks the nodes' disks. K
 flake and out of the Nix store: in a secrets manager or on the machine that signs, readable by you
 alone.
 
-## Name the certificate in the cluster definition
-
-Set [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
-to the certificate:
-
-```nix title="cluster.nix"
-{
-  chalkos.secureBoot.signerCertificate = ./db.crt;
-}
-```
+## Check images against the certificate
 
 [`chalkctl install`](../reference/cli/chalkctl_install.md) and
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) then check the UKI, and on an install
-the boot loader, against it before they send anything, as firmware with that certificate in db
-would. An image signed with another key, or not at all, stops with
-`Secure Boot would refuse the image's UKI: ...` on your workstation instead of at a node. Without
-the option, chalkctl checks against the certificate given with `--sign-cert`.
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) check the UKI, and on an install the
+boot loader, against the certificate `--sign-cert` names before they send anything, as firmware
+with that certificate in db would. With `--sign-key`, chalkctl signs the image first; without it,
+`--sign-cert` checks an image signed beforehand. An image signed with another key, or not at
+all, stops with `Secure Boot would refuse the image's UKI: ...` on your workstation instead of
+at a node. Without `--sign-cert`, chalkctl checks no signature.
 
 ## Enrol the certificate in the firmware
 
@@ -134,7 +126,7 @@ chalkctl install <node> --address=<address> --fingerprint=<fingerprint> \
   --sign-key=db.key --sign-cert=db.crt
 ```
 
-`<node>` is the node's name in the cluster definition, `<address>` the address the installer's
+`<node>` is the node's name in the inventory, `<address>` the address the installer's
 console shows and `<fingerprint>` the certificate fingerprint next to it.
 
 `chalkctl upgrade` with the same flags signs the UKI of each image it rolls out:

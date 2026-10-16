@@ -40,18 +40,23 @@ same command again continues.
 
 ## Where does chalkctl get the images?
 
-Without `--image`, chalkctl asks every node what it runs, groups the nodes by the role the cluster
-definition gives them and the platform they run, and builds one image per group from the flake
-with `nix build` of `chalkos.<cluster>.roles.<role>.images.<platform>`. Control planes and workers
-of a role get the same image:
+Without `--image`, each node gets the image its `Image` document names: chalkctl asks every
+node what it runs, refuses a node that runs another platform than that image, and opens each
+image directory once for the nodes that share it. Control planes and workers that name one
+`Image` get the same image:
 
 ```sh
 chalkctl upgrade
 ```
 
-With `--image`, it takes a prebuilt image, a raw image with `repart-output.json` beside it or the
-directory `nix build` makes, and installs it on the nodes of the image's role, or on the nodes
-`--nodes` names, whatever their role. Nodes on another platform than the image's are skipped and
+The image in an `Image`'s directory must be the build whose root hash its `metadata.json` names,
+which `chalkctl status` compares the nodes with; rebuild the image or link its directory again
+otherwise. The root hash stays on the operator's machine, so a new build changes no node's
+config, and an upgrade needs no `chalkctl apply-config` after it.
+
+With `--image`, it takes a prebuilt image, a raw image with `repart-output.json` beside it or an
+image directory, and installs it on the nodes that run the image's variant, or on the nodes
+`--nodes` names, whatever they run. Nodes on another platform than the image's are skipped and
 named. chalkctl prints each node that gets an image of another variant than the one it runs.
 
 ```sh
@@ -65,23 +70,18 @@ Before it sends anything, chalkctl checks each image against the cluster:
 
 - the UKI boots the store the image holds: its `usrhash=` equals the store's root hash;
 - the version is one chalkos installs, and the UKI's os-release names a variant and platform;
-- the config the cluster definition gives each node that gets the image suits the
-  `schemas/` and `image.json` in the image's directory, as an install checks the config it
-  delivers;
-- the UKI carries a signature of the certificate in
-  [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate),
-  or, when that is not set, of the certificate chalkctl signed with. With neither, chalkctl checks
-  no signature.
+- the config the inventory gives each node that gets the image suits the `schemas/` and
+  `image.json` in the image's directory, as an install checks the config it delivers;
+- the UKI carries a signature of the certificate `--sign-cert` names, with or without
+  `--sign-key`. Without `--sign-cert`, chalkctl checks no signature.
 
-chalkctl checks every node's config before it drains the first node. It needs the cluster
-definition for that; with a client file alone, each node's own check of its stored config, before
-the image becomes its next boot, is all there is.
+chalkctl checks every node's config before it drains the first node. It needs the inventory for
+that; with a client file alone, each node's own check of its stored config, before the image
+becomes its next boot, is all there is.
 
-chalkctl also stops before any image is built or sent when a node runs another platform than the
-[cluster definition](../reference/glossary.md#cluster-definition) declares for it, because changing
-it is a reinstall. A node may get an image of another [variant](../reference/glossary.md#variant)
-than the one it runs: the check of its stored config against the image's schemas decides whether
-the image suits it.
+A node may get an image of another [variant](../reference/glossary.md#variant) than the one it
+runs: the check of its stored config against the image's schemas decides whether the image suits
+it.
 
 ## What does the node check?
 
@@ -145,7 +145,7 @@ counted tries, the [health check](../reference/glossary.md#health-check), the
 
 `chalkctl upgrade` upgrades the [control planes](../reference/glossary.md#control-plane) first,
 one at a time, then the [workers](../reference/glossary.md#worker) and nodes without Kubernetes in
-batches of `--max-unavailable`, 1 by default. Control planes go first across every role and
+batches of `--max-unavailable`, 1 by default. Control planes go first across every image and
 platform, which also keeps every kubelet at or behind its API server's version, as Kubernetes
 requires.
 
@@ -268,7 +268,7 @@ again. Usually the fix is a new build, which needs a new version.
 
 | Flag | Effect |
 | --- | --- |
-| `--image` | Install a prebuilt image on the nodes of its role and platform, or on the nodes `--nodes` names, whatever their role, instead of building each group's image |
+| `--image` | Install a prebuilt image on the nodes that run its variant and platform, or on the nodes `--nodes` names, instead of each node's Image |
 | `--nodes` | Upgrade only the named nodes |
 | `--max-unavailable` | Upgrade this many workers and nodes without Kubernetes at once, 1 by default |
 | `--allow-downtime` | Upgrade one or two control planes, whose etcd and API server are down while one reboots |
@@ -278,15 +278,14 @@ again. Usually the fix is a new build, which needs a new version.
 | `--timeout` | How long a drain and a node's return may take, 30 minutes by default |
 
 The command needs an operator [client file](../reference/glossary.md#client-file) or the
-[secrets file](../reference/glossary.md#secrets-file). Without `--image` it builds the images from
-the cluster definition, so it runs in the flake's directory or names it with `--flake`. A
-[lab](../reference/glossary.md#lab), for example, is upgraded from its flake's directory with its
-client file and its Secure Boot keys, which [`chalklab status`](../reference/cli/chalklab_status.md)
-names:
+[secrets file](../reference/glossary.md#secrets-file). Without an inventory, `--address NODE=ADDR`
+names the nodes, and `--image` is needed. A [lab](../reference/glossary.md#lab), for example, is
+upgraded with the lab's inventory, its client file and its Secure Boot keys, which
+[`chalklab status`](../reference/cli/chalklab_status.md) names:
 
 ```sh
-chalkctl upgrade --config=<client-file> --sign-key=<db-key> --sign-cert=<db-cert> \
-  --allow-downtime
+chalkctl upgrade --inventory=<lab-inventory> --config=<client-file> \
+  --sign-key=<db-key> --sign-cert=<db-cert> --allow-downtime
 ```
 
 ## Can a node go back to an older version?

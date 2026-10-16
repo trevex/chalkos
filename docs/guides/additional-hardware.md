@@ -214,8 +214,8 @@ vendor's agent, belong in a platform. chalkos defines `metal` and `kvm`;
 ```
 
 Each role is built once per platform, as `chalkos.roles.<role>.images.<platform>`, and only for
-the platforms its nodes use when chalkctl builds them, so only the images of `r650` carry its
-drivers. A platform of your own starts from chalkos's node modules alone: it does not include
+the platforms its nodes use, so only the images of `r650` carry its drivers. A platform of your
+own starts from chalkos's node modules alone: it does not include
 `metal`'s modules, so give it a console. Its name, lower-case letters, digits and dashes, becomes
 `CHALKOS_PLATFORM` in the image's os-release. A node refuses images of another platform, and its
 [config](../reference/glossary.md#config) is translated for the platform it runs, so moving a node

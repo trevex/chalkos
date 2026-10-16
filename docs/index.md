@@ -42,7 +42,7 @@ It differs where Nix changes the trade-offs:
 | Configuration | A machine configuration in Talos's own YAML schema, applied through the API. | Nix modules, evaluated when the image is built. A node receives at runtime only its [config](reference/glossary.md#config): a few documents, such as its network, storage and Kubernetes labels, which chalkctl generates from the cluster definition and checks against the schemas the image carries. |
 | Images | One image for every node, extended with signed system extensions. | One image per role and [platform](reference/glossary.md#platform), so a GPU role carries the GPU drivers and the others do not. The kernel is nixpkgs's, with its modules filtered per role, so the binary cache keeps working. |
 | Node certificates | Control planes hold the root CA's key. | Control planes hold a [node CA](reference/glossary.md#node-ca), an intermediate that may issue only server and client certificates. The [OS CA](reference/glossary.md#os-ca)'s key stays in the [secrets file](reference/glossary.md#secrets-file). |
-| Upgrades | The node pulls an installer image from a registry. | chalkctl builds the image and streams it to chalkd, which writes it into the inactive slot. |
+| Upgrades | The node pulls an installer image from a registry. | chalkctl streams an image Nix built to chalkd, which writes it into the inactive slot. |
 | Maturity | Released, with images for many clouds, hypervisors and boards. | Unreleased; bare metal and KVM on x86-64. |
 
 ## How does chalkos compare with plain NixOS?

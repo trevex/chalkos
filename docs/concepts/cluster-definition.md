@@ -40,9 +40,9 @@ of `chalkos.lib.mkCluster`. A minimal `flake.nix` declares one:
 The flake pins the chalkos version in `flake.lock`, so the images a cluster builds change only
 when the lock file does.
 
-A flake may hold several clusters, each under its own name. chalkctl and
-[chalklab](../reference/glossary.md#chalklab) pick the only one, or the one `--cluster` names.
-Each command's `--flake` names the flake's directory, `.` by default.
+A flake may hold several clusters, each under its own name. The flake builds the images; chalkctl
+and [chalklab](../reference/glossary.md#chalklab) do not read it, but an inventory of YAML files
+and the image directories its `Image` documents name.
 
 With flake-parts, the module `chalkos.flakeModules.default` declares the same thing:
 `chalkos.clusters.<cluster>` takes a cluster's module, sets `chalkos.cluster.name` to the
@@ -251,13 +251,10 @@ Kubernetes node's config carries, the registry mirrors (`registries`), the clust
 each node's role, Kubernetes kind (null on a role without Kubernetes), platform, identity and
 documents. The identity is what layer 1 renders from the node's options: hostname, network units,
 storage, Kubernetes and time settings. The documents are the config documents its extensions add.
-chalkctl generates the node's config from both. A role's images are attribute paths relative to
-the cluster, which chalkctl builds when a command needs an image. While `schemaVersion` is 0 the
-format may change between chalkos versions, which matters only to tools other than chalkctl and
-chalklab.
-
-`chalkctl --manifest=<file>` reads a manifest from a file instead of evaluating the flake. It
-cannot build images then, so commands that need one take `--image`.
+A role's images are attribute paths relative to the cluster, which `nix build` builds. While
+`schemaVersion` is 0 the format may change between chalkos versions. chalkctl and chalklab do not
+read the manifest: they read an inventory of YAML files and the image directories its `Image`
+documents name.
 
 ## What does a node receive at runtime?
 

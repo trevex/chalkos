@@ -22,13 +22,13 @@ does not unlock, boot, renew or rejoin, [Recover a node](recover-node.md) has th
 ## Read the node's status
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) is the first command to run. It asks
-the node's [chalkd](../reference/glossary.md#chalkd) for everything chalkd checks, and compares the node's config with the
-[cluster definition](../reference/glossary.md#cluster-definition). A healthy [worker](../reference/glossary.md#worker):
+the node's [chalkd](../reference/glossary.md#chalkd) for everything chalkd checks, and compares the node's config and image with the
+inventory. A healthy [worker](../reference/glossary.md#worker):
 
 ```console
 $ chalkctl status w1
-config b02445f30a5a8197dac34ce49e8af8c62f9974d2c7b8dbf02ffb1d54cd620a65 (the cluster definition's)
-platform metal (the cluster definition's)
+config b02445f30a5a8197dac34ce49e8af8c62f9974d2c7b8dbf02ffb1d54cd620a65 (the inventory's)
+platform metal (the inventory's)
 image 1.5.0, booted from chalkos_1.5.0.efi
 VOLUME    DISK      MOUNT POINT        STATE
 longhorn  longhorn  /var/lib/longhorn  mounted
@@ -50,9 +50,10 @@ Read it from the top:
 
 | Line | Says | When it is wrong |
 | --- | --- | --- |
-| `config` | The version of the [config](../reference/glossary.md#config) the node runs, the SHA-256 of its documents, and whether it is the cluster definition's; `none` on a node installed before config documents. | `not the cluster definition's; chalkctl apply-config w1 delivers it`: the definition changed since the last delivery. `cannot generate the cluster definition's config: ...`: chalkctl could not generate the documents from the definition, for the reason it names. |
-| `platform` | The platform the image was built for. | A mismatch with the definition: changing a node's platform is a reinstall. |
+| `config` | The version of the [config](../reference/glossary.md#config) the node runs, the SHA-256 of its documents, and whether it is the inventory's; `none` on a node installed before config documents. | `not the inventory's; chalkctl apply-config w1 delivers it`: the node's files changed since the last delivery. `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's documents from the inventory, for the reason it names. |
+| `platform` | The platform the image was built for. | A mismatch with the platform of the node's `Image`: changing a node's platform is a reinstall. |
 | `image` | The [image version](../reference/glossary.md#image-version) booted, its boot entry, and `not found healthy yet` while the [health check](../reference/glossary.md#health-check) runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
+| `its store's root hash is ...` | Shown only when the node runs another build than the image directory of its `Image`, whose `metadata.json` names the root hash. | `chalkctl upgrade --nodes w1 installs that image`: the image was rebuilt since the node's upgrade. `it has ... staged`: the node boots that build with its next reboot. |
 | `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
 | `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the [VIP](../reference/glossary.md#vip) and its [control plane](../reference/glossary.md#control-plane)'s state. | Any state other than `bootstrapped` or `joined`, or one of them followed by `: <problem>`; the table of symptoms below lists them. |
 | `certificates:` | Every certificate the node holds or issues, with its expiry. | A third column names what needs doing. |

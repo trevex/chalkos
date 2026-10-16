@@ -19,7 +19,8 @@ PodDisruptionBudgets.
 
 ## Before you begin
 
-- A running cluster and its flake, with the [secrets file](../reference/glossary.md#secrets-file)
+- A running cluster, its inventory and the flake that builds its images, with the
+  [secrets file](../reference/glossary.md#secrets-file)
   or an operator [client file](../reference/glossary.md#client-file).
 - The [Secure Boot](../reference/glossary.md#secure-boot) [db](../reference/glossary.md#db-and-dbx) key and certificate, when your nodes enforce Secure Boot and you sign the
   images during the upgrade. [Sign images for Secure Boot](secure-boot-signing.md) explains the
@@ -62,35 +63,38 @@ Then make the change itself:
 
 ## Decide how the images are built and signed
 
-Without `--image`, `chalkctl upgrade` asks each node which platform it runs, groups the nodes by
-the role the cluster definition gives them and that platform, and builds each group's image from
-the flake with `nix build`, so it runs in the flake's directory or with `--flake`.
-
-With `--image`, it installs an image you built before, a raw image with `repart-output.json`
-next to it or the directory `nix build` makes, on the nodes of that image's role, or on the nodes
-`--nodes` names, whatever their role. Nodes on another platform are skipped and named. Run it
-once per role.
+Without `--image`, `chalkctl upgrade` gives each node the image its `Image` document names, the
+directory of an image build. Build the images first, where the `Image` documents point, and
+check the nodes' config against them with `chalkctl validate`. A node that runs another platform
+than its `Image` stops the run before any node is sent anything.
 
 ```sh
-nix build .#chalkos.<cluster>.roles.node.images.metal --out-link node-image
-chalkctl upgrade --image=node-image
+nix build .#chalkos.<cluster>.roles.node.images.metal -o images/node-metal
+chalkctl validate
+```
+
+With `--image`, it installs an image you built before, a raw image with `repart-output.json`
+next to it or an image directory, on the nodes that run that image's variant, or on the nodes
+`--nodes` names. Nodes on another platform are skipped and named.
+
+```sh
+chalkctl upgrade --image=images/node-metal
 ```
 
 On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's
 db, and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before the node can boot it. `--sign-key` and
 `--sign-cert` make chalkctl sign the UKIs it sends; an upgrade leaves the boot loader as it is.
-An image you sign beforehand with [`chalkctl sign`](../reference/cli/chalkctl_sign.md) needs
-neither flag. When
-[`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
-is set, chalkctl checks every image against it before sending anything.
+An image you sign beforehand with [`chalkctl sign`](../reference/cli/chalkctl_sign.md) needs no
+`--sign-key`. `--sign-cert` alone makes chalkctl check every image against the certificate
+before sending anything.
 
 ## Run the upgrade
 
-Run the command in the flake's directory. It reads the secrets file there, or the client file
-`--config` names:
+Run the command in the inventory's directory, or name the inventory with `--inventory`. It
+authenticates with the secrets file `--secrets` names, or with a client file:
 
 ```console
-$ chalkctl upgrade --sign-key=<db-key> --sign-cert=<db-cert>
+$ chalkctl upgrade --secrets=secrets.age --sign-key=<db-key> --sign-cert=<db-cert>
 upgrading node on metal to chalkos 1.5.0: cp1, cp2, cp3, w1, w2, w3
 cp1: installing 1.5.0
 cp1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
@@ -230,7 +234,7 @@ Keep the previous commit, or the image directory, until the new version has prov
   falls back to. Wait for the check, at most `healthTimeout` per try.
 - `Secure Boot would refuse the UKI`: the image is unsigned or signed with a key the firmware's db
   does not hold. Sign it with the db key.
-- `w1 runs an image built for kvm, but the cluster definition declares it on metal`: changing a
+- `w1 runs an image built for kvm, but its Image node-metal is built for metal`: changing a
   node's platform is a reinstall, not an upgrade.
 - A drain that does not finish within `--timeout` leaves the node cordoned and stops the run.
   A PodDisruptionBudget that allows no eviction is the usual cause; `kubectl get pdb -A` shows

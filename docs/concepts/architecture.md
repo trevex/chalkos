@@ -84,13 +84,12 @@ and needs [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md)
 
 ## What runs on the operator's machine?
 
-chalkctl reads the cluster from the flake with `nix eval` of `chalkos.<cluster>.manifest`, or from
-a file with `--manifest`. It is the only inventory chalkctl has: node names, roles, platforms and
-addresses all come from the cluster definition. The one exception is a command run with a client
-file, without `--manifest` or `--cluster`, where the flake directory (`--flake`, the current
-directory by default) holds no `flake.nix`: chalkctl then takes the node names and addresses
-from the client file. When a command needs an image, chalkctl builds it with `nix build` of
-`chalkos.<cluster>.roles.<role>.images.<platform>`, or takes one given with `--image`.
+chalkctl reads the cluster from an inventory, `chalkos.yaml` in the current directory or the file
+`--inventory` names. The inventory names each node, the address chalkctl reaches it at and the
+YAML files of its config; each node's `Image` document names the directory of its image build,
+which chalkctl reads when a command needs the image. chalkctl never builds images or runs Nix.
+Without an inventory, a command that only reaches a node works with a client file and
+`--address`.
 
 chalkctl authenticates in one of two ways:
 

@@ -26,70 +26,82 @@ You need:
 
 You do not need root. [Requirements](requirements.md#lab-host) lists the details.
 
-## Create the cluster's flake
+## Create the lab's files
 
-A chalkos cluster is a Nix flake. The `lab` template holds one that chalklab can run. Create a
-directory for it and initialise the flake from the template:
+The `lab` template holds a cluster that chalklab can run. Create a directory for it and
+initialise it from the template:
 
 ```console
 $ mkdir lab && cd lab
 $ nix flake init -t github:trevex/chalkos#lab
 wrote: "/home/alice/lab/.gitignore"
 wrote: "/home/alice/lab/README.md"
+wrote: "/home/alice/lab/chalkos.yaml"
+wrote: "/home/alice/lab/chalklab.yaml"
 wrote: "/home/alice/lab/cluster.nix"
+wrote: "/home/alice/lab/cluster/cluster.yaml"
 wrote: "/home/alice/lab/flake.nix"
+wrote: "/home/alice/lab/nodes/cp1.yaml"
+wrote: "/home/alice/lab/nodes/w1.yaml"
 ```
 
-`flake.nix` pins chalkos as an input, declares the cluster `lab` with `chalkos.lib.mkCluster` and
-gives a development shell. `cluster.nix` is the
-[cluster definition](../reference/glossary.md#cluster-definition): one
-[role](../reference/glossary.md#role) and two [nodes](../reference/glossary.md#node) on the
-`kvm` [platform](../reference/glossary.md#platform), each with a static address on a private lab
-network.
+Nix builds the [image](../reference/glossary.md#image); YAML files describe the cluster.
+`flake.nix` pins chalkos as an input, builds the image the nodes run from `cluster.nix`, and
+gives a development shell. `chalkos.yaml` is the inventory: it names the two nodes, the address
+chalkctl reaches each at, and the files each gets, every file of `cluster/` and its own file of
+`nodes/`. `chalklab.yaml` is the lab file, which names the nodes chalklab runs as virtual
+machines.
 
-```nix title="cluster.nix"
-# A cluster of one control plane and one worker, which chalklab runs as QEMU virtual machines on
-# this machine. Each VM has two network cards: one on the lab network, 192.168.123.0/24, between
-# the VMs, which chalklab connects by the MAC address the node's network matches; and one that
-# reaches the internet and the ports chalklab forwards from 127.0.0.1, configured by DHCP.
-let
-  labNetwork = n: {
-    networks."10-lab" = {
-      matchConfig.MACAddress = "52:54:00:7b:00:${n}";
-      address = [ "192.168.123.${n}/24" ];
-    };
-  };
-in
-{
-  chalkos.cluster = {
-    name = "lab";
-    # cp1 on the lab network: the API server of the only control plane.
-    endpoint = "https://192.168.123.11:6443";
-  };
+```yaml title="chalkos.yaml"
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: lab}
+spec:
+  files: [cluster/*.yaml]
+  nodes:
+    cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
+    w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}
+```
 
-  # The public part of the cluster's secrets, which chalkctl gen secrets writes. The images carry
-  # its OS CA, so in maintenance mode they accept only the cluster's clients.
-  chalkos.osCA = ./secrets.pub.json;
+`cluster/cluster.yaml` names the cluster and its API server, the image both nodes run and
+Kubernetes with its defaults. Each node's file says what the node is in Kubernetes, which disk
+holds its system, and its address on the lab network, a private network between the virtual
+machines:
 
-  # One image for both nodes; cp1's kind makes it the control plane.
-  chalkos.roles.node = { };
+```yaml title="nodes/cp1.yaml"
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: cp1}
+spec:
+  type: controlplane
+  imageRef: node-kvm
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/vda}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lab}
+spec:
+  match: {macAddress: "52:54:00:7b:00:11"}
+  network: {address: [192.168.123.11/24]}
+```
 
-  chalkos.nodes = {
-    cp1 = {
-      role = "node";
-      platform = "kvm";
-      kubernetes.kind = "controlplane";
-      storage.system.disk = "/dev/vda";
-      network = labNetwork "11";
-    };
-    w1 = {
-      role = "node";
-      platform = "kvm";
-      storage.system.disk = "/dev/vda";
-      network = labNetwork "12";
-    };
-  };
-}
+chalklab gives each virtual machine's card on the lab network the MAC address `chalklab.yaml`
+names, which the node's `Network` document matches:
+
+```yaml title="chalklab.yaml"
+apiVersion: chalklab.chalkos.dev/v1alpha1
+kind: Lab
+metadata: {name: lab}
+spec:
+  inventory: ./chalkos.yaml
+  nodes:
+    cp1: {mac: "52:54:00:7b:00:11"}
+    w1: {mac: "52:54:00:7b:00:12"}
 ```
 
 Nix evaluates a flake in a git repository from the files git tracks, so put the files under git
@@ -130,24 +142,41 @@ names it in `chalkos.osCA`, so the image trusts the OS CA. A real cluster encryp
 with age: `--recipient` in place of `--plaintext` writes `secrets.age`, which can live in the
 repository.
 
-Commit the flake, including `flake.lock`, so the lab keeps the same chalkos version:
+Commit the files, including `flake.lock`, so the lab keeps the same chalkos version:
 
 ```sh
 git add . && git commit -m "A chalkos lab"
 ```
 
+## Build the image
+
+The image is built into `images/node-kvm`, where the `Image` document of `cluster/cluster.yaml`
+points. [`chalkctl validate`](../reference/cli/chalkctl_validate.md) then checks each node's
+config against the image's schemas, without a node:
+
+```console
+$ nix build .#node-kvm -o images/node-kvm
+$ chalkctl validate
+cp1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d
+w1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850
+```
+
+The first build takes most of the tutorial's time. The template's `.gitignore` keeps `images/`
+out of git.
+
 ## Create the lab
 
-[`chalklab create`](../reference/cli/chalklab_create.md) builds the image, starts the virtual
-machines, installs both nodes and bootstraps the cluster:
+[`chalklab create`](../reference/cli/chalklab_create.md) starts the virtual machines, installs
+both nodes and bootstraps the cluster. It reads `chalklab.yaml` and the inventory it names, and
+the secrets file that `--secrets` names:
 
 ```console
 $ chalklab create --secrets secrets.json
-evaluating .#chalkos."lab"
-building the kvm image of node
-...
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/keys
+copying the image of cp1 from /home/alice/lab/images/node-kvm
+copying the image of w1 from /home/alice/lab/images/node-kvm
 starting cp1, w1
+wrote /home/alice/.local/state/chalklab/lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-10-10
 waiting for cp1 to come up in maintenance mode
 cp1 runs in maintenance mode with the certificate fingerprint 2db1ac1f7dd6f1088bb5588971225627d90013fbe2c11bc0b8e9713f0b1d8bb1
 installing cp1 in place
@@ -163,23 +192,30 @@ cp1: kubernetes controlplane: waiting for bootstrap or for the cluster at https:
 bootstrapping cp1; the control plane pulls its images and starts
 cp1 is bootstrapped; applied 19 objects
 wrote /home/alice/.local/state/chalklab/lab/kubeconfig; its certificate is valid for 8760h0m0s
-wrote /home/alice/.local/state/chalklab/lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-10-10
 
 the lab of lab runs cp1, w1; next:
   export KUBECONFIG=/home/alice/.local/state/chalklab/lab/kubeconfig
+  export CHALKOSCONFIG=/home/alice/.local/state/chalklab/lab/chalkctl.json
   kubectl get nodes
-  chalkctl status cp1 --config /home/alice/.local/state/chalklab/lab/chalkctl.json
+  chalkctl status cp1 --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml
   chalklab status
   chalklab destroy
+The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with
+the lab's db key, or with --image of an image chalklab sign signed:
+  chalkctl upgrade --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml \
+    --sign-key /home/alice/.local/state/chalklab/lab/keys/db.key --sign-cert /home/alice/.local/state/chalklab/lab/keys/db.crt
 ```
 
 The output follows the life of a node:
 
-1. Nix builds one [image](../reference/glossary.md#image) for the `kvm` platform, which both nodes
-   boot; what differs between them, such as cp1 being the control plane, travels separately as
-   their [config](../reference/glossary.md#config).
+1. Both nodes boot the one image built for the `kvm` [platform](../reference/glossary.md#platform);
+   what differs between them, such as cp1 being the control plane, travels separately as their
+   [config](../reference/glossary.md#config).
 2. chalklab creates Secure Boot keys for this lab, enrols them in the firmware of the virtual
-   machines and signs a copy of the image with them.
+   machines and signs a copy of the image for each node with them. It writes the lab's
+   inventory, `chalkos.yaml` in the lab's state, which names the nodes at the ports chalklab
+   forwards to them, and an admin [client file](../reference/glossary.md#client-file),
+   `chalkctl.json`.
 3. Each virtual machine boots its image in
    [maintenance mode](../reference/glossary.md#maintenance-mode), where
    [chalkd](../reference/glossary.md#chalkd) prints its certificate's fingerprint on the console.
@@ -190,8 +226,11 @@ The output follows the life of a node:
 4. After the reboot, cp1 waits to be bootstrapped. chalklab runs
    [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md), which starts etcd and the
    control plane; the worker joins on its own.
-5. Last, chalklab writes a kubeconfig and an admin [client file](../reference/glossary.md#client-file)
-   for chalkctl.
+5. Last, chalklab writes a kubeconfig that reaches the API server through its forwarded port.
+
+The commands chalklab prints last export the kubeconfig for kubectl and the client file for
+chalkctl: chalkctl reads the client file `$CHALKOSCONFIG` names when a command passes neither
+`--config` nor `--secrets`.
 
 The lab keeps its state, disks, keys and logs in `~/.local/state/chalklab/lab`, or under
 `$XDG_STATE_HOME/chalklab` when that variable is set; the commands on this page use the default
@@ -199,10 +238,10 @@ path, and `chalklab status` prints the one in use. A supervisor process keeps th
 machines running after the command returns.
 
 Each virtual machine has two network cards. One is on the lab network, a switch that connects
-only the virtual machines, with the static addresses `cluster.nix` gives them. The other is
-QEMU's user-mode network, which reaches the internet and carries ports that chalklab forwards
-from `127.0.0.1` on your machine: each node's chalkd and cp1's API server. The diagram shows the
-layout.
+only the virtual machines, with the addresses the nodes' `Network` documents give them. The
+other is QEMU's user-mode network, which reaches the internet and carries ports that chalklab
+forwards from `127.0.0.1` on your machine: each node's chalkd and cp1's API server. The diagram
+shows the layout.
 
 ```mermaid
 flowchart LR
@@ -224,11 +263,12 @@ flowchart LR
 
 ## Use the cluster with kubectl
 
-The kubeconfig reaches the API server through its forwarded port. Point kubectl at it and list
-the nodes:
+The kubeconfig reaches the API server through its forwarded port. Export it and the client file,
+as `chalklab create` printed; the commands of this page rely on both. Then list the nodes:
 
 ```console
 $ export KUBECONFIG=~/.local/state/chalklab/lab/kubeconfig
+$ export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
 $ kubectl get nodes
 NAME   STATUS   ROLES    AGE   VERSION
 cp1    Ready    <none>   28s   v1.37.1
@@ -257,13 +297,13 @@ kube-system    kube-scheduler-cp1            1/1     Running   0          2m19s
 ## Look at a node with chalkctl
 
 The nodes have no SSH and no login. chalkctl talks to chalkd on each node over mutual TLS
-instead, with the client file chalklab wrote.
-[`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs:
+instead, with the client file `$CHALKOSCONFIG` names, and reaches them at the forwarded ports the
+lab's inventory names. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs:
 
 ```console
-$ chalkctl status cp1 --config ~/.local/state/chalklab/lab/chalkctl.json
-config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d (the cluster definition's)
-platform kvm (the cluster definition's)
+$ chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d (the inventory's)
+platform kvm (the inventory's)
 image 0.1.0, booted from chalkos_0.1.0.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
@@ -288,7 +328,7 @@ trust:
 time: synchronised to 192.53.103.103, offset +0.000642 s
 ```
 
-The first lines say that the node runs the config the cluster definition gives it and image
+The first lines say that the node runs the config the inventory gives it and image
 version 0.1.0. The certificates section lists the node's certificates and CAs with their expiry
 dates; the control plane renews the node's certificates before they expire. The trust section
 lists the CAs and keys the node trusts by the start of their fingerprints; `(issues)` marks the
@@ -301,10 +341,11 @@ machines, their forwarded ports and the lab's files.
 ```console
 $ chalklab status
 lab of lab in /home/alice/.local/state/chalklab/lab; its supervisor runs as PID 1540233
-NODE  ROLE  VM       CHALKD           API SERVER       CONSOLE
-cp1   node  running  127.0.0.1:46353  127.0.0.1:43323  /home/alice/.local/state/chalklab/lab/cp1/console.log
-w1    node  running  127.0.0.1:44069  -                /home/alice/.local/state/chalklab/lab/w1/console.log
+NODE  TYPE          VM       CHALKD           API SERVER       CONSOLE
+cp1   controlplane  running  127.0.0.1:46353  127.0.0.1:43323  /home/alice/.local/state/chalklab/lab/cp1/console.log
+w1    worker        running  127.0.0.1:44069  -                /home/alice/.local/state/chalklab/lab/w1/console.log
 kubeconfig: /home/alice/.local/state/chalklab/lab/kubeconfig
+inventory: /home/alice/.local/state/chalklab/lab/chalkos.yaml
 client file: /home/alice/.local/state/chalklab/lab/chalkctl.json
 Secure Boot db key: /home/alice/.local/state/chalklab/lab/keys/db.key
 Secure Boot db certificate: /home/alice/.local/state/chalklab/lab/keys/db.crt
@@ -343,46 +384,34 @@ A new image needs a new version, set with NixOS's `system.image.version` in the 
 the tools `kubectl debug` uses on a node:
 
 ```diff
-@@ -9,6 +9,10 @@ let
-       address = [ "192.168.123.${n}/24" ];
-     };
-   };
-+  upgrade = {
-+    system.image.version = "0.2.0";
-+    chalkos.debug.tools = true;
-+  };
- in
- {
-   chalkos.cluster = {
-@@ -22,7 +26,8 @@ in
-   chalkos.osCA = ./secrets.pub.json;
- 
-   # One image for both nodes; cp1's kind makes it the control plane.
+-  # One image for both nodes; cp1's Node document makes it the control plane.
 -  chalkos.roles.node = { };
-+  # A new image version, with the tools for kubectl debug.
-+  chalkos.roles.node.nixosModules = [ upgrade ];
- 
-   chalkos.nodes = {
-     cp1 = {
++  # One image for both nodes, at a new version, with the tools for kubectl debug.
++  chalkos.roles.node.nixosModules = [
++    {
++      system.image.version = "0.2.0";
++      chalkos.debug.tools = true;
++    }
++  ];
 ```
 
-Commit the change:
+Commit the change and build the image again; `images/node-kvm` then points at the new build:
 
 ```sh
 git commit -am "Upgrade to 0.2.0"
+nix build .#node-kvm -o images/node-kvm
 ```
 
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) builds the role's new image, signs
-it and rolls it through the cluster, one node at a time. The lab's firmware boots only images
-signed with the lab's Secure Boot key, so pass the key and certificate that `chalklab status`
-listed:
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) gives each node the image its `Image`
+names, signs it and rolls it through the cluster, one node at a time. The lab's firmware boots
+only images signed with the lab's Secure Boot key, so pass the key and certificate that
+`chalklab create` printed and `chalklab status` lists:
 
 ```console
-$ chalkctl upgrade --config ~/.local/state/chalklab/lab/chalkctl.json \
+$ chalkctl upgrade --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
   --sign-key ~/.local/state/chalklab/lab/keys/db.key \
   --sign-cert ~/.local/state/chalklab/lab/keys/db.crt \
   --allow-downtime
-...
 upgrading node on kvm to chalkos 0.2.0: cp1, w1
 cp1: installing 0.2.0
 cp1: installed 0.2.0, which boots next as chalkos_0.2.0+3.efi
@@ -399,10 +428,14 @@ w1: uncordoned
 upgraded 2 nodes to 0.2.0
 ```
 
-The lines before `upgrading` are Nix building the image. `--allow-downtime` is needed because
-the lab has a single control plane: while cp1 reboots, etcd has no quorum and the API server is
-down, and chalkctl refuses that unless told to accept it. In a cluster of three control planes,
-the other two keep etcd and the API server running while one reboots.
+`--allow-downtime` is needed because the lab has a single control plane: while cp1 reboots, etcd
+has no quorum and the API server is down, and chalkctl refuses that unless told to accept it. In
+a cluster of three control planes, the other two keep etcd and the API server running while one
+reboots.
+
+The nodes' config is unchanged, so the upgrade needs no `chalkctl apply-config` after it.
+chalkctl reads the image's root hash from the image directory on this machine, and
+`chalkctl status` compares it with the root hash each node runs.
 
 Each node goes through the same steps. chalkctl sends the image to chalkd, which writes it into
 the inactive slot and adds a boot entry with three tries, `chalkos_0.2.0+3.efi`. The node is
@@ -419,9 +452,9 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 `+3`:
 
 ```console
-$ chalkctl status w1 --config ~/.local/state/chalklab/lab/chalkctl.json
-config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850 (the cluster definition's)
-platform kvm (the cluster definition's)
+$ chalkctl status w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850 (the inventory's)
+platform kvm (the inventory's)
 image 0.2.0, booted from chalkos_0.2.0.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
@@ -474,8 +507,9 @@ $ chalklab destroy
 removed the lab in /home/alice/.local/state/chalklab/lab
 ```
 
-The flake stays, so `chalklab create` builds the same cluster again. A lab you keep stays on
-disk across a reboot of your machine, but its virtual machines do not start by themselves;
+The files and the image stay, so `chalklab create --secrets secrets.json` makes the same cluster
+again. A lab you keep stays on disk across a reboot of your machine, but its virtual machines do
+not start by themselves;
 [`chalklab start`](../reference/cli/chalklab_start.md) starts them again with their disks, TPM
 state and ports.
 
