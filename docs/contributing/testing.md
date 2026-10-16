@@ -19,7 +19,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | --- | --- | --- | --- |
 | Go unit test | next to the code, `*_test.go` in `pkg/` and `cmd/` | logic, parsing, error paths, command output | seconds |
 | Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule` check | network rules, partition tables and file systems written by the real tools | seconds |
-| Evaluation test | `test/nix/eval.nix` | option defaults, assertions, what a module sets in a role image, the manifest | one evaluation |
+| Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
 | Build check | `nix/checks.nix` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, [Secure Boot](../reference/glossary.md#secure-boot), the [TPM](../reference/glossary.md#tpm), the initrd, a cluster | minutes and 2 GiB or more per VM |
 
@@ -59,14 +59,15 @@ Prefer this level for anything about partitions, firewall rules or interfaces.
 ## Evaluation tests and build checks
 
 `test/nix/eval.nix` holds evaluation tests in the form of `lib.runTests`: each `test*`
-attribute has an `expr` and an `expected` value. They evaluate small clusters with `mkCluster`
-and check options, assertions, what role images set and the manifest; a test that an
-evaluation fails uses `builtins.tryEval`. The `eval` check fails with the list of failures.
+attribute has an `expr` and an `expected` value. They evaluate images with `mkImages` and check
+its arguments, the images' options and assertions, and what the images set; a test that an
+evaluation fails uses `builtins.tryEval`. The `eval` check fails with the list of failures, and
+`eval-kinds` does the same for `test/nix/kinds.nix`, the tests of config kinds.
 
 ```nix
-testRoleReadsClusterEndpoint = {
-  expr = (role (cluster [ ])).chalkos.cluster.endpoint;
-  expected = "https://10.0.0.1:6443";
+testVariantSetsDiskOptions = {
+  expr = (worker [ { chalkos.disk.espSize = "256M"; } ]).chalkos.disk.espSize;
+  expected = "256M";
 };
 ```
 
@@ -74,12 +75,12 @@ Build checks in `nix/checks.nix` check what an image build produces, without boo
 
 | Check | What it checks |
 | --- | --- |
-| `kernel-modules` | A role's module tree holds its groups' modules and no others, and the tool refuses unknown modules and missing dependencies. |
-| `image-size` | The test cluster's images stay within the ceilings in `nix/testing/image-sizes.nix`, and the fit check every image build runs refuses images that leave no room. |
-| `bootspec` | A [role](../reference/glossary.md#role)'s bootspec names the [UKI](../reference/glossary.md#uki) on the ESP and no initrd. |
+| `kernel-modules` | An image's module tree holds its groups' modules and no others, and the tool refuses unknown modules and missing dependencies. |
+| `image-size` | The test images stay within the ceilings in `nix/testing/image-sizes.nix`, and the fit check every image build runs refuses images that leave no room. |
+| `bootspec` | An image's bootspec names the [UKI](../reference/glossary.md#uki) on the ESP and no initrd. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
-| `template-lab` | The [lab](../reference/glossary.md#lab) template evaluates and its images build. |
-| `manifest-golden` | The homelab example's manifest equals `test/fixtures/homelab-manifest.json`. |
+| `template-lab` | The [lab](../reference/glossary.md#lab) template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
+| `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Rack` documents included, with it. |
 
 ## End-to-end tests
 
@@ -137,7 +138,8 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `api/chalkos/node/v1/node.proto` | `api-generated`, `docs-generated`, `go-unit` |
 | Command help, option descriptions | `docs-generated`, `docs` |
 | Pages in `docs/` | `docs` |
-| Modules in `modules/` or `lib/` | `eval`, `manifest-golden`, and the build and end-to-end checks of what the module does |
+| Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, and the build and end-to-end checks of what the module does |
+| `examples/homelab` | `example-homelab` |
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
 | The firewall or VXLAN rule | `vxlan-rule`, `e2e-kubernetes` |
 | `templates/lab` | `template-lab` |

@@ -44,7 +44,6 @@ commits what they generate too. A check fails when they differ.
 | `api/chalkos/node/v1/node.proto` | `buf generate` | `pkg/api/node/v1/`, `docs/reference/api.md` | `api-generated`, `docs-generated` |
 | Command help, option declarations, `node.proto` | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/options.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
 | `go.mod`, `go.sum` | `nix build .#chalkctl`, with `vendorHash` set to `lib.fakeHash` first | `vendorHash` in `nix/go-module.nix` | every Go package's build |
-| `examples/homelab`, the cluster modules | apply the diff the check prints | `test/fixtures/homelab-manifest.json` | `manifest-golden` |
 
 ## Commit messages
 

@@ -43,18 +43,17 @@ use the same tools and variables from `nix/testing/env.nix`.
 | `api/` | The node API's protobuf definition, `api/chalkos/node/v1/node.proto`, and the template of its reference page. |
 | `cmd/` | Thin mains: `chalkctl`, `chalkd`, `chalklab`, `chalkos-storage` and `docgen`. |
 | `pkg/` | The Go packages, including `pkg/api`, the code `buf generate` writes. |
-| `modules/cluster/` | The [cluster definition](../reference/glossary.md#cluster-definition): core options in `options/`, built-in features in `features/`, the Kubernetes objects every cluster gets in `kubernetes/`. |
-| `modules/node/` | The NixOS modules every [role](../reference/glossary.md#role) [image](../reference/glossary.md#image) is built from. |
+| `modules/node/` | The NixOS modules every [image](../reference/glossary.md#image) is built from. |
 | `modules/platforms/` | The `metal` and `kvm` [platforms](../reference/glossary.md#platform). |
 | `modules/installer/` | The [installer](../reference/glossary.md#installer) image and its ISO. |
 | `modules/testing/` | The test probe and the test image's small partitions. |
-| `lib/` | `mkCluster` and the flake-parts module. |
-| `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, test fixtures and the test cluster in `nix/testing/`. |
+| `lib/` | `mkImages` and the module of its arguments. |
+| `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, and the test images and their secrets in `nix/testing/`. |
 | `templates/lab/` | The lab template the quick start uses. |
-| `examples/homelab/` | An example cluster flake, which the `manifest-golden` check evaluates. |
+| `examples/homelab/` | An example cluster: a flake that builds its image with an extension, an inventory and its YAML, which the `example-homelab` check builds and validates. |
 | `test/e2e/` | The end-to-end tests, which boot virtual machines. |
 | `test/nix/` | The Nix evaluation tests. |
-| `test/fixtures/` | Static test data, such as the homelab's golden manifest. |
+| `test/fixtures/` | Static test data: the e2e clusters' YAML, kind schemas and config documents. |
 | `docs/` | The documentation site's pages. |
 
 [Architecture for developers](architecture.md) describes the packages and modules one by one.
@@ -82,17 +81,17 @@ go run ./cmd/chalklab --help
 
 ## Build images
 
-A cluster's role images build from its flake with
-`nix build .#chalkos.<cluster>.roles.<role>.images.<platform>`. The repository's own flake
-exposes the images of its test cluster, defined in `nix/testing/cluster.nix`, as packages:
+A cluster's flake builds its images with `chalkos.lib.mkImages`, whose `images.<variant>-<platform>`
+it exposes as packages. The repository's own flake exposes its test images, which
+`nix/testing/images.nix` builds, as packages:
 
 | Package | What it is |
 | --- | --- |
-| `test-image` | The `test` role on `metal`, with small partitions and the test probe; most VM tests boot it. |
-| `test-storage-image` | A role with volumes on the system disk and on a second disk. |
-| `test-installer` | The test cluster's installer. |
-| `test-kubernetes-image` | The Kubernetes test's role on `kvm`, which its control plane and its worker boot. |
-| `test-kubernetes-ha-image` | The HA test's role on `metal`. |
+| `test-image` | The `test` variant on `metal`, with small partitions and the test probe; most VM tests boot it. |
+| `test-storage-image` | The `storage` variant on `metal`, which the storage test gives volumes on the system disk and on a second disk. |
+| `test-installer` | The test images' installer. |
+| `test-kubernetes-image` | The `k8s` variant on `kvm`, which the Kubernetes test's control plane and worker boot. |
+| `test-kubernetes-ha-image` | The `k8s` variant on `metal`, which the HA test's control planes boot. |
 | `test-upgrade-image`, `test-unhealthy-image`, `test-kubernetes-ha-upgrade-image` | Images the [upgrade](../reference/glossary.md#upgrade) tests install. |
 | `installer` | An installer of a cluster without an [OS CA](../reference/glossary.md#os-ca), which accepts any client until it installs a node. |
 

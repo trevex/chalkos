@@ -82,7 +82,7 @@ let
     NixOS systems with chalkos's node modules. This page is generated from those modules with
     nixosOptionsDoc; each option links to its declaration.
 
-    A flake calls it and exposes the images to build:
+    A flake calls mkImages and exposes the images to build:
 
     ```nix title="flake.nix"
     {
