@@ -38,7 +38,6 @@ wrote: "/home/alice/lab/.gitignore"
 wrote: "/home/alice/lab/README.md"
 wrote: "/home/alice/lab/chalkos.yaml"
 wrote: "/home/alice/lab/chalklab.yaml"
-wrote: "/home/alice/lab/cluster.nix"
 wrote: "/home/alice/lab/cluster/cluster.yaml"
 wrote: "/home/alice/lab/flake.nix"
 wrote: "/home/alice/lab/nodes/cp1.yaml"
@@ -46,7 +45,7 @@ wrote: "/home/alice/lab/nodes/w1.yaml"
 ```
 
 Nix builds the [image](../reference/glossary.md#image); YAML files describe the cluster.
-`flake.nix` pins chalkos as an input, builds the image the nodes run from `cluster.nix`, and
+`flake.nix` pins chalkos as an input, builds the image the nodes run with `mkImages`, and
 gives a development shell. `chalkos.yaml` is the inventory: it names the two nodes, the address
 chalkctl reaches each at, and the files each gets, every file of `cluster/` and its own file of
 `nodes/`. `chalklab.yaml` is the lab file, which names the nodes chalklab runs as virtual
@@ -137,8 +136,8 @@ warning: secrets.json holds the cluster's secrets unencrypted; protect it by oth
 
 `secrets.json` holds every secret of the cluster in plain text, including the
 [OS CA](../reference/glossary.md#os-ca)'s key, which grants admin access to every node. The
-template's `.gitignore` keeps it out of git. `secrets.pub.json` is the public part: `cluster.nix`
-names it in `chalkos.osCA`, so the image trusts the OS CA. A real cluster encrypts its secrets
+template's `.gitignore` keeps it out of git. `secrets.pub.json` is the public part: `flake.nix`
+names it in the `osCA` of `mkImages`, so the image trusts the OS CA. A real cluster encrypts its secrets
 with age: `--recipient` in place of `--plaintext` writes `secrets.age`, which can live in the
 repository.
 
@@ -410,21 +409,20 @@ A node changes its software only by booting a new image. An
 [slot](../reference/glossary.md#slot) and reboots into it; if the new image does not become
 healthy, the node falls back to the image it ran before.
 
-A new image needs a new version, set with NixOS's `system.image.version` in the role's
-`nixosModules`. Edit `cluster.nix` so the role builds version 0.2.0, and turn on
+A new image needs a new version, set with NixOS's `system.image.version` in the variant's
+`modules`. Edit `flake.nix` so the variant `node` builds version 0.2.0, and turn on
 [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in the same module, which adds
 the tools `kubectl debug` uses on a node:
 
 ```diff
--  # One image for both nodes; cp1's Node document makes it the control plane.
--  chalkos.roles.node = { };
-+  # One image for both nodes, at a new version, with the tools for kubectl debug.
-+  chalkos.roles.node.nixosModules = [
-+    {
-+      system.image.version = "0.2.0";
-+      chalkos.debug.tools = true;
-+    }
-+  ];
+-        variants.node = { };
++        # Version 0.2.0, with the tools for kubectl debug.
++        variants.node.modules = [
++          {
++            system.image.version = "0.2.0";
++            chalkos.debug.tools = true;
++          }
++        ];
 ```
 
 Commit the change and build the image again; `images/node-kvm` then points at the new build:

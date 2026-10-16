@@ -965,39 +965,35 @@ in
         touch $out
       '';
 
-  # The lab template: its flake builds the nodes' kvm image, which finds its virtio disks at boot,
-  # and its dev shell brings chalklab, chalkctl and kubectl. chalkctl validate accepts the
-  # template's nodes with that image where their Image points; TestTheLabFiles of go-unit checks
-  # chalklab.yaml's MAC addresses. The image carries the test secrets' OS CA in place of the
-  # secrets.pub.json chalkctl gen secrets writes.
+  # The lab template: its flake builds the nodes' kvm image with mkImages, and its dev shell
+  # brings chalklab, chalkctl and kubectl. chalkctl validate accepts the template's nodes with that
+  # image where their Image points; TestTheLabFiles of go-unit checks chalklab.yaml's MAC
+  # addresses. The flake's mkImages gets the test secrets' OS CA in place of the secrets.pub.json
+  # chalkctl gen secrets writes, which the repository does not hold.
   template-lab =
     let
       system = pkgs.stdenv.hostPlatform.system;
-      template = (import ../templates/lab/flake.nix).outputs { chalkos = self; };
-      shell = template.devShells.${system}.default;
-      c = self.lib.mkCluster {
-        modules = [
-          ../templates/lab/cluster.nix
-          { chalkos.osCA = lib.mkForce "${chalkPkgs.test-secrets}/secrets.pub.json"; }
-        ];
+      chalkos = self // {
+        lib = self.lib // {
+          mkImages =
+            arguments:
+            self.lib.mkImages (arguments // { osCA = "${chalkPkgs.test-secrets}/secrets.pub.json"; });
+        };
       };
+      template = (import ../templates/lab/flake.nix).outputs { inherit chalkos; };
+      shell = template.devShells.${system}.default;
     in
-    assert template.packages.${system} ? node-kvm;
     assert lib.all (p: lib.elem p shell.nativeBuildInputs) [
       chalkPkgs.chalklab
       chalkPkgs.chalkctl
       pkgs.kubectl
     ];
     assert lib.isString shell.drvPath;
-    assert lib.all (m: lib.elem m c.roles.node.nixos.kvm.config.boot.initrd.availableKernelModules) [
-      "virtio_pci"
-      "virtio_blk"
-    ];
     pkgs.runCommand "chalkos-template-lab" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''
       cp -r ${../templates/lab} lab
       chmod -R u+w lab
       mkdir -p lab/images
-      ln -s ${c.roles.node.images.kvm} lab/images/node-kvm
+      ln -s ${template.packages.${system}.node-kvm} lab/images/node-kvm
       cd lab
       chalkctl validate
       touch $out

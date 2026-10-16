@@ -10,7 +10,7 @@ being in the `kvm` group; not root.
 
 The files:
 
-- `flake.nix` and `cluster.nix` build the image the nodes run.
+- `flake.nix` builds the image the nodes run, with `chalkos.lib.mkImages`.
 - `chalkos.yaml` is the inventory: the nodes, their addresses and their config files.
 - `cluster/` holds the config every node gets, `nodes/` each node's own.
 - `chalklab.yaml` names the nodes chalklab runs and the MAC address of each.
@@ -47,9 +47,10 @@ chalkctl validate
 chalkctl apply-config w1 --inventory <lab inventory> --secrets secrets.json
 ```
 
-To upgrade, edit `cluster.nix`, build the image again with `nix build .#node-kvm -o
-images/node-kvm`, and let chalkctl sign it with the lab's db key and install it, with the files
-`chalklab status` names and the client file `CHALKOSCONFIG` names:
+To upgrade, give the `node` variant in `flake.nix` a new `system.image.version` in its `modules`,
+build the image again with `nix build .#node-kvm -o images/node-kvm`, and let chalkctl sign it
+with the lab's db key and install it, with the files `chalklab status` names and the client file
+`CHALKOSCONFIG` names:
 
 ```sh
 chalkctl upgrade --inventory <lab inventory> \
