@@ -64,7 +64,7 @@ chalkos.nodes.w1.storage = {
 A volume is formatted `ext4` by default, or `xfs`, `btrfs` or `swap`; `format = null` leaves a
 raw block device, for software that wants one. A volume with a `disk` occupies that disk alone. On
 each disk at most one partition, VAR included, may leave its size unset and fill the space left.
-[`chalkos.nodes.<name>.storage.volumes`](../reference/options.md#chalkosnodesstoragevolumes) lists
+`chalkos.nodes.<name>.storage.volumes` lists
 the options; evaluation refuses duplicate mount points, reserved names such as `state` and `var`,
 and mount points at `/`, `/nix`, `/state` or `/var`.
 
@@ -73,7 +73,7 @@ and mount points at `/`, `/nix`, `/state` or `/var`.
 The system disk is always the disk the node booted from. udev links it as
 `/dev/disk/chalk-boot-disk` and its partitions as `/dev/disk/chalk-boot/<label>`, and only that
 disk gets the links, so a second disk carrying the same image never stands in for it. A node
-installed in place checks that its [`storage.system.disk`](../reference/options.md#chalkosnodesstoragesystemdisk)
+installed in place checks that its `storage.system.disk`
 names the disk it booted from; the [installer](../reference/glossary.md#installer) writes the role image to the disk it names.
 
 Other disks are named by a `/dev/` path or by a selector of `model` (a glob), `serial`, `wwn`,
@@ -105,7 +105,7 @@ the typed options set cannot be overridden there.
 
 ## How are the partitions encrypted?
 
-With [`storage.encryption.mode`](../reference/options.md#chalkosnodesstorageencryptionmode) set to
+With `storage.encryption.mode` set to
 `tpm2`, the default, STATE, VAR and volumes are LUKS2 volumes whose key the
 [TPM](../reference/glossary.md#tpm) seals to [PCR 7](../reference/glossary.md#pcr-7). VAR and each
 volume can override the mode; STATE follows the node's. `none` leaves the partitions unencrypted,
@@ -113,7 +113,7 @@ and the cluster definition warns when STATE, which holds the node's private keys
 them. The [Security model](security.md) explains why PCR 7 is the register chalkos seals to.
 
 Each encrypted volume has a second keyslot, the fallback, for when the TPM does not unseal, chosen
-with [`storage.encryption.fallback`](../reference/options.md#chalkosnodesstorageencryptionfallback):
+with `storage.encryption.fallback`:
 
 | Fallback | Second keyslot |
 | --- | --- |

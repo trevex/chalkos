@@ -17,7 +17,7 @@ A node's trust rests on four anchors:
 | Anchor | Where it lives | What it vouches for |
 | --- | --- | --- |
 | The db signing certificate | The firmware's [db](../reference/glossary.md#db-and-dbx) | The boot loader and the [UKI](../reference/glossary.md#uki), and through the UKI the whole [store](../reference/glossary.md#store) |
-| The [OS CA](../reference/glossary.md#os-ca) | The [secrets file](../reference/glossary.md#secrets-file); its certificate is in every image built with [`chalkos.osCA`](../reference/options.md#chalkososca) | Every node certificate and client certificate of the node API |
+| The [OS CA](../reference/glossary.md#os-ca) | The [secrets file](../reference/glossary.md#secrets-file); its certificate is in every image built with `chalkos.osCA` | Every node certificate and client certificate of the node API |
 | The Kubernetes, front-proxy and etcd CAs | The secrets file; a [control plane](../reference/glossary.md#control-plane) holds them in its [Kubernetes share](../reference/glossary.md#kubernetes-share) | The control plane's certificates, the kubelets' and admin kubeconfigs |
 | The [TPM](../reference/glossary.md#tpm) | The machine | That the node booted under the same Secure Boot state it was installed under |
 
@@ -63,7 +63,7 @@ when Secure Boot is enforced. It refuses a binary that no db certificate signed,
 or any certificate of its signature dbx lists, and any binary at all while dbx holds an entry it
 cannot read. A node therefore never reboots into an image its firmware would refuse. When the
 [cluster definition](../reference/glossary.md#cluster-definition) sets
-[`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate),
+`chalkos.secureBoot.signerCertificate`,
 chalkctl also refuses to upgrade with an image this certificate's key did not sign. The
 [signing guide](../guides/secure-boot-signing.md) creates the key and enrols it.
 
@@ -90,7 +90,7 @@ of the stored config.
 [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted
 [volumes](../reference/glossary.md#volume) are LUKS2 volumes whose key the TPM seals to
 [PCR 7](../reference/glossary.md#pcr-7) under the default
-[encryption mode](../reference/options.md#chalkosnodesstorageencryptionmode) `tpm2`; the mode
+encryption mode `tpm2`; the mode
 `none` leaves them unencrypted. PCR 7 measures the Secure Boot state: whether it is on, the
 contents of PK, KEK, db and dbx, and the db certificate that verified the boot binaries. The TPM
 releases the key only when PCR 7 holds the value it was sealed under.
@@ -203,7 +203,7 @@ whose fingerprint was printed. Every command that reaches a node in maintenance 
 `--insecure`.
 
 The node in turn decides whom it accepts. An image built with
-[`chalkos.osCA`](../reference/options.md#chalkososca), a role image or the
+`chalkos.osCA`, a role image or the
 cluster's [installer](../reference/glossary.md#installer), accepts in maintenance mode only
 clients with a certificate of that OS CA, so only the holder of the secrets file or a client file
 can install it. An image built without one accepts any client as an admin until it is installed.
@@ -224,8 +224,8 @@ tools to an image for that.
 - chalkos does not enrol Secure Boot keys. The operator enrols the db certificate in each machine's
   firmware, as the [signing guide](../guides/secure-boot-signing.md) shows; only [chalklab](../reference/glossary.md#chalklab) enrols
   keys, its own, in its virtual machines. The options
-  [`chalkos.secureBoot.enrollment`](../reference/options.md#chalkossecurebootenrollment) and
-  [`chalkos.secureBoot.require`](../reference/options.md#chalkossecurebootrequire) are declared,
+  `chalkos.secureBoot.enrollment` and
+  `chalkos.secureBoot.require` are declared,
   but nothing reads them yet, and installing does not check that Secure Boot is on.
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it
   expires or its CA is rotated; rotation is how access is revoked, as

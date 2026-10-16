@@ -56,7 +56,7 @@ Then make the change itself:
     ```
 
 - A new Kubernetes release: set
-  [`chalkos.cluster.kubernetes.package`](../reference/options.md#chalkosclusterkubernetespackage).
+  `chalkos.cluster.kubernetes.package`.
   Every role image carries the kubelet, so every role gets a new version. Move one minor release
   at a time, as the Kubernetes version skew policy requires; `chalkctl upgrade` upgrades the
   control planes before the [workers](../reference/glossary.md#worker), which keeps the kubelets no newer than the API server.

@@ -38,18 +38,18 @@ the API server keeps answering.
 Four voters tolerate one failure, like three, so an even number buys nothing. A single control
 plane is fine for a lab or a cluster whose API may go away during upgrades. Small clusters can
 run workloads on the control planes with
-[`chalkos.cluster.kubernetes.allowSchedulingOnControlPlanes`](../reference/options.md#chalkosclusterkubernetesallowschedulingoncontrolplanes);
+`chalkos.cluster.kubernetes.allowSchedulingOnControlPlanes`;
 otherwise they are tainted.
 
 A node becomes a control plane with
-[`kubernetes.kind = "controlplane"`](../reference/options.md#chalkosnodeskuberneteskind), and is a
+`kubernetes.kind = "controlplane"`, and is a
 worker by default. Control planes and workers can share a role, and so one image per platform.
 
 [Run a highly available control plane](ha-control-plane.md) walks through installing three.
 
 ## Decide how clients reach the API server
 
-The [cluster endpoint](../reference/glossary.md#cluster-endpoint), [`chalkos.cluster.endpoint`](../reference/options.md#chalkosclusterendpoint),
+The [cluster endpoint](../reference/glossary.md#cluster-endpoint), `chalkos.cluster.endpoint`,
 is the URL kubelets, kubeconfigs and [workers](../reference/glossary.md#worker) use to reach the control planes. Workers also renew
 their [node certificates](../reference/glossary.md#node-certificate) through it: [chalkd](../reference/glossary.md#chalkd) on a
 worker connects to the endpoint's host on port 50000, where a control plane's chalkd answers.
@@ -83,7 +83,7 @@ connection to the old holder went more than 40 seconds without reaching the API 
 
 ## Fix the IP families
 
-[`chalkos.cluster.kubernetes.ipFamilies`](../reference/options.md#chalkosclusterkubernetesipfamilies)
+`chalkos.cluster.kubernetes.ipFamilies`
 lists the cluster's address families, the primary one first: `[ "ipv4" ]` by default,
 `[ "ipv4" "ipv6" ]` for dual stack. The families and their order are fixed when the cluster is
 created. A control plane compares them with the families it was pinned with and refuses to
@@ -95,8 +95,8 @@ the cluster was created with families [ipv4]; ipFamilies is [ipv4 ipv6]; changin
 
 A different choice later means a new cluster, so decide now. Pick the pod and service ranges
 of each family at the same time
-([`podCIDRs`](../reference/options.md#chalkosclusterkubernetespodcidrsipv4) and
-[`serviceCIDRs`](../reference/options.md#chalkosclusterkubernetesservicecidrsipv4)), so they
+(`podCIDRs` and
+`serviceCIDRs`), so they
 overlap none of your networks.
 
 ## Plan the node addresses
@@ -110,9 +110,9 @@ Give every node a static address in its `network` definition. Two things depend 
 - chalkctl reaches a node at the address the inventory names for it, or at `--address`.
 
 Workers may take their address from DHCP instead and pick it with
-[`chalkos.cluster.kubernetes.nodeIP.validSubnets`](../reference/options.md#chalkosclusterkubernetesnodeipvalidsubnets)
+`chalkos.cluster.kubernetes.nodeIP.validSubnets`
 or a node's own
-[`kubernetes.validSubnets`](../reference/options.md#chalkosnodeskubernetesvalidsubnets). The
+`kubernetes.validSubnets`. The
 inventory names such a node by an address that stays, such as a DNS name.
 
 ```nix title="nodes.nix"
@@ -130,7 +130,7 @@ inventory names such a node by an address that stays, such as a DNS name.
 }
 ```
 
-Set [`chalkos.cluster.kubernetes.vxlanSourceSubnets`](../reference/options.md#chalkosclusterkubernetesvxlansourcesubnets)
+Set `chalkos.cluster.kubernetes.vxlanSourceSubnets`
 to the ranges your nodes live in. Without it, nodes accept the pod network's VXLAN traffic from
 any source.
 
@@ -139,14 +139,14 @@ any source.
 Name the system disk by a path that survives a reordering of the disks, such as
 `/dev/disk/by-id/...`, not `/dev/sda`. [VAR](../reference/glossary.md#var), which holds etcd,
 containerd's images and the logs, fills the rest of the system disk unless
-[`storage.var.size`](../reference/options.md#chalkosnodesstoragevarsize) limits it. Volumes for
+`storage.var.size` limits it. Volumes for
 local persistent volumes or a storage system go on the system disk or on disks of their own,
 picked by path or by a selector of model, serial number, WWN, size and type.
 [Add storage volumes](storage-volumes.md) has the details.
 
 Encryption is on by default: STATE, VAR and every volume are LUKS2 volumes whose key the
 [TPM](../reference/glossary.md#tpm) seals to [PCR 7](../reference/glossary.md#pcr-7). The
-fallback, [`storage.encryption.fallback`](../reference/options.md#chalkosnodesstorageencryptionfallback),
+fallback, `storage.encryption.fallback`,
 decides what unlocks a volume when the TPM does not:
 
 | Fallback | What unlocks it | Cost |
@@ -173,7 +173,7 @@ that changes db or dbx has the same effect.
 
 Decide who signs. Whoever runs `chalkctl upgrade --sign-key=<db-key>` holds the key on their
 machine; a build machine that signs images and hands them out keeps it in one place. Set
-[`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate)
+`chalkos.secureBoot.signerCertificate`
 to the db certificate, so `chalkctl install` and `chalkctl upgrade` refuse an image that key did
 not sign.
 
@@ -195,7 +195,7 @@ chalkctl gen secrets --recipient=<admin-recipient> --recipient=<backup-recipient
 ```
 
 The command writes `secrets.age` and `secrets.pub.json`, the public half, which
-[`chalkos.osCA`](../reference/options.md#chalkososca) names so the images trust
+`chalkos.osCA` names so the images trust
 the OS CA. To decrypt the file, chalkctl tries `~/.config/chalkos/age.key`, `~/.ssh/id_ed25519`
 and `~/.ssh/id_rsa`, or the files `--identity` names; a plugin identity file goes there too.
 `--plaintext` writes `secrets.json` unencrypted, for a file protected by other means.
@@ -241,13 +241,13 @@ Kubeconfigs from [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md
 for the Kubernetes API: one per person with `--name`, all in the group bound to
 `cluster-admin`, revoked only by rotating the Kubernetes CAs. For narrower access, configure an
 authenticator of the API server through
-[`chalkos.cluster.kubernetes.extraArgs.kube-apiserver`](../reference/options.md#chalkosclusterkubernetesextraargskube-apiserver).
+`chalkos.cluster.kubernetes.extraArgs.kube-apiserver`.
 
 ## Choose time servers
 
 Nodes check certificates against their clocks, so a node whose clock drifts refuses valid
 certificates or accepts expired ones. chalkos runs chrony with
-[`chalkos.time.servers`](../reference/options.md#chalkostimeservers), by default three servers
+`chalkos.time.servers`, by default three servers
 of the German national metrology institute (PTB), authenticated with NTS. NTS needs the nodes
 to reach the servers on TCP port 4460 as well as UDP port 123.
 
@@ -262,17 +262,17 @@ A network without outbound NTP needs internal servers. Use NTS where your server
 }
 ```
 
-[`chalkos.time.dhcpServers`](../reference/options.md#chalkostimedhcpservers) adds the servers
+`chalkos.time.dhcpServers` adds the servers
 DHCP announces, which nothing authenticates. It reaches each node as `spec.dhcp` of its
 `TimeSync` document, so `chalkctl apply-config` turns it on or off without a new image.
 
 ## Plan registry mirrors
 
 Nodes pull the control plane's images, flannel and CoreDNS from their upstream registries.
-[`chalkos.cluster.registries.mirrors`](../reference/options.md#chalkosclusterregistriesmirrors)
+`chalkos.cluster.registries.mirrors`
 puts HTTPS mirrors in front of a registry host; containerd tries them in order and falls back
 to the registry. A cluster without internet access needs every image in a mirror, including
-those [`chalkos.cluster.kubernetes.images`](../reference/options.md#chalkosclusterkubernetesimagesetcd)
+those `chalkos.cluster.kubernetes.images`
 names.
 
 ```nix title="cluster.nix"

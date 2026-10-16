@@ -93,7 +93,7 @@ by a [flake](#flake). It is the only inventory chalkctl reads. See
 ## Cluster endpoint { #cluster-endpoint }
 
 The URL of the cluster's API server,
-[`chalkos.cluster.endpoint`](options.md#chalkosclusterendpoint), at which kubelets, kubeconfigs
+`chalkos.cluster.endpoint`, at which kubelets, kubeconfigs
 and joining control planes reach it. Nodes also renew their
 [node certificates](#node-certificate) at port 50000 of its host, so it points at a control plane,
 a [VIP](#vip) or a load balancer that forwards both ports. See
@@ -172,7 +172,7 @@ same mechanism. See [The cluster definition](../concepts/cluster-definition.md).
 
 The second keyslot of every encrypted partition, which unlocks it when the [TPM](#tpm) does not:
 the node's [recovery key](#recovery-key) by default, a password, or none, as
-[`storage.encryption.fallback`](options.md#chalkosnodesstorageencryptionfallback) chooses. See
+`storage.encryption.fallback` chooses. See
 [Storage and encryption](../concepts/storage.md).
 
 ## Flake { #flake }
@@ -216,7 +216,7 @@ different root hash is refused. See [Upgrades](../concepts/upgrades.md).
 
 An image that always boots into [maintenance mode](#maintenance-mode) and writes a role image to
 a disk of the machine. It is built as a raw image and a hybrid ISO from
-[`chalkos.installer`](options.md#chalkosinstallerimage), and serves every role and platform.
+`chalkos.installer`, and serves every role and platform.
 See [Architecture](../concepts/architecture.md).
 
 ## Kind { #kind }
@@ -264,7 +264,7 @@ role. See [The image](../concepts/image.md).
 
 ## Node { #node }
 
-A machine of the cluster, declared under [`chalkos.nodes`](options.md#chalkosnodes) with a
+A machine of the cluster, declared under `chalkos.nodes` with a
 [role](#role), a [platform](#platform) and its own settings, and installed from the image of its
 role and platform. See [The cluster definition](../concepts/cluster-definition.md).
 
@@ -308,7 +308,7 @@ after a change to Secure Boot. See [Security model](../concepts/security.md).
 ## Platform { #platform }
 
 The kind of machine an image is built for, such as `metal` or `kvm`, defined as NixOS modules
-under [`chalkos.platforms`](options.md#chalkosplatforms). Each role gets one image per platform,
+under `chalkos.platforms`. Each role gets one image per platform,
 so only the images for a platform carry its drivers and agents. See
 [The cluster definition](../concepts/cluster-definition.md).
 
@@ -328,7 +328,7 @@ file never changes, and
 ## Role { #role }
 
 The unit an [image](#image) is built for: the NixOS modules its nodes run, declared under
-[`chalkos.roles`](options.md#chalkosroles) with storage defaults and whether its images run
+`chalkos.roles` with storage defaults and whether its images run
 Kubernetes. Each role becomes one image per platform. Control planes and workers of a role boot the
 same image; each node's kind makes it one or the other. See
 [The cluster definition](../concepts/cluster-definition.md). A role's images have the role's name as

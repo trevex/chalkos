@@ -45,33 +45,22 @@ let
     };
   declaredIn = dir: opt: lib.all (d: lib.hasPrefix "${root}/${dir}/" (toString d)) opt.declarations;
 
-  cluster = lib.evalModules {
-    modules = [ ../modules/cluster ];
-    specialArgs = { inherit (self.inputs) nixpkgs; };
+  # The arguments of chalkos.lib.mkImages, from the module that checks them.
+  arguments = lib.evalModules {
+    modules = [ ../lib/images-arguments.nix ];
+    specialArgs.defaultNixpkgs = self.inputs.nixpkgs;
   };
-  clusterOptions =
+  argumentOptions =
     (pkgs.nixosOptionsDoc {
-      options = { inherit (cluster.options) chalkos; };
+      options = removeAttrs arguments.options [ "_module" ];
       transformOptions = linkDeclarations;
     }).optionsCommonMark;
 
-  # A role image's own options, those the node modules declare. The role builder adds the
-  # cluster's settings to a role image read-only; they are documented with the cluster's options.
-  roleSystem =
-    (self.lib.mkCluster {
-      modules = [
-        {
-          chalkos.cluster = {
-            name = "docs";
-            endpoint = "https://127.0.0.1:6443";
-          };
-          chalkos.roles.docs = { };
-        }
-      ];
-    }).roles.docs.nixos.metal;
-  nodeOptions =
+  # An image's own options, those the node modules declare.
+  imageSystem = (self.lib.mkImages { variants.docs = { }; }).nixos.docs-metal;
+  imageOptions =
     (pkgs.nixosOptionsDoc {
-      options = { inherit (roleSystem.options) chalkos; };
+      options = { inherit (imageSystem.options) chalkos; };
       transformOptions =
         opt:
         linkDeclarations opt
@@ -82,26 +71,25 @@ let
 
   optionsHead = pkgs.writeText "options-head.md" ''
     ---
-    title: "Cluster and node options"
-    description: "The options of a chalkos cluster definition and of its role images"
+    title: "mkImages and image options"
+    description: "The arguments of chalkos.lib.mkImages and the options of the images it builds"
     ---
 
-    # Cluster and node options
+    # mkImages and image options
 
-    A cluster definition sets the options under `chalkos` of the cluster modules, which
-    `chalkos.lib.mkCluster` evaluates; a role's `nixosModules` set the options of its role image,
-    a NixOS system with the node modules. This page is generated from those modules with
+    `chalkos.lib.mkImages` builds a cluster's images from its arguments: each variant on each
+    platform, and the installer. The NixOS modules of a variant set the options of its images,
+    NixOS systems with chalkos's node modules. This page is generated from those modules with
     nixosOptionsDoc; each option links to its declaration.
 
-    ## Cluster definition
+    ## mkImages arguments
 
   '';
-  nodeHead = pkgs.writeText "options-node-head.md" ''
+  imageHead = pkgs.writeText "options-image-head.md" ''
 
-    ## Role images
+    ## Image options
 
-    The options the node modules declare in each role image. The cluster's settings appear in a
-    role image under the same names as in the cluster definition, read-only.
+    The options the node modules declare in every image and in the installer.
 
   '';
 in
@@ -129,8 +117,8 @@ rec {
       '';
 
   # The generated pages of docs/reference and zensical.toml with their navigation, laid out as
-  # in the repository: a page per command of chalkctl and chalklab, the cluster and node options,
-  # and the node API.
+  # in the repository: a page per command of chalkctl and chalklab, the arguments of mkImages and
+  # the image options, and the node API.
   reference =
     pkgs.runCommand "chalkos-docs-reference"
       {
@@ -157,9 +145,9 @@ rec {
         docgen cli $out/docs/reference/cli $out/zensical.toml
         {
           cat ${optionsHead}
-          sed 's/^## /### /' ${clusterOptions}
-          cat ${nodeHead}
-          sed 's/^## /### /' ${nodeOptions}
+          sed 's/^## /### /' ${argumentOptions}
+          cat ${imageHead}
+          sed 's/^## /### /' ${imageOptions}
         } > $out/docs/reference/options.md
         cp -r $api proto
         chmod -R u+w proto

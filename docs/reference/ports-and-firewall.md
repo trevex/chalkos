@@ -38,7 +38,7 @@ The firewall opens the NodePort range for TCP only.
 
 flannel's VXLAN carries pod traffic unauthenticated, so a node accepts UDP 8472 only when it is
 sent to one of the addresses the node picked for Kubernetes, and only from
-[`chalkos.cluster.kubernetes.vxlanSourceSubnets`](options.md#chalkosclusterkubernetesvxlansourcesubnets)
+`chalkos.cluster.kubernetes.vxlanSourceSubnets`
 when that list is set. The rule has three parts:
 
 | Part | What it does |
@@ -129,9 +129,9 @@ between the nodes.
 
 | Destination | Port | Protocol | Purpose |
 | --- | --- | --- | --- |
-| Container registries, or the mirrors in [`chalkos.cluster.registries.mirrors`](options.md#chalkosclusterregistriesmirrors) | 443, or the mirror's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. A mirror may use plain HTTP with [`chalkos.cluster.registries.allowPlainHTTP`](options.md#chalkosclusterregistriesallowplainhttp). |
-| Time servers of [`chalkos.time.servers`](options.md#chalkostimeservers) | 4460 | TCP | NTS key exchange, for servers with [`nts`](options.md#chalkostimeserversnts), the default. |
-| Time servers | 123, or the server's [`port`](options.md#chalkostimeserversport) | UDP | NTP. |
+| Container registries, or the mirrors in `chalkos.cluster.registries.mirrors` | 443, or the mirror's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. A mirror may use plain HTTP with `chalkos.cluster.registries.allowPlainHTTP`. |
+| Time servers of `chalkos.time.servers` | 4460 | TCP | NTS key exchange, for servers with `nts`, the default. |
+| Time servers | 123, or the server's `port` | UDP | NTP. |
 | DNS resolvers of the node's network | 53 | UDP and TCP | Names of registries and time servers. |
 | DHCP servers, when the node's network units use DHCP | 67 | UDP | Addresses. |
 | The cluster endpoint | 6443 | TCP | The kubelet and kube-proxy of every Kubernetes node. |

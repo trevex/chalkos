@@ -7,7 +7,7 @@ description: "Add NixOS modules, packages, kernel modules and manifests to a rol
 
 A [role](../reference/glossary.md#role)'s image is built from chalkos's node modules, its
 [platform](../reference/glossary.md#platform)'s modules and the role's own NixOS modules, which
-you add with [`chalkos.roles.<role>.nixosModules`](../reference/options.md#chalkosrolesnixosmodules).
+you add with `chalkos.roles.<role>.nixosModules`.
 They can add packages, services, kernel modules and anything else a NixOS module sets, within
 the limits an image-based node sets. Every node of the role runs the same image, so a role module
 sees the cluster's settings but no single node's; per-node values reach a unit at runtime. A
@@ -159,7 +159,7 @@ Values of your own, such as a site name per node, come from an
 [extension](../reference/glossary.md#extension): a cluster module that declares options in a
 namespace of its own and adds modules to roles. A role module declares a config kind, the
 per-node option adds a document of that kind to the node's
-[`documents`](../reference/options.md#chalkosnodesdocuments), and a unit reads it. This one serves
+`documents`, and a unit reads it. This one serves
 a cluster with a role `remote` for its machines at other sites:
 
 ```nix title="extensions/site.nix"
@@ -263,7 +263,7 @@ tools for debugging from a privileged pod, as
 ## Add Kubernetes objects to the cluster
 
 Objects every cluster should hold, such as namespaces, a storage class or an operator's
-deployment, go into [`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests),
+deployment, go into `chalkos.cluster.manifests`,
 a cluster setting, not a role:
 
 ```nix title="cluster.nix"

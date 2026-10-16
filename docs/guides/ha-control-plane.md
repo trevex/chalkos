@@ -24,7 +24,7 @@ member, removing one and replacing a failed machine.
 
 ## Define three control planes and the VIP
 
-Put the VIP in [`chalkos.cluster.kubernetes.vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses)
+Put the VIP in `chalkos.cluster.kubernetes.vip.addresses`
 and make the [cluster endpoint](../reference/glossary.md#cluster-endpoint) point at it. Every node and client reaches the API server at the
 endpoint, so the endpoint has to follow the VIP from one control plane to the next.
 
@@ -58,7 +58,7 @@ endpoint, so the endpoint has to follow the VIP from one control plane to the ne
 
 A dual-stack cluster takes one VIP per family. [chalkd](../reference/glossary.md#chalkd) adds the VIP to the interface that holds
 the node's address of the VIP's family, unless
-[`vip.interface`](../reference/options.md#chalkosclusterkubernetesvipinterface) names another.
+`vip.interface` names another.
 
 ## Install every control plane
 
@@ -240,7 +240,7 @@ attempt.
 
 A pinned control plane that boots without one of its addresses, after a cabling or switch
 change for example, waits for it for
-[`nodeIP.timeout`](../reference/options.md#chalkosclusterkubernetesnodeiptimeout) seconds and then
+`nodeIP.timeout` seconds and then
 runs neither etcd nor the kubelet:
 
 ```text

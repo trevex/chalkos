@@ -18,13 +18,13 @@ empty system disk, and replaces one that holds data only when you say so.
 You need:
 
 - A [cluster definition](../reference/glossary.md#cluster-definition) in a flake, with the nodes
-  declared under [`chalkos.nodes`](../reference/options.md#chalkosnodes): their role, their
+  declared under `chalkos.nodes`: their role, their
   network and, on `metal`, the default [platform](../reference/glossary.md#platform). The
   [cluster definition concept](../concepts/cluster-definition.md) shows a complete one, and
   [Plan a production cluster](production-cluster.md) helps decide what goes into it.
 - The cluster's [secrets file](../reference/glossary.md#secrets-file), written once with
   [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md), and
-  [`chalkos.osCA`](../reference/options.md#chalkososca) set to its public part,
+  `chalkos.osCA` set to its public part,
   `./secrets.pub.json`, committed to the flake. The images then carry the cluster's
   [OS CA](../reference/glossary.md#os-ca), so a machine in
   [maintenance mode](../reference/glossary.md#maintenance-mode) accepts only your chalkctl.
@@ -117,7 +117,7 @@ generic one, or the cluster definition lacks `chalkos.osCA`.
 ## Choose the system disk
 
 The node's system disk is set in the cluster definition, by
-[`storage.system.disk`](../reference/options.md#chalkosnodesstoragesystemdisk), and the installer
+`storage.system.disk`, and the installer
 writes only to that disk. List the machine's disks with
 [`chalkctl disks`](../reference/cli/chalkctl_disks.md), at the address and fingerprint from the
 console:

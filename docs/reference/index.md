@@ -9,7 +9,7 @@ Most reference pages are generated from the code, so they describe what the code
 `nix run .#docgen` writes them, and the `docs-generated` check fails when they are out of date.
 
 - [Command line](cli/index.md): every command of `chalkctl`, `chalklab` and `chalkcfg`, from their help.
-- [Cluster and node options](options.md): the options of a cluster definition and of role images.
+- [mkImages and image options](options.md): the arguments of `chalkos.lib.mkImages` and the options of the images it builds.
 - [Node API](api.md): the API chalkd serves on every node.
 
 The other pages are written by hand:

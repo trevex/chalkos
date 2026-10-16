@@ -44,12 +44,12 @@ and etcd and the API server advertise the primary family's. Before the kubelet s
 
 A family's address is fixed or picked:
 
-- Fixed: [`chalkos.nodes.<name>.kubernetes.nodeIPs`](../reference/options.md#chalkosnodeskubernetesnodeips),
+- Fixed: `chalkos.nodes.<name>.kubernetes.nodeIPs`,
   or `nodeIP` for one address. By default it is the node's first static address of each family in
   its network, unless subnets to pick from apply to the node. The node waits until an interface
   holds the address.
 - Picked: the node takes the first of its global unicast addresses that
-  [`chalkos.cluster.kubernetes.nodeIP.validSubnets`](../reference/options.md#chalkosclusterkubernetesnodeipvalidsubnets)
+  `chalkos.cluster.kubernetes.nodeIP.validSubnets`
   selects, or a node's own `validSubnets`. A leading `!` excludes a subnet. Addresses are compared
   IPv4 before IPv6, then by interface name and address, so the choice does not depend on the order
   the kernel lists them in. With no subnets, every global unicast address qualifies.
@@ -64,7 +64,7 @@ chalkos.cluster.kubernetes.nodeIP.validSubnets = [ "10.0.0.0/24" "!10.0.0.200/29
 ```
 
 DHCP leases and addresses that a routing daemon adds can arrive late, so the node waits for its
-addresses up to [`nodeIP.timeout`](../reference/options.md#chalkosclusterkubernetesnodeiptimeout),
+addresses up to `nodeIP.timeout`,
 300 seconds by default. A node that finds none runs neither the kubelet nor static pods, and the
 Kubernetes line of its status names the filter and the addresses the node has:
 
@@ -91,7 +91,7 @@ members.
 
 ## How does dual stack work?
 
-[`chalkos.cluster.kubernetes.ipFamilies`](../reference/options.md#chalkosclusterkubernetesipfamilies)
+`chalkos.cluster.kubernetes.ipFamilies`
 lists the families of the cluster, the primary one first: `[ "ipv4" ]` by default, or both in
 either order. Every node has one address of each family, pods get one of each, and services get
 one of each family they ask for. The families and their order are fixed when the cluster is
@@ -101,10 +101,10 @@ Each family has its own ranges:
 
 | Option | IPv4 default | IPv6 default |
 | --- | --- | --- |
-| [`podCIDRs`](../reference/options.md#chalkosclusterkubernetespodcidrsipv4) | `10.244.0.0/16` | `fd00:10:244::/56` |
-| [`serviceCIDRs`](../reference/options.md#chalkosclusterkubernetesservicecidrsipv4) | `10.96.0.0/12` | `fd00:10:96::/112` |
-| [`dnsIPs`](../reference/options.md#chalkosclusterkubernetesdnsipsipv4) | `10.96.0.10` | `fd00:10:96::a` |
-| [`nodeCIDRMaskSizes`](../reference/options.md#chalkosclusterkubernetesnodecidrmasksizesipv4) | `24` | `64` |
+| `podCIDRs` | `10.244.0.0/16` | `fd00:10:244::/56` |
+| `serviceCIDRs` | `10.96.0.0/12` | `fd00:10:96::/112` |
+| `dnsIPs` | `10.96.0.10` | `fd00:10:96::a` |
+| `nodeCIDRMaskSizes` | `24` | `64` |
 
 The cluster DNS service has an address of the primary family alone, as kubeadm's does, because the
 kubelet gives pods one name server; it still answers A and AAAA queries.
@@ -113,7 +113,7 @@ kubelet gives pods one name server; it still answers A and AAAA queries.
 
 A VIP is an address of the API server that no single machine owns: one healthy control plane
 holds it at a time, so the [cluster endpoint](../reference/glossary.md#cluster-endpoint) stays reachable while a control plane reboots or
-fails. [`chalkos.cluster.kubernetes.vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses)
+fails. `chalkos.cluster.kubernetes.vip.addresses`
 takes at most one address per family, and the endpoint is then one of them or a name that resolves
 to them.
 
@@ -127,7 +127,7 @@ chalkos.cluster = {
 chalkd on every bootstrapped control plane takes part in an election held in etcd under
 `/chalkos/vip`. It campaigns only while its local API server answers `/readyz`. The winner adds
 every VIP to an interface as a /32 or /128 host address, on the interface
-[`vip.interface`](../reference/options.md#chalkosclusterkubernetesvipinterface) names or else the
+`vip.interface` names or else the
 one holding the node's address of that family, and announces it with gratuitous ARP and
 unsolicited neighbour advertisements, so switches and neighbours send its traffic to the new
 holder at once.
@@ -186,7 +186,7 @@ after the firewall started, so a table of chalkos's own, `chalkos-vxlan`, which 
 fills with the addresses it picked, marks such packets, and the firewall accepts packets that
 carry the mark. No VXLAN is accepted while the addresses are being picked or when none are found.
 
-[`chalkos.cluster.kubernetes.vxlanSourceSubnets`](../reference/options.md#chalkosclusterkubernetesvxlansourcesubnets)
+`chalkos.cluster.kubernetes.vxlanSourceSubnets`
 narrows this to sources in the given ranges, one or more per family, which must hold every node's
 addresses and may not overlap the pod or service ranges. With them, the node also drops VXLAN that
 pods send through it to those ranges. Without them, VXLAN is accepted from any source, so pods can
@@ -194,12 +194,12 @@ reach the other nodes' VXLAN port too. The node reads the pod and source ranges 
 `Kubernetes` document; while it cannot, it drops all VXLAN it forwards.
 
 flannel's devices get the MTU of the interface holding the node's address, minus 50.
-[`chalkos.cni.flannel.mtu`](../reference/options.md#chalkoscniflannelmtu) sets the network's MTU
+`chalkos.cni.flannel.mtu` sets the network's MTU
 instead, and is required when the node's address is on a loopback interface. IPv6 VXLAN needs 70
 bytes rather than 50, so with IPv6 in use set it to the network's MTU minus 20.
 
 `chalkos.cni.provider = "none"` installs no pod network and ships every CNI reference plugin, for
-clusters whose [`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests) bring
+clusters whose `chalkos.cluster.manifests` bring
 their own. Opening that network's ports is then up to the role's NixOS modules.
 
 ## How is traffic filtered?
@@ -223,7 +223,7 @@ A node's addresses do not have to come from networkd. A routing daemon, such as 
 extension adds, can announce an address on a loopback or dummy interface. Such a unit orders itself
 before `chalkos-node-addresses.target` and is wanted by it; the preparation starts after the target
 and still waits up to `nodeIP.timeout` for the addresses. An address on a loopback interface needs
-[`chalkos.cni.flannel.mtu`](../reference/options.md#chalkoscniflannelmtu) set, because flannel
+`chalkos.cni.flannel.mtu` set, because flannel
 would take the loopback's MTU. When the option is set, a dummy interface holding a node's address
 needs an MTU of at least its value, 20 more for an IPv6 address. Otherwise the node refuses to
 prepare.
@@ -254,5 +254,5 @@ prepare.
 - [Troubleshooting](../guides/troubleshooting.md#pods-on-different-nodes-cannot-reach-each-other)
   for VXLAN and MTU problems.
 - [Ports and firewall](../reference/ports-and-firewall.md).
-- [`chalkos.cluster.kubernetes.vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses)
-  and [`chalkos.cluster.kubernetes.nodeIP.validSubnets`](../reference/options.md#chalkosclusterkubernetesnodeipvalidsubnets).
+- `chalkos.cluster.kubernetes.vip.addresses`
+  and `chalkos.cluster.kubernetes.nodeIP.validSubnets`.

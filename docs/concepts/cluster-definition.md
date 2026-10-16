@@ -128,17 +128,17 @@ in
 A role is the unit an image is built for: the NixOS modules its nodes run. Every node of a role
 on one platform boots the same image, whatever its Kubernetes kind. A role declares:
 
-- [`nixosModules`](../reference/options.md#chalkosrolesnixosmodules), plain NixOS modules added
+- `nixosModules`, plain NixOS modules added
   to the role's images, for a GPU driver, a monitoring agent or extra kernel
   [module groups](../reference/glossary.md#module-group);
-- [`kubernetes.enable`](../reference/options.md#chalkosroleskubernetesenable), whether its
+- `kubernetes.enable`, whether its
   images run Kubernetes (the default); each node's
-  [`kubernetes.kind`](../reference/options.md#chalkosnodeskuberneteskind) makes it a control
+  `kubernetes.kind` makes it a control
   plane or a worker;
 - `storage`, defaults for its nodes' storage, applied leaf by leaf, so a node overrides one
   value or adds a volume without restating the rest.
 
-[`images`](../reference/options.md#chalkosrolesimages) is the output:
+`images` is the output:
 `chalkos.<cluster>.roles.<role>.images.<platform>` builds the role's image for a platform, and
 only the images asked for are evaluated. [Customise a role](../guides/customise-role.md) shows
 how to extend one.
@@ -146,18 +146,18 @@ how to extend one.
 ## What is a node?
 
 A [node](../reference/glossary.md#node) is a machine of the cluster under
-[`chalkos.nodes`](../reference/options.md#chalkosnodes), named by its attribute. Its options:
+`chalkos.nodes`, named by its attribute. Its options:
 
 | Option | Default | What it sets |
 | --- | --- | --- |
-| [`role`](../reference/options.md#chalkosnodesrole) | none | The role whose image the node runs |
-| [`platform`](../reference/options.md#chalkosnodesplatform) | `metal` | The platform whose image of the role it runs |
-| [`hostname`](../reference/options.md#chalkosnodeshostname) | the node's name | The hostname set at boot |
-| [`network`](../reference/options.md#chalkosnodesnetwork) | none | systemd-networkd networks, netdevs and links, in the shape of NixOS's `systemd.network` |
-| [`labels`](../reference/options.md#chalkosnodeslabels), [`taints`](../reference/options.md#chalkosnodestaints) | none | The Kubernetes Node's labels and taints |
-| [`storage`](../reference/options.md#chalkosnodesstoragesystemdisk) | the role's | The system disk, [VAR](../reference/glossary.md#var), further volumes and encryption |
-| [`kubernetes.nodeIPs`](../reference/options.md#chalkosnodeskubernetesnodeips) | `kubernetes.nodeIP`, else the first static address of each family; none when the node's [`kubernetes.validSubnets`](../reference/options.md#chalkosnodeskubernetesvalidsubnets) or the cluster's [`kubernetes.nodeIP.validSubnets`](../reference/options.md#chalkosclusterkubernetesnodeipvalidsubnets) are set, and the node picks its addresses at boot | The addresses the kubelet registers and a [control plane](../reference/glossary.md#control-plane) advertises |
-| [`time.servers`](../reference/options.md#chalkosnodestimeservers) | the cluster's | Time servers that replace the cluster's |
+| `role` | none | The role whose image the node runs |
+| `platform` | `metal` | The platform whose image of the role it runs |
+| `hostname` | the node's name | The hostname set at boot |
+| `network` | none | systemd-networkd networks, netdevs and links, in the shape of NixOS's `systemd.network` |
+| `labels`, `taints` | none | The Kubernetes Node's labels and taints |
+| `storage` | the role's | The system disk, [VAR](../reference/glossary.md#var), further volumes and encryption |
+| `kubernetes.nodeIPs` | `kubernetes.nodeIP`, else the first static address of each family; none when the node's `kubernetes.validSubnets` or the cluster's `kubernetes.nodeIP.validSubnets` are set, and the node picks its addresses at boot | The addresses the kubelet registers and a [control plane](../reference/glossary.md#control-plane) advertises |
+| `time.servers` | the cluster's | Time servers that replace the cluster's |
 
 A node's name is its name in Kubernetes too, which its kubelet certificate carries. Changing a
 node's platform means installing it again: the node refuses an image of another platform than the
@@ -170,7 +170,7 @@ becomes its next boot.
 ## What is a platform?
 
 A platform is the kind of machine an image runs on, declared under
-[`chalkos.platforms`](../reference/options.md#chalkosplatforms) as a list of NixOS modules that
+`chalkos.platforms` as a list of NixOS modules that
 every role image for it carries before the role's own. chalkos defines two:
 
 - `metal`: the base kernel module groups, with the console on the screen and the first serial
@@ -215,7 +215,7 @@ flowchart LR
 ```
 
 The installer is a layer 2 system too, built from the node modules, the cluster's settings and
-[`chalkos.installer.nixosModules`](../reference/options.md#chalkosinstallernixosmodules), with no
+`chalkos.installer.nixosModules`, with no
 role or platform.
 
 ## What is the manifest?
@@ -413,7 +413,7 @@ The three parts reach the node by different paths:
 - `chalkos.rack.enable` is a cluster setting, so every image of the cluster can read it as
   `config.chalkos.rack.enable`.
 - `chalkos.nodes.<node>.rack.location` is a per-node option. It adds a `Rack` document to the
-  node's [`documents`](../reference/options.md#chalkosnodesdocuments), which chalkctl delivers
+  node's `documents`, which chalkctl delivers
   with the documents it generates.
 - The role module declares the kind `Rack` under
   [`chalkos.kinds`](../reference/options.md#chalkoskinds), so the image accepts its documents, and
@@ -430,7 +430,7 @@ DNS name outside `chalkos.dev`, which chalkos keeps for its own kinds.
 
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) writes the cluster's
 [secrets file](../reference/glossary.md#secrets-file) and its public part, `secrets.pub.json`.
-[`chalkos.osCA`](../reference/options.md#chalkososca) points to the public part, which holds
+`chalkos.osCA` points to the public part, which holds
 certificates and no keys, so it belongs in the repository. It is an input of the images: the role
 images and the installer carry its [OS CA](../reference/glossary.md#os-ca), so chalkd in
 [maintenance mode](../reference/glossary.md#maintenance-mode) accepts only clients with a

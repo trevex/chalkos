@@ -62,7 +62,7 @@ Read it from the top:
 | `failed unit` | Each systemd unit that failed in this boot. | Any line: read that unit's log. |
 
 A control plane's Kubernetes line adds `vip holder` or `vip standby` when
-[`vip.addresses`](../reference/options.md#chalkosclusterkubernetesvipaddresses) is set, and the
+`vip.addresses` is set, and the
 control plane's state, `current` when its API server and etcd serve the node's certificates and the
 API server answers ready.
 
@@ -136,7 +136,7 @@ explains the causes and what comes after.
 
 The Kubernetes line says `preparation failed: no ipv4 node address matches ...`, with the
 selector and the addresses the node has. The node waited
-[`nodeIP.timeout`](../reference/options.md#chalkosclusterkubernetesnodeiptimeout) seconds, 300
+`nodeIP.timeout` seconds, 300
 by default, for an address that matches its fixed `nodeIPs` or its `validSubnets`, and found
 none, so it runs neither the kubelet nor static pods. Check the node's network definition and
 DHCP, and that the subnets list the network the node is on. Then deliver a corrected definition
@@ -179,12 +179,12 @@ definition.
 ### Image pulls fail
 
 Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the mirrors of
-[`chalkos.cluster.registries.mirrors`](../reference/options.md#chalkosclusterregistriesmirrors)
+`chalkos.cluster.registries.mirrors`
 and then the registry itself. Read `containerd.service`'s log on the node for the URL that
 failed. `chalkos-registry-mirrors.service` writes the mirrors from the node's `RegistryMirror`
 documents to `/run/containerd/certs.d/<registry>/hosts.toml`; its log shows when it could not.
 Mirrors must be `https://` unless
-[`allowPlainHTTP`](../reference/options.md#chalkosclusterregistriesallowplainhttp) is set, and a
+`allowPlainHTTP` is set, and a
 cluster without internet access needs every image in a mirror.
 
 ### Pods on different nodes cannot reach each other
@@ -192,12 +192,12 @@ cluster without internet access needs every image in a mirror.
 Pod traffic between nodes travels in flannel's VXLAN, on UDP port 8472.
 
 - A node whose address lies outside
-  [`vxlanSourceSubnets`](../reference/options.md#chalkosclusterkubernetesvxlansourcesubnets)
+  `vxlanSourceSubnets`
   refuses to prepare and says `the node's address ... is outside vxlanSourceSubnets`; the other
   nodes would drop its VXLAN. Widen the ranges, which changes every image.
 - Small packets pass and large ones hang, as with TLS handshakes or large responses: the VXLAN
   MTU is too big for the network. Set
-  [`chalkos.cni.flannel.mtu`](../reference/options.md#chalkoscniflannelmtu) to the network's MTU,
+  `chalkos.cni.flannel.mtu` to the network's MTU,
   minus 20 when IPv6 is in use.
 - A firewall between the nodes drops UDP 8472.
 
@@ -205,7 +205,7 @@ Pod traffic between nodes travels in flannel's VXLAN, on UDP port 8472.
 
 A worker's state ends in `the Node has no ipv6 pod range; the control plane allocates ranges of
 the families the cluster was created with`. The families in
-[`ipFamilies`](../reference/options.md#chalkosclusterkubernetesipfamilies) changed after the
+`ipFamilies` changed after the
 cluster was created, which is not supported. Restore the original families.
 
 ### An upgrade rolled back or stopped
@@ -230,7 +230,7 @@ whose reboot would cost etcd its quorum, or at a drain that does not finish.
 `time: not synchronised; certificates are checked against this clock`. chrony reached none of
 its servers. With the default servers, NTS needs the node to reach them on TCP port 4460 and UDP
 port 123. A network that blocks both needs internal servers in
-[`chalkos.time.servers`](../reference/options.md#chalkostimeservers). Certificates start an hour
+`chalkos.time.servers`. Certificates start an hour
 before they are issued, so a small offset does no harm, but a clock that is days off rejects
 valid certificates.
 

@@ -21,7 +21,7 @@ You need:
 
 - A [cluster definition](../reference/glossary.md#cluster-definition) in a flake, its
   [secrets file](../reference/glossary.md#secrets-file), and
-  [`chalkos.osCA`](../reference/options.md#chalkososca) set to
+  `chalkos.osCA` set to
   `./secrets.pub.json`, as in [Install on bare metal](install-bare-metal.md#before-you-begin).
 - A Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate, `db.key` and `db.crt`, from
   [Sign images for Secure Boot](secure-boot-signing.md). On a VM you own the firmware's variable
@@ -37,7 +37,7 @@ You need:
 A node's platform decides which image it runs. Every image carries the virtio drivers; the `kvm`
 image also writes its console to the first serial port alone and runs the QEMU guest agent,
 which the `metal` image lacks. Set
-[`platform`](../reference/options.md#chalkosnodesplatform) on each VM node, and name the disk by
+`platform` on each VM node, and name the disk by
 the device a virtio block disk gets, `/dev/vda`:
 
 ```nix title="nodes.nix"

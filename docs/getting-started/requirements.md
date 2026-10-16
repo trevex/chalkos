@@ -17,10 +17,10 @@ as a virtual machine under KVM.
 
 | Requirement | What chalkos needs | Without it |
 | --- | --- | --- |
-| CPU architecture | x86-64. Images are built for [`chalkos.cluster.system`](../reference/options.md#chalkosclustersystem), `x86_64-linux` by default. | [chalkd](../reference/glossary.md#chalkd) and the partition layout know arm64, but no arm64 image has been built or tested. |
+| CPU architecture | x86-64. Images are built for `chalkos.cluster.system`, `x86_64-linux` by default. | [chalkd](../reference/glossary.md#chalkd) and the partition layout know arm64, but no arm64 image has been built or tested. |
 | Firmware | UEFI. systemd-boot and the [UKI](../reference/glossary.md#uki) are EFI binaries. | A BIOS-only machine does not boot an image. |
 | [Secure Boot](../reference/glossary.md#secure-boot) | On, with the certificate that signs the images in the firmware's [db](../reference/glossary.md#db-and-dbx). On a real machine chalkos does not enrol keys; the operator does, as [Sign images for Secure Boot](../guides/secure-boot-signing.md) shows. chalklab enrols its own keys in the lab's virtual machines. | The image boots, but nothing verifies the UKI, so nothing verifies the store either. [PCR 7](../reference/glossary.md#pcr-7) then records Secure Boot as off, a state that any boot chain with Secure Boot off reproduces, so the [TPM](../reference/glossary.md#tpm) unseals STATE and VAR for whatever boots on the machine. chalkd checks the signatures of an upgrade's UKI and boot loader against db and dbx only while Secure Boot is enforced. |
-| TPM | TPM 2.0, for the default encryption mode `tpm2`, which seals the keys of [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted volumes to PCR 7. | Install fails with mode `tpm2`. Set [`chalkos.roles.<name>.storage.encryption.mode`](../reference/options.md#chalkosrolesstorageencryptionmode) to `none`, which leaves STATE and the node's secrets unencrypted on the disk. |
+| TPM | TPM 2.0, for the default encryption mode `tpm2`, which seals the keys of [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted volumes to PCR 7. | Install fails with mode `tpm2`. Set `chalkos.roles.<name>.storage.encryption.mode` to `none`, which leaves STATE and the node's secrets unencrypted on the disk. |
 
 A node's memory follows mostly from its workloads. Measured before any workload, a single
 [control plane](../reference/glossary.md#control-plane) uses about 0.7 GiB after its bootstrap and 1.1 GiB after a reboot, each control
@@ -36,7 +36,7 @@ The sizes are options of a role's NixOS modules.
 | Store, [slot](../reference/glossary.md#slot) A and slot B | 3 GiB each | [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize) |
 | Store hash tree, slot A and slot B | 128 MiB each | [`chalkos.disk.storeVeritySize`](../reference/options.md#chalkosdiskstoreveritysize) |
 | STATE | 128 MiB | [`chalkos.disk.stateSize`](../reference/options.md#chalkosdiskstatesize) |
-| VAR | the rest of the disk | [`chalkos.nodes.<name>.storage.var.size`](../reference/options.md#chalkosnodesstoragevarsize) |
+| VAR | the rest of the disk | `chalkos.nodes.<name>.storage.var.size` |
 
 The system region takes about 7.4 GiB. VAR holds etcd, containerd's images and the logs, so its
 size follows from the workloads; a lab's 16 GiB disk leaves about 8.6 GiB for it, enough to try
@@ -46,10 +46,10 @@ chalkos. [Storage and encryption](../concepts/storage.md) explains the layout an
 
 | Requirement | What chalkos needs |
 | --- | --- |
-| Addresses | Static addresses declared in the node's systemd-networkd configuration, [`chalkos.nodes.<name>.network`](../reference/options.md#chalkosnodesnetwork), or DHCP on interfaces that no network of the node matches. A control plane that joined etcd keeps the addresses it joined with. |
+| Addresses | Static addresses declared in the node's systemd-networkd configuration, `chalkos.nodes.<name>.network`, or DHCP on interfaces that no network of the node matches. A control plane that joined etcd keeps the addresses it joined with. |
 | Ports | chalkd listens on TCP 50000 and a control plane's API server on TCP 6443; [Ports and firewall](../reference/ports-and-firewall.md) lists every port between nodes and from operators. |
-| Time | Reachable time servers, because certificates are checked against the clock and a node whose clock is off reaches no other node. The default servers are `ptbtime1.ptb.de` to `ptbtime3.ptb.de`, authenticated with NTS; [`chalkos.time.servers`](../reference/options.md#chalkostimeservers) replaces them. |
-| Container registries | Access to `registry.k8s.io` for the control plane, etcd, kube-proxy, CoreDNS and pause images and to `ghcr.io` for flannel, or mirrors of them in [`chalkos.cluster.registries.mirrors`](../reference/options.md#chalkosclusterregistriesmirrors). The kubelet and containerd are in the image. |
+| Time | Reachable time servers, because certificates are checked against the clock and a node whose clock is off reaches no other node. The default servers are `ptbtime1.ptb.de` to `ptbtime3.ptb.de`, authenticated with NTS; `chalkos.time.servers` replaces them. |
+| Container registries | Access to `registry.k8s.io` for the control plane, etcd, kube-proxy, CoreDNS and pause images and to `ghcr.io` for flannel, or mirrors of them in `chalkos.cluster.registries.mirrors`. The kubelet and containerd are in the image. |
 
 ## Operator's machine
 

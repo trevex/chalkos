@@ -18,8 +18,8 @@ store or a binary cache, and nodes never hold it.
 !!! note "chalkos does not enrol keys"
 
     Getting the certificate into each machine's db is a step you do with the firmware's own
-    tools, described below. [`chalkos.secureBoot.enrollment`](../reference/options.md#chalkossecurebootenrollment)
-    and [`chalkos.secureBoot.require`](../reference/options.md#chalkossecurebootrequire) are
+    tools, described below. `chalkos.secureBoot.enrollment`
+    and `chalkos.secureBoot.require` are
     reserved for key enrolment by [chalkd](../reference/glossary.md#chalkd) and have no effect yet. Only [chalklab](../reference/glossary.md#chalklab) enrols keys, its
     own, in the firmware of its virtual machines.
 

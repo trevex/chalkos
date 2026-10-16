@@ -9,7 +9,7 @@ The cluster's [installer](../reference/glossary.md#installer) takes its addresse
 every Ethernet port and carries the drivers of the base [module groups](../reference/glossary.md#module-group).
 When a machine has no DHCP on its network, sits on a VLAN, needs a bond, or has a network card
 or storage controller the installer cannot drive, add NixOS modules to the installer with
-[`chalkos.installer.nixosModules`](../reference/options.md#chalkosinstallernixosmodules), build
+`chalkos.installer.nixosModules`, build
 it again and sign it. The change affects the installer alone; the role images and installed nodes
 stay as they are.
 
@@ -24,7 +24,7 @@ it, and the others fall back to DHCP.
 ## Before you begin
 
 You need the [cluster definition](../reference/glossary.md#cluster-definition) with
-[`chalkos.osCA`](../reference/options.md#chalkososca) set, the [db](../reference/glossary.md#db-and-dbx) key and
+`chalkos.osCA` set, the [db](../reference/glossary.md#db-and-dbx) key and
 certificate from [Sign images for Secure Boot](secure-boot-signing.md), and the MAC addresses of
 the machines' ports, from the BMC, the firmware setup or the machines' labels.
 [Install on bare metal](install-bare-metal.md) builds the unchanged installer.

@@ -21,7 +21,7 @@ expiry and backdated by an hour, so a node whose clock lags slightly still accep
 
 | CA or key | Lifetime | Issues or does | Held by |
 | --- | --- | --- | --- |
-| [OS CA](../reference/glossary.md#os-ca) | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with [`chalkos.osCA`](../reference/options.md#chalkososca) |
+| [OS CA](../reference/glossary.md#os-ca) | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with `chalkos.osCA` |
 | [Node CA](../reference/glossary.md#node-ca) | 5 years | Node certificates, for TLS servers and clients only; path length 0 | The secrets file and every control plane |
 | Kubernetes CA | 10 years | The API server's, controllers' and kubelets' certificates and admin kubeconfigs | The secrets file and every control plane; workers get its certificate |
 | Front-proxy CA | 10 years | The certificate the API server presents to aggregated API servers | The secrets file and every control plane |
@@ -145,7 +145,7 @@ it, so the certificates it issues get shorter in its last year.
 Certificates are checked against the node's clock, so a node whose clock is off refuses valid
 certificates. Nodes keep time with chrony, authenticated with NTS by default, against the
 Physikalisch-Technische Bundesanstalt's servers `ptbtime1.ptb.de` to `ptbtime3.ptb.de` unless
-[`chalkos.time.servers`](../reference/options.md#chalkostimeservers) names others. chrony steps a
+`chalkos.time.servers` names others. chrony steps a
 clock that is more than a second off during its first three updates, instead of slewing it for
 hours. The status reports the clock as `time: synchronised to <source>, offset <seconds> s`, or
 `time: not synchronised; certificates are checked against this clock`.

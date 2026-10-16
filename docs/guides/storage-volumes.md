@@ -82,7 +82,7 @@ volume from a running node.
 
 ## Size VAR
 
-[`storage.var.size`](../reference/options.md#chalkosnodesstoragevarsize) limits VAR; `null`, the
+`storage.var.size` limits VAR; `null`, the
 default, fills the rest of the system disk. Sizes are a number with an optional `K`, `M`, `G`, `T`
 or `P`, in units of 1024.
 
@@ -149,11 +149,11 @@ Two volumes may not reference the same disk, and a volume's disk may not be the 
 
 ## Choose a format and a mount point
 
-[`format`](../reference/options.md#chalkosnodesstoragevolumesformat) is `ext4` by default, or
+`format` is `ext4` by default, or
 `xfs`, `btrfs` or `swap`. `null` leaves a raw block device for software that brings its own
 format, such as Ceph's OSDs.
 
-[`mountPoint`](../reference/options.md#chalkosnodesstoragevolumesmountpoint) mounts the volume;
+`mountPoint` mounts the volume;
 `null` leaves it unmounted. The rules come from what the unit files and the image allow:
 
 - an absolute path of letters, digits, `.`, `_`, `-` and `/`;
@@ -170,7 +170,7 @@ mount point can start before the volume is mounted.
 ## Choose the encryption
 
 A volume is encrypted like the node, by
-[`storage.encryption.mode`](../reference/options.md#chalkosnodesstorageencryptionmode), which is
+`storage.encryption.mode`, which is
 `tpm2` by default: LUKS2 with a key the [TPM](../reference/glossary.md#tpm) seals to
 [PCR 7](../reference/glossary.md#pcr-7). A volume's own `encryption.mode`, and
 `var.encryption.mode` for VAR, override it:
@@ -189,7 +189,7 @@ appears: chalkctl asks for it, or reads it from `--password-file`.
 
 ## Pass extra repart keys
 
-[`repart`](../reference/options.md#chalkosnodesstoragevolumesrepart) adds keys to the volume's
+`repart` adds keys to the volume's
 systemd-repart definition, merged last:
 
 ```nix
@@ -300,6 +300,6 @@ reinstalled to use the new disk.
 
 - [Storage and encryption](../concepts/storage.md) explains pinning, unlocking and the
   fallback.
-- [The volume options](../reference/options.md#chalkosnodesstoragevolumes) list every option
+- The volume options list every option
   with its default.
 - [Recover a node](recover-node.md) unlocks a node whose TPM refuses.

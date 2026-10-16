@@ -49,7 +49,7 @@ system region.
 | `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot, or install from the installer |
 | `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
 | `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the [TPM](glossary.md#tpm) by default | first boot, install |
-| `50-var` | `var` | [`var.size`](options.md#chalkosnodesstoragevarsize), rest of the disk | ext4 | node's policy | install |
+| `50-var` | `var` | `var.size`, rest of the disk | ext4 | node's policy | install |
 | `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later config |
 
 A volume with a disk of its own is the only partition on that disk, from the definition
@@ -233,7 +233,7 @@ another disk carrying the same image or the same labels for its own.
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
-| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster definition sets [`chalkos.osCA`](options.md#chalkososca). |
+| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster definition sets `chalkos.osCA`. |
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images of a role with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
 | `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |

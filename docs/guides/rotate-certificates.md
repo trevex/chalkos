@@ -193,7 +193,7 @@ themselves at the switch: it gives each worker a kubelet client certificate of t
 has every node's kubelet renew its serving certificate.
 
 At the pause after accept, chalkos's add-ons and the workloads of
-[`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests) have restarted and
+`chalkos.cluster.manifests` have restarted and
 trust both CAs. Restart your own workloads that talk to the API server, so they trust both CAs
 too; pods started from then on do. Issue new kubeconfigs with `chalkctl kubeconfig`. Then
 resume: the switch makes the new CAs issue, and the refresh gives the kubelets new client and

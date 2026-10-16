@@ -18,7 +18,7 @@ node by node, so the cluster keeps its etcd quorum and its workloads keep runnin
 An upgrade replaces the whole image with a new [image version](../reference/glossary.md#image-version).
 There are no packages to update on a node and no separate Kubernetes upgrade: a new Kubernetes
 release is a new image built with a new
-[`chalkos.cluster.kubernetes.package`](../reference/options.md#chalkosclusterkubernetespackage),
+`chalkos.cluster.kubernetes.package`,
 installed like any other.
 
 The node receives three parts of the image, in this order:
