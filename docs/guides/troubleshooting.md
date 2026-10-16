@@ -102,9 +102,9 @@ follows it; it is read-only, so a lab node cannot answer a passphrase prompt.
 ## Open a shell on a node
 
 Nodes have no logins and no SSH. With
-[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in a role's NixOS modules, the
-role image carries coreutils, grep, sed, findutils, procps, iproute2, util-linux and, on
-Kubernetes roles, crictl; systemd, bash, less, nftables and kmod are always there. A privileged
+[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in a variant's NixOS modules,
+its images carry coreutils, grep, sed, findutils, procps, iproute2, util-linux and, on images
+with Kubernetes, crictl; systemd, bash, less, nftables and kmod are always there. A privileged
 pod on the node then reaches them through the host's root:
 
 ```sh
@@ -135,12 +135,14 @@ explains the causes and what comes after.
 ### The node has no address
 
 The Kubernetes line says `preparation failed: no ipv4 node address matches ...`, with the
-selector and the addresses the node has. The node waited
-`nodeIP.timeout` seconds, 300
-by default, for an address that matches its fixed `nodeIPs` or its `validSubnets`, and found
-none, so it runs neither the kubelet nor static pods. Check the node's network definition and
-DHCP, and that the subnets list the network the node is on. Then deliver a corrected definition
-with `chalkctl apply-config <node>`, or reboot once the network is right.
+selector and the addresses the node has. The node waited `spec.nodeIP.timeout` of the cluster's
+[`Kubernetes`](../reference/kinds.md#kubernetes) document, 300 seconds by default, for an address
+that matches its fixed `nodeIPs` or its `validSubnets` in its
+[`Kubelet`](../reference/kinds.md#kubelet) document, or the cluster's `nodeIP.validSubnets`, and
+found none, so it runs neither the kubelet nor static pods. Check the node's `Network` documents
+and DHCP, and that the subnets list the network the node is on. Then deliver the corrected
+documents with `chalkctl apply-config <node> --secrets=secrets.age`, or reboot once the network
+is right.
 
 A control plane that lost an address it was pinned to says `pinned address ... is not present`
 instead; see [Recover a node](recover-node.md#a-control-plane-cannot-rejoin-etcd).
@@ -173,19 +175,18 @@ kubectl get csr
 ```
 
 A pending `kubernetes.io/kubelet-serving` request usually asks for an address the Node does not
-report. Check the node's addresses in `kubectl get node <node> -o wide` against its network
-definition.
+report. Check the node's addresses in `kubectl get node <node> -o wide` against its `Network`
+and `Kubelet` documents.
 
 ### Image pulls fail
 
-Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the mirrors of
-`chalkos.cluster.registries.mirrors`
-and then the registry itself. Read `containerd.service`'s log on the node for the URL that
-failed. `chalkos-registry-mirrors.service` writes the mirrors from the node's `RegistryMirror`
-documents to `/run/containerd/certs.d/<registry>/hosts.toml`; its log shows when it could not.
-Mirrors must be `https://` unless
-`allowPlainHTTP` is set, and a
-cluster without internet access needs every image in a mirror.
+Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the mirrors of the
+node's [`RegistryMirror`](../reference/kinds.md#registrymirror) documents and then the registry
+itself. Read `containerd.service`'s log on the node for the URL that failed.
+`chalkos-registry-mirrors.service` writes the mirrors to
+`/run/containerd/certs.d/<registry>/hosts.toml`; its log shows when it could not. Mirrors must be
+`https://` unless `allowPlainHTTP` is set, and a cluster without internet access needs every
+image in a mirror.
 
 ### Pods on different nodes cannot reach each other
 
@@ -229,10 +230,9 @@ whose reboot would cost etcd its quorum, or at a drain that does not finish.
 
 `time: not synchronised; certificates are checked against this clock`. chrony reached none of
 its servers. With the default servers, NTS needs the node to reach them on TCP port 4460 and UDP
-port 123. A network that blocks both needs internal servers in
-`chalkos.time.servers`. Certificates start an hour
-before they are issued, so a small offset does no harm, but a clock that is days off rejects
-valid certificates.
+port 123. A network that blocks both needs internal servers in `spec.servers` of the node's
+[`TimeSync`](../reference/kinds.md#timesync) document. Certificates start an hour before they are
+issued, so a small offset does no harm, but a clock that is days off rejects valid certificates.
 
 ### The lab does not start
 
@@ -257,7 +257,8 @@ A report someone can act on holds:
 - the full output of `chalkctl status <node>` for the nodes involved;
 - the logs of the units involved, from `chalkctl logs <node> --unit=<unit>`;
 - for a boot problem, the console output, from the BMC or `chalklab console <node> -f=false`;
-- the parts of the cluster definition that concern the problem, without secrets;
+- the config documents and `mkImages` modules that concern the problem, without `Secret`
+  documents;
 - the commands you ran and their full output.
 
 Leave out the secrets file, client files, kubeconfigs and recovery keys: each grants access to

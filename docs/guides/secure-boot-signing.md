@@ -11,16 +11,14 @@ certificate in its [db](../reference/glossary.md#db-and-dbx) signed it. chalkos 
 binaries per image, systemd-boot and the [UKI](../reference/glossary.md#uki), and the UKI's
 signature covers the whole read-only store through the [root hash](../reference/glossary.md#root-hash)
 on its command line. This guide creates the key and certificate, gets the firmware of your
-machines to trust the certificate, and signs the [installer](../reference/glossary.md#installer) and the role images with the key.
+machines to trust the certificate, and signs the [installer](../reference/glossary.md#installer) and the node images with the key.
 Nix builds images unsigned; you sign them on your workstation, so the key never enters the Nix
 store or a binary cache, and nodes never hold it.
 
 !!! note "chalkos does not enrol keys"
 
     Getting the certificate into each machine's db is a step you do with the firmware's own
-    tools, described below. `chalkos.secureBoot.enrollment`
-    and `chalkos.secureBoot.require` are
-    reserved for key enrolment by [chalkd](../reference/glossary.md#chalkd) and have no effect yet. Only [chalklab](../reference/glossary.md#chalklab) enrols keys, its
+    tools, described below. Only [chalklab](../reference/glossary.md#chalklab) enrols keys, its
     own, in the firmware of its virtual machines.
 
 ## Before you begin
@@ -52,10 +50,10 @@ The certificate in db may also be a CA that signed the signing certificate: chal
 signer that a db certificate issued. A CA lets you keep its key offline and sign with a
 short-lived one, at the cost of one more key to manage.
 
-`db.crt` is public; commit it to the flake. `db.key` lets anyone sign a boot image every machine
-of the cluster accepts, and any image signed with it unlocks the nodes' disks. Keep it out of the
-flake and out of the Nix store: in a secrets manager or on the machine that signs, readable by you
-alone.
+`db.crt` is public; commit it to the cluster's repository, from where you pass it to `--sign-cert`. `db.key`
+lets anyone sign a boot image every machine of the cluster accepts, and any image signed with it
+unlocks the nodes' disks. Keep it out of the repository and out of the Nix store: in a secrets
+manager or on the machine that signs, readable by you alone.
 
 ## Check images against the certificate
 
@@ -97,8 +95,8 @@ ask for the recovery key.
 
 ## Sign the installer and the images
 
-Every binary that firmware or systemd-boot starts must be signed: the installer's, the
-role image's when a machine boots it directly, and each new UKI an upgrade brings. chalkctl signs
+Every binary that firmware or systemd-boot starts must be signed: the installer's, a node
+image's when a machine boots it directly, and each new UKI an upgrade brings. chalkctl signs
 in three places.
 
 [`chalkctl sign`](../reference/cli/chalkctl_sign.md) signs a disk image in place: the boot loader
@@ -114,15 +112,16 @@ chalkctl sign --image=installer.iso --repart-json=result/chalkos-installer_0.1.0
   --key=db.key --cert=db.crt
 ```
 
-Sign the installer this way, and a role image that a VM boots directly. Ctrl+C during the signing
+Sign the installer this way, and a node image that a VM boots directly. Ctrl+C during the signing
 can leave an image partly signed; sign a fresh copy then.
 
-`chalkctl install` with `--sign-key` and `--sign-cert` signs the role image a machine receives
-from the installer. chalkctl copies the UKI and the boot loader off the image, signs the copies
-and streams them with the store, so the image in the Nix store stays as it is:
+`chalkctl install` with `--sign-key` and `--sign-cert` signs the image a machine receives
+from the installer, the image directory the node's `Image` document names. chalkctl copies the
+UKI and the boot loader off the image, signs the copies and streams them with the store, so the
+image in the Nix store stays as it is:
 
 ```sh
-chalkctl install <node> --address=<address> --fingerprint=<fingerprint> \
+chalkctl install <node> --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
   --sign-key=db.key --sign-cert=db.crt
 ```
 
@@ -151,8 +150,8 @@ console asks for the node's [recovery key](../reference/glossary.md#recovery-key
 
 That has three consequences:
 
-- Sign the installer and the role images with the same key. The installer seals STATE as PCR 7
-  reads while the installer runs, so a role image signed with another key asks for the recovery
+- Sign the installer and the node images with the same key. The installer seals STATE as PCR 7
+  reads while the installer runs, so an image signed with another key asks for the recovery
   key on its first boot.
 - Keep one key for the life of every installed node. chalkos has no command that seals the disk
   keys again to a new PCR 7 value, so a node upgraded to an image signed with a new key asks for

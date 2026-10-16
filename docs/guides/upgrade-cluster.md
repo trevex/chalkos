@@ -7,7 +7,8 @@ description: "Roll a new chalkos or Kubernetes version through a cluster, node b
 
 An [upgrade](../reference/glossary.md#upgrade) installs a new [image](../reference/glossary.md#image)
 on every node and reboots the node into it. Any change to what the image holds goes this way: a
-new chalkos release, a new Kubernetes release, a change to a role's NixOS modules.
+new chalkos release, a new Kubernetes release, a change to a
+[variant](../reference/glossary.md#variant)'s NixOS modules.
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) does it for the whole cluster: it
 writes each node's inactive [slot](../reference/glossary.md#slot), drains the node, reboots it
 and waits until the new image is found healthy, [control planes](../reference/glossary.md#control-plane) one at a time and the other nodes
@@ -31,16 +32,36 @@ PodDisruptionBudgets.
 
 ## Change the image and its version
 
-Every role image carries a version, `system.image.version`, which names its
+Every image carries a version, `system.image.version`, which names its
 [UKI](../reference/glossary.md#uki) and its slot's partitions, within the rules
-[The image](../concepts/image.md#what-may-an-image-version-be) gives. Set it in the role's NixOS
-modules, for every role whose image changes:
+[The image](../concepts/image.md#what-may-an-image-version-be) gives. Set it in the NixOS
+modules of every variant whose image changes, in the call of
+[`chalkos.lib.mkImages`](../reference/options.md) in `flake.nix`. In the homelab example:
 
-```nix title="cluster.nix"
+```nix title="flake.nix"
 {
-  chalkos.roles.node.nixosModules = [ { system.image.version = "1.5.0"; } ];
+  description = "A chalkos home lab cluster";
+
+  inputs.chalkos.url = "github:trevex/chalkos";
+
+  outputs =
+    { chalkos, ... }:
+    let
+      images = chalkos.lib.mkImages {
+        platforms = [ "metal" ];
+        variants.node.modules = [
+          ./extensions/rack.nix
+          { system.image.version = "1.5.0"; }
+        ];
+      };
+    in
+    {
+      packages.x86_64-linux.node-metal = images.images.node-metal;
+    };
 }
 ```
+
+A version set in `modules`, beside `variants`, applies to every variant's images.
 
 Raise the version whenever the image changes, even when you only changed a module. A node
 refuses an image of the version it runs with a different store, because the version names its
@@ -56,22 +77,33 @@ Then make the change itself:
     ```
 
 - A new Kubernetes release: set
-  [`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage).
-  Every role image carries the kubelet, so every role gets a new version. Move one minor release
-  at a time, as the Kubernetes version skew policy requires; `chalkctl upgrade` upgrades the
-  control planes before the [workers](../reference/glossary.md#worker), which keeps the kubelets no newer than the API server.
+  [`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage) in the
+  variant's modules. Every image with Kubernetes carries the kubelet, so every such variant gets
+  a new version. Move one minor release at a time, as the Kubernetes version skew policy
+  requires; `chalkctl upgrade` upgrades the control planes before the
+  [workers](../reference/glossary.md#worker), which keeps the kubelets no newer than the API
+  server.
 
 ## Decide how the images are built and signed
 
 Without `--image`, `chalkctl upgrade` gives each node the image its `Image` document names, the
-directory of an image build. Build the images first, where the `Image` documents point, and
-check the nodes' config against them with `chalkctl validate`. A node that runs another platform
-than its `Image` stops the run before any node is sent anything.
+[image directory](../reference/glossary.md#image-directory) of a build. Build the images first,
+where the `Image` documents point, and check the nodes' config against them with
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md). The homelab example's `Image`
+names `../images/node-metal`, relative to `cluster/cluster.yaml`:
 
 ```sh
-nix build .#chalkos.<cluster>.roles.node.images.metal -o images/node-metal
+nix build .#node-metal -o images/node-metal
 chalkctl validate
 ```
+
+`validate` checks each node's config against the new image's schemas, offline. `chalkctl upgrade`
+runs the same check before it drains any node and stops the run on a config the new image does
+not accept, so fix it now:
+[Apply config that needs the new image](#apply-config-that-needs-the-new-image) says how. A node
+that runs another platform than its `Image` stops the run before any node is sent anything. chalkctl
+compares no variant: a node whose `Image` names another variant's build gets that image, and
+chalkctl prints the change.
 
 With `--image`, it installs an image you built before, a raw image with `repart-output.json`
 next to it or an image directory, on the nodes that run that image's variant, or on the nodes
@@ -147,6 +179,35 @@ Control planes go first, one at a time. Workers and nodes without Kubernetes fol
 Raise `--max-unavailable` when the workloads have spare capacity: each batch takes its nodes'
 capacity away for one reboot.
 
+## Apply config that needs the new image
+
+An upgrade sends images, never config. With an inventory, chalkctl checks each node's files
+against the image the node gets before it drains any node, and stops the run with
+`the config of <node>: ...` when the image does not accept them, such as a document of a kind its
+variant no longer declares. The node checks the config it stores against the new image's schemas
+too, read from the slot it has just written, before the image becomes its next boot. A stored
+config the files no longer match, such as one whose removed documents were not delivered yet,
+stops the upgrade of that node with
+`the node's config does not suit the image: ...; apply config both images accept with chalkctl apply-config, then upgrade`.
+Remove such documents from the node's files and deliver the config before the upgrade:
+
+```sh
+chalkctl apply-config <node> --secrets=secrets.age
+```
+
+Config that only the new image accepts, such as a document of a kind an extension of the new
+image declares, waits until the node runs that image: the running image would refuse it. Add it
+to the node's files after the upgrade, check it and deliver it:
+
+```sh
+chalkctl validate <node>
+chalkctl apply-config <node> --secrets=secrets.age
+```
+
+`<node>` is the node's name in the inventory. Until then
+[`chalkctl status`](../reference/cli/chalkctl_status.md) reports that the node runs another config
+than the inventory gives it.
+
 ## Check that it worked
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) names the version a node booted and
@@ -188,7 +249,8 @@ for as long as the failed image stays on the disk. With them:
 1. Find the cause. The journal lines name what the health check found missing: a failed unit
    on a node without Kubernetes, the kubelet, the Node's registration, the API server or the
    [etcd member](../reference/glossary.md#etcd-member). [Troubleshooting](troubleshooting.md) helps from there.
-2. Fix the definition, raise the version and run `chalkctl upgrade` again. chalkctl refuses to
+2. Fix the image's modules, raise the version, build the image again and run `chalkctl upgrade`
+   again. chalkctl refuses to
    install 1.5.0 again on a node that fell back from it, so a known-bad image never boots twice
    by accident.
 3. When the cause was outside the image, a switch port that was down for example, install the
@@ -234,8 +296,9 @@ Keep the previous commit, or the image directory, until the new version has prov
   falls back to. Wait for the check, at most `healthTimeout` per try.
 - `Secure Boot would refuse the UKI`: the image is unsigned or signed with a key the firmware's db
   does not hold. Sign it with the db key.
-- `w1 runs an image built for kvm, but its Image node-metal is built for metal`: changing a
-  node's platform is a reinstall, not an upgrade.
+- `w1 runs an image built for kvm, but its Image node-metal is built for metal; changing a node's platform is a reinstall`:
+  the node's `Image` names a build of another platform. Changing a node's platform is a
+  reinstall, not an upgrade.
 - A drain that does not finish within `--timeout` leaves the node cordoned and stops the run.
   A PodDisruptionBudget that allows no eviction is the usual cause; `kubectl get pdb -A` shows
   it.

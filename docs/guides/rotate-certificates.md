@@ -14,9 +14,11 @@ kubeconfig.
 
 ## Before you begin
 
-- The secrets file and the cluster's flake. Every command on this page needs the secrets file.
-- For a rotation, every node of the [cluster definition](../reference/glossary.md#cluster-definition) running and reachable: each phase waits
+- The secrets file and the cluster's [inventory](../reference/glossary.md#inventory). Every
+  command on this page needs the secrets file.
+- For a rotation, every node of the inventory running and reachable: each phase waits
   until each node confirms it, and a node that does not answer stops the phase until it does.
+
 - [Certificates](../concepts/certificates.md) shows the hierarchy of CAs this guide changes.
 
 ## Give someone access to the nodes
@@ -56,7 +58,7 @@ the API server.
 
 Nodes with Kubernetes renew their [node certificates](../reference/glossary.md#node-certificate)
 through a [control plane](../reference/glossary.md#control-plane) once two thirds of the year's lifetime have passed. Two kinds of node
-need [`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose role
+need [`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose image
 has no Kubernetes, which has no control plane to ask, and a node whose certificate expired, for
 example after months switched off.
 
@@ -192,8 +194,8 @@ The refresh delivers nothing to control planes, which issued their kubelet clien
 themselves at the switch: it gives each worker a kubelet client certificate of the new CA, then
 has every node's kubelet renew its serving certificate.
 
-At the pause after accept, chalkos's add-ons and the workloads of
-`chalkos.cluster.manifests` have restarted and
+At the pause after accept, chalkos's add-ons and the workloads of the cluster's
+[`Addon`](../reference/kinds.md#addon) documents have restarted and
 trust both CAs. Restart your own workloads that talk to the API server, so they trust both CAs
 too; pods started from then on do. Issue new kubeconfigs with `chalkctl kubeconfig`. Then
 resume: the switch makes the new CAs issue, and the refresh gives the kubelets new client and
@@ -268,7 +270,7 @@ expiry, and the node certificate's line names a renewal that is failing.
 - `secrets.age changed since chalkctl read it and was left as it is`: something else, an editor
   or a `git checkout`, changed the file during the command. Look at what changed it, then run
   the command again.
-- A node unreachable for good blocks every phase. Remove it from the cluster definition, or
+- A node unreachable for good blocks every phase. Remove it from the inventory, or
   reinstall it, before you resume.
 
 ## What next

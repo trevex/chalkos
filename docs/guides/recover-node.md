@@ -182,7 +182,7 @@ load:
   medium is still attached and comes first in the boot order. Remove the medium or fix the
   boot order, and reboot.
 - The install did not finish. Run `chalkctl install` again; it continues an unfinished install
-  of the node's role on the same disk.
+  of the node on the same disk.
 
 A node in maintenance mode answers `chalkctl logs` and `chalkctl reboot` with `--fingerprint`
 or `--insecure`, so you can read why an install failed:
@@ -194,7 +194,8 @@ chalkctl logs <node> --insecure --unit=chalkd.service
 ## Reinstall a node
 
 Reinstalling gives a node a new disk layout, new keys sealed to its TPM and a fresh VAR, from
-the [cluster definition](../reference/glossary.md#cluster-definition). Everything on its disks is lost, so move workloads off first.
+the node's config in the [inventory](../reference/glossary.md#inventory)'s files. Everything on
+its disks is lost, so move workloads off first.
 
 1. For a control plane, take it out of etcd first, with `chalkctl etcd leave <node>`, so the
    others keep a correct membership. For a worker, drain it with `kubectl drain <node>`.
@@ -203,7 +204,7 @@ the [cluster definition](../reference/glossary.md#cluster-definition). Everythin
 3. Install it, letting the installer replace what the disk holds:
 
     ```sh
-    chalkctl install <node> --fingerprint=<fingerprint> --wipe-disk
+    chalkctl install <node> --secrets=secrets.age --fingerprint=<fingerprint> --wipe-disk
     ```
 
     `<fingerprint>` is the one the console shows.
