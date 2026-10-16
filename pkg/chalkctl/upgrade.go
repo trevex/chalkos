@@ -305,12 +305,13 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			continue
 		}
 		r.nodes[name] = n
+		// A client file alone needs --image, so without one the cluster definition names the role.
 		role := node.Role
-		switch {
-		case img != nil:
+		if img != nil {
 			role = img.info.Variant()
-		case r.cluster.partial:
-			role = info.Variant
+		}
+		if info.Variant != "" && info.Variant != role {
+			r.say("%s runs the variant %s; it gets the image of %s", name, info.Variant, role)
 		}
 		key := [2]string{role, info.Platform}
 		if groups[key] == nil {

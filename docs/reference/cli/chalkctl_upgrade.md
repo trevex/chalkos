@@ -17,8 +17,8 @@ each group's image is built from the cluster definition; with --image the nodes 
 role get it, or those --nodes names whatever their role, and nodes on another platform are
 skipped and named. A node that runs on another platform than the cluster definition declares
 stops the run before any node is sent anything. A node may get an image of another role than the
-one it runs; it checks its stored config against the image before the image becomes its next
-boot.
+one it runs, which chalkctl prints; the node checks its stored config against the image before
+the image becomes its next boot.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy

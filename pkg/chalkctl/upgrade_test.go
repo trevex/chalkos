@@ -1128,6 +1128,9 @@ func TestUpgradeNamedNodeOfAnotherRole(t *testing.T) {
 	if v := l.versions(); v["cp1"] != "0.2.0" || v["cp2"] != "0.1.0" || v["w1"] != "0.1.0" {
 		t.Errorf("the nodes run %v", v)
 	}
+	if want := "cp1 runs the variant cp; it gets the image of w"; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("stdout = %q, want %q", l.ta.stdout, want)
+	}
 }
 
 // TestUpgradeWithAnImageGivesItToANodeThatRunsAnotherRole installs the image on every node the
@@ -1140,5 +1143,25 @@ func TestUpgradeWithAnImageGivesItToANodeThatRunsAnotherRole(t *testing.T) {
 	}
 	if v := l.versions(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
 		t.Errorf("the nodes run %v", v)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w2 runs the variant plain; it gets the image of w") || strings.Contains(out, "w1 runs the variant") {
+		t.Errorf("stdout = %q, want a notice for w2 alone", out)
+	}
+}
+
+// TestUpgradeBuildsTheDefinitionsImageForANodeThatRunsAnotherRole gives a node the image of the
+// role the cluster definition gives it, without --image, and names the variant it runs.
+func TestUpgradeBuildsTheDefinitionsImageForANodeThatRunsAnotherRole(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	l.nodes["w2"].role = "plain"
+	images := map[string]string{`roles."w".images."metal"`: testUpgradeImage(t, "w", "0.2.0")}
+	if _, err := l.upgradeBuilding(images, "--nodes", "w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if v := l.versions(); v["w2"] != "0.2.0" || v["w1"] != "0.1.0" {
+		t.Errorf("the nodes run %v", v)
+	}
+	if want := "w2 runs the variant plain; it gets the image of w"; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("stdout = %q, want %q", l.ta.stdout, want)
 	}
 }

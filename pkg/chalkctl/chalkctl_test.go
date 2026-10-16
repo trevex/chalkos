@@ -1228,6 +1228,13 @@ func TestApplyConfigToAnImageOfAnotherRole(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
+	want, err := config.FromManifest(ta.manifest, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := store.Version(s.Identity.Config); err != nil || v != want.Version {
+		t.Errorf("config version on the node = %q, %v; want %s", v, err, want.Version)
+	}
 }
 
 // TestInstallInPlaceOnAnImageOfAnotherRole installs a node in place that runs an image of another
