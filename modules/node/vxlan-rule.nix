@@ -9,6 +9,7 @@
 # firewall leaves it alone. With source ranges it also drops the VXLAN pods send through the node
 # to them, whatever the file holds: the pod and source ranges come from rangesCommand, which
 # prints "pods <range>" for each family's pod range and "source <range>" for each source range.
+# When it fails or prints anything else, the table drops all VXLAN the node forwards.
 {
   lib,
   writeShellApplication,
@@ -84,7 +85,7 @@ writeShellApplication {
       fi
     }
 
-    # The nft family of a range in CIDR notation of a family in use, or nothing.
+    # The nft family of a range in CIDR notation, or nothing.
     range_family() {
       local family length longest=128
       [[ "$1" == */* ]] || return 0
@@ -93,45 +94,22 @@ writeShellApplication {
       if [ "$family" = ip ]; then
         longest=32
       fi
-      if [ -n "$family" ] && [[ "$length" =~ ^(0|[1-9][0-9]{0,2})$ ]] && ((length <= longest)) &&
-        [[ " ''${families[*]} " == *" $family "* ]]; then
+      if [ -n "$family" ] && [[ "$length" =~ ^(0|[1-9][0-9]{0,2})$ ]] && ((length <= longest)); then
         echo "$family"
       fi
+    }
+
+    # Whether the image uses the nft family.
+    in_use() {
+      [[ " ''${families[*]} " == *" $1 "* ]]
     }
 
     # The node masquerades what pods send to other nodes behind its own address, which is in the
     # source ranges, so pods could send VXLAN the other nodes take as this node's. The chain
     # drops it as the node forwards it, per family. flannel's own VXLAN is the node's, not
-    # forwarded. The ranges are read on every run, whatever the file holds, so the chain stands
-    # as long as the cluster has them.
-    forward=()
-    declare -A pod_ranges=() source_ranges=()
-    # The command may quote a template, whose variables start with $.
-    # shellcheck disable=SC2016
-    if ranges=$(${rangesCommand}); then
-      while read -r what range rest; do
-        [ -n "$what" ] || continue
-        family=$(range_family "$range")
-        if [ -z "$family" ] || [ -n "$rest" ] || ! [[ "$what" == pods || "$what" == source ]]; then
-          echo "chalkos-vxlan-rule: the cluster's ranges hold \"$what $range $rest\"; pods' VXLAN is not dropped" >&2
-          pod_ranges=()
-          source_ranges=()
-          break
-        fi
-        if [ "$what" = pods ]; then
-          pod_ranges[$family]+="''${pod_ranges[$family]:+, }$range"
-        else
-          source_ranges[$family]+="''${source_ranges[$family]:+, }$range"
-        fi
-      done <<<"$ranges"
-    else
-      echo "chalkos-vxlan-rule: the cluster's ranges are unknown; pods' VXLAN is not dropped" >&2
-    fi
-    for family in "''${!pod_ranges[@]}"; do
-      if [ -n "''${source_ranges[$family]:-}" ]; then
-        forward+=("$family saddr { ''${pod_ranges[$family]} } $family daddr { ''${source_ranges[$family]} } udp dport 8472 drop")
-      fi
-    done
+    # forwarded. Until the cluster's ranges are read, and when they cannot be, the chain drops
+    # all VXLAN the node forwards.
+    forward=("udp dport 8472 drop")
 
     # The table, replaced in one transaction, with the rules given. Its input chain runs before
     # the firewall's, which drops what it does not accept, and first clears the mark, so only
@@ -169,9 +147,49 @@ writeShellApplication {
     trap '"$written" || table | nft -f - || nft delete table inet chalkos-vxlan' EXIT
 
     # The preparation runs this before and after it picks the node's addresses: one run at a time,
-    # so the last one sees the file as it is now.
+    # so the last one sees the file and the ranges as they are now.
     exec 9>>${lib.escapeShellArg lockFile}
     flock 9
+
+    # The forward chain's rules from the cluster's ranges, read on every run whatever the file
+    # holds, so the chain stands as long as the cluster has them. Ranges of a family the image
+    # does not use are skipped; anything but ranges keeps the chain dropping all VXLAN.
+    read_ranges() {
+      local ranges what range rest family
+      local -A pods=() sources=()
+      # The command may quote a template, whose variables start with $.
+      # shellcheck disable=SC2016
+      if ! ranges=$(${rangesCommand}); then
+        echo "chalkos-vxlan-rule: the cluster's ranges are unknown; pods' VXLAN is dropped wherever it goes" >&2
+        return
+      fi
+      while read -r what range rest; do
+        [ -n "$what" ] || continue
+        family=$(range_family "$range")
+        if [ -z "$family" ] || [ -n "$rest" ] || ! [[ "$what" == pods || "$what" == source ]]; then
+          echo "chalkos-vxlan-rule: the cluster's ranges hold \"$what $range $rest\"; pods' VXLAN is dropped wherever it goes" >&2
+          return
+        fi
+        in_use "$family" || continue
+        if [ "$what" = pods ]; then
+          pods[$family]+="''${pods[$family]:+, }$range"
+        else
+          sources[$family]+="''${sources[$family]:+, }$range"
+        fi
+      done <<<"$ranges"
+      # Without a Kubernetes document the command prints nothing.
+      if [ "''${#pods[@]}" -eq 0 ]; then
+        echo "chalkos-vxlan-rule: the cluster's ranges are unknown; pods' VXLAN is dropped wherever it goes" >&2
+        return
+      fi
+      forward=()
+      for family in "''${!pods[@]}"; do
+        if [ -n "''${sources[$family]:-}" ]; then
+          forward+=("$family saddr { ''${pods[$family]} } $family daddr { ''${sources[$family]} } udp dport 8472 drop")
+        fi
+      done
+    }
+    read_ranges
 
     rules=()
     status=0
@@ -184,8 +202,11 @@ writeShellApplication {
         read -r kind address mode rest <<<"$line" || true
         if [ "$kind" = source ] && [ -z "$mode" ] && [ "$line" = "source $address" ]; then
           family=$(range_family "$address")
+          # A range of a family the image does not use is skipped, as the cluster's are.
           if [ -n "$family" ]; then
-            sources[$family]+="''${sources[$family]:+, }$address"
+            if in_use "$family"; then
+              sources[$family]+="''${sources[$family]:+, }$address"
+            fi
             continue
           fi
           status=1
@@ -193,7 +214,7 @@ writeShellApplication {
         fi
         family=$(family_of "$address")
         if [ "$kind" != destination ] || [ -z "$family" ] || [ -n "$rest" ] ||
-          [ -n "''${addresses[$family]:-}" ] || ! [[ " ''${families[*]} " == *" $family "* ]] ||
+          [ -n "''${addresses[$family]:-}" ] || ! in_use "$family" ||
           ! [[ "$mode" == interface || "$mode" == any ]] || [ "$line" != "$kind $address $mode" ]; then
           status=1
           break

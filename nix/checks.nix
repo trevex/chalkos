@@ -5,6 +5,27 @@ let
   testEnv = import ./testing/env.nix { inherit pkgs self; };
   docs = import ./docs.nix { inherit pkgs self; };
 
+  # The test cluster's worker, whose units the checks below run.
+  worker =
+    (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm.config;
+  # The script NixOS runs to load and reload the worker's firewall.
+  firewall =
+    lib.findFirst (lib.hasSuffix "-nftables-rules")
+      (throw "the worker's nftables.service runs no nftables-rules script")
+      worker.systemd.services.nftables.serviceConfig.ExecStart;
+  # Runs test.sh as root of user and network namespaces of its own, where run/ and var/ of the
+  # build directory are /run and /var, and /etc holds the worker's schemas: the units' scripts run
+  # as on a node, and their chalkcfg reads the documents written below /run/chalkos/config.
+  onNode = ''
+    mkdir -p run/chalkos/config var etc/chalkos
+    cp -r /etc/. etc/
+    ln -s ${worker.environment.etc."chalkos/schemas".source} etc/chalkos/schemas
+    bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add ALL \
+      --ro-bind /nix /nix --ro-bind /bin /bin --dev /dev --bind /proc /proc --tmpfs /tmp \
+      --ro-bind "$PWD/etc" /etc --bind "$PWD/run" /run --bind "$PWD/var" /var \
+      --bind "$PWD" "$PWD" --chdir "$PWD" bash test.sh
+  '';
+
   # Tests skip when a tool or variable is missing, so a check must not pass on skipped or zero tests.
   runTests = command: ''
     set -o pipefail
@@ -97,52 +118,19 @@ in
     CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";
   };
 
-  # The VXLAN rule's script with the firewall of the test cluster's worker, in a network namespace:
-  # a peer sends UDP to port 8472 over a veth pair, and the node receives what the firewall
-  # accepts.
+  # The worker's VXLAN rule with its firewall, in a network namespace: a peer sends UDP to port
+  # 8472 over a veth pair, and the node receives what the firewall accepts. The rule reads the
+  # cluster's ranges from the Kubernetes documents the test writes.
   vxlan-rule =
     let
-      worker =
-        (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm.config;
-      # The script NixOS runs to load and reload the firewall.
-      firewall = builtins.elemAt worker.systemd.services.nftables.serviceConfig.ExecReload 1;
-      # The ranges as the node's Kubernetes document gives them: the pod range of each family,
-      # then the source ranges.
-      script =
-        sourceSubnets:
-        lib.getExe (
-          pkgs.callPackage ../modules/node/vxlan-rule.nix {
-            lockFile = "vxlan.lock";
-            mark = "0x01000000";
-            rangesCommand = "printf '%s\\n' ${
-              lib.escapeShellArgs (
-                [
-                  "pods 10.244.0.0/16"
-                  "pods fd00:10:244::/56"
-                ]
-                ++ map (r: "source ${r}") sourceSubnets
-              )
-            }";
-          }
-        );
-      rule = script [
-        "10.0.0.0/24"
-        "fd00::/64"
-      ];
-      # The script of a cluster without source ranges.
-      anySource = script [ ];
-      # The script when the ranges cannot be read.
-      noRanges = lib.getExe (
-        pkgs.callPackage ../modules/node/vxlan-rule.nix {
-          lockFile = "vxlan.lock";
-          mark = "0x01000000";
-          rangesCommand = "false";
-        }
-      );
+      rule = lib.getExe worker.system.build.chalkosVxlanRule;
+      # The rule of an image without IPv6.
+      ipv4Rule = lib.getExe (worker.system.build.chalkosVxlanRule.override { ipv6 = false; });
     in
     pkgs.runCommand "chalkos-vxlan-rule"
       {
         nativeBuildInputs = [
+          pkgs.bubblewrap
           pkgs.nftables
           pkgs.iproute2
           pkgs.util-linux
@@ -211,10 +199,10 @@ in
           on_peer sh -c "echo 0 >/proc/sys/net/ipv4/conf/$conf/rp_filter"
         done
 
-        # The firewall as NixOS loads it, with the state file it keeps in /var/lib/nftables here.
-        sed "s|/var/lib/nftables/deletions.nft|$PWD/deletions.nft|" ${firewall} >firewall.nft
-        touch deletions.nft
-        nft -f firewall.nft
+        # The firewall as NixOS loads it, with the state file it keeps.
+        mkdir -p /var/lib/nftables
+        touch /var/lib/nftables/deletions.nft
+        nft -f ${firewall}
         # Counts the packets the firewall accepted, and those still marked then.
         nft -f - <<'NFT'
         table inet count {
@@ -275,6 +263,17 @@ in
         }
         v4='destination 10.0.0.11 interface\n'
         v6='destination fd00::11 interface\n'
+        # The node's Kubernetes document with the spec given, and one of a dual-stack cluster with
+        # the source ranges given.
+        kubernetes=/run/chalkos/config/kubernetes.chalkos.dev/Kubernetes/kubernetes.json
+        mkdir -p "$(dirname "$kubernetes")"
+        spec() {
+          printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Kubernetes","metadata":{"name":"kubernetes"},"spec":%s}\n' "$1" >"$kubernetes"
+        }
+        ranges() {
+          spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"},"vxlanSourceSubnets":'"$1"'}'
+        }
+        ranges '["10.0.0.0/24","fd00::/64"]'
         rules() {
           grep -c 'meta mark set meta mark |' rules.log || true
         }
@@ -320,21 +319,56 @@ in
         forwarded 10.0.2.12 8472 || fail "a pod's VXLAN outside the source ranges was dropped"
         forwarded fd00:2::12 8472 || fail "a pod's IPv6 VXLAN outside the source ranges was dropped"
         # Without source ranges VXLAN may come from anywhere, so nothing is dropped.
-        ${anySource} vxlan >/dev/null
+        ranges '[]'
+        holding "$v4$v6"
         forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without source ranges"
         forwarded fd00::12 8472 || fail "a pod's IPv6 VXLAN was dropped without source ranges"
-        holding "$v4$v6"
-        # Ranges that cannot be read drop nothing, and say so.
-        ${noRanges} vxlan >/dev/null 2>no-ranges.log
-        grep -q "the cluster's ranges are unknown" no-ranges.log || fail "no warning without ranges"
-        forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without ranges"
+
+        # Ranges that cannot be read, and anything but ranges, drop all VXLAN the node forwards,
+        # and say so; the node still takes VXLAN.
+        closed() {
+          holding "$v4$v6"
+          [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "the addresses $1"
+          grep -q "$2" errors.log || fail "no warning $1"
+          if forwarded 10.0.2.12 8472; then fail "a pod sent VXLAN outside the source ranges $1"; fi
+          if forwarded fd00:2::12 8472; then fail "a pod sent IPv6 VXLAN outside the source ranges $1"; fi
+          forwarded 10.0.2.12 8473 || fail "a pod's datagram to another port was dropped $1"
+          arrives 10.0.0.11 || fail "VXLAN to the node was refused $1"
+        }
+        rm "$kubernetes"
+        closed "without a Kubernetes document" "ranges are unknown"
+        echo '{' >"$kubernetes"
+        closed "with a document chalkcfg cannot read" "ranges are unknown"
+        spec '{"ipFamilies":["ipv4","ipv5"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":[]}'
+        closed "with a family without a pod range" "ranges are unknown"
+        for s in \
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.0.0.0/8 }"},"vxlanSourceSubnets":[]}' \
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":["cafe.be/8"]}' \
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":null},"vxlanSourceSubnets":[]}' \
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16 10.0.0.0/8"},"vxlanSourceSubnets":[]}' \
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":["10.0.0.0/24\nflush 10.0.0.0/8"]}'; do
+          spec "$s"
+          closed "with the spec $s" "ranges hold"
+        done
+        ranges '["10.0.0.0/24","fd00::/64"]'
         holding "$v4$v6"
         if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range after the ranges came back"; fi
+        forwarded 10.0.2.12 8472 || fail "a pod's VXLAN outside the source ranges was dropped after the ranges came back"
+
+        # An image without IPv6 skips the IPv6 ranges, the cluster's and the file's alike.
+        printf '%b' "$v4"'source 10.0.0.0/24\nsource fd00::/64\n' >vxlan
+        ${ipv4Rule} vxlan >rules.log 2>errors.log || fail "an image without IPv6 refused IPv6 ranges"
+        [ ! -s errors.log ] || fail "an image without IPv6 warned of IPv6 ranges: $(cat errors.log)"
+        [ "$(rules)" = 1 ] || fail "an image without IPv6"
+        arrives 10.0.0.11 || fail "an image without IPv6 refused VXLAN from a source range"
+        if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range on an image without IPv6"; fi
+        forwarded fd00::12 8472 || fail "an image without IPv6 dropped IPv6 VXLAN it forwards"
+        holding "$v4$v6"
 
         # A reload of the firewall replaces its own table alone.
         nft add table ip kube-proxy
         nft add table ip6 flannel-ipv6
-        nft -f firewall.nft
+        nft -f ${firewall}
         nft list tables | grep -qx 'table ip kube-proxy' || fail "the firewall's reload removed kube-proxy's table"
         nft list tables | grep -qx 'table ip6 flannel-ipv6' || fail "the firewall's reload removed flannel's table"
         arrives 10.0.0.11 || fail "VXLAN was refused after the firewall's reload"
@@ -439,12 +473,12 @@ in
 
         # A lock that cannot be taken empties the table and fails.
         holding "$v4"
-        rm vxlan.lock
-        mkdir vxlan.lock
+        rm /run/chalkos-vxlan-rule.lock
+        mkdir /run/chalkos-vxlan-rule.lock
         run vxlan
         [ "$status" != 0 ] && [ "$(marking)" = 0 ] || fail "kept its rules without the lock"
         if arrives 10.0.0.11; then fail "VXLAN arrived after the lock could not be taken"; fi
-        rmdir vxlan.lock
+        rmdir /run/chalkos-vxlan-rule.lock
 
         # Without the file or an argument the table is emptied.
         holding "$v4"
@@ -457,73 +491,80 @@ in
         if arrives 10.0.0.11; then fail "VXLAN arrived without the file"; fi
         if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range without the file"; fi
         TEST
-        unshare -rn bash test.sh
+        ${onNode}
         touch $out
       '';
 
-  # The script that writes containerd's hosts.toml files, with the output chalkcfg's template
-  # gives for two RegistryMirror documents.
+  # The worker's registry mirrors from two RegistryMirror documents: the files containerd reads,
+  # kept as they were when chalkcfg fails, and none without documents.
   registry-mirrors =
     let
-      documents = pkgs.writeText "mirrors" ''
-        === docker.io
-        server = "https://registry-1.docker.io"
-
-        [host."https://mirror.example"]
-          capabilities = ["pull", "resolve"]
-
-        === localhost:5000
-        server = "https://localhost:5000"
-
-        [host."http://10.0.2.100:5000"]
-          capabilities = ["pull", "resolve"]
-
-      '';
-      script =
-        command:
-        lib.getExe (
-          pkgs.callPackage ../modules/node/registry-mirrors.nix {
-            mirrorsCommand = command;
-            certsDir = "certs.d";
-          }
-        );
+      script = worker.systemd.services.chalkos-registry-mirrors.serviceConfig.ExecStart;
     in
-    pkgs.runCommand "chalkos-registry-mirrors" { } ''
+    pkgs.runCommand "chalkos-registry-mirrors" { nativeBuildInputs = [ pkgs.bubblewrap ]; } ''
+      cat >test.sh <<'TEST'
       set -euo pipefail
-      mkdir -p certs.d/stale
-      ${script "cat ${documents}"}
-      [ "$(ls certs.d)" = "$(printf 'docker.io\nlocalhost:5000')" ] || { ls certs.d; exit 1; }
-      grep -qx 'server = "https://registry-1.docker.io"' certs.d/docker.io/hosts.toml
-      grep -qx '\[host."http://10.0.2.100:5000"\]' certs.d/localhost:5000/hosts.toml
-      # A failing command leaves the mirrors as they were.
-      if ${script "false"}; then echo "a failing command succeeded" >&2; exit 1; fi
-      [ -e certs.d/docker.io/hosts.toml ]
+      fail() {
+        echo "error: $*" >&2
+        exit 1
+      }
+      documents=/run/chalkos/config/kubernetes.chalkos.dev/RegistryMirror
+      certs=/run/containerd/certs.d
+      mkdir -p "$documents" "$certs/stale"
+      cat >"$documents/docker-io.json" <<'JSON'
+      {"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"RegistryMirror","metadata":{"name":"docker-io"},
+       "spec":{"registry":"docker.io","mirrors":["https://mirror.example","mirror2.example:5000"],"allowPlainHTTP":false}}
+      JSON
+      cat >"$documents/local.json" <<'JSON'
+      {"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"RegistryMirror","metadata":{"name":"local"},
+       "spec":{"registry":"[::1]:5000","mirrors":["http://10.0.2.100:5000"],"allowPlainHTTP":true}}
+      JSON
+      ${script}
+      [ "$(ls "$certs" | sort)" = "$(printf '%s\n' docker.io '[::1]:5000' | sort)" ] || fail "the registries are $(ls "$certs")"
+      cat >docker.io.toml <<'TOML'
+      server = "https://registry-1.docker.io"
+
+      [host."https://mirror.example"]
+        capabilities = ["pull", "resolve"]
+
+      [host."mirror2.example:5000"]
+        capabilities = ["pull", "resolve"]
+
+      TOML
+      diff -u docker.io.toml "$certs/docker.io/hosts.toml" || fail "docker.io's hosts.toml"
+      cat >local.toml <<'TOML'
+      server = "https://[::1]:5000"
+
+      [host."http://10.0.2.100:5000"]
+        capabilities = ["pull", "resolve"]
+
+      TOML
+      diff -u local.toml "$certs/[::1]:5000/hosts.toml" || fail "[::1]:5000's hosts.toml"
+      # A document chalkcfg cannot read leaves the mirrors as they were.
+      echo '{' >"$documents/local.json"
+      if ${script}; then fail "an unreadable document was taken"; fi
+      diff -u docker.io.toml "$certs/docker.io/hosts.toml" || fail "the mirrors changed"
       # No documents, no mirrors, and no directory left behind.
-      ${script "true"}
-      [ -z "$(ls certs.d)" ]
-      if ls -A | grep -q "^\.certs\.d\."; then ls -A; exit 1; fi
+      rm "$documents"/*
+      ${script}
+      [ -z "$(ls "$certs")" ] || fail "mirrors without documents: $(ls "$certs")"
+      [ "$(ls -A /run/containerd)" = certs.d ] || fail "left behind: $(ls -A /run/containerd)"
+      TEST
+      ${onNode}
       touch $out
     '';
 
-  # The control-plane ports with the worker's firewall, in a network namespace: a peer connects to
-  # 6443, 2379 and 2380, which the firewall accepts once the script marked them for a control
-  # plane, and refuses again on a worker.
+  # The worker's control-plane ports with its firewall, in a network namespace: a peer connects to
+  # 6443, 2379 and 2380 over IPv4 and IPv6, which the firewall accepts once the node's Node
+  # document makes it a control plane, and refuses again once it makes it a worker.
   controlplane-ports =
     let
-      worker =
-        (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm.config;
-      firewall = builtins.elemAt worker.systemd.services.nftables.serviceConfig.ExecReload 1;
-      script = lib.getExe (
-        pkgs.callPackage ../modules/node/controlplane-ports.nix {
-          typeCommand = "cat type";
-          etcdDir = "etcd";
-          mark = "0x02000000";
-        }
-      );
+      script = worker.systemd.services.chalkos-controlplane.serviceConfig.ExecStart;
     in
     pkgs.runCommand "chalkos-controlplane-ports"
       {
         nativeBuildInputs = [
+          pkgs.bubblewrap
           pkgs.nftables
           pkgs.iproute2
           pkgs.util-linux
@@ -546,40 +587,112 @@ in
         on_peer() { nsenter -t "$peer" -n "$@"; }
         ip link add v0 type veth peer name v1 netns "$peer"
         ip addr add 10.0.0.11/24 dev v0
+        ip addr add fd00::11/64 dev v0 nodad
         ip link set v0 up
         on_peer ip link set lo up
         on_peer ip addr add 10.0.0.12/24 dev v1
+        on_peer ip addr add fd00::12/64 dev v1 nodad
         on_peer ip link set v1 up
 
-        # The firewall as NixOS loads it, with the state file it keeps in /var/lib/nftables here.
-        sed "s|/var/lib/nftables/deletions.nft|$PWD/deletions.nft|" ${firewall} >firewall.nft
-        touch deletions.nft
-        nft -f firewall.nft
+        # The firewall as NixOS loads it, with the state file it keeps.
+        mkdir -p /var/lib/nftables
+        touch /var/lib/nftables/deletions.nft
+        nft -f ${firewall}
         for port in 6443 2379 2380; do
-          socat TCP-LISTEN:$port,fork,reuseaddr /dev/null &
+          socat TCP4-LISTEN:$port,fork,reuseaddr /dev/null &
+          socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 /dev/null &
         done
-        sleep 0.5
-        reaches() { on_peer socat -u /dev/null TCP:10.0.0.11:$1,connect-timeout=1; }
+        until [ "$(ss -Hltn | wc -l)" = 6 ]; do sleep 0.1; done
+        reaches() { on_peer socat -u /dev/null "TCP:$1:$2,connect-timeout=1" 2>/dev/null; }
+        open() {
+          for port in 6443 2379 2380; do
+            reaches 10.0.0.11 $port || fail "$port refused $1"
+            reaches '[fd00::11]' $port || fail "$port refused over IPv6 $1"
+          done
+        }
+        closed() {
+          for port in 6443 2379 2380; do
+            if reaches 10.0.0.11 $port; then fail "$port open $1"; fi
+            if reaches '[fd00::11]' $port; then fail "$port open over IPv6 $1"; fi
+          done
+        }
+        node=/run/chalkos/config/chalkos.dev/Node/n1.json
+        mkdir -p "$(dirname "$node")"
+        node_type() {
+          printf '{"apiVersion":"chalkos.dev/v1alpha1","kind":"Node","metadata":{"name":"n1"},"spec":{"type":"%s","imageRef":"kvm"}}\n' "$1" >"$node"
+        }
 
-        if reaches 6443; then fail "6443 open without the table"; fi
-        echo controlplane >type
+        closed "without the table"
+        node_type controlplane
         ${script}
-        [ -d etcd ] && [ "$(stat -c %a etcd)" = 700 ] || fail "no etcd directory"
-        for port in 6443 2379 2380; do
-          reaches $port || fail "$port refused on a control plane"
-        done
+        [ "$(stat -c %a /var/lib/etcd)" = 700 ] || fail "no etcd directory"
+        open "on a control plane"
         # The firewall's reload leaves the table alone.
-        nft -f firewall.nft
-        reaches 6443 || fail "6443 refused after the firewall's reload"
-        echo worker >type
+        nft -f ${firewall}
+        open "after the firewall's reload"
+        node_type worker
         ${script}
-        if reaches 6443; then fail "6443 open on a worker"; fi
+        closed "on a worker"
         # A worker without the table stays one.
         ${script}
+        closed "on a worker again"
         TEST
-        unshare -rn bash test.sh
+        ${onNode}
         touch $out
       '';
+
+  # The chrony-dhcp unit's script with the links networkd announced time servers on: the servers
+  # are chrony's when the node's TimeSync takes them, and none are otherwise.
+  chrony-dhcp =
+    let
+      script = worker.systemd.services.chalkos-chrony-dhcp.serviceConfig.ExecStart;
+      path = lib.makeBinPath worker.systemd.services.chalkos-chrony-dhcp.path;
+    in
+    pkgs.runCommand "chalkos-chrony-dhcp" { nativeBuildInputs = [ pkgs.bubblewrap ]; } ''
+      cat >test.sh <<'TEST'
+      set -euo pipefail
+      fail() {
+        echo "error: $*" >&2
+        exit 1
+      }
+      # chronyc of the unit's path, which this namespace has no chronyd for.
+      mkdir -p stub
+      printf '#!/bin/sh\necho "$@" >>chronyc.log\n' >stub/chronyc
+      chmod +x stub/chronyc
+      export PATH=$PWD/stub:${path}:$PATH
+      mkdir -p /run/systemd/netif/links /run/chalkos/chrony-dhcp
+      printf 'ADMIN_STATE=configured\nNTP=10.0.0.1 ntp.example\n' >/run/systemd/netif/links/2
+      printf 'NTP=10.0.0.1 10.0.0.2\n' >/run/systemd/netif/links/3
+      sources=/run/chalkos/chrony-dhcp/dhcp.sources
+      timesync=/run/chalkos/config/time.chalkos.dev/TimeSync/timesync.json
+      mkdir -p "$(dirname "$timesync")"
+      dhcp() {
+        printf '{"apiVersion":"time.chalkos.dev/v1alpha1","kind":"TimeSync","metadata":{"name":"timesync"},"spec":{"servers":[],"dhcp":%s}}\n' "$1" >"$timesync"
+      }
+
+      dhcp true
+      ${script}
+      printf 'server 10.0.0.1 iburst\nserver 10.0.0.2 iburst\nserver ntp.example iburst\n' >want
+      diff -u want "$sources" || fail "the servers DHCP announced"
+      grep -qx "reload sources" chronyc.log || fail "chrony did not reload its sources"
+      dhcp false
+      ${script}
+      [ ! -s "$sources" ] || fail "servers with dhcp false: $(cat "$sources")"
+      dhcp true
+      ${script}
+      rm "$timesync"
+      ${script}
+      [ ! -s "$sources" ] || fail "servers without a TimeSync: $(cat "$sources")"
+      # A TimeSync chalkcfg cannot read takes no servers, and says why.
+      echo '{' >"$timesync"
+      ${script} 2>errors.log
+      [ ! -s "$sources" ] || fail "servers with an unreadable TimeSync: $(cat "$sources")"
+      grep -q timesync errors.log || fail "no error for an unreadable TimeSync"
+      [ "$(ls -A /run/chalkos/chrony-dhcp)" = dhcp.sources ] || fail "left behind: $(ls -A /run/chalkos/chrony-dhcp)"
+      TEST
+      ${onNode}
+      touch $out
+    '';
 
   # The worker's kernel module tree, and one with the gpu group: a module outside a role's groups
   # is not in its tree, and neither a name the kernel does not know, a directory without modules,
