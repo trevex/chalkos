@@ -72,6 +72,9 @@ What Nix decides at build time and what reaches a node at runtime:
 | Boot tries and health timeout | Time servers |
 | | Documents of the kinds [extensions](../reference/glossary.md#extension) declare |
 
+The right column is what chalkos delivers as config. A role module can still read a cluster
+setting, which every image receives as a read-only option, and so bake it into the role's image.
+
 The split keeps one image per role and platform, so a cluster of three control planes and fifty
 [workers](../reference/glossary.md#worker) in one role builds and signs one image per platform. A
 change in the left column is an [upgrade](upgrades.md); a change in the right column is delivered

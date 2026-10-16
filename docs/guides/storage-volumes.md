@@ -56,12 +56,13 @@ chalkctl disks --endpoint=<address> --insecure
 Every storage option exists on a role and on a node. A role's values become defaults of its
 nodes leaf by leaf, so a node overrides one attribute or adds a volume without restating the
 role's. The exception is a volume's `disk`: a node's disk reference replaces the role's whole,
-rather than merging its selector keys into the role's.
+rather than merging its selector keys into the role's. A cluster whose Longhorn nodes have a role
+of their own, `data`, declares their SSD once on the role:
 
 ```nix title="cluster.nix"
 {
-  # Every node of the storage role carries a SATA SSD for Longhorn next to its NVMe system disk.
-  chalkos.roles.storage.storage.volumes.longhorn = {
+  # Every node of the data role carries a SATA SSD for Longhorn next to its NVMe system disk.
+  chalkos.roles.data.storage.volumes.longhorn = {
     disk = {
       model = "Samsung SSD 870*";
       type = "ssd";
@@ -177,7 +178,7 @@ A volume is encrypted like the node, by
 ```nix
 {
   # The replicas on this disk are not secret; they need no TPM-sealed key.
-  chalkos.roles.storage.storage.volumes.longhorn.encryption.mode = "none";
+  chalkos.roles.data.storage.volumes.longhorn.encryption.mode = "none";
 }
 ```
 

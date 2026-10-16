@@ -35,13 +35,14 @@ See [The cluster definition](../concepts/cluster-definition.md).
 
 ## Roles become images, nodes get config
 
-A [role](../reference/glossary.md#role), such as `controlplane` or `worker`, is a kind of node
-with its own NixOS modules. Nix builds one [image](../reference/glossary.md#image) per role and
-[platform](../reference/glossary.md#platform) (`metal` or `kvm`), and every node of that role
-and platform boots the same image. What differs between nodes is their
-[config](../reference/glossary.md#config): documents for its hostname, network, labels, taints,
-storage, time servers and extensions. chalkctl generates them from the cluster definition and
-delivers them at install, and chalkd applies them at every boot. See [The image](../concepts/image.md).
+A [role](../reference/glossary.md#role), such as the lab's `node`, is the unit an image is built
+for: the NixOS modules its nodes run. Control planes and workers can share one. Nix builds one
+[image](../reference/glossary.md#image) per role and [platform](../reference/glossary.md#platform)
+(`metal` or `kvm`), and every node of that role and platform boots the same image. What differs
+between nodes is their [config](../reference/glossary.md#config): documents for its hostname,
+network, Kubernetes kind, labels, taints, storage, time servers and extensions. chalkctl generates
+them from the cluster definition and delivers them at install, and chalkd applies them at every
+boot. See [The image](../concepts/image.md).
 
 ## The secrets file stays with the operator
 

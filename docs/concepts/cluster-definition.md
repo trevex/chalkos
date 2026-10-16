@@ -125,8 +125,8 @@ in
 
 ## What is a role?
 
-A role is a kind of node, and the unit an image is built for: every node of a role on one
-platform boots the same image. A role declares:
+A role is the unit an image is built for: the NixOS modules its nodes run. Every node of a role
+on one platform boots the same image, whatever its Kubernetes kind. A role declares:
 
 - [`nixosModules`](../reference/options.md#chalkosrolesnixosmodules), plain NixOS modules added
   to the role's images, for a GPU driver, a monitoring agent or extra kernel
@@ -243,13 +243,15 @@ $ nix eval --json .#chalkos.homelab.manifest | jq '{schemaVersion, cluster, role
 ```
 
 Besides these, it holds `secureBoot.signerCertificate`, the Kubernetes and flannel settings every
-Kubernetes node's config carries and, under `nodes`, each node's role, Kubernetes kind (null on a
-role without Kubernetes), platform, identity and documents. The identity is what layer 1 renders
-from the node's options: hostname, network units, storage, Kubernetes and time settings. The
-documents are the config documents its extensions add. chalkctl generates the node's config from
-both. A role's images are attribute paths relative to the cluster, which chalkctl builds when a
-command needs an image. While `schemaVersion` is 0 the format may change between chalkos
-versions, which matters only to tools other than chalkctl and chalklab.
+Kubernetes node's config carries, the registry mirrors (`registries`), the cluster's own
+`manifests`, whether nodes take time servers from DHCP (`time.dhcpServers`) and, under `nodes`,
+each node's role, Kubernetes kind (null on a role without Kubernetes), platform, identity and
+documents. The identity is what layer 1 renders from the node's options: hostname, network units,
+storage, Kubernetes and time settings. The documents are the config documents its extensions add.
+chalkctl generates the node's config from both. A role's images are attribute paths relative to
+the cluster, which chalkctl builds when a command needs an image. While `schemaVersion` is 0 the
+format may change between chalkos versions, which matters only to tools other than chalkctl and
+chalklab.
 
 `chalkctl --manifest=<file>` reads a manifest from a file instead of evaluating the flake. It
 cannot build images then, so commands that need one take `--image`.

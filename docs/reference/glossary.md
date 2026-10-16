@@ -327,10 +327,10 @@ file never changes, and
 
 ## Role { #role }
 
-A kind of node, declared under [`chalkos.roles`](options.md#chalkosroles) with its NixOS
-modules, storage defaults and whether its images run Kubernetes. Each role becomes one
-[image](#image) per platform. Control planes and workers of a role boot the same image; each
-node's kind makes it one or the other. See
+The unit an [image](#image) is built for: the NixOS modules its nodes run, declared under
+[`chalkos.roles`](options.md#chalkosroles) with storage defaults and whether its images run
+Kubernetes. Each role becomes one image per platform. Control planes and workers of a role boot the
+same image; each node's kind makes it one or the other. See
 [The cluster definition](../concepts/cluster-definition.md).
 
 ## Rollback { #rollback }

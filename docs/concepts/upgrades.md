@@ -65,13 +65,15 @@ Before it sends anything, chalkctl checks each image against the cluster:
 - the UKI boots the store the image holds: its `usrhash=` equals the store's root hash;
 - the version is one chalkos installs, and the UKI's os-release names a role and platform;
 - the image's directory holds its `schemas/`, which go to the node with `image.json`;
-- with the cluster definition at hand, the config it gives each node of the image's role and
-  platform suits the image, as an install checks the config it delivers; chalkctl checks this for
-  every node before it drains the first;
+- the config the cluster definition gives each node of the image's role and platform suits the
+  image, as an install checks the config it delivers;
 - the UKI carries a signature of the certificate in
   [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate),
   or, when that is not set, of the certificate chalkctl signed with. With neither, chalkctl checks
   no signature.
+
+chalkctl checks every node's config before it drains the first node. It needs the cluster
+definition for that; with a client file alone, each node's own check below is all there is.
 
 chalkctl also stops before any image is built or sent when a node runs another role or platform
 than the [cluster definition](../reference/glossary.md#cluster-definition) declares for it, because changing either is a reinstall.

@@ -23,8 +23,9 @@ nodes fit together, and [The image](../concepts/image.md) what an image holds.
 
 ## Add a module to a role
 
-A role module is an ordinary NixOS module. This one runs a service on every node of the role
-`node`, with the tools it calls in its own `path`:
+A role module is an ordinary NixOS module. In a cluster whose nodes share the role `node`, as in
+the lab template, this one runs a service on every node, with the tools it calls in its own
+`path`:
 
 ```nix title="cluster.nix"
 {
@@ -158,7 +159,8 @@ Values of your own, such as a site name per node, come from an
 [extension](../reference/glossary.md#extension): a cluster module that declares options in a
 namespace of its own and adds modules to roles. A role module declares a config kind, the
 per-node option adds a document of that kind to the node's
-[`documents`](../reference/options.md#chalkosnodesdocuments), and a unit reads it:
+[`documents`](../reference/options.md#chalkosnodesdocuments), and a unit reads it. This one serves
+a cluster with a role `remote` for its machines at other sites:
 
 ```nix title="extensions/site.nix"
 { config, lib, ... }:
@@ -166,7 +168,7 @@ let
   inherit (config.chalkos.site) enable;
 in
 {
-  options.chalkos.site.enable = lib.mkEnableOption "the site name on every node of the role node";
+  options.chalkos.site.enable = lib.mkEnableOption "the site name on the nodes of the remote role";
 
   options.chalkos.nodes = lib.mkOption {
     type = lib.types.attrsOf (
@@ -178,8 +180,9 @@ in
             example = "berlin-1";
             description = "Site the node runs at.";
           };
-          # Only the node role's images declare the kind, and a node refuses a kind its image lacks.
-          config.documents = lib.mkIf (enable && config.role == "node") [
+          # Only the remote role's images declare the kind, and a node refuses a kind its image
+          # lacks.
+          config.documents = lib.mkIf (enable && config.role == "remote") [
             {
               apiVersion = "site.example.org/v1alpha1";
               kind = "Site";
@@ -193,7 +196,7 @@ in
   };
 
   config = lib.mkIf enable {
-    chalkos.roles.node.nixosModules = [
+    chalkos.roles.remote.nixosModules = [
       (
         { config, pkgs, ... }:
         {
@@ -227,7 +230,7 @@ in
 ```
 
 Import the file in the cluster definition, set `chalkos.site.enable = true`, and give each node of
-the role `node` its `site.name`. A change of a node's `site.name` needs no new image:
+the `remote` role its `site.name`. A change of a node's `site.name` needs no new image:
 `chalkctl apply-config <node>` delivers the new `Site` document, and chalkd restarts
 `site-name.service`. The extension adds the document to the nodes of that role alone, because a
 node whose image lacks the kind refuses it: the role that declares a kind is the one whose nodes
@@ -295,8 +298,8 @@ settings break the node:
   install, configure and upgrade the node. A role that disables or replaces them builds, and the
   node then cannot be installed or upgraded.
 - `chalkos.role.name`, `chalkos.role.kubernetes.enable`, `chalkos.platform.name` and
-  `chalkos.maintenance.osCA` are set by the role builder from the cluster definition; set the
-  role's `kubernetes.enable` and `chalkos.osCA` there instead.
+  `chalkos.maintenance.osCA` are set by the role builder from the cluster definition; set
+  `chalkos.roles.<role>.kubernetes.enable` and `chalkos.osCA` there instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
   applies only to nodes installed afterwards, and an upgrade whose store does not fit a node's
   [slot](../reference/glossary.md#slot) is refused.
