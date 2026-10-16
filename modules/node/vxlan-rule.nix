@@ -254,8 +254,10 @@ writeShellApplication {
         echo "chalkos-vxlan-rule: $1 does not hold the node's addresses; VXLAN stays refused" >&2
       fi
     fi
-    # A ruleset nft refuses changes nothing, so the old rules go then.
+    # A ruleset nft refuses changes nothing, so the old rules go then, and forwarded VXLAN is
+    # dropped as without the ranges.
     if ! table "''${rules[@]}" | nft -f -; then
+      forward=("udp dport 8472 drop")
       table | nft -f -
       status=1
     fi
