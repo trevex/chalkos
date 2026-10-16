@@ -7,18 +7,19 @@ description: "Add drivers, firmware and platform settings for hardware the base 
 
 A chalkos image carries a chosen part of the kernel's modules, no firmware files and no CPU
 microcode by default, which keeps the store that every install and upgrade sends small. When a
-network card, storage controller or GPU is not found, add its driver and firmware to the role or
-[platform](../reference/glossary.md#platform) whose nodes need it, build, and roll the new image
-out. This guide finds the missing module, adds it in the right place, adds firmware and
-out-of-tree modules, defines a platform of your own, and covers the size checks a larger image
-meets.
+network card, storage controller or GPU is not found, add its driver and firmware to the
+[variant](../reference/glossary.md#variant) or [platform](../reference/glossary.md#platform)
+whose nodes need it, build, and roll the new image out. This guide finds the missing module, adds
+it in the right place, adds firmware and out-of-tree modules, defines a platform of your own, and
+covers the size checks a larger image meets.
 
 ## Before you begin
 
-You need a [cluster definition](../reference/glossary.md#cluster-definition) with the role in question, and a way to see the hardware: a Linux
-live system booted on the machine, or the vendor's specification of the card. For nodes that run
-already, [Upgrade a cluster](upgrade-cluster.md) rolls the new image out; machines that are not
-installed yet may need the same driver in the [installer](../reference/glossary.md#installer), which
+You need the flake that builds the cluster's images with `chalkos.lib.mkImages`, and a way to see
+the hardware: a Linux live system booted on the machine, or the vendor's specification of the
+card. For nodes that run already, [Upgrade a cluster](upgrade-cluster.md) rolls the new image
+out; machines that are not installed yet may need the same driver in the
+[installer](../reference/glossary.md#installer), which
 [Customise the installer](customise-installer.md) adds.
 
 ## Find the module
@@ -43,18 +44,26 @@ $ modinfo -n mt7921e
 /lib/modules/6.18.55/kernel/drivers/net/wireless/mediatek/mt76/mt7921/mt7921e.ko.xz
 ```
 
-`drivers/net/wireless` belongs to the `wireless` group. Then check whether the role's image
-carries the module. The image's module tree is a build output of its own, so this needs no full
-image build:
+`drivers/net/wireless` belongs to the `wireless` group. Then check whether the image carries the
+module. The image's module tree is a build output of its own, so this needs no full image build.
+`mkImages` returns each image's NixOS system as `nixos.<variant>-<platform>`; expose its tree in
+`flake.nix` next to the images:
+
+```nix
+packages.x86_64-linux.node-metal-modules =
+  images.nixos.node-metal.config.system.build.chalkosKernelModules;
+```
+
+Then build it and look for the module:
 
 ```console
-$ nix build .#chalkos.<cluster>.roles.<role>.nixos.metal.config.system.build.chalkosKernelModules
+$ nix build .#node-metal-modules
 $ find result/ -name 'mt7921e*'
 ```
 
 No output means the image lacks the module; a module it carries prints its path, such as
 `result/lib/modules/6.18.55/kernel/drivers/net/ethernet/mellanox/mlx5/core/mlx5_core.ko.xz`.
-Replace `metal` with the node's platform.
+Replace `node-metal` with the variant and platform of the node's image.
 
 ## Add a module group or single modules
 
@@ -72,26 +81,24 @@ drivers. Every image carries the base groups:
 | `platform` | [TPM](../reference/glossary.md#tpm), IPMI, watchdogs, sensors, ACPI, CPU frequency, crypto, the console keyboard |
 
 The further groups are `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can` and
-`industrial`. Add a group or single modules in a role's NixOS modules, which apply to all its
-images:
+`industrial`. Add a group or single modules in the NixOS modules of the variant whose nodes need
+them, here a `gpu` variant in `flake.nix`'s call of `mkImages`:
 
-```nix title="cluster.nix"
-{
-  chalkos.roles.gpu-worker = {
-    nixosModules = [
-      {
-        chalkos.kernel.moduleGroups = [ "gpu" ];
-        chalkos.kernel.extraModules = [ "kvm_amd" ];
-      }
-    ];
-  };
-}
+```nix
+variants.gpu.modules = [
+  {
+    chalkos.kernel.moduleGroups = [ "gpu" ];
+    chalkos.kernel.extraModules = [ "kvm_amd" ];
+  }
+];
 ```
 
-A role's groups add to the base groups; `lib.mkForce` replaces them, for an image that carries
-less. [`chalkos.kernel.extraModules`](../reference/options.md#chalkoskernelextramodules) names
-single modules, for a driver whose directory holds much you do not need; each comes with the
-modules it depends on. [`chalkos.kernel.allModules`](../reference/options.md#chalkoskernelallmodules)
+Every image of the variant carries them; [`modules`](../reference/options.md#modules) gives them
+to every variant instead. The groups add to the base groups; `lib.mkForce` replaces them, for an
+image that carries less.
+[`chalkos.kernel.extraModules`](../reference/options.md#chalkoskernelextramodules) names single
+modules, for a driver whose directory holds much you do not need; each comes with the modules it
+depends on. [`chalkos.kernel.allModules`](../reference/options.md#chalkoskernelallmodules)
 carries the kernel's whole tree, which adds about 100 MiB to the store and is meant for finding
 out what a machine needs, not for production.
 
@@ -141,28 +148,26 @@ mediatek/WIFI_MT7961_patch_mcu_1a_2_hdr.bin
 mediatek/WIFI_RAM_CODE_MT7961_1a.bin
 ```
 
-The driver serves several chips; the MT7922 above needs the two files that name it. A role takes
-the group and those files:
+The driver serves several chips; the MT7922 above needs the two files that name it. A variant
+`edge` for the machines that have the card takes the group and those files:
 
-```nix title="cluster.nix"
-{
-  chalkos.roles.edge.nixosModules = [
-    (
-      { pkgs, ... }:
-      {
-        chalkos.kernel.moduleGroups = [ "wireless" ];
-        hardware.firmware = [
-          (pkgs.runCommand "mt7922-firmware" { } ''
-            mkdir -p $out/lib/firmware/mediatek
-            cp ${pkgs.linux-firmware}/lib/firmware/mediatek/WIFI_{MT7922_patch_mcu_1_1_hdr,RAM_CODE_MT7922_1}.bin \
-              $out/lib/firmware/mediatek/
-          '')
-        ];
-        hardware.cpu.amd.updateMicrocode = true;
-      }
-    )
-  ];
-}
+```nix
+variants.edge.modules = [
+  (
+    { pkgs, ... }:
+    {
+      chalkos.kernel.moduleGroups = [ "wireless" ];
+      hardware.firmware = [
+        (pkgs.runCommand "mt7922-firmware" { } ''
+          mkdir -p $out/lib/firmware/mediatek
+          cp ${pkgs.linux-firmware}/lib/firmware/mediatek/WIFI_{MT7922_patch_mcu_1_1_hdr,RAM_CODE_MT7922_1}.bin \
+            $out/lib/firmware/mediatek/
+        '')
+      ];
+      hardware.cpu.amd.updateMicrocode = true;
+    }
+  )
+];
 ```
 
 `hardware.cpu.intel.updateMicrocode` and `hardware.cpu.amd.updateMicrocode` put the CPU vendor's
@@ -188,54 +193,88 @@ The build fails when such a module depends on one the kernel does not have.
 
 ## Define a platform of your own
 
-A role applies to every node of that role, wherever it runs. Settings that belong to a kind of
-machine instead, such as the drivers and firmware of one server model, its serial console or a
-vendor's agent, belong in a platform. chalkos defines `metal` and `kvm`;
-[`platforms`](../reference/options.md#platforms) adds to them or defines another:
+A variant applies to every node that runs its images, wherever they run. Settings that belong to
+a kind of machine instead, such as the drivers and firmware of one server model, its serial
+console or a vendor's agent, belong in a platform. chalkos defines `metal` and `kvm`; the
+[`platforms`](../reference/options.md#platforms) argument of `mkImages`, as an attribute set,
+gives each platform its NixOS modules and defines others. Write the platform's module:
 
-```nix title="cluster.nix"
+```nix title="platforms/r650.nix"
 {
-  chalkos.platforms.r650.nixosModules = [
-    {
-      boot.kernelParams = [
-        "console=tty0"
-        "console=ttyS1,115200"
-      ];
-      chalkos.kernel.extraModules = [ "mlx5_ib" ];
-    }
+  boot.kernelParams = [
+    "console=tty0"
+    "console=ttyS1,115200"
   ];
-
-  chalkos.nodes.w3 = {
-    role = "node";
-    platform = "r650";
-    storage.system.disk = { model = "Dell BOSS-N1"; };
-  };
+  chalkos.kernel.extraModules = [ "mlx5_ib" ];
 }
 ```
 
-Each role is built once per platform, as `chalkos.roles.<role>.images.<platform>`, and only for
-the platforms its nodes use, so only the images of `r650` carry its drivers. A platform of your
-own starts from chalkos's node modules alone: it does not include
-`metal`'s modules, so give it a console. Its name, lower-case letters, digits and dashes, becomes
-`CHALKOS_PLATFORM` in the image's os-release. A node refuses images of another platform, and its
-[config](../reference/glossary.md#config) is translated for the platform it runs, so moving a node
-to a new platform is a reinstall. Platform modules come before the
-role's; a role overrides a value its platform sets plainly with `lib.mkForce`, and one the platform
-forces itself with `lib.mkOverride` below 50, as for the `kvm` platform's `ExecStart` of the guest
-agent.
+Then name the platforms to build in `flake.nix`:
+
+```nix
+images = chalkos.lib.mkImages {
+  platforms = {
+    metal = [ ];
+    r650 = [ ./platforms/r650.nix ];
+  };
+  variants.node = { };
+};
+```
+
+Either form of `platforms` names exactly the platforms built, so `metal` stays only because it is
+named. Every variant is built for every platform, as `images.<variant>-<platform>`, here
+`images.node-metal` and `images.node-r650`, and each image is built only when asked for, so only
+the images of `r650` carry its drivers. `metal` and `kvm` carry chalkos's own modules for them
+before the ones given; a platform of your own starts from chalkos's node modules alone, without
+`metal`'s, so give it a console. Its name, lower-case letters, digits and dashes starting with a letter or digit, becomes
+`CHALKOS_PLATFORM` in the image's os-release.
+
+A node runs a platform's image through an `Image` document and its `Node`'s `imageRef`. Expose
+the image in `flake.nix` as `packages.x86_64-linux.node-r650 = images.images.node-r650;`, add its
+`Image` to the files every node gets, and point the node at it in its own file:
+
+```yaml
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: node-r650}
+spec:
+  # nix build .#node-r650 -o images/node-r650 puts the image here.
+  source: {directory: ../images/node-r650}
+```
+
+```yaml title="nodes/w3.yaml"
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w3}
+spec:
+  type: worker
+  imageRef: node-r650
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {model: "Dell BOSS-N1"}
+```
+
+A node refuses images of another platform, and its [config](../reference/glossary.md#config) is
+translated for the platform it runs, so moving a node to a new platform is a reinstall. Platform
+modules come before the variants'; a variant overrides a value its platform sets plainly with
+`lib.mkForce`, and one the platform forces itself with `lib.mkOverride` below 50, as for the
+`kvm` platform's `ExecStart` of the guest agent.
 
 ## Keep the image within its slot
 
 A larger module tree or firmware grows the [store](../reference/glossary.md#store). Each image
 build checks that the store's data takes at most 80% of a [slot](../reference/glossary.md#slot), 3 GiB by default, its hash tree
 at most 80% of the hash partition, and the UKIs the [ESP](../reference/glossary.md#esp) holds at most 80% of the ESP, so the next
-image still fits. A role that grows past that fails the build:
+image still fits. An image that grows past that fails the build, naming its variant:
 
 ```text
 error: node: the store's data takes 2671771648 bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
 ```
 
-Leave out what the role does not need first. Raising
+Leave out what the variant does not need first. Raising
 [`chalkos.disk.storeSize`](../reference/options.md#chalkosdiskstoresize) helps only nodes installed
 afterwards: a node's partitions are laid out at install, and an upgrade whose store does not fit
 the node's slot is refused. Every MiB of the store is also sent to each node at every upgrade.
@@ -243,7 +282,7 @@ the node's slot is refused. Every MiB of the store is also sent to each node at 
 ## Check that it worked
 
 After the upgrade or install, the device works when its driver bound to it. Nodes have no logins;
-with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) on the role, a privileged
+with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in the image's modules, a privileged
 pod reaches the node's tools:
 
 ```sh
@@ -258,6 +297,8 @@ node does not find its disk and stops in the initrd, which the console shows.
 ## What next
 
 - [The image](../concepts/image.md) explains the module tree, the store and the slots.
+- [Variants and platforms](../concepts/variants.md) explains how `mkImages` combines platforms,
+  variants and modules.
 - [Customise an image](customise-image.md) covers the rest of what an image's modules may change.
 - [Customise the installer](customise-installer.md) adds the same drivers to the installer.
 - [Upgrade a cluster](upgrade-cluster.md) rolls the new image out.
