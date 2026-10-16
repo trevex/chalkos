@@ -177,7 +177,7 @@ func keyText(n *yaml.Node) string {
 }
 
 // decodeSpec decodes the document's spec into v. Numbers in untyped fields stay json.Number,
-// exact as written, such as those of the Kubernetes objects a Manifest carries.
+// exact as written, such as those of the Kubernetes objects an Addon carries.
 func (d Document) decodeSpec(v any) error {
 	b, err := json.Marshal(d.Object["spec"])
 	if err != nil {

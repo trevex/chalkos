@@ -418,11 +418,11 @@ in
         };
       };
     };
-    Manifest = builtin "kubernetes.chalkos.dev" // {
+    Addon = builtin "kubernetes.chalkos.dev" // {
       multiple = true;
       spec.objects = mkOption {
         type = types.listOf kubernetesObject;
-        description = "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Manifest documents in the order of their names.";
+        description = "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. Every Kubernetes node may hold them; workers apply none.";
       };
     };
   }

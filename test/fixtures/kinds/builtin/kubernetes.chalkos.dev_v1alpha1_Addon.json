@@ -6,7 +6,7 @@
       "const": "kubernetes.chalkos.dev/v1alpha1"
     },
     "kind": {
-      "const": "Manifest"
+      "const": "Addon"
     },
     "metadata": {
       "additionalProperties": false,
@@ -25,7 +25,7 @@
       "additionalProperties": false,
       "properties": {
         "objects": {
-          "description": "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Manifest documents in the order of their names.",
+          "description": "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. Every Kubernetes node may hold them; workers apply none.",
           "items": {
             "properties": {
               "apiVersion": {
@@ -63,11 +63,11 @@
     "metadata",
     "spec"
   ],
-  "title": "Manifest",
+  "title": "Addon",
   "type": "object",
   "x-chalkos-kind": {
     "group": "kubernetes.chalkos.dev",
-    "kind": "Manifest",
+    "kind": "Addon",
     "multiple": true,
     "version": "v1alpha1"
   }

@@ -188,14 +188,14 @@ func RegistryMirrorsOf(docs []Document) (map[string]Registry, error) {
 // RegistryMirrors returns the set's registry mirrors by registry.
 func (s *Set) RegistryMirrors() (map[string]Registry, error) { return RegistryMirrorsOf(s.docs) }
 
-// ManifestObjectsOf returns the objects of the Manifest documents, in the order of the documents'
-// names and each document's own order: the objects the control planes apply after chalkos's.
-func ManifestObjectsOf(docs []Document) ([]map[string]any, error) {
-	manifests := docsOf(docs, KubernetesAPI, "Manifest")
-	slices.SortStableFunc(manifests, func(a, b Document) int { return cmp.Compare(a.Name, b.Name) })
+// AddonObjectsOf returns the objects of the Addon documents, in the order of the documents' names
+// and each document's own order: the objects the control planes apply after chalkos's.
+func AddonObjectsOf(docs []Document) ([]map[string]any, error) {
+	addons := docsOf(docs, KubernetesAPI, "Addon")
+	slices.SortStableFunc(addons, func(a, b Document) int { return cmp.Compare(a.Name, b.Name) })
 	var out []map[string]any
-	for _, d := range manifests {
-		var spec manifestSpec
+	for _, d := range addons {
+		var spec addonSpec
 		if err := d.decodeSpec(&spec); err != nil {
 			return nil, err
 		}
@@ -204,8 +204,8 @@ func ManifestObjectsOf(docs []Document) ([]map[string]any, error) {
 	return out, nil
 }
 
-// ManifestObjects returns the objects of the set's Manifest documents in the order they apply.
-func (s *Set) ManifestObjects() ([]map[string]any, error) { return ManifestObjectsOf(s.docs) }
+// AddonObjects returns the objects of the set's Addon documents in the order they apply.
+func (s *Set) AddonObjects() ([]map[string]any, error) { return AddonObjectsOf(s.docs) }
 
 // TimeDHCP tells whether the node also takes the time servers DHCP announces.
 func (s *Set) TimeDHCP() (bool, error) {
@@ -220,7 +220,7 @@ func (s *Set) TimeDHCP() (bool, error) {
 
 // CheckKubernetes refuses a set whose Kubernetes documents a node of an image with the facts img
 // could not run on: a cluster that does not build, registry mirrors that conflict or are plain
-// HTTP without leave, and Manifest documents that do not decode.
+// HTTP without leave, and Addon documents that do not decode.
 func (s *Set) CheckKubernetes(img kubernetes.Image) error {
 	if _, err := s.Cluster(img); err != nil {
 		return err
@@ -228,6 +228,6 @@ func (s *Set) CheckKubernetes(img kubernetes.Image) error {
 	if _, err := s.RegistryMirrors(); err != nil {
 		return err
 	}
-	_, err := s.ManifestObjects()
+	_, err := s.AddonObjects()
 	return err
 }

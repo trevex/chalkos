@@ -189,7 +189,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	// the stored config's; nil on an image without Kubernetes or without new config. The stored
 	// set is replaced last, so a retry after a failed restart still finds the cluster changed.
 	var cluster *k8s.Cluster
-	clusterChanged, manifestsChanged := false, false
+	clusterChanged, addonsChanged := false, false
 	if !keep {
 		if s.Kubernetes != nil {
 			if cluster, err = s.Loader.Cluster(r.next.Documents); err != nil {
@@ -197,7 +197,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			}
 			if cluster != nil {
 				var prev *k8s.Cluster
-				if prev, manifestsChanged, err = s.storedKubernetes(r.next.Documents); err != nil {
+				if prev, addonsChanged, err = s.storedKubernetes(r.next.Documents); err != nil {
 					return nil, err
 				}
 				if err := s.checkFixed(prev, cluster); err != nil {
@@ -280,9 +280,10 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		if kubernetesUnits, act, err = s.applyKubernetes(ctx, old, d.data, share, clusterChanged); err != nil {
 			return nil, err
 		}
-		// A control plane applies the objects of changed Manifest documents at once, as its loop
-		// does whenever it starts.
-		if act == keepLoops && manifestsChanged && cluster.Kind == k8s.KindControlPlane {
+		// A control plane applies the objects of changed Addon documents at once, as its loop
+		// does whenever it starts. A worker holds them and applies none, so they change nothing it
+		// runs.
+		if act == keepLoops && addonsChanged && cluster.Kind == k8s.KindControlPlane {
 			act = reloadLoops
 		}
 	}
@@ -657,25 +658,25 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, c
 
 // storedKubernetes compares the stored config set with next on this image: it returns the
 // cluster the stored set gives, nil without a set or for a set that gives none, as one stored
-// before the image had Kubernetes settings, and whether the objects of next's Manifest
-// documents differ from the stored set's.
+// before the image had Kubernetes settings, and whether the objects of next's Addon documents
+// differ from the stored set's.
 func (s *Server) storedKubernetes(next []config.Document) (*k8s.Cluster, bool, error) {
 	stored, found, err := store.Read(s.Loader.Config)
 	if err != nil {
 		return nil, false, failed(connect.CodeInternal, "read the stored config: %v", err)
 	}
-	was, errWas := config.ManifestObjectsOf(stored.Documents)
-	gets, errGets := config.ManifestObjectsOf(next)
-	manifestsChanged := errWas != nil || errGets != nil || !sameJSON(was, gets)
+	was, errWas := config.AddonObjectsOf(stored.Documents)
+	gets, errGets := config.AddonObjectsOf(next)
+	addonsChanged := errWas != nil || errGets != nil || !sameJSON(was, gets)
 	if !found {
-		return nil, manifestsChanged, nil
+		return nil, addonsChanged, nil
 	}
 	c, err := s.Loader.Cluster(stored.Documents)
 	if err != nil {
 		log.Printf("the stored config gives no Kubernetes cluster: %v", err)
-		return nil, manifestsChanged, nil
+		return nil, addonsChanged, nil
 	}
-	return c, manifestsChanged, nil
+	return c, addonsChanged, nil
 }
 
 // sameJSON reports whether a and b encode to the same JSON.

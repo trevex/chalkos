@@ -31,20 +31,18 @@ type Bridged struct {
 	// that chalkos.nodes.<node>.documents added.
 	node       string
 	extensions int
-	// kubernetes is whether the node's image runs Kubernetes, controlPlane whether it is a
-	// control plane, which alone gets the manifests, and registries, manifests and dhcp the
-	// manifest's values its documents must give back.
-	kubernetes   bool
-	controlPlane bool
-	registries   manifest.Registries
-	manifests    []json.RawMessage
-	dhcp         bool
+	// kubernetes is whether the node's image runs Kubernetes, and registries, manifests and dhcp
+	// the manifest's values its documents must give back.
+	kubernetes bool
+	registries manifest.Registries
+	manifests  []json.RawMessage
+	dhcp       bool
 }
 
 // FromManifest generates a node's config from the manifest: Cluster, Image, Node, TimeSync,
 // SystemDisk and Volume, Network, NetDev and Link, and Kubelet documents mapped back from the
 // identity the cluster definition rendered; on a node with Kubernetes the Kubernetes, Flannel,
-// RegistryMirror and Manifest documents of the manifest's cluster-wide settings; then the
+// RegistryMirror and Addon documents of the manifest's cluster-wide settings; then the
 // documents the node's extensions add. The Image is named <role>-<platform>, and its source is the
 // flake attribute path the manifest gives the role's image of the platform. Check tells whether
 // the documents give back that identity.
@@ -90,7 +88,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		objects = append(objects, kubeletObject(id))
 	}
 	if n.Kind != "" {
-		docs, err := kubernetesObjects(m, n.Kind == identity.KindControlPlane)
+		docs, err := kubernetesObjects(m)
 		if err != nil {
 			return Bridged{}, err
 		}
@@ -108,7 +106,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		return Bridged{}, err
 	}
 	b.node, b.extensions = name, len(n.Documents)
-	b.kubernetes, b.controlPlane = n.Kind != "", n.Kind == identity.KindControlPlane
+	b.kubernetes = n.Kind != ""
 	b.registries, b.manifests, b.dhcp = m.Registries, m.Manifests, m.Time.DHCPServers
 	return b, nil
 }
@@ -316,11 +314,11 @@ func kubeletObject(id identity.Identity) map[string]any {
 }
 
 // kubernetesObjects maps the manifest's cluster-wide settings to the Kubernetes, Flannel,
-// RegistryMirror and Manifest documents of a node with Kubernetes. A manifest without a
-// kubernetes section gets the kind's defaults. Only control planes apply the cluster's manifests,
-// so only they get the Manifest, which holds them in order; none is emitted for an empty list.
-// Workers thus neither store the objects, Secrets among them, nor carry them in every message.
-func kubernetesObjects(m *manifest.Manifest, controlPlane bool) ([]map[string]any, error) {
+// RegistryMirror and Addon documents of a node with Kubernetes. A manifest without a kubernetes
+// section gets the kind's defaults. Every Kubernetes node gets the Addon, which holds the
+// cluster's manifests in order and which only control planes apply; none is emitted for an empty
+// list.
+func kubernetesObjects(m *manifest.Manifest) ([]map[string]any, error) {
 	spec := map[string]any{}
 	if !manifest.IsNull(m.Kubernetes) {
 		var err error
@@ -354,7 +352,7 @@ func kubernetesObjects(m *manifest.Manifest, controlPlane bool) ([]map[string]an
 			"allowPlainHTTP": m.Registries.AllowPlainHTTP,
 		}))
 	}
-	if controlPlane && len(m.Manifests) > 0 {
+	if len(m.Manifests) > 0 {
 		list := make([]any, 0, len(m.Manifests))
 		for i, raw := range m.Manifests {
 			o, err := decodeObject(raw)
@@ -363,7 +361,7 @@ func kubernetesObjects(m *manifest.Manifest, controlPlane bool) ([]map[string]an
 			}
 			list = append(list, o)
 		}
-		objects = append(objects, object(KubernetesAPI, "Manifest", "manifests", map[string]any{"objects": list}))
+		objects = append(objects, object(KubernetesAPI, "Addon", "manifests", map[string]any{"objects": list}))
 	}
 	return objects, nil
 }
@@ -554,8 +552,8 @@ func (b Bridged) Check(want identity.Identity, s *schema.Schemas, t Target) (ide
 	return got, nil
 }
 
-// clusterSettingsDiffs names how the documents' registries, manifests and DHCP flag differ from
-// the manifest's; a worker's documents hold no manifests.
+// clusterSettingsDiffs names how the documents' registries, Addon objects and DHCP flag differ
+// from the manifest's.
 func (b Bridged) clusterSettingsDiffs(set *Set, t Target) ([]string, error) {
 	var diffs []string
 	dhcp, err := set.TimeDHCP()
@@ -583,15 +581,11 @@ func (b Bridged) clusterSettingsDiffs(set *Set, t Target) ([]string, error) {
 			diffs = append(diffs, fmt.Sprintf("registry %s: mirrors %v, plain HTTP %t instead of %v, %t", registry, g.Mirrors, g.AllowPlainHTTP, w.Mirrors, w.AllowPlainHTTP))
 		}
 	}
-	objects, err := set.ManifestObjects()
+	objects, err := set.AddonObjects()
 	if err != nil {
-		return nil, fmt.Errorf("the manifests the documents give: %w", err)
+		return nil, fmt.Errorf("the Addon objects the documents give: %w", err)
 	}
-	var manifests []json.RawMessage
-	if b.controlPlane {
-		manifests = b.manifests
-	}
-	if d := manifestDiff(manifests, objects); d != "" {
+	if d := manifestDiff(b.manifests, objects); d != "" {
 		diffs = append(diffs, d)
 	}
 	return diffs, nil

@@ -40,11 +40,11 @@ import (
 // Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
 type Kubernetes struct {
 	Paths knode.Paths
-	// Config is the node's config set on STATE, whose Manifest documents the control plane
+	// Config is the node's config set on STATE, whose Addon documents the control plane
 	// applies after chalkos's addons.
 	Config string
 	// Objects returns the objects the control plane applies for the cluster: chalkos's addons,
-	// then those of the Manifest documents. Tests replace it.
+	// then those of the Addon documents. Tests replace it.
 	Objects func(c k8s.Cluster) ([]map[string]any, error)
 	// ControlPlane runs on a bootstrapped control-plane node until ctx ends or it fails: it
 	// applies the manifests, calls applied with their number once that succeeded, and approves
@@ -531,7 +531,7 @@ func (k *Kubernetes) runControlPlane(ctx context.Context, share kpki.Share, appl
 
 // serveControlPlane approves kubelet serving certificates once the API server is ready and,
 // independently, applies the control plane's objects until that succeeds, so objects that fail,
-// such as a Manifest document's, leave kubelets their serving certificates. It runs until ctx
+// such as an Addon document's, leave kubelets their serving certificates. It runs until ctx
 // ends.
 func (k *Kubernetes) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.Config, applied func(n int)) error {
 	approve := k.Approve
@@ -597,8 +597,7 @@ func (k *Kubernetes) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Con
 	return len(objects), nil
 }
 
-// objects are chalkos's addons for the cluster, then the objects of the node's Manifest
-// documents.
+// objects are chalkos's addons for the cluster, then the objects of the node's Addon documents.
 func (k *Kubernetes) objects(c k8s.Cluster) ([]map[string]any, error) {
 	objects, err := addons.Render(c)
 	if err != nil {
@@ -608,11 +607,11 @@ func (k *Kubernetes) objects(c k8s.Cluster) ([]map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read the stored config: %w", err)
 	}
-	manifests, err := config.ManifestObjectsOf(stored.Documents)
+	extra, err := config.AddonObjectsOf(stored.Documents)
 	if err != nil {
 		return nil, err
 	}
-	return append(objects, manifests...), nil
+	return append(objects, extra...), nil
 }
 
 // node reads the node's Node object with the kubelet's credentials, which may read their own

@@ -1046,9 +1046,9 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 	}
 }
 
-// TestObjectsAreTheAddonsThenTheManifests: chalkd applies the addons it renders for the cluster,
-// then the objects of the stored Manifest documents.
-func TestObjectsAreTheAddonsThenTheManifests(t *testing.T) {
+// TestObjectsAreChalkosAddonsThenTheAddonDocuments: chalkd applies the addons it renders for the
+// cluster, then the objects of the stored Addon documents.
+func TestObjectsAreChalkosAddonsThenTheAddonDocuments(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
 	k := NewKubernetes()
 	k.Config = s.Kubernetes.Config
@@ -1057,7 +1057,7 @@ func TestObjectsAreTheAddonsThenTheManifests(t *testing.T) {
 		t.Fatal(err)
 	}
 	docs, err := config.Parse(strings.NewReader(`apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Manifest
+kind: Addon
 metadata: {name: apps}
 spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 `))
@@ -1309,9 +1309,9 @@ func TestApplyConfigComparesRangesCanonically(t *testing.T) {
 	}
 }
 
-// A control plane applies the objects of changed Manifest documents at once, without restarting
+// A control plane applies the objects of changed Addon documents at once, without restarting
 // a unit, from the config stored by then.
-func TestApplyConfigAppliesChangedManifests(t *testing.T) {
+func TestApplyConfigAppliesChangedAddons(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindControlPlane)
 	k := s.Kubernetes
 	p := k.Paths
@@ -1351,7 +1351,7 @@ func TestApplyConfigAppliesChangedManifests(t *testing.T) {
 	r.calls = nil
 	resp, err := sendConfig(s, config+`---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Manifest
+kind: Addon
 metadata: {name: apps}
 spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 `)
@@ -1361,17 +1361,17 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	select {
 	case got := <-applied:
 		if got != "apps" {
-			t.Errorf("applied up to %s, want the Manifest's namespace", got)
+			t.Errorf("applied up to %s, want the Addon's namespace", got)
 		}
 	case <-time.After(time.Minute):
-		t.Fatal("the changed Manifest documents were not applied")
+		t.Fatal("the changed Addon documents were not applied")
 	}
 	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.calls, func(c string) bool { return strings.HasPrefix(c, "systemctl restart") }) {
 		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
 	}
 }
 
-// Objects that fail to apply, such as a bad Manifest document's, leave the approver of kubelet
+// Objects that fail to apply, such as a bad Addon document's, leave the approver of kubelet
 // serving certificates running while the apply retries.
 func TestApproverRunsWhileObjectsFail(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
@@ -1402,5 +1402,26 @@ func TestApproverRunsWhileObjectsFail(t *testing.T) {
 	cancel()
 	if err := <-served; !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// A worker holds Addon documents without applying them: a changed one restarts no unit.
+func TestApplyConfigOnAWorkerKeepsChangedAddons(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	r.calls = nil
+	resp, err := sendConfig(s, workerConfig+`---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Addon
+metadata: {name: apps}
+spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.RestartedUnits) != 0 || slices.ContainsFunc(r.calls, func(c string) bool { return strings.Contains(c, "restart") }) {
+		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.calls)
 	}
 }

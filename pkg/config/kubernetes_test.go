@@ -127,16 +127,16 @@ func TestRegistryMirrors(t *testing.T) {
 	}
 }
 
-func TestManifestObjectsInNameOrder(t *testing.T) {
-	manifest := func(name string, objects ...string) string {
+func TestAddonObjectsInNameOrder(t *testing.T) {
+	addon := func(name string, objects ...string) string {
 		var list []string
 		for _, o := range objects {
 			list = append(list, "{apiVersion: v1, kind: Namespace, metadata: {name: "+o+"}}")
 		}
-		return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Manifest\nmetadata: {name: " + name + "}\nspec: {objects: [" + strings.Join(list, ", ") + "]}\n"
+		return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: " + name + "}\nspec: {objects: [" + strings.Join(list, ", ") + "]}\n"
 	}
-	s := kubernetesSet(t, "{}", manifest("b", "third")+manifest("a", "first", "second"))
-	objects, err := s.ManifestObjects()
+	s := kubernetesSet(t, "{}", addon("b", "third")+addon("a", "first", "second"))
+	objects, err := s.AddonObjects()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,11 +209,11 @@ func TestClusterNamesTheDocument(t *testing.T) {
 	}
 }
 
-// Manifest objects keep their numbers as written, so applying them sends the same digits.
-func TestManifestObjectsKeepNumbers(t *testing.T) {
-	s := kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Manifest\nmetadata: {name: m}\n"+
+// Addon objects keep their numbers as written, so applying them sends the same digits.
+func TestAddonObjectsKeepNumbers(t *testing.T) {
+	s := kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: m}\n"+
 		"spec: {objects: [{apiVersion: v1, kind: ConfigMap, metadata: {name: c}, data: {}, big: 9007199254740993, f: 1.5}]}\n")
-	objects, err := s.ManifestObjects()
+	objects, err := s.AddonObjects()
 	if err != nil {
 		t.Fatal(err)
 	}

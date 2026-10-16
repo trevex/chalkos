@@ -116,6 +116,6 @@ type registryMirrorSpec struct {
 	AllowPlainHTTP bool     `json:"allowPlainHTTP"`
 }
 
-type manifestSpec struct {
+type addonSpec struct {
 	Objects []map[string]any `json:"objects"`
 }

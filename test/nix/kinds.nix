@@ -524,13 +524,13 @@ lib.runTests {
   testBuiltinKindsOfKubernetesImage = {
     expr = lib.sort lib.lessThan (kindNames kubernetesImage);
     expected = [
+      "Addon"
       "Cluster"
       "Flannel"
       "Image"
       "Kubelet"
       "Kubernetes"
       "Link"
-      "Manifest"
       "NetDev"
       "Network"
       "Node"
@@ -547,9 +547,9 @@ lib.runTests {
   };
   testImageWithoutKubernetesHasNoKubernetesKinds = {
     expr = lib.intersectLists [
+      "Addon"
       "Flannel"
       "Kubernetes"
-      "Manifest"
       "RegistryMirror"
     ] (kindNames plainImage);
     expected = [ ];
@@ -677,7 +677,7 @@ lib.runTests {
       "Image"
       "Kubelet"
       "Kubernetes"
-      "Manifest"
+      "Addon"
       "Node"
       "RegistryMirror"
       "Secret"
@@ -691,7 +691,7 @@ lib.runTests {
       "chalkos.dev_v1alpha1_Image.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubelet.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubernetes.json"
-      "kubernetes.chalkos.dev_v1alpha1_Manifest.json"
+      "kubernetes.chalkos.dev_v1alpha1_Addon.json"
       "chalkos.dev_v1alpha1_Node.json"
       "kubernetes.chalkos.dev_v1alpha1_RegistryMirror.json"
       "chalkos.dev_v1alpha1_Secret.json"

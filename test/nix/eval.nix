@@ -936,7 +936,7 @@ lib.runTests {
     expected = [ ];
   };
   # The cluster-wide settings chalkctl turns into each node's Kubernetes, Flannel, RegistryMirror,
-  # Manifest and TimeSync documents.
+  # Addon and TimeSync documents.
   testManifestCarriesTheClusterSettings = {
     expr =
       let
