@@ -3,6 +3,7 @@
 # accept, whatever other tables do, so the table chalkos-controlplane only marks TCP to 6443,
 # 2379 and 2380, and the firewall accepts what carries the mark (see kubernetes.nix). The table
 # is not the firewall's: reloading the firewall leaves it alone. On a worker the table goes.
+# Without the firewall, ports is false and the script makes etcd's directory alone.
 {
   lib,
   writeShellApplication,
@@ -10,6 +11,7 @@
   nftables,
   typeCommand,
   etcdDir ? "/var/lib/etcd",
+  ports ? true,
   # The packet mark bit the firewall accepts the ports with.
   mark,
 }:
@@ -18,14 +20,15 @@ let
 in
 writeShellApplication {
   name = "chalkos-controlplane";
-  runtimeInputs = [
-    coreutils
-    nftables
-  ];
+  runtimeInputs = [ coreutils ] ++ lib.optional ports nftables;
   text = ''
     type=$(${typeCommand})
     if [ "$type" = controlplane ]; then
       install -d -m 0700 ${lib.escapeShellArg etcdDir}
+    fi
+  ''
+  + lib.optionalString ports ''
+    if [ "$type" = controlplane ]; then
       # Its input chain runs before the firewall's and first clears the mark, so only this rule
       # sets it; its clear chain runs after the firewall's, so the mark never outlives it.
       nft -f - <<'NFT'
@@ -43,10 +46,8 @@ writeShellApplication {
       }
     }
     NFT
-    else
-      if nft list table inet chalkos-controlplane >/dev/null 2>&1; then
-        nft delete table inet chalkos-controlplane
-      fi
+    elif nft list table inet chalkos-controlplane >/dev/null 2>&1; then
+      nft delete table inet chalkos-controlplane
     fi
   '';
 }

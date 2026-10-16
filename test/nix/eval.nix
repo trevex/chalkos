@@ -3054,8 +3054,8 @@ lib.runTests {
           nodeCIDRMaskSizes
           ;
         apiServer = clusterFile.images.kubeAPIServer;
-        # The images no longer differ: Node.spec.type opens the API server's and etcd's ports,
-        # which etcd authenticates by its CA, and makes etcd's directory at runtime.
+        # The image opens neither the API server's nor etcd's ports, which etcd authenticates by its
+        # CA, nor makes etcd's directory: chalkos-controlplane does both by Node.spec.type.
         firewall = lib.any (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
           6443
           2379
@@ -3071,6 +3071,19 @@ lib.runTests {
           "chalkos-kubernetes.service"
           "kubelet.service"
         ];
+        etcdMount = config.systemd.services.chalkos-controlplane.unitConfig.RequiresMountsFor;
+        # Without the firewall the unit makes etcd's directory alone, and does not wait for it.
+        afterAbsentFirewall =
+          let
+            unit =
+              (role (cluster [
+                {
+                  chalkos.roles.worker.kubernetes.kind = "controlplane";
+                  chalkos.roles.worker.nixosModules = [ { networking.firewall.enable = false; } ];
+                }
+              ])).systemd.services.chalkos-controlplane;
+          in
+          lib.elem "nftables.service" unit.after;
       };
     expected = {
       kind = "controlplane";
@@ -3088,6 +3101,8 @@ lib.runTests {
       etcdDir = false;
       consumer = [ "Node" ];
       beforeKubernetes = true;
+      etcdMount = "/var/lib/etcd";
+      afterAbsentFirewall = false;
     };
   };
   testWorkerImageHasNoManifests = {
@@ -3099,7 +3114,7 @@ lib.runTests {
         manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
         apiServerPort = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
         # The control plane's rule, which only a control plane's table makes match.
-        markedPorts = lib.hasInfix "6443" config.networking.firewall.extraInputRules;
+        markedPorts = lib.hasInfix "tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept" config.networking.firewall.extraInputRules;
       };
     expected = {
       manifests = false;

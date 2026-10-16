@@ -139,10 +139,13 @@ let
   };
 
   # A packet mark bit of the control plane's ports, which chalkos-controlplane sets; kube-proxy
-  # (0x4000, 0x8000), flannel and the VXLAN rule leave it alone.
+  # (0x4000, 0x8000), flannel and the VXLAN rule leave it alone. It is cleared on every packet
+  # the node receives, so a network plugin of the cluster's own (cni.provider "none") must not
+  # use it.
   controlPlaneMark = "0x02000000";
   controlPlanePorts = pkgs.callPackage ./controlplane-ports.nix {
     typeCommand = config.chalkos.kinds.Node.get { path = "spec.type"; };
+    ports = config.networking.firewall.enable;
     mark = controlPlaneMark;
   };
 in
@@ -208,6 +211,9 @@ in
       # chalkd renders from the node's config; tests compare the two.
       system.build.chalkosAddons = k.addons;
       system.build.chalkosKubeletConfig = kubeletConfig;
+      # The scripts of the units that read the config, which checks run with documents of their
+      # own.
+      system.build.chalkosVxlanRule = vxlanRule;
 
       # containerd runs the CNI plugins, and portmap programs nftables with nft.
       systemd.services.containerd.path = [ pkgs.nftables ];
@@ -327,13 +333,14 @@ in
       };
 
       systemd.services.chalkos-controlplane = {
-        description = "Open the control plane's ports by the node's type";
+        description = "Open the control plane's ports and make etcd's directory by the node's type";
         wantedBy = [ "multi-user.target" ];
         after = [
           "chalkos-identity.service"
-          "nftables.service"
           "local-fs.target"
-        ];
+        ]
+        ++ lib.optional config.networking.firewall.enable "nftables.service";
+        unitConfig.RequiresMountsFor = "/var/lib/etcd";
         before = [
           "chalkos-kubernetes.service"
           "kubelet.service"

@@ -106,6 +106,9 @@ These limits hold in the current code, grouped by area.
 - The firewall opens etcd's ports 2379 and 2380 on control planes to every source, not only to
   the other control planes; etcd accepts only certificates of its CA there.
 - The firewall opens the NodePort range for TCP only.
+- Packets a node receives lose the packet mark bit 0x02000000, which the firewall's rule for the
+  control plane's ports uses, so a network plugin of the cluster's own
+  (`chalkos.cni.provider = "none"`) must not use it.
 - VIPs are announced on the local network alone, with ARP and IPv6 neighbour advertisements.
 
 [Ports and firewall](../reference/ports-and-firewall.md) lists the rules and
