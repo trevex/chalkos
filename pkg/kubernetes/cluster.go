@@ -105,7 +105,7 @@ type VIP struct {
 }
 
 // Images are the images the cluster's components run from: the control plane's static pods and
-// the addons chalkd applies. Flannel is empty without flannel.
+// the add-ons chalkd applies. Flannel is empty without flannel.
 type Images struct {
 	Etcd                  string `json:"etcd"`
 	KubeAPIServer         string `json:"kubeAPIServer"`

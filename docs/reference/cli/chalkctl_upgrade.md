@@ -59,7 +59,7 @@ chalkctl upgrade [flags]
       --flake string           directory of the flake that defines the cluster (default ".")
   -h, --help                   help for upgrade
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --image string           image to install on the nodes of its role and platform: a raw image with repart-output.json next to it, or the directory nix build produces (default: build each node's image from the cluster definition)
+      --image string           image to install on the nodes of its role and platform, or on the nodes --nodes names whatever their role: a raw image with repart-output.json next to it, or the directory nix build produces (default: build each node's image from the cluster definition)
       --manifest string        read the cluster's manifest from this file instead of evaluating the flake
       --max-unavailable int    how many workers and nodes without Kubernetes upgrade at once (default 1)
       --no-reboot              install the images on the nodes without draining or rebooting them; they boot with their next reboot

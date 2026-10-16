@@ -50,8 +50,8 @@ chalkctl upgrade
 ```
 
 With `--image`, it takes a prebuilt image, a raw image with `repart-output.json` beside it or the
-directory `nix build` makes, and installs it on the nodes of the image's role, or on those
-`--nodes` names whatever their role. Nodes on another platform than the image's are skipped and
+directory `nix build` makes, and installs it on the nodes of the image's role, or on the nodes
+`--nodes` names, whatever their role. Nodes on another platform than the image's are skipped and
 named. chalkctl prints each node that gets an image of another variant than the one it runs.
 
 ```sh
@@ -268,7 +268,7 @@ again. Usually the fix is a new build, which needs a new version.
 
 | Flag | Effect |
 | --- | --- |
-| `--image` | Install a prebuilt image on the nodes of its role, or those `--nodes` names, instead of building each group's image |
+| `--image` | Install a prebuilt image on the nodes of its role and platform, or on the nodes `--nodes` names, whatever their role, instead of building each group's image |
 | `--nodes` | Upgrade only the named nodes |
 | `--max-unavailable` | Upgrade this many workers and nodes without Kubernetes at once, 1 by default |
 | `--allow-downtime` | Upgrade one or two control planes, whose etcd and API server are down while one reboots |

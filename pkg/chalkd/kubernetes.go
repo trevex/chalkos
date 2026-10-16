@@ -41,9 +41,9 @@ import (
 type Kubernetes struct {
 	Paths knode.Paths
 	// Config is the node's config set on STATE, whose Addon documents the control plane
-	// applies after chalkos's addons.
+	// applies after chalkos's add-ons.
 	Config string
-	// Objects returns the objects the control plane applies for the cluster: chalkos's addons,
+	// Objects returns the objects the control plane applies for the cluster: chalkos's add-ons,
 	// then those of the Addon documents. Tests replace it.
 	Objects func(c k8s.Cluster) ([]map[string]any, error)
 	// ControlPlane runs on a bootstrapped control-plane node until ctx ends or it fails: it
@@ -597,11 +597,11 @@ func (k *Kubernetes) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Con
 	return len(objects), nil
 }
 
-// objects are chalkos's addons for the cluster, then the objects of the node's Addon documents.
+// objects are chalkos's add-ons for the cluster, then the objects of the node's Addon documents.
 func (k *Kubernetes) objects(c k8s.Cluster) ([]map[string]any, error) {
 	objects, err := addons.Render(c)
 	if err != nil {
-		return nil, fmt.Errorf("render chalkos's addons: %w", err)
+		return nil, fmt.Errorf("render chalkos's add-ons: %w", err)
 	}
 	stored, _, err := store.Read(k.Config)
 	if err != nil {

@@ -91,7 +91,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs. |
 | `kubernetes/vip` | Adds a VIP to an interface and announces it. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the [lab](../reference/glossary.md#lab)'s supervisor, for chalklab and the end-to-end tests. |
-| `manifest` | The manifest's Go types, which chalkctl and chalklab read; nothing on a node does. |
+| `manifest` | The manifest's Go types, which chalkctl and chalklab read; no node reads one. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the node's stored config, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the units that read them, and tells which units to restart. |
 | `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |

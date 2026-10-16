@@ -117,7 +117,7 @@ type workload struct{ kind, namespace, name string }
 
 func (w workload) String() string { return w.namespace + "/" + w.kind + "/" + w.name }
 
-// restartAddons restarts the workloads of the cluster's manifests, chalkos's addons among them,
+// restartAddons restarts the workloads of the cluster's manifests, chalkos's add-ons among them,
 // so their pods trust the Kubernetes CAs of bundle: a pod reads its service account's CA
 // certificates when it starts. They restart only once kube-root-ca.crt holds all of them in
 // their namespaces, and the step ends once they rolled out. A workload whose rollout does not

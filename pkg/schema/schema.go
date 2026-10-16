@@ -31,7 +31,7 @@ type Metadata struct {
 	// Variant is the name the image is built as: a cluster definition's role images carry the
 	// role's name.
 	Variant string `json:"variant"`
-	// Platform is empty for the installer, which serves every platform.
+	// Platform is the platform the image is built for, such as metal or kvm.
 	Platform string `json:"platform"`
 	// RootHash is the store's dm-verity root hash, in hex; it identifies the image's content.
 	RootHash string `json:"rootHash"`

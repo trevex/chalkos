@@ -1,6 +1,6 @@
 // Package manifest decodes the cluster manifest that a chalkos cluster definition generates
 // (`chalkos.<cluster>.manifest`). The format is unstable while SchemaVersion is 0. chalkctl and
-// chalklab read it; nothing on a node does.
+// chalklab read it; no node reads one.
 package manifest
 
 import (
