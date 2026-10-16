@@ -155,14 +155,14 @@ func TestClusterValidate(t *testing.T) {
 		// The kubelet's flags reach it through an environment variable that ExecStart splits at
 		// whitespace.
 		"kubelet flag with a space": func(c *Cluster) {
-			c.ExtraArgs = map[string]map[string]string{"kubelet": {"node-labels": "a=b c=d"}}
+			c.ExtraArgs = map[string]map[string]string{"kubelet": {"eviction-hard": "a=b c=d"}}
 		},
 		"kubelet flag with a newline": func(c *Cluster) {
 			c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2\nX=1"}}
 		},
 		// systemd's environment files drop backslashes.
 		"kubelet flag with a backslash": func(c *Cluster) {
-			c.ExtraArgs = map[string]map[string]string{"kubelet": {"node-labels": `a=b\c`}}
+			c.ExtraArgs = map[string]map[string]string{"kubelet": {"eviction-hard": `a=b\c`}}
 		},
 		// These flags decide who may do what; chalkos sets them.
 		"authorization-mode": func(c *Cluster) {
@@ -194,7 +194,13 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, flag := range ProtectedKubeletFlags {
+	// Written out rather than read from ProtectedKubeletFlags, so a flag dropped from it fails here.
+	for _, flag := range []string{
+		"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
+		"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override", "kubeconfig", "node-ip",
+		"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
+		"tls-cert-file", "tls-private-key-file",
+	} {
 		for _, name := range []string{flag, strings.ReplaceAll(flag, "-", "_")} {
 			c := valid
 			c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", name: "x"}}
@@ -204,11 +210,30 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"anonymous_auth", "authorization-mode", "enable_bootstrap-token_auth"} {
+	for _, flag := range []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"} {
+		for _, name := range []string{flag, strings.ReplaceAll(flag, "-", "_")} {
+			c := valid
+			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
+			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "kube-apiserver --"+name+" is set by chalkos") {
+				t.Errorf("kube-apiserver %s: err = %v", name, err)
+			}
+		}
+	}
+	// The components take _ for - anywhere in a name.
+	for _, name := range []string{"enable_bootstrap-token_auth"} {
 		c := valid
 		c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
 		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "kube-apiserver --"+name+" is set by chalkos") {
 			t.Errorf("kube-apiserver %s: err = %v", name, err)
+		}
+	}
+	// The kubelet's flags reach it through an environment variable that ExecStart splits at
+	// whitespace, from an environment file that drops backslashes.
+	for name, value := range map[string]string{"space": "a=b c=d", "tab": "2\t", "newline": "2\nX=1", "carriage return": "2\r", "backslash": `a=b\c`} {
+		c := valid
+		c.ExtraArgs = map[string]map[string]string{"kubelet": {"eviction-hard": value}}
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "cannot hold whitespace or backslashes") {
+			t.Errorf("kubelet flag with a %s: err = %v", name, err)
 		}
 	}
 	c := valid

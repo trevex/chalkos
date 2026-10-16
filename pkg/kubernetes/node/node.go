@@ -433,27 +433,15 @@ func vxlanFile(picked []nodeip.Address, sources []netip.Prefix) []byte {
 	return []byte(b.String())
 }
 
-// checkVXLANSources refuses node addresses outside the ranges the other nodes take VXLAN from:
-// their pods could not reach this node's.
+// checkVXLANSources refuses picked addresses outside the ranges the other nodes take VXLAN from.
+// The node's config was checked against them already, but an address picked from the subnets at
+// boot is known only now.
 func checkVXLANSources(picked []nodeip.Address, sources []netip.Prefix) error {
-	if len(sources) == 0 {
-		return nil
+	addrs := make([]netip.Addr, len(picked))
+	for i, a := range picked {
+		addrs[i] = a.IP
 	}
-	for _, a := range picked {
-		if !slices.ContainsFunc(sources, func(p netip.Prefix) bool { return p.Contains(a.IP) }) {
-			return fmt.Errorf("the node's address %s is outside vxlanSourceSubnets %s, from which alone the other nodes take VXLAN", a.IP, joinPrefixes(sources))
-		}
-	}
-	return nil
-}
-
-// joinPrefixes lists the ranges, separated by commas.
-func joinPrefixes(prefixes []netip.Prefix) string {
-	list := make([]string, len(prefixes))
-	for i, p := range prefixes {
-		list[i] = p.String()
-	}
-	return strings.Join(list, ", ")
+	return kubernetes.CheckVXLANSources(sources, addrs)
 }
 
 // nodeIPFile is the content of the file holding the addresses: one per line.

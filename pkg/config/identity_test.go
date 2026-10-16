@@ -350,3 +350,43 @@ func TestKubeletValidSubnets(t *testing.T) {
 		})
 	}
 }
+
+// TestVXLANSourcesHoldTheNodesAddresses refuses a node whose addresses, fixed or picked from the
+// subnets that apply, may lie outside the ranges the other nodes take VXLAN from.
+func TestVXLANSourcesHoldTheNodesAddresses(t *testing.T) {
+	const network = "---\napiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-a}\nspec: {network: {address: [192.168.100.5/24, \"fd00:100::5/64\"]}}\n"
+	const sources = `vxlanSourceSubnets: ["192.168.0.0/16", "fd00:100::/64"]`
+	kubelet := func(spec string) string {
+		return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\nspec: " + spec + "\n"
+	}
+	for name, tc := range map[string]struct {
+		cluster, kubelet string
+		nodeIPs          []string
+		refused          string
+	}{
+		"static inside":  {"{ipFamilies: [ipv4, ipv6], " + sources + "}", "", []string{"192.168.100.5", "fd00:100::5"}, ""},
+		"fixed outside":  {"{ipFamilies: [ipv4, ipv6], " + sources + "}", kubelet(`{nodeIPs: [10.0.0.5]}`), nil, "10.0.0.5 is outside vxlanSourceSubnets"},
+		"subnets inside": {"{ipFamilies: [ipv4, ipv6], " + sources + "}", kubelet(`{validSubnets: ["192.168.100.0/24", "fd00:100::/64"]}`), []string{}, ""},
+		"subnet outside": {"{ipFamilies: [ipv4, ipv6], " + sources + "}", kubelet(`{validSubnets: ["192.168.0.0/15", "fd00:100::/64"]}`), nil, "picks its address from 192.168.0.0/15"},
+		// Exclusions need not be inside.
+		"exclusion outside":      {"{ipFamilies: [ipv4, ipv6], " + sources + "}", kubelet(`{validSubnets: ["192.168.100.0/24", "fd00:100::/64", "!10.0.0.0/8"]}`), []string{}, ""},
+		"cluster subnet outside": {`{ipFamilies: [ipv4, ipv6], nodeIP: {validSubnets: ["10.0.0.0/8"]}, ` + sources + "}", "", nil, "picks its address from 10.0.0.0/8"},
+		"without sources":        {"{}", kubelet(`{nodeIPs: [10.0.0.5]}`), []string{"10.0.0.5"}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			id, err := kubernetesSet(t, tc.cluster, network+tc.kubelet).Identity(Target{Image: &testImage})
+			if tc.refused != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.refused) {
+					t.Fatalf("err = %v, want one mentioning %q", err, tc.refused)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(id.Kubernetes.NodeIPs, tc.nodeIPs) {
+				t.Errorf("nodeIPs = %#v, want %#v", id.Kubernetes.NodeIPs, tc.nodeIPs)
+			}
+		})
+	}
+}

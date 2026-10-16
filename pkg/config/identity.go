@@ -176,9 +176,11 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 		nodeIPs = defaultNodeIPs(id.StaticAddresses(), families, subnets)
 	}
 	var seen []nodeip.Family
+	var addrs []netip.Addr
 	for _, a := range nodeIPs {
 		if ip, err := netip.ParseAddr(a); err == nil {
 			seen = append(seen, nodeip.FamilyOf(ip))
+			addrs = append(addrs, ip)
 		} else {
 			add("Kubelet: nodeIPs: %q is not an address", a)
 		}
@@ -197,6 +199,20 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	for _, f := range unique {
 		if !slices.Contains(families, f) {
 			add("Kubelet: nodeIPs: an %s address, but the cluster's ipFamilies are [ %s ]", f, joinFamilies(families))
+		}
+	}
+	// The other nodes take VXLAN only from vxlanSourceSubnets, so every address the node has or
+	// may pick must lie in them; the node checks the addresses it picks at boot again. Invalid
+	// sources are the Kubernetes document's error, reported with the cluster.
+	if sources, err := c.VXLANSources(); err == nil {
+		if err := kubernetes.CheckVXLANSources(sources, addrs); err != nil {
+			add("Kubelet: nodeIPs: %v", err)
+		}
+		for _, s := range subnets {
+			p, err := netip.ParsePrefix(s)
+			if err == nil && !kubernetes.InVXLANSources(sources, p) {
+				add("Kubelet: the node picks its address from %s, which is not inside vxlanSourceSubnets, from which alone the other nodes take VXLAN", s)
+			}
 		}
 	}
 	// Invalid subnets are reported above; which families they would pick from is moot.

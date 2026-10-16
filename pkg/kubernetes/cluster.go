@@ -392,6 +392,35 @@ func parseRange(option string, f nodeip.Family, s string) (netip.Prefix, error) 
 	return p, nil
 }
 
+// CheckVXLANSources refuses node addresses outside the ranges the other nodes take VXLAN from,
+// sources from VXLANSources: their pods could not reach this node's. No sources take VXLAN from
+// anywhere.
+func CheckVXLANSources(sources []netip.Prefix, addrs []netip.Addr) error {
+	for _, a := range addrs {
+		if !InVXLANSources(sources, netip.PrefixFrom(a, a.BitLen())) {
+			return fmt.Errorf("the node's address %s is outside vxlanSourceSubnets %s, from which alone the other nodes take VXLAN", a, joinPrefixes(sources))
+		}
+	}
+	return nil
+}
+
+// InVXLANSources tells whether every address of the range p lies in one of sources, or sources
+// are none.
+func InVXLANSources(sources []netip.Prefix, p netip.Prefix) bool {
+	return len(sources) == 0 || slices.ContainsFunc(sources, func(s netip.Prefix) bool {
+		return s.Bits() <= p.Bits() && s.Contains(p.Masked().Addr())
+	})
+}
+
+// joinPrefixes lists the ranges, separated by commas.
+func joinPrefixes(prefixes []netip.Prefix) string {
+	list := make([]string, len(prefixes))
+	for i, p := range prefixes {
+		list[i] = p.String()
+	}
+	return strings.Join(list, ", ")
+}
+
 // VXLANSources returns the ranges VXLAN must come from: networks of the cluster's families, at
 // least one of each, or none.
 func (c Cluster) VXLANSources() ([]netip.Prefix, error) {
