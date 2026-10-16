@@ -1654,7 +1654,7 @@ lib.runTests {
     expr = {
       manifest = twoNodes.manifest.nodes.n1.kind;
       roleKind = twoNodes.manifest.roles.worker ? kind;
-      image = (role (cluster [ ])).chalkos.role.kubernetes.enable;
+      image = (role (cluster [ ])).chalkos.kubernetes.enable;
     };
     expected = {
       manifest = "worker";
@@ -1681,7 +1681,7 @@ lib.runTests {
       {
         manifest = (c "worker").manifest.nodes.n1.kind;
         identity = (c "worker").manifest.nodes.n1.identity.kubernetes;
-        image = (role (c "worker")).chalkos.role.kubernetes.enable;
+        image = (role (c "worker")).chalkos.kubernetes.enable;
         controlPlane = fails (c "controlplane").manifest;
       };
     expected = {
@@ -2869,6 +2869,39 @@ lib.runTests {
   testRejectsUnknownComponentFlags = {
     expr = fails (cluster [ { chalkos.cluster.kubernetes.extraArgs.kube-dns.v = "2"; } ]).cluster;
     expected = true;
+  };
+  # The image fixes its Kubernetes release, the images of etcd, the pod sandbox and CoreDNS, and
+  # its pod network, as options of its own, which the role builder sets from the cluster
+  # definition.
+  testImageKubernetesOptions = {
+    expr =
+      let
+        c = role (cluster [
+          {
+            chalkos.cni.provider = "none";
+            chalkos.cluster.kubernetes.images.etcd = "registry.example/etcd:1";
+          }
+        ]);
+      in
+      {
+        inherit (c.chalkos.kubernetes) enable;
+        version = c.chalkos.kubernetes.package.version;
+        inherit (c.chalkos.kubernetes.images) etcd pause coredns;
+        inherit (c.chalkos.cni) provider;
+        flannel = c.chalkos.cni.flannel.image;
+        withoutKubernetes =
+          (role (cluster [ { chalkos.roles.worker.kubernetes.enable = false; } ])).chalkos.kubernetes.enable;
+      };
+    expected = {
+      enable = true;
+      version = "1.37.1";
+      etcd = "registry.example/etcd:1";
+      pause = "registry.k8s.io/pause:3.10.2";
+      coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
+      provider = "none";
+      flannel = "ghcr.io/flannel-io/flannel:v0.28.9";
+      withoutKubernetes = false;
+    };
   };
   testKubernetesOnlyInKubernetesRoles = {
     expr =

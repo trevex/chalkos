@@ -1,6 +1,6 @@
-# Kubernetes on nodes of a role with Kubernetes: containerd and the kubelet from the image, and the
-# image's Kubernetes facts in /etc/chalkos/kubernetes/image.json. chalkd builds the node's cluster
-# from them and the node's config, and writes everything node-specific below
+# Kubernetes on images that run it: containerd and the kubelet of the image's Kubernetes release,
+# and the image's Kubernetes facts in /etc/chalkos/kubernetes/image.json. chalkd builds the node's
+# cluster from them and the node's config, and writes everything node-specific below
 # /run/chalkos/kubernetes before the kubelet starts.
 {
   config,
@@ -9,9 +9,8 @@
   ...
 }:
 let
-  inherit (config.chalkos.role.kubernetes) enable;
-  inherit (config.chalkos) cluster;
-  k = cluster.kubernetes;
+  k = config.chalkos.kubernetes;
+  inherit (k) enable;
   chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
   # The kubelet alone: the package holds every component, which control planes run from images.
   kubelet = pkgs.runCommand "kubelet-${k.package.version}" { } ''
@@ -41,7 +40,7 @@ let
     };
   };
 
-  # The reference plugins the cluster names (chalkos.cni.plugins), and with flannel its own plugin.
+  # The reference plugins the image names (chalkos.cni.plugins), and with flannel its own plugin.
   # Copies, so the store holds these alone.
   cniPlugins =
     pkgs.runCommand "cni-plugins-chalkos-${pkgs.cni-plugins.version}"
@@ -100,6 +99,49 @@ let
   };
 in
 {
+  options.chalkos = lib.mkOption {
+    type = lib.types.submodule {
+      options.kubernetes = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = ''
+            Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
+            node's Kubernetes configuration. One image serves control planes and workers: the
+            node's Node document makes it one or the other. mkImages sets it from the variant's
+            `kubernetes`; the installer runs none.
+          '';
+        };
+        package = lib.mkOption {
+          type = lib.types.package;
+          default = pkgs.kubernetes;
+          defaultText = lib.literalExpression "pkgs.kubernetes";
+          description = ''
+            Kubernetes release of the image. Nodes run its kubelet; control planes run the
+            upstream images of the same version. A Kubernetes upgrade is an image upgrade.
+          '';
+        };
+        images = {
+          etcd = lib.mkOption {
+            type = lib.types.str;
+            default = "registry.k8s.io/etcd:3.7.0-0";
+            description = "Image of etcd; the default is the version kubeadm uses with this Kubernetes release.";
+          };
+          pause = lib.mkOption {
+            type = lib.types.str;
+            default = "registry.k8s.io/pause:3.10.2";
+            description = "Image of the pod sandbox.";
+          };
+          coredns = lib.mkOption {
+            type = lib.types.str;
+            default = "registry.k8s.io/coredns/coredns:v1.14.6";
+            description = "Image of the cluster DNS.";
+          };
+        };
+      };
+    };
+  };
+
   config = lib.mkMerge [
     # Apart from the rest: the condition reads chalkos, so it can guard values below chalkos but
     # not a definition of chalkos as a whole.

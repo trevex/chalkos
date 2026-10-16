@@ -299,7 +299,7 @@ settings break the node:
 - chalkd, `chalkos-config.service`, `chalkos-health.service` and systemd-networkd are what
   install, configure and upgrade the node. A role that disables or replaces them builds, and the
   node then cannot be installed or upgraded.
-- `chalkos.variant.name`, `chalkos.role.kubernetes.enable`, `chalkos.platform.name` and
+- `chalkos.variant.name`, `chalkos.kubernetes.enable`, `chalkos.platform.name` and
   `chalkos.maintenance.osCA` are set by the role builder from the cluster definition; set
   `chalkos.roles.<role>.kubernetes.enable` and `chalkos.osCA` there instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size

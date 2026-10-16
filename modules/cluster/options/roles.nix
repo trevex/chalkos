@@ -13,7 +13,7 @@ let
     settings
     module
     ;
-  inherit (config.chalkos) platforms osCA;
+  inherit (config.chalkos) platforms osCA cni;
   roleDefaults = name: ../../roles + "/${name}.nix";
 
   roleModule =
@@ -57,8 +57,17 @@ let
                 nixpkgs.hostPlatform = settings.cluster.system;
                 chalkos.variant.name = name;
                 chalkos.maintenance.osCA = osCA;
-                chalkos.role.kubernetes.enable = config.kubernetes.enable;
                 chalkos.platform.name = platform;
+                # The image's Kubernetes release and pod network, from the cluster definition.
+                chalkos.kubernetes = {
+                  inherit (config.kubernetes) enable;
+                  inherit (settings.cluster.kubernetes) package images;
+                };
+                chalkos.cni = {
+                  inherit (cni) provider;
+                  plugins = lib.mkForce cni.plugins;
+                  flannel.image = cni.flannel.image;
+                };
               }
             ]
             ++ p.nixosModules

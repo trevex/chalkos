@@ -12,6 +12,7 @@ rec {
     "manifest"
     "warnings"
     "osCA"
+    "cni"
   ];
   module = {
     options.chalkos = lib.mkOption {

@@ -36,24 +36,17 @@
           an image of another platform, and translates its config for its own.
         '';
       };
-      options.role.kubernetes.enable = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = ''
-          Whether the image runs Kubernetes, from the role's `kubernetes.enable`, set by the role
-          builder; the installer runs none. A node's kind comes with its config.
-        '';
-      };
     };
     default = { };
     description = ''
       chalkos settings. Cluster-wide values (`chalkos.cluster`, `chalkos.secureBoot`,
-      `chalkos.cni`, `chalkos.time` and feature namespaces) are set read-only from the cluster
-      definition; image options (`chalkos.consumers`, `chalkos.debug`, `chalkos.disk`,
-      `chalkos.kernel`, `chalkos.kinds`, `chalkos.maintenance`, `chalkos.platform`, `chalkos.role`,
-      `chalkos.upgrade`, `chalkos.variant`) are declared by the node modules. `consumers`, `debug`,
-      `disk`, `kernel`, `kinds`, `maintenance`, `nodes`, `platform`, `role`, `upgrade` and
-      `variant` are therefore reserved and cannot be used as feature namespaces.
+      `chalkos.time` and feature namespaces) are set read-only from the cluster definition; image
+      options (`chalkos.cni`, `chalkos.consumers`, `chalkos.debug`, `chalkos.disk`,
+      `chalkos.kernel`, `chalkos.kinds`, `chalkos.kubernetes`, `chalkos.maintenance`,
+      `chalkos.platform`, `chalkos.upgrade`, `chalkos.variant`) are declared by the node modules.
+      `cni`, `consumers`, `debug`, `disk`, `kernel`, `kinds`, `kubernetes`, `maintenance`,
+      `nodes`, `platform`, `upgrade` and `variant` are therefore reserved and cannot be used as
+      feature namespaces.
     '';
   };
 }

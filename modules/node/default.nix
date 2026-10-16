@@ -8,6 +8,7 @@
     ./kernel.nix
     ./chalkd.nix
     ./time.nix
+    ./cni.nix
     ./kubernetes.nix
     ./upgrade.nix
   ];

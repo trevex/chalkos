@@ -2621,7 +2621,96 @@ null
 The options the node modules declare in each role image. The cluster's settings appear in a
 role image under the same names as in the cluster definition, read-only.
 
+### chalkos\.cni\.flannel\.image
+
+Image of flannel\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"ghcr.io/flannel-io/flannel:v0.28.9"
+```
+
+*Declared by:*
+ - [modules/node/cni\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/cni.nix)
+
+
+
+### chalkos\.cni\.plugins
+
+
+
+CNI reference plugins the image ships, in containerd’s plugin directory\. With
+` flannel ` they are bridge, host-local, loopback and portmap, which its network runs,
+besides flannel’s own plugin; with ` none ` every reference plugin nixpkgs builds, since
+the cluster’s own network may use any\. Definitions add to these; ` lib.mkForce `
+replaces them\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "bandwidth"
+]
+```
+
+*Declared by:*
+ - [modules/node/cni\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/cni.nix)
+
+
+
+### chalkos\.cni\.provider
+
+
+
+Pod network of an image with Kubernetes\. ` flannel ` connects pods across nodes with
+VXLAN, configured by the node’s Flannel document; ` none ` installs no network, for
+clusters whose Addon documents bring their own, and ships every CNI reference plugin
+(see ` chalkos.cni.plugins `)\.
+
+
+
+*Type:*
+one of “flannel”, “none”
+
+
+
+*Default:*
+
+```nix
+"flannel"
+```
+
+*Declared by:*
+ - [modules/node/cni\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/cni.nix)
+
+
+
 ### chalkos\.consumers
+
+
 
 Services, by name, that read config kinds\.
 
@@ -3117,6 +3206,130 @@ string matching the pattern v\[0-9]+((alpha|beta)\[0-9]+)?
 
 
 
+### chalkos\.kubernetes\.enable
+
+
+
+Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
+node’s Kubernetes configuration\. One image serves control planes and workers: the
+node’s Node document makes it one or the other\. mkImages sets it from the variant’s
+` kubernetes `; the installer runs none\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+*Declared by:*
+ - [modules/node/kubernetes\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+
+
+
+### chalkos\.kubernetes\.package
+
+
+
+Kubernetes release of the image\. Nodes run its kubelet; control planes run the
+upstream images of the same version\. A Kubernetes upgrade is an image upgrade\.
+
+
+
+*Type:*
+package
+
+
+
+*Default:*
+
+```nix
+pkgs.kubernetes
+```
+
+*Declared by:*
+ - [modules/node/kubernetes\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+
+
+
+### chalkos\.kubernetes\.images\.coredns
+
+
+
+Image of the cluster DNS\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"registry.k8s.io/coredns/coredns:v1.14.6"
+```
+
+*Declared by:*
+ - [modules/node/kubernetes\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+
+
+
+### chalkos\.kubernetes\.images\.etcd
+
+
+
+Image of etcd; the default is the version kubeadm uses with this Kubernetes release\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"registry.k8s.io/etcd:3.7.0-0"
+```
+
+*Declared by:*
+ - [modules/node/kubernetes\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+
+
+
+### chalkos\.kubernetes\.images\.pause
+
+
+
+Image of the pod sandbox\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"registry.k8s.io/pause:3.10.2"
+```
+
+*Declared by:*
+ - [modules/node/kubernetes\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes.nix)
+
+
+
 ### chalkos\.maintenance\.osCA
 
 
@@ -3164,31 +3377,6 @@ null or string matching the pattern \[a-z0-9]\[a-z0-9-]\*
 
 ```nix
 null
-```
-
-*Declared by:*
- - [modules/node/settings\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/settings.nix)
-
-
-
-### chalkos\.role\.kubernetes\.enable
-
-
-
-Whether the image runs Kubernetes, from the role’s ` kubernetes.enable `, set by the role
-builder; the installer runs none\. A node’s kind comes with its config\.
-
-
-
-*Type:*
-boolean
-
-
-
-*Default:*
-
-```nix
-false
 ```
 
 *Declared by:*
