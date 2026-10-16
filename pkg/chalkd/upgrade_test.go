@@ -20,6 +20,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -266,48 +267,115 @@ func TestUpgradeKeepsSecretsFromTheHeadersSchemas(t *testing.T) {
 	}
 }
 
-// TestUpgradeRefusalQuotesNoValue: a header schema that refuses a value of a document other than
-// a Secret learns where and by which keyword, but neither the reply nor the journal quotes the
-// value; nor does a refusal of a later step, whose own message would.
-func TestUpgradeRefusalQuotesNoValue(t *testing.T) {
-	var journal bytes.Buffer
-	log.SetOutput(&journal)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
-	attack := fixtureSchemas(t)
+// storeConfig makes text the node's stored config set as it is, without the checks of
+// ApplyConfig, as one an older image accepted.
+func storeConfig(t *testing.T, s *Server, text string) {
+	t.Helper()
+	docs, err := config.Parse(strings.NewReader(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(s.Identity.Config, store.Stored{Documents: docs, Version: "stored"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// demoSchemaWith is the fixture schemas with the Demo's spec.name schema replaced by name.
+func demoSchemaWith(t *testing.T, name map[string]any) map[string][]byte {
+	t.Helper()
+	files := fixtureSchemas(t)
 	var doc map[string]any
-	if err := json.Unmarshal(attack["demo.example.org_v1alpha1_Demo.json"], &doc); err != nil {
+	if err := json.Unmarshal(files["demo.example.org_v1alpha1_Demo.json"], &doc); err != nil {
 		t.Fatal(err)
 	}
 	spec := doc["properties"].(map[string]any)["spec"].(map[string]any)
-	spec["properties"].(map[string]any)["name"] = map[string]any{"type": "string", "pattern": "^$"}
+	spec["properties"].(map[string]any)["name"] = name
 	data, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	attack["demo.example.org_v1alpha1_Demo.json"] = data
+	files["demo.example.org_v1alpha1_Demo.json"] = data
+	return files
+}
 
-	s, _ := configServer(t)
-	installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: attack})
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || installed {
-		t.Fatalf("upgrade = %v, installed %v", err, installed)
-	}
-	if !strings.Contains(err.Error(), `Demo "one": - at '/spec/name': pattern`) || strings.Contains(err.Error(), "first") {
-		t.Errorf("err = %v, want the place and keyword and not the value", err)
-	}
-
-	// The node's identity on an image with Kubernetes fails for the Node's missing type; its
-	// message would quote the Node, the reply names the step alone.
-	s, _ = configServer(t)
-	installed, err = upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
-		Schemas: fixtureSchemas(t), KubernetesImage: []byte(testImage)})
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || installed {
-		t.Fatalf("upgrade = %v, installed %v", err, installed)
-	}
-	if !strings.Contains(err.Error(), "it fails the node's identity") || strings.Contains(err.Error(), `Node "n1"`) {
-		t.Errorf("err = %v, want the step and not its message", err)
-	}
-	if !strings.Contains(journal.String(), "refused") || strings.Contains(journal.String(), "first") || strings.Contains(journal.String(), `Node "n1"`) {
-		t.Errorf("the journal holds no refusal, or a value:\n%s", journal.String())
+// TestUpgradeRefusalQuotesNoValue: whatever step of the check refuses the stored config, and
+// whatever the header's schemas refer to, neither the reply nor the journal quotes a value of the
+// stored config. A schema refusal names where and by which keyword; a later step only itself.
+func TestUpgradeRefusalQuotesNoValue(t *testing.T) {
+	collision := strings.Replace(baseConfig, "token: {secretRef: {name: demo, key: token}}", "token: {secretRef: {name: zq-sec, key: x.y}}", 1) + `---
+apiVersion: demo.example.org/v1alpha1
+kind: Demo
+metadata: {name: two}
+spec: {name: second, token: {secretRef: {name: zq-sec.x, key: y}}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: zq-sec}
+spec: {data: {x.y: a}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: zq-sec.x}
+spec: {data: {y: b}}
+`
+	plainMirror := workerConfig + `---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: docker}
+spec: {registry: docker.io, mirrors: ["http://zq-mirror-7"]}
+`
+	for name, tc := range map[string]struct {
+		stored          string
+		schemas         func(s *Server) map[string][]byte
+		kubernetesImage string
+		code            connect.Code
+		want, absent    string
+	}{
+		"a schema's pattern": {
+			strings.Replace(baseConfig, "name: first", "name: zq-first-7", 1),
+			func(*Server) map[string][]byte {
+				return demoSchemaWith(t, map[string]any{"type": "string", "pattern": "^$"})
+			},
+			"", connect.CodeFailedPrecondition, `Demo "one": - at '/spec/name': pattern`, "zq-first-7",
+		},
+		"a schema's reference to a stored file": {
+			baseConfig,
+			func(s *Server) map[string][]byte {
+				return demoSchemaWith(t, map[string]any{"$ref": "file://" + filepath.Join(s.Identity.Config, "secrets", "demo.json") + "#/spec/data/token"})
+			},
+			"", connect.CodeInvalidArgument, "the image's schemas do not load: demo.example.org_v1alpha1_Demo.json", "s3cret",
+		},
+		"the Secret references": {
+			collision, func(*Server) map[string][]byte { return fixtureSchemas(t) },
+			"", connect.CodeFailedPrecondition, "it fails its Secret references", "zq-sec",
+		},
+		"the node's identity": {
+			baseConfig, func(*Server) map[string][]byte { return fixtureSchemas(t) },
+			testImage, connect.CodeFailedPrecondition, "it fails the node's identity", `Node "n1"`,
+		},
+		"the Kubernetes settings": {
+			plainMirror, func(*Server) map[string][]byte { return fixtureSchemas(t) },
+			testImage, connect.CodeFailedPrecondition, "it fails its Kubernetes settings", "zq-mirror-7",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var journal bytes.Buffer
+			log.SetOutput(&journal)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
+			s, _ := configServer(t)
+			storeConfig(t, s, tc.stored)
+			installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
+				Schemas: tc.schemas(s), KubernetesImage: []byte(tc.kubernetesImage)})
+			if connect.CodeOf(err) != tc.code || installed {
+				t.Fatalf("upgrade = %v, installed %v; want %v", err, installed, tc.code)
+			}
+			if !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), tc.absent) {
+				t.Errorf("err = %v, want %q and not %q", err, tc.want, tc.absent)
+			}
+			if !strings.Contains(journal.String(), "refused") || strings.Contains(journal.String(), tc.absent) {
+				t.Errorf("the journal holds no refusal, or %q:\n%s", tc.absent, journal.String())
+			}
+		})
 	}
 }
 

@@ -100,7 +100,11 @@ const redactedSecret = "redacted"
 //     their values.
 //   - A refusal names the document, where it fails and the schema keyword that refuses it, or
 //     only the step of the translation that fails, never a value, since the schemas' messages
-//     and the translation's quote the values they refuse.
+//     and the translation's quote the values they refuse. Schemas that do not load are named by
+//     their file alone.
+//   - The schemas refer to nothing but themselves: pkg/schema fetches no file or URL a $ref
+//     names, which chalkd, as root, would otherwise read. Schemas that refer to themselves
+//     without end are refused where defaults are filled in and secretRefs are looked for.
 //
 // Whether the check refuses remains an oracle on the documents other than Secrets: a schema of
 // the operator's choosing tells one value from another by refusing it. That holds until the
@@ -125,7 +129,16 @@ func (s *Server) checkStoredConfig(h *nodev1.UpgradeHeader) error {
 		files = maps.Clone(files)
 		files[secretSchema] = own
 	}
-	t, schemas, err := imageTarget(h.Image, files, h.KubernetesImage)
+	schemas, err := schema.LoadFiles(files)
+	if err != nil {
+		// The library's errors quote the schemas, and what a reference in them reached.
+		var lerr *schema.LoadError
+		if errors.As(err, &lerr) {
+			return failed(connect.CodeInvalidArgument, "the image's schemas do not load: %s", lerr.File)
+		}
+		return failed(connect.CodeInvalidArgument, "the image's schemas do not load")
+	}
+	t, err := imageTarget(h.Image, h.KubernetesImage)
 	if err != nil {
 		return err
 	}

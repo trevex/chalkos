@@ -219,24 +219,24 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 	if len(h.Schemas) == 0 {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
 	}
-	return imageTarget(h.Image, h.Schemas, h.KubernetesImage)
-}
-
-// imageTarget is the image an install or upgrade header describes, as config for it is
-// translated, with the schemas the header carries for it and its image.json, empty for an image
-// without Kubernetes.
-func imageTarget(img *nodev1.ImageHeader, files map[string][]byte, kubernetesImage []byte) (config.Target, *schema.Schemas, error) {
-	schemas, err := schema.LoadFiles(files)
+	schemas, err := schema.LoadFiles(h.Schemas)
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
+	t, err := imageTarget(h.Image, h.KubernetesImage)
+	return t, schemas, err
+}
+
+// imageTarget is the image an install or upgrade header describes, as config for it is
+// translated, with its image.json, empty for an image without Kubernetes.
+func imageTarget(img *nodev1.ImageHeader, kubernetesImage []byte) (config.Target, error) {
 	t := config.Target{Role: img.GetRole(), Platform: img.GetPlatform()}
 	if len(kubernetesImage) > 0 {
 		facts, err := k8s.ParseImage(kubernetesImage)
 		if err != nil {
-			return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's image.json: %v", err)
+			return config.Target{}, failed(connect.CodeInvalidArgument, "the image's image.json: %v", err)
 		}
 		t.Image = &facts
 	}
-	return t, schemas, nil
+	return t, nil
 }
