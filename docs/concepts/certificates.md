@@ -21,7 +21,7 @@ expiry and backdated by an hour, so a node whose clock lags slightly still accep
 
 | CA or key | Lifetime | Issues or does | Held by |
 | --- | --- | --- | --- |
-| [OS CA](../reference/glossary.md#os-ca) | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with [`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) |
+| [OS CA](../reference/glossary.md#os-ca) | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node, and in every image built with [`chalkos.osCA`](../reference/options.md#chalkososca) |
 | [Node CA](../reference/glossary.md#node-ca) | 5 years | Node certificates, for TLS servers and clients only; path length 0 | The secrets file and every control plane |
 | Kubernetes CA | 10 years | The API server's, controllers' and kubelets' certificates and admin kubeconfigs | The secrets file and every control plane; workers get its certificate |
 | Front-proxy CA | 10 years | The certificate the API server presents to aggregated API servers | The secrets file and every control plane |

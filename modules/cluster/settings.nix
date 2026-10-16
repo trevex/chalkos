@@ -1,6 +1,7 @@
 # The cluster settings every image of the cluster reads: the cluster definition minus per-node
-# data and outputs. Declaring each setting as a read-only option keeps image modules from
-# overriding cluster settings and lets the module system reject unknown names under `chalkos`.
+# data, outputs and the inputs the builders pass to the images themselves. Declaring each setting
+# as a read-only option keeps image modules from overriding cluster settings and lets the module
+# system reject unknown names under `chalkos`.
 { lib, chalkos }:
 rec {
   settings = removeAttrs chalkos [
@@ -10,6 +11,7 @@ rec {
     "installer"
     "manifest"
     "warnings"
+    "osCA"
   ];
   module = {
     options.chalkos = lib.mkOption {

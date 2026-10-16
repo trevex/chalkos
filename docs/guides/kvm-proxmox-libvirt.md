@@ -21,7 +21,7 @@ You need:
 
 - A [cluster definition](../reference/glossary.md#cluster-definition) in a flake, its
   [secrets file](../reference/glossary.md#secrets-file), and
-  [`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) set to
+  [`chalkos.osCA`](../reference/options.md#chalkososca) set to
   `./secrets.pub.json`, as in [Install on bare metal](install-bare-metal.md#before-you-begin).
 - A Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate, `db.key` and `db.crt`, from
   [Sign images for Secure Boot](secure-boot-signing.md). On a VM you own the firmware's variable

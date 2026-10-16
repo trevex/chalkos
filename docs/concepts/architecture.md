@@ -152,7 +152,7 @@ chalkd: addresses <addresses>; certificate fingerprint <fingerprint>
 ```
 
 It accepts only reads (node information, disks and logs), a reboot and an install. An image built
-with [`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) carries the cluster's
+with [`chalkos.osCA`](../reference/options.md#chalkososca) carries the cluster's
 OS CA and accepts only clients with a certificate from it. An image built without one prints
 `accepting any client` and accepts anyone until it is installed.
 

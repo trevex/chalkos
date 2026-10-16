@@ -432,7 +432,7 @@ outside `chalkos.dev`, which chalkos keeps for its own kinds.
 
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) writes the cluster's
 [secrets file](../reference/glossary.md#secrets-file) and its public part, `secrets.pub.json`.
-[`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) points to the public part,
+[`chalkos.osCA`](../reference/options.md#chalkososca) points to the public part,
 which holds certificates and no keys, so it belongs in the repository. Role images and the
 installer then carry the cluster's
 [OS CA](../reference/glossary.md#os-ca), so chalkd in

@@ -40,10 +40,10 @@ let
     }
   ];
   definition = {
+    chalkos.osCA = "${secrets}/secrets.pub.json";
     chalkos.cluster = {
       name = "chalklab";
       endpoint = "https://192.168.100.11:6443";
-      osCA = "${secrets}/secrets.pub.json";
       kubernetes = {
         allowSchedulingOnControlPlanes = true;
         ipFamilies = [
@@ -171,10 +171,10 @@ let
   # endpoint and the VIP; its role k8s has the name and the modules of the main cluster's, and
   # builds images of its own.
   haDefinition = {
+    chalkos.osCA = "${secrets}/secrets.pub.json";
     chalkos.cluster = {
       name = "chalklab-ha";
       endpoint = "https://[fd00:100::10]:6443";
-      osCA = "${secrets}/secrets.pub.json";
       kubernetes = {
         allowSchedulingOnControlPlanes = true;
         ipFamilies = [ "ipv6" ];
@@ -364,7 +364,7 @@ in
         modules = [
           ../../templates/lab/cluster.nix
           # The template's own secrets.pub.json is written by chalkctl gen secrets.
-          { chalkos.cluster.osCA = lib.mkForce "${secrets}/secrets.pub.json"; }
+          { chalkos.osCA = lib.mkForce "${secrets}/secrets.pub.json"; }
         ];
       }
     );

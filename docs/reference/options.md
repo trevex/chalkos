@@ -776,41 +776,6 @@ string matching the pattern \[a-z0-9]\[a-z0-9-]\*
 
 
 
-### chalkos\.cluster\.osCA
-
-
-
-Public part of the cluster’s secrets (` secrets.pub.json ` from ` chalkctl gen secrets `, version
-3)\. Role images and the cluster’s installer carry its OS CA, so chalkd
-in maintenance mode accepts only clients with a certificate from it\. null builds images
-that accept any client until they are installed\.
-
-
-
-*Type:*
-null or absolute path
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-
-
-*Example:*
-
-```nix
-./secrets.pub.json
-```
-
-*Declared by:*
- - [modules/cluster/options/cluster\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/cluster.nix)
-
-
-
 ### chalkos\.cluster\.registries\.allowPlainHTTP
 
 
@@ -1907,6 +1872,43 @@ null
 
 *Declared by:*
  - [modules/cluster/options/nodes\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/nodes.nix)
+
+
+
+### chalkos\.osCA
+
+
+
+Public part of the cluster’s secrets (` secrets.pub.json ` from ` chalkctl gen secrets `, version
+3), whose OS CA every role image and the installer carry, so chalkd
+in maintenance mode accepts only clients with a certificate from it\. null builds images that
+accept any client until they are installed\. It is an input of the images, which the role
+builder and the installer set as their ` chalkos.maintenance.osCA `; the nodes’ config does
+not carry it\.
+
+
+
+*Type:*
+null or absolute path
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+./secrets.pub.json
+```
+
+*Declared by:*
+ - [modules/cluster/options/cluster\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/cluster.nix)
 
 
 
@@ -3109,6 +3111,34 @@ string matching the pattern v\[0-9]+((alpha|beta)\[0-9]+)?
 
 *Declared by:*
  - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.maintenance\.osCA
+
+
+
+Public part of the cluster’s secrets (` secrets.pub.json ` from ` chalkctl gen secrets `),
+whose OS CA the image carries, so chalkd in maintenance mode accepts only clients with a
+certificate from it\. null builds an image that accepts any client until it is installed\.
+The role builder and the installer set it from the cluster definition’s ` chalkos.osCA `,
+which checks the file’s version; the image’s build checks it again\.
+
+
+
+*Type:*
+null or absolute path
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+*Declared by:*
+ - [modules/node/chalkd\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/chalkd.nix)
 
 
 

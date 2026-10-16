@@ -234,18 +234,25 @@ lib.runTests {
       mdns = true;
     };
   };
-  testRoleCarriesOSCA = {
+  # The OS CA is an input of the images, which the role images and the installer carry; the
+  # cluster settings the images receive do not hold it.
+  testImagesCarryOSCA = {
     expr =
       let
         pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
+        c = cluster [ { chalkos.osCA = pub; } ];
       in
       {
-        withCA = (role (cluster [ { chalkos.cluster.osCA = pub; } ])).environment.etc ? "chalkos/os-ca.crt";
+        withCA = (role c).environment.etc ? "chalkos/os-ca.crt";
+        installer = c.installer.nixos.config.environment.etc ? "chalkos/os-ca.crt";
         withoutCA = (role (cluster [ ])).environment.etc ? "chalkos/os-ca.crt";
+        setting = (role c).chalkos.cluster ? osCA;
       };
     expected = {
       withCA = true;
+      installer = true;
       withoutCA = false;
+      setting = false;
     };
   };
   testOSCARefusesOlderSecrets = {
@@ -255,7 +262,7 @@ lib.runTests {
           version:
           (role (cluster [
             {
-              chalkos.cluster.osCA = builtins.toFile "secrets.pub.json" ''{"version": ${toString version}, "osCA": {"certificate": "PEM"}}'';
+              chalkos.osCA = builtins.toFile "secrets.pub.json" ''{"version": ${toString version}, "osCA": {"certificate": "PEM"}}'';
             }
           ])).environment.etc."chalkos/os-ca.crt".source.drvPath;
       in
@@ -443,7 +450,7 @@ lib.runTests {
     expr =
       let
         pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
-        installer = (cluster [ { chalkos.cluster.osCA = pub; } ]).installer.image;
+        installer = (cluster [ { chalkos.osCA = pub; } ]).installer.image;
       in
       lib.isDerivation installer && lib.hasInfix "chalkos-installer" installer.name;
     expected = true;

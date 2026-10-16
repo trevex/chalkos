@@ -191,7 +191,7 @@ chalkctl gen secrets --recipient=<admin-recipient> --recipient=<backup-recipient
 ```
 
 The command writes `secrets.age` and `secrets.pub.json`, the public half, which
-[`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca) names so the images trust
+[`chalkos.osCA`](../reference/options.md#chalkososca) names so the images trust
 the OS CA. To decrypt the file, chalkctl tries `~/.config/chalkos/age.key`, `~/.ssh/id_ed25519`
 and `~/.ssh/id_rsa`, or the files `--identity` names; a plugin identity file goes there too.
 `--plaintext` writes `secrets.json` unencrypted, for a file protected by other means.

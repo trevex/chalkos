@@ -15,10 +15,11 @@ in
     name = "lab";
     # cp1 on the lab network: the API server of the only control plane.
     endpoint = "https://192.168.123.11:6443";
-    # The public part of the cluster's secrets, which chalkctl gen secrets writes. The images
-    # carry its OS CA.
-    osCA = ./secrets.pub.json;
   };
+
+  # The public part of the cluster's secrets, which chalkctl gen secrets writes. The images carry
+  # its OS CA, so in maintenance mode they accept only the cluster's clients.
+  chalkos.osCA = ./secrets.pub.json;
 
   # One image for both nodes; cp1's kind makes it the control plane.
   chalkos.roles.node = { };

@@ -18,9 +18,24 @@ let
     if p == null || !readable p || version == publicVersion then
       p
     else
-      throw "chalkos.cluster.osCA: ${toString p} is version ${toString version}; chalkos reads version ${toString publicVersion} only, so generate new secrets with chalkctl gen secrets";
+      throw "chalkos.osCA: ${toString p} is version ${toString version}; chalkos reads version ${toString publicVersion} only, so generate new secrets with chalkctl gen secrets";
 in
 {
+  options.chalkos.osCA = lib.mkOption {
+    type = lib.types.nullOr lib.types.path;
+    default = null;
+    example = lib.literalExpression "./secrets.pub.json";
+    apply = checkPublic;
+    description = ''
+      Public part of the cluster's secrets (`secrets.pub.json` from `chalkctl gen secrets`, version
+      ${toString publicVersion}), whose OS CA every role image and the installer carry, so chalkd
+      in maintenance mode accepts only clients with a certificate from it. null builds images that
+      accept any client until they are installed. It is an input of the images, which the role
+      builder and the installer set as their `chalkos.maintenance.osCA`; the nodes' config does
+      not carry it.
+    '';
+  };
+
   options.chalkos.cluster = {
     name = lib.mkOption {
       type = lib.types.strMatching "[a-z0-9][a-z0-9-]*";
@@ -30,18 +45,6 @@ in
       type = lib.types.str;
       example = "https://10.0.0.10:6443";
       description = "URL of the Kubernetes API server used by nodes and clients.";
-    };
-    osCA = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
-      default = null;
-      example = lib.literalExpression "./secrets.pub.json";
-      apply = checkPublic;
-      description = ''
-        Public part of the cluster's secrets (`secrets.pub.json` from `chalkctl gen secrets`, version
-        ${toString publicVersion}). Role images and the cluster's installer carry its OS CA, so chalkd
-        in maintenance mode accepts only clients with a certificate from it. null builds images
-        that accept any client until they are installed.
-      '';
     };
     system = lib.mkOption {
       type = lib.types.str;

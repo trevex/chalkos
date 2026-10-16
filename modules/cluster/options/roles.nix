@@ -13,7 +13,7 @@ let
     settings
     module
     ;
-  inherit (config.chalkos) platforms;
+  inherit (config.chalkos) platforms osCA;
   roleDefaults = name: ../../roles + "/${name}.nix";
 
   roleModule =
@@ -56,6 +56,7 @@ let
               {
                 nixpkgs.hostPlatform = settings.cluster.system;
                 chalkos.role.name = name;
+                chalkos.maintenance.osCA = osCA;
                 chalkos.role.kubernetes.enable = config.kubernetes.enable;
                 chalkos.platform.name = platform;
               }

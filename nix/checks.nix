@@ -963,7 +963,7 @@ in
       c = self.lib.mkCluster {
         modules = [
           ../templates/lab/cluster.nix
-          { chalkos.cluster.osCA = lib.mkForce "${chalkPkgs.test-secrets}/secrets.pub.json"; }
+          { chalkos.osCA = lib.mkForce "${chalkPkgs.test-secrets}/secrets.pub.json"; }
         ];
       };
       macs = lib.mapAttrs (

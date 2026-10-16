@@ -1,4 +1,4 @@
-# The cluster's installer, built with the cluster's settings, so it carries the cluster's OS CA.
+# The cluster's installer, built with the cluster definition's OS CA.
 {
   config,
   lib,
@@ -51,7 +51,10 @@ in
         ../../node
         ../../installer
         module
-        { nixpkgs.hostPlatform = settings.cluster.system; }
+        {
+          nixpkgs.hostPlatform = settings.cluster.system;
+          chalkos.maintenance.osCA = config.chalkos.osCA;
+        }
       ]
       ++ cfg.nixosModules;
     };

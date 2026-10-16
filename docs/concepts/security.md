@@ -199,7 +199,7 @@ whose fingerprint was printed. Every command that reaches a node in maintenance 
 `--insecure`.
 
 The node in turn decides whom it accepts. An image built with
-[`chalkos.cluster.osCA`](../reference/options.md#chalkosclusterosca), a role image or the
+[`chalkos.osCA`](../reference/options.md#chalkososca), a role image or the
 cluster's [installer](../reference/glossary.md#installer), accepts in maintenance mode only
 clients with a certificate of that OS CA, so only the holder of the secrets file or a client file
 can install it. An image built without one accepts any client as an admin until it is installed.

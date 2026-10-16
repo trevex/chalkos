@@ -49,10 +49,10 @@
       chalkos settings. Cluster-wide values (`chalkos.cluster`, `chalkos.secureBoot`,
       `chalkos.cni`, `chalkos.time` and feature namespaces) are set read-only from the cluster
       definition; image options (`chalkos.consumers`, `chalkos.debug`, `chalkos.disk`,
-      `chalkos.kernel`, `chalkos.kinds`, `chalkos.platform`, `chalkos.role`, `chalkos.upgrade`) are
-      declared by the node modules. `consumers`, `debug`, `disk`, `kernel`, `kinds`, `nodes`,
-      `platform`, `role` and `upgrade` are therefore reserved and cannot be used as feature
-      namespaces.
+      `chalkos.kernel`, `chalkos.kinds`, `chalkos.maintenance`, `chalkos.platform`, `chalkos.role`,
+      `chalkos.upgrade`) are declared by the node modules. `consumers`, `debug`, `disk`, `kernel`,
+      `kinds`, `maintenance`, `nodes`, `platform`, `role` and `upgrade` are therefore reserved and
+      cannot be used as feature namespaces.
     '';
   };
 }
