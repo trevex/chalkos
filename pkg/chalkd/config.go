@@ -173,8 +173,8 @@ func (s *Server) installConfig(h *nodev1.InstallHeader) (string, *store.Stored, 
 	switch {
 	case s.Installer:
 		t, schemas, err = headerTarget(h)
-	case len(h.Schemas) > 0 || len(h.KubernetesCluster) > 0:
-		err = failed(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or kubernetes.json")
+	case len(h.Schemas) > 0 || len(h.KubernetesImage) > 0:
+		err = failed(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or image.json")
 	default:
 		t, schemas, err = s.runningTarget()
 	}
@@ -202,13 +202,11 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
 	t := config.Target{Role: h.Image.GetRole(), Platform: h.Image.GetPlatform()}
-	if len(h.KubernetesCluster) > 0 {
-		c, err := k8s.ParseCluster(h.KubernetesCluster)
+	if len(h.KubernetesImage) > 0 {
+		img, err := k8s.ParseImage(h.KubernetesImage)
 		if err != nil {
-			return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's kubernetes.json: %v", err)
+			return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's image.json: %v", err)
 		}
-		// The header carries the image's cluster file, which holds its image.json's facts.
-		img := c.Image()
 		t.Image = &img
 	}
 	return t, schemas, nil

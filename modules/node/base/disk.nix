@@ -92,9 +92,9 @@ let
       kinds = config.system.build.chalkosKinds;
     }
   );
-  # The image's Kubernetes settings, with which an install from the installer translates the
-  # node's config for the image it writes; null on an image without Kubernetes.
-  kubernetesFile = config.environment.etc."chalkos/kubernetes/cluster.json".source or null;
+  # What the image fixes about Kubernetes, which chalkctl sends with the schemas, so a node checks
+  # config against the image it is for; null on an image without Kubernetes.
+  kubernetesImage = config.environment.etc."chalkos/kubernetes/image.json".source or null;
 in
 {
   imports = [ "${modulesPath}/image/repart.nix" ];
@@ -272,7 +272,7 @@ in
           ln -s ${config.system.build.image}/* $out/
           ln -s ${systemDefinitions} $out/repart.d
           ln -s ${config.system.build.chalkosSchemas} $out/schemas
-          ${lib.optionalString (kubernetesFile != null) "ln -s ${kubernetesFile} $out/kubernetes.json"}
+          ${lib.optionalString (kubernetesImage != null) "ln -s ${kubernetesImage} $out/image.json"}
           jq --slurpfile repart ${config.system.build.image}/repart-output.json \
             '. + { rootHash: ([$repart[0][] | .roothash // empty] | first) }' \
             ${metadata} > $out/metadata.json

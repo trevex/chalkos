@@ -40,7 +40,7 @@ func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
 	if kind := ta.manifest.Roles["test"].Kind; kind != "" {
-		kubernetesImage(t, s, kind, filepath.Join(t.TempDir(), "cluster.json"))
+		kubernetesImage(t, s)
 	}
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure"}, addr))
@@ -98,9 +98,8 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	}
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(s.Kubernetes.Stop)
-	// The image's cluster file and the one chalkd writes from the node's config are apart, as
-	// on a node.
-	kubernetesImage(t, s, "worker", filepath.Join(root, "image-cluster.json"))
+	kubernetesImage(t, s)
+	// The cluster file chalkd writes from the node's config.
 	s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
 	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))
 	return s, r

@@ -798,12 +798,18 @@ lib.runTests {
     expr = (image [ ]).chalkos ? node;
     expected = false;
   };
-  testKubernetesImageDirectoryHasClusterFile = {
-    expr = lib.hasInfix "$out/kubernetes.json" kubernetesImage.system.build.chalkosImage.buildCommand;
-    expected = true;
+  testKubernetesImageDirectoryHasImageFacts = {
+    expr = {
+      facts = lib.hasInfix "$out/image.json" kubernetesImage.system.build.chalkosImage.buildCommand;
+      clusterFile = lib.hasInfix "kubernetes.json" kubernetesImage.system.build.chalkosImage.buildCommand;
+    };
+    expected = {
+      facts = true;
+      clusterFile = false;
+    };
   };
-  testImageDirectoryWithoutKubernetesHasNoClusterFile = {
-    expr = lib.hasInfix "kubernetes.json" plainImage.system.build.chalkosImage.buildCommand;
+  testImageDirectoryWithoutKubernetesHasNoImageFacts = {
+    expr = lib.hasInfix "image.json" plainImage.system.build.chalkosImage.buildCommand;
     expected = false;
   };
   testGetPath = {

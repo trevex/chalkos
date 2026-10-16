@@ -170,9 +170,6 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 		s.Identity.Schemas = filepath.Join(t.TempDir(), "schemas")
 		copySchemas(t, s.Identity.Schemas)
 	}
-	if s.Paths.KubernetesCluster == "" {
-		s.Paths.KubernetesCluster = filepath.Join(t.TempDir(), "cluster.json")
-	}
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
@@ -224,7 +221,7 @@ func copySchemas(t *testing.T, dir string) {
 	}
 }
 
-// clusterFile is an image's kubernetes.json for nodes of the kind.
+// clusterFile is the cluster file chalkd writes for a node of the kind.
 func clusterFile(kind string) string {
 	return `{"kind": "` + kind + `", "endpoint": "https://10.0.0.10:6443", "version": "1.37.1",
 	  "ipFamilies": ["ipv4"], "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
@@ -232,6 +229,10 @@ func clusterFile(kind string) string {
 	  "nodeIP": {"validSubnets": [], "timeout": 300}, "vxlanSourceSubnets": [], "vip": {"addresses": [], "mode": "l2"},
 	  "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`
 }
+
+// testImageJSON is the image.json of a Kubernetes image without flannel.
+const testImageJSON = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
+  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`
 
 func TestGenSecretsPlaintext(t *testing.T) {
 	ta := newTestApp(t)
@@ -1277,14 +1278,14 @@ func TestImageContractNeedsSchemas(t *testing.T) {
 	}
 }
 
-// TestInstallFromPartsSendsTheImageContract sends the installer the schemas and kubernetes.json
+// TestInstallFromPartsSendsTheImageContract sends the installer the schemas and image.json
 // of the image it installs, which it translates the config for.
 func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, manifest.KindWorker)
 	imageDir := testUpgradeImage(t, "lab", "test", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
-	writeFile(t, filepath.Join(imageDir, "kubernetes.json"), clusterFile("worker"))
+	writeFile(t, filepath.Join(imageDir, "image.json"), testImageJSON)
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	s := maintenanceNode()
 	s.Installer = true
@@ -1351,13 +1352,9 @@ func TestAddressesWithoutTheDefinitionsConfig(t *testing.T) {
 	}
 }
 
-// kubernetesImage gives the node s the running image of a role of the kind: its cluster file at
-// cluster and its Kubernetes facts.
-func kubernetesImage(t *testing.T, s *chalkd.Server, kind, cluster string) {
+// kubernetesImage gives the node s a running image with Kubernetes: its image.json.
+func kubernetesImage(t *testing.T, s *chalkd.Server) {
 	t.Helper()
-	s.Paths.KubernetesCluster = cluster
-	writeFile(t, cluster, clusterFile(kind))
 	s.Identity.KubernetesImage = filepath.Join(t.TempDir(), "image.json")
-	writeFile(t, s.Identity.KubernetesImage, `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
-	  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`)
+	writeFile(t, s.Identity.KubernetesImage, testImageJSON)
 }

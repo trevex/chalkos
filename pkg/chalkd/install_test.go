@@ -227,24 +227,13 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 	}
 }
 
-// workerCluster is a worker image's kubernetes.json.
-const workerCluster = `{"kind": "worker", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
-  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
-  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
-  "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`
-
-// testImage is the image.json of workerCluster's image.
+// testImage is the image.json of a Kubernetes image without flannel.
 const testImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
   "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`
 
-// kubernetesImage gives s's running image Kubernetes: the cluster file, workerCluster unless
-// given, and its facts.
-func kubernetesImage(t *testing.T, s *Server, cluster string) {
+// kubernetesImage gives s's running image Kubernetes: its image.json.
+func kubernetesImage(t *testing.T, s *Server) {
 	t.Helper()
-	if cluster == "" {
-		cluster = workerCluster
-	}
-	write(t, s.Paths.KubernetesCluster, cluster)
 	write(t, s.Identity.KubernetesImage, testImage)
 }
 
@@ -297,7 +286,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig
 	h.Schemas = fixtureSchemas(t)
-	h.KubernetesCluster = []byte(workerCluster)
+	h.KubernetesImage = []byte(testImage)
 	h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64"}
 
 	if err := sendInstall(t, s, h, nil); err != nil {
@@ -339,13 +328,13 @@ func TestInstallRefusesConfig(t *testing.T) {
 			h.Image = &nodev1.ImageHeader{Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal"}
 		}, "schemas"},
 		"without config": {false, func(h *nodev1.InstallHeader) { h.Config = "" }, "the header delivers no config"},
-		"from the installer with an invalid kubernetes.json": {true, func(h *nodev1.InstallHeader) {
+		"from the installer with an invalid image.json": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
-			h.KubernetesCluster = []byte(`{"kind": "worker"`)
-		}, "kubernetes.json"},
+			h.KubernetesImage = []byte(`{"version": "1.37.1"`)
+		}, "image.json"},
 		"from the installer with a schema outside schemas/": {true, func(h *nodev1.InstallHeader) {
 			fromInstaller(h)
-			h.KubernetesCluster = []byte(workerCluster)
+			h.KubernetesImage = []byte(testImage)
 			h.Schemas = map[string][]byte{"../x.json": []byte("{}")}
 		}, `"../x.json" is not the name of a schema file`},
 	} {

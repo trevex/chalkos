@@ -13,8 +13,8 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
-// Contract returns what the running image was built for, and its schemas and kubernetes.json as
-// files, so a client checks config against exactly what chalkd translates it for.
+// Contract returns what the running image was built for, and its schemas and image.json as files,
+// so a client checks config against exactly what chalkd translates it for.
 func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractRequest]) (*connect.Response[nodev1.ContractResponse], error) {
 	// The installer runs an image of its own: config is for the image it installs, which comes
 	// with its contract.
@@ -42,10 +42,10 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 		}
 		resp.Schemas[e.Name()] = data
 	}
-	data, err := os.ReadFile(s.Paths.KubernetesCluster)
+	data, err := os.ReadFile(s.Identity.KubernetesImage)
 	switch {
 	case err == nil:
-		resp.KubernetesCluster = data
+		resp.KubernetesImage = data
 	case !errors.Is(err, fs.ErrNotExist):
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}

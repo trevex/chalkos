@@ -64,27 +64,22 @@ type Paths struct {
 	// FailedBoot, on VAR, keeps what chalkd and the health check logged during the last boot that
 	// was not found healthy.
 	FailedBoot string
-	// KubernetesCluster is the running image's Kubernetes settings, which config is translated
-	// with; absent on an image without Kubernetes. It is read in maintenance mode too, where the
-	// node runs no Kubernetes side.
-	KubernetesCluster string
 }
 
 // DefaultPaths are the paths on a node.
 func DefaultPaths() Paths {
 	return Paths{
-		StateDir:          "/state",
-		BootDisk:          "/dev/disk/chalk-boot-disk",
-		BootPartitions:    "/dev/disk/chalk-boot",
-		OSRelease:         "/etc/os-release",
-		EFIVars:           "/sys/firmware/efi/efivars",
-		TPM:               "/sys/class/tpm",
-		StorageStatus:     "/run/chalkos/storage-status.json",
-		MountInfo:         "/proc/self/mountinfo",
-		ESP:               "/efi",
-		Cmdline:           "/proc/cmdline",
-		FailedBoot:        "/var/lib/chalkd/failed-boot",
-		KubernetesCluster: "/etc/chalkos/kubernetes/cluster.json",
+		StateDir:       "/state",
+		BootDisk:       "/dev/disk/chalk-boot-disk",
+		BootPartitions: "/dev/disk/chalk-boot",
+		OSRelease:      "/etc/os-release",
+		EFIVars:        "/sys/firmware/efi/efivars",
+		TPM:            "/sys/class/tpm",
+		StorageStatus:  "/run/chalkos/storage-status.json",
+		MountInfo:      "/proc/self/mountinfo",
+		ESP:            "/efi",
+		Cmdline:        "/proc/cmdline",
+		FailedBoot:     "/var/lib/chalkd/failed-boot",
 	}
 }
 

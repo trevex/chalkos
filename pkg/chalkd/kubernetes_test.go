@@ -1083,7 +1083,7 @@ func clusterServer(t *testing.T, kind string) (*Server, *fakeRunner) {
 	s, r := configServer(t)
 	addKubernetes(t, s, kind, true)
 	s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
-	kubernetesImage(t, s, strings.Replace(workerCluster, `"kind": "worker"`, `"kind": "`+kind+`"`, 1))
+	kubernetesImage(t, s)
 	return s, r
 }
 

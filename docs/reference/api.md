@@ -50,10 +50,10 @@ Disks lists the node's disks and their partitions. Available in both modes to re
 ### Contract { #method-contract }
 
 Contract returns the config contract of the image the node runs: the cluster, role and
-platform it was built for, the schemas of the config kinds it accepts and its
-kubernetes.json, which chalkctl checks config against before it delivers it. The installer
-refuses it: config is for the image it installs, whose contract comes with that image.
-Available in both modes to readers.
+platform it was built for, the schemas of the config kinds it accepts and its image.json,
+which chalkctl checks config against before it delivers it. The installer refuses it: config
+is for the image it installs, whose contract comes with that image. Available in both modes to
+readers.
 
 ### Install { #method-install }
 
@@ -225,10 +225,10 @@ No fields.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `schemas` | repeated [`ContractResponse.SchemasEntry`](#message-contractresponseschemasentry) | The image's schemas by file name, as /etc/chalkos/schemas holds them. |
-| `kubernetes_cluster` | `bytes` | The image's kubernetes.json; empty on an image without Kubernetes. |
 | `cluster` | `string` | The cluster, role and platform the image was built for, as its os-release names them. |
 | `role` | `string` |  |
 | `platform` | `string` |  |
+| `kubernetes_image` | `bytes` | The image's image.json: the Kubernetes release, the images of its components and the pod network it ships. Empty on an image without Kubernetes. |
 
 ### ContractResponse.SchemasEntry { #message-contractresponseschemasentry }
 
@@ -466,7 +466,7 @@ No fields.
 | `kubernetes_share` | `bytes` | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for a role without Kubernetes. |
 | `config` | `string` | The node's config: YAML documents separated by ---. chalkd checks them as a set against the schemas of the image it installs, fills in their defaults, keeps them on STATE and translates them into what the node applies at boot. Required. |
 | `schemas` | repeated [`InstallHeader.SchemasEntry`](#message-installheaderschemasentry) | The schemas of the image the installer writes, by file name, as its image directory's schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses the running image's. |
-| `kubernetes_cluster` | `bytes` | The kubernetes.json of the image the installer writes, as its image directory holds it; empty for an image without Kubernetes. Installer only. |
+| `kubernetes_image` | `bytes` | The image.json of the image the installer writes, as its image directory holds it; empty for an image without Kubernetes. Installer only. |
 
 ### InstallHeader.SchemasEntry { #message-installheaderschemasentry }
 

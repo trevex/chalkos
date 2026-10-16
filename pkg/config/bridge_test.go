@@ -404,10 +404,13 @@ func TestBridgeGivesBackEveryManifest(t *testing.T) {
 					t.Fatal(err)
 				}
 				target := Target{Role: n.Role, Platform: n.Platform}
-				c, err := kubernetes.ReadCluster(filepath.Join(contract, "kubernetes.json"))
+				data, err := os.ReadFile(filepath.Join(contract, "image.json"))
 				switch {
 				case err == nil:
-					img := c.Image()
+					img, err := kubernetes.ParseImage(data)
+					if err != nil {
+						t.Fatal(err)
+					}
 					target.Image = &img
 				case !errors.Is(err, fs.ErrNotExist):
 					t.Fatal(err)

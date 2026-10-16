@@ -244,18 +244,21 @@ let
   # VAR with a fixed size where it filled its disk: a destructive change.
   destructive = [ { chalkos.nodes.chalklab.storage.var.size = "1G"; } ];
   # What an image accepts as config, as its image directory holds it: its schemas and its
-  # kubernetes.json, without building the image; and for the parity tests the addons and the
-  # kubelet configuration as Nix renders them.
+  # image.json, without building the image; and for the parity tests its cluster file, the addons
+  # and the kubelet configuration as Nix renders them.
   contractOf =
     nixos:
     let
       inherit (nixos.config.system) build;
-      kubernetes = nixos.config.environment.etc."chalkos/kubernetes/cluster.json".source or null;
+      inherit (nixos.config.environment) etc;
+      image = etc."chalkos/kubernetes/image.json".source or null;
+      kubernetes = etc."chalkos/kubernetes/cluster.json".source or null;
       json = name: value: pkgs.writeText name (builtins.toJSON value);
     in
     pkgs.runCommand "chalkos-contract" { } ''
       mkdir $out
       ln -s ${build.chalkosSchemas} $out/schemas
+      ${lib.optionalString (image != null) "ln -s ${image} $out/image.json"}
       ${lib.optionalString (kubernetes != null) ''
         ln -s ${kubernetes} $out/kubernetes.json
         ln -s ${json "addons.json" build.chalkosAddons} $out/addons.json

@@ -18,10 +18,10 @@ service NodeService {
   // Disks lists the node's disks and their partitions. Available in both modes to readers.
   rpc Disks(DisksRequest) returns (DisksResponse);
   // Contract returns the config contract of the image the node runs: the cluster, role and
-  // platform it was built for, the schemas of the config kinds it accepts and its
-  // kubernetes.json, which chalkctl checks config against before it delivers it. The installer
-  // refuses it: config is for the image it installs, whose contract comes with that image.
-  // Available in both modes to readers.
+  // platform it was built for, the schemas of the config kinds it accepts and its image.json,
+  // which chalkctl checks config against before it delivers it. The installer refuses it: config
+  // is for the image it installs, whose contract comes with that image. Available in both modes to
+  // readers.
   rpc Contract(ContractRequest) returns (ContractResponse);
   // Install turns a node in maintenance mode into an installed node and reboots it. The first
   // message carries the header; when the node is the installer, the image's store data, hash
@@ -167,14 +167,17 @@ message Partition {
 message ContractRequest {}
 
 message ContractResponse {
+  reserved 2;
+  reserved "kubernetes_cluster";
   // The image's schemas by file name, as /etc/chalkos/schemas holds them.
   map<string, bytes> schemas = 1;
-  // The image's kubernetes.json; empty on an image without Kubernetes.
-  bytes kubernetes_cluster = 2;
   // The cluster, role and platform the image was built for, as its os-release names them.
   string cluster = 3;
   string role = 4;
   string platform = 5;
+  // The image's image.json: the Kubernetes release, the images of its components and the pod
+  // network it ships. Empty on an image without Kubernetes.
+  bytes kubernetes_image = 6;
 }
 
 message InstallRequest {
@@ -185,8 +188,8 @@ message InstallRequest {
 }
 
 message InstallHeader {
-  reserved 1;
-  reserved "identity";
+  reserved 1, 14;
+  reserved "identity", "kubernetes_cluster";
   // PEM certificate and key chalkd serves once the node is installed.
   bytes node_certificate = 2;
   bytes node_key = 3;
@@ -223,9 +226,9 @@ message InstallHeader {
   // schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
   // the running image's.
   map<string, bytes> schemas = 13;
-  // The kubernetes.json of the image the installer writes, as its image directory holds it;
-  // empty for an image without Kubernetes. Installer only.
-  bytes kubernetes_cluster = 14;
+  // The image.json of the image the installer writes, as its image directory holds it; empty for
+  // an image without Kubernetes. Installer only.
+  bytes kubernetes_image = 15;
 }
 
 message InPlace {}

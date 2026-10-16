@@ -709,14 +709,15 @@ type ContractResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The image's schemas by file name, as /etc/chalkos/schemas holds them.
 	Schemas map[string][]byte `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// The image's kubernetes.json; empty on an image without Kubernetes.
-	KubernetesCluster []byte `protobuf:"bytes,2,opt,name=kubernetes_cluster,json=kubernetesCluster,proto3" json:"kubernetes_cluster,omitempty"`
 	// The cluster, role and platform the image was built for, as its os-release names them.
-	Cluster       string `protobuf:"bytes,3,opt,name=cluster,proto3" json:"cluster,omitempty"`
-	Role          string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
-	Platform      string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Cluster  string `protobuf:"bytes,3,opt,name=cluster,proto3" json:"cluster,omitempty"`
+	Role     string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	Platform string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
+	// The image's image.json: the Kubernetes release, the images of its components and the pod
+	// network it ships. Empty on an image without Kubernetes.
+	KubernetesImage []byte `protobuf:"bytes,6,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ContractResponse) Reset() {
@@ -756,13 +757,6 @@ func (x *ContractResponse) GetSchemas() map[string][]byte {
 	return nil
 }
 
-func (x *ContractResponse) GetKubernetesCluster() []byte {
-	if x != nil {
-		return x.KubernetesCluster
-	}
-	return nil
-}
-
 func (x *ContractResponse) GetCluster() string {
 	if x != nil {
 		return x.Cluster
@@ -782,6 +776,13 @@ func (x *ContractResponse) GetPlatform() string {
 		return x.Platform
 	}
 	return ""
+}
+
+func (x *ContractResponse) GetKubernetesImage() []byte {
+	if x != nil {
+		return x.KubernetesImage
+	}
+	return nil
 }
 
 type InstallRequest struct {
@@ -903,11 +904,11 @@ type InstallHeader struct {
 	// schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses
 	// the running image's.
 	Schemas map[string][]byte `protobuf:"bytes,13,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// The kubernetes.json of the image the installer writes, as its image directory holds it;
-	// empty for an image without Kubernetes. Installer only.
-	KubernetesCluster []byte `protobuf:"bytes,14,opt,name=kubernetes_cluster,json=kubernetesCluster,proto3" json:"kubernetes_cluster,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The image.json of the image the installer writes, as its image directory holds it; empty for
+	// an image without Kubernetes. Installer only.
+	KubernetesImage []byte `protobuf:"bytes,15,opt,name=kubernetes_image,json=kubernetesImage,proto3" json:"kubernetes_image,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *InstallHeader) Reset() {
@@ -1035,9 +1036,9 @@ func (x *InstallHeader) GetSchemas() map[string][]byte {
 	return nil
 }
 
-func (x *InstallHeader) GetKubernetesCluster() []byte {
+func (x *InstallHeader) GetKubernetesImage() []byte {
 	if x != nil {
-		return x.KubernetesCluster
+		return x.KubernetesImage
 	}
 	return nil
 }
@@ -3828,20 +3829,20 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x12\n" +
 	"\x04uuid\x18\x06 \x01(\tR\x04uuid\x12\x18\n" +
 	"\acontent\x18\a \x01(\tR\acontent\"\x11\n" +
-	"\x0fContractRequest\"\x91\x02\n" +
+	"\x0fContractRequest\"\xa7\x02\n" +
 	"\x10ContractResponse\x12H\n" +
-	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12-\n" +
-	"\x12kubernetes_cluster\x18\x02 \x01(\fR\x11kubernetesCluster\x12\x18\n" +
+	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x18\n" +
 	"\acluster\x18\x03 \x01(\tR\acluster\x12\x12\n" +
 	"\x04role\x18\x04 \x01(\tR\x04role\x12\x1a\n" +
-	"\bplatform\x18\x05 \x01(\tR\bplatform\x1a:\n" +
+	"\bplatform\x18\x05 \x01(\tR\bplatform\x12)\n" +
+	"\x10kubernetes_image\x18\x06 \x01(\fR\x0fkubernetesImage\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\x8a\x01\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01J\x04\b\x02\x10\x03R\x12kubernetes_cluster\"\x8a\x01\n" +
 	"\x0eInstallRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.InstallHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
-	"\amessage\"\x9e\x06\n" +
+	"\amessage\"\xb4\x06\n" +
 	"\rInstallHeader\x12)\n" +
 	"\x10node_certificate\x18\x02 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
 	"\bnode_key\x18\x03 \x01(\fR\anodeKey\x12%\n" +
@@ -3855,15 +3856,15 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	" \x03(\v25.chalkos.node.v1.InstallHeader.SystemDefinitionsEntryR\x11systemDefinitions\x12)\n" +
 	"\x10kubernetes_share\x18\v \x01(\fR\x0fkubernetesShare\x12\x16\n" +
 	"\x06config\x18\f \x01(\tR\x06config\x12E\n" +
-	"\aschemas\x18\r \x03(\v2+.chalkos.node.v1.InstallHeader.SchemasEntryR\aschemas\x12-\n" +
-	"\x12kubernetes_cluster\x18\x0e \x01(\fR\x11kubernetesCluster\x1aD\n" +
+	"\aschemas\x18\r \x03(\v2+.chalkos.node.v1.InstallHeader.SchemasEntryR\aschemas\x12)\n" +
+	"\x10kubernetes_image\x18\x0f \x01(\fR\x0fkubernetesImage\x1aD\n" +
 	"\x16SystemDefinitionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01B\b\n" +
-	"\x06targetJ\x04\b\x01\x10\x02R\bidentity\"\t\n" +
+	"\x06targetJ\x04\b\x01\x10\x02J\x04\b\x0e\x10\x0fR\bidentityR\x12kubernetes_cluster\"\t\n" +
 	"\aInPlace\"\x8b\x01\n" +
 	"\rDiskReference\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +

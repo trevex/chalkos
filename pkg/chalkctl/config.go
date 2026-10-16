@@ -19,7 +19,7 @@ import (
 )
 
 // contract is what an image accepts as config: the cluster, role and platform it was built for,
-// the schemas of its kinds and its kubernetes.json, as files to send an installer, and loaded.
+// the schemas of its kinds and its image.json, as files to send a node, and loaded.
 type contract struct {
 	imageCluster, role, platform string
 	files                        map[string][]byte
@@ -29,24 +29,23 @@ type contract struct {
 	image *k8s.Image
 }
 
-func newContract(files map[string][]byte, kubernetesJSON []byte) (contract, error) {
+func newContract(files map[string][]byte, imageJSON []byte) (contract, error) {
 	s, err := schema.LoadFiles(files)
 	if err != nil {
 		return contract{}, err
 	}
-	c := contract{files: files, kubernetes: kubernetesJSON, schemas: s}
-	if len(kubernetesJSON) > 0 {
-		k, err := k8s.ParseCluster(kubernetesJSON)
+	c := contract{files: files, kubernetes: imageJSON, schemas: s}
+	if len(imageJSON) > 0 {
+		img, err := k8s.ParseImage(imageJSON)
 		if err != nil {
-			return contract{}, fmt.Errorf("kubernetes.json: %w", err)
+			return contract{}, fmt.Errorf("image.json: %w", err)
 		}
-		img := k.Image()
 		c.image = &img
 	}
 	return c, nil
 }
 
-// imageContract reads the contract of an image directory: its schemas/ and kubernetes.json.
+// imageContract reads the contract of an image directory: its schemas/ and image.json.
 func imageContract(dir string) (contract, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, "schemas", "*.json"))
 	if err != nil {
@@ -63,11 +62,11 @@ func imageContract(dir string) (contract, error) {
 		}
 		files[filepath.Base(p)] = data
 	}
-	kubernetesJSON, err := os.ReadFile(filepath.Join(dir, "kubernetes.json"))
+	imageJSON, err := os.ReadFile(filepath.Join(dir, "image.json"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return contract{}, err
 	}
-	c, err := newContract(files, kubernetesJSON)
+	c, err := newContract(files, imageJSON)
 	if err != nil {
 		return contract{}, fmt.Errorf("%s: %w", dir, err)
 	}
@@ -80,7 +79,7 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 	if err != nil {
 		return contract{}, fmt.Errorf("ask %s for the schemas of its image: %w", name, err)
 	}
-	c, err := newContract(resp.Msg.Schemas, resp.Msg.KubernetesCluster)
+	c, err := newContract(resp.Msg.Schemas, resp.Msg.KubernetesImage)
 	if err != nil {
 		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
 	}

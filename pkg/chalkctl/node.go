@@ -342,7 +342,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 			return err
 		}
 		c.imageCluster, c.role, c.platform = img.info.Cluster(), img.info.Role(), img.info.Platform()
-		header.Image, header.Schemas, header.KubernetesCluster = img.header, c.files, c.kubernetes
+		header.Image, header.Schemas, header.KubernetesImage = img.header, c.files, c.kubernetes
 	}
 	d, err := configFor(t, c)
 	if err != nil {
