@@ -30,6 +30,10 @@ type diskImage struct {
 	info            uki.Image
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
+	// schemas and kubernetesImage are the contract of an upgrade's image directory, which the
+	// node checks its stored config against.
+	schemas         map[string][]byte
+	kubernetesImage []byte
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
 	// cleanup removes the copies of the UKI and the boot loader.
@@ -157,6 +161,22 @@ func sum(r io.Reader) (*nodev1.ImagePart, error) {
 		return nil, err
 	}
 	return &nodev1.ImagePart{Size: uint64(n), Sha256: h.Sum(nil)}, nil
+}
+
+// openUpgradeImage opens an upgrade's image with the contract its directory holds: the node
+// checks its stored config against the image's schemas and image.json before it writes anything.
+func openUpgradeImage(ctx context.Context, path, key, cert string) (*diskImage, error) {
+	img, err := openImage(ctx, path, key, cert, false)
+	if err != nil {
+		return nil, err
+	}
+	c, err := imageContract(filepath.Dir(img.definitions))
+	if err != nil {
+		img.Close()
+		return nil, err
+	}
+	img.schemas, img.kubernetesImage = c.files, c.kubernetes
+	return img, nil
 }
 
 // checkSignature checks the UKI and the boot loader against a db certificate, as firmware with

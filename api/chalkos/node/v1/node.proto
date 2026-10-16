@@ -65,9 +65,9 @@ service NodeService {
   // the image's boot tries until a boot is found healthy, and reboots the node when asked to.
   // The first message carries the header; the store, its hash tree and the UKI follow as
   // chunks. Available to operators. The node checks that the image is of its role and platform,
-  // not that it is one to trust: without Secure Boot, an operator can run any image as root,
-  // with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what
-  // limits upgrades to images signed for db.
+  // and that its stored config suits the image, not that it is one to trust: without Secure
+  // Boot, an operator can run any image as root, with STATE and VAR unsealed, as their keys are
+  // sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
   rpc Upgrade(stream UpgradeRequest) returns (UpgradeResponse);
   // DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
   // eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
@@ -589,6 +589,12 @@ message UpgradeHeader {
   ImageHeader image = 1;
   // Reboot the node into the image once it is installed.
   bool reboot = 2;
+  // The image's schemas by file name, as its image directory's schemas/ holds them, and its
+  // image.json, empty for an image without Kubernetes. Before it writes anything, the node checks
+  // its stored config against them as an install checks the config it delivers, and refuses an
+  // image that would not accept it. The schemas are required.
+  map<string, bytes> schemas = 3;
+  bytes kubernetes_image = 4;
 }
 
 message UpgradeResponse {

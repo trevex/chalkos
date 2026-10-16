@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestUpgrade(t *testing.T) {
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{
 		Version: "0.2.0", ImageId: "chalkos", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1, 2},
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 2, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 3, Sha256: []byte{6}},
-	}}
+	}, Schemas: fixtureSchemas(t)}
 	for _, tc := range []struct {
 		name       string
 		reboot     bool
@@ -119,6 +120,7 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 	}{
 		{&nodev1.UpgradeHeader{Reboot: true}, "the header names no image"},
 		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", BootLoader: &nodev1.ImagePart{Size: 1, Sha256: []byte{1}}}}, "an upgrade carries no boot loader"},
+		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0"}}, "no schemas"},
 	} {
 		stream := conn.Upgrade(context.Background())
 		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: tc.header}})
@@ -126,6 +128,53 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %v, want %q", tc.header, err, tc.want)
 		}
+	}
+}
+
+// TestUpgradeChecksTheStoredConfig refuses, before anything is installed, an image whose schemas
+// or Kubernetes facts the node's stored config does not suit, and installs one it suits.
+func TestUpgradeChecksTheStoredConfig(t *testing.T) {
+	c := newCreds(t)
+	withoutDemo := fixtureSchemas(t)
+	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
+	for name, tc := range map[string]struct {
+		schemas         map[string][]byte
+		kubernetesImage string
+		code            connect.Code
+		want            string
+	}{
+		"suits":                     {fixtureSchemas(t), "", 0, ""},
+		"an unknown kind":           {withoutDemo, "", connect.CodeFailedPrecondition, "Demo"},
+		"Kubernetes without a type": {fixtureSchemas(t), testImage, connect.CodeFailedPrecondition, "its image runs Kubernetes"},
+		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, connect.CodeInvalidArgument, "image.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := configServer(t)
+			var installed atomic.Bool
+			s.InstallImage = func(_ context.Context, _ upgrade.Header, r io.Reader) (upgrade.Result, error) {
+				installed.Store(true)
+				_, err := io.Copy(io.Discard, r)
+				return upgrade.Result{Entry: "chalkos_0.2.0+3.efi"}, err
+			}
+			addr := serve(t, s, c, c.pool)
+			conn := dial(t, addr, c.clients[pki.RoleOperator])
+			stream := conn.Upgrade(context.Background())
+			stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{
+				Image:           &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
+				Schemas:         tc.schemas,
+				KubernetesImage: []byte(tc.kubernetesImage),
+			}}})
+			_, err := stream.CloseAndReceive()
+			if tc.want == "" {
+				if err != nil || !installed.Load() {
+					t.Fatalf("upgrade = %v, installed %v", err, installed.Load())
+				}
+				return
+			}
+			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) || installed.Load() {
+				t.Errorf("upgrade = %v, installed %v; want %v naming %q", err, installed.Load(), tc.code, tc.want)
+			}
+		})
 	}
 }
 
@@ -143,7 +192,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	conn := dial(t, addr, c.clients[pki.RoleOperator])
 	send := func() error {
 		stream := conn.Upgrade(context.Background())
-		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0"}}}})
+		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0"}, Schemas: fixtureSchemas(t)}}})
 		_, err := stream.CloseAndReceive()
 		return err
 	}

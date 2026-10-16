@@ -123,9 +123,9 @@ Upgrade installs a new image into the node's inactive slot, from which it boots 
 the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 The first message carries the header; the store, its hash tree and the UKI follow as
 chunks. Available to operators. The node checks that the image is of its role and platform,
-not that it is one to trust: without Secure Boot, an operator can run any image as root,
-with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what
-limits upgrades to images signed for db.
+and that its stored config suits the image, not that it is one to trust: without Secure
+Boot, an operator can run any image as root, with STATE and VAR unsealed, as their keys are
+sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 
 ### DrainNode { #method-drainnode }
 
@@ -682,6 +682,17 @@ No fields.
 | ----- | ---- | ----------- |
 | `image` | [`ImageHeader`](#message-imageheader) | The image to install. The node refuses another ID or role than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
+| `schemas` | repeated [`UpgradeHeader.SchemasEntry`](#message-upgradeheaderschemasentry) | The image's schemas by file name, as its image directory's schemas/ holds them, and its image.json, empty for an image without Kubernetes. Before it writes anything, the node checks its stored config against them as an install checks the config it delivers, and refuses an image that would not accept it. The schemas are required. |
+| `kubernetes_image` | `bytes` |  |
+
+### UpgradeHeader.SchemasEntry { #message-upgradeheaderschemasentry }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `key` | `string` |  |
+| `value` | `bytes` |  |
 
 ### UpgradeRequest { #message-upgraderequest }
 

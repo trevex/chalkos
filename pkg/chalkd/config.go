@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -39,27 +40,38 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (configure
 	if err != nil {
 		return configured{}, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
 	}
-	set, err := config.NewSet(docs, schemas)
+	set, id, err := translate(docs, schemas, t)
 	if err != nil {
 		return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
-	}
-	if err := store.CheckCredentials(set.Documents(), schemas); err != nil {
-		return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
-	}
-	id, err := set.Identity(t)
-	if err != nil {
-		return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
-	}
-	if t.Image != nil {
-		if err := set.CheckKubernetes(*t.Image); err != nil {
-			return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
-		}
 	}
 	data, err := json.Marshal(id)
 	if err != nil {
 		return configured{}, failed(connect.CodeInternal, "encode the identity: %v", err)
 	}
 	return configured{stored: store.Stored{Documents: set.Documents(), Version: version}, identity: data}, nil
+}
+
+// translate checks docs as a set against schemas and translates them into the identity of a node
+// of the image t describes: the set rules, each document's schema, the Secrets their secretRefs
+// name and, on an image with Kubernetes, the cluster, registry mirrors and manifests they give.
+func translate(docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, manifest.Identity, error) {
+	set, err := config.NewSet(docs, schemas)
+	if err != nil {
+		return nil, manifest.Identity{}, err
+	}
+	if err := store.CheckCredentials(set.Documents(), schemas); err != nil {
+		return nil, manifest.Identity{}, err
+	}
+	id, err := set.Identity(t)
+	if err != nil {
+		return nil, manifest.Identity{}, err
+	}
+	if t.Image != nil {
+		if err := set.CheckKubernetes(*t.Image); err != nil {
+			return nil, manifest.Identity{}, err
+		}
+	}
+	return set, id, nil
 }
 
 // runningTarget is the running image, as config for it is translated, and its schemas.
@@ -197,17 +209,24 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 	if len(h.Schemas) == 0 {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
 	}
-	schemas, err := schema.LoadFiles(h.Schemas)
+	return imageTarget(h.Image, h.Schemas, h.KubernetesImage)
+}
+
+// imageTarget is the image an install or upgrade header describes, as config for it is
+// translated, with the schemas the header carries for it and its image.json, empty for an image
+// without Kubernetes.
+func imageTarget(img *nodev1.ImageHeader, files map[string][]byte, kubernetesImage []byte) (config.Target, *schema.Schemas, error) {
+	schemas, err := schema.LoadFiles(files)
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
-	t := config.Target{Role: h.Image.GetRole(), Platform: h.Image.GetPlatform()}
-	if len(h.KubernetesImage) > 0 {
-		img, err := k8s.ParseImage(h.KubernetesImage)
+	t := config.Target{Role: img.GetRole(), Platform: img.GetPlatform()}
+	if len(kubernetesImage) > 0 {
+		facts, err := k8s.ParseImage(kubernetesImage)
 		if err != nil {
 			return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's image.json: %v", err)
 		}
-		t.Image = &img
+		t.Image = &facts
 	}
 	return t, schemas, nil
 }

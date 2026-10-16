@@ -91,11 +91,11 @@ These limits hold in the current code, grouped by area.
 - An upgrade sends the whole store, its hash tree and the UKI to each node, about 300 MiB for
   a Kubernetes role's image as [The image](../concepts/image.md#how-large-is-an-image) measures it.
 - The boot loader is never updated after install, as above.
-- An upgrade does not check the node's stored config against the new image. A node whose stored
-  config holds no `Kubernetes` document fails its boot on an image with Kubernetes, in
-  `chalkos-identity.service`, and [boot counting](../reference/glossary.md#boot-counting) rolls it
-  back. Deliver the config with
-  [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) before the upgrade.
+- An upgrade carries no config. chalkd refuses an image that does not accept the node's stored
+  config before it writes anything, but config that only the new image accepts cannot be
+  delivered before the upgrade, since
+  [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) checks config against the
+  running image.
 
 ### Networking
 

@@ -115,7 +115,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	}
 	var img *diskImage
 	if f.image != "" {
-		if img, err = openImage(ctx, f.image, f.signKey, f.signCert, false); err != nil {
+		if img, err = openUpgradeImage(ctx, f.image, f.signKey, f.signCert); err != nil {
 			return err
 		}
 		defer img.Close()
@@ -144,7 +144,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 			if err != nil {
 				return err
 			}
-			if g.image, err = openImage(ctx, path, f.signKey, f.signCert, false); err != nil {
+			if g.image, err = openUpgradeImage(ctx, path, f.signKey, f.signCert); err != nil {
 				return err
 			}
 			defer g.image.Close()
@@ -436,7 +436,8 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	var resp *nodev1.UpgradeResponse
 	err = r.call(name, func(conn *client.Conn) error {
 		stream := conn.Upgrade(ctx)
-		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: img.header}}}); err != nil && !errors.Is(err, io.EOF) {
+		header := &nodev1.UpgradeHeader{Image: img.header, Schemas: img.schemas, KubernetesImage: img.kubernetesImage}
+		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 		if err := sendChunks(parts, func(c *nodev1.ImageChunk) error {
