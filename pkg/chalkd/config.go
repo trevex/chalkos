@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -143,6 +144,9 @@ func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *sc
 // that never started, or was stopped, stays so.
 func (s *Server) restartConsumer(ctx context.Context, unit string) error {
 	out, err := s.Run.Run(ctx, "systemctl", "show", "--property=ActiveState", "--value", unit)
+	if err != nil {
+		log.Printf("the state of %s: %v; restarting it only if it runs", unit, err)
+	}
 	if err != nil || strings.TrimSpace(string(out)) != "failed" {
 		_, err := s.Run.Run(ctx, "systemctl", "try-restart", unit)
 		return err
