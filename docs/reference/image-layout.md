@@ -196,7 +196,7 @@ entries, six for a role with Kubernetes:
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
 | `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, platform and the store's root hash, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
-| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only for a role with Kubernetes. chalkctl sends it with `schemas`: an install from the installer, so chalkd translates the node's config for the image it writes, and an upgrade, so chalkd checks the node's stored config against the image before it writes anything. |
+| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only for a role with Kubernetes. An install from the installer sends it with `schemas`, so chalkd translates the node's config for the image it writes; an upgrade checks the cluster definition's config against both before it drains a node, and chalkd reads them from the image it wrote. |
 
 The definitions of a role with the default sizes read:
 

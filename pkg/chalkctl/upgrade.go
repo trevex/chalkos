@@ -460,7 +460,7 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	var resp *nodev1.UpgradeResponse
 	err = r.call(name, func(conn *client.Conn) error {
 		stream := conn.Upgrade(ctx)
-		header := &nodev1.UpgradeHeader{Image: img.header, Schemas: img.contract.files, KubernetesImage: img.contract.kubernetesImage}
+		header := &nodev1.UpgradeHeader{Image: img.header}
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}

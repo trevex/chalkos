@@ -54,35 +54,25 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (configure
 // translate checks docs as a set against schemas and translates them into the identity of a node
 // of the image t describes: the set rules, each document's schema, the Secrets their secretRefs
 // name and, on an image with Kubernetes, the cluster, registry mirrors and manifests they give.
-// Its errors read as the step's own, and name the step for a caller that may not show them.
 func translate(docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, manifest.Identity, error) {
 	set, err := config.NewSet(docs, schemas)
 	if err != nil {
-		return nil, manifest.Identity{}, &translateError{"its documents' schemas and the rules of a set", err}
+		return nil, manifest.Identity{}, err
 	}
 	if err := store.CheckCredentials(set.Documents(), schemas); err != nil {
-		return nil, manifest.Identity{}, &translateError{"its Secret references", err}
+		return nil, manifest.Identity{}, err
 	}
 	id, err := set.Identity(t)
 	if err != nil {
-		return nil, manifest.Identity{}, &translateError{"the node's identity", err}
+		return nil, manifest.Identity{}, err
 	}
 	if t.Image != nil {
 		if err := set.CheckKubernetes(*t.Image); err != nil {
-			return nil, manifest.Identity{}, &translateError{"its Kubernetes settings", err}
+			return nil, manifest.Identity{}, err
 		}
 	}
 	return set, id, nil
 }
-
-// translateError is an error of a step of translate.
-type translateError struct {
-	step string
-	err  error
-}
-
-func (e *translateError) Error() string { return e.err.Error() }
-func (e *translateError) Unwrap() error { return e.err }
 
 // runningTarget is the running image, as config for it is translated, and its schemas.
 func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
@@ -223,14 +213,14 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
-	t, err := imageTarget(h.Image, h.KubernetesImage)
+	t, err := imageTarget(h.Image.GetRole(), h.Image.GetPlatform(), h.KubernetesImage)
 	return t, schemas, err
 }
 
-// imageTarget is the image an install or upgrade header describes, as config for it is
-// translated, with its image.json, empty for an image without Kubernetes.
-func imageTarget(img *nodev1.ImageHeader, kubernetesImage []byte) (config.Target, error) {
-	t := config.Target{Role: img.GetRole(), Platform: img.GetPlatform()}
+// imageTarget is the image of the role and platform an install or upgrade writes, as config for
+// it is translated, with its image.json, empty for an image without Kubernetes.
+func imageTarget(role, platform string, kubernetesImage []byte) (config.Target, error) {
+	t := config.Target{Role: role, Platform: platform}
 	if len(kubernetesImage) > 0 {
 		facts, err := k8s.ParseImage(kubernetesImage)
 		if err != nil {

@@ -5,17 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
-	"maps"
-	"os"
-	"path/filepath"
 	"runtime"
-	"time"
+	"strings"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -23,10 +20,11 @@ import (
 )
 
 // Upgrade installs the image an operator streams. It checks that the image is of the node's
-// role and platform, that the node's stored config suits it and that it boots the store it
-// carries, but cannot tell an image to trust from another: without Secure Boot, an operator can
-// run any image as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone.
-// Secure Boot is what limits upgrades to images signed for db.
+// role and platform, that it boots the store it carries and, before it becomes the next boot,
+// that the schemas in the image accept the node's stored config, but cannot tell an image to
+// trust from another: without Secure Boot, an operator can run any image as root, with STATE and
+// VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to
+// images signed for db.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	if !s.upgrading.TryLock() {
 		return nil, failed(connect.CodeAborted, "another upgrade is running")
@@ -48,10 +46,6 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "the header names no image")
 	case img.GetBootLoader() != nil:
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
-	}
-	if err := s.checkStoredConfig(ctx, h); err != nil {
-		log.Printf("upgrade to %q refused: %v", img.GetVersion(), err)
-		return nil, err
 	}
 	header := imageHeader(img)
 	log.Printf("upgrading to %q %q with the root hash %x", img.GetImageId(), img.GetVersion(), img.GetRootHash())
@@ -78,175 +72,67 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	return connect.NewResponse(resp), nil
 }
 
-// secretSchema is the schema file of the Secret kind, as an image's schemas/ names it.
-const secretSchema = "chalkos.dev_v1alpha1_Secret.json"
+// Where an image holds the schemas of its kinds and its Kubernetes facts, below its system.
+const (
+	imageSchemas = "/etc/chalkos/schemas"
+	imageFacts   = "/etc/chalkos/kubernetes/image.json"
+)
 
-// redactedSecret replaces every Secret value the upgrade's check of the stored config sees.
-const redactedSecret = "redacted"
+// imageStore is the store of an image an upgrade wrote, read as upgrade.Store reads it: by the
+// image's own paths.
+type imageStore interface {
+	ReadFile(name string) ([]byte, error)
+	ReadDir(name string) ([]fs.DirEntry, error)
+}
 
 // checkStoredConfig refuses an upgrade to an image that would not accept the node's stored
 // config: the node boots the image with that config, which chalkos-identity would refuse, and
-// boot counting would fall back once the image's tries are used up. The stored set is checked
-// against the schemas and image.json the header carries, as an install from the installer
-// checks the config it delivers, before anything is written.
-//
-// Like an install's, the header's schemas and image.json are not bound to the image: they are
-// what the operator's chalkctl read from the image directory, and an operator may send any. The
-// check must therefore show an operator nothing of the stored config they could not read
-// otherwise, in its reply or in the journal readers see:
-//   - The Secrets are checked against the running image's Secret schema, whatever the header
-//     carries, and with every value under their spec replaced, so no Secret value reaches a
-//     schema the header supplies. A header schema can still mark a field as a secretRef
-//     (x-chalkos-secret-ref) and so probe which Secret names and keys the set holds, though not
-//     their values.
-//   - A refusal names the document, where it fails and the schema keyword that refuses it, or
-//     only the step of the translation that fails, never a value, since the schemas' messages
-//     and the translation's quote the values they refuse. Schemas that do not load are named by
-//     their file alone.
-//   - The schemas refer to nothing but themselves: pkg/schema fetches no file or URL a $ref
-//     names, which chalkd, as root, would otherwise read.
-//   - The schemas cannot make the check run long or fill chalkd's memory: pkg/schema refuses,
-//     where they load, schemas that refer to themselves or expand through their references to
-//     far more schemas than any chalkos kind. The check also has a deadline, and a panic in the
-//     library refuses the upgrade rather than ending chalkd.
-//
-// Whether the check refuses remains an oracle on the documents other than Secrets: a schema of
-// the operator's choosing tells one value from another by refusing it. That holds until the
-// image's schemas are bound to the image.
-func (s *Server) checkStoredConfig(ctx context.Context, h *nodev1.UpgradeHeader) error {
-	if len(h.Schemas) == 0 {
-		return failed(connect.CodeInvalidArgument, "the header carries no schemas of the image, which the node checks its config against; upgrade with the chalkctl of this chalkos")
-	}
+// boot counting would fall back once the image's tries are used up. It runs once the image's
+// store is written to the inactive slot and before the image becomes the next boot, and reads
+// the schemas and image.json from that store, whose content the image's root hash covers, so
+// the config is checked against exactly what the image will translate it with. system is the
+// image's NixOS system in st, and role and platform are the image's. A node without config
+// translates none at boot, whatever the image.
+func (s *Server) checkStoredConfig(st imageStore, system, role, platform string) error {
 	// ApplyConfig replaces the stored set under the same lock.
 	s.mu.Lock()
 	stored, found, err := store.Read(s.Identity.Config)
 	s.mu.Unlock()
 	if err != nil {
-		return failed(connect.CodeInternal, "read the stored config: %v", err)
+		return fmt.Errorf("read the stored config: %w", err)
 	}
-	files := h.Schemas
-	if found {
-		own, err := os.ReadFile(filepath.Join(s.Identity.Schemas, secretSchema))
-		if err != nil {
-			return failed(connect.CodeInternal, "read the running image's Secret schema: %v", err)
-		}
-		files = maps.Clone(files)
-		files[secretSchema] = own
-	}
-	t, err := imageTarget(h.Image, h.KubernetesImage)
-	if err != nil {
-		return err
-	}
-	// The schemas' work is bounded where they load, which is the guard that holds: a validation
-	// under way in the library cannot be stopped. The deadline answers the operator and releases
-	// the upgrade lock all the same, should a check run long; it then ends in the background.
-	timeout := s.storedConfigTimeout
-	if timeout == 0 {
-		timeout = storedConfigTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		defer func() {
-			// A panic in the library, on schemas of the operator's choosing, must not end chalkd;
-			// its message may quote the config, so it is not passed on.
-			if r := recover(); r != nil {
-				done <- failed(connect.CodeInvalidArgument, "the image's schemas fail on the node's config")
-			}
-		}()
-		check := s.checkStored
-		if check == nil {
-			check = checkAgainst
-		}
-		done <- check(files, t, stored.Documents, found)
-	}()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		return failed(connect.CodeDeadlineExceeded, "checking the node's config against the image took longer than %v", timeout)
-	}
-}
-
-// storedConfigTimeout is how long an upgrade waits for the check of the stored config.
-const storedConfigTimeout = 30 * time.Second
-
-// checkAgainst loads the header's schemas files and, when the node holds a config, docs, checks
-// that config against them and the image t describes.
-func checkAgainst(files map[string][]byte, t config.Target, docs []config.Document, found bool) error {
-	schemas, err := schema.LoadFiles(files)
-	if err != nil {
-		// The library's errors quote the schemas, and what a reference in them reached.
-		var lerr *schema.LoadError
-		if errors.As(err, &lerr) {
-			return failed(connect.CodeInvalidArgument, "the image's schemas do not load: %s", lerr.File)
-		}
-		return failed(connect.CodeInvalidArgument, "the image's schemas do not load")
-	}
-	// A node without config translates none at boot, whatever the image.
 	if !found {
 		return nil
 	}
-	if _, _, err := translate(redactSecrets(docs), schemas, t); err != nil {
-		return failed(connect.CodeFailedPrecondition, "the node's config does not suit the image: %s; apply config both images accept with chalkctl apply-config, then upgrade", unsuitable(err))
+	entries, err := st.ReadDir(system + imageSchemas)
+	if err != nil {
+		return fmt.Errorf("the image's schemas: %w", err)
 	}
-	return nil
-}
-
-// unsuitable says why translate refused the stored config without quoting a value of it: where a
-// document fails its schema and the keyword that refuses it, or else the step that fails, which
-// chalkctl upgrade's check of the cluster definition's config against the image explains.
-func unsuitable(err error) string {
-	var verr *schema.ValidationError
-	if errors.As(err, &verr) {
-		return verr.Redacted()
-	}
-	var terr *translateError
-	if errors.As(err, &terr) {
-		return "it fails " + terr.step + "; the reasons quote the config, so they are not shown here, and chalkctl upgrade checks the cluster definition's config against the image with them"
-	}
-	return "it fails its translation"
-}
-
-// redactSecrets returns docs with every string under each Secret's spec replaced by
-// redactedSecret, leaving docs as they are.
-func redactSecrets(docs []config.Document) []config.Document {
-	out := make([]config.Document, len(docs))
-	for i, d := range docs {
-		out[i] = d
-		if !d.IsSecret() {
+	files := map[string][]byte{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		object := maps.Clone(d.Object)
-		if spec, ok := object["spec"]; ok {
-			object["spec"] = redactStrings(spec)
+		if files[e.Name()], err = st.ReadFile(system + imageSchemas + "/" + e.Name()); err != nil {
+			return fmt.Errorf("the image's schemas: %w", err)
 		}
-		out[i].Object = object
 	}
-	return out
-}
-
-// redactStrings returns a copy of v with every string in it replaced by redactedSecret.
-func redactStrings(v any) any {
-	switch v := v.(type) {
-	case string:
-		return redactedSecret
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, e := range v {
-			out[k] = redactStrings(e)
-		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, e := range v {
-			out[i] = redactStrings(e)
-		}
-		return out
-	default:
-		return v
+	schemas, err := schema.LoadFiles(files)
+	if err != nil {
+		return fmt.Errorf("the image's schemas: %w", err)
 	}
+	facts, err := st.ReadFile(system + imageFacts)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("the image's Kubernetes facts: %w", err)
+	}
+	t, err := imageTarget(role, platform, facts)
+	if err != nil {
+		return err
+	}
+	if _, _, err := translate(stored.Documents, schemas, t); err != nil {
+		return fmt.Errorf("the node's config does not suit the image: %w; apply config both images accept with chalkctl apply-config, then upgrade", err)
+	}
+	return nil
 }
 
 // imageHeader is the image an install or upgrade header describes.
@@ -279,6 +165,9 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, image io.Re
 		OpenPartition: upgrade.OpenPartition,
 		// ApplyConfig and ResetVolume change the boot disk's partitions under the same lock.
 		TableLock: &s.mu,
+		CheckStore: func(st upgrade.Store) error {
+			return s.checkStoredConfig(st, st.Toplevel, h.Role, h.Platform)
+		},
 	}
 	return n.Install(ctx, h, image)
 }

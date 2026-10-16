@@ -126,8 +126,8 @@ Schemas of its [kinds](#kind) and what it fixes about Kubernetes. The image carr
 `/etc/chalkos/schemas` and the Kubernetes facts in `/etc/chalkos/kubernetes/image.json`, and its
 image directory has them as `schemas/` and `image.json`. chalkctl reads the contract from the
 image directory when it installs from the [installer](#installer) or upgrades a node, and from the
-running node with the [Contract](api.md#method-contract) method otherwise. See
-[Image and partition layout](image-layout.md).
+running node with the [Contract](api.md#method-contract) method otherwise. On an upgrade, the node
+reads it from the image it wrote. See [Image and partition layout](image-layout.md).
 
 ## Control plane { #control-plane }
 

@@ -3,16 +3,12 @@ package chalkd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"log"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,8 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -34,7 +28,7 @@ func TestUpgrade(t *testing.T) {
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{
 		Version: "0.2.0", ImageId: "chalkos", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1, 2},
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 2, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 3, Sha256: []byte{6}},
-	}, Schemas: fixtureSchemas(t)}
+	}}
 	for _, tc := range []struct {
 		name       string
 		reboot     bool
@@ -128,7 +122,6 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 	}{
 		{&nodev1.UpgradeHeader{Reboot: true}, "the header names no image"},
 		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", BootLoader: &nodev1.ImagePart{Size: 1, Sha256: []byte{1}}}}, "an upgrade carries no boot loader"},
-		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0"}}, "no schemas"},
 	} {
 		stream := conn.Upgrade(context.Background())
 		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: tc.header}})
@@ -139,329 +132,69 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 	}
 }
 
-// TestUpgradeChecksTheStoredConfig refuses, before anything is installed, an image whose schemas
-// or Kubernetes facts the node's stored config does not suit, and installs one it suits.
+// dirStore is an image's store laid out in a directory, its paths those of the image.
+type dirStore string
+
+func (d dirStore) ReadFile(name string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(string(d), name))
+}
+
+func (d dirStore) ReadDir(name string) ([]fs.DirEntry, error) {
+	return os.ReadDir(filepath.Join(string(d), name))
+}
+
+// imageWith is the store of an image whose system /nix/store/x holds the schemas files and, when
+// facts is not empty, the image.json facts.
+func imageWith(t *testing.T, files map[string][]byte, facts string) dirStore {
+	t.Helper()
+	root := t.TempDir()
+	for name, data := range files {
+		write(t, filepath.Join(root, "nix/store/x", imageSchemas, name), string(data))
+	}
+	if facts != "" {
+		write(t, filepath.Join(root, "nix/store/x", imageFacts), facts)
+	}
+	return dirStore(root)
+}
+
+// TestUpgradeChecksTheStoredConfig refuses an image whose schemas or Kubernetes facts the node's
+// stored config does not suit, giving the reason, and accepts one it suits.
 func TestUpgradeChecksTheStoredConfig(t *testing.T) {
-	c := newCreds(t)
 	withoutDemo := fixtureSchemas(t)
 	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
 	for name, tc := range map[string]struct {
-		schemas         map[string][]byte
-		kubernetesImage string
-		code            connect.Code
-		want            string
+		schemas map[string][]byte
+		facts   string
+		want    string
 	}{
-		"suits":                     {fixtureSchemas(t), "", 0, ""},
-		"an unknown kind":           {withoutDemo, "", connect.CodeFailedPrecondition, "Demo"},
-		"Kubernetes without a type": {fixtureSchemas(t), testImage, connect.CodeFailedPrecondition, "it fails the node's identity"},
-		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, connect.CodeInvalidArgument, "image.json"},
+		"suits":                     {fixtureSchemas(t), "", ""},
+		"an unknown kind":           {withoutDemo, "", `does not accept kind "Demo"`},
+		"Kubernetes without a type": {fixtureSchemas(t), testImage, `Node "n1" has no type, but its image runs Kubernetes`},
+		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, "image.json"},
+		"no schemas":                {nil, "", "the image's schemas"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
-			var installed atomic.Bool
-			s.InstallImage = func(_ context.Context, _ upgrade.Header, r io.Reader) (upgrade.Result, error) {
-				installed.Store(true)
-				_, err := io.Copy(io.Discard, r)
-				return upgrade.Result{Entry: "chalkos_0.2.0+3.efi"}, err
-			}
-			addr := serve(t, s, c, c.pool)
-			conn := dial(t, addr, c.clients[pki.RoleOperator])
-			stream := conn.Upgrade(context.Background())
-			stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{
-				Image:           &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
-				Schemas:         tc.schemas,
-				KubernetesImage: []byte(tc.kubernetesImage),
-			}}})
-			_, err := stream.CloseAndReceive()
+			err := s.checkStoredConfig(imageWith(t, tc.schemas, tc.facts), "/nix/store/x", "worker", "metal")
 			if tc.want == "" {
-				if err != nil || !installed.Load() {
-					t.Fatalf("upgrade = %v, installed %v", err, installed.Load())
+				if err != nil {
+					t.Fatal(err)
 				}
 				return
 			}
-			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) || installed.Load() {
-				t.Errorf("upgrade = %v, installed %v; want %v naming %q", err, installed.Load(), tc.code, tc.want)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want one naming %q", err, tc.want)
 			}
 		})
 	}
 }
 
-// upgradeOnce streams an upgrade header without chunks to s as an operator, and tells whether the
-// node went on to install the image.
-func upgradeOnce(t *testing.T, s *Server, h *nodev1.UpgradeHeader) (bool, error) {
-	t.Helper()
-	c := newCreds(t)
-	var installed atomic.Bool
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, r io.Reader) (upgrade.Result, error) {
-		installed.Store(true)
-		_, err := io.Copy(io.Discard, r)
-		return upgrade.Result{Entry: "chalkos_0.2.0+3.efi"}, err
-	}
-	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-	stream := conn.Upgrade(context.Background())
-	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}})
-	_, err := stream.CloseAndReceive()
-	return installed.Load(), err
-}
-
-// TestUpgradeWithoutStoredConfig installs on a node that holds no config, which translates none
-// at boot, also an image with Kubernetes.
+// TestUpgradeWithoutStoredConfig accepts any image on a node that holds no config, which
+// translates none at boot.
 func TestUpgradeWithoutStoredConfig(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
-	installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{
-		Image:           &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
-		Schemas:         fixtureSchemas(t),
-		KubernetesImage: []byte(testImage),
-	})
-	if err != nil || !installed {
-		t.Fatalf("upgrade = %v, installed %v", err, installed)
-	}
-}
-
-// patternSecretSchema is the Secret schema with a pattern that refuses every value but "", so a
-// refusal would quote the value checked.
-func patternSecretSchema(t *testing.T) []byte {
-	t.Helper()
-	var doc map[string]any
-	if err := json.Unmarshal(fixtureSchemas(t)[secretSchema], &doc); err != nil {
+	if err := s.checkStoredConfig(imageWith(t, nil, testImage), "/nix/store/x", "worker", "metal"); err != nil {
 		t.Fatal(err)
-	}
-	spec := doc["properties"].(map[string]any)["spec"].(map[string]any)
-	data := spec["properties"].(map[string]any)["data"].(map[string]any)
-	data["additionalProperties"] = map[string]any{"type": "string", "pattern": "^$"}
-	out, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
-// TestUpgradeKeepsSecretsFromTheHeadersSchemas: an operator may not read the node's Secrets, so
-// the check of the stored config never shows a Secret's value to a schema the header carries,
-// nor quotes one in the reply or the journal.
-func TestUpgradeKeepsSecretsFromTheHeadersSchemas(t *testing.T) {
-	var journal bytes.Buffer
-	log.SetOutput(&journal)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
-	attack := fixtureSchemas(t)
-	attack[secretSchema] = patternSecretSchema(t)
-	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: attack}
-
-	// The header's Secret schema is not the one the Secrets are checked against.
-	s, _ := configServer(t)
-	if installed, err := upgradeOnce(t, s, header); err != nil || !installed {
-		t.Errorf("upgrade = %v, installed %v; want the running image's Secret schema used", err, installed)
-	}
-
-	// Even a schema that refuses a value sees none.
-	s, _ = configServer(t)
-	write(t, filepath.Join(s.Identity.Schemas, secretSchema), string(patternSecretSchema(t)))
-	installed, err := upgradeOnce(t, s, header)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || installed {
-		t.Fatalf("upgrade = %v, installed %v; want the redacted value refused", err, installed)
-	}
-	if strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), `Secret "demo": - at '/spec/data/token': pattern`) {
-		t.Errorf("err = %v, want the place and keyword and not the Secret's value", err)
-	}
-	if !strings.Contains(journal.String(), "refused") || strings.Contains(journal.String(), "s3cret") {
-		t.Errorf("the journal holds no refusal, or the Secret's value:\n%s", journal.String())
-	}
-}
-
-// storeConfig makes text the node's stored config set as it is, without the checks of
-// ApplyConfig, as one an older image accepted.
-func storeConfig(t *testing.T, s *Server, text string) {
-	t.Helper()
-	docs, err := config.Parse(strings.NewReader(text))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write(s.Identity.Config, store.Stored{Documents: docs, Version: "stored"}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// demoSchemaWith is the fixture schemas with the Demo's spec.name schema replaced by name.
-func demoSchemaWith(t *testing.T, name map[string]any) map[string][]byte {
-	t.Helper()
-	files := fixtureSchemas(t)
-	var doc map[string]any
-	if err := json.Unmarshal(files["demo.example.org_v1alpha1_Demo.json"], &doc); err != nil {
-		t.Fatal(err)
-	}
-	spec := doc["properties"].(map[string]any)["spec"].(map[string]any)
-	spec["properties"].(map[string]any)["name"] = name
-	data, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files["demo.example.org_v1alpha1_Demo.json"] = data
-	return files
-}
-
-// TestUpgradeRefusalQuotesNoValue: whatever step of the check refuses the stored config, and
-// whatever the header's schemas refer to, neither the reply nor the journal quotes a value of the
-// stored config. A schema refusal names where and by which keyword; a later step only itself.
-func TestUpgradeRefusalQuotesNoValue(t *testing.T) {
-	collision := strings.Replace(baseConfig, "token: {secretRef: {name: demo, key: token}}", "token: {secretRef: {name: zq-sec, key: x.y}}", 1) + `---
-apiVersion: demo.example.org/v1alpha1
-kind: Demo
-metadata: {name: two}
-spec: {name: second, token: {secretRef: {name: zq-sec.x, key: y}}}
----
-apiVersion: chalkos.dev/v1alpha1
-kind: Secret
-metadata: {name: zq-sec}
-spec: {data: {x.y: a}}
----
-apiVersion: chalkos.dev/v1alpha1
-kind: Secret
-metadata: {name: zq-sec.x}
-spec: {data: {y: b}}
-`
-	plainMirror := workerConfig + `---
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: RegistryMirror
-metadata: {name: docker}
-spec: {registry: docker.io, mirrors: ["http://zq-mirror-7"]}
-`
-	for name, tc := range map[string]struct {
-		stored          string
-		schemas         func(s *Server) map[string][]byte
-		kubernetesImage string
-		code            connect.Code
-		want, absent    string
-	}{
-		"a schema's pattern": {
-			strings.Replace(baseConfig, "name: first", "name: zq-first-7", 1),
-			func(*Server) map[string][]byte {
-				return demoSchemaWith(t, map[string]any{"type": "string", "pattern": "^$"})
-			},
-			"", connect.CodeFailedPrecondition, `Demo "one": - at '/spec/name': pattern`, "zq-first-7",
-		},
-		"a schema's reference to a stored file": {
-			baseConfig,
-			func(s *Server) map[string][]byte {
-				return demoSchemaWith(t, map[string]any{"$ref": "file://" + filepath.Join(s.Identity.Config, "secrets", "demo.json") + "#/spec/data/token"})
-			},
-			"", connect.CodeInvalidArgument, "the image's schemas do not load: demo.example.org_v1alpha1_Demo.json", "s3cret",
-		},
-		"the Secret references": {
-			collision, func(*Server) map[string][]byte { return fixtureSchemas(t) },
-			"", connect.CodeFailedPrecondition, "it fails its Secret references", "zq-sec",
-		},
-		"the node's identity": {
-			baseConfig, func(*Server) map[string][]byte { return fixtureSchemas(t) },
-			testImage, connect.CodeFailedPrecondition, "it fails the node's identity", `Node "n1"`,
-		},
-		"the Kubernetes settings": {
-			plainMirror, func(*Server) map[string][]byte { return fixtureSchemas(t) },
-			testImage, connect.CodeFailedPrecondition, "it fails its Kubernetes settings", "zq-mirror-7",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			var journal bytes.Buffer
-			log.SetOutput(&journal)
-			t.Cleanup(func() { log.SetOutput(os.Stderr) })
-			s, _ := configServer(t)
-			storeConfig(t, s, tc.stored)
-			installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
-				Schemas: tc.schemas(s), KubernetesImage: []byte(tc.kubernetesImage)})
-			if connect.CodeOf(err) != tc.code || installed {
-				t.Fatalf("upgrade = %v, installed %v; want %v", err, installed, tc.code)
-			}
-			if !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), tc.absent) {
-				t.Errorf("err = %v, want %q and not %q", err, tc.want, tc.absent)
-			}
-			if !strings.Contains(journal.String(), "refused") || strings.Contains(journal.String(), tc.absent) {
-				t.Errorf("the journal holds no refusal, or %q:\n%s", tc.absent, journal.String())
-			}
-		})
-	}
-}
-
-// TestUpgradeRefusesASchemaOfUnboundedWorkQuickly: a header schema that would take validation
-// hours, holding a definition twice at every level, is refused where it loads.
-func TestUpgradeRefusesASchemaOfUnboundedWorkQuickly(t *testing.T) {
-	files := demoSchemaWith(t, map[string]any{"$ref": "#/$defs/d0"})
-	var doc map[string]any
-	if err := json.Unmarshal(files["demo.example.org_v1alpha1_Demo.json"], &doc); err != nil {
-		t.Fatal(err)
-	}
-	defs := map[string]any{"d30": map[string]any{"type": "string"}}
-	for i := range 30 {
-		next := map[string]any{"$ref": fmt.Sprintf("#/$defs/d%d", i+1)}
-		defs[fmt.Sprintf("d%d", i)] = map[string]any{"allOf": []any{next, next}}
-	}
-	doc["$defs"] = defs
-	data, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files["demo.example.org_v1alpha1_Demo.json"] = data
-	s, _ := configServer(t)
-	start := time.Now()
-	installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: files})
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image's schemas do not load: demo.example.org_v1alpha1_Demo.json") || installed {
-		t.Fatalf("upgrade = %v, installed %v", err, installed)
-	}
-	if d := time.Since(start); d > 5*time.Second {
-		t.Errorf("the refusal took %v", d)
-	}
-}
-
-// TestUpgradeCheckEnds: a check of the stored config that runs past its deadline answers the
-// operator and releases the upgrade lock, and one that panics refuses the upgrade without ending
-// chalkd.
-func TestUpgradeCheckEnds(t *testing.T) {
-	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: fixtureSchemas(t)}
-	s, _ := configServer(t)
-	s.storedConfigTimeout = 50 * time.Millisecond
-	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
-	s.checkStored = func(map[string][]byte, config.Target, []config.Document, bool) error { <-release; return nil }
-	installed, err := upgradeOnce(t, s, header)
-	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || installed {
-		t.Fatalf("upgrade = %v, installed %v; want the deadline exceeded", err, installed)
-	}
-	s.checkStored = nil
-	if installed, err := upgradeOnce(t, s, header); err != nil || !installed {
-		t.Fatalf("the next upgrade = %v, installed %v; want the lock released", err, installed)
-	}
-	s.checkStored = func(map[string][]byte, config.Target, []config.Document, bool) error { panic("zq-panic-7") }
-	installed, err = upgradeOnce(t, s, header)
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || strings.Contains(err.Error(), "zq-panic-7") || installed {
-		t.Fatalf("upgrade = %v, installed %v; want a refusal without the panic's message", err, installed)
-	}
-}
-
-// TestRedactSecretsReplacesEveryStringOfTheirSpec: every string under a Secret's spec is
-// replaced, in fields besides data too, and the documents given are left as they are.
-func TestRedactSecretsReplacesEveryStringOfTheirSpec(t *testing.T) {
-	docs, err := config.Parse(strings.NewReader(`apiVersion: chalkos.dev/v1alpha1
-kind: Secret
-metadata: {name: s}
-spec: {data: {k: v1}, more: {list: [v2, {deep: v3}], n: 7}}
----
-apiVersion: demo.example.org/v1alpha1
-kind: Demo
-metadata: {name: one}
-spec: {name: first}
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := redactSecrets(docs)
-	want := map[string]any{"data": map[string]any{"k": redactedSecret},
-		"more": map[string]any{"list": []any{redactedSecret, map[string]any{"deep": redactedSecret}}, "n": json.Number("7")}}
-	if !reflect.DeepEqual(got[0].Object["spec"], want) || got[0].Object["metadata"].(map[string]any)["name"] != "s" {
-		t.Errorf("redacted Secret = %#v", got[0].Object)
-	}
-	if !reflect.DeepEqual(got[1], docs[1]) {
-		t.Errorf("redacted another document: %#v", got[1].Object)
-	}
-	if docs[0].Object["spec"].(map[string]any)["data"].(map[string]any)["k"] != "v1" {
-		t.Error("changed the documents given")
 	}
 }
 
@@ -479,7 +212,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	conn := dial(t, addr, c.clients[pki.RoleOperator])
 	send := func() error {
 		stream := conn.Upgrade(context.Background())
-		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0"}, Schemas: fixtureSchemas(t)}}})
+		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0"}}}})
 		_, err := stream.CloseAndReceive()
 		return err
 	}

@@ -31,8 +31,7 @@ type diskImage struct {
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
 	// contract is what an upgrade's image directory says the image accepts as config, which
-	// chalkctl checks the cluster definition's config against and the node its stored config;
-	// nil for an install's image.
+	// chalkctl checks the cluster definition's config against; nil for an install's image.
 	contract *contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
@@ -163,8 +162,9 @@ func sum(r io.Reader) (*nodev1.ImagePart, error) {
 	return &nodev1.ImagePart{Size: uint64(n), Sha256: h.Sum(nil)}, nil
 }
 
-// openUpgradeImage opens an upgrade's image with the contract its directory holds: the node
-// checks its stored config against the image's schemas and image.json before it writes anything.
+// openUpgradeImage opens an upgrade's image with the contract its directory holds, which chalkctl
+// checks the cluster definition's config against before any node is drained. The node checks its
+// stored config against the schemas in the image itself.
 func openUpgradeImage(ctx context.Context, path, key, cert string) (*diskImage, error) {
 	img, err := openImage(ctx, path, key, cert, false)
 	if err != nil {

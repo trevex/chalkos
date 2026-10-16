@@ -12,7 +12,8 @@
 //     them against the root hash.
 //  3. Write the UKI under a name systemd-boot ignores and check it: it must boot this store, name
 //     the node's image and role, and carry a signature of the firmware's db when Secure
-//     Boot is on.
+//     Boot is on. Then the caller checks the image itself, reading the store through dm-verity,
+//     as chalkd checks the node's config against the image's schemas.
 //  4. Activate: give the slot the partition UUIDs systemd derives from the root hash and the
 //     labels naming the version, prefer the new entry in systemd-boot, and rename the UKI to
 //     <id>_<version>+<tries>.efi.
@@ -64,6 +65,12 @@ type Node struct {
 	// Change, when set, is called before each change to the disk, the ESP or the firmware's
 	// variables; tests make it fail to stop an upgrade at each of them.
 	Change func(what string) error
+	// CheckStore, when set, checks the image before it becomes the next boot: Install mounts the
+	// written store read-only through dm-verity at StoreMount, /run/chalkd/upgrade-store when
+	// empty, and passes it. When the check fails, the slot stays retired and the running image
+	// stays the next boot.
+	CheckStore func(Store) error
+	StoreMount string
 }
 
 func (n *Node) change(what string) error {
@@ -178,6 +185,9 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		return Result{}, err
 	}
 	tmp, tries, err := n.receiveUKI(h, stream)
+	if err == nil && n.CheckStore != nil {
+		err = n.checkStore(ctx, h, inactive, tmp)
+	}
 	var entry string
 	if err == nil {
 		entry, err = n.activate(ctx, h, inactive, tmp, tries)

@@ -20,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -153,8 +152,8 @@ func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, bloc
 		{Type: "usr-x86-64", Label: "store_" + version, Offset: espSize + treeSize, RawSize: storeSize, RootHash: hex.EncodeToString(root)},
 	})
 	writeFile(t, filepath.Join(imgDir, "repart-output.json"), string(parts))
-	// The contract an upgrade sends with the image: the upgrade lab's roles cp, w and k8s run
-	// Kubernetes.
+	// The contract chalkctl checks the cluster definition's config against: the upgrade lab's
+	// roles cp, w and k8s run Kubernetes.
 	copySchemas(t, filepath.Join(imgDir, "schemas"))
 	if role == "cp" || role == "w" || role == "k8s" {
 		writeFile(t, filepath.Join(imgDir, "image.json"), testImageJSON)
@@ -171,9 +170,6 @@ type upgradeFake struct {
 	name, role, platform string
 	// kind is the node's Kubernetes kind, "" without Kubernetes.
 	kind string
-	// schemas and imageJSON are what the last upgrade's header carried of the image's contract.
-	schemas   map[string][]byte
-	imageJSON []byte
 
 	mu                      sync.Mutex
 	version, staged, failed string
@@ -275,11 +271,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	if !stream.Receive() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no header"))
 	}
-	header := stream.Msg().GetHeader()
-	h := header.GetImage()
-	if len(header.GetSchemas()) == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("the header carries no schemas of the image"))
-	}
+	h := stream.Msg().GetHeader().GetImage()
 	var received uint64
 	for stream.Receive() {
 		received += uint64(len(stream.Msg().GetChunk().GetData()))
@@ -302,7 +294,6 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.schemas, n.imageJSON = header.GetSchemas(), header.GetKubernetesImage()
 	if h.Version == n.version {
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true}), nil
 	}
@@ -724,31 +715,10 @@ func testSigner(t *testing.T, dir, name string) (key, cert string) {
 	return key, cert
 }
 
-// TestUpgradeSendsTheImageContract sends each node the schemas and image.json of the image's
-// directory, which the node checks its stored config against, and refuses an image directory
-// without schemas.
-func TestUpgradeSendsTheImageContract(t *testing.T) {
+// TestUpgradeNeedsTheImageContract refuses an image directory without schemas, which the cluster
+// definition's config is checked against.
+func TestUpgradeNeedsTheImageContract(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	img := testUpgradeImage(t, "w", "0.2.0")
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
-		t.Fatalf("%v\n%s", err, l.ta.stdout)
-	}
-	n := l.nodes["w1"]
-	n.mu.Lock()
-	schemas, imageJSON := n.schemas, string(n.imageJSON)
-	n.mu.Unlock()
-	want := map[string][]byte{}
-	paths, _ := filepath.Glob(filepath.Join(img, "schemas", "*.json"))
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want[filepath.Base(p)] = data
-	}
-	if len(want) == 0 || !reflect.DeepEqual(schemas, want) || imageJSON != testImageJSON {
-		t.Errorf("the node got the schemas %v and image.json %q, want the image directory's %v", slices.Sorted(maps.Keys(schemas)), imageJSON, slices.Sorted(maps.Keys(want)))
-	}
 	bare := testUpgradeImage(t, "w", "0.3.0")
 	if err := os.RemoveAll(filepath.Join(bare, "schemas")); err != nil {
 		t.Fatal(err)

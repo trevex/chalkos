@@ -78,13 +78,11 @@ with STATE and VAR unlocked, because their keys are sealed to PCR 7 alone. With 
 enforced, the firmware boots only images signed with the db key, so an operator can roll out only
 what the key holder signed.
 
-Before it installs anything, Upgrade checks the node's stored config against the schemas and
-`image.json` the request carries, which are not bound to the image. An operator can therefore test
-the node's stored config against schemas of their own. They learn whether it is accepted and, when
-it is refused, the document, the place in it and the schema keyword that refuses it, but no value.
-Secret values never reach those schemas, though the names of Secrets and of their keys can be
-tested. The schemas cannot refer to files or URLs, and chalkd refuses schemas that refer to
-themselves or would take far more work than any chalkos kind; the check gives up after 30 seconds.
+Once it has written the image to the inactive slot, and before the image becomes the next boot,
+Upgrade checks the node's stored config against the schemas and `image.json` inside the image,
+read through dm-verity from the store it wrote. The request carries no schemas of its own, so the
+check always uses those the image will translate the config with, and an operator learns from it
+no more than whether that image accepts the node's config.
 
 ## Why are the disk keys sealed to PCR 7?
 

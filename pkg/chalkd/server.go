@@ -21,7 +21,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
-	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -39,8 +38,7 @@ const (
 	// maxMessageBytes limits each request message, as received and after decompression. The
 	// largest is an install message: a header carries the identity or config, certificates,
 	// repart definitions and, from the installer, the target image's schemas, under 1 MiB
-	// together. An upgrade's header carries the new image's schemas and image.json, and an image
-	// chunk from chalkctl is 1 MiB.
+	// together; an image chunk from chalkctl is 1 MiB.
 	maxMessageBytes = 4 << 20
 	// maxLogStreams limits concurrent Logs calls, each of which holds a journalctl process
 	// until the client goes away.
@@ -131,10 +129,6 @@ type Server struct {
 	installed bool
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
-	// storedConfigTimeout bounds an upgrade's check of the stored config, 30 seconds when 0, and
-	// checkStored makes the check, checkAgainst when nil; tests replace them.
-	storedConfigTimeout time.Duration
-	checkStored         func(files map[string][]byte, t config.Target, docs []config.Document, found bool) error
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 }

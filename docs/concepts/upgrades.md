@@ -64,16 +64,17 @@ Before it sends anything, chalkctl checks each image against the cluster:
 
 - the UKI boots the store the image holds: its `usrhash=` equals the store's root hash;
 - the version is one chalkos installs, and the UKI's os-release names a role and platform;
-- the image's directory holds its `schemas/`, which go to the node with `image.json`;
 - the config the cluster definition gives each node of the image's role and platform suits the
-  image, as an install checks the config it delivers;
+  `schemas/` and `image.json` in the image's directory, as an install checks the config it
+  delivers;
 - the UKI carries a signature of the certificate in
   [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate),
   or, when that is not set, of the certificate chalkctl signed with. With neither, chalkctl checks
   no signature.
 
 chalkctl checks every node's config before it drains the first node. It needs the cluster
-definition for that; with a client file alone, each node's own check below is all there is.
+definition for that; with a client file alone, each node's own check of its stored config, before
+the image becomes its next boot, is all there is.
 
 chalkctl also stops before any image is built or sent when a node runs another role or platform
 than the [cluster definition](../reference/glossary.md#cluster-definition) declares for it, because changing either is a reinstall.
@@ -86,10 +87,6 @@ The [Upgrade](../reference/api.md#method-upgrade) method needs the
 chalkd checks the image's header against the running image's os-release and the disk:
 
 - the image ID, role and platform equal the running image's, and the architecture the machine's;
-- the node's stored config suits the image: it passes the set rules and the image's schemas, and
-  on an image with Kubernetes gives a cluster, as an install checks the config it delivers. An
-  image that would not accept it would fail its boot in `chalkos-identity`, and boot counting
-  would fall back;
 - the version is not the running one, unless the root hash is the same too, in which case the node
   answers that it runs the image already and changes nothing;
 - the root hash is not the running one under another version, whose partitions would be the
@@ -109,7 +106,7 @@ lists its digest or any certificate in its signer's chain.
 
 ## How does a node install the image?
 
-chalkd installs in four steps. At every point between them the disk boots the running image, or
+chalkd installs in five steps. At every point between them the disk boots the running image, or
 the new one with all its tries.
 
 1. Retire the inactive slot. chalkd removes every UKI of the image on the ESP except those that
@@ -120,7 +117,15 @@ the new one with all its tries.
    holds this store is not written again.
 3. Receive the UKI. chalkd writes it to the ESP as `/EFI/Linux/.upgrade-<version>.efi`, a name
    systemd-boot ignores, and checks it.
-4. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
+4. Check the stored config. chalkd opens the written store read-only through dm-verity with the
+   image's root hash, reads the schemas and `image.json` of the system the UKI boots, and checks
+   the node's stored config against them, as an install checks the config it delivers: the set
+   rules, each document's schema and, on an image with Kubernetes, the cluster it gives. An image
+   that would not accept the config would fail its boot in `chalkos-identity`, and boot counting
+   would fall back. When the check refuses, chalkd answers with the reason, removes the UKI and
+   leaves the slot retired, so the running image stays the next boot and the next upgrade
+   overwrites the slot. A node without stored config skips the check.
+5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
    `store_<version>` and `store-verity_<version>`, sets `LoaderEntryPreferred` to the new entry
    and renames the UKI to `chalkos_<version>+<tries>.efi`. The rename is the last change: before
    it, nothing boots the slot.
