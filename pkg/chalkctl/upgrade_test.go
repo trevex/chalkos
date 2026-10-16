@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -38,11 +40,29 @@ import (
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
+// diskSeed is the seed the config generated for the node of the cluster lab gives its system
+// disk.
+func diskSeed(node string) string {
+	sum := sha256.Sum256([]byte("chalkos-seed:lab/" + node + "/system"))
+	h := hex.EncodeToString(sum[:])
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
 // upgradeManifest is a cluster of three control planes, three workers and a node without
-// Kubernetes.
+// Kubernetes, whose identities the config generated from them gives back.
 func upgradeManifest(controlPlanes int) string {
 	node := func(name, role string, n int) string {
-		return fmt.Sprintf(`%q: {"role": %q, "platform": "metal", "identity": {"hostname": %q, "platform": "metal", "network": {"networks": {"10-uplink": {"address": ["10.0.0.%d/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}`, name, role, name, n)
+		k := "null"
+		if role != "plain" {
+			k = fmt.Sprintf(`{"nodeName": %q, "nodeIPs": ["10.0.0.%d"]}`, name, n)
+		}
+		return fmt.Sprintf(`%q: {"role": %q, "platform": "metal", "identity": {"hostname": %q, "cluster": "lab", "role": %q, "platform": "metal",
+		  "network": {"networks": {"10-uplink": {"address": ["10.0.0.%d/24"]}}}, "networkUnits": {"10-uplink.network": "[Network]\nAddress=10.0.0.%d/24\n"},
+		  "labels": {}, "taints": [], "kubernetes": %s, "time": {"servers": []},
+		  "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": %q,
+		    "repart": {"50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"}}},
+		    "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null}},
+		    "fallback": "recovery-key", "encryption": "tpm2"}}}`, name, role, name, role, n, n, k, diskSeed(name))
 	}
 	var nodes []string
 	for i := 1; i <= controlPlanes; i++ {
@@ -116,8 +136,12 @@ func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, bloc
 		{Type: "usr-x86-64", Label: "store_" + version, Offset: espSize + treeSize, RawSize: storeSize, RootHash: hex.EncodeToString(root)},
 	})
 	writeFile(t, filepath.Join(imgDir, "repart-output.json"), string(parts))
-	// The contract an upgrade sends with the image.
+	// The contract an upgrade sends with the image: the upgrade lab's roles cp and w run
+	// Kubernetes.
 	copySchemas(t, filepath.Join(imgDir, "schemas"))
+	if role == "cp" || role == "w" {
+		writeFile(t, filepath.Join(imgDir, "image.json"), testImageJSON)
+	}
 	return imgDir
 }
 
@@ -131,7 +155,7 @@ type upgradeFake struct {
 	// kind is the node's Kubernetes kind, "" without Kubernetes.
 	kind string
 	// schemas and imageJSON are what the last upgrade's header carried of the image's contract.
-	schemas   int
+	schemas   map[string][]byte
 	imageJSON []byte
 
 	mu                      sync.Mutex
@@ -261,7 +285,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.schemas, n.imageJSON = len(header.GetSchemas()), header.GetKubernetesImage()
+	n.schemas, n.imageJSON = header.GetSchemas(), header.GetKubernetesImage()
 	if h.Version == n.version {
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true}), nil
 	}
@@ -633,7 +657,6 @@ func testSigner(t *testing.T, dir, name string) (key, cert string) {
 func TestUpgradeSendsTheImageContract(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
-	writeFile(t, filepath.Join(img, "image.json"), testImageJSON)
 	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
@@ -641,8 +664,17 @@ func TestUpgradeSendsTheImageContract(t *testing.T) {
 	n.mu.Lock()
 	schemas, imageJSON := n.schemas, string(n.imageJSON)
 	n.mu.Unlock()
-	if schemas == 0 || imageJSON != testImageJSON {
-		t.Errorf("the node got %d schemas and image.json %q", schemas, imageJSON)
+	want := map[string][]byte{}
+	paths, _ := filepath.Glob(filepath.Join(img, "schemas", "*.json"))
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want[filepath.Base(p)] = data
+	}
+	if len(want) == 0 || !reflect.DeepEqual(schemas, want) || imageJSON != testImageJSON {
+		t.Errorf("the node got the schemas %v and image.json %q, want the image directory's %v", slices.Sorted(maps.Keys(schemas)), imageJSON, slices.Sorted(maps.Keys(want)))
 	}
 	bare := testUpgradeImage(t, "w", "0.3.0")
 	if err := os.RemoveAll(filepath.Join(bare, "schemas")); err != nil {
@@ -650,6 +682,23 @@ func TestUpgradeSendsTheImageContract(t *testing.T) {
 	}
 	if err := l.upgrade(bare, "--nodes", "w1", "--no-reboot"); err == nil || !strings.Contains(err.Error(), "has no schemas/") {
 		t.Errorf("an image without schemas: %v", err)
+	}
+}
+
+// TestUpgradeChecksTheConfigBeforeDraining refuses an image the cluster definition's config of a
+// node does not suit before any node is drained or sent the image.
+func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	if err := os.Remove(filepath.Join(img, "image.json")); err != nil {
+		t.Fatal(err)
+	}
+	err := l.upgrade(img, "--nodes", "w1")
+	if err == nil || !strings.Contains(err.Error(), "its image runs no Kubernetes") {
+		t.Fatalf("upgrade = %v, want the config refused for an image without Kubernetes", err)
+	}
+	if events := l.takeEvents(); len(events) != 0 {
+		t.Errorf("the nodes were asked %q", events)
 	}
 }
 

@@ -95,7 +95,9 @@ These limits hold in the current code, grouped by area.
   config before it writes anything, but config that only the new image accepts cannot be
   delivered before the upgrade, since
   [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) checks config against the
-  running image.
+  running image. Once `chalkctl upgrade --no-reboot` installed an image, the node does not check
+  config applied after it against that image, since a later run finds the image installed and
+  does not send it again; only chalkctl checks the cluster definition's config against it.
 
 ### Networking
 

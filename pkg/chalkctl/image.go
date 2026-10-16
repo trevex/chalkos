@@ -30,10 +30,10 @@ type diskImage struct {
 	info            uki.Image
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
-	// schemas and kubernetesImage are the contract of an upgrade's image directory, which the
-	// node checks its stored config against.
-	schemas         map[string][]byte
-	kubernetesImage []byte
+	// contract is what an upgrade's image directory says the image accepts as config, which
+	// chalkctl checks the cluster definition's config against and the node its stored config;
+	// nil for an install's image.
+	contract *contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
 	// cleanup removes the copies of the UKI and the boot loader.
@@ -175,7 +175,8 @@ func openUpgradeImage(ctx context.Context, path, key, cert string) (*diskImage, 
 		img.Close()
 		return nil, err
 	}
-	img.schemas, img.kubernetesImage = c.files, c.kubernetesImage
+	c.role, c.platform = img.info.Role(), img.info.Platform()
+	img.contract = &c
 	return img, nil
 }
 

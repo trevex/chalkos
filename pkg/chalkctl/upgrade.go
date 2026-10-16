@@ -159,7 +159,30 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 			r.nodes[name].image = g.image
 		}
 	}
+	if err := r.checkConfig(); err != nil {
+		return err
+	}
 	return r.run(ctx)
+}
+
+// checkConfig checks, before any node is drained or sent its image, that the config the cluster
+// definition gives each node suits the image it gets, as an install checks the config it
+// delivers. Each node checks its stored config against the image again before it installs it,
+// which is all a client file without the definition leaves.
+func (r *upgradeRun) checkConfig() error {
+	if r.cluster.partial {
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
+		node, err := r.cluster.node(name)
+		if err != nil {
+			return err
+		}
+		if _, err := configFor(&target{cluster: r.cluster, name: name, node: node}, *r.nodes[name].image.contract); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkImage checks the signatures of the image's UKI and boot loader when the cluster names a db
@@ -436,7 +459,7 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	var resp *nodev1.UpgradeResponse
 	err = r.call(name, func(conn *client.Conn) error {
 		stream := conn.Upgrade(ctx)
-		header := &nodev1.UpgradeHeader{Image: img.header, Schemas: img.schemas, KubernetesImage: img.kubernetesImage}
+		header := &nodev1.UpgradeHeader{Image: img.header, Schemas: img.contract.files, KubernetesImage: img.contract.kubernetesImage}
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
