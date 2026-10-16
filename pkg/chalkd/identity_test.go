@@ -177,23 +177,6 @@ func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 	}
 }
 
-// TestApplyConfigRefusesAnotherCluster refuses config of another cluster than the running
-// image's.
-func TestApplyConfigRefusesAnotherCluster(t *testing.T) {
-	s, r := installedServer(t, section("", ""), false)
-	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
-	_, err := apply(s, strings.Replace(identityWith(section("", "")), `"cluster": "lab"`, `"cluster": "prod"`, 1), secret)
-	if want := `the config is of the cluster "prod", but the node's image is of "lab"`; connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
-		t.Errorf("err = %v, want %q", err, want)
-	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v for refused config", r.calls)
-	}
-	if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
-		t.Error("recorded a refused identity")
-	}
-}
-
 func TestApplyConfigNeedsFallbackForEncryptedVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	_, err := apply(s, identityWith(section("", "ext4")), "")

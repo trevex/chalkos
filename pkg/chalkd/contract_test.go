@@ -21,8 +21,8 @@ func TestContract(t *testing.T) {
 	if !reflect.DeepEqual(resp.Msg.Schemas, fixtureSchemas(t)) || len(resp.Msg.KubernetesImage) != 0 {
 		t.Errorf("contract = %d schemas and image.json %q, want the image's schemas alone", len(resp.Msg.Schemas), resp.Msg.KubernetesImage)
 	}
-	if m := resp.Msg; m.Cluster != "lab" || m.Role != "worker" || m.Platform != "metal" {
-		t.Errorf("contract of the image of %q, %q and %q, want the os-release's lab, worker and metal", m.Cluster, m.Role, m.Platform)
+	if m := resp.Msg; m.Role != "worker" || m.Platform != "metal" {
+		t.Errorf("contract of the image of %q and %q, want the os-release's worker and metal", m.Role, m.Platform)
 	}
 	write(t, s.Identity.KubernetesImage, testImage)
 	if resp, err = s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); err != nil || string(resp.Msg.KubernetesImage) != testImage {

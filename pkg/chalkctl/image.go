@@ -116,13 +116,12 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 	if !upgrade.VersionPattern.MatchString(img.info.Version()) {
 		return nil, fmt.Errorf("the image's version %q is not one chalkos installs: 1 to 23 characters of a-z, 0-9, '.', '~', '^' and '-'", img.info.Version())
 	}
-	if img.info.Role() == "" || img.info.Cluster() == "" || img.info.Platform() == "" {
-		return nil, errors.New("the image names no role, cluster or platform in its os-release; it is no role image of a cluster")
+	if img.info.Role() == "" || img.info.Platform() == "" {
+		return nil, errors.New("the image names no role or platform in its os-release; it is no role image")
 	}
 	h := &nodev1.ImageHeader{
 		Version:      img.info.Version(),
 		ImageId:      img.info.ID(),
-		Cluster:      img.info.Cluster(),
 		Role:         img.info.Role(),
 		Platform:     img.info.Platform(),
 		RootHash:     img.store.RootHash,
@@ -227,7 +226,7 @@ func (img *diskImage) Close() {
 }
 
 // checkInstallImage checks the image against the node it installs: of the node's role and
-// platform, and checked against the cluster as an upgrade's image is.
+// platform, and its signatures checked as an upgrade's image is.
 func checkInstallImage(t *target, img *diskImage, signCert string) error {
 	if got := img.info.Role(); got != t.node.Role {
 		return fmt.Errorf("%s is a node of the role %s; the image is of %s", t.name, t.node.Role, got)

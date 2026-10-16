@@ -18,13 +18,13 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// contract is what an image accepts as config: the cluster, role and platform it was built for,
-// the schemas of its kinds and its image.json, as files to send a node, and loaded.
+// contract is what an image accepts as config: the role and platform it was built for, the
+// schemas of its kinds and its image.json, as files to send a node, and loaded.
 type contract struct {
-	imageCluster, role, platform string
-	files                        map[string][]byte
-	kubernetes                   []byte
-	schemas                      *schema.Schemas
+	role, platform string
+	files          map[string][]byte
+	kubernetes     []byte
+	schemas        *schema.Schemas
 	// image is the image's Kubernetes facts; nil on an image without Kubernetes.
 	image *k8s.Image
 }
@@ -83,7 +83,7 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 	if err != nil {
 		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
 	}
-	c.imageCluster, c.role, c.platform = resp.Msg.Cluster, resp.Msg.Role, resp.Msg.Platform
+	c.role, c.platform = resp.Msg.Role, resp.Msg.Platform
 	return c, nil
 }
 
@@ -96,8 +96,8 @@ type delivery struct {
 
 // configFor generates the target's config from the cluster definition and checks that, on the
 // image the contract describes, it gives back the node's identity. The node translates config
-// for the image it runs, so an image of another cluster, role or platform than the definition
-// gives the node is refused, rather than checked as one thing and applied as another.
+// for the image it runs, so an image of another role or platform than the definition gives the
+// node is refused, rather than checked as one thing and applied as another.
 func configFor(t *target, c contract) (delivery, error) {
 	if err := sameImage(t, c); err != nil {
 		return delivery{}, err
@@ -113,13 +113,11 @@ func configFor(t *target, c contract) (delivery, error) {
 	return delivery{Bridged: b, identity: id}, nil
 }
 
-// sameImage refuses a contract of an image built for another cluster, role or platform than the
-// cluster definition gives the target.
+// sameImage refuses a contract of an image built for another role or platform than the cluster
+// definition gives the target.
 func sameImage(t *target, c contract) error {
 	const reinstall = "changing a node's role or platform is a reinstall"
-	switch m := t.cluster.manifest; {
-	case c.imageCluster != m.Cluster.Name:
-		return fmt.Errorf("%s runs an image of the cluster %s, but the cluster definition is of %s", t.name, c.imageCluster, m.Cluster.Name)
+	switch {
 	case c.role != t.node.Role:
 		return fmt.Errorf("%s runs an image of the role %s, but the cluster definition gives it the role %s; %s", t.name, c.role, t.node.Role, reinstall)
 	case c.platform != t.node.Platform:

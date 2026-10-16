@@ -73,7 +73,6 @@ func (img image) osRelease(tries int) map[string]string {
 	return map[string]string{
 		"IMAGE_ID":           "chalkos",
 		"IMAGE_VERSION":      img.version,
-		"CHALKOS_CLUSTER":    "lab",
 		"CHALKOS_ROLE":       "worker",
 		"CHALKOS_PLATFORM":   "metal",
 		"CHALKOS_BOOT_TRIES": strconv.Itoa(tries),
@@ -88,7 +87,7 @@ func sum(b []byte) []byte {
 // headerFor describes the image with the UKI given.
 func (img image) headerFor(uki []byte) Header {
 	return Header{
-		ImageID: "chalkos", Version: img.version, Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: img.root,
+		ImageID: "chalkos", Version: img.version, Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: img.root,
 		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(uki)),
 		StoreSHA256: sum(img.store), VeritySHA256: sum(img.hash), UKISHA256: sum(uki),
 	}

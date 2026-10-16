@@ -302,7 +302,6 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		want   string
 	}{
 		{"another image ID", func(h *Header) { h.ImageID = "other" }, nil, "image ID is other"},
-		{"another cluster", func(h *Header) { h.Cluster = "prod" }, nil, "cluster is prod"},
 		{"another role", func(h *Header) { h.Role = "controlplane" }, nil, "role is controlplane"},
 		{"another platform", func(h *Header) { h.Platform = "kvm" }, nil, "platform is kvm, the node's metal"},
 		{"no platform", func(h *Header) { h.Platform = "" }, nil, "platform are required"},

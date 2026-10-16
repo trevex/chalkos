@@ -60,14 +60,14 @@ func upgradeManifest(controlPlanes int) string {
 // testUpgradeImage builds a metal disk image of the role and version as chalkos images are laid
 // out: an ESP holding systemd-boot and the UKI, the store's hash tree and the store, described by
 // repart-output.json.
-func testUpgradeImage(t *testing.T, cluster, role, version string) string {
+func testUpgradeImage(t *testing.T, role, version string) string {
 	t.Helper()
-	return testUpgradeImageOfBlocks(t, cluster, role, "metal", version, 512)
+	return testUpgradeImageOfBlocks(t, role, "metal", version, 512)
 }
 
 // testUpgradeImageOfBlocks builds a test image of the platform whose store has dm-verity blocks of
 // the size.
-func testUpgradeImageOfBlocks(t *testing.T, cluster, role, platform, version string, blockSize int) string {
+func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, blockSize int) string {
 	t.Helper()
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -85,7 +85,7 @@ func testUpgradeImageOfBlocks(t *testing.T, cluster, role, platform, version str
 	loader := filepath.Join(dir, "systemd-boot.efi")
 	writeFile(t, loader, string(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")})))
 	writeFile(t, uki, string(ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_CLUSTER": cluster, "CHALKOS_ROLE": role, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_ROLE": role, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/x usrhash=%x", root))))
 	for _, args := range [][]string{
 		{"mkfs.vfat", "-C", esp, "4096"},
@@ -194,7 +194,7 @@ func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return connect.NewResponse(&nodev1.InfoResponse{Version: n.version, ImageId: "chalkos", Cluster: "lab", Role: n.role, Platform: n.platform}), nil
+	return connect.NewResponse(&nodev1.InfoResponse{Version: n.version, ImageId: "chalkos", Role: n.role, Platform: n.platform}), nil
 }
 
 func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
@@ -399,7 +399,7 @@ func (l *upgradeLab) versions() map[string]string {
 // others keep etcd's quorum, the image installed before it is drained, and uncordoned once back.
 func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImage(t, "lab", "cp", "0.2.0")); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0")); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	var want []string
@@ -419,7 +419,7 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	}
 
 	// Run again, it finds every control plane upgraded.
-	if err := l.upgrade(testUpgradeImage(t, "lab", "cp", "0.2.0")); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0")); err != nil {
 		t.Fatal(err)
 	}
 	if got := l.takeEvents(); len(got) != 0 {
@@ -433,7 +433,7 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 func TestUpgradeKeepsQuorum(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthyMembers = []string{"cp2"}
-	err := l.upgrade(testUpgradeImage(t, "lab", "cp", "0.2.0"), "--nodes", "cp1", "--timeout", "100ms")
+	err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--nodes", "cp1", "--timeout", "100ms")
 	if err == nil || !strings.Contains(err.Error(), "without cp1 etcd has 1 healthy voter of 3, fewer than the 2 its quorum needs") {
 		t.Errorf("upgrade = %v", err)
 	}
@@ -444,7 +444,7 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 	}
 
 	single := newUpgradeLab(t, 1)
-	img := testUpgradeImage(t, "lab", "cp", "0.2.0")
+	img := testUpgradeImage(t, "cp", "0.2.0")
 	if err := single.upgrade(img); err == nil || !strings.Contains(err.Error(), "etcd has 1 voter, and without cp1") || !strings.Contains(err.Error(), "--allow-downtime") {
 		t.Errorf("upgrade of a single control plane = %v", err)
 	}
@@ -475,7 +475,7 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 // --max-unavailable at once, and starts a batch once the one before is back.
 func TestUpgradeWorkersInBatches(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImage(t, "lab", "w", "0.2.0"), "--max-unavailable", "2"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--max-unavailable", "2"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	events := l.takeEvents()
@@ -509,7 +509,7 @@ func TestUpgradeWorkersInBatches(t *testing.T) {
 func TestUpgradeStopsAtARollback(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthy["0.3.0"] = true
-	img := testUpgradeImage(t, "lab", "w", "0.3.0")
+	img := testUpgradeImage(t, "w", "0.3.0")
 	err := l.upgrade(img)
 	if err == nil || !strings.Contains(err.Error(), "w1: upgrade to 0.3.0 failed: rolled back to 0.1.0; it stays cordoned") || !strings.Contains(err.Error(), "units failed: broken.service") {
 		t.Fatalf("upgrade = %v", err)
@@ -534,7 +534,7 @@ func TestUpgradeStopsAtARollback(t *testing.T) {
 // upgrade cordoned are uncordoned.
 func TestUpgradeContinues(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	img := testUpgradeImage(t, "w", "0.2.0")
 	l.refuseUpgrade = "w2"
 	if err := l.upgrade(img); err == nil || !strings.HasPrefix(err.Error(), "w2: ") || !strings.Contains(err.Error(), "upgrade: receive the store") {
 		t.Fatalf("upgrade = %v", err)
@@ -563,7 +563,7 @@ func TestUpgradeContinues(t *testing.T) {
 // run.
 func TestUpgradeWithoutReboot(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImage(t, "lab", "cp", "0.2.0"), "--no-reboot"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--no-reboot"); err != nil {
 		t.Fatal(err)
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"cp1 upgrade", "cp2 upgrade", "cp3 upgrade"}) {
@@ -578,7 +578,7 @@ func TestUpgradeWithoutReboot(t *testing.T) {
 // and its hash tree, as long as the tree's superblock counts them.
 func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImageOfBlocks(t, "lab", "cp", "metal", "0.2.0", 4096), "--no-reboot"); err != nil {
+	if err := l.upgrade(testUpgradeImageOfBlocks(t, "cp", "metal", "0.2.0", 4096), "--no-reboot"); err != nil {
 		t.Fatal(err)
 	}
 	// 300 data blocks; the superblock's block, three of digests and their root.
@@ -592,7 +592,7 @@ func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
 	l.ta.withoutSecrets(t)
-	if err := l.upgrade(testUpgradeImage(t, "lab", "plain", "0.2.0"), "--config", config); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--config", config); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if v := l.versions()["n1"]; v != "0.2.0" {
@@ -617,7 +617,7 @@ func testSigner(t *testing.T, dir, name string) (key, cert string) {
 	return key, cert
 }
 
-// TestUpgradeChecksTheImage refuses images of another cluster or role, and images whose UKI the
+// TestUpgradeChecksTheImage refuses images of another role, and images whose UKI the
 // cluster's db certificate did not sign, before any node is asked to change.
 func TestUpgradeChecksTheImage(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
@@ -629,18 +629,17 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 	otherKey, otherCert := testSigner(t, dir, "other")
 	certPEM, _ := os.ReadFile(dbCert)
 	l.ta.editManifest(t, func(m *manifest.Manifest) { m.SecureBoot.SignerCertificate = string(certPEM) })
-	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	img := testUpgradeImage(t, "w", "0.2.0")
 	for _, tc := range []struct {
 		name string
 		img  string
 		args []string
 		want string
 	}{
-		{"another cluster", testUpgradeImage(t, "prod", "w", "0.2.0"), nil, "the image is of the cluster prod, not lab"},
 		{"a node of another role", img, []string{"--nodes", "cp1", "--sign-key", dbKey, "--sign-cert", dbCert}, "cp1 is a node of the role cp; the image is of w"},
 		{"an unsigned UKI", img, nil, "Secure Boot would refuse the image's UKI: the image is not signed"},
 		{"a UKI signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
-		{"a version with upper-case letters", testUpgradeImage(t, "lab", "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one chalkos installs"},
+		{"a version with upper-case letters", testUpgradeImage(t, "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one chalkos installs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := l.upgrade(tc.img, tc.args...)
@@ -662,7 +661,7 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 func TestUpgradeRetriesAFailedImage(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthy["0.3.0"] = true
-	img := testUpgradeImage(t, "lab", "w", "0.3.0")
+	img := testUpgradeImage(t, "w", "0.3.0")
 	if err := l.upgrade(img); err == nil || !strings.Contains(err.Error(), "rolled back to 0.1.0") {
 		t.Fatalf("upgrade = %v", err)
 	}
@@ -693,7 +692,7 @@ func TestUpgradeRetriesAFailedImage(t *testing.T) {
 // without a controller that stay on the node.
 func TestUpgradeDrainsAsAsked(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImage(t, "lab", "w", "0.2.0"), "--nodes", "w1", "--delete-emptydir-data"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1", "--delete-emptydir-data"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if !l.emptyDir["w1"] {
@@ -712,7 +711,7 @@ func TestUpgradeDrainsAsAsked(t *testing.T) {
 func TestUpgradeStopsAtADrainTimeout(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.stopping["w1"] = true
-	err := l.upgrade(testUpgradeImage(t, "lab", "w", "0.2.0"))
+	err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"))
 	if err == nil || !strings.Contains(err.Error(), "pods default/web still run: they did not stop") {
 		t.Fatalf("upgrade = %v", err)
 	}
@@ -725,7 +724,7 @@ func TestUpgradeStopsAtADrainTimeout(t *testing.T) {
 // once its Node is Ready.
 func TestUpgradeContinuesOnceReady(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	img := testUpgradeImage(t, "w", "0.2.0")
 	if err := l.upgrade(img, "--nodes", "w1"); err != nil {
 		t.Fatal(err)
 	}
@@ -752,7 +751,7 @@ func TestUpgradeContinuesOnceReady(t *testing.T) {
 // one that runs the image.
 func TestUpgradeComparesTheBuild(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	img := testUpgradeImage(t, "w", "0.2.0")
 	l.nodes["w1"].version, l.nodes["w1"].root = "0.2.0", bytes.Repeat([]byte{2}, 32)
 	l.cordoned["w1"] = true
 	err := l.upgrade(img, "--nodes", "w1")
@@ -810,10 +809,10 @@ func TestUpgradeBuildsAnImagePerRoleAndPlatform(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
 	images := map[string]string{
-		`roles."cp".images."metal"`:    testUpgradeImage(t, "lab", "cp", "0.2.0"),
-		`roles."w".images."metal"`:     testUpgradeImage(t, "lab", "w", "0.2.0"),
-		`roles."w".images."kvm"`:       testUpgradeImageOfBlocks(t, "lab", "w", "kvm", "0.2.0", 512),
-		`roles."plain".images."metal"`: testUpgradeImage(t, "lab", "plain", "0.2.0"),
+		`roles."cp".images."metal"`:    testUpgradeImage(t, "cp", "0.2.0"),
+		`roles."w".images."metal"`:     testUpgradeImage(t, "w", "0.2.0"),
+		`roles."w".images."kvm"`:       testUpgradeImageOfBlocks(t, "w", "kvm", "0.2.0", 512),
+		`roles."plain".images."metal"`: testUpgradeImage(t, "plain", "0.2.0"),
 	}
 	built, err := l.upgradeBuilding(images, "--max-unavailable", "4")
 	if err != nil {
@@ -849,7 +848,7 @@ func TestUpgradeBuildsAnImagePerRoleAndPlatform(t *testing.T) {
 func TestUpgradeSkipsOtherPlatforms(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
-	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	img := testUpgradeImage(t, "w", "0.2.0")
 	if err := l.upgrade(img); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
@@ -874,10 +873,10 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w2"].platform = "kvm"
 	want := "w2 runs an image built for kvm, but the cluster definition declares it on metal; changing a node's platform is a reinstall"
-	if err := l.upgrade(testUpgradeImage(t, "lab", "w", "0.2.0")); err == nil || !strings.Contains(err.Error(), want) {
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("upgrade = %v, want %q", err, want)
 	}
-	images := map[string]string{`roles."w".images."metal"`: testUpgradeImage(t, "lab", "w", "0.2.0")}
+	images := map[string]string{`roles."w".images."metal"`: testUpgradeImage(t, "w", "0.2.0")}
 	if built, err := l.upgradeBuilding(images, "--nodes", "w1,w2"); err == nil || !strings.Contains(err.Error(), want) || len(built) != 0 {
 		t.Errorf("upgrade building images = %v, built %q, want %q", err, built, want)
 	}
@@ -891,7 +890,7 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 // cluster definition declares, as without --image, also when it is declared on another platform
 // than the image's.
 func TestUpgradeWithAnImageChecksEveryNodeOfItsRole(t *testing.T) {
-	img := testUpgradeImage(t, "lab", "w", "0.2.0")
+	img := testUpgradeImage(t, "w", "0.2.0")
 	for _, tc := range []struct {
 		name   string
 		change func(l *upgradeLab)
@@ -942,7 +941,7 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	if err := l.ta.run(context.Background(), []string{"upgrade", "--config", config, "--flake", noFlake}); err == nil || !strings.Contains(err.Error(), "pass --image") {
 		t.Errorf("upgrade with a client file alone, without --image = %v", err)
 	}
-	if err := l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "lab", "w", "0.2.0"), "--config", config, "--flake", noFlake}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--flake", noFlake}); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if v := l.versions(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.1.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
@@ -953,7 +952,7 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	}
 	l.takeEvents()
 
-	images := map[string]string{`roles."w".images."metal"`: testUpgradeImage(t, "lab", "w", "0.2.0"), `roles."w".images."kvm"`: testUpgradeImageOfBlocks(t, "lab", "w", "kvm", "0.2.0", 512)}
+	images := map[string]string{`roles."w".images."metal"`: testUpgradeImage(t, "w", "0.2.0"), `roles."w".images."kvm"`: testUpgradeImageOfBlocks(t, "w", "kvm", "0.2.0", 512)}
 	if _, err := l.upgradeBuilding(images, "--nodes", "w1,w2,w3"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}

@@ -162,12 +162,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	return r.run(ctx)
 }
 
-// checkImage checks the image against the cluster: its cluster, and the signatures of its UKI and
-// boot loader when the cluster names a db certificate, or else when chalkctl signed them.
+// checkImage checks the signatures of the image's UKI and boot loader when the cluster names a db
+// certificate, or else when chalkctl signed them.
 func checkImage(c *cluster, img *diskImage, signCert string) error {
-	if got := img.info.Cluster(); got != c.manifest.Cluster.Name {
-		return fmt.Errorf("the image is of the cluster %s, not %s", got, c.manifest.Cluster.Name)
-	}
 	certPEM := c.manifest.SecureBoot.SignerCertificate
 	if certPEM == "" && signCert != "" {
 		data, err := os.ReadFile(signCert)
@@ -267,8 +264,6 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			return err
 		}
 		switch {
-		case info.Cluster != m.Cluster.Name:
-			return fmt.Errorf("%s runs an image of the cluster %q, not %s", name, info.Cluster, m.Cluster.Name)
 		case !r.cluster.partial && info.Platform != node.Platform:
 			return fmt.Errorf("%s runs an image built for %s, but the cluster definition declares it on %s; changing a node's platform is a reinstall", name, info.Platform, node.Platform)
 		case !r.cluster.partial && info.Role != node.Role:

@@ -1,5 +1,5 @@
 # What an image needs to be upgraded to and from. The image describes itself in os-release, which
-# its UKI carries signed: chalkd checks an upgrade's cluster, role and platform against its own,
+# its UKI carries signed: chalkd checks an upgrade's role and platform against its own,
 # and takes the boot tries from the image it installs. Versions name the UKI and the store
 # partitions, so they are restricted to what GPT labels and systemd-boot's entry IDs hold
 # unchanged. A boot the boot loader counts is blessed only once chalkd found the node healthy.
@@ -86,7 +86,6 @@ in
     };
 
     system.nixos.extraOSReleaseArgs = {
-      CHALKOS_CLUSTER = config.chalkos.cluster.name;
       CHALKOS_BOOT_TRIES = toString cfg.bootTries;
     }
     // lib.optionalAttrs (config.chalkos.role.name != null) {

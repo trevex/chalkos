@@ -42,7 +42,6 @@ const cryptsetupPath = "systemd-cryptsetup"
 // delivered is an identity as it arrives, with what chalkd reads from it.
 type delivered struct {
 	data       []byte
-	cluster    string
 	section    storage.Section
 	kubernetes *manifest.KubernetesIdentity
 }
@@ -71,17 +70,7 @@ func parseIdentity(data string) (delivered, error) {
 			return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
 		}
 	}
-	return delivered{data: []byte(data), cluster: id.Cluster, section: id.Storage, kubernetes: id.Kubernetes}, nil
-}
-
-// checkClusterOf refuses config of another cluster than the running image's, which the node
-// would run under the wrong cluster definition. The role and the platform are the image's own,
-// since config is translated for the image it runs on.
-func (s *Server) checkClusterOf(cluster string) error {
-	if image := readOSRelease(s.Paths.OSRelease)["CHALKOS_CLUSTER"]; cluster != image {
-		return failed(connect.CodeInvalidArgument, "the config is of the cluster %q, but the node's image is of %q", cluster, image)
-	}
-	return nil
+	return delivered{data: []byte(data), section: id.Storage, kubernetes: id.Kubernetes}, nil
 }
 
 // kubernetesShare validates a delivered share for the node the identity names, a node CA in it
@@ -202,9 +191,6 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	var cluster *k8s.Cluster
 	clusterChanged, manifestsChanged := false, false
 	if !keep {
-		if err := s.checkClusterOf(d.cluster); err != nil {
-			return nil, err
-		}
 		if s.Kubernetes != nil {
 			if cluster, err = s.Identity.Cluster(r.next.Documents); err != nil {
 				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
@@ -797,9 +783,6 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 func (s *Server) resetVolume(ctx context.Context, name, identity, fallback string) error {
 	d, err := parseIdentity(identity)
 	if err != nil {
-		return err
-	}
-	if err := s.checkClusterOf(d.cluster); err != nil {
 		return err
 	}
 	recorded, pins, err := s.recorded()

@@ -482,7 +482,6 @@ lib.runTests {
         "console=ttyS0,115200"
       ];
       osRelease = {
-        CHALKOS_CLUSTER = "t";
         CHALKOS_BOOT_TRIES = "3";
       };
       image = true;
@@ -3777,7 +3776,6 @@ lib.runTests {
     expected = {
       default = {
         osRelease = {
-          CHALKOS_CLUSTER = "t";
           CHALKOS_ROLE = "worker";
           CHALKOS_PLATFORM = "metal";
           CHALKOS_BOOT_TRIES = "3";
@@ -3789,7 +3787,6 @@ lib.runTests {
       };
       upgraded = {
         osRelease = {
-          CHALKOS_CLUSTER = "t";
           CHALKOS_ROLE = "worker";
           CHALKOS_PLATFORM = "metal";
           CHALKOS_BOOT_TRIES = "1";

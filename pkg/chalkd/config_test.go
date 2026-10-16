@@ -367,10 +367,6 @@ func TestResetVolumeTakesConfig(t *testing.T) {
 	if err := reset("kind: Nope\n"); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("invalid config: %v", err)
 	}
-	prod := strings.Replace(baseConfig, "metadata: {name: lab}", "metadata: {name: prod}", 1)
-	if err := reset(prod); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `the config is of the cluster "prod", but the node's image is of "lab"`) {
-		t.Errorf("config of another cluster: %v", err)
-	}
 }
 
 // extraConfig is baseConfig with the volume extra on a disk of its own, in the format given.

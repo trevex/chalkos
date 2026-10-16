@@ -73,18 +73,12 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
-		if err := s.checkClusterOf(id.Cluster); err != nil {
-			return nil, err
-		}
 		log.Print("installing in place")
 		err = s.InPlace(ctx, req)
 	case *nodev1.InstallHeader_Disk:
 		d := target.Disk
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}
 		img := imageHeader(h.Image)
-		if img.Cluster != id.Cluster {
-			return nil, failed(connect.CodeInvalidArgument, "the image is of the cluster %q, but the config names %q", img.Cluster, id.Cluster)
-		}
 		log.Printf("installing %q %q with the root hash %x onto %s", img.ImageID, img.Version, img.RootHash, ref)
 		err = s.FromParts(ctx, install.PartsRequest{
 			Request: req,

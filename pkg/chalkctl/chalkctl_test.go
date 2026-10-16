@@ -164,7 +164,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	// The node runs the image of the test node's role.
 	if s.Paths.OSRelease == "" {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=test\nCHALKOS_PLATFORM=metal\n")
+		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_ROLE=test\nCHALKOS_PLATFORM=metal\n")
 	}
 	if s.Identity.Schemas == "" {
 		s.Identity.Schemas = filepath.Join(t.TempDir(), "schemas")
@@ -395,7 +395,7 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 // boot loader with the header describing them, and the role's definitions.
 func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	ta := newTestApp(t)
-	imageDir := testUpgradeImage(t, "lab", "test", "0.1.0")
+	imageDir := testUpgradeImage(t, "test", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	s := maintenanceNode()
@@ -415,7 +415,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := got.Image
-	if h.ImageID != "chalkos" || h.Version != "0.1.0" || h.Cluster != "lab" || h.Role != "test" || h.Platform != "metal" || h.BootLoaderSize == 0 {
+	if h.ImageID != "chalkos" || h.Version != "0.1.0" || h.Role != "test" || h.Platform != "metal" || h.BootLoaderSize == 0 {
 		t.Errorf("image = %+v", h)
 	}
 	size := h.StoreSize + h.VeritySize + h.UKISize + h.BootLoaderSize
@@ -434,7 +434,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	}
 }
 
-// TestInstallChecksTheImage refuses images of another cluster, role or platform, and images whose UKI or
+// TestInstallChecksTheImage refuses images of another role or platform, and images whose UKI or
 // boot loader the cluster's db certificate did not sign, before the installer is sent anything;
 // --sign-key signs both.
 func TestInstallChecksTheImage(t *testing.T) {
@@ -447,8 +447,8 @@ func TestInstallChecksTheImage(t *testing.T) {
 	otherKey, otherCert := testSigner(t, keys, "other")
 	certPEM, _ := os.ReadFile(dbCert)
 	ta.editManifest(t, func(m *manifest.Manifest) { m.SecureBoot.SignerCertificate = string(certPEM) })
-	image := func(cluster, role string) string {
-		dir := testUpgradeImage(t, cluster, role, "0.1.0")
+	image := func(role string) string {
+		dir := testUpgradeImage(t, role, "0.1.0")
 		writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 		copySchemas(t, filepath.Join(dir, "schemas"))
 		return dir
@@ -464,17 +464,16 @@ func TestInstallChecksTheImage(t *testing.T) {
 		return err
 	}
 	addr := ta.startNode(t, s)
-	img := image("lab", "test")
+	img := image("test")
 	for _, tc := range []struct {
 		name string
 		img  string
 		args []string
 		want string
 	}{
-		{"another cluster", image("prod", "test"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image is of the cluster prod, not lab"},
-		{"another role", image("lab", "w"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 is a node of the role test; the image is of w"},
+		{"another role", image("w"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 is a node of the role test; the image is of w"},
 		{"another platform", func() string {
-			dir := testUpgradeImageOfBlocks(t, "lab", "test", "kvm", "0.1.0", 512)
+			dir := testUpgradeImageOfBlocks(t, "test", "kvm", "0.1.0", 512)
 			writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 			copySchemas(t, filepath.Join(dir, "schemas"))
 			return dir
@@ -1202,9 +1201,9 @@ func TestCount(t *testing.T) {
 // the config for its own.
 func TestApplyConfigRefusesAnotherImage(t *testing.T) {
 	for name, tc := range map[string]struct{ release, want string }{
-		"role": {"CHALKOS_CLUSTER=lab\nCHALKOS_ROLE=w\nCHALKOS_PLATFORM=metal\n",
+		"role": {"CHALKOS_ROLE=w\nCHALKOS_PLATFORM=metal\n",
 			"n1 runs an image of the role w, but the cluster definition gives it the role test; changing a node's role or platform is a reinstall"},
-		"platform": {"CHALKOS_CLUSTER=lab\nCHALKOS_ROLE=test\nCHALKOS_PLATFORM=kvm\n",
+		"platform": {"CHALKOS_ROLE=test\nCHALKOS_PLATFORM=kvm\n",
 			"n1 runs an image built for kvm, but the cluster definition declares it on metal; changing a node's role or platform is a reinstall"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1233,7 +1232,7 @@ func TestInstallInPlaceRefusesAnotherRole(t *testing.T) {
 	s := maintenanceNode()
 	s.InPlace = func(context.Context, install.Request) error { t.Error("installed in place"); return nil }
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_CLUSTER=lab\nCHALKOS_ROLE=w\nCHALKOS_PLATFORM=metal\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_ROLE=w\nCHALKOS_PLATFORM=metal\n")
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr))
 	if want := "n1 runs an image of the role w, but the cluster definition gives it the role test"; err == nil || !strings.Contains(err.Error(), want) {
@@ -1283,7 +1282,7 @@ func TestImageContractNeedsSchemas(t *testing.T) {
 func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, manifest.KindWorker)
-	imageDir := testUpgradeImage(t, "lab", "test", "0.1.0")
+	imageDir := testUpgradeImage(t, "test", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
 	writeFile(t, filepath.Join(imageDir, "image.json"), testImageJSON)
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")

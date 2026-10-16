@@ -101,7 +101,7 @@ func TestInstallFromParts(t *testing.T) {
 	}
 	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{
-		Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
+		Version: "0.1.0", ImageId: "chalkos", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
 		Uki: &nodev1.ImagePart{Size: 5, Sha256: []byte{6}}, BootLoader: &nodev1.ImagePart{Size: 7, Sha256: []byte{8}},
 	}
@@ -116,7 +116,7 @@ func TestInstallFromParts(t *testing.T) {
 		t.Errorf("streamed %d bytes, want the %d of the image's parts", len(streamed), len(parts))
 	}
 	want := upgrade.Header{
-		ImageID: "chalkos", Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
+		ImageID: "chalkos", Version: "0.1.0", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
 		StoreSize: 1, StoreSHA256: []byte{2}, VeritySize: 3, VeritySHA256: []byte{4},
 		UKISize: 5, UKISHA256: []byte{6}, BootLoaderSize: 7, BootLoaderSHA256: []byte{8},
 	}
@@ -146,39 +146,6 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 	}
 	if err := sendInstall(t, s, header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}), nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("onto a disk without an image: %v", err)
-	}
-}
-
-// TestInstallImageOfTheConfig refuses an image of another cluster than the config's.
-func TestInstallImageOfTheConfig(t *testing.T) {
-	s, _ := newTestServer(t, maintenance, vda)
-	s.Installer = true
-	s.FromParts = func(context.Context, install.PartsRequest) error {
-		t.Error("installed onto the disk")
-		return nil
-	}
-	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}})
-	h.Schemas = fixtureSchemas(t)
-	h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: "prod", Role: "worker", Platform: "metal"}
-	want := `the image is of the cluster "prod", but the config names "lab"`
-	if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
-		t.Errorf("an image of another cluster: %v, want %q", err, want)
-	}
-}
-
-// TestInstallInPlaceOfTheImage refuses to install config of another cluster than the running
-// image's in place.
-func TestInstallInPlaceOfTheImage(t *testing.T) {
-	s, _ := newTestServer(t, maintenance, vda)
-	s.InPlace = func(context.Context, install.Request) error {
-		t.Error("installed in place")
-		return nil
-	}
-	h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
-	h.Config = strings.Replace(installConfig, "metadata: {name: lab}", "metadata: {name: prod}", 1)
-	want := `the config is of the cluster "prod", but the node's image is of "lab"`
-	if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
-		t.Errorf("config of another cluster: %v, want %q", err, want)
 	}
 }
 
@@ -287,7 +254,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	h.Config = workerConfig
 	h.Schemas = fixtureSchemas(t)
 	h.KubernetesImage = []byte(testImage)
-	h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Cluster: "lab", Role: "worker", Platform: "metal", Architecture: "x86-64"}
+	h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Role: "worker", Platform: "metal", Architecture: "x86-64"}
 
 	if err := sendInstall(t, s, h, nil); err != nil {
 		t.Fatal(err)
@@ -309,7 +276,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 	fromInstaller := func(h *nodev1.InstallHeader) {
 		h.Config, h.Schemas = workerConfig, schemas
 		h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
-		h.Image = &nodev1.ImageHeader{Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal"}
+		h.Image = &nodev1.ImageHeader{Version: "0.1.0", Role: "worker", Platform: "metal"}
 	}
 	for name, c := range map[string]struct {
 		installer bool
@@ -325,7 +292,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 		"from the installer without schemas": {true, func(h *nodev1.InstallHeader) {
 			h.Config = baseConfig
 			h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
-			h.Image = &nodev1.ImageHeader{Version: "0.1.0", Cluster: "lab", Role: "worker", Platform: "metal"}
+			h.Image = &nodev1.ImageHeader{Version: "0.1.0", Role: "worker", Platform: "metal"}
 		}, "schemas"},
 		"without config": {false, func(h *nodev1.InstallHeader) { h.Config = "" }, "the header delivers no config"},
 		"from the installer with an invalid image.json": {true, func(h *nodev1.InstallHeader) {

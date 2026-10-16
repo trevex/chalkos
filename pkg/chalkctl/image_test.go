@@ -24,7 +24,7 @@ func TestOpenImageForInstall(t *testing.T) {
 	_, otherCert := testSigner(t, dir, "other")
 	certPEM, _ := os.ReadFile(cert)
 	otherPEM, _ := os.ReadFile(otherCert)
-	path := testUpgradeImage(t, "lab", "w", "0.2.0")
+	path := testUpgradeImage(t, "w", "0.2.0")
 
 	img, err := openImage(context.Background(), path, key, cert, true)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestOpenImageForInstall(t *testing.T) {
 // TestOpenImageRefusesABootLoaderOfAnotherArchitecture refuses an image whose boot loader is
 // built for another architecture than its UKI.
 func TestOpenImageRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
-	path := testUpgradeImage(t, "lab", "w", "0.2.0")
+	path := testUpgradeImage(t, "w", "0.2.0")
 	raws, _ := filepath.Glob(filepath.Join(path, "*.raw"))
 	arm := filepath.Join(t.TempDir(), "BOOTX64.EFI")
 	writeFile(t, arm, string(ukitest.WithMachine(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")}), 0xaa64)))

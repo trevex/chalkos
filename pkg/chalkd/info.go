@@ -24,7 +24,6 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Installer:   s.Installer,
 		SecureBoot:  s.secureBoot(),
 		Fingerprint: s.CurrentFingerprint(),
-		Cluster:     release["CHALKOS_CLUSTER"],
 		Role:        release["CHALKOS_ROLE"],
 		Platform:    release["CHALKOS_PLATFORM"],
 	}

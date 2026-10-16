@@ -83,11 +83,10 @@ type NodeServiceClient interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
-	// Contract returns the config contract of the image the node runs: the cluster, role and
-	// platform it was built for, the schemas of the config kinds it accepts and its image.json,
-	// which chalkctl checks config against before it delivers it. The installer refuses it: config
-	// is for the image it installs, whose contract comes with that image. Available in both modes to
-	// readers.
+	// Contract returns the config contract of the image the node runs: the role and platform it
+	// was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
+	// checks config against before it delivers it. The installer refuses it: config is for the
+	// image it installs, whose contract comes with that image. Available in both modes to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
@@ -131,7 +130,7 @@ type NodeServiceClient interface {
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as
-	// chunks. Available to operators. The node checks that the image is of its cluster and role,
+	// chunks. Available to operators. The node checks that the image is of its role and platform,
 	// not that it is one to trust: without Secure Boot, an operator can run any image as root,
 	// with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what
 	// limits upgrades to images signed for db.
@@ -393,11 +392,10 @@ type NodeServiceHandler interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
-	// Contract returns the config contract of the image the node runs: the cluster, role and
-	// platform it was built for, the schemas of the config kinds it accepts and its image.json,
-	// which chalkctl checks config against before it delivers it. The installer refuses it: config
-	// is for the image it installs, whose contract comes with that image. Available in both modes to
-	// readers.
+	// Contract returns the config contract of the image the node runs: the role and platform it
+	// was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
+	// checks config against before it delivers it. The installer refuses it: config is for the
+	// image it installs, whose contract comes with that image. Available in both modes to readers.
 	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
@@ -441,7 +439,7 @@ type NodeServiceHandler interface {
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as
-	// chunks. Available to operators. The node checks that the image is of its cluster and role,
+	// chunks. Available to operators. The node checks that the image is of its role and platform,
 	// not that it is one to trust: without Secure Boot, an operator can run any image as root,
 	// with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what
 	// limits upgrades to images signed for db.
