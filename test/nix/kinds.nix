@@ -1,26 +1,18 @@
 # Evaluation tests for config kinds: the schema converter and the chalkos.kinds option of images.
 # Returns lib.runTests failures, empty on success.
-{ lib, mkCluster }:
+{
+  lib,
+  mkCluster,
+  mkImages,
+}:
 let
   inherit (lib) mkOption types;
   schema = import ../../modules/node/kinds/schema.nix { inherit lib; };
   getLib = import ../../modules/node/kinds/get.nix { inherit lib; };
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 
-  # The worker image of a one-role cluster whose role carries the given NixOS modules.
-  image =
-    modules:
-    (mkCluster {
-      modules = [
-        {
-          chalkos.cluster = {
-            name = "t";
-            endpoint = "https://10.0.0.1:6443";
-          };
-          chalkos.roles.worker.nixosModules = modules;
-        }
-      ];
-    }).roles.worker.nixos.metal.config;
+  # The metal image of a variant worker with Kubernetes and the given NixOS modules.
+  image = modules: (mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config;
 
   demoModule =
     { chalkosLib, ... }:
@@ -61,45 +53,12 @@ let
   # Forces the schemas an image ships, and with them the checks of its kinds' names.
   schemasOf = config: config.system.build.chalkosSchemas.drvPath;
 
-  # The worker image of a cluster with a Kubernetes worker role and no extra modules.
-  kubernetesImage =
-    (mkCluster {
-      modules = [
-        {
-          chalkos.cluster = {
-            name = "t";
-            endpoint = "https://10.0.0.1:6443";
-          };
-          chalkos.roles.worker = { };
-        }
-      ];
-    }).roles.worker.nixos.metal.config;
-  # The image of a role without Kubernetes.
-  plainImage =
-    (mkCluster {
-      modules = [
-        {
-          chalkos.cluster = {
-            name = "t";
-            endpoint = "https://10.0.0.1:6443";
-          };
-          chalkos.roles.worker.kubernetes.enable = false;
-        }
-      ];
-    }).roles.worker.nixos.metal.config;
-  # The installer of a one-role cluster.
-  installer =
-    (mkCluster {
-      modules = [
-        {
-          chalkos.cluster = {
-            name = "t";
-            endpoint = "https://10.0.0.1:6443";
-          };
-          chalkos.roles.worker = { };
-        }
-      ];
-    }).installer.nixos.config;
+  # The metal image of a variant with Kubernetes and no extra modules.
+  kubernetesImage = image [ ];
+  # The metal image of a variant without Kubernetes.
+  plainImage = (mkImages { variants.worker.kubernetes = false; }).nixos.worker-metal.config;
+  # The installer.
+  installer = (mkImages { variants = { }; }).nixos.installer.config;
   hasChalkcfg = packages: lib.any (p: lib.getName p == "chalkcfg") packages;
   # The options of the Peering kind: a nested group, a nullOr submodule, a list of submodules,
   # attribute sets of submodules and of strings, and a secretRef.
@@ -612,21 +571,7 @@ lib.runTests {
       };
     };
   testFlannelKindFollowsTheProvider = {
-    expr = lib.elem "Flannel" (
-      kindNames
-        (mkCluster {
-          modules = [
-            {
-              chalkos.cluster = {
-                name = "t";
-                endpoint = "https://10.0.0.1:6443";
-              };
-              chalkos.cni.provider = "none";
-              chalkos.roles.worker = { };
-            }
-          ];
-        }).roles.worker.nixos.metal.config
-    );
+    expr = lib.elem "Flannel" (kindNames (image [ { chalkos.cni.provider = "none"; } ]));
     expected = false;
   };
   # A Kubernetes object: an object with apiVersion, kind and metadata, and any other field.

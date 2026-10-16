@@ -1051,7 +1051,7 @@ in
     let
       failures = import ../test/nix/kinds.nix {
         inherit (pkgs) lib;
-        inherit (self.lib) mkCluster;
+        inherit (self.lib) mkCluster mkImages;
       };
     in
     if failures == [ ] then
