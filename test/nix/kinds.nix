@@ -2,7 +2,6 @@
 # Returns lib.runTests failures, empty on success.
 {
   lib,
-  mkCluster,
   mkImages,
 }:
 let
@@ -118,8 +117,10 @@ let
       args = lib.concatStringsSep " " (lib.tail words);
     };
   resolvePeering = getLib.resolve (peeringSpec schema.types.secretRef);
+  # The homelab example's image, with its Rack extension.
   homelab =
-    (mkCluster { modules = [ ../../examples/homelab/cluster.nix ]; }).roles.node.nixos.metal.config;
+    (mkImages { variants.node.modules = [ ../../examples/homelab/extensions/rack.nix ]; })
+    .nixos.node-metal.config;
   kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
   builtinFixture =
     file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));

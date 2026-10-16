@@ -1,0 +1,10 @@
+# The cluster's nodes, the address chalkctl reaches each at, and their config files: every node
+# gets cluster/, each its own file in nodes/.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: homelab}
+spec:
+  files: [cluster/*.yaml]
+  nodes:
+    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
+    w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}

@@ -999,13 +999,20 @@ in
       touch $out
     '';
 
-  manifest-golden =
+  # The homelab example: its flake builds the nodes' metal image with the Rack extension, and
+  # chalkctl validate accepts its nodes' YAML, Rack documents included, with that image where
+  # their Image points.
+  example-homelab =
     let
-      homelab = self.lib.mkCluster { modules = [ ../examples/homelab/cluster.nix ]; };
-      generated = pkgs.writeText "homelab-manifest.json" (builtins.toJSON homelab.manifest);
+      homelab = (import ../examples/homelab/flake.nix).outputs { chalkos = self; };
     in
-    pkgs.runCommand "chalkos-manifest-golden" { nativeBuildInputs = [ pkgs.jq ]; } ''
-      diff -u <(jq -S . ${../test/fixtures/homelab-manifest.json}) <(jq -S . ${generated})
+    pkgs.runCommand "chalkos-example-homelab" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''
+      cp -r ${../examples/homelab} homelab
+      chmod -R u+w homelab
+      mkdir -p homelab/images
+      ln -s ${homelab.packages.${pkgs.stdenv.hostPlatform.system}.node-metal} homelab/images/node-metal
+      cd homelab
+      chalkctl validate
       touch $out
     '';
 
@@ -1051,7 +1058,7 @@ in
     let
       failures = import ../test/nix/kinds.nix {
         inherit (pkgs) lib;
-        inherit (self.lib) mkCluster mkImages;
+        inherit (self.lib) mkImages;
       };
     in
     if failures == [ ] then

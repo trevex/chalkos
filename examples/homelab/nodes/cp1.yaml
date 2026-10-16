@@ -1,0 +1,25 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: cp1}
+spec:
+  type: controlplane
+  imageRef: node-metal
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: enp1s0}
+  network: {address: [10.0.0.11/24], gateway: 10.0.0.1}
+---
+apiVersion: rack.example.org/v1alpha1
+kind: Rack
+metadata: {name: rack}
+spec:
+  location: rack-a/u12
