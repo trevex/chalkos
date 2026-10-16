@@ -13,66 +13,110 @@ member, removing one and replacing a failed machine.
 
 ## Before you begin
 
-- A [cluster definition](../reference/glossary.md#cluster-definition) and its [secrets file](../reference/glossary.md#secrets-file), as in
-  [Plan a production cluster](production-cluster.md).
+- The cluster's repository, with its [inventory](../reference/glossary.md#inventory), the YAML
+  files of its nodes and a flake that builds their image, and the cluster's
+  [secrets file](../reference/glossary.md#secrets-file), `secrets.age`, as in
+  [Plan a production cluster](production-cluster.md). The commands below run in the repository's
+  directory.
 - Three machines on one layer-2 segment, each with a static address, and one free address on
   that segment for the VIP. The VIP is announced with gratuitous ARP and unsolicited neighbour
   advertisements, so it cannot cross a router.
-- Each machine booted into the [installer](../reference/glossary.md#installer), or into its role
+- Each machine booted into the [installer](../reference/glossary.md#installer), or into its
   image, in [maintenance mode](../reference/glossary.md#maintenance-mode), as
   [Install on bare metal](install-bare-metal.md) describes.
 
 ## Define three control planes and the VIP
 
-Put the VIP in `chalkos.cluster.kubernetes.vip.addresses`
-and make the [cluster endpoint](../reference/glossary.md#cluster-endpoint) point at it. Every node and client reaches the API server at the
-endpoint, so the endpoint has to follow the VIP from one control plane to the next.
+Put the VIP in `spec.vip.addresses` of the [`Kubernetes`](../reference/kinds.md#kubernetes)
+document every node gets, and make the
+[cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the
+[`Cluster`](../reference/kinds.md#cluster) document, point at it. Every node and client reaches
+the API server at the endpoint, so the endpoint has to follow the VIP from one control plane to
+the next.
 
-```nix title="cluster.nix"
-{
-  chalkos.cluster = {
-    name = "prod";
-    endpoint = "https://10.0.0.10:6443";
-    kubernetes.vip.addresses = [ "10.0.0.10" ];
-  };
-
-  chalkos.osCA = ./secrets.pub.json;
-
-  chalkos.roles.node = { };
-
-  chalkos.nodes = {
-    cp1 = {
-      role = "node";
-      kubernetes.kind = "controlplane";
-      storage.system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001";
-      network.networks."10-uplink" = {
-        matchConfig.Name = "enp1s0";
-        address = [ "10.0.0.11/24" ];
-        gateway = [ "10.0.0.1" ];
-      };
-    };
-    # cp2 and cp3 alike, at 10.0.0.12 and 10.0.0.13.
-  };
-}
+```yaml title="cluster/cluster.yaml"
+apiVersion: chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: prod}
+spec:
+  endpoint: https://10.0.0.10:6443
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: node-metal}
+spec:
+  source: {directory: ../images/node-metal}
 ```
 
-A dual-stack cluster takes one VIP per family. [chalkd](../reference/glossary.md#chalkd) adds the VIP to the interface that holds
-the node's address of the VIP's family, unless
-`vip.interface` names another.
+```yaml title="cluster/kubernetes.yaml"
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec:
+  vip: {addresses: [10.0.0.10]}
+```
+
+Each control plane has a file of its own with `type: controlplane`, its system disk and its
+static address:
+
+```yaml title="nodes/cp1.yaml"
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: cp1}
+spec:
+  type: controlplane
+  imageRef: node-metal
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: enp1s0}
+  network: {address: [10.0.0.11/24], gateway: 10.0.0.1}
+```
+
+`nodes/cp2.yaml` and `nodes/cp3.yaml` are alike, at 10.0.0.12 and 10.0.0.13, and the inventory
+names all three at those addresses:
+
+```yaml title="chalkos.yaml"
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: prod}
+spec:
+  files: [cluster/*.yaml]
+  nodes:
+    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
+    cp2: {address: 10.0.0.12, files: [nodes/cp2.yaml]}
+    cp3: {address: 10.0.0.13, files: [nodes/cp3.yaml]}
+```
+
+A cluster takes at most one VIP per family, and an endpoint that is an IP address must be one of
+the VIPs. [chalkd](../reference/glossary.md#chalkd) adds
+the VIP to the interface that holds the node's address of the VIP's family, unless
+`spec.vip.interface` names another. Check the files with
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md) once the image is built.
 
 ## Install every control plane
 
-Install the three nodes as any other node, each with the fingerprint its console shows in
-maintenance mode:
+Install the three nodes as any other node, each at the address and with the fingerprint its
+console shows in maintenance mode:
 
 ```sh
-chalkctl install cp1 --fingerprint=<fingerprint>
-chalkctl install cp2 --fingerprint=<fingerprint>
-chalkctl install cp3 --fingerprint=<fingerprint>
+chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl install cp2 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
-Each node reboots into its installed image. Until one of them is bootstrapped, none can tell
-whether it is meant to start the cluster or join it, so all three wait.
+`<address>` is the address the installer took on that machine, and `<fingerprint>` the one its
+console prints. Each node reboots into its installed image, at the address of its `Network`
+document. Until one of them is bootstrapped, none can tell whether it is meant to start the
+cluster or join it, so all three wait.
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows it in the Kubernetes line:
 
 ```text
@@ -82,11 +126,11 @@ kubernetes controlplane: waiting for bootstrap or for the cluster at https://10.
 ## Bootstrap exactly one
 
 [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md) starts etcd on one node as the
-cluster's first member, starts the control-plane components and applies the cluster's
-manifests:
+cluster's first member, starts the control-plane components and applies chalkos's addons and
+the objects of the cluster's `Addon` documents:
 
 ```console
-$ chalkctl bootstrap cp1
+$ chalkctl bootstrap cp1 --secrets=secrets.age
 bootstrapping cp1; the control plane pulls its images and starts
 cp1 is bootstrapped; applied 19 objects
 ```
@@ -102,9 +146,10 @@ Once cp1's API server is ready, cp1 wins the VIP's election and holds the VIP.
 ## Watch the others join
 
 cp2 and cp3 find the cluster at the endpoint and join etcd on their own, one after the other:
-etcd accepts one learner at a time. Each node adds itself as a learner, starts its [etcd member](../reference/glossary.md#etcd-member),
-waits until the member caught up with the leader, has it promoted to a voter and then starts the
-rest of the control plane. Its status names the step:
+etcd accepts one learner at a time. Each node adds itself as a learner, starts its
+[etcd member](../reference/glossary.md#etcd-member), waits until the member caught up with the
+leader, has it promoted to a voter and then starts the rest of the control plane. Its status
+names the step:
 
 ```text
 kubernetes controlplane: joining the cluster at https://10.0.0.10:6443: checking etcd's members
@@ -121,14 +166,15 @@ kubernetes controlplane: bootstrapped, node ready: True, vip standby, control pl
 
 `vip standby` is shown on every bootstrapped control plane that does not hold the VIP; the holder
 shows `vip holder`. A standby node takes part in the VIP's election only while its API server
-answers ready.
-`control plane current` means its API server and etcd serve the certificates the node holds and
-the API server answers ready.
+answers ready. `control plane current` means its API server and etcd serve the certificates the
+node holds and the API server answers ready.
 
 ## Check that it worked
 
 [`chalkctl etcd members`](../reference/cli/chalkctl_etcd_members.md) lists etcd's members as
-one control plane's member sees them. Three healthy voters is the goal:
+one control plane's member sees them. It and the etcd commands below authenticate with a
+[client file](../reference/glossary.md#client-file), an admin one for the commands that change
+members, or with `--secrets`. Three healthy voters is the goal:
 
 ```console
 $ chalkctl etcd members
@@ -142,26 +188,25 @@ cp3   d2f4c87a1b3e5096  https://10.0.0.13:2380  voter   healthy
 check that the API server answers through the VIP:
 
 ```sh
-chalkctl kubeconfig --out=prod.kubeconfig
+chalkctl kubeconfig --out=prod.kubeconfig --secrets=secrets.age
 kubectl --kubeconfig=prod.kubeconfig get nodes
 ```
 
 ## Expect a VIP failover to take seconds
 
 When the holder's API server stops answering, or the holder fails, another healthy control plane
-takes the VIP through an election in etcd; [Networking](../concepts/networking.md#how-does-the-vip-move-between-control-planes)
-explains the timing. In runs of the HA end-to-end test the VIP moved within about 30 seconds of its
-holder's network link going down, against the test's limit of 2 minutes, and it stayed with the new
-holder when the old one came back. Clients with an open connection to the old holder can take
-longer to notice: in one run of an upgrade test a kubelet went more than 40 seconds without
-renewing its lease. A cluster without etcd quorum has no holder, because
-nobody can win the election.
+takes the VIP through an election in etcd;
+[Networking](../concepts/networking.md#how-does-the-vip-move-between-control-planes) explains the
+timing. The holder's lease lives 10 seconds, and the HA end-to-end test requires the VIP to move
+within 30 seconds of its holder's network link going down and to stay with the new holder when
+the old one comes back. Clients with an open connection to the old holder notice only when it
+times out. A cluster without etcd quorum has no holder, because nobody can win the election.
 
 ## Add a control plane
 
-Define the new node with `kubernetes.kind = "controlplane"` and install it. It joins as cp2 and
-cp3 did, with no further command. Grow to five, not four: four voters need three for a quorum and
-so tolerate one failure, like three.
+Write the new node's file with `type: controlplane`, add the node to the inventory with its
+address and file, and install it. It joins as cp2 and cp3 did, with no further command. Grow to
+five, not four: four voters need three for a quorum and so tolerate one failure, like three.
 
 ## Remove a control plane
 
@@ -176,12 +221,12 @@ cp3 left etcd; reinstall it to join the cluster again
 
 The removal is refused when the voters left would have fewer healthy members than their quorum
 needs, because etcd would then stop accepting writes. The message names the counts:
-`without cp3 etcd has 2 voters, 1 healthy, fewer than the 2 a quorum needs`. Bring
-the unhealthy members back first.
+`without cp3 etcd has 2 voters, 1 healthy, fewer than the 2 a quorum needs`. Bring the unhealthy
+members back first.
 
-The node now reports `left etcd; reinstall the node to join the cluster again` and does not
-join again on its own, also after a reboot. Delete its Node with `kubectl delete node cp3`, power
-it off and remove it from the cluster definition.
+The node now reports `left etcd; reinstall the node to join the cluster again` and does not join
+again on its own, also after a reboot. Delete its Node with `kubectl delete node cp3`, power it
+off, and remove it from the inventory and its file from the repository.
 
 ## Replace a failed machine
 
@@ -197,12 +242,14 @@ removed the etcd member cp3 (d2f4c87a1b3e5096)
 The same quorum guard applies. `--force` skips it, and etcd then accepts no writes until enough
 of the remaining members are healthy again.
 
-Then install the replacement machine under the same name. Give it the addresses the definition
-declares, boot it into the installer, and install it; `--wipe-disk` lets the installer replace
-whatever its disk holds:
+Then install the replacement machine under the same name. Give it the addresses of the node's
+`Network` document, so the inventory's address stays right, and change its `SystemDisk` if the
+new machine's disk has another serial number or path. Boot it into the installer, and install it;
+`--wipe-disk` lets the installer replace whatever its disk holds:
 
 ```sh
-chalkctl install cp3 --fingerprint=<fingerprint> --wipe-disk
+chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
+  --wipe-disk
 ```
 
 It joins as a new member.
@@ -214,7 +261,8 @@ STATE, leaves first and is reinstalled after:
 
 ```sh
 chalkctl etcd leave cp3
-chalkctl install cp3 --fingerprint=<fingerprint> --wipe-disk
+chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
+  --wipe-disk
 ```
 
 Between the two commands, boot the machine into the installer, through its BMC or boot menu: an
@@ -239,9 +287,8 @@ attempt.
 ### A control plane lost its pinned address
 
 A pinned control plane that boots without one of its addresses, after a cabling or switch
-change for example, waits for it for
-`nodeIP.timeout` seconds and then
-runs neither etcd nor the kubelet:
+change for example, waits for it for `spec.nodeIP.timeout` seconds of the `Kubernetes` document
+and then runs neither etcd nor the kubelet:
 
 ```text
 kubernetes controlplane: preparation failed: pinned address 10.0.0.13 is not present, 5m0s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node
