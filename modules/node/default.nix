@@ -1,4 +1,4 @@
-# NixOS modules every role image is built from.
+# NixOS modules every image is built from.
 {
   imports = [
     ./settings.nix

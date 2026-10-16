@@ -1,4 +1,4 @@
-# The installer: the node modules with chalkd in maintenance mode, which writes a role image to
+# The installer: the node modules with chalkd in maintenance mode, which writes an image to
 # another disk and installs the node there. It has no storage section and never creates or
 # opens STATE, so it leaves the medium it boots from as it is.
 #

@@ -1,4 +1,4 @@
-# The kernel modules of a role's image: a filtered copy of nixpkgs's prebuilt module tree, so the
+# The kernel modules of an image: a filtered copy of nixpkgs's prebuilt module tree, so the
 # kernel and the binary cache stay as they are. Groups name directories of the tree where they
 # can, so a kernel update brings a subsystem's new drivers along; module names fill the gaps.
 # Modules need no signatures: they live in the dm-verity store, whose root hash the signed UKI
@@ -260,7 +260,7 @@ in
           type = lib.types.listOf (lib.types.enum (lib.attrNames groups));
           description = ''
             Groups of kernel modules the image carries. The base groups are set by default and
-            a role's definitions add to them, for example `[ "gpu" ]`; `lib.mkForce` replaces
+            a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce` replaces
             them. Base: ${lib.concatStringsSep ", " baseGroups}. Further:
             ${lib.concatStringsSep ", " (lib.subtractLists baseGroups (lib.attrNames groups))}.
             Modules from `boot.extraModulePackages` are always included whole, with the modules

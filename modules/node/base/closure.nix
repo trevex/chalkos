@@ -1,7 +1,7 @@
 # What the store leaves out. The UKI on the ESP carries the kernel and the initrd, so the system
 # does not link them as well: nothing on a node boots from the store's copies. Nodes have no
-# logins, so the system path holds none of NixOS's default packages, only what the image's modules
-# and the role put there; each unit names the tools it runs in its own path.
+# logins, so the system path holds none of NixOS's default packages, only what chalkos's and the
+# variant's modules put there; each unit names the tools it runs in its own path.
 {
   config,
   lib,

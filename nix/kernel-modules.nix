@@ -1,5 +1,5 @@
-# Builds a role's kernel module tree from nixpkgs's prebuilt one, and checks that a tree holds the
-# modules a role loads and those its modules depend on.
+# Builds an image's kernel module tree from nixpkgs's prebuilt one, and checks that a tree holds the
+# modules an image loads and those its modules depend on.
 #
 #   chalkos-kernel-modules filter SOURCE OUT DIRECTORIES NAMES [EXTRA...]
 #     copies to OUT the modules of SOURCE below the directories the file DIRECTORIES lists

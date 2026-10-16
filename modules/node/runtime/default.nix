@@ -1,7 +1,7 @@
 # Runtime access to config: units declare the config kinds they read. chalkd writes the node's
 # documents of those kinds below /run/chalkos/config, the values their secretRef fields name into
 # the unit's credentials, and restarts the unit when one of its kinds changes. chalkcfg prints the
-# documents, on the system path of role images and on the PATH of every consumer.
+# documents, on the system path of every image and on the PATH of every consumer.
 {
   config,
   lib,

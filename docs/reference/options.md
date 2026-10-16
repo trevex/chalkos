@@ -710,7 +710,7 @@ list of string
 
 
 Groups of kernel modules the image carries\. The base groups are set by default and
-a role’s definitions add to them, for example ` [ "gpu" ] `; ` lib.mkForce ` replaces
+a variant’s modules add to them, for example ` [ "gpu" ] `; ` lib.mkForce ` replaces
 them\. Base: storage, network, virtualisation, filesystems, kubernetes, platform\. Further:
 can, gpu, industrial, infiniband, media, sound, wireless\.
 Modules from ` boot.extraModulePackages ` are always included whole, with the modules

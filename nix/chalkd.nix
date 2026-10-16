@@ -1,5 +1,5 @@
 # chalkd, the node agent. It takes only the packages it imports, so other Go changes do not
-# rebuild role images.
+# rebuild the images.
 { callPackage }:
 callPackage ./go-module.nix { } {
   pname = "chalkd";

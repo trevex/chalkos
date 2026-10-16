@@ -713,7 +713,7 @@ in
       touch $out
     '';
 
-  # The worker's kernel module tree, and one with the gpu group: a module outside a role's groups
+  # The worker's kernel module tree, and one with the gpu group: a module outside an image's groups
   # is not in its tree, and neither a name the kernel does not know, a directory without modules,
   # a module the image loads but its tree lacks, nor one whose dependency the tree lacks gets past
   # the build. Out-of-tree modules bring the in-tree modules they depend on.
@@ -916,7 +916,7 @@ in
         touch $out
       '';
 
-  # A role's bootspec, which nixos-init reads in the initrd to find /etc, names no initrd and, as
+  # An image's bootspec, which nixos-init reads in the initrd to find /etc, names no initrd and, as
   # its kernel, the UKI on the ESP: the store holds neither the kernel nor the initrd.
   bootspec =
     let
