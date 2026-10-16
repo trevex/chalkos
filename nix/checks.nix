@@ -14,11 +14,14 @@ let
       (throw "the worker's nftables.service runs no nftables-rules script")
       worker.systemd.services.nftables.serviceConfig.ExecStart;
   # Runs test.sh as root of user and network namespaces of its own, where run/ and var/ of the
-  # build directory are /run and /var, and /etc holds the worker's schemas: the units' scripts run
-  # as on a node, and their chalkcfg reads the documents written below /run/chalkos/config.
+  # build directory are /run and /var, and /etc holds the worker's schemas and the root user
+  # alone, nothing of the host's: the units' scripts run as on a node, and their chalkcfg reads
+  # the documents written below /run/chalkos/config.
   onNode = ''
     mkdir -p run/chalkos/config var etc/chalkos
-    cp -r /etc/. etc/
+    echo 'root:x:0:0:root:/:/bin/sh' >etc/passwd
+    echo 'root:x:0:' >etc/group
+    printf '127.0.0.1 localhost\n::1 localhost\n' >etc/hosts
     ln -s ${worker.environment.etc."chalkos/schemas".source} etc/chalkos/schemas
     bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add ALL \
       --ro-bind /nix /nix --ro-bind /bin /bin --dev /dev --bind /proc /proc --tmpfs /tmp \
@@ -339,7 +342,7 @@ in
         closed "without a Kubernetes document" "ranges are unknown"
         echo '{' >"$kubernetes"
         closed "with a document chalkcfg cannot read" "ranges are unknown"
-        spec '{"ipFamilies":["ipv4","ipv5"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":[]}'
+        spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":[]}'
         closed "with a family without a pod range" "ranges are unknown"
         for s in \
           '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.0.0.0/8 }"},"vxlanSourceSubnets":[]}' \
@@ -602,7 +605,11 @@ in
           socat TCP4-LISTEN:$port,fork,reuseaddr /dev/null &
           socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 /dev/null &
         done
-        until [ "$(ss -Hltn | wc -l)" = 6 ]; do sleep 0.1; done
+        for try in $(seq 100); do
+          [ "$(ss -Hltn | wc -l)" = 6 ] && break
+          [ "$try" != 100 ] || { ss -Hltn >&2; fail "the listeners did not start"; }
+          sleep 0.1
+        done
         reaches() { on_peer socat -u /dev/null "TCP:$1:$2,connect-timeout=1" 2>/dev/null; }
         open() {
           for port in 6443 2379 2380; do
