@@ -319,14 +319,14 @@ func checkFlannelLinks(c kubernetes.Cluster, picked []nodeip.Address) error {
 	for _, a := range picked {
 		switch {
 		case a.Link.Loopback && c.Flannel.MTU == 0:
-			return fmt.Errorf("the node's address %s is on the loopback interface %s, whose MTU flannel would take; set chalkos.cni.flannel.mtu", a.IP, a.Interface)
+			return fmt.Errorf("the node's address %s is on the loopback interface %s, whose MTU flannel would take; set the Flannel document's spec.mtu", a.IP, a.Interface)
 		case a.Link.Kind == "dummy" && c.Flannel.MTU > 0:
 			need := c.Flannel.MTU
 			if a.IP.Is6() {
 				need += 20
 			}
 			if a.Link.MTU < need {
-				return fmt.Errorf("the node's address %s is on the dummy interface %s with MTU %d; flannel's %s VXLAN with chalkos.cni.flannel.mtu %d needs an MTU of at least %d there", a.IP, a.Interface, a.Link.MTU, nodeip.FamilyOf(a.IP), c.Flannel.MTU, need)
+				return fmt.Errorf("the node's address %s is on the dummy interface %s with MTU %d; flannel's %s VXLAN with the Flannel document's MTU %d needs an MTU of at least %d there", a.IP, a.Interface, a.Link.MTU, nodeip.FamilyOf(a.IP), c.Flannel.MTU, need)
 			}
 		}
 	}

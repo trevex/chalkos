@@ -319,12 +319,12 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 	}{
 		"NIC":                       {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth0 fd00::11"}, ""},
 		"loopback without flannel":  {`null`, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
-		"loopback without MTU":      {`{"mtu": 0}`, []string{"lo 192.168.100.11", "lo fd00::11"}, "the node's address 192.168.100.11 is on the loopback interface lo, whose MTU flannel would take; set chalkos.cni.flannel.mtu"},
+		"loopback without MTU":      {`{"mtu": 0}`, []string{"lo 192.168.100.11", "lo fd00::11"}, "the node's address 192.168.100.11 is on the loopback interface lo, whose MTU flannel would take; set the Flannel document's spec.mtu"},
 		"loopback with MTU":         {`{"mtu": 1430}`, []string{"lo 192.168.100.11", "lo fd00::11"}, ""},
 		"dummy":                     {`{"mtu": 1430}`, []string{"bgp0 192.168.100.11", "bgp0 fd00::11"}, ""},
 		"dummy without MTU":         {`{"mtu": 0}`, []string{"small 192.168.100.11", "small fd00::11"}, ""},
-		"dummy too small for IPv6":  {`{"mtu": 1430}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address fd00::11 is on the dummy interface small with MTU 1440; flannel's ipv6 VXLAN with chalkos.cni.flannel.mtu 1430 needs an MTU of at least 1450 there"},
-		"dummy too small for IPv4":  {`{"mtu": 1450}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address 192.168.100.11 is on the dummy interface small with MTU 1440; flannel's ipv4 VXLAN with chalkos.cni.flannel.mtu 1450 needs an MTU of at least 1450 there"},
+		"dummy too small for IPv6":  {`{"mtu": 1430}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address fd00::11 is on the dummy interface small with MTU 1440; flannel's ipv6 VXLAN with the Flannel document's MTU 1430 needs an MTU of at least 1450 there"},
+		"dummy too small for IPv4":  {`{"mtu": 1450}`, []string{"small 192.168.100.11", "small fd00::11"}, "the node's address 192.168.100.11 is on the dummy interface small with MTU 1440; flannel's ipv4 VXLAN with the Flannel document's MTU 1450 needs an MTU of at least 1450 there"},
 		"two interfaces":            {`{"mtu": 0}`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, "flannel needs the node's IPv4 and IPv6 addresses on one interface; 192.168.100.11 is on eth0, fd00::11 on eth1, 5m0s after chalkos-node-addresses.target"},
 		"two interfaces without it": {`null`, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, ""},
 	} {
