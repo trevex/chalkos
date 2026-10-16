@@ -1044,7 +1044,7 @@ in
       failures = import ../test/nix/eval.nix {
         inherit pkgs;
         inherit (pkgs) lib;
-        inherit (self.lib) mkCluster;
+        inherit (self.lib) mkCluster mkImages;
         flakeModule = self.flakeModules.default;
       };
     in

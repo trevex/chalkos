@@ -11,7 +11,7 @@
       chalkosLib = import ./lib { inherit nixpkgs; };
     in
     {
-      lib = { inherit (chalkosLib) mkCluster; };
+      lib = { inherit (chalkosLib) mkCluster mkImages; };
       flakeModules.default = chalkosLib.flakeModule;
       templates.lab = {
         path = ./templates/lab;

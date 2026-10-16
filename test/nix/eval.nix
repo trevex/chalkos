@@ -3,6 +3,7 @@
   lib,
   pkgs,
   mkCluster,
+  mkImages,
   flakeModule,
 }:
 let
@@ -141,6 +142,233 @@ let
   varType = "65f335d7-a1f7-f6df-b954-a97d9a5db9e6";
 in
 lib.runTests {
+  # mkImages builds each variant on each platform, metal and kvm unless the arguments name
+  # others, as <variant>-<platform>, and one installer; without variants it builds node.
+  testMkImagesNamesImagesByVariantAndPlatform = {
+    expr =
+      let
+        i = mkImages {
+          variants = {
+            node = { };
+            storage.kubernetes = false;
+          };
+        };
+      in
+      {
+        images = lib.attrNames i.images;
+        nixos = lib.attrNames i.nixos;
+        build = lib.all lib.isDerivation (lib.attrValues i.images);
+        installer = lib.isDerivation i.installer && lib.hasInfix "chalkos-installer" i.installer.name;
+        default = lib.attrNames (mkImages { }).images;
+        onePlatform = lib.attrNames (mkImages { platforms = [ "kvm" ]; }).images;
+      };
+    expected = {
+      images = [
+        "node-kvm"
+        "node-metal"
+        "storage-kvm"
+        "storage-metal"
+      ];
+      nixos = [
+        "installer"
+        "node-kvm"
+        "node-metal"
+        "storage-kvm"
+        "storage-metal"
+      ];
+      build = true;
+      installer = true;
+      default = [
+        "node-kvm"
+        "node-metal"
+      ];
+      onePlatform = [ "node-kvm" ];
+    };
+  };
+  # Each image names its variant and platform, runs Kubernetes as its variant says and carries the
+  # OS CA; the installer is no variant, belongs to no platform and runs no Kubernetes.
+  testMkImagesDescribesEachImage = {
+    expr =
+      let
+        pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
+        i = mkImages {
+          osCA = pub;
+          variants = {
+            node = { };
+            storage.kubernetes = false;
+          };
+          platforms = [ "metal" ];
+        };
+        summary = n: {
+          variant = n.config.chalkos.variant.name;
+          platform = n.config.chalkos.platform.name;
+          kubernetes = n.config.chalkos.kubernetes.enable;
+          osCA = n.config.environment.etc ? "chalkos/os-ca.crt";
+        };
+      in
+      lib.mapAttrs (_: summary) i.nixos;
+    expected = {
+      installer = {
+        variant = null;
+        platform = null;
+        kubernetes = false;
+        osCA = true;
+      };
+      node-metal = {
+        variant = "node";
+        platform = "metal";
+        kubernetes = true;
+        osCA = true;
+      };
+      storage-metal = {
+        variant = "storage";
+        platform = "metal";
+        kubernetes = false;
+        osCA = true;
+      };
+    };
+  };
+  # A variant's images carry their platform's modules, those of every variant and the variant's
+  # own; the installer carries its own modules alone.
+  testMkImagesAppliesModules = {
+    expr =
+      let
+        mark = m: { boot.kernelParams = [ m ]; };
+        i = mkImages {
+          platforms.metal = [ (mark "platform") ];
+          modules = [ (mark "every") ];
+          variants.node.modules = [ (mark "variant") ];
+          installer.modules = [ (mark "installer") ];
+        };
+        marks =
+          n:
+          lib.filter (
+            p:
+            lib.elem p [
+              "platform"
+              "every"
+              "variant"
+              "installer"
+            ]
+          ) n.config.boot.kernelParams;
+      in
+      {
+        node = lib.sort lib.lessThan (marks i.nixos.node-metal);
+        installer = marks i.nixos.installer;
+        # metal's own modules come first.
+        console = lib.elem "console=tty0" i.nixos.node-metal.config.boot.kernelParams;
+      };
+    expected = {
+      node = [
+        "every"
+        "platform"
+        "variant"
+      ];
+      installer = [ "installer" ];
+      console = true;
+    };
+  };
+  # Variant and platform names become os-release values and image names; two images of one name
+  # are refused, as are arguments mkImages does not have.
+  testMkImagesRefuses = {
+    expr = {
+      platform = fails (lib.attrNames (mkImages { platforms = [ "Bad" ]; }).images);
+      platformModules = fails (lib.attrNames (mkImages { platforms."x.y" = [ ]; }).images);
+      variant = fails (lib.attrNames (mkImages { variants.Node = { }; }).images);
+      collision = fails (
+        lib.attrNames
+          (mkImages {
+            platforms = [
+              "metal"
+              "b-metal"
+            ];
+            variants = {
+              a = { };
+              a-b = { };
+            };
+          }).images
+      );
+      unknown = fails (lib.attrNames (mkImages { roles.node = { }; }).images);
+      custom = (mkImages { platforms.esxi-8 = [ ]; }).nixos.node-esxi-8.config.chalkos.platform.name;
+    };
+    expected = {
+      platform = true;
+      platformModules = true;
+      variant = true;
+      collision = true;
+      unknown = true;
+      custom = "esxi-8";
+    };
+  };
+  # The OS CA is the public part of secrets of the version chalkos reads.
+  testMkImagesChecksOSCA = {
+    expr =
+      map
+        (
+          version:
+          fails
+            (mkImages {
+              osCA = builtins.toFile "secrets.pub.json" ''{"version": ${toString version}, "osCA": {"certificate": "PEM"}}'';
+            }).nixos.node-metal.config.environment.etc."chalkos/os-ca.crt".source.drvPath
+        )
+        [
+          1
+          2
+          3
+        ];
+    expected = [
+      true
+      true
+      false
+    ];
+  };
+  # mkImages evaluates the images with the nixpkgs and the module arguments given.
+  testMkImagesUsesItsNixpkgs = {
+    expr =
+      let
+        n =
+          (mkImages {
+            nixpkgs.lib.nixosSystem = args: {
+              marker = "custom";
+              inherit (args) specialArgs;
+            };
+            specialArgs.answer = 42;
+          }).nixos.node-metal;
+      in
+      {
+        inherit (n) marker;
+        inherit (n.specialArgs) answer;
+      };
+    expected = {
+      marker = "custom";
+      answer = 42;
+    };
+  };
+  # A variant's modules set the image's Kubernetes release and pod network, which its image.json
+  # names.
+  testVariantSetsKubernetesImageOptions = {
+    expr =
+      let
+        n =
+          (mkImages {
+            variants.node.modules = [
+              {
+                chalkos.kubernetes.images.etcd = "registry.example/etcd:1";
+                chalkos.cni.provider = "none";
+              }
+            ];
+          }).nixos.node-metal;
+        facts = builtins.fromJSON n.config.environment.etc."chalkos/kubernetes/image.json".text;
+      in
+      {
+        inherit (facts) cni;
+        inherit (facts.images) etcd;
+      };
+    expected = {
+      cni = "none";
+      etcd = "registry.example/etcd:1";
+    };
+  };
   testRoleReadsClusterEndpoint = {
     expr = (role (cluster [ ])).chalkos.cluster.endpoint;
     expected = "https://10.0.0.1:6443";
