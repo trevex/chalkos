@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -376,6 +377,61 @@ spec: {registry: docker.io, mirrors: ["http://zq-mirror-7"]}
 				t.Errorf("the journal holds no refusal, or %q:\n%s", tc.absent, journal.String())
 			}
 		})
+	}
+}
+
+// TestUpgradeRefusesASchemaOfUnboundedWorkQuickly: a header schema that would take validation
+// hours, holding a definition twice at every level, is refused where it loads.
+func TestUpgradeRefusesASchemaOfUnboundedWorkQuickly(t *testing.T) {
+	files := demoSchemaWith(t, map[string]any{"$ref": "#/$defs/d0"})
+	var doc map[string]any
+	if err := json.Unmarshal(files["demo.example.org_v1alpha1_Demo.json"], &doc); err != nil {
+		t.Fatal(err)
+	}
+	defs := map[string]any{"d30": map[string]any{"type": "string"}}
+	for i := range 30 {
+		next := map[string]any{"$ref": fmt.Sprintf("#/$defs/d%d", i+1)}
+		defs[fmt.Sprintf("d%d", i)] = map[string]any{"allOf": []any{next, next}}
+	}
+	doc["$defs"] = defs
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files["demo.example.org_v1alpha1_Demo.json"] = data
+	s, _ := configServer(t)
+	start := time.Now()
+	installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: files})
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image's schemas do not load: demo.example.org_v1alpha1_Demo.json") || installed {
+		t.Fatalf("upgrade = %v, installed %v", err, installed)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("the refusal took %v", d)
+	}
+}
+
+// TestUpgradeCheckEnds: a check of the stored config that runs past its deadline answers the
+// operator and releases the upgrade lock, and one that panics refuses the upgrade without ending
+// chalkd.
+func TestUpgradeCheckEnds(t *testing.T) {
+	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: fixtureSchemas(t)}
+	s, _ := configServer(t)
+	s.storedConfigTimeout = 50 * time.Millisecond
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	s.checkStored = func(map[string][]byte, config.Target, []config.Document, bool) error { <-release; return nil }
+	installed, err := upgradeOnce(t, s, header)
+	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || installed {
+		t.Fatalf("upgrade = %v, installed %v; want the deadline exceeded", err, installed)
+	}
+	s.checkStored = nil
+	if installed, err := upgradeOnce(t, s, header); err != nil || !installed {
+		t.Fatalf("the next upgrade = %v, installed %v; want the lock released", err, installed)
+	}
+	s.checkStored = func(map[string][]byte, config.Target, []config.Document, bool) error { panic("zq-panic-7") }
+	installed, err = upgradeOnce(t, s, header)
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || strings.Contains(err.Error(), "zq-panic-7") || installed {
+		t.Fatalf("upgrade = %v, installed %v; want a refusal without the panic's message", err, installed)
 	}
 }
 

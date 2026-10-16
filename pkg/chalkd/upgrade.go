@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -48,7 +49,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	case img.GetBootLoader() != nil:
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	}
-	if err := s.checkStoredConfig(h); err != nil {
+	if err := s.checkStoredConfig(ctx, h); err != nil {
 		log.Printf("upgrade to %q refused: %v", img.GetVersion(), err)
 		return nil, err
 	}
@@ -103,13 +104,16 @@ const redactedSecret = "redacted"
 //     and the translation's quote the values they refuse. Schemas that do not load are named by
 //     their file alone.
 //   - The schemas refer to nothing but themselves: pkg/schema fetches no file or URL a $ref
-//     names, which chalkd, as root, would otherwise read. Schemas that refer to themselves
-//     without end are refused where defaults are filled in and secretRefs are looked for.
+//     names, which chalkd, as root, would otherwise read.
+//   - The schemas cannot make the check run long or fill chalkd's memory: pkg/schema refuses,
+//     where they load, schemas that refer to themselves or expand through their references to
+//     far more schemas than any chalkos kind. The check also has a deadline, and a panic in the
+//     library refuses the upgrade rather than ending chalkd.
 //
 // Whether the check refuses remains an oracle on the documents other than Secrets: a schema of
 // the operator's choosing tells one value from another by refusing it. That holds until the
 // image's schemas are bound to the image.
-func (s *Server) checkStoredConfig(h *nodev1.UpgradeHeader) error {
+func (s *Server) checkStoredConfig(ctx context.Context, h *nodev1.UpgradeHeader) error {
 	if len(h.Schemas) == 0 {
 		return failed(connect.CodeInvalidArgument, "the header carries no schemas of the image, which the node checks its config against; upgrade with the chalkctl of this chalkos")
 	}
@@ -129,6 +133,48 @@ func (s *Server) checkStoredConfig(h *nodev1.UpgradeHeader) error {
 		files = maps.Clone(files)
 		files[secretSchema] = own
 	}
+	t, err := imageTarget(h.Image, h.KubernetesImage)
+	if err != nil {
+		return err
+	}
+	// The schemas' work is bounded where they load, which is the guard that holds: a validation
+	// under way in the library cannot be stopped. The deadline answers the operator and releases
+	// the upgrade lock all the same, should a check run long; it then ends in the background.
+	timeout := s.storedConfigTimeout
+	if timeout == 0 {
+		timeout = storedConfigTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		defer func() {
+			// A panic in the library, on schemas of the operator's choosing, must not end chalkd;
+			// its message may quote the config, so it is not passed on.
+			if r := recover(); r != nil {
+				done <- failed(connect.CodeInvalidArgument, "the image's schemas fail on the node's config")
+			}
+		}()
+		check := s.checkStored
+		if check == nil {
+			check = checkAgainst
+		}
+		done <- check(files, t, stored.Documents, found)
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return failed(connect.CodeDeadlineExceeded, "checking the node's config against the image took longer than %v", timeout)
+	}
+}
+
+// storedConfigTimeout is how long an upgrade waits for the check of the stored config.
+const storedConfigTimeout = 30 * time.Second
+
+// checkAgainst loads the header's schemas files and, when the node holds a config, docs, checks
+// that config against them and the image t describes.
+func checkAgainst(files map[string][]byte, t config.Target, docs []config.Document, found bool) error {
 	schemas, err := schema.LoadFiles(files)
 	if err != nil {
 		// The library's errors quote the schemas, and what a reference in them reached.
@@ -138,15 +184,11 @@ func (s *Server) checkStoredConfig(h *nodev1.UpgradeHeader) error {
 		}
 		return failed(connect.CodeInvalidArgument, "the image's schemas do not load")
 	}
-	t, err := imageTarget(h.Image, h.KubernetesImage)
-	if err != nil {
-		return err
-	}
 	// A node without config translates none at boot, whatever the image.
 	if !found {
 		return nil
 	}
-	if _, _, err := translate(redactSecrets(stored.Documents), schemas, t); err != nil {
+	if _, _, err := translate(redactSecrets(docs), schemas, t); err != nil {
 		return failed(connect.CodeFailedPrecondition, "the node's config does not suit the image: %s; apply config both images accept with chalkctl apply-config, then upgrade", unsuitable(err))
 	}
 	return nil

@@ -83,7 +83,8 @@ Before it installs anything, Upgrade checks the node's stored config against the
 the node's stored config against schemas of their own. They learn whether it is accepted and, when
 it is refused, the document, the place in it and the schema keyword that refuses it, but no value.
 Secret values never reach those schemas, though the names of Secrets and of their keys can be
-tested. The schemas cannot refer to files or URLs.
+tested. The schemas cannot refer to files or URLs, and chalkd refuses schemas that refer to
+themselves or would take far more work than any chalkos kind; the check gives up after 30 seconds.
 
 ## Why are the disk keys sealed to PCR 7?
 

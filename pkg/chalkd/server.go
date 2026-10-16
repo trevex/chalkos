@@ -21,6 +21,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -130,6 +131,10 @@ type Server struct {
 	installed bool
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
+	// storedConfigTimeout bounds an upgrade's check of the stored config, 30 seconds when 0, and
+	// checkStored makes the check, checkAgainst when nil; tests replace them.
+	storedConfigTimeout time.Duration
+	checkStored         func(files map[string][]byte, t config.Target, docs []config.Document, found bool) error
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 }
