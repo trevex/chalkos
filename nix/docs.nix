@@ -56,8 +56,29 @@ let
       transformOptions = linkDeclarations;
     }).optionsCommonMark;
 
+  # The images the documentation is generated and checked against: the default variant, whose
+  # options the reference lists, and one with the homelab's Rack extension, whose documents the
+  # pages show as an extension's.
+  docsImages = self.lib.mkImages {
+    platforms = [ "metal" ];
+    variants = {
+      docs = { };
+      rack.modules = [ ../examples/homelab/extensions/rack.nix ];
+    };
+  };
   # An image's own options, those the node modules declare.
-  imageSystem = (self.lib.mkImages { variants.docs = { }; }).nixos.docs-metal;
+  imageSystem = docsImages.nixos.docs-metal;
+  # The schemas of chalkctl's inventory and chalklab's lab file, which they are built with.
+  inventorySchema = ../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
+  labSchema = ../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
+  # The schemas the pages' config documents are checked against: the kinds of the image with the
+  # Rack extension, the inventory and the lab file.
+  snippetSchemas = pkgs.runCommand "chalkos-docs-schemas" { } ''
+    mkdir $out
+    ln -s ${docsImages.nixos.rack-metal.config.system.build.chalkosSchemas}/*.json $out/
+    ln -s ${inventorySchema} $out/chalkctl.chalkos.dev_v1alpha1_Inventory.json
+    ln -s ${labSchema} $out/chalklab.chalkos.dev_v1alpha1_Lab.json
+  '';
   imageOptions =
     (pkgs.nixosOptionsDoc {
       options = { inherit (imageSystem.options) chalkos; };
@@ -194,13 +215,34 @@ rec {
         cp proto/docs/reference/api.md $out/docs/reference/api.md
       '';
 
-  # The site builds strictly, and the chalkctl and chalklab commands its pages show exist.
-  check = pkgs.runCommand "chalkos-docs-check" { nativeBuildInputs = [ docgen ]; } ''
-    cd ${src}
-    docgen check docs
-    test -d ${site}
-    touch $out
-  '';
+  # The site builds strictly; the chalkctl, chalklab and chalkcfg commands its pages show exist;
+  # the config documents they show are valid against an image's, the inventory's and the lab
+  # file's schemas; and the Nix files they show parse.
+  check =
+    pkgs.runCommand "chalkos-docs-check"
+      {
+        nativeBuildInputs = [
+          docgen
+          pkgs.nixfmt
+        ];
+      }
+      ''
+        cd ${src}
+        docgen check docs
+        docgen yaml docs ${snippetSchemas}
+        docgen nix docs $TMPDIR/nix
+        status=0
+        for f in $TMPDIR/nix/*.nix; do
+          [ -e "$f" ] || continue
+          if ! nixfmt - < "$f" > /dev/null; then
+            echo "error: $(basename "$f"), a Nix block of the documentation named by its page and first line, does not parse" >&2
+            status=1
+          fi
+        done
+        [ "$status" = 0 ]
+        test -d ${site}
+        touch $out
+      '';
 
   # Fails when the generated pages in the repository differ from what the code generates.
   generated = pkgs.runCommand "chalkos-docs-generated" { } ''

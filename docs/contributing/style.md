@@ -178,6 +178,17 @@ flag and on a flag missing its value. It strips `$ ` prompts and follows `sudo`,
 page that shows a command another way, in prose for example, is not checked, so show commands in
 blocks.
 
+### Every config document must be valid
+
+`docgen yaml`, part of the `docs` check, validates each document of a `yaml` block whose group is
+`chalkos.dev`, a subdomain of it, or `rack.example.org` against the schemas of an image of the
+default variant with the homelab's `Rack` extension and against the inventory's and the lab
+file's, as `chalkctl validate` checks a node's files. Show whole documents, with `apiVersion`,
+`kind`, `metadata.name` and `spec`, so the check reads them: a fragment without an `apiVersion` is
+not checked. A block that is a file names it in its `title`, such as `title="nodes/w1.yaml"`. A
+`nix` block titled with a `.nix` file is a whole file, which the check parses; a fragment of a
+module has no title.
+
 ### Placeholders
 
 A value the reader replaces is a placeholder: lower-case words joined by dashes in angle
@@ -391,6 +402,8 @@ Run this list before handing a page in.
 - The first sentence of the page and of each section states its point.
 - Every fact was checked against the code: option names, defaults, flags, file paths, messages,
   ports and sizes.
+- Every YAML document is whole and passes `docgen yaml`, and every Nix block titled with a file
+  is a whole file.
 - Every command block passes `docgen check`, every command was run or its output comes from a
   run, and placeholders follow `<name>` and `--flag=<value>`.
 - Each glossary term links on its first use; commands, options and API methods link to the

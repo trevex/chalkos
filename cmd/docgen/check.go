@@ -86,16 +86,29 @@ func language(info string) string {
 	return strings.ToLower(strings.TrimPrefix(lang, "."))
 }
 
-// shellBlocks returns the shell code blocks of a Markdown file.
-func shellBlocks(path string) ([]block, error) {
+// codeBlock is a fenced code block of a Markdown file: the language and title of its info
+// string, the line number of its first line, and its lines without the fence's indentation.
+type codeBlock struct {
+	lang   string
+	title  string
+	first  int
+	indent int
+	lines  []string
+}
+
+// titleAttr is the title attribute of a fence's info string, as in yaml title="nodes/w1.yaml".
+var titleAttr = regexp.MustCompile(`title="([^"]*)"`)
+
+// codeBlocks returns the fenced code blocks of a Markdown file whose language is one of langs.
+func codeBlocks(path string, langs ...string) ([]codeBlock, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	var blocks []block
+	var blocks []codeBlock
 	var open string // the fence of the open block
-	var cur *block
+	var cur *codeBlock
 	scanner := bufio.NewScanner(f)
 	for n := 1; scanner.Scan(); n++ {
 		line := scanner.Text()
@@ -106,18 +119,44 @@ func shellBlocks(path string) ([]block, error) {
 		switch {
 		case open == "" && m != nil:
 			open = m[1]
-			lang := language(m[2])
-			if slices.Contains(shellLanguages, lang) {
-				blocks = append(blocks, block{first: n + 1, console: lang == "console" || lang == "shell-session"})
+			if lang := language(m[2]); slices.Contains(langs, lang) {
+				b := codeBlock{lang: lang, first: n + 1, indent: len(line) - len(strings.TrimLeft(line, " "))}
+				if t := titleAttr.FindStringSubmatch(m[2]); t != nil {
+					b.title = t[1]
+				}
+				blocks = append(blocks, b)
 				cur = &blocks[len(blocks)-1]
 			}
 		case open != "" && m != nil && strings.TrimSpace(m[2]) == "" && strings.HasPrefix(m[1], open):
 			open, cur = "", nil
 		case cur != nil:
-			cur.lines = append(cur.lines, line)
+			cur.lines = append(cur.lines, dedent(line, cur.indent))
 		}
 	}
 	return blocks, scanner.Err()
+}
+
+// dedent removes up to n leading spaces, the indentation of a block's fence in a list, an
+// admonition or a tab, from a line of the block.
+func dedent(line string, n int) string {
+	i := 0
+	for i < n && i < len(line) && line[i] == ' ' {
+		i++
+	}
+	return line[i:]
+}
+
+// shellBlocks returns the shell code blocks of a Markdown file.
+func shellBlocks(path string) ([]block, error) {
+	cbs, err := codeBlocks(path, shellLanguages...)
+	if err != nil {
+		return nil, err
+	}
+	blocks := make([]block, len(cbs))
+	for i, b := range cbs {
+		blocks[i] = block{first: b.first, console: b.lang == "console" || b.lang == "shell-session", lines: b.lines}
+	}
+	return blocks, nil
 }
 
 // invocation is a command line that runs chalkctl, chalklab or chalkcfg: the program and its

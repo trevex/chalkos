@@ -1,5 +1,5 @@
 // Command docgen writes the pages of chalkos's documentation that are generated from its command
-// line tools, and checks the commands its pages show.
+// line tools, and checks the commands, config documents and Nix files its pages show.
 //
 //	docgen cli DIR ZENSICAL_TOML
 //
@@ -11,6 +11,16 @@
 // fails when a shell code block of the Markdown files under DOCS_DIR, but not under
 // DOCS_DIR/superpowers, runs a chalkctl, chalklab or chalkcfg command or passes a flag they do not
 // have.
+//
+//	docgen yaml DOCS_DIR SCHEMAS_DIR
+//
+// fails when a YAML block of those files holds a config document of a chalkos group, or of a group
+// the schemas declare, that the schemas in SCHEMAS_DIR refuse.
+//
+//	docgen nix DOCS_DIR OUT_DIR
+//
+// writes the Nix blocks of those files that are whole files, titled with a .nix file name, to
+// OUT_DIR, for a Nix parser to check.
 package main
 
 import (
@@ -38,8 +48,12 @@ func run(args []string) error {
 		return writeCLI(programs(), args[1], args[2])
 	case len(args) == 2 && args[0] == "check":
 		return check(programs, args[1])
+	case len(args) == 3 && args[0] == "yaml":
+		return checkYAML(args[1], args[2])
+	case len(args) == 3 && args[0] == "nix":
+		return writeNix(args[1], args[2])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen check DOCS_DIR")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR")
 }
 
 // programs are the command trees of chalkctl, chalklab and chalkcfg, with the help and completion
