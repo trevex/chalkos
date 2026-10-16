@@ -614,10 +614,11 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	}
 }
 
-func TestApplyConfigNamesResetCommand(t *testing.T) {
+func TestApplyConfigNamesTheRemedy(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
-	// The node recorded VAR as xfs, so the inventory's ext4 is a destructive change.
+	// The node recorded VAR as xfs, so the inventory's ext4 is a destructive change, which only a
+	// reinstall carries out, since a reset cannot recreate VAR while the node runs.
 	section := ta.identity(t).Storage
 	v := section.Volumes["var"]
 	v.Format = "xfs"
@@ -627,8 +628,8 @@ func TestApplyConfigNamesResetCommand(t *testing.T) {
 	addr := ta.startNode(t, s)
 
 	err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
-	if err == nil || !strings.Contains(err.Error(), "chalkctl storage reset n1 var") {
-		t.Fatalf("err = %v, want the reset command for n1", err)
+	if err == nil || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") {
+		t.Fatalf("err = %v, want a reinstall of n1", err)
 	}
 }
 

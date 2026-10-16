@@ -93,8 +93,8 @@ func TestInstallInPlace(t *testing.T) {
 		t.Errorf("ApplyConfig as a reader: %v, want permission denied", err)
 	}
 
-	if out, err := chalkctl(t, n, "destructive", "apply-config", "chalklab"); err == nil || !strings.Contains(out, "chalkctl storage reset chalklab var") {
-		t.Errorf("destructive config was not refused with the reset command: %v", err)
+	if out, err := chalkctl(t, n, "destructive", "apply-config", "chalklab"); err == nil || !strings.Contains(out, "only a reinstall of chalklab carries it out") {
+		t.Errorf("destructive config was not refused naming a reinstall: %v", err)
 	}
 	out, err = chalkctl(t, n, "added", "apply-config", "chalklab")
 	if err != nil || !strings.Contains(out, "volume extra: new volume on new disk extra") || !strings.Contains(out, "restarted chalktest-greeting") {

@@ -122,11 +122,37 @@ func (s *Server) kubernetesShare(d delivered, data []byte, osCA string, cluster 
 
 // classify compares the delivered section with the recorded one and the pinned disks.
 func (s *Server) classify(recorded, section storage.Section, pins storage.Pins) []storage.Change {
-	changes := storage.Classify(recorded, section)
-	return append(changes, storage.ClassifyDisks(section, pins, func(ref storage.Ref) (storage.Identity, error) {
+	return append(storage.Classify(recorded, section), s.classifyDisks(section, pins)...)
+}
+
+// classifyDisks reports the volumes whose changed disk reference finds another disk than the
+// pinned one.
+func (s *Server) classifyDisks(section storage.Section, pins storage.Pins) []storage.Change {
+	return storage.ClassifyDisks(section, pins, func(ref storage.Ref) (storage.Identity, error) {
 		disk, err := s.Host.Resolve(ref)
 		return disk.Identity, err
-	})...)
+	})
+}
+
+// movedVolumes are the volumes whose disk reference finds another disk than the pinned one, which
+// a reset would recreate on the pinned disk.
+func (s *Server) movedVolumes(section storage.Section, pins storage.Pins) map[string]bool {
+	moved := map[string]bool{}
+	for _, c := range s.classifyDisks(section, pins) {
+		moved[c.Volume] = true
+	}
+	return moved
+}
+
+// remedy says how a node carries out a destructive change of a volume. chalkctl storage reset
+// recreates a volume in place; changing VAR, removing a volume or moving it to another disk, also
+// by a disk reference that finds another disk, takes a reinstall, as resetVolume refuses those.
+func (s *Server) remedy(recorded, section storage.Section, moved map[string]bool, c storage.Change) string {
+	v, kept := section.Volumes[c.Volume]
+	if c.Volume == storage.VarVolume || !kept || v.Disk != recorded.Volumes[c.Volume].Disk || moved[c.Volume] {
+		return fmt.Sprintf("only a reinstall of %s carries it out", s.nodeName())
+	}
+	return fmt.Sprintf("reset it with chalkctl storage reset %s %s", s.nodeName(), c.Volume)
 }
 
 // applyRequest is an ApplyConfig request once its config is translated: the identity the node
@@ -238,10 +264,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		changes = s.classify(recorded, d.section, pins)
+		moved := s.movedVolumes(d.section, pins)
 		var destructive []string
 		for _, c := range changes {
 			if c.Class == storage.Destructive {
-				destructive = append(destructive, fmt.Sprintf("%s; reset it with chalkctl storage reset %s %s", c, s.nodeName(), c.Volume))
+				destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, d.section, moved, c)))
 			}
 		}
 		if len(destructive) > 0 {
@@ -809,6 +836,9 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 	}
 	if nv.Disk != v.Disk {
 		return failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
+	}
+	if s.movedVolumes(d.section, pins)[name] {
+		return failed(connect.CodeFailedPrecondition, "the disk reference of volume %s finds another disk than the one it lives on; a reset recreates a volume on its own disk only", name)
 	}
 	var others []string
 	for _, c := range s.classify(recorded, d.section, pins) {

@@ -597,8 +597,8 @@ func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
 	if !contains(r.calls, "systemd-cryptsetup attach var /dev/disk/chalk-boot/var - tpm2-device=auto,headless=true") {
 		t.Errorf("commands = %v, want a headless attach", r.calls)
 	}
-	if err == nil || !strings.Contains(err.Error(), "chalkctl storage reset <node> var") {
-		t.Errorf("err = %v, want the reset hint", err)
+	if err == nil || !strings.Contains(err.Error(), "the node must be reinstalled") {
+		t.Errorf("err = %v, want the reinstall hint, since a reset cannot recreate VAR", err)
 	}
 }
 

@@ -166,14 +166,40 @@ func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 	withNodeCertificate(t, s)
 	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
 	_, err := apply(s, identityWith(section("1G", "")), secret)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl storage reset n1 var") {
-		t.Fatalf("err = %v, want a refusal naming the reset command", err)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") {
+		t.Fatalf("err = %v, want a refusal naming a reinstall, since a reset cannot change VAR", err)
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v for a refused identity", r.calls)
 	}
 	if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
 		t.Error("recorded a refused identity")
+	}
+}
+
+// A destructive change names the command that carries it out: a reset for a volume it recreates in
+// place, a reinstall for a volume the config removes.
+func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
+	for _, tc := range []struct{ name, next, want string }{
+		{"reformatted", section("", "xfs"), "reset it with chalkctl storage reset n1 extra"},
+		{"removed", section("", ""), "only a reinstall of n1 carries it out"},
+		{"moved by its reference", editSection(t, section("", "ext4"), func(s *storage.Section) {
+			d := s.Disks["extra"]
+			d.Ref = storage.Ref{Selector: storage.Selector{Serial: "chalk-other"}}
+			s.Disks["extra"] = d
+		}), "only a reinstall of n1 carries it out"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, r := installedServer(t, section("", "ext4"), true)
+			withNodeCertificate(t, s)
+			_, err := apply(s, identityWith(tc.next), secret)
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want a refusal containing %q", err, tc.want)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("ran %v for a refused identity", r.calls)
+			}
+		})
 	}
 }
 
@@ -266,6 +292,11 @@ func TestResetVolumeRefusals(t *testing.T) {
 		{"unknown volume", "nope", identityWith(section("", "ext4")), "vdb", "no volume nope"},
 		{"other volumes change destructively", "extra", identityWith(section("1G", "xfs")), "vdb", "other volumes"},
 		{"partition on another disk", "extra", identityWith(section("", "xfs")), "vda", "refusing to touch it"},
+		{"reference finding another disk", "extra", identityWith(editSection(t, section("", "xfs"), func(s *storage.Section) {
+			d := s.Disks["extra"]
+			d.Ref = storage.Ref{Selector: storage.Selector{Serial: "chalk-other"}}
+			s.Disks["extra"] = d
+		})), "vdb", "finds another disk"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true)

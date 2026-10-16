@@ -78,7 +78,12 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, prompt, en
 		}
 		if _, err := s.Run.Run(ctx, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
 			if !prompt && unsealFailed(err) {
-				return fmt.Errorf("the TPM did not unseal %s and the node has no fallback key; the volume must be reset with chalkctl storage reset <node> %s: %w", name, name, err)
+				// A reset recreates any volume but VAR, which only a reinstall recreates.
+				remedy := "the volume must be reset with chalkctl storage reset <node> " + name
+				if name == storage.VarVolume {
+					remedy = "the node must be reinstalled"
+				}
+				return fmt.Errorf("the TPM did not unseal %s and the node has no fallback key; %s: %w", name, remedy, err)
 			}
 			return fmt.Errorf("unlock %s: %w", name, err)
 		}
