@@ -15,8 +15,8 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -142,7 +142,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal(c.identity, &id); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestApplyConfig(t *testing.T) {
 	if info, err := os.Stat(filepath.Join(s.Loader.Config, "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("stored Secret: %v, %v", info, err)
 	}
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))), &id); err != nil ||
 		id.Hostname != "n1" || id.Cluster != "lab" || id.Platform != "metal" {
 		t.Errorf("identity on STATE = %+v, %v", id, err)
@@ -269,7 +269,7 @@ func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))), &id); err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal(c.identity, &id); err != nil {
 		t.Fatal(err)
 	}

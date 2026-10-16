@@ -24,6 +24,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/lab"
@@ -126,7 +127,7 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	l := &lab.Lab{Cluster: m.Cluster.Name, FirmwareCode: code, FirmwareVars: filepath.Join(dir, "keys", "OVMF_VARS.fd"), GuestForwards: guestForwards}
 	for _, n := range nodes {
 		n.CPUs, n.MemoryMB = f.cpus, f.memory
-		if n.Kind == manifest.KindControlPlane {
+		if n.Kind == identity.KindControlPlane {
 			n.MemoryMB = f.controlPlaneMemory
 		}
 		l.Nodes = append(l.Nodes, n)
@@ -197,7 +198,7 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	// The ports are picked last, so they are most likely still free when the VMs start.
 	for i := range l.Nodes {
 		n := &l.Nodes[i]
-		if n.Kind == manifest.KindControlPlane {
+		if n.Kind == identity.KindControlPlane {
 			if n.APIPort, err = lab.FreePort(); err != nil {
 				return err
 			}
@@ -490,7 +491,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 
 	var cp *lab.LabNode
 	for i, n := range l.Nodes {
-		if n.Kind == manifest.KindControlPlane {
+		if n.Kind == identity.KindControlPlane {
 			cp = &l.Nodes[i]
 			break
 		}

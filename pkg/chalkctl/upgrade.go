@@ -18,7 +18,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/identity"
 )
 
 // upgradeRun upgrades nodes to the images of their roles and platforms.
@@ -293,7 +293,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if k := st.Kubernetes; k != nil {
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
-		probedCPs[name] = n.kind == manifest.KindControlPlane
+		probedCPs[name] = n.kind == identity.KindControlPlane
 		// A client file names no roles: its image is for the nodes that run its variant.
 		if r.cluster.partial && img != nil && len(named) == 0 && info.Variant != img.info.Variant() {
 			continue
@@ -332,7 +332,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		r.groups = append(r.groups, groups[key])
 	}
 	for _, name := range slices.Sorted(maps.Keys(m.Nodes)) {
-		if probedCPs[name] || !r.cluster.partial && m.Nodes[name].Kind == manifest.KindControlPlane {
+		if probedCPs[name] || !r.cluster.partial && m.Nodes[name].Kind == identity.KindControlPlane {
 			r.controlPlanes = append(r.controlPlanes, name)
 		}
 	}
@@ -343,7 +343,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 func (r *upgradeRun) run(ctx context.Context) error {
 	var controlPlanes, others []string
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
-		if r.nodes[name].kind == manifest.KindControlPlane {
+		if r.nodes[name].kind == identity.KindControlPlane {
 			controlPlanes = append(controlPlanes, name)
 		} else {
 			others = append(others, name)
@@ -414,12 +414,12 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		if boot.GetFailed() == version {
 			r.say("%s: fell back from %s before; trying it again", n.name, version)
 		}
-		if n.kind == manifest.KindControlPlane && !r.noReboot {
+		if n.kind == identity.KindControlPlane && !r.noReboot {
 			if err := r.quorum(ctx, n.name); err != nil {
 				return err
 			}
 		}
-		if n.kind == manifest.KindWorker && !r.noReboot {
+		if n.kind == identity.KindWorker && !r.noReboot {
 			if err := r.drain(ctx, n); err != nil {
 				return err
 			}
@@ -432,7 +432,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		if r.noReboot {
 			return nil
 		}
-		if n.kind == manifest.KindControlPlane {
+		if n.kind == identity.KindControlPlane {
 			if err := r.drain(ctx, n); err != nil {
 				return err
 			}

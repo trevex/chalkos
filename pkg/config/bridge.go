@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/networkdschema"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -89,7 +90,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		objects = append(objects, kubeletObject(id))
 	}
 	if n.Kind != "" {
-		docs, err := kubernetesObjects(m, n.Kind == manifest.KindControlPlane)
+		docs, err := kubernetesObjects(m, n.Kind == identity.KindControlPlane)
 		if err != nil {
 			return Bridged{}, err
 		}
@@ -107,7 +108,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		return Bridged{}, err
 	}
 	b.node, b.extensions = name, len(n.Documents)
-	b.kubernetes, b.controlPlane = n.Kind != "", n.Kind == manifest.KindControlPlane
+	b.kubernetes, b.controlPlane = n.Kind != "", n.Kind == identity.KindControlPlane
 	b.registries, b.manifests, b.dhcp = m.Registries, m.Manifests, m.Time.DHCPServers
 	return b, nil
 }
@@ -139,7 +140,7 @@ func encode(objects []map[string]any) (Bridged, error) {
 	return Bridged{Documents: docs, Text: text, Version: version}, nil
 }
 
-func timeServers(servers []manifest.TimeServer) []any {
+func timeServers(servers []identity.TimeServer) []any {
 	out := []any{}
 	for _, s := range servers {
 		o := map[string]any{"host": s.Host, "nts": s.NTS}
@@ -294,7 +295,7 @@ func appendValue(prev, v any) any {
 	}
 }
 
-func kubeletObject(id manifest.Identity) map[string]any {
+func kubeletObject(id identity.Identity) map[string]any {
 	labels := map[string]any{}
 	for k, v := range id.Labels {
 		labels[k] = v
@@ -516,7 +517,7 @@ func sortedUnion[V any](a, b map[string]V) []string {
 // name order and without prefix lengths, read from the documents alone, so a client finds a node
 // before it has the schemas of the node's image.
 func StaticAddresses(docs []Document) []string {
-	return manifest.Identity{Network: NetworkMap(docs)}.StaticAddresses()
+	return identity.Identity{Network: NetworkMap(docs)}.StaticAddresses()
 }
 
 // Check translates the documents for the image t describes, with its schemas, and requires the
@@ -525,7 +526,7 @@ func StaticAddresses(docs []Document) []string {
 // On an image with Kubernetes it also requires the manifest's registries, manifests and DHCP
 // flag; the Kubernetes settings reach the documents as the manifest gives them, and the cluster
 // they give is checked where the identity is translated.
-func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (manifest.Identity, error) {
+func (b Bridged) Check(want identity.Identity, s *schema.Schemas, t Target) (identity.Identity, error) {
 	set, err := NewSet(b.Documents, s)
 	if err != nil {
 		// The generated documents form a set by themselves, so when they still do, the
@@ -533,22 +534,22 @@ func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (man
 		// document the image does not accept.
 		generated := b.Documents[:len(b.Documents)-b.extensions]
 		if _, genErr := NewSet(generated, s); b.extensions > 0 && genErr == nil {
-			return manifest.Identity{}, fmt.Errorf("chalkos.nodes.%s.documents: %w", b.node, err)
+			return identity.Identity{}, fmt.Errorf("chalkos.nodes.%s.documents: %w", b.node, err)
 		}
-		return manifest.Identity{}, err
+		return identity.Identity{}, err
 	}
 	got, err := set.Identity(t)
 	if err != nil {
-		return manifest.Identity{}, err
+		return identity.Identity{}, err
 	}
 	diffs := identityDiff(want, got)
 	more, err := b.clusterSettingsDiffs(set, t)
 	if err != nil {
-		return manifest.Identity{}, err
+		return identity.Identity{}, err
 	}
 	diffs = append(diffs, more...)
 	if len(diffs) > 0 {
-		return manifest.Identity{}, fmt.Errorf("the config generated from the cluster definition does not give back the definition's identity, registries, manifests and time settings for the node: %s", strings.Join(diffs, "; "))
+		return identity.Identity{}, fmt.Errorf("the config generated from the cluster definition does not give back the definition's identity, registries, manifests and time settings for the node: %s", strings.Join(diffs, "; "))
 	}
 	return got, nil
 }
@@ -637,7 +638,7 @@ func objectName(v any) string {
 // definitions with iniDiff, and of the network map only what Go reads, the static addresses and
 // the MAC address each network matches. Each difference names the field, and the volume, disk,
 // file, section or key it is in.
-func identityDiff(want, got manifest.Identity) []string {
+func identityDiff(want, got identity.Identity) []string {
 	var diffs []string
 	differ := func(what string, w, g any) {
 		diffs = append(diffs, fmt.Sprintf("%s %v instead of %v", what, g, w))
@@ -688,7 +689,7 @@ func labelValue(v string, ok bool) string {
 	return fmt.Sprintf("%q", v)
 }
 
-func matchedMACs(id manifest.Identity) map[string]string {
+func matchedMACs(id identity.Identity) map[string]string {
 	out := map[string]string{}
 	networks, _ := id.Network["networks"].(map[string]any)
 	for name, n := range networks {
@@ -779,7 +780,7 @@ func orNull(s string) string {
 
 // kubernetesDiffs compares the Kubernetes sections; nil validSubnets, which use the cluster's,
 // differ from empty ones.
-func kubernetesDiffs(want, got *manifest.KubernetesIdentity) []string {
+func kubernetesDiffs(want, got *identity.Kubernetes) []string {
 	switch {
 	case want == nil && got == nil:
 		return nil
@@ -808,7 +809,7 @@ func subnets(s []string) string {
 	return fmt.Sprint(s)
 }
 
-func timeDiffs(want, got []manifest.TimeServer) []string {
+func timeDiffs(want, got []identity.TimeServer) []string {
 	if len(want) != len(got) {
 		return []string{fmt.Sprintf("time servers %+v instead of %+v", got, want)}
 	}

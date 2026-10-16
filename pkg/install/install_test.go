@@ -19,8 +19,8 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -396,7 +396,7 @@ func testRequest(t *testing.T, section storage.Section) Request {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := json.Marshal(map[string]any{"hostname": "n1", "storage": section, "kubernetes": map[string]any{"nodeName": "n1"}})
+	text, err := json.Marshal(map[string]any{"hostname": "n1", "storage": section, "kubernetes": map[string]any{"nodeName": "n1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,9 +405,9 @@ func testRequest(t *testing.T, section storage.Section) Request {
 		fallback = ""
 	}
 	return Request{
-		Identity:        identity,
+		Identity:        text,
 		Section:         section,
-		Kubernetes:      &manifest.KubernetesIdentity{NodeName: "n1"},
+		Kubernetes:      &identity.Kubernetes{NodeName: "n1"},
 		NodeCertificate: []byte(n.Certificate),
 		NodeKey:         []byte(n.Key),
 		CA:              []byte(ca.Certificate),

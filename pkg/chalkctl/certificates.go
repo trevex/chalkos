@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -90,7 +90,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	}
 	var controlPlanes []string
 	for _, name := range slices.Sorted(maps.Keys(c.manifest.Nodes)) {
-		if c.manifest.Nodes[name].Kind == manifest.KindControlPlane {
+		if c.manifest.Nodes[name].Kind == identity.KindControlPlane {
 			controlPlanes = append(controlPlanes, name)
 		}
 	}

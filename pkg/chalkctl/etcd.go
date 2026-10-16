@@ -13,6 +13,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
@@ -79,7 +80,7 @@ func tryNextControlPlane(err error) bool {
 func controlPlaneNodes(m *manifest.Manifest, skip string) []string {
 	var names []string
 	for name, node := range m.Nodes {
-		if name != skip && node.Kind == manifest.KindControlPlane {
+		if name != skip && node.Kind == identity.KindControlPlane {
 			names = append(names, name)
 		}
 	}

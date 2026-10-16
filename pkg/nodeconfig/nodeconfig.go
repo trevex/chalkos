@@ -20,8 +20,8 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -75,11 +75,11 @@ func Default() Loader {
 	}
 }
 
-// identity holds the fields of the identity the loader needs.
-type identity struct {
+// identityFields holds the fields of the identity the loader needs.
+type identityFields struct {
 	Hostname     string            `json:"hostname"`
 	NetworkUnits map[string]string `json:"networkUnits"`
-	Time         manifest.Time     `json:"time"`
+	Time         identity.Time     `json:"time"`
 }
 
 // Load applies the identity recorded on STATE, then writes the node's stored config for its
@@ -190,7 +190,7 @@ func (l Loader) WriteCluster(c *kubernetes.Cluster) (bool, error) {
 
 // Apply writes what the identity determines and sets the hostname.
 func (l Loader) Apply(data []byte) error {
-	var id identity
+	var id identityFields
 	if err := json.Unmarshal(data, &id); err != nil {
 		return fmt.Errorf("parse the identity: %w", err)
 	}
@@ -290,7 +290,7 @@ func writeFile(path string, data []byte, perm fs.FileMode) error {
 // TimeChanged reports whether the time servers of two identities differ; an identity that does
 // not parse counts as changed.
 func TimeChanged(old, new []byte) bool {
-	var a, b identity
+	var a, b identityFields
 	if json.Unmarshal(old, &a) != nil || json.Unmarshal(new, &b) != nil {
 		return true
 	}

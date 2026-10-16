@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -22,7 +23,7 @@ import (
 // etcdNode is n1 as a bootstrapped control-plane node whose etcd member runs.
 func etcdNode(t *testing.T, ta *testApp) *chalkd.Server {
 	t.Helper()
-	withKind(t, ta, manifest.KindControlPlane)
+	withKind(t, ta, identity.KindControlPlane)
 	s, _ := kubernetesNode(t, ta)
 	k := s.Kubernetes
 	share := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA)
@@ -87,8 +88,8 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 
 func TestControlPlaneNodes(t *testing.T) {
 	m := &manifest.Manifest{
-		Nodes: map[string]manifest.Node{"cp3": {Role: "cp", Kind: manifest.KindControlPlane}, "cp1": {Role: "cp", Kind: manifest.KindControlPlane},
-			"w1": {Role: "w", Kind: manifest.KindWorker}, "cp2": {Role: "cp", Kind: manifest.KindControlPlane}},
+		Nodes: map[string]manifest.Node{"cp3": {Role: "cp", Kind: identity.KindControlPlane}, "cp1": {Role: "cp", Kind: identity.KindControlPlane},
+			"w1": {Role: "w", Kind: identity.KindWorker}, "cp2": {Role: "cp", Kind: identity.KindControlPlane}},
 	}
 	if got := controlPlaneNodes(m, "cp2"); !slices.Equal(got, []string{"cp1", "cp3"}) {
 		t.Errorf("controlPlaneNodes() = %v", got)

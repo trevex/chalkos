@@ -15,14 +15,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
-	"github.com/trevex/chalkos/pkg/manifest"
 )
 
 // Kinds of Kubernetes nodes.
 const (
-	KindControlPlane = manifest.KindControlPlane
-	KindWorker       = manifest.KindWorker
+	KindControlPlane = identity.KindControlPlane
+	KindWorker       = identity.KindWorker
 )
 
 // Cluster is what the node's image knows about its cluster.
@@ -518,7 +518,7 @@ type Node struct {
 	// Addresses are the node's static addresses.
 	Addresses []net.IP
 	Labels    map[string]string
-	Taints    []manifest.Taint
+	Taints    []identity.Taint
 }
 
 // ReadNode reads the node from its identity without secrets (node.json).
@@ -535,9 +535,9 @@ func ReadNode(path string) (Node, error) {
 }
 
 // ParseNode reads the node from its identity.
-func ParseNode(identity []byte) (Node, error) {
-	var id manifest.Identity
-	if err := json.Unmarshal(identity, &id); err != nil {
+func ParseNode(data []byte) (Node, error) {
+	var id identity.Identity
+	if err := json.Unmarshal(data, &id); err != nil {
 		return Node{}, fmt.Errorf("parse the identity: %w", err)
 	}
 	if id.Kubernetes == nil || id.Kubernetes.NodeName == "" {

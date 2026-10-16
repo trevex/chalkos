@@ -14,8 +14,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -95,7 +95,7 @@ func TestNodeRenewVerifiesTheNode(t *testing.T) {
 
 func TestNodeCARotate(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, manifest.KindControlPlane)
+	withKind(t, ta, identity.KindControlPlane)
 	s, r := kubernetesNode(t, ta)
 	p := s.Kubernetes.Paths
 	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
@@ -239,7 +239,7 @@ func TestCertificateLine(t *testing.T) {
 // Without --public-out the public file goes stale, which the message says.
 func TestNodeCARotateNamesThePublicFile(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, manifest.KindControlPlane)
+	withKind(t, ta, identity.KindControlPlane)
 	s, _ := kubernetesNode(t, ta)
 	p := s.Kubernetes.Paths
 	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",

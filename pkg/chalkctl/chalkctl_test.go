@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -1297,7 +1298,7 @@ func TestImageContractNeedsSchemas(t *testing.T) {
 // of the image it installs, which it translates the config for.
 func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, manifest.KindWorker)
+	withKind(t, ta, identity.KindWorker)
 	imageDir := testUpgradeImage(t, "gpu", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
 	writeFile(t, filepath.Join(imageDir, "image.json"), testImageJSON)

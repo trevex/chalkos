@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
-	"github.com/trevex/chalkos/pkg/manifest"
 )
 
 // Target is the image a set is translated for.
@@ -22,7 +22,7 @@ type Target struct {
 }
 
 // defaultTimeServers are the servers of a set without a TimeSync, the TimeSync kind's default.
-var defaultTimeServers = []manifest.TimeServer{
+var defaultTimeServers = []identity.TimeServer{
 	{Host: "ptbtime1.ptb.de", NTS: true},
 	{Host: "ptbtime2.ptb.de", NTS: true},
 	{Host: "ptbtime3.ptb.de", NTS: true},
@@ -31,19 +31,19 @@ var defaultTimeServers = []manifest.TimeServer{
 // Identity translates the set into the node's identity for the image t describes, as the cluster
 // definition rendered it, so every reader of the identity on the node keeps working. Extension
 // kinds stay in the set.
-func (s *Set) Identity(t Target) (manifest.Identity, error) {
+func (s *Set) Identity(t Target) (identity.Identity, error) {
 	cluster, _ := s.One("Cluster")
 	nodeDoc, _ := s.One("Node")
 	var node nodeSpec
 	if err := nodeDoc.decodeSpec(&node); err != nil {
-		return manifest.Identity{}, err
+		return identity.Identity{}, err
 	}
 	if node.Type != nil && t.Image == nil {
-		return manifest.Identity{}, fmt.Errorf("%s has type %s, but its image runs no Kubernetes", nodeDoc, *node.Type)
+		return identity.Identity{}, fmt.Errorf("%s has type %s, but its image runs no Kubernetes", nodeDoc, *node.Type)
 	}
 	sec, err := s.storage()
 	if err != nil {
-		return manifest.Identity{}, err
+		return identity.Identity{}, err
 	}
 	var networkDocs []Document
 	for _, kind := range []string{"Link", "NetDev", "Network"} {
@@ -51,18 +51,18 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 	}
 	units, err := renderNetworkUnits(networkDocs, s.schemas)
 	if err != nil {
-		return manifest.Identity{}, err
+		return identity.Identity{}, err
 	}
-	id := manifest.Identity{
+	id := identity.Identity{
 		Hostname:     nodeDoc.Name,
 		Cluster:      cluster.Name,
 		Platform:     t.Platform,
 		Network:      NetworkMap(networkDocs),
 		NetworkUnits: units,
 		Labels:       map[string]string{},
-		Taints:       []manifest.Taint{},
+		Taints:       []identity.Taint{},
 		Storage:      sec,
-		Time:         manifest.Time{Servers: slices.Clone(defaultTimeServers)},
+		Time:         identity.Time{Servers: slices.Clone(defaultTimeServers)},
 	}
 	if node.Hostname != nil {
 		id.Hostname = *node.Hostname
@@ -70,11 +70,11 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 	if ts, ok := s.One("TimeSync"); ok {
 		var spec timeSyncSpec
 		if err := ts.decodeSpec(&spec); err != nil {
-			return manifest.Identity{}, err
+			return identity.Identity{}, err
 		}
-		id.Time.Servers = []manifest.TimeServer{}
+		id.Time.Servers = []identity.TimeServer{}
 		for _, srv := range spec.Servers {
-			server := manifest.TimeServer{Host: srv.Host, NTS: srv.NTS}
+			server := identity.TimeServer{Host: srv.Host, NTS: srv.NTS}
 			if srv.Port != nil {
 				server.Port = *srv.Port
 			}
@@ -86,10 +86,10 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 		// documents give, which needs the Node's type and a Kubernetes document.
 		c, err := s.Cluster(*t.Image)
 		if err != nil {
-			return manifest.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
+			return identity.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
 		}
 		if err := s.kubelet(&id, nodeDoc.Name, c); err != nil {
-			return manifest.Identity{}, err
+			return identity.Identity{}, err
 		}
 	}
 	return id, nil
@@ -125,7 +125,7 @@ func refusedLabel(key string) bool {
 // defaults without one, and refuses settings the kubelet would not start with. The errors come
 // in the cluster definition's order: refused labels and swap volumes by name, then the node's
 // addresses.
-func (s *Set) kubelet(id *manifest.Identity, name string, c kubernetes.Cluster) error {
+func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) error {
 	var spec kubeletSpec
 	if d, ok := s.One("Kubelet"); ok {
 		if err := d.decodeSpec(&spec); err != nil {
@@ -151,7 +151,7 @@ func (s *Set) kubelet(id *manifest.Identity, name string, c kubernetes.Cluster) 
 		}
 	}
 	for _, t := range spec.Taints {
-		id.Taints = append(id.Taints, manifest.Taint{Key: t.Key, Value: deref(t.Value), Effect: t.Effect})
+		id.Taints = append(id.Taints, identity.Taint{Key: t.Key, Value: deref(t.Value), Effect: t.Effect})
 	}
 	volumes := make([]string, 0, len(id.Storage.Volumes))
 	for v := range id.Storage.Volumes {
@@ -211,7 +211,7 @@ func (s *Set) kubelet(id *manifest.Identity, name string, c kubernetes.Cluster) 
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid Kubernetes settings:\n- %s", strings.Join(errs, "\n- "))
 	}
-	id.Kubernetes = &manifest.KubernetesIdentity{NodeName: name, NodeIPs: nodeIPs, ValidSubnets: spec.ValidSubnets}
+	id.Kubernetes = &identity.Kubernetes{NodeName: name, NodeIPs: nodeIPs, ValidSubnets: spec.ValidSubnets}
 	return nil
 }
 

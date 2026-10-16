@@ -14,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -27,7 +28,7 @@ func withKind(t *testing.T, ta *testApp, kind string) {
 	ta.editManifest(t, func(m *manifest.Manifest) {
 		n := m.Nodes["n1"]
 		n.Kind = kind
-		n.Identity.Kubernetes = &manifest.KubernetesIdentity{NodeName: "n1", NodeIPs: []string{"10.0.0.11"}}
+		n.Identity.Kubernetes = &identity.Kubernetes{NodeName: "n1", NodeIPs: []string{"10.0.0.11"}}
 		m.Nodes["n1"] = n
 	})
 }
@@ -55,7 +56,7 @@ func TestInstallSendsShareOfTheRole(t *testing.T) {
 		t.Error("a node of a role without Kubernetes got a share")
 	}
 
-	withKind(t, ta, manifest.KindWorker)
+	withKind(t, ta, identity.KindWorker)
 	if got, err = installShare(t, ta); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestInstallSendsShareOfTheRole(t *testing.T) {
 		t.Errorf("worker share for %q of kind %s", share.Node(), share.Kind)
 	}
 
-	withKind(t, ta, manifest.KindControlPlane)
+	withKind(t, ta, identity.KindControlPlane)
 	if got, err = installShare(t, ta); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 
 func TestApplyConfigDeliversShare(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, manifest.KindWorker)
+	withKind(t, ta, identity.KindWorker)
 	s, r := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 
@@ -187,7 +188,7 @@ func TestKubeconfig(t *testing.T) {
 
 func TestStatusShowsKubernetes(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, manifest.KindWorker)
+	withKind(t, ta, identity.KindWorker)
 	s, _ := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
@@ -233,14 +234,14 @@ func TestKubernetesLine(t *testing.T) {
 
 func TestBootstrapNeedsControlPlane(t *testing.T) {
 	ta := newTestApp(t)
-	withKind(t, ta, manifest.KindWorker)
+	withKind(t, ta, identity.KindWorker)
 	s, _ := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "not a control-plane node") {
 		t.Errorf("err = %v, want a refusal for a worker", err)
 	}
 	// A control-plane node that runs no Kubernetes: the node refuses.
-	withKind(t, ta, manifest.KindControlPlane)
+	withKind(t, ta, identity.KindControlPlane)
 	plain, _ := installedNode(t, ta, []byte(`{}`))
 	addr = ta.startNode(t, plain)
 	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "has no Kubernetes") {

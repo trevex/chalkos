@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -836,7 +836,7 @@ func TestPrepareRefusesMismatchedShare(t *testing.T) {
 
 func TestKubeletFlags(t *testing.T) {
 	c := kubernetes.Cluster{Kind: kubernetes.KindControlPlane, AllowSchedulingOnControlPlanes: true}
-	n := kubernetes.Node{Name: "cp1", Taints: []manifest.Taint{{Key: "dedicated", Value: "db", Effect: "NoSchedule"}, {Key: "spot", Effect: "PreferNoSchedule"}}}
+	n := kubernetes.Node{Name: "cp1", Taints: []identity.Taint{{Key: "dedicated", Value: "db", Effect: "NoSchedule"}, {Key: "spot", Effect: "PreferNoSchedule"}}}
 	got := strings.Join(KubeletFlags(c, n), " ")
 	if got != "--hostname-override=cp1 --register-with-taints=dedicated=db:NoSchedule,spot:PreferNoSchedule" {
 		t.Errorf("flags = %s", got)

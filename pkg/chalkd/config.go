@@ -14,8 +14,8 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -54,21 +54,21 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (configure
 // translate checks docs as a set against schemas and translates them into the identity of a node
 // of the image t describes: the set rules, each document's schema, the Secrets their secretRefs
 // name and, on an image with Kubernetes, the cluster, registry mirrors and manifests they give.
-func translate(docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, manifest.Identity, error) {
+func translate(docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, identity.Identity, error) {
 	set, err := config.NewSet(docs, schemas)
 	if err != nil {
-		return nil, manifest.Identity{}, err
+		return nil, identity.Identity{}, err
 	}
 	if err := store.CheckCredentials(set.Documents(), schemas); err != nil {
-		return nil, manifest.Identity{}, err
+		return nil, identity.Identity{}, err
 	}
 	id, err := set.Identity(t)
 	if err != nil {
-		return nil, manifest.Identity{}, err
+		return nil, identity.Identity{}, err
 	}
 	if t.Image != nil {
 		if err := set.CheckKubernetes(*t.Image); err != nil {
-			return nil, manifest.Identity{}, err
+			return nil, identity.Identity{}, err
 		}
 	}
 	return set, id, nil

@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 )
 
 // kubernetesShare issues the share of a node with Kubernetes; nil for one without.
@@ -51,7 +51,7 @@ func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duratio
 		return err
 	}
 	// Without the cluster definition the node itself refuses when it is a worker.
-	if kind := t.node.Kind; !t.cluster.partial && kind != manifest.KindControlPlane {
+	if kind := t.node.Kind; !t.cluster.partial && kind != identity.KindControlPlane {
 		return fmt.Errorf("%s is not a control-plane node; bootstrap one of the cluster's control-plane nodes", t.name)
 	}
 	conn, err := dialInstalled(t)

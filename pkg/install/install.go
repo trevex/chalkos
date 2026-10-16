@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -63,7 +63,7 @@ type Request struct {
 	// Section is the identity's storage section.
 	Section storage.Section
 	// Kubernetes is the identity's Kubernetes section; nil on a node of a role without Kubernetes.
-	Kubernetes *manifest.KubernetesIdentity
+	Kubernetes *identity.Kubernetes
 	// NodeCertificate, the node certificate followed by the node CA's, and NodeKey are what chalkd
 	// serves once the node is installed; CA holds the OS CAs, which issue the client certificates
 	// it accepts and the node CA. All are PEM.

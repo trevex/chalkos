@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/networkdschema"
@@ -431,13 +432,13 @@ func TestBridgeGivesBackEveryManifest(t *testing.T) {
 }
 
 // cloneIdentity copies an identity deeply, so a test changes its copy alone.
-func cloneIdentity(t *testing.T, id manifest.Identity) manifest.Identity {
+func cloneIdentity(t *testing.T, id identity.Identity) identity.Identity {
 	t.Helper()
 	b, err := json.Marshal(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out manifest.Identity
+	var out identity.Identity
 	if err := json.Unmarshal(b, &out); err != nil {
 		t.Fatal(err)
 	}
@@ -448,48 +449,48 @@ func TestCheckNamesEachField(t *testing.T) {
 	m := homelabManifest(t)
 	for name, c := range map[string]struct {
 		node   string
-		change func(id *manifest.Identity)
+		change func(id *identity.Identity)
 		want   string
 	}{
-		"volume encryption": {"w1", func(id *manifest.Identity) {
+		"volume encryption": {"w1", func(id *identity.Identity) {
 			v := id.Storage.Volumes["longhorn"]
 			v.Encryption = "none"
 			id.Storage.Volumes["longhorn"] = v
 		}, "volume longhorn: encryption tpm2 instead of none"},
-		"seed": {"w1", func(id *manifest.Identity) {
+		"seed": {"w1", func(id *identity.Identity) {
 			d := id.Storage.Disks["longhorn"]
 			d.Seed = "00000000-0000-0000-0000-000000000000"
 			id.Storage.Disks["longhorn"] = d
 		}, "disk longhorn: seed 7dc5cf32-67a9-6501-acce-377a47f9df6c instead of 00000000-0000-0000-0000-000000000000"},
-		"repart": {"w1", func(id *manifest.Identity) {
+		"repart": {"w1", func(id *identity.Identity) {
 			d := id.Storage.Disks["longhorn"]
 			d.Repart["10-longhorn.conf"] += "Weight=1000\n"
 			id.Storage.Disks["longhorn"] = d
 		}, "disk longhorn: 10-longhorn.conf: [Partition] Weight= (none) instead of 1000"},
-		"validSubnets": {"cp1", func(id *manifest.Identity) {
+		"validSubnets": {"cp1", func(id *identity.Identity) {
 			id.Kubernetes.ValidSubnets = []string{}
 		}, "kubernetes validSubnets null instead of []"},
-		"nodeIPs": {"cp1", func(id *manifest.Identity) {
+		"nodeIPs": {"cp1", func(id *identity.Identity) {
 			id.Kubernetes.NodeIPs = []string{"10.0.0.12"}
 		}, "kubernetes nodeIPs [10.0.0.11] instead of [10.0.0.12]"},
-		"time server port": {"cp1", func(id *manifest.Identity) {
+		"time server port": {"cp1", func(id *identity.Identity) {
 			id.Time.Servers[0].Port = 123
 		}, "time server 1 (ptbtime1.ptb.de): port 0 instead of 123"},
-		"time server nts": {"cp1", func(id *manifest.Identity) {
+		"time server nts": {"cp1", func(id *identity.Identity) {
 			id.Time.Servers[1].NTS = false
 		}, "time server 2 (ptbtime2.ptb.de): nts true instead of false"},
-		"MAC": {"cp1", func(id *manifest.Identity) {
+		"MAC": {"cp1", func(id *identity.Identity) {
 			n := id.Network["networks"].(map[string]any)["10-uplink"].(map[string]any)
 			n["matchConfig"] = map[string]any{"MACAddress": "52:54:00:12:34:56"}
 		}, "network 10-uplink: matched MAC address (none) instead of 52:54:00:12:34:56"},
-		"static addresses": {"cp1", func(id *manifest.Identity) {
+		"static addresses": {"cp1", func(id *identity.Identity) {
 			n := id.Network["networks"].(map[string]any)["10-uplink"].(map[string]any)
 			n["address"] = []any{"10.0.0.12/24"}
 		}, "static addresses [10.0.0.11] instead of [10.0.0.12]"},
-		"labels": {"w1", func(id *manifest.Identity) {
+		"labels": {"w1", func(id *identity.Identity) {
 			id.Labels["node.kubernetes.io/storage"] = "hdd"
 		}, `label node.kubernetes.io/storage: "ssd" instead of "hdd"`},
-		"taints": {"w1", func(id *manifest.Identity) {
+		"taints": {"w1", func(id *identity.Identity) {
 			id.Taints[0].Effect = "NoExecute"
 		}, "taints"},
 	} {

@@ -13,8 +13,8 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -101,7 +101,7 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 // the identity it translates to there.
 type delivery struct {
 	config.Bridged
-	identity manifest.Identity
+	identity identity.Identity
 }
 
 // configFor generates the target's config from the cluster definition and checks that, on the

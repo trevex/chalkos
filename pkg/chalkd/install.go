@@ -10,8 +10,8 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -56,7 +56,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if err != nil {
 		return nil, err
 	}
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal([]byte(text), &id); err != nil {
 		return nil, failed(connect.CodeInternal, "parse the identity: %v", err)
 	}

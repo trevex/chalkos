@@ -23,12 +23,12 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -43,11 +43,11 @@ const cryptsetupPath = "systemd-cryptsetup"
 type delivered struct {
 	data       []byte
 	section    storage.Section
-	kubernetes *manifest.KubernetesIdentity
+	kubernetes *identity.Kubernetes
 }
 
 func parseIdentity(data string) (delivered, error) {
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal([]byte(data), &id); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
 	}

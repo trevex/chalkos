@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -56,7 +57,7 @@ func homelabSet(t *testing.T, node string) *Set {
 	return s
 }
 
-func golden(t *testing.T, node string) manifest.Identity {
+func golden(t *testing.T, node string) identity.Identity {
 	t.Helper()
 	f, err := os.Open("../../test/fixtures/homelab-manifest.json")
 	if err != nil {
@@ -94,7 +95,7 @@ func TestIdentityMatchesTheClusterDefinition(t *testing.T) {
 
 // macsOf returns the MAC address each network of the identity matches, by network name: the part
 // of the network map besides its addresses that Go reads.
-func macsOf(id manifest.Identity) map[string]any {
+func macsOf(id identity.Identity) map[string]any {
 	out := map[string]any{}
 	networks, _ := id.Network["networks"].(map[string]any)
 	for name, n := range networks {

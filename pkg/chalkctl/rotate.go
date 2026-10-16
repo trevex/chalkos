@@ -14,7 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -272,7 +272,7 @@ func (r *rotation) nodesOf(kind string) []string {
 
 // allNodes lists every node, control planes first.
 func (r *rotation) allNodes() []string {
-	return slices.Concat(r.nodesOf(manifest.KindControlPlane), r.nodesOf(manifest.KindWorker), r.nodesOf(""))
+	return slices.Concat(r.nodesOf(identity.KindControlPlane), r.nodesOf(identity.KindWorker), r.nodesOf(""))
 }
 
 // target addresses a node with the secrets as they are now: chalkctl's admin certificate comes
@@ -472,7 +472,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 		if err != nil {
 			return err
 		}
-		return r.eachNode(r.nodesOf(manifest.KindControlPlane), func(name string) error {
+		return r.eachNode(r.nodesOf(identity.KindControlPlane), func(name string) error {
 			if err := r.deliverShare(ctx, name); err != nil {
 				return err
 			}

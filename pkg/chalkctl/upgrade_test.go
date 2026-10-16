@@ -32,6 +32,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -256,9 +257,9 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
 	}
 	switch n.kind {
-	case manifest.KindControlPlane:
+	case identity.KindControlPlane:
 		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "bootstrapped", NodeReady: ready}
-	case manifest.KindWorker:
+	case identity.KindWorker:
 		st.Kubernetes = &nodev1.KubernetesStatus{Kind: n.kind, State: "joined", NodeReady: ready}
 	}
 	return connect.NewResponse(st), nil
@@ -335,7 +336,7 @@ func (n *upgradeFake) EtcdMembers(context.Context, *connect.Request[nodev1.EtcdM
 	if err := n.down(); err != nil {
 		return nil, err
 	}
-	if n.kind != manifest.KindControlPlane {
+	if n.kind != identity.KindControlPlane {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is a worker; ask a control-plane node"))
 	}
 	n.lab.record("%s members", n.name)
@@ -343,7 +344,7 @@ func (n *upgradeFake) EtcdMembers(context.Context, *connect.Request[nodev1.EtcdM
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
 	for name, node := range n.lab.nodes {
-		if node.kind == manifest.KindControlPlane {
+		if node.kind == identity.KindControlPlane {
 			m := &nodev1.EtcdMember{Name: name}
 			if slices.Contains(n.lab.unhealthyMembers, name) {
 				m.Unhealthy = "no answer"

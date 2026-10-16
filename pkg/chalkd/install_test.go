@@ -16,8 +16,8 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -229,7 +229,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 	if err := sendInstall(t, s, h, nil); err != nil {
 		t.Fatal(err)
 	}
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Hostname != "n1" || id.Platform != "metal" {
 		t.Errorf("identity = %s, %v", got.Identity, err)
 	}
@@ -259,7 +259,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	if err := sendInstall(t, s, h, nil); err != nil {
 		t.Fatal(err)
 	}
-	var id manifest.Identity
+	var id identity.Identity
 	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Platform != "metal" {
 		t.Errorf("identity = %s, %v", got.Identity, err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -161,7 +162,7 @@ func clusterOfConfig(c client.Config, f clusterFlags) *cluster {
 	m := &manifest.Manifest{Cluster: manifest.Cluster{Name: c.Cluster}, Nodes: map[string]manifest.Node{}}
 	for name, addr := range c.Nodes {
 		network := map[string]any{"networks": map[string]any{"client-file": map[string]any{"address": []any{addr}}}}
-		m.Nodes[name] = manifest.Node{Identity: manifest.Identity{Network: network}}
+		m.Nodes[name] = manifest.Node{Identity: identity.Identity{Network: network}}
 	}
 	return &cluster{flags: f, manifest: m, partial: true}
 }
