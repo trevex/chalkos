@@ -35,7 +35,6 @@ chalkctl etcd leave <node> [flags]
   -h, --help               help for leave
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --manifest string    read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --secrets string     secrets file, encrypted with age or not, or - to read it from standard input
 ```
 

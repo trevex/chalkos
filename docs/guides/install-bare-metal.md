@@ -123,11 +123,11 @@ writes only to that disk. List the machine's disks with
 console:
 
 ```sh
-chalkctl disks --endpoint=<address> --fingerprint=<fingerprint> --secrets=secrets.age
+chalkctl disks --address=<address> --fingerprint=<fingerprint> --secrets=secrets.age
 ```
 
 `--secrets` gives chalkctl the certificate the installer asks for; a machine that is not in the
-cluster definition yet is reached at `--endpoint` alone. The output has one line per disk, with
+cluster definition yet is reached at `--address` alone. The output has one line per disk, with
 its device, size, type (`nvme`, `ssd` or `hdd`), model, serial number, WWN and use, and one
 indented line per partition. The installer's own medium shows the use `boot`.
 
@@ -157,7 +157,7 @@ Commit the change, as the flake sees only the files git tracks.
 Run `chalkctl install` with the node's name, the installer's address and the fingerprint:
 
 ```sh
-chalkctl install cp1 --endpoint=<address> --fingerprint=<fingerprint> \
+chalkctl install cp1 --address=<address> --fingerprint=<fingerprint> \
   --sign-key=db.key --sign-cert=db.crt
 ```
 
@@ -196,7 +196,7 @@ On the machine, the installer:
 The machine reboots into its role image. The new boot entry comes first in the boot order, so the
 stick may stay in; remove it before the next install elsewhere. After the reboot the node runs in
 [normal mode](../reference/glossary.md#normal-mode) with the network of its config, and
-chalkctl reaches it at its first static address, or at `--endpoint`.
+chalkctl reaches it at its first static address, or at `--address`.
 
 `--fingerprint` is the way to pin the node. When reading the console is impractical, `--insecure`
 accepts any certificate and prints the fingerprint it saw, which you then compare with the

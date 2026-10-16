@@ -11,7 +11,7 @@ Install new images on the cluster's nodes, one control plane at a time
 
 Installs on each node a new image: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image each node (every node of the cluster, or those --nodes names) gets the image its
+Without --image each node (every node of the inventory, or those --nodes names) gets the image its
 Image document names, which must be the build whose root hash its directory's metadata.json
 names, as status compares nodes with it: rebuild the image or link its directory again
 otherwise. A node that runs on another platform than its image stops the run before any node is
@@ -29,8 +29,9 @@ back from the image before gets it once more.
 Run again, the command skips nodes that run the image and continues one it stopped at; it
 uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
 one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
-volumes are evicted only with --delete-emptydir-data. The command needs an operator client file
-or the secrets file.
+volumes are evicted only with --delete-emptydir-data. Without an inventory, --address NODE=ADDR
+names the nodes, and --image is needed. The command needs an operator client file or the secrets
+file.
 
 ```
 chalkctl upgrade [flags]
@@ -58,7 +59,6 @@ chalkctl upgrade [flags]
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --image string           image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default each node's Image's directory)
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --manifest string        read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --max-unavailable int    how many workers and nodes without Kubernetes upgrade at once (default 1)
       --no-reboot              install the images on the nodes without draining or rebooting them; they boot with their next reboot
       --nodes string           comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)

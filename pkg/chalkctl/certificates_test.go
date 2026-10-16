@@ -43,7 +43,7 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, r := installedNode(t, ta, current)
 	addr := ta.nodeWithCertificate(t, s, expired)
 
@@ -80,7 +80,7 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 func TestNodeRenewVerifiesTheNode(t *testing.T) {
 	ta := newTestApp(t)
 	other := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	// A node certificate of another cluster's node CA, for the right name.
 	foreign, err := pki.IssueNode(other.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
@@ -186,7 +186,7 @@ func TestNodeCARotate(t *testing.T) {
 
 func TestStatusShowsCertificatesAndTime(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
 	if err != nil {
@@ -264,7 +264,7 @@ func TestNodeCARotateNamesThePublicFile(t *testing.T) {
 func TestNodeCARotateNeedsAControlPlane(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "secrets.rotated.json")
-	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json")})
+	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--out", out, "--inventory", ta.inventory})
 	if err == nil || !strings.Contains(err.Error(), "control-plane") {
 		t.Errorf("err = %v, want a refusal naming the missing control-plane node", err)
 	}

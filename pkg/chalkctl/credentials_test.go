@@ -20,7 +20,7 @@ import (
 // now, and returns its path.
 func (ta *testApp) writeConfig(t *testing.T, name, role string, validity time.Duration, now time.Time) string {
 	t.Helper()
-	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", name, role, validity, map[string]string{"n1": "10.0.0.11"}, now)
+	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", name, role, validity, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func (ta *testApp) writeConfig(t *testing.T, name, role string, validity time.Du
 	return path
 }
 
-// withoutSecrets removes the secrets file from the flake directory.
+// withoutSecrets removes the secrets file from beside the inventory.
 func (ta *testApp) withoutSecrets(t *testing.T) {
 	t.Helper()
 	if err := os.Remove(filepath.Join(ta.dir, "secrets.json")); err != nil {
@@ -44,7 +44,7 @@ func (ta *testApp) withoutSecrets(t *testing.T) {
 func TestConfigNew(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "alice.json")
-	args := []string{"config", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json")}
+	args := []string{"config", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out, "--inventory", ta.inventory}
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
@@ -53,8 +53,8 @@ func TestConfigNew(t *testing.T) {
 		t.Fatal(err)
 	}
 	leaf, _ := c.Leaf()
-	if c.Cluster != "lab" || c.Name != "alice" || c.Role != pki.RoleOperator || c.OSCA != ta.secrets.OSCA.Certificate || c.Nodes["n1"] != "10.0.0.11" {
-		t.Errorf("client file %v with nodes %v", c, c.Nodes)
+	if c.Cluster != "lab" || c.Name != "alice" || c.Role != pki.RoleOperator || c.OSCA != ta.secrets.OSCA.Certificate {
+		t.Errorf("client file %v", c)
 	}
 	if got := time.Until(leaf.NotAfter).Round(time.Hour); got != 720*time.Hour {
 		t.Errorf("the certificate lasts %v", got)
@@ -69,14 +69,14 @@ func TestConfigNew(t *testing.T) {
 		t.Errorf("--force: %v", err)
 	}
 	// By default the file goes where chalkctl looks for it.
-	if err := ta.run(context.Background(), []string{"config", "new", "--name", "bob", "--role", "reader", "--manifest", filepath.Join(ta.dir, "manifest.json")}); err != nil {
+	if err := ta.run(context.Background(), []string{"config", "new", "--name", "bob", "--role", "reader", "--inventory", ta.inventory}); err != nil {
 		t.Fatal(err)
 	}
 	if c, err := client.ReadConfig(defaultConfigPath(ta.home)); err != nil || c.Name != "bob" {
 		t.Errorf("default client file: %v, %v", c, err)
 	}
 	for _, bad := range [][]string{{"--name", "x", "--role", "root"}, {"--role", "reader"}, {"--name", "x", "--role", "node"}} {
-		args := append([]string{"config", "new", "--out", filepath.Join(ta.dir, "bad.json"), "--manifest", filepath.Join(ta.dir, "manifest.json")}, bad...)
+		args := append([]string{"config", "new", "--out", filepath.Join(ta.dir, "bad.json"), "--inventory", ta.inventory}, bad...)
 		if err := ta.run(context.Background(), args); err == nil {
 			t.Errorf("config new %v: accepted", bad)
 		}
@@ -85,7 +85,7 @@ func TestConfigNew(t *testing.T) {
 
 func TestClientFileRole(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
@@ -108,7 +108,7 @@ func TestClientFileRole(t *testing.T) {
 // one is at hand.
 func TestCredentialChoice(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
@@ -146,7 +146,7 @@ func TestCredentialChoice(t *testing.T) {
 
 func TestClientFileExpiry(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
 	soon := ta.writeConfig(t, "alice", pki.RoleReader, 10*24*time.Hour, time.Now())
@@ -167,14 +167,14 @@ func TestClientFileExpiry(t *testing.T) {
 
 func TestClientFileWithoutAnInventory(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
 	ta.withoutSecrets(t)
-	// No inventory: the client file names the cluster and its nodes.
+	// No inventory: the client file names the cluster, and --address reaches the node.
 	without := func(args ...string) []string {
-		return append(args, "--config", reader, "--endpoint", addr)
+		return append(args, "--config", reader, "--address", addr)
 	}
 	if err := ta.run(context.Background(), without("status", "n1")); err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestClientFileWithoutAnInventory(t *testing.T) {
 		t.Errorf("etcd members: %v, want a refusal naming --via", err)
 	}
 
-	// A client file of another cluster is refused where the cluster definition is at hand.
+	// A client file of another cluster is refused where the inventory is at hand.
 	other := ta.writeConfig(t, "dave", pki.RoleReader, time.Hour*24*365, time.Now())
 	c, _ := client.ReadConfig(other)
 	c.Cluster = "elsewhere"
@@ -209,7 +209,7 @@ func TestConfigNewCreatesItsDirectoryPrivate(t *testing.T) {
 	ta := newTestApp(t)
 	for _, force := range []bool{false, true} {
 		dir := filepath.Join(ta.dir, fmt.Sprintf("new-%v", force), "chalkos")
-		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config"), "--manifest", filepath.Join(ta.dir, "manifest.json")}
+		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config"), "--inventory", ta.inventory}
 		if force {
 			args = append(args, "--force")
 		}
@@ -224,109 +224,23 @@ func TestConfigNewCreatesItsDirectoryPrivate(t *testing.T) {
 	}
 }
 
-// Without a cluster definition, a node is reached at the address its client file names.
-func TestClientFileNodes(t *testing.T) {
+// TestUnreachableAddressNamesItsSource names an address chalkctl cannot reach with where it
+// comes from: the inventory, or --address, which comes first.
+func TestUnreachableAddressNamesItsSource(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
-	s, _ := installedNode(t, ta, current)
-	addr := ta.startNode(t, s)
-	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", pki.RoleReader, time.Hour, map[string]string{"n1": addr}, time.Now())
-	if err != nil {
-		t.Fatal(err)
+	// Port 1 refuses the connection at once.
+	writeFile(t, ta.inventory, strings.Replace(testInventoryYAML, "address: 10.0.0.11", "address: 127.0.0.1:1", 1))
+	err := ta.run(context.Background(), []string{"status", "n1", "--inventory", ta.inventory})
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from the inventory "+ta.inventory+")") {
+		t.Errorf("an unreachable address of the inventory: %v, want it named with the inventory", err)
 	}
-	data, err := c.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(ta.dir, "alice.json")
-	writeFile(t, path, string(data))
-	ta.withoutSecrets(t)
-	if err := ta.run(context.Background(), []string{"status", "n1", "--config", path}); err != nil {
-		t.Fatalf("status through the client file's address: %v", err)
-	}
-	if !strings.Contains(ta.stdout.String(), "config ") {
-		t.Errorf("stdout = %q", ta.stdout)
-	}
-}
-
-// writeAddressConfig writes a client file naming the nodes' addresses, which it prefers to the
-// cluster definition's when prefer is set, and returns its path.
-func (ta *testApp) writeAddressConfig(t *testing.T, nodes map[string]string, prefer bool) string {
-	t.Helper()
-	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", pki.RoleReader, time.Hour, nodes, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.PreferNodeAddresses = prefer
-	data, err := c.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(ta.dir, "alice.json")
-	writeFile(t, path, string(data))
-	return path
-}
-
-// TestClientFileAddresses reaches a node at the address a client file that prefers its addresses
-// names, such as a forwarded port, before the static address of the cluster definition, and
-// --address before both. An address that cannot be reached is named with where it came from.
-func TestClientFileAddresses(t *testing.T) {
-	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	manifest := filepath.Join(ta.dir, "manifest.json")
-	status := func(config string, extra ...string) error {
-		return ta.run(context.Background(), append([]string{"status", "n1", "--config", config, "--manifest", manifest}, extra...))
+	if err := ta.run(context.Background(), []string{"status", "n1", "--inventory", ta.inventory, "--address", addr}); err != nil {
+		t.Errorf("--address before the inventory's: %v", err)
 	}
-	if err := status(ta.writeAddressConfig(t, map[string]string{"n1": addr}, true)); err != nil {
-		t.Fatalf("status at the client file's address: %v", err)
-	}
-	// Port 1 refuses the connection at once.
-	closed := ta.writeAddressConfig(t, map[string]string{"n1": "127.0.0.1:1"}, true)
-	if err := status(closed, "--address", addr); err != nil {
-		t.Errorf("--address after a client file naming another address: %v", err)
-	}
-	err := status(closed)
-	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from the client file "+closed+")") {
-		t.Errorf("an unreachable address of the client file: %v, want it named with the client file", err)
-	}
-	if err := status(closed, "--address", "127.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --address)") {
+	err = ta.run(context.Background(), []string{"status", "n1", "--inventory", ta.inventory, "--address", "127.0.0.1:1"})
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --address)") {
 		t.Errorf("an unreachable --address: %v, want it named with --address", err)
-	}
-}
-
-// TestAddressPrecedence picks --address, then a client file's address when the file prefers its
-// addresses and names the node, then the cluster definition's first static address; without a
-// cluster definition, the client file's address, and else --address alone.
-func TestAddressPrecedence(t *testing.T) {
-	ta := newTestApp(t)
-	def := clusterOfManifest(ta.manifest)
-	file := func(nodes map[string]string, prefer bool) *credentials {
-		return &credentials{config: &client.Config{Nodes: nodes, PreferNodeAddresses: prefer}, configPath: "lab.json"}
-	}
-	partial := &cluster{partial: true}
-	for _, tc := range []struct {
-		name         string
-		c            *cluster
-		flag         string
-		creds        *credentials
-		addr, source string
-	}{
-		{"--address beats the client file", def, "10.9.9.9", file(map[string]string{"n1": "127.0.0.1:15001"}, true), "10.9.9.9", "--address"},
-		{"the client file when it prefers its addresses", def, "", file(map[string]string{"n1": "127.0.0.1:15001"}, true), "127.0.0.1:15001", "the client file lab.json"},
-		{"a node the client file does not name", def, "", file(map[string]string{"n2": "127.0.0.1:15002"}, true), "10.0.0.11", "the cluster definition"},
-		{"the definition without the opt-in", def, "", file(map[string]string{"n1": "127.0.0.1:15001"}, false), "10.0.0.11", "the cluster definition"},
-		{"the secrets file", def, "", &credentials{}, "10.0.0.11", "the cluster definition"},
-		{"no cluster definition", partial, "", file(map[string]string{"n1": "10.0.0.20"}, false), "10.0.0.20", "the client file lab.json"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			addr, source, err := tc.c.address(tc.flag, tc.creds, "n1")
-			if err != nil || addr != tc.addr || source != tc.source {
-				t.Errorf("address = %q, %q, %v; want %q, %q", addr, source, err, tc.addr, tc.source)
-			}
-		})
-	}
-	if _, _, err := partial.address("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "pass --address") {
-		t.Errorf("no cluster definition nor credentials = %v", err)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -33,65 +32,10 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
 )
-
-// diskSeed is the seed the config generated for the node of the cluster lab gives its system
-// disk.
-func diskSeed(node string) string {
-	sum := sha256.Sum256([]byte("chalkos-seed:lab/" + node + "/system"))
-	h := hex.EncodeToString(sum[:])
-	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
-}
-
-// upgradeManifest is a cluster of the control planes, three workers and a node without
-// Kubernetes, whose identities the config generated from them gives back.
-func upgradeManifest(controlPlanes int) string {
-	return upgradeManifestOf(controlPlanes, []string{"w1", "w2", "w3"}, "cp", "w")
-}
-
-// upgradeManifestOf is a cluster of the control planes cp1 and on, the workers named, of the roles
-// cpRole and wRole, which may be one, and a node without Kubernetes.
-func upgradeManifestOf(controlPlanes int, workers []string, cpRole, wRole string) string {
-	node := func(name, role, kind string, n int) string {
-		k := "null"
-		if role != "plain" {
-			k = fmt.Sprintf(`{"nodeName": %q, "nodeIPs": ["10.0.0.%d"]}`, name, n)
-		}
-		return fmt.Sprintf(`%q: {"role": %q, "kind": %q, "platform": "metal", "identity": {"hostname": %q, "cluster": "lab", "platform": "metal",
-		  "network": {"networks": {"10-uplink": {"address": ["10.0.0.%d/24"]}}}, "networkUnits": {"10-uplink.network": "[Network]\nAddress=10.0.0.%d/24\n"},
-		  "labels": {}, "taints": [], "kubernetes": %s, "time": {"servers": []},
-		  "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": %q,
-		    "repart": {"50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"}}},
-		    "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null}},
-		    "fallback": "recovery-key", "encryption": "tpm2"}}}`, name, role, kind, name, n, n, k, diskSeed(name))
-	}
-	var nodes []string
-	for i := 1; i <= controlPlanes; i++ {
-		nodes = append(nodes, node(fmt.Sprintf("cp%d", i), cpRole, "controlplane", 10+i))
-	}
-	for i, name := range workers {
-		nodes = append(nodes, node(name, wRole, "worker", 21+i))
-	}
-	nodes = append(nodes, node("n1", "plain", "", 31))
-	images := func(role string, platforms ...string) string {
-		var entries []string
-		for _, p := range platforms {
-			entries = append(entries, fmt.Sprintf(`%q: "roles.%s.images.%s"`, p, role, p))
-		}
-		return fmt.Sprintf(`%q: {"images": {%s}}, `, role, strings.Join(entries, ", "))
-	}
-	roles := images(cpRole, "metal") + images(wRole, "metal", "kvm")
-	if cpRole == wRole {
-		roles = images(cpRole, "metal", "kvm")
-	}
-	return `{"schemaVersion": 0, "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-	  "roles": {` + roles + `"plain": {"images": {"metal": "roles.plain.images.metal"}}},
-	  "nodes": {` + strings.Join(nodes, ",\n") + `}}`
-}
 
 // testUpgradeImage builds a metal disk image of the variant and version as chalkos images are
 // laid out: an ESP holding systemd-boot and the UKI, the store's hash tree and the store,
@@ -397,19 +341,28 @@ func (n *upgradeFake) UncordonNode(_ context.Context, req *connect.Request[nodev
 
 func newUpgradeLab(t *testing.T, controlPlanes int) *upgradeLab {
 	t.Helper()
-	return newUpgradeLabOf(t, upgradeManifest(controlPlanes))
+	return newUpgradeLabOf(t, controlPlanes, []string{"w1", "w2", "w3"}, "cp", "w")
 }
 
-// newUpgradeLabOf runs a fake chalkd for every node of the manifest m.
-func newUpgradeLabOf(t *testing.T, m string) *upgradeLab {
+// newUpgradeLabOf runs a fake chalkd for each of the control planes cp1 and on, of the variant
+// cpVariant, the workers named, of the variant wVariant, which may be the same, and n1, a node of
+// the variant plain without Kubernetes, and describes them in an inventory.
+func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVariant, wVariant string) *upgradeLab {
 	t.Helper()
 	ta := newTestApp(t)
 	ta.pollInterval = 5 * time.Millisecond
-	writeFile(t, filepath.Join(ta.dir, "manifest.json"), m)
-	ta.manifest, _ = manifest.Decode(strings.NewReader(m))
+	var nodes []testNode
+	for i := 1; i <= controlPlanes; i++ {
+		nodes = append(nodes, testNode{fmt.Sprintf("cp%d", i), identity.KindControlPlane, cpVariant})
+	}
+	for _, w := range workers {
+		nodes = append(nodes, testNode{w, identity.KindWorker, wVariant})
+	}
+	nodes = append(nodes, testNode{"n1", "", "plain"})
 	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
-	for name, node := range ta.manifest.Nodes {
-		n := &upgradeFake{lab: l, name: name, role: node.Role, platform: node.Platform, kind: node.Kind, version: "0.1.0", root: bytes.Repeat([]byte{1}, 32)}
+	for _, node := range nodes {
+		name := node.name
+		n := &upgradeFake{lab: l, name: name, role: node.variant, platform: "metal", kind: node.kind, version: "0.1.0", root: bytes.Repeat([]byte{1}, 32)}
 		dir := filepath.Join(t.TempDir(), "chalkd")
 		cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 		if err != nil {
@@ -425,17 +378,13 @@ func newUpgradeLabOf(t *testing.T, m string) *upgradeLab {
 		l.addrs[name] = serveTLS(t, http.Handler(h), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
 		l.nodes[name] = n
 	}
+	l.useInventory(t, nil)
 	return l
 }
 
-// upgrade runs chalkctl upgrade with the lab's cluster.
+// upgrade runs chalkctl upgrade with the image and the lab's inventory.
 func (l *upgradeLab) upgrade(img string, args ...string) error {
-	args = append([]string{"upgrade", "--image", img}, args...)
-	args = append(args, "--manifest", filepath.Join(l.ta.dir, "manifest.json"))
-	for name, addr := range l.addrs {
-		args = append(args, "--endpoint", name+"="+addr)
-	}
-	return l.ta.run(context.Background(), args)
+	return l.run(append([]string{"upgrade", "--image", img}, args...)...)
 }
 
 // useInventory describes the lab's nodes in an inventory, which the lab's runs read from then on:
@@ -532,12 +481,12 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	}
 }
 
-// TestUpgradeOneRoleControlPlanesFirst upgrades control planes and workers that share a role and
+// TestUpgradeOneVariantControlPlanesFirst upgrades control planes and workers that share a variant and
 // its image: the control planes one at a time, each back before the next, and the workers after
 // them all, although their names sort first, each drained before it gets the image and without a
 // check of etcd's quorum.
-func TestUpgradeOneRoleControlPlanesFirst(t *testing.T) {
-	l := newUpgradeLabOf(t, upgradeManifestOf(3, []string{"a1", "a2"}, "k8s", "k8s"))
+func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
+	l := newUpgradeLabOf(t, 3, []string{"a1", "a2"}, "k8s", "k8s")
 	if err := l.upgrade(testUpgradeImage(t, "k8s", "0.2.0")); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
@@ -790,8 +739,17 @@ func testSigner(t *testing.T, dir, name string) (key, cert string) {
 	return key, cert
 }
 
-// TestUpgradeNeedsTheImageContract refuses an image directory without schemas, which the cluster
-// definition's config is checked against.
+// signTestImage signs the boot loader and UKI of a test image of the version in place, as
+// chalklab sign does.
+func signTestImage(t *testing.T, dir, version, key, cert string) {
+	t.Helper()
+	if err := signImage(context.Background(), filepath.Join(dir, "chalkos_"+version+".raw"), filepath.Join(dir, "repart-output.json"), key, cert); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestUpgradeNeedsTheImageContract refuses an image directory without schemas, which the
+// inventory's config is checked against.
 func TestUpgradeNeedsTheImageContract(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	bare := testUpgradeImage(t, "w", "0.3.0")
@@ -803,8 +761,8 @@ func TestUpgradeNeedsTheImageContract(t *testing.T) {
 	}
 }
 
-// TestUpgradeChecksTheConfigBeforeDraining refuses an image the cluster definition's config of a
-// node does not suit before any node is drained or sent the image.
+// TestUpgradeChecksTheConfigBeforeDraining refuses an image the inventory's config of a node does
+// not suit before any node is drained or sent the image.
 func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -824,11 +782,7 @@ func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 // image, no node is drained or sent it, not even those before it.
 func TestUpgradeChecksEveryNodesConfigFirst(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	l.ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes["w2"]
-		n.Identity.Labels = map[string]string{"kubernetes.io/role": "edge"}
-		m.Nodes["w2"] = n
-	})
+	appendDocument(t, filepath.Join(l.ta.dir, "nodes", "w2.yaml"), "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: kubelet}\nspec: {labels: {kubernetes.io/role: edge}}\n")
 	err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2")
 	if err == nil || !strings.Contains(err.Error(), "w2") || !strings.Contains(err.Error(), "kubernetes.io/role") {
 		t.Fatalf("upgrade = %v, want w2's config refused", err)
@@ -865,17 +819,17 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 	dir := t.TempDir()
 	dbKey, dbCert := testSigner(t, dir, "db")
 	otherKey, otherCert := testSigner(t, dir, "other")
-	certPEM, _ := os.ReadFile(dbCert)
-	l.ta.editManifest(t, func(m *manifest.Manifest) { m.SecureBoot.SignerCertificate = string(certPEM) })
 	img := testUpgradeImage(t, "w", "0.2.0")
+	signedByOther := testUpgradeImage(t, "w", "0.2.0")
+	signTestImage(t, signedByOther, "0.2.0", otherKey, otherCert)
 	for _, tc := range []struct {
 		name string
 		img  string
 		args []string
 		want string
 	}{
-		{"an unsigned UKI", img, nil, "Secure Boot would refuse the image's UKI: the image is not signed"},
-		{"a UKI signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
+		{"an unsigned UKI", img, []string{"--sign-cert", dbCert}, "Secure Boot would refuse the image's UKI: the image is not signed"},
+		{"a UKI signed by another key", signedByOther, []string{"--sign-cert", dbCert}, "not in db"},
 		{"a version with upper-case letters", testUpgradeImage(t, "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one chalkos installs"},
 		{"an image without a variant", testUpgradeImage(t, "", "0.2.0"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image names no variant or platform in its os-release"},
 	} {
@@ -1001,19 +955,13 @@ func TestUpgradeComparesTheBuild(t *testing.T) {
 	}
 }
 
-// onPlatform declares and runs the node on the platform.
+// onPlatform runs the node on the platform.
 func (l *upgradeLab) onPlatform(t *testing.T, name, platform string) {
-	t.Helper()
-	l.ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes[name]
-		n.Platform, n.Identity.Platform = platform, platform
-		m.Nodes[name] = n
-	})
 	l.nodes[name].platform = platform
 }
 
-// TestUpgradeSkipsOtherPlatforms installs an image on the nodes of its role and platform and names
-// those of its role on another platform; a node named on another platform stops the run.
+// TestUpgradeSkipsOtherPlatforms installs an image on the nodes of its variant and platform and
+// names those of its variant on another platform; a node named on another platform stops the run.
 func TestUpgradeSkipsOtherPlatforms(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
@@ -1036,18 +984,13 @@ func TestUpgradeSkipsOtherPlatforms(t *testing.T) {
 	}
 }
 
-// TestUpgradeStopsAtAnotherPlatform stops before any node is sent anything when a node runs
-// another platform than the cluster definition declares with an image, or than its Image's
-// without one.
+// TestUpgradeStopsAtAnotherPlatform stops without --image before any node is sent anything when a
+// node runs another platform than its Image's.
 func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w2"].platform = "kvm"
-	want := "w2 runs an image built for kvm, but the cluster definition declares it on metal; changing a node's platform is a reinstall"
-	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("upgrade = %v, want %q", err, want)
-	}
 	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
-	want = "w2 runs an image built for kvm, but its Image w-metal is built for metal; changing a node's platform is a reinstall"
+	want := "w2 runs an image built for kvm, but its Image w-metal is built for metal; changing a node's platform is a reinstall"
 	if err := l.run("upgrade", "--nodes", "w1,w2"); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("upgrade of the Images = %v, want %q", err, want)
 	}
@@ -1056,52 +999,33 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithAnImageChecksEveryNodeOfItsRole asks every node of the image's role what it runs
-// before any is sent anything, and stops at one that runs another platform than the cluster
-// definition declares, as without --image, also when it is declared on another platform than the
-// image's.
-func TestUpgradeWithAnImageChecksEveryNodeOfItsRole(t *testing.T) {
-	img := testUpgradeImage(t, "w", "0.2.0")
-	for _, tc := range []struct {
-		name   string
-		change func(l *upgradeLab)
-		want   string
-	}{
-		{"a node declared on kvm that runs metal", func(l *upgradeLab) {
-			l.onPlatform(t, "w3", "kvm")
-			l.nodes["w3"].platform = "metal"
-		}, "w3 runs an image built for metal, but the cluster definition declares it on kvm"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			l := newUpgradeLab(t, 3)
-			tc.change(l)
-			if err := l.upgrade(img); err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("upgrade = %v, want %q", err, tc.want)
-			}
-			if got := l.takeEvents(); len(got) != 0 {
-				t.Errorf("asked %q", got)
-			}
-		})
-	}
-}
-
-// TestUpgradeWithAClientFileAlone installs an image on the nodes a client file names that run its
-// role and platform, after asking each what it runs, and names those of its role on another
-// platform; without --image it is refused, as there is nothing to build images from.
+// TestUpgradeWithAClientFileAlone installs an image, without an inventory, on the nodes --address
+// names that run its variant and platform, after asking each what it runs, and names those of
+// its variant on another platform; without --image it is refused, as no Image names the nodes'
+// images.
 func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
-	c, err := client.NewConfig(l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), "lab", "ops", pki.RoleAdmin, time.Hour, l.addrs, time.Now())
+	c, err := client.NewConfig(l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), "lab", "ops", pki.RoleAdmin, time.Hour, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	data, _ := c.Encode()
 	config := filepath.Join(t.TempDir(), "ops.json")
 	writeFile(t, config, string(data))
-	if err := l.ta.run(context.Background(), []string{"upgrade", "--config", config}); err == nil || !strings.Contains(err.Error(), "pass --image") {
+	addressed := func(args ...string) []string {
+		for name, addr := range l.addrs {
+			args = append(args, "--address", name+"="+addr)
+		}
+		return args
+	}
+	if err := l.ta.run(context.Background(), addressed("upgrade", "--config", config)); err == nil || !strings.Contains(err.Error(), "pass --image") {
 		t.Errorf("upgrade with a client file alone, without --image = %v", err)
 	}
-	if err := l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config}); err == nil || !strings.Contains(err.Error(), "--address NODE=ADDR") {
+		t.Errorf("upgrade without an inventory or addresses = %v", err)
+	}
+	if err := l.ta.run(context.Background(), addressed("upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config)); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if v := l.versions(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.1.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
@@ -1112,9 +1036,9 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	}
 }
 
-// TestUpgradeNamedNodeOfAnotherRole gives a named node the image of another role: an upgrade may
-// change a node's variant, and the node checks its stored config against the image.
-func TestUpgradeNamedNodeOfAnotherRole(t *testing.T) {
+// TestUpgradeNamedNodeOfAnotherVariant gives a named node the image of another variant: an
+// upgrade may change a node's variant, and the node checks its stored config against the image.
+func TestUpgradeNamedNodeOfAnotherVariant(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "cp1"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
@@ -1127,18 +1051,15 @@ func TestUpgradeNamedNodeOfAnotherRole(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithAnImageGivesItToANodeThatRunsAnotherRole installs the image on every node the
-// cluster definition gives its role, also one that runs an image of another role.
-func TestUpgradeWithAnImageGivesItToANodeThatRunsAnotherRole(t *testing.T) {
+// TestUpgradeWithAnImageGivesItToTheNodesOfItsVariant installs the image on the nodes that run
+// its variant, and leaves a node of the inventory that runs another one.
+func TestUpgradeWithAnImageGivesItToTheNodesOfItsVariant(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w2"].role = "plain"
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if v := l.versions(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
+	if v := l.versions(); v["w1"] != "0.2.0" || v["w2"] != "0.1.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
 		t.Errorf("the nodes run %v", v)
-	}
-	if out := l.ta.stdout.String(); !strings.Contains(out, "w2 runs the variant plain; it gets the image of w") || strings.Contains(out, "w1 runs the variant") {
-		t.Errorf("stdout = %q, want a notice for w2 alone", out)
 	}
 }

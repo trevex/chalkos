@@ -1,11 +1,11 @@
 ---
 title: "chalkctl apply-config"
-description: "Deliver a node's config from the cluster definition"
+description: "Deliver a node's config from the inventory"
 ---
 
 # chalkctl apply-config
 
-Deliver a node's config from the cluster definition
+Deliver a node's config from the inventory
 
 ## Synopsis
 
@@ -41,7 +41,6 @@ chalkctl apply-config <node> [flags]
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --kubernetes-share       also deliver a new Kubernetes share, such as a new kubelet certificate for a worker
-      --manifest string        read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --password-file string   file holding the password of a node whose fallback is a password
       --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
 ```

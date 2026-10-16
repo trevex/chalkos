@@ -108,13 +108,13 @@ Give every node a static address in its `network` definition. Two things depend 
   exactly those addresses. A control plane cannot change its address while it runs; it leaves
   etcd and is reinstalled.
 - chalkctl reaches a node at the first static address of its network definition. A node
-  without one needs `--endpoint` on every command.
+  without one needs `--address` on every command.
 
 Workers may take their address from DHCP instead and pick it with
 [`chalkos.cluster.kubernetes.nodeIP.validSubnets`](../reference/options.md#chalkosclusterkubernetesnodeipvalidsubnets)
 or a node's own
 [`kubernetes.validSubnets`](../reference/options.md#chalkosnodeskubernetesvalidsubnets). The
-cost is the `--endpoint` on each chalkctl command for those nodes.
+cost is the `--address` on each chalkctl command for those nodes.
 
 ```nix title="nodes.nix"
 {

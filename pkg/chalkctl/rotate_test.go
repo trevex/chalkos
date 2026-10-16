@@ -23,22 +23,8 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
-
-// rotationManifest is a cluster of two control planes, a worker and a node without Kubernetes.
-const rotationManifest = `{
-  "schemaVersion": 0,
-  "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}}, "w": {"images": {"metal": "roles.w.images.metal"}}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
-  "nodes": {
-    "cp1": {"role": "cp", "kind": "controlplane", "identity": {"hostname": "cp1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "cp2": {"role": "cp", "kind": "controlplane", "identity": {"hostname": "cp2", "network": {"networks": {"10-uplink": {"address": ["10.0.0.12/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "w1": {"role": "w", "kind": "worker", "identity": {"hostname": "w1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.21/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "n1": {"role": "plain", "identity": {"hostname": "n1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.31/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
-  }
-}`
 
 // fakeNode answers chalkctl rotate as chalkd does: it trusts and serves what it was delivered
 // and reports it in its status. It serves its node certificate with chalkd's NodeCertificate,
@@ -335,14 +321,16 @@ func newRotationLab(t *testing.T) *rotationLab {
 	t.Helper()
 	ta := newTestApp(t)
 	ta.pollInterval = 5 * time.Millisecond
-	writeFile(t, filepath.Join(ta.dir, "manifest.json"), rotationManifest)
-	m, err := manifest.Decode(strings.NewReader(rotationManifest))
-	if err != nil {
-		t.Fatal(err)
+	// Two control planes, a worker and a node without Kubernetes.
+	nodes := []testNode{
+		{"cp1", identity.KindControlPlane, "cp"}, {"cp2", identity.KindControlPlane, "cp"},
+		{"w1", identity.KindWorker, "w"}, {"n1", "", "plain"},
 	}
+	ta.inventory = writeNodes(t, ta.dir, nodes, nil)
 	l := &rotationLab{t: t, ta: ta, nodes: map[string]*fakeNode{}, addrs: map[string]string{}, encrypted: map[string]uint64{pki.DefaultEncryptionKeyName: 3}}
-	for name, node := range m.Nodes {
-		n := &fakeNode{lab: l, name: name, kind: node.Kind}
+	for _, node := range nodes {
+		name := node.name
+		n := &fakeNode{lab: l, name: name, kind: node.kind}
 		dir := filepath.Join(t.TempDir(), "chalkd")
 		cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 		if err != nil {
@@ -372,9 +360,9 @@ func newRotationLab(t *testing.T) *rotationLab {
 // rotate runs chalkctl rotate with the lab's cluster.
 func (l *rotationLab) rotate(args ...string) error {
 	args = append([]string{"rotate"}, args...)
-	args = append(args, "--manifest", filepath.Join(l.ta.dir, "manifest.json"))
+	args = append(args, "--inventory", l.ta.inventory)
 	for name, addr := range l.addrs {
-		args = append(args, "--endpoint", name+"="+addr)
+		args = append(args, "--address", name+"="+addr)
 	}
 	return l.ta.run(context.Background(), args)
 }
@@ -425,7 +413,7 @@ func TestRotateOSCA(t *testing.T) {
 	}
 	// A client file issued at the pause carries both roots and works throughout.
 	carol := filepath.Join(l.ta.dir, "carol.json")
-	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol, "--manifest", filepath.Join(l.ta.dir, "manifest.json")}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol, "--inventory", l.ta.inventory}); err != nil {
 		t.Fatal(err)
 	}
 	if creds, err := l.ta.configCredentials(carol); err != nil || strings.Count(creds.osCA, "BEGIN CERTIFICATE") != 2 {
@@ -489,7 +477,7 @@ func TestRotateOSCA(t *testing.T) {
 		}
 	}
 	// A client file of the old OS CA is refused; one issued at the pause or now works.
-	if err := l.ta.run(context.Background(), []string{"status", "w1", "--config", oldConfig, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--endpoint", l.addrs["w1"]}); err == nil {
+	if err := l.ta.run(context.Background(), []string{"status", "w1", "--config", oldConfig, "--inventory", l.ta.inventory, "--address", l.addrs["w1"]}); err == nil {
 		t.Error("a client file of the old OS CA reached a node after the finish")
 	}
 	if err := l.authenticatesWith(oldConfig, "w1"); err == nil {
@@ -720,7 +708,7 @@ func TestSecretsLockedWhileChanged(t *testing.T) {
 		// A second chalkctl with its own output, as another process would be.
 		second := *l.ta.app
 		second.stdout, second.stderr = &bytes.Buffer{}, &bytes.Buffer{}
-		base := []string{"--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--secrets", path}
+		base := []string{"--inventory", l.ta.inventory, "--secrets", path}
 		for _, args := range [][]string{{"rotate", "kubernetes-ca", "--resume"}, {"rotate", "os-ca", "--finish"}, {"node-ca", "rotate"}} {
 			refused = append(refused, second.run(context.Background(), append(args, base...)))
 		}

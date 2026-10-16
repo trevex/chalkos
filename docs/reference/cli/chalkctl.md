@@ -18,8 +18,7 @@ or with a client file (chalkctl config new), which holds a certificate of the ad
 reader role. Each command's help says which of the two it needs. The secrets file is read only
 where --secrets names it, as a path or as - for standard input, encrypted with age or not; the
 inventory names none. Commands that accept both take --config, else --secrets, else the client
-file $CHALKOSCONFIG names, else ~/.config/chalkos/config. --manifest reads a cluster
-definition's manifest instead of an inventory.
+file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.
@@ -43,7 +42,7 @@ argument after it is read as a positional argument.
 
 ## SEE ALSO
 
-* [chalkctl apply-config](chalkctl_apply-config.md)	 - Deliver a node's config from the cluster definition
+* [chalkctl apply-config](chalkctl_apply-config.md)	 - Deliver a node's config from the inventory
 * [chalkctl bootstrap](chalkctl_bootstrap.md)	 - Initialise the cluster on a control plane
 * [chalkctl completion](chalkctl_completion.md)	 - Generate the autocompletion script for the specified shell
 * [chalkctl config](chalkctl_config.md)	 - Manage client files

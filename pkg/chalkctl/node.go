@@ -43,14 +43,7 @@ type nodeCommand struct {
 func (n *nodeCommand) register(fs *pflag.FlagSet) {
 	n.cluster.register(fs)
 	n.secrets.register(fs)
-	registerAddress(fs, &n.address, "address of the node's chalkd, host or host:port (default the node's address in the inventory)")
-}
-
-// registerAddress registers --address, and hidden --endpoint, its former name.
-func registerAddress(fs *pflag.FlagSet, p *string, usage string) {
-	fs.StringVar(p, "address", "", usage)
-	fs.StringVar(p, "endpoint", "", usage)
-	fs.MarkHidden("endpoint")
+	fs.StringVar(&n.address, "address", "", "address of the node's chalkd, host or host:port (default the node's address in the inventory)")
 }
 
 // registerClient registers the flags of a command that a client file may run.
@@ -119,7 +112,7 @@ func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*targ
 	if err := c.node(name); err != nil {
 		return nil, err
 	}
-	addr, source, err := c.address(n.address, creds, name)
+	addr, source, err := c.address(n.address, name)
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +570,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	var f applyConfigFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "apply-config <node>",
-		Short:   "Deliver a node's config from the cluster definition",
+		Short:   "Deliver a node's config from the inventory",
 		Long:    applyConfigLong,
 		Example: applyConfigExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
@@ -625,9 +618,6 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			return err
 		}
 		if share == nil {
-			if t.cluster.manifest != nil {
-				return fmt.Errorf("%s is no Kubernetes node: the cluster definition gives it no kind", t.name)
-			}
 			return fmt.Errorf("%s is no Kubernetes node: its Node names no type", t.name)
 		}
 	}

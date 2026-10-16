@@ -18,19 +18,15 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// withKind makes n1 a Kubernetes node of the kind.
+// withKind makes n1 a Kubernetes node of the kind, on an image with Kubernetes.
 func withKind(t *testing.T, ta *testApp, kind string) {
 	t.Helper()
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes["n1"]
-		n.Kind = kind
-		n.Identity.Kubernetes = &identity.Kubernetes{NodeName: "n1", NodeIPs: []string{"10.0.0.11"}}
-		m.Nodes["n1"] = n
-	})
+	ta.writeNode(t, strings.Replace(n1Node, "imageRef: test-metal", "imageRef: test-metal, type: "+kind, 1), n1SystemDisk, n1Network, kubernetesDoc)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "metal", testRootHash, true)
+	ta.kind = kind
 }
 
 func installShare(t *testing.T, ta *testApp) (install.Request, error) {
@@ -38,7 +34,7 @@ func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	s := maintenanceNode()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
-	if kind := ta.manifest.Nodes["n1"].Kind; kind != "" {
+	if ta.kind != "" {
 		kubernetesImage(t, s)
 	}
 	addr := ta.startNode(t, s)
@@ -81,7 +77,7 @@ func TestInstallSendsShareOfTheRole(t *testing.T) {
 // ready.
 func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	t.Helper()
-	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
+	current, _ := json.Marshal(ta.identity(t))
 	s, r := installedNode(t, ta, current)
 	root := t.TempDir()
 	s.Kubernetes = &chalkd.Kubernetes{
@@ -136,7 +132,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 func TestKubeconfig(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "kubeconfig")
-	args := []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--out", out, "--server", "https://127.0.0.1:16443", "--ttl", "1h"}
+	args := []string{"kubeconfig", "--inventory", ta.inventory, "--out", out, "--server", "https://127.0.0.1:16443", "--ttl", "1h"}
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +255,7 @@ func TestKubeconfigTrustsBothCAs(t *testing.T) {
 	issue := func() (ca []byte, client *x509.Certificate) {
 		t.Helper()
 		out := filepath.Join(t.TempDir(), "kubeconfig")
-		if err := ta.run(context.Background(), []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--out", out}); err != nil {
+		if err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", out}); err != nil {
 			t.Fatal(err)
 		}
 		data, _ := os.ReadFile(out)

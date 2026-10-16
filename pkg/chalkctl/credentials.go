@@ -175,17 +175,7 @@ func (a *app) configNew(ctx context.Context, f configNewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
-	// A cluster definition's client file names the nodes' addresses; an inventory's nodes are
-	// reached at the inventory's.
-	nodes := map[string]string{}
-	if c.manifest != nil {
-		for _, node := range c.nodeNames() {
-			if addrs := c.staticAddresses(node); len(addrs) > 0 {
-				nodes[node] = addrs[0]
-			}
-		}
-	}
-	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.name, f.name, f.role, f.ttl, nodes, time.Now())
+	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.name, f.name, f.role, f.ttl, time.Now())
 	if err != nil {
 		return err
 	}

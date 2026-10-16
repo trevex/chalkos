@@ -14,8 +14,9 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// ConfigVersion is the version of the client file this package reads and writes.
-const ConfigVersion = 1
+// ConfigVersion is the version of the client file this package reads and writes. Version 1 named
+// the nodes' addresses, which an inventory names now.
+const ConfigVersion = 2
 
 // Config is a client file: a user's certificate from the OS CA, with what is needed to reach
 // and verify the cluster's nodes, for operating the cluster without the secrets file.
@@ -32,24 +33,16 @@ type Config struct {
 	// OSCA holds the PEM certificates of the OS CAs nodes' certificates chain to: the one that
 	// issued the certificate, and while it rotates the other one.
 	OSCA string `json:"osCA"`
-	// Nodes are the nodes' addresses by name, as the cluster definition had them when the file
-	// was issued, or as its holder reaches them otherwise, such as through forwarded ports. They
-	// are used without a cluster definition, and before its static addresses when
-	// PreferNodeAddresses is set.
-	Nodes map[string]string `json:"nodes"`
-	// PreferNodeAddresses has Nodes come before the cluster definition's static addresses, for a
-	// holder that reaches the nodes otherwise, as chalklab's client file does with forwarded ports.
-	PreferNodeAddresses bool `json:"preferNodeAddresses,omitempty"`
 }
 
 // NewConfig issues a client certificate of the role from the OS CA for a new key, valid for
 // validity and never beyond the OS CA, for a cluster whose nodes chain to the OS CAs trusted.
-func NewConfig(osCA pki.CertKey, trusted, cluster, name, role string, validity time.Duration, nodes map[string]string, now time.Time) (Config, error) {
+func NewConfig(osCA pki.CertKey, trusted, cluster, name, role string, validity time.Duration, now time.Time) (Config, error) {
 	ck, err := pki.IssueClient(osCA, name, role, validity, now)
 	if err != nil {
 		return Config{}, err
 	}
-	c := Config{Version: ConfigVersion, Cluster: cluster, Name: name, Role: role, Certificate: ck.Certificate, Key: ck.Key, OSCA: pki.Bundle(osCA.Certificate, trusted), Nodes: nodes}
+	c := Config{Version: ConfigVersion, Cluster: cluster, Name: name, Role: role, Certificate: ck.Certificate, Key: ck.Key, OSCA: pki.Bundle(osCA.Certificate, trusted)}
 	if err := c.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -62,6 +55,15 @@ func ReadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
+	}
+	var version struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(data, &version); err != nil {
+		return Config{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if version.Version != ConfigVersion {
+		return Config{}, fmt.Errorf("%s: %w", path, versionError(version.Version))
 	}
 	var c Config
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -78,11 +80,16 @@ func ReadConfig(path string) (Config, error) {
 	return c, nil
 }
 
+// versionError says that a client file of another version is not read, and what replaces it.
+func versionError(v int) error {
+	return fmt.Errorf("client file version %d is not supported (want %d); issue a new one with chalkctl config new", v, ConfigVersion)
+}
+
 // Validate checks the version, that the certificate belongs to the key, that an OS CA of the file
 // issued it itself for clients, and that it grants the role and names the user the file says.
 func (c Config) Validate() error {
 	if c.Version != ConfigVersion {
-		return fmt.Errorf("client file version %d is not supported (want %d)", c.Version, ConfigVersion)
+		return versionError(c.Version)
 	}
 	if c.Cluster == "" || c.Name == "" {
 		return errors.New("a client file names the cluster and the user")

@@ -46,7 +46,7 @@ the cluster definition yet, booted into the [installer](../reference/glossary.md
 reached at its address in [maintenance mode](../reference/glossary.md#maintenance-mode):
 
 ```sh
-chalkctl disks --endpoint=<address> --insecure
+chalkctl disks --address=<address> --insecure
 ```
 
 `--insecure` prints the certificate's fingerprint, which you compare with the console.

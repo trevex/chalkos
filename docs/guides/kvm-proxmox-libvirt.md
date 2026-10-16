@@ -280,7 +280,7 @@ chalkd: addresses 10.0.0.57; certificate fingerprint <fingerprint>
 Before it is installed, the node takes an address by DHCP. Install it at that address:
 
 ```sh
-chalkctl install cp1 --endpoint=<address> --fingerprint=<fingerprint>
+chalkctl install cp1 --address=<address> --fingerprint=<fingerprint>
 ```
 
 chalkctl prints `installing cp1 in place` and, once the node accepted everything,

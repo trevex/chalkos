@@ -40,7 +40,6 @@ chalkctl config new [flags]
   -h, --help               help for new
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --manifest string    read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --name string        the user's name, which the certificate carries
       --out string         file to write (default ~/.config/chalkos/config)
       --role string        the role the certificate grants: admin, operator or reader

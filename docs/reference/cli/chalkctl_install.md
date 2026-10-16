@@ -53,7 +53,6 @@ chalkctl install <node> [flags]
       --image string           image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory the node's Image names)
       --insecure               accept any certificate and print the node's fingerprint
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --manifest string        read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --password-file string   file holding the password of a node whose fallback is a password
       --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
       --sign-cert string       PEM certificate of the Secure Boot db signer, to check the image's signatures against before it is sent

@@ -344,17 +344,17 @@ func TestAddressFromTheInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if addr, source, err := c.address("", nil, "n1"); err != nil || addr != "10.0.0.11" || source != "the inventory "+path {
+	if addr, source, err := c.address("", "n1"); err != nil || addr != "10.0.0.11" || source != "the inventory "+path {
 		t.Errorf("address = %q, %q, %v", addr, source, err)
 	}
-	if addr, source, err := c.address("10.9.9.9", nil, "n1"); err != nil || addr != "10.9.9.9" || source != "--address" {
+	if addr, source, err := c.address("10.9.9.9", "n1"); err != nil || addr != "10.9.9.9" || source != "--address" {
 		t.Errorf("address with --address = %q, %q, %v", addr, source, err)
 	}
 	writeFile(t, path, strings.Replace(testInventoryYAML, "address: 10.0.0.11, ", "", 1))
 	if c, err = loadInventory(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.address("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "names no address of n1; pass --address") {
+	if _, _, err := c.address("", "n1"); err == nil || !strings.Contains(err.Error(), "names no address of n1; pass --address") {
 		t.Errorf("address without one = %v", err)
 	}
 }
@@ -400,14 +400,6 @@ func TestNodesOfTheInventory(t *testing.T) {
 	}
 	if got, err := c.nodesOf("", ""); err != nil || !slices.Equal(got, []string{"n1"}) {
 		t.Errorf("nodes without Kubernetes = %q, %v", got, err)
-	}
-}
-
-// TestLoadClusterRefusesBoth refuses an inventory and a manifest together.
-func TestLoadClusterRefusesBoth(t *testing.T) {
-	path := writeInventory(t, t.TempDir())
-	if _, err := loadCluster(clusterFlags{inventory: path, manifest: "m.json"}); err == nil || !strings.Contains(err.Error(), "not both") {
-		t.Errorf("an inventory and a manifest = %v", err)
 	}
 }
 
@@ -485,3 +477,16 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 		t.Errorf("the line without the Image's directory = %q", got)
 	}
 }
+
+// appendDocument adds a document to a config file.
+func appendDocument(t *testing.T, path, doc string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, string(data)+"---\n"+doc)
+}
+
+// passwordSystemDisk is n1's system disk with the password fallback.
+const passwordSystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}, encryption: {fallback: password}}\n"

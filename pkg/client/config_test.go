@@ -14,7 +14,7 @@ import (
 func TestConfigRoundTrip(t *testing.T) {
 	now := time.Now()
 	osCA, _ := pki.NewOSCA(now)
-	c, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleReader, 30*24*time.Hour, map[string]string{"n1": "10.0.0.11"}, now)
+	c, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleReader, 30*24*time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,13 +31,13 @@ func TestConfigRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	leaf, _ := got.Leaf()
-	if got.Name != "alice" || got.Role != pki.RoleReader || got.Nodes["n1"] != "10.0.0.11" || leaf.NotAfter.Sub(now).Round(time.Minute) != 30*24*time.Hour {
+	if got.Name != "alice" || got.Role != pki.RoleReader || leaf.NotAfter.Sub(now).Round(time.Minute) != 30*24*time.Hour {
 		t.Errorf("read back %v until %v", got, leaf.NotAfter)
 	}
 	if out := fmt.Sprintf("%v %+v %#v", got, got, got); strings.Contains(out, "PRIVATE KEY") {
 		t.Errorf("a formatted client file holds its key: %s", out)
 	}
-	if _, err := NewConfig(osCA, osCA.Certificate, "lab", "bob", pki.RoleNode, time.Hour, nil, now); err == nil {
+	if _, err := NewConfig(osCA, osCA.Certificate, "lab", "bob", pki.RoleNode, time.Hour, now); err == nil {
 		t.Error("issued a client file for the node role")
 	}
 }
@@ -47,14 +47,14 @@ func TestConfigValidate(t *testing.T) {
 	osCA, _ := pki.NewOSCA(now)
 	nodeCA, _ := pki.NewNodeCA(osCA, now)
 	other, _ := pki.NewOSCA(now)
-	valid, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleOperator, time.Hour, nil, now)
+	valid, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleOperator, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	fromNodeCA, _ := pki.IssueLeaf(nodeCA, pki.Leaf{CommonName: "alice", Organization: []string{pki.RoleOperator}, Client: true}, now)
 	otherKey, _ := pki.IssueClient(osCA, "alice", pki.RoleOperator, time.Hour, now)
 	for name, edit := range map[string]func(c *Config){
-		"another version": func(c *Config) { c.Version = 2 },
+		"another version": func(c *Config) { c.Version = 1 },
 		"another role":    func(c *Config) { c.Role = pki.RoleAdmin },
 		"another name":    func(c *Config) { c.Name = "bob" },
 		"another OS CA":   func(c *Config) { c.OSCA = other.Certificate },
@@ -74,8 +74,18 @@ func TestConfigValidate(t *testing.T) {
 		}
 	}
 	path := filepath.Join(t.TempDir(), "config")
-	os.WriteFile(path, []byte(`{"version": 1, "extra": true}`), 0o600)
+	os.WriteFile(path, []byte(`{"version": 2, "extra": true}`), 0o600)
 	if _, err := ReadConfig(path); err == nil {
 		t.Error("read a client file with an unknown field")
+	}
+}
+
+// TestConfigOfVersion1 refuses a client file of the version that named the nodes, saying how to
+// replace it.
+func TestConfigOfVersion1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	os.WriteFile(path, []byte(`{"version": 1, "cluster": "lab", "name": "alice", "role": "reader", "certificate": "", "key": "", "osCA": "", "nodes": {"n1": "10.0.0.11"}}`), 0o600)
+	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 1 is not supported (want 2); issue a new one with chalkctl config new") {
+		t.Errorf("a client file of version 1: %v", err)
 	}
 }

@@ -63,8 +63,6 @@ func (a *app) rotateCommand() *cobra.Command {
 	f.secrets.register(fs)
 	f.change.register(fs)
 	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
-	fs.Var(f.addresses, "endpoint", "address of a node's chalkd, `NODE=ADDR`")
-	fs.MarkHidden("endpoint")
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
 	fs.BoolVar(&f.force, "force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")

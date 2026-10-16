@@ -54,7 +54,7 @@ machine, matched by the MAC address of its port:
 Import the file from the cluster definition, next to your other modules. The options are NixOS's
 [`systemd.network`](https://nixos.org/manual/nixos/stable/options#opt-systemd.network.networks)
 options, the same shape as a node's `network`. Giving a machine the address its node will have
-after the install lets chalkctl reach it without `--endpoint`, at the node's first static
+after the install lets chalkctl reach it without `--address`, at the node's first static
 address.
 
 ## Put the installer on a VLAN
@@ -231,7 +231,7 @@ chalkd: addresses 10.0.0.11; certificate fingerprint <fingerprint>
 installer reaches the network and drives the storage controller:
 
 ```sh
-chalkctl disks --endpoint=10.0.0.11 --fingerprint=<fingerprint> --secrets=secrets.age
+chalkctl disks --address=10.0.0.11 --fingerprint=<fingerprint> --secrets=secrets.age
 ```
 
 A disk that is missing from the list needs its controller's driver; a machine whose console shows

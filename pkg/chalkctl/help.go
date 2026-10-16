@@ -12,8 +12,7 @@ or with a client file (chalkctl config new), which holds a certificate of the ad
 reader role. Each command's help says which of the two it needs. The secrets file is read only
 where --secrets names it, as a path or as - for standard input, encrypted with age or not; the
 inventory names none. Commands that accept both take --config, else --secrets, else the client
-file $CHALKOSCONFIG names, else ~/.config/chalkos/config. --manifest reads a cluster
-definition's manifest instead of an inventory.
+file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.`
@@ -272,7 +271,7 @@ const recoveryKeyExample = `  chalkctl recovery-key w1`
 
 const upgradeLong = `Installs on each node a new image: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image each node (every node of the cluster, or those --nodes names) gets the image its
+Without --image each node (every node of the inventory, or those --nodes names) gets the image its
 Image document names, which must be the build whose root hash its directory's metadata.json
 names, as status compares nodes with it: rebuild the image or link its directory again
 otherwise. A node that runs on another platform than its image stops the run before any node is
@@ -290,8 +289,9 @@ back from the image before gets it once more.
 Run again, the command skips nodes that run the image and continues one it stopped at; it
 uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
 one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
-volumes are evicted only with --delete-emptydir-data. The command needs an operator client file
-or the secrets file.`
+volumes are evicted only with --delete-emptydir-data. Without an inventory, --address NODE=ADDR
+names the nodes, and --image is needed. The command needs an operator client file or the secrets
+file.`
 
 const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
 status before the next one starts: accept (every node trusts the new value besides the old one),

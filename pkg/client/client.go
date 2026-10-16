@@ -41,7 +41,7 @@ type Options struct {
 	// replaces it.
 	Certificate          *tls.Certificate
 	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
-	// Source says where the address came from, such as --endpoint; an error reaching it names it.
+	// Source says where the address came from, such as --address; an error reaching it names it.
 	Source string
 }
 

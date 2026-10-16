@@ -109,22 +109,10 @@ type delivery struct {
 // checked as the node checks it. The node translates config for the platform its image is built
 // for, so an image of another platform than the node's is refused, rather than checked as one
 // thing and applied as another. The image's variant is not compared: the image's schemas decide
-// which config it takes. From a cluster definition, the documents must give back the identity the
-// definition renders.
+// which config it takes.
 func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	if err := c.samePlatform(name, ct.platform); err != nil {
 		return delivery{}, err
-	}
-	if c.manifest != nil {
-		b, err := config.FromManifest(c.manifest, name)
-		if err != nil {
-			return delivery{}, err
-		}
-		id, err := b.Check(c.manifest.Nodes[name].Identity, ct.schemas, config.Target{Platform: ct.platform, Image: ct.image})
-		if err != nil {
-			return delivery{}, fmt.Errorf("the config of %s: %w", name, err)
-		}
-		return delivery{Encoded: b.Encoded, identity: id}, nil
 	}
 	nc, err := c.config(name)
 	if err != nil {

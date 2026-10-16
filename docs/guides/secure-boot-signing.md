@@ -130,7 +130,7 @@ from the installer. chalkctl copies the UKI and the boot loader off the image, s
 and streams them with the store, so the image in the Nix store stays as it is:
 
 ```sh
-chalkctl install <node> --endpoint=<address> --fingerprint=<fingerprint> \
+chalkctl install <node> --address=<address> --fingerprint=<fingerprint> \
   --sign-key=db.key --sign-cert=db.crt
 ```
 

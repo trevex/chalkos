@@ -31,7 +31,7 @@ type diskImage struct {
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
 	// contract is what an upgrade's image directory says the image accepts as config, which
-	// chalkctl checks the cluster definition's config against; nil for an install's image.
+	// chalkctl checks the inventory's config against; nil for an install's image.
 	contract *contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
@@ -42,10 +42,10 @@ type diskImage struct {
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
 // repart-output.json next to it, or the directory nix build makes. The UKI and the boot loader
 // of the UKI's architecture are copied off its ESP into a temporary directory and signed there
-// with key and cert when they are given.
+// with key and cert when a key is given; a certificate alone checks an image signed before.
 func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ *diskImage, err error) {
-	if (key == "") != (cert == "") {
-		return nil, errors.New("signing needs both --sign-key and --sign-cert")
+	if key != "" && cert == "" {
+		return nil, errors.New("signing with --sign-key needs --sign-cert")
 	}
 	raw, definitions, err := imageFiles(path)
 	if err != nil {
@@ -162,7 +162,7 @@ func sum(r io.Reader) (*nodev1.ImagePart, error) {
 }
 
 // openUpgradeImage opens an upgrade's image with the contract its directory holds, which chalkctl
-// checks the cluster definition's config against before any node is drained. The node checks its
+// checks the inventory's config against before any node is drained. The node checks its
 // stored config against the schemas in the image itself.
 func openUpgradeImage(ctx context.Context, path, key, cert string) (*diskImage, error) {
 	img, err := openImage(ctx, path, key, cert, false)
@@ -256,7 +256,7 @@ func checkInstallImage(t *target, img *diskImage, signCert string) error {
 	if got := img.info.Platform(); got != want {
 		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, want, got)
 	}
-	return checkImage(t.cluster, img, signCert)
+	return checkImage(img, signCert)
 }
 
 // sendChunks sends what r holds in chunks. A send that finds the stream closed ends it: the node

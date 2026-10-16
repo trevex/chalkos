@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/manifest"
 )
 
 // etcdNode is n1 as a bootstrapped control-plane node whose etcd member runs.
@@ -57,7 +55,7 @@ func TestEtcdMembers(t *testing.T) {
 		!strings.Contains(lines[1], "https://127.0.0.1:") || !strings.HasSuffix(lines[1], "voter   healthy") {
 		t.Errorf("members:\n%s", ta.stdout)
 	}
-	// --endpoint reaches one node, which --via names.
+	// --address reaches one node, which --via names.
 	if err := ta.run(context.Background(), ta.args([]string{"etcd", "members"}, addr)); err == nil || !strings.Contains(err.Error(), "--via") {
 		t.Errorf("without --via: %v", err)
 	}
@@ -83,16 +81,6 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 	}
 	if bootstrapped, _ := knode.Bootstrapped(s.Kubernetes.Paths); !bootstrapped {
 		t.Error("a refused leave changed the node")
-	}
-}
-
-func TestControlPlaneNodes(t *testing.T) {
-	c := clusterOfManifest(&manifest.Manifest{
-		Nodes: map[string]manifest.Node{"cp3": {Role: "cp", Kind: identity.KindControlPlane}, "cp1": {Role: "cp", Kind: identity.KindControlPlane},
-			"w1": {Role: "w", Kind: identity.KindWorker}, "cp2": {Role: "cp", Kind: identity.KindControlPlane}},
-	})
-	if got, err := c.nodesOf(identity.KindControlPlane, "cp2"); err != nil || !slices.Equal(got, []string{"cp1", "cp3"}) {
-		t.Errorf("nodesOf() = %v, %v", got, err)
 	}
 }
 

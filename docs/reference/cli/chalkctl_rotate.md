@@ -43,7 +43,6 @@ chalkctl rotate <kind> [flags]
   -h, --help                help for rotate
       --identity strings    age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string    inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
-      --manifest string     read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --out string          write the changed secrets file to this new file instead of updating the secrets file in place
       --public-out string   write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place
       --recipient strings   age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out

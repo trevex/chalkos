@@ -26,12 +26,9 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
-	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -45,44 +42,18 @@ func TestRunSignRequiresAllFlags(t *testing.T) {
 	}
 }
 
-const testManifest = `{
-  "schemaVersion": 0,
-  "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-  "roles": {"test": {"images": {"metal": "roles.test.images.metal", "kvm": "roles.test.images.kvm"}}},
-  "nodes": {
-    "n1": {
-      "role": "test",
-      "platform": "metal",
-      "identity": {
-        "hostname": "n1",
-        "cluster": "lab",
-        "platform": "metal",
-        "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}},
-        "networkUnits": {"10-uplink.network": "[Network]\nAddress=10.0.0.11/24\n"},
-        "labels": {},
-        "taints": [],
-        "storage": {
-          "disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": "3786212b-e096-c4b2-df4e-69fa65255324",
-            "repart": {"50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"}}},
-          "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null}},
-          "fallback": "recovery-key",
-          "encryption": "tpm2"
-        },
-        "kubernetes": null,
-        "time": {"servers": []}
-      }
-    }
-  }
-}`
-
-// testApp is chalkctl with a manifest and a plaintext secrets file in a temporary directory.
+// testApp is chalkctl with the test cluster's inventory and a plaintext secrets file in a
+// temporary directory.
 type testApp struct {
 	*app
-	dir      string
-	secrets  pki.Secrets
-	stdout   *bytes.Buffer
-	stderr   *bytes.Buffer
-	manifest *manifest.Manifest
+	dir string
+	// inventory is the test cluster's inventory in dir.
+	inventory string
+	secrets   pki.Secrets
+	stdout    *bytes.Buffer
+	stderr    *bytes.Buffer
+	// kind is n1's Kubernetes kind, which withKind gives it.
+	kind string
 	// prompts records what chalkctl asked on the terminal; answers are given in order.
 	prompts []string
 	answers []string
@@ -103,12 +74,7 @@ func newTestAppAt(t *testing.T, now time.Time) *testApp {
 	}
 	data, _ := secrets.Encode()
 	writeFile(t, filepath.Join(dir, "secrets.json"), string(data))
-	writeFile(t, filepath.Join(dir, "manifest.json"), testManifest)
-	m, err := manifest.Decode(strings.NewReader(testManifest))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ta := &testApp{dir: dir, secrets: secrets, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, manifest: m}
+	ta := &testApp{dir: dir, inventory: writeInventory(t, dir), secrets: secrets, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}}
 	ta.app = &app{
 		stdin:  strings.NewReader(""),
 		stdout: ta.stdout,
@@ -137,9 +103,48 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// args prefixes the flags that point chalkctl at the test cluster and the node's address.
+// args appends the flags that point chalkctl at the test cluster and the node's address.
 func (ta *testApp) args(cmd []string, addr string) []string {
-	return append(cmd, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--endpoint", addr)
+	return append(cmd, "--inventory", ta.inventory, "--address", addr)
+}
+
+// writeNode replaces n1's file with the documents given.
+func (ta *testApp) writeNode(t *testing.T, docs ...string) {
+	t.Helper()
+	writeFile(t, filepath.Join(ta.dir, "nodes", "n1.yaml"), strings.Join(docs, "---\n"))
+}
+
+// configVersion is the version of n1's config as the inventory gives it.
+func (ta *testApp) configVersion(t *testing.T) string {
+	t.Helper()
+	return inventoryVersion(t, ta.inventory)
+}
+
+// identity is n1's identity as its config translates on the image its Image names.
+func (ta *testApp) identity(t *testing.T) identity.Identity {
+	t.Helper()
+	c, err := loadInventory(ta.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc, err := c.config("n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	md, err := nc.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, err := imageContract(nc.ImageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct.platform = md.Platform
+	d, err := checkNodeConfig(nc, ct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d.identity
 }
 
 // startNode serves a chalkd in the mode with the test cluster's OS CA. In normal mode it serves
@@ -281,9 +286,9 @@ func TestGenSecretsAgeAndRecoveryKey(t *testing.T) {
 	}
 
 	// The encrypted file, decrypted with the default identity.
-	writeFile(t, filepath.Join(out, "manifest.json"), testManifest)
+	inventory := writeInventory(t, out)
 	ta.stdout.Reset()
-	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", filepath.Join(out, "secrets.age"), "--manifest", filepath.Join(out, "manifest.json")}); err != nil {
+	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", filepath.Join(out, "secrets.age"), "--inventory", inventory}); err != nil {
 		t.Fatal(err)
 	}
 	secrets, _ := pki.ReadSecrets(encrypted, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
@@ -295,7 +300,7 @@ func TestGenSecretsAgeAndRecoveryKey(t *testing.T) {
 	// The same file from standard input, as a secret manager would supply it.
 	ta.stdout.Reset()
 	ta.stdin = bytes.NewReader(encrypted)
-	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", "-", "--manifest", filepath.Join(out, "manifest.json")}); err != nil {
+	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", "-", "--inventory", inventory}); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.TrimSpace(ta.stdout.String()); got != want {
@@ -319,12 +324,9 @@ func TestInstallInPlace(t *testing.T) {
 	if !strings.Contains(ta.stdout.String(), "n1 is installed and reboots") {
 		t.Errorf("stdout = %q", ta.stdout)
 	}
-	want, err := config.FromManifest(ta.manifest, "n1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Config == nil || got.Config.Version != want.Version || got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
-		t.Errorf("install request config = %+v, section = %+v; want the config of version %s", got.Config, got.Section, want.Version)
+	want := ta.configVersion(t)
+	if got.Config == nil || got.Config.Version != want || got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
+		t.Errorf("install request config = %+v, section = %+v; want the config of version %s", got.Config, got.Section, want)
 	}
 	key, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "lab", "n1")
 	if got.FallbackSecret != key {
@@ -350,20 +352,16 @@ func TestInstallInPlace(t *testing.T) {
 }
 
 // TestInstallInPlaceRefusesAnotherPlatform refuses to install a node in place that runs an image
-// of another platform than the cluster definition declares.
+// of another platform than its Image's.
 func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes["n1"]
-		n.Platform, n.Identity.Platform = "kvm", "kvm"
-		m.Nodes["n1"] = n
-	})
+	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "kvm", testRootHash, false)
 	s := maintenanceNode()
 	called := false
 	s.InPlace = func(context.Context, install.Request) error { called = true; return nil }
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr))
-	if want := "n1 runs an image built for metal, but the cluster definition declares it on kvm; changing a node's platform is a reinstall"; err == nil || !strings.Contains(err.Error(), want) {
+	if want := "n1 runs an image built for metal, but its Image test-metal is built for kvm; changing a node's platform is a reinstall"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("install = %v, want %q", err, want)
 	}
 	if called {
@@ -445,7 +443,6 @@ func TestInstallChecksTheImage(t *testing.T) {
 	dbKey, dbCert := testSigner(t, keys, "db")
 	otherKey, otherCert := testSigner(t, keys, "other")
 	certPEM, _ := os.ReadFile(dbCert)
-	ta.editManifest(t, func(m *manifest.Manifest) { m.SecureBoot.SignerCertificate = string(certPEM) })
 	image := func(role string) string {
 		dir := testUpgradeImage(t, role, "0.1.0")
 		writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
@@ -464,6 +461,8 @@ func TestInstallChecksTheImage(t *testing.T) {
 	}
 	addr := ta.startNode(t, s)
 	img := image("test")
+	signedByOther := image("test")
+	signTestImage(t, signedByOther, "0.1.0", otherKey, otherCert)
 	for _, tc := range []struct {
 		name string
 		img  string
@@ -476,8 +475,8 @@ func TestInstallChecksTheImage(t *testing.T) {
 			copySchemas(t, filepath.Join(dir, "schemas"))
 			return dir
 		}(), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 runs on metal; the image is built for kvm"},
-		{"an unsigned image", img, nil, "Secure Boot would refuse the image's UKI"},
-		{"an image signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
+		{"an unsigned image", img, []string{"--sign-cert", dbCert}, "Secure Boot would refuse the image's UKI"},
+		{"an image signed by another key", signedByOther, []string{"--sign-cert", dbCert}, "not in db"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parts = nil
@@ -519,7 +518,7 @@ func TestInstallReportsNodeRefusal(t *testing.T) {
 
 func TestPasswordFileTrimsOneNewline(t *testing.T) {
 	ta := newTestApp(t)
-	tg := &target{cluster: clusterOfManifest(ta.manifest), name: "n1", secrets: ta.secrets}
+	tg := &target{cluster: &cluster{name: "lab"}, name: "n1", secrets: ta.secrets}
 	for content, want := range map[string]string{
 		"pw\n": "pw", "pw \n\n": "pw \n", "pw": "pw",
 		"pw\r\n": "pw", "pw\r": "pw", "pw\r\r\n": "pw\r", "pw\n\r\n": "pw\n",
@@ -556,7 +555,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Loader.SetHostname = func(string) error { return nil }
 	s.Loader.Config = filepath.Join(root, "state", "config")
 	writeFile(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(recorded))
-	section, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity.Storage)
+	section, _ := json.Marshal(ta.identity(t).Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	return s, r
@@ -585,7 +584,7 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "config none (not the cluster definition's; chalkctl apply-config n1 delivers it)") || !strings.Contains(ta.stdout.String(), "var") {
+	if !strings.Contains(ta.stdout.String(), "config none (not the inventory's; chalkctl apply-config n1 delivers it)") || !strings.Contains(ta.stdout.String(), "var") {
 		t.Errorf("status before = %q", ta.stdout)
 	}
 
@@ -594,17 +593,14 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking", "networkctl reload"}) {
+	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking", "networkctl reload", "chronyc reload sources"}) {
 		t.Errorf("node ran %v", r.calls)
 	}
-	want, err := config.FromManifest(ta.manifest, "n1")
-	if err != nil {
-		t.Fatal(err)
+	want := ta.configVersion(t)
+	if v, err := store.Version(s.Loader.Config); err != nil || v != want {
+		t.Errorf("config version on the node = %q, %v; want %s", v, err, want)
 	}
-	if v, err := store.Version(s.Loader.Config); err != nil || v != want.Version {
-		t.Errorf("config version on the node = %q, %v; want %s", v, err, want.Version)
-	}
-	if !strings.Contains(ta.stdout.String(), "n1 runs config "+want.Version) {
+	if !strings.Contains(ta.stdout.String(), "n1 runs config "+want) {
 		t.Errorf("stdout = %q", ta.stdout)
 	}
 
@@ -613,7 +609,7 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "platform metal (the cluster definition's)") || !strings.Contains(ta.stdout.String(), "config "+want.Version+" (the cluster definition's)") {
+	if !strings.Contains(ta.stdout.String(), "platform metal (the inventory's)") || !strings.Contains(ta.stdout.String(), "config "+want+" (the inventory's)") {
 		t.Errorf("status after = %q", ta.stdout)
 	}
 }
@@ -621,8 +617,8 @@ func TestApplyConfigAndStatus(t *testing.T) {
 func TestApplyConfigNamesResetCommand(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
-	// The node recorded VAR as xfs, so the definition's ext4 is a destructive change.
-	section := ta.manifest.Nodes["n1"].Identity.Storage
+	// The node recorded VAR as xfs, so the inventory's ext4 is a destructive change.
+	section := ta.identity(t).Storage
 	v := section.Volumes["var"]
 	v.Format = "xfs"
 	section.Volumes = map[string]storage.Volume{"var": v}
@@ -634,37 +630,6 @@ func TestApplyConfigNamesResetCommand(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "chalkctl storage reset n1 var") {
 		t.Fatalf("err = %v, want the reset command for n1", err)
 	}
-}
-
-func TestAddressNeedsAStaticAddress(t *testing.T) {
-	ta := newTestApp(t)
-	units := func(u map[string]string) {
-		ta.editManifest(t, func(m *manifest.Manifest) {
-			n := m.Nodes["n1"]
-			n.Identity.NetworkUnits = u
-			m.Nodes["n1"] = n
-		})
-	}
-	c := clusterOfManifest(ta.manifest)
-	units(map[string]string{})
-	if _, _, err := c.address("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "--address") {
-		t.Errorf("err = %v", err)
-	}
-	units(map[string]string{"20-b.network": "[Network]\nAddress=10.0.1.5/24\n", "10-a.network": "[Network]\nAddress=10.0.0.11/24\n"})
-	if got, _, _ := c.address("", nil, "n1"); got != "10.0.0.11" {
-		t.Errorf("endpoint = %q, want the first network's address", got)
-	}
-}
-
-// editManifest changes the test cluster's manifest and writes it where --manifest reads it.
-func (ta *testApp) editManifest(t *testing.T, edit func(m *manifest.Manifest)) {
-	t.Helper()
-	edit(ta.manifest)
-	data, err := json.Marshal(ta.manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(ta.dir, "manifest.json"), string(data))
 }
 
 func TestInstalledNodeRequiresOSCA(t *testing.T) {
@@ -688,11 +653,8 @@ func TestInstalledNodeRequiresOSCA(t *testing.T) {
 	}
 
 	// The node's certificate names n1, so it cannot pass for n2.
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		n2 := m.Nodes["n1"]
-		n2.Identity.Hostname = "n2"
-		m.Nodes["n2"] = n2
-	})
+	writeFile(t, ta.inventory, testInventoryYAML+"    n2: {address: 10.0.0.11, files: [nodes/n2.yaml]}\n")
+	writeFile(t, filepath.Join(ta.dir, "nodes", "n2.yaml"), strings.Join([]string{strings.Replace(n1Node, "{name: n1}", "{name: n2}", 1), n1SystemDisk, n1Network}, "---\n"))
 	err = ta.run(context.Background(), ta.args([]string{"status", "n2"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "x509") || !strings.Contains(err.Error(), "not n2") {
 		t.Fatalf("err = %v, want the node's certificate refused for the name n2", err)
@@ -701,7 +663,7 @@ func TestInstalledNodeRequiresOSCA(t *testing.T) {
 
 func TestPasswordPromptConfirms(t *testing.T) {
 	ta := newTestApp(t)
-	tg := &target{cluster: clusterOfManifest(ta.manifest), name: "n1", secrets: ta.secrets}
+	tg := &target{cluster: &cluster{name: "lab"}, name: "n1", secrets: ta.secrets}
 
 	ta.answers = []string{"secret one", "secret one"}
 	if got, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err != nil || got != "secret one" {
@@ -724,26 +686,13 @@ func TestPasswordPromptConfirms(t *testing.T) {
 
 // withPassword gives n1 the password fallback and the volume data, encrypted as given.
 func withPassword(t *testing.T, ta *testApp, encryption string) {
-	def := "[Partition]\nFormat=ext4\nLabel=data\nSizeMaxBytes=1G\nSizeMinBytes=1G\nType=63dd1eb4-1dd2-0d0b-0c1e-27c204214ec8\n"
-	if encryption == storage.EncryptionTPM2 {
-		def = "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=data\nSizeMaxBytes=1G\nSizeMinBytes=1G\nTPM2PCRs=7\nType=63dd1eb4-1dd2-0d0b-0c1e-27c204214ec8\n"
-	}
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes["n1"]
-		n.Identity.Storage.Fallback = "password"
-		n.Identity.Storage.Disks[storage.SystemDisk].Repart["60-data.conf"] = def
-		n.Identity.Storage.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "data", Format: "ext4", MountPoint: "/srv/data", Encryption: encryption, Size: "1G"}
-		m.Nodes["n1"] = n
-	})
+	ta.writeNode(t, n1Node, passwordSystemDisk, n1Network,
+		"apiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\nspec: {size: 1G, format: ext4, mountPoint: /srv/data, encryption: {mode: "+encryption+"}}\n")
 }
 
 func TestApplyConfigAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	ta := newTestApp(t)
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes["n1"]
-		n.Identity.Storage.Fallback = "password"
-		m.Nodes["n1"] = n
-	})
+	ta.writeNode(t, n1Node, passwordSystemDisk, n1Network)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
 
@@ -1034,7 +983,7 @@ func TestExecuteFlagUsageErrors(t *testing.T) {
 
 func TestExecuteErrors(t *testing.T) {
 	ta := newTestApp(t)
-	if got := ta.execute(context.Background(), "status", "n1", "--manifest", filepath.Join(ta.dir, "missing.json")); got != 1 {
+	if got := ta.execute(context.Background(), "status", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 1 {
 		t.Errorf("a failing command exits with %d, want 1", got)
 	}
 	if !strings.HasPrefix(ta.stderr.String(), "chalkctl: ") {
@@ -1043,7 +992,7 @@ func TestExecuteErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	ta = newTestApp(t)
-	if got := ta.execute(ctx, "status", "n1", "--manifest", filepath.Join(ta.dir, "missing.json")); got != 130 {
+	if got := ta.execute(ctx, "status", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 130 {
 		t.Errorf("a command whose context ended exits with %d, want 130", got)
 	}
 }
@@ -1126,7 +1075,7 @@ func TestCount(t *testing.T) {
 }
 
 // TestApplyConfigRefusesAnotherPlatform refuses to deliver config to a node whose image was built
-// for another platform than the cluster definition gives it: the node would translate the config
+// for another platform than its Image's: the node would translate the config
 // for its own.
 func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
@@ -1134,7 +1083,7 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=kvm\n")
 	addr := ta.startNode(t, s)
-	want := "n1 runs an image built for kvm, but the cluster definition declares it on metal; changing a node's platform is a reinstall"
+	want := "n1 runs an image built for kvm, but its Image test-metal is built for metal; changing a node's platform is a reinstall"
 	for _, cmd := range [][]string{{"apply-config", "n1"}, {"storage", "reset", "n1", "var"}} {
 		err := ta.run(context.Background(), ta.args(cmd, addr))
 		if err == nil || !strings.Contains(err.Error(), want) {
@@ -1146,10 +1095,9 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	}
 }
 
-// TestApplyConfigToAnImageOfAnotherRole delivers config to a node that runs an image of another
-// role than the cluster definition gives it: the node checks the config against its image's
-// schemas.
-func TestApplyConfigToAnImageOfAnotherRole(t *testing.T) {
+// TestApplyConfigToAnImageOfAnotherVariant delivers config to a node that runs an image of another
+// variant than its Image's: the node checks the config against its image's schemas.
+func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{"hostname": "old"}`))
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
@@ -1158,19 +1106,15 @@ func TestApplyConfigToAnImageOfAnotherRole(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	want, err := config.FromManifest(ta.manifest, "n1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v, err := store.Version(s.Loader.Config); err != nil || v != want.Version {
-		t.Errorf("config version on the node = %q, %v; want %s", v, err, want.Version)
+	want := ta.configVersion(t)
+	if v, err := store.Version(s.Loader.Config); err != nil || v != want {
+		t.Errorf("config version on the node = %q, %v; want %s", v, err, want)
 	}
 }
 
-// TestInstallInPlaceOnAnImageOfAnotherRole installs a node in place that runs an image of another
-// role than the cluster definition gives it: the node checks the config against its image's
-// schemas.
-func TestInstallInPlaceOnAnImageOfAnotherRole(t *testing.T) {
+// TestInstallInPlaceOnAnImageOfAnotherVariant installs a node in place that runs an image of
+// another variant than its Image's: the node checks the config against its image's schemas.
+func TestInstallInPlaceOnAnImageOfAnotherVariant(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
 	called := false
@@ -1251,49 +1195,33 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	}
 }
 
-// TestStatusWithoutTheDefinitionsConfig reports the rest of the status when chalkctl cannot
-// generate the node's config from the cluster definition.
-func TestStatusWithoutTheDefinitionsConfig(t *testing.T) {
+// TestStatusWithABrokenConfig reports the rest of the status when chalkctl cannot read the node's
+// config from the inventory.
+func TestStatusWithABrokenConfig(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes["n1"]
-		n.Identity.NetworkUnits = map[string]string{"10-uplink.conf": "[Network]\nAddress=10.0.0.11/24\n"}
-		m.Nodes["n1"] = n
-	})
+	ta.writeNode(t, strings.Replace(n1Node, "imageRef: test-metal", "imageRef: missing", 1), n1SystemDisk, n1Network)
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	out := ta.stdout.String()
-	if !strings.Contains(out, "config none (cannot read the config the cluster definition gives it: ") || !strings.Contains(out, "platform metal") || !strings.Contains(out, "var") {
+	if !strings.Contains(out, "config none (cannot read the config the inventory gives it: ") || !strings.Contains(out, "platform metal") || !strings.Contains(out, "var") {
 		t.Errorf("status = %q", out)
 	}
 }
 
-// TestAddressesWithoutTheDefinitionsConfig finds a node whose config chalkctl cannot generate at
-// the static address the cluster definition renders for it, so commands still reach it and a
-// client file still names it.
-func TestAddressesWithoutTheDefinitionsConfig(t *testing.T) {
+// TestAddressWithABrokenConfig reaches a node whose config chalkctl cannot read at the address
+// the inventory names, so commands still reach it.
+func TestAddressWithABrokenConfig(t *testing.T) {
 	ta := newTestApp(t)
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		n := m.Nodes["n1"]
-		n.Identity.NetworkUnits = map[string]string{"10-uplink.conf": "[Network]\nAddress=10.0.0.11/24\n"}
-		m.Nodes["n1"] = n
-	})
-	if _, err := config.FromManifest(ta.manifest, "n1"); err == nil {
-		t.Fatal("the bridge generated config from a unit it should refuse")
-	}
-	c := clusterOfManifest(ta.manifest)
-	if addr, source, err := c.address("", nil, "n1"); err != nil || addr != "10.0.0.11" || source != "the cluster definition" {
-		t.Errorf("endpoint = %q, %q, %v; want the definition's 10.0.0.11", addr, source, err)
-	}
-	out := filepath.Join(ta.dir, "alice.json")
-	if err := ta.run(context.Background(), []string{"config", "new", "--name", "alice", "--role", "reader", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json")}); err != nil {
+	ta.writeNode(t, strings.Replace(n1Node, "imageRef: test-metal", "imageRef: missing", 1), n1SystemDisk, n1Network)
+	c, err := loadInventory(ta.inventory)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if f, err := client.ReadConfig(out); err != nil || f.Nodes["n1"] != "10.0.0.11" {
-		t.Errorf("client file nodes = %v, %v", f.Nodes, err)
+	if addr, _, err := c.address("", "n1"); err != nil || addr != "10.0.0.11" {
+		t.Errorf("address = %q, %v; want the inventory's 10.0.0.11", addr, err)
 	}
 }
 
