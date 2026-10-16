@@ -1069,6 +1069,7 @@ in
         jq -e '
           .schemaVersion == 0
           and .id == "chalkos"
+          and .variant == "test"
           and .platform == "metal"
           and (.rootHash | test("^[0-9a-f]{64}$"))
           and ([.kinds[].kind] | index("Network") != null)
@@ -1085,6 +1086,7 @@ in
         jq -e '.cni == "flannel" and (. as $i | $i.images.kubeProxy | endswith(":v" + $i.version))' $k/image.json
         jq -e --slurpfile img $k/image.json \
           '.kubernetes == {version: $img[0].version, cni: $img[0].cni}' $k/metadata.json
+        jq -e '.variant == "k8s"' $k/metadata.json
         if [ -e $k/kubernetes.json ]; then
           echo "error: the Kubernetes image's directory has kubernetes.json" >&2
           exit 1

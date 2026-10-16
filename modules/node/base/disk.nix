@@ -88,6 +88,7 @@ let
     builtins.toJSON {
       schemaVersion = 0;
       inherit (config.system.image) id version;
+      variant = config.chalkos.variant.name;
       platform = config.chalkos.platform.name;
       # The Kubernetes release and pod network, null on an image without Kubernetes.
       kubernetes =

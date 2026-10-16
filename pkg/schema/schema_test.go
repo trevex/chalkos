@@ -26,7 +26,7 @@ func TestLoadReadsMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	md := img.Metadata
-	if md.ID != "chalkos" || md.Platform != "metal" || len(md.RootHash) != 64 {
+	if md.ID != "chalkos" || md.Variant != "worker" || md.Platform != "metal" || len(md.RootHash) != 64 {
 		t.Errorf("metadata = %+v", md)
 	}
 	if len(md.Kinds) != 1 || md.Kinds[0] != (Kind{APIVersion: "demo.example.org/v1alpha1", Kind: "Demo", Multiple: true}) {
