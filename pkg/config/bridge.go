@@ -46,7 +46,7 @@ type Bridged struct {
 // RegistryMirror and Manifest documents of the manifest's cluster-wide settings; then the
 // documents the node's extensions add. The Image is named <role>-<platform>, and its source is the
 // flake attribute path the manifest gives the role's image of the platform. Check tells whether
-// the documents give back that identity, and the image's Kubernetes settings.
+// the documents give back that identity.
 func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 	n, ok := m.Nodes[name]
 	if !ok {

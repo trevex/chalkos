@@ -1183,20 +1183,54 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 }
 
 // A node holding a share keeps its type: its certificates are those of its kind, and a control
-// plane's etcd data stays its own.
+// plane's etcd data stays its own. The type is compared with the share the node holds, also when
+// the stored config gives no cluster, and a share of the new type delivered with the config does
+// not change it. A node without a share takes any type.
 func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
-	s, r := clusterServer(t, k8s.KindWorker)
-	if _, err := sendConfig(s, workerConfig); err != nil {
-		t.Fatal(err)
-	}
-	r.calls = nil
 	controlPlane := strings.Replace(workerConfig, "spec: {type: worker, imageRef: metal}", "spec: {type: controlplane, imageRef: metal}", 1)
-	_, err := sendConfig(s, controlPlane)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), `the node's type from "worker" to "controlplane"`) {
-		t.Fatalf("err = %v", err)
-	}
-	if len(r.calls) != 0 {
-		t.Errorf("ran %v", r.calls)
+	const refused = `the node's type from "worker" to "controlplane"`
+	for name, tc := range map[string]struct {
+		share, stored bool
+		delivered     []byte
+		want          string
+	}{
+		"a stored cluster":                 {true, true, nil, refused},
+		"no stored cluster":                {true, false, nil, refused},
+		"a share of the new type with it":  {true, true, testShare(t, k8s.KindControlPlane), refused},
+		"no share":                         {false, true, nil, ""},
+		"the first config without a share": {false, false, nil, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, r := configServer(t)
+			addKubernetes(t, s, k8s.KindWorker, tc.share)
+			s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
+			kubernetesImage(t, s)
+			if tc.stored {
+				if _, err := sendConfig(s, workerConfig); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r.calls = nil
+			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: controlPlane, KubernetesShare: tc.delivered}))
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); err != nil || c.Kind != k8s.KindControlPlane {
+					t.Errorf("cluster = %+v, %v", c, err)
+				}
+				return
+			}
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v", err)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("ran %v", r.calls)
+			}
+			if c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); err != nil || c.Kind != k8s.KindWorker {
+				t.Errorf("cluster = %+v, %v; want the worker's kept", c, err)
+			}
+		})
 	}
 }
 
@@ -1251,8 +1285,8 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 	}
 }
 
-// Without a stored cluster there is nothing to compare with: the image's own cluster file agrees
-// with the config in the image's facts alone.
+// Without a stored cluster, as on a node whose stored config holds no Kubernetes document, the
+// fixed settings have nothing to compare with.
 func TestApplyConfigFirstClusterIsNotCompared(t *testing.T) {
 	s, _ := clusterServer(t, k8s.KindWorker)
 	if _, err := sendConfig(s, withKubernetesSpec("{podCIDRs: {ipv4: 10.245.0.0/16}}")); err != nil {

@@ -693,25 +693,31 @@ func sameCluster(a, b *k8s.Cluster) bool {
 	return sameJSON(a, b)
 }
 
-// checkFixed refuses config that changes, on a node holding a Kubernetes share, the node's type,
-// or a setting fixed once the cluster exists: its address families and its pod, service and DNS addresses, for
-// which its certificates, etcd and the ranges the control plane allocated were made. prev is
-// the stored config's cluster. Without one, as on a node whose stored config predates its
-// image's Kubernetes settings, there is nothing to compare with: the image's own cluster file
-// agrees with the config only in the image's facts, not in these settings.
+// checkFixed refuses config that changes, on a node holding a Kubernetes share, what the node
+// and its cluster were set up for: the node's type, which the share it holds is of, and the
+// settings fixed once the cluster exists, its address families and its pod, service and DNS
+// addresses, for which its certificates, etcd and the ranges the control plane allocated were
+// made. next is the cluster the config gives, and prev the stored config's. The type is compared
+// with the held share, so a stored config without a Kubernetes document changes nothing; a share
+// of the new type delivered with the config is refused too, since the node's etcd data and its
+// Node stay those of the old type until it is reinstalled. Without a stored cluster the settings
+// have nothing to compare with.
 func (s *Server) checkFixed(prev, next *k8s.Cluster) error {
-	if prev == nil || next == nil {
+	if next == nil {
 		return nil
 	}
-	if _, err := os.Stat(s.Kubernetes.Paths.Share()); errors.Is(err, fs.ErrNotExist) {
+	held, err := knode.ReadShare(s.Kubernetes.Paths)
+	switch {
+	case errors.Is(err, knode.ErrNoShare):
 		return nil
-	} else if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
+	case err != nil:
+		return failed(connect.CodeInternal, "read the node's Kubernetes share: %v", err)
 	}
-	// The node's type comes from its config, not its image, and a node's share, certificates and
-	// etcd data are of its type.
-	if prev.Kind != next.Kind {
-		return failed(connect.CodeFailedPrecondition, "the config changes the node's type from %q to %q; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a %s", prev.Kind, next.Kind, next.Kind)
+	if held.Kind != next.Kind {
+		return failed(connect.CodeFailedPrecondition, "the config changes the node's type from %q to %q; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a %s", held.Kind, next.Kind, next.Kind)
+	}
+	if prev == nil {
+		return nil
 	}
 	pf, _ := prev.Families()
 	nf, _ := next.Families()

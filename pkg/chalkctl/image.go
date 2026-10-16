@@ -175,7 +175,7 @@ func openUpgradeImage(ctx context.Context, path, key, cert string) (*diskImage, 
 		img.Close()
 		return nil, err
 	}
-	img.schemas, img.kubernetesImage = c.files, c.kubernetes
+	img.schemas, img.kubernetesImage = c.files, c.kubernetesImage
 	return img, nil
 }
 

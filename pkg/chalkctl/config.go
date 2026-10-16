@@ -23,8 +23,10 @@ import (
 type contract struct {
 	role, platform string
 	files          map[string][]byte
-	kubernetes     []byte
-	schemas        *schema.Schemas
+	// kubernetesImage is the image's image.json as the image holds it; empty on an image without
+	// Kubernetes.
+	kubernetesImage []byte
+	schemas         *schema.Schemas
 	// image is the image's Kubernetes facts; nil on an image without Kubernetes.
 	image *k8s.Image
 }
@@ -34,7 +36,7 @@ func newContract(files map[string][]byte, imageJSON []byte) (contract, error) {
 	if err != nil {
 		return contract{}, err
 	}
-	c := contract{files: files, kubernetes: imageJSON, schemas: s}
+	c := contract{files: files, kubernetesImage: imageJSON, schemas: s}
 	if len(imageJSON) > 0 {
 		img, err := k8s.ParseImage(imageJSON)
 		if err != nil {
@@ -63,7 +65,15 @@ func imageContract(dir string) (contract, error) {
 		files[filepath.Base(p)] = data
 	}
 	imageJSON, err := os.ReadFile(filepath.Join(dir, "image.json"))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// An image directory of an older chalkos carries its cluster file instead, which no node
+		// translates config with any more: read without image.json, the image would pass for one
+		// without Kubernetes.
+		if _, err := os.Stat(filepath.Join(dir, "kubernetes.json")); err == nil {
+			return contract{}, fmt.Errorf("%s has kubernetes.json but no image.json, so it was built by an older chalkos; build the image again with this version", dir)
+		}
+	case err != nil:
 		return contract{}, err
 	}
 	c, err := newContract(files, imageJSON)

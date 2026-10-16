@@ -653,6 +653,22 @@ func TestUpgradeSendsTheImageContract(t *testing.T) {
 	}
 }
 
+// TestImageContractRefusesAnOlderImageDirectory: a directory with the cluster file older
+// chalkos images carried, and no image.json, is refused rather than read as an image without
+// Kubernetes.
+func TestImageContractRefusesAnOlderImageDirectory(t *testing.T) {
+	dir := t.TempDir()
+	copySchemas(t, filepath.Join(dir, "schemas"))
+	writeFile(t, filepath.Join(dir, "kubernetes.json"), clusterFile("worker"))
+	if _, err := imageContract(dir); err == nil || !strings.Contains(err.Error(), "built by an older chalkos") {
+		t.Fatalf("err = %v", err)
+	}
+	writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
+	if c, err := imageContract(dir); err != nil || c.image == nil {
+		t.Fatalf("contract = %+v, %v", c, err)
+	}
+}
+
 // TestUpgradeChecksTheImage refuses images of another role, and images whose UKI the
 // cluster's db certificate did not sign, before any node is asked to change.
 func TestUpgradeChecksTheImage(t *testing.T) {
