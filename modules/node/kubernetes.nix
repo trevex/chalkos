@@ -309,8 +309,13 @@ in
           "chalkos-kubernetes.service"
           "network-online.target"
         ];
-        # A node without a share has no kubeconfig and runs no kubelet.
-        unitConfig.ConditionPathExists = "${run}/kubelet/kubeconfig";
+        unitConfig = {
+          # A node without a share has no kubeconfig and runs no kubelet.
+          ConditionPathExists = "${run}/kubelet/kubeconfig";
+          # A control plane's etcd pod would make its directory on the file system below a volume
+          # that is missing, and start empty there.
+          RequiresMountsFor = "/var/lib/etcd";
+        };
         path = [
           pkgs.util-linux
           pkgs.iproute2

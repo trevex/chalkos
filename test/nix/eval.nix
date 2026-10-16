@@ -3072,6 +3072,8 @@ lib.runTests {
           "kubelet.service"
         ];
         etcdMount = config.systemd.services.chalkos-controlplane.unitConfig.RequiresMountsFor;
+        # The kubelet waits for the mount too: its etcd pod would otherwise start on an empty directory.
+        kubeletEtcdMount = config.systemd.services.kubelet.unitConfig.RequiresMountsFor;
         # Without the firewall the unit makes etcd's directory alone, and does not wait for it.
         afterAbsentFirewall =
           let
@@ -3102,6 +3104,7 @@ lib.runTests {
       consumer = [ "Node" ];
       beforeKubernetes = true;
       etcdMount = "/var/lib/etcd";
+      kubeletEtcdMount = "/var/lib/etcd";
       afterAbsentFirewall = false;
     };
   };
