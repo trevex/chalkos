@@ -1,7 +1,9 @@
 package inventory
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 
@@ -44,7 +46,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	for _, f := range files {
 		read, err := inv.read(f)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("node %s: %w", name, err)
 		}
 		for _, d := range read {
 			// The inventory reads a file once for every node that gets it; each node gets its own
@@ -147,11 +149,14 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	if c.Image != nil {
 		return *c.Image, nil
 	}
+	file := filepath.Join(c.ImageDir, "metadata.json")
 	md, err := schema.ReadMetadata(c.ImageDir)
-	if err != nil {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s has no metadata.json; build the image or link its directory there", c.ImageName, c.Name, c.ImageDir)
+	case err != nil:
 		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %w", c.ImageName, c.Name, err)
 	}
-	file := filepath.Join(c.ImageDir, "metadata.json")
 	switch {
 	case md.RootHash == "":
 		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names no root hash", c.ImageName, c.Name, file)

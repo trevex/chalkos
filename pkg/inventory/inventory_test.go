@@ -111,7 +111,7 @@ func TestFilesInOrder(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "gpu", "driver.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := inv.Files("w1"); err == nil || !strings.Contains(err.Error(), "gpu/*.yaml names no file") {
+	if _, err := inv.Files("w1"); err == nil || !strings.Contains(err.Error(), "node w1: gpu/*.yaml names no file") {
 		t.Errorf("files of w1 without gpu's = %v", err)
 	}
 }
@@ -193,5 +193,24 @@ func TestFilesSkipDirectories(t *testing.T) {
 	}
 	if _, err := inv.Files("w1"); err == nil || !strings.Contains(err.Error(), "nodes/old names only the directory nodes/old; name its files, such as nodes/old/*.yaml") {
 		t.Errorf("files of w1 naming a directory = %v", err)
+	}
+}
+
+// TestFilesNameTheGlobOfABrokenLink names the glob that matches a link whose target is gone.
+func TestFilesNameTheGlobOfABrokenLink(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "chalkos.yaml"), homelab)
+	for _, f := range []string{"cluster/a.yaml", "gpu/driver.yaml", "nodes/w1.yaml"} {
+		write(t, filepath.Join(dir, f), "")
+	}
+	if err := os.Symlink(filepath.Join(dir, "gone.yaml"), filepath.Join(dir, "cluster", "b.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inv.Files("w1"); err == nil || !strings.Contains(err.Error(), "node w1: cluster/*.yaml: ") || !strings.Contains(err.Error(), "b.yaml") {
+		t.Errorf("files of w1 with a broken link = %v", err)
 	}
 }

@@ -15,18 +15,23 @@ import (
 )
 
 // fixtureBridges are the inventories of the e2e clusters' fixtures, by the set of
-// CHALKOS_TEST_BRIDGE whose manifest defines the same nodes.
-var fixtureBridges = []struct{ inventory, bridge string }{
-	{"../../test/fixtures/clusters/chalklab/chalkos.yaml", "base"},
-	{"../../test/fixtures/clusters/chalklab/added.yaml", "added"},
-	{"../../test/fixtures/clusters/chalklab/destructive.yaml", "destructive"},
-	{"../../test/fixtures/clusters/chalklab-ha/chalkos.yaml", "ha"},
+// CHALKOS_TEST_BRIDGE whose manifest defines the same nodes. nodes are the nodes the inventory
+// names, nil for every node of the manifest: the inventories that change node chalklab's config
+// name it alone.
+var fixtureBridges = []struct {
+	inventory, bridge string
+	nodes             []string
+}{
+	{"../../test/fixtures/clusters/chalklab/chalkos.yaml", "base", nil},
+	{"../../test/fixtures/clusters/chalklab/added.yaml", "added", []string{"chalklab"}},
+	{"../../test/fixtures/clusters/chalklab/destructive.yaml", "destructive", []string{"chalklab"}},
+	{"../../test/fixtures/clusters/chalklab-ha/chalkos.yaml", "ha", nil},
 }
 
-// TestFixturesGiveTheBridgesDocuments checks that every node of the fixtures gets the documents
-// the bridge generates for it from the cluster definitions the images are built from, so the e2e
-// tests deliver the config they did. The Images' sources differ, a directory against a flake
-// attribute, and are left out.
+// TestFixturesGiveTheBridgesDocuments checks that the fixtures name the nodes they should, and
+// that every node gets the documents the bridge generates for it from the cluster definitions the
+// images are built from, so the e2e tests deliver the config they did. The Images' sources
+// differ, a directory against a flake attribute, and are left out.
 func TestFixturesGiveTheBridgesDocuments(t *testing.T) {
 	root := os.Getenv("CHALKOS_TEST_BRIDGE")
 	if root == "" {
@@ -45,6 +50,13 @@ func TestFixturesGiveTheBridgesDocuments(t *testing.T) {
 		inv, err := inventory.Load(fb.inventory)
 		if err != nil {
 			t.Fatal(err)
+		}
+		want := fb.nodes
+		if want == nil {
+			want = slices.Sorted(maps.Keys(m.Nodes))
+		}
+		if got := inv.NodeNames(); !slices.Equal(got, want) {
+			t.Errorf("%s names the nodes %q, want %q of the bridge's %s", fb.inventory, got, want, fb.bridge)
 		}
 		for _, name := range inv.NodeNames() {
 			t.Run(fb.bridge+"/"+name, func(t *testing.T) {

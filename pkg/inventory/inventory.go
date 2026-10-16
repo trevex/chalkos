@@ -197,7 +197,7 @@ func (inv *Inventory) NodeNames() []string { return slices.Sorted(maps.Keys(inv.
 // Files are the config files of a node, in the order their documents form its set: the shared
 // files, then its groups' files in the order it names the groups, then its own. Each path or glob
 // must name at least one file; a glob's files come in name order, and a file named twice counts
-// where it is named first.
+// where it is named first. Its errors name the node.
 func (inv *Inventory) Files(node string) ([]string, error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {
@@ -208,7 +208,11 @@ func (inv *Inventory) Files(node string) ([]string, error) {
 		patterns = append(patterns, inv.Spec.Groups[g].Files...)
 	}
 	patterns = append(patterns, n.Files...)
-	return inv.expand(patterns)
+	files, err := inv.expand(patterns)
+	if err != nil {
+		return nil, fmt.Errorf("node %s: %w", node, err)
+	}
+	return files, nil
 }
 
 // expand lists the files of paths and globs, each of which must name one at least, once each in
@@ -224,9 +228,10 @@ func (inv *Inventory) expand(patterns []string) ([]string, error) {
 		}
 		var named, dirs []string
 		for _, m := range matches {
+			// A glob matches a link whose target is gone as well.
 			info, err := os.Stat(m)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("%s: %w", inv.rel(p), err)
 			}
 			if info.IsDir() {
 				dirs = append(dirs, m)

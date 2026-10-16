@@ -137,7 +137,8 @@ func TestResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cp1.Resolve(); err == nil || !strings.Contains(err.Error(), `the Image "node-metal" of node cp1`) {
+	if _, err := cp1.Resolve(); err == nil || !strings.Contains(err.Error(), `the Image "node-metal" of node cp1`) ||
+		!strings.Contains(err.Error(), "has no metadata.json; build the image or link its directory there") {
 		t.Errorf("an image directory without metadata.json: %v", err)
 	}
 	write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),

@@ -1133,8 +1133,11 @@ in
         ln -s ${image} clusters/${link}
       '') fixtureImages
     )}
-    for inventory in clusters/chalklab/chalkos.yaml clusters/chalklab/added.yaml \
-      clusters/chalklab/destructive.yaml clusters/chalklab-ha/chalkos.yaml; do
+    # Every inventory of every cluster; the clusters' other files at the top, such as lab files,
+    # are no inventories.
+    inventories=$(grep -l '^kind: Inventory$' clusters/*/*.yaml)
+    test -n "$inventories"
+    for inventory in $inventories; do
       chalkctl validate --inventory "$inventory"
     done
     touch $out

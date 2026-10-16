@@ -87,6 +87,7 @@ func writeImageDir(t *testing.T, dir, variant, platform, rootHash string, kubern
 // secrets file or a node, and names every node whose config is invalid.
 func TestValidate(t *testing.T) {
 	ta := newTestApp(t)
+	ta.withoutSecrets(t)
 	path := writeInventory(t, ta.dir)
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
@@ -102,17 +103,60 @@ func TestValidate(t *testing.T) {
 	}, "---\n"))
 	ta.stdout.Reset()
 	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
-	if err == nil || !strings.Contains(err.Error(), "the config of 1 node is invalid") || !strings.Contains(err.Error(), "n2: ") || !strings.Contains(err.Error(), "gatway") {
+	if err == nil || !strings.Contains(err.Error(), "the config of 1 node is invalid") || !strings.Contains(err.Error(), "\nnode n2: ") || !strings.Contains(err.Error(), "gatway") {
 		t.Errorf("validate = %v, want n2's misspelled key named", err)
 	}
 	if !strings.Contains(ta.stdout.String(), "n1: valid") {
 		t.Errorf("stdout = %q, want n1 valid all the same", ta.stdout)
 	}
-	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err != nil {
-		t.Errorf("validate n1 alone: %v", err)
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), []string{"validate", "n1", "n1", "--inventory", path}); err != nil || strings.Count(ta.stdout.String(), "n1: valid") != 1 {
+		t.Errorf("validate n1 twice: %v, %q, want n1 checked once", err, ta.stdout)
 	}
-	if err := ta.run(context.Background(), []string{"validate", "n9", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "has no node n9") {
-		t.Errorf("validate n9 = %v", err)
+	// An unknown node is a usage error, before any node is checked.
+	ta.stdout.Reset()
+	if got := ta.execute(context.Background(), "validate", "n1", "n9", "--inventory", path); got != 2 || strings.Contains(ta.stdout.String(), "n1: valid") || !strings.Contains(ta.stderr.String(), "has no node n9") {
+		t.Errorf("validate n1 n9 exits with %d, stdout %q, stderr %q", got, ta.stdout, ta.stderr)
+	}
+}
+
+// TestValidateTheCluster refuses an inventory whose nodes' Cluster documents differ, as every
+// other command does.
+func TestValidateTheCluster(t *testing.T) {
+	dir := t.TempDir()
+	path := writeInventory(t, dir)
+	// cluster.yaml keeps the Image alone; n1 and n2 each get a Cluster of another endpoint.
+	writeFile(t, filepath.Join(dir, "cluster.yaml"), strings.SplitN(testClusterYAML, "---\n", 2)[1])
+	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://%s:6443\"}\n"
+	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join([]string{n1Node, n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.10")}, "---\n"))
+	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{strings.Replace(n1Node, "{name: n1}", "{name: n2}", 1), n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
+	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
+	ta := newTestApp(t)
+	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "the nodes n1 and n2 are in different clusters") {
+		t.Errorf("validate of nodes in different clusters = %v", err)
+	}
+}
+
+// TestValidateKubernetes checks a Kubernetes node's config against its image's image.json as the
+// node does, and names a node whose Image directory holds no image.
+func TestValidateKubernetes(t *testing.T) {
+	ta := newTestApp(t)
+	path := writeNodes(t, ta.dir, []testNode{{"cp1", identity.KindControlPlane, "k8s"}, {"n1", "", "plain"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "k8s-metal"), "k8s", "metal", testRootHash, true)
+	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
+	if err == nil || !strings.Contains(err.Error(), "the config of 1 node is invalid") ||
+		!strings.Contains(err.Error(), "images/plain-metal has no metadata.json; build the image or link its directory there") {
+		t.Errorf("validate without n1's image = %v", err)
+	}
+	if !strings.Contains(ta.stdout.String(), "cp1: valid for the Image k8s-metal (k8s on metal") {
+		t.Errorf("stdout = %q, want cp1 valid", ta.stdout)
+	}
+	// A mirror over plain HTTP is refused where the node reads the cluster's Kubernetes settings.
+	mirror := "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: RegistryMirror\nmetadata: {name: local}\nspec: {registry: \"localhost:5000\", mirrors: [\"http://10.0.2.100:5000\"]}\n"
+	data, _ := os.ReadFile(filepath.Join(ta.dir, "nodes", "cp1.yaml"))
+	writeFile(t, filepath.Join(ta.dir, "nodes", "cp1.yaml"), string(data)+"---\n"+mirror)
+	if err := ta.run(context.Background(), []string{"validate", "cp1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "node cp1: ") || !strings.Contains(err.Error(), "is not an https:// URL") {
+		t.Errorf("validate of a plain HTTP mirror = %v", err)
 	}
 }
 
