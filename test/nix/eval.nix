@@ -3541,6 +3541,24 @@ lib.runTests {
       extensionBefore = true;
     };
   };
+  # A role's images are the role's variant; the installer is no variant, and its os-release
+  # names none.
+  testInstallerIsNoVariant = {
+    expr =
+      let
+        c = cluster [ ];
+      in
+      {
+        role = (role c).chalkos.variant.name;
+        installer = c.installer.nixos.config.chalkos.variant.name;
+        installerOSRelease = c.installer.nixos.config.system.nixos.extraOSReleaseArgs ? CHALKOS_VARIANT;
+      };
+    expected = {
+      role = "worker";
+      installer = null;
+      installerOSRelease = false;
+    };
+  };
   # An image describes itself in os-release and names its store partitions by its version.
   testImageDescribesItself = {
     expr =

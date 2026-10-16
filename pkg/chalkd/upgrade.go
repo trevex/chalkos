@@ -20,11 +20,11 @@ import (
 )
 
 // Upgrade installs the image an operator streams. It checks that the image is of the node's
-// role and platform, that it boots the store it carries and, before it becomes the next boot,
-// that the schemas in the image accept the node's stored config, but cannot tell an image to
-// trust from another: without Secure Boot, an operator can run any image as root, with STATE and
-// VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to
-// images signed for db.
+// platform, whatever its variant, that it boots the store it carries and, before it becomes the
+// next boot, that the schemas in the image accept the node's stored config, but cannot tell an
+// image to trust from another: without Secure Boot, an operator can run any image as root, with
+// STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits
+// upgrades to images signed for db.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	if !s.upgrading.TryLock() {
 		return nil, failed(connect.CodeAborted, "another upgrade is running")

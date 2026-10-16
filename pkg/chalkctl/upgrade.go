@@ -248,7 +248,7 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 
 // find picks the nodes to upgrade and groups them by the image they get. The nodes are those
 // named, or else every node of the cluster; with an image, every node the cluster definition
-// gives the image's role, or with a client file alone every node that runs an image of that role.
+// gives the image's role, or with a client file alone every node that runs the image's variant.
 // Without an image, a group is the nodes of a role on a platform, the role the cluster definition
 // gives them, whose image chalkctl builds. Every node is asked what it runs before any is sent
 // anything: one that runs another platform than the cluster definition declares stops the run,

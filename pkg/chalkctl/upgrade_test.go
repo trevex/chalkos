@@ -780,8 +780,9 @@ func TestImageContractRefusesAnOlderImageDirectory(t *testing.T) {
 	}
 }
 
-// TestUpgradeChecksTheImage refuses images of another role, and images whose UKI the
-// cluster's db certificate did not sign, before any node is asked to change.
+// TestUpgradeChecksTheImage refuses images that name no variant, of a version chalkos does not
+// install, or whose UKI the cluster's db certificate did not sign, before any node is asked to
+// change.
 func TestUpgradeChecksTheImage(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
 		t.Skip("sbsign not in PATH")
@@ -802,6 +803,7 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 		{"an unsigned UKI", img, nil, "Secure Boot would refuse the image's UKI: the image is not signed"},
 		{"a UKI signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
 		{"a version with upper-case letters", testUpgradeImage(t, "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one chalkos installs"},
+		{"an image without a variant", testUpgradeImage(t, "", "0.2.0"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image names no variant or platform in its os-release"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := l.upgrade(tc.img, tc.args...)
