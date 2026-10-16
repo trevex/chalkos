@@ -42,7 +42,8 @@ same command again continues.
 
 Without `--image`, chalkctl asks every node what it runs, groups the nodes by role and platform
 and builds one image per group from the flake with `nix build` of
-`chalkos.<cluster>.roles.<role>.images.<platform>`:
+`chalkos.<cluster>.roles.<role>.images.<platform>`. Control planes and workers of a role get the
+same image:
 
 ```sh
 chalkctl upgrade
@@ -62,9 +63,11 @@ sign the UKI before it is sent, so the signing key never enters the Nix store.
 Before it sends anything, chalkctl checks each image against the cluster:
 
 - the UKI boots the store the image holds: its `usrhash=` equals the store's root hash;
-- the version is one chalkos installs, and the UKI's os-release names a cluster, role and
-  platform;
-- the cluster is this cluster;
+- the version is one chalkos installs, and the UKI's os-release names a role and platform;
+- the image's directory holds its `schemas/`, which go to the node with `image.json`;
+- with the cluster definition at hand, the config it gives each node of the image's role and
+  platform suits the image, as an install checks the config it delivers; chalkctl checks this for
+  every node before it drains the first;
 - the UKI carries a signature of the certificate in
   [`chalkos.secureBoot.signerCertificate`](../reference/options.md#chalkossecurebootsignercertificate),
   or, when that is not set, of the certificate chalkctl signed with. With neither, chalkctl checks
@@ -80,8 +83,11 @@ The [Upgrade](../reference/api.md#method-upgrade) method needs the
 [normal mode](../reference/glossary.md#normal-mode). Before it changes anything,
 chalkd checks the image's header against the running image's os-release and the disk:
 
-- the image ID, cluster, role and platform equal the running image's, and the architecture the
-  machine's;
+- the image ID, role and platform equal the running image's, and the architecture the machine's;
+- the node's stored config suits the image: it passes the set rules and the image's schemas, and
+  on an image with Kubernetes gives a cluster, as an install checks the config it delivers. An
+  image that would not accept it would fail its boot in `chalkos-identity`, and boot counting
+  would fall back;
 - the version is not the running one, unless the root hash is the same too, in which case the node
   answers that it runs the image already and changes nothing;
 - the root hash is not the running one under another version, whose partitions would be the
@@ -93,7 +99,7 @@ chalkd checks the image's header against the running image's os-release and the 
 - the store and hash tree fit the inactive slot.
 
 The UKI is checked when it arrives, before anything can boot it. Its SHA-256 must match the
-header, its os-release must name the same image ID, version, cluster, role and platform as the
+header, its os-release must name the same image ID, version, role and platform as the
 header, its `usrhash=` must equal the header's root hash, and its boot tries must be a positive
 number. With Secure Boot enforced, chalkd checks its signature against the firmware's
 [db and dbx](../reference/glossary.md#db-and-dbx) as the firmware will, and refuses it when dbx
@@ -174,7 +180,7 @@ A run over a cluster of three control planes prints this, shortened. On cp1 a po
 controller, `default/debug`, stays where it is:
 
 ```text
-upgrading controlplane on metal to chalkos 1.5.0: cp1, cp2, cp3
+upgrading node on metal to chalkos 1.5.0: cp1, cp2, cp3
 cp1: installing 1.5.0
 cp1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
 cp1: cordoned, evicted 2 pods, kept 7
@@ -282,12 +288,13 @@ is still on the node's ESP with another root hash is refused, as for any upgrade
 
 ## What does an upgrade trust?
 
-chalkd checks that an image is of its cluster, role and platform and boots the store it carries;
-it cannot tell an image to trust from another. Secure Boot does that. With Secure Boot enforced,
-the node refuses a UKI that the firmware's db does not accept, so only images signed by a trusted
-signer run. Without Secure Boot, an operator can upgrade a node to any image, which then runs as
-root with [STATE](../reference/glossary.md#state) and [VAR](../reference/glossary.md#var)
-unsealed, because their keys are sealed to [PCR 7](../reference/glossary.md#pcr-7) alone.
+chalkd checks that an image is of its role and platform, that the node's config suits it, and that
+it boots the store it carries; it cannot tell an image to trust from another. Secure Boot does
+that. With Secure Boot enforced, the node refuses a UKI that the firmware's db does not accept, so
+only images signed by a trusted signer run. Without Secure Boot, an operator can upgrade a node
+to any image, which then runs as root with [STATE](../reference/glossary.md#state) and
+[VAR](../reference/glossary.md#var) unsealed, because their keys are sealed to
+[PCR 7](../reference/glossary.md#pcr-7) alone.
 [Security model](security.md) explains the consequences.
 
 After a [rotation](../reference/glossary.md#rotation) of the [OS CA](../reference/glossary.md#os-ca), images rebuilt from the new
@@ -307,6 +314,7 @@ installed again later.
 - The health check decides on chalkd, etcd, the API server and the kubelet. An image that breaks
   only workloads is blessed, and the run continues.
 - A cluster with one or two control planes has no API server while a control plane reboots.
+- An upgrade carries no config, so config only the new image accepts cannot be delivered before it.
 
 ## Related pages
 

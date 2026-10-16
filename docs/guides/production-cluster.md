@@ -41,6 +41,10 @@ run workloads on the control planes with
 [`chalkos.cluster.kubernetes.allowSchedulingOnControlPlanes`](../reference/options.md#chalkosclusterkubernetesallowschedulingoncontrolplanes);
 otherwise they are tainted.
 
+A node becomes a control plane with
+[`kubernetes.kind = "controlplane"`](../reference/options.md#chalkosnodeskuberneteskind), and is a
+worker by default. Control planes and workers can share a role, and so one image per platform.
+
 [Run a highly available control plane](ha-control-plane.md) walks through installing three.
 
 ## Decide how clients reach the API server
@@ -115,7 +119,8 @@ cost is the `--endpoint` on each chalkctl command for those nodes.
 ```nix title="nodes.nix"
 {
   chalkos.nodes.cp1 = {
-    role = "controlplane";
+    role = "node";
+    kubernetes.kind = "controlplane";
     storage.system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001";
     network.networks."10-uplink" = {
       matchConfig.Name = "enp1s0";

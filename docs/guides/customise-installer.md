@@ -211,8 +211,8 @@ Sign it with the key the role images are signed with: the installer seals each n
 [PCR 7](../reference/glossary.md#pcr-7) as measured under the installer, and a role image signed
 with another key asks for the [recovery key](../reference/glossary.md#recovery-key) on its first boot.
 
-The installer also carries the cluster's [OS CA](../reference/glossary.md#os-ca), from the
-`secrets.pub.json` that `osCA` names, and accepts only clients whose certificate chains to it.
+The installer also carries the [OS CA](../reference/glossary.md#os-ca) of the `secrets.pub.json`
+that `chalkos.osCA` names, and accepts only clients whose certificate chains to it.
 After an OS CA [rotation](../reference/glossary.md#rotation) with [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), build and
 sign the installer again. An installer built before the rotation refuses chalkctl's new
 certificate, and chalkctl says so: `the maintenance image trusts another OS CA than the secrets

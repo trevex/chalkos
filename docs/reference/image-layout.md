@@ -187,16 +187,16 @@ A node whose STATE has no `installed` marker starts chalkd in
 ## Outputs of an image build
 
 `nix build .#chalkos.<cluster>.roles.<role>.images.<platform>` makes a directory of five
-entries, six for a role with a Kubernetes kind:
+entries, six for a role with Kubernetes:
 
 | Entry | What it is |
 | --- | --- |
 | `chalkos_<version>.raw` | The raw disk image: the ESP and slot A, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash. `chalkctl sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, platform and the store's root hash, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, platform and the store's root hash, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
-| `kubernetes.json` | The image's Kubernetes settings, as it carries them in `/etc/chalkos/kubernetes/cluster.json`; only for a role with a Kubernetes kind. An install from the installer sends it, with `schemas`, so chalkd checks and translates the node's config for the image it writes, and chalkctl checks that the config's Kubernetes settings are the image's. |
+| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only for a role with Kubernetes. chalkctl sends it with `schemas`: an install from the installer, so chalkd translates the node's config for the image it writes, and an upgrade, so chalkd checks the node's stored config against the image before it writes anything. |
 
 The definitions of a role with the default sizes read:
 
@@ -233,9 +233,8 @@ another disk carrying the same image or the same labels for its own.
 | `/var` | VAR; tmpfs until the node is installed. |
 | `/etc/chalkos/repart.d` | The system region's definitions. |
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
-| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster sets [`chalkos.osCA`](options.md#chalkososca). |
-| `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images of a role with a Kubernetes kind. chalkd builds the node's cluster from it and the node's config. |
-| `/etc/chalkos/kubernetes/cluster.json` | The cluster's Kubernetes settings the image was built with, which chalkctl checks the node's config against. |
+| `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the cluster definition sets [`chalkos.osCA`](options.md#chalkososca). |
+| `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images of a role with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
 | `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and `image.json` at boot and on every apply. |

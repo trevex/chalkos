@@ -112,7 +112,7 @@ chalkd: addresses 192.168.1.50; certificate fingerprint <fingerprint>
 Note both. The fingerprint is how chalkctl knows it talks to this machine and not to something in
 the network path; the certificate lives in memory, so a reboot of the installer prints a new
 one. When the first line says `accepting any client`, the installer has no OS CA: it is the
-generic one, or the cluster definition lacks `osCA`.
+generic one, or the cluster definition lacks `chalkos.osCA`.
 
 ## Choose the system disk
 
@@ -138,7 +138,8 @@ can change between boots.
 ```nix title="nodes.nix"
 {
   chalkos.nodes.cp1 = {
-    role = "controlplane";
+    role = "node";
+    kubernetes.kind = "controlplane";
     storage.system.disk = { serial = "S7KHNJ0W100001"; };
     network.networks."10-uplink" = {
       matchConfig.Name = "enp1s0";

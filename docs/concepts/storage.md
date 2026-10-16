@@ -46,18 +46,18 @@ without restating the role's other volumes; a disk reference is a leaf, so a nod
 replaces the role's instead of merging selector keys into it. A volume with `enable = false` on a
 node drops a volume its role defines.
 
-The homelab example gives every [worker](../reference/glossary.md#worker) a volume on a SATA SSD of its own, and w1 a VAR of
-200 GiB:
+The homelab example gives its [worker](../reference/glossary.md#worker) w1 a VAR of 200 GiB and a
+volume on a SATA SSD of its own:
 
 ```nix
-chalkos.roles.worker.storage.volumes.longhorn = {
-  disk = { model = "Samsung SSD 870*"; type = "ssd"; };
-  format = "xfs";
-  mountPoint = "/var/lib/longhorn";
-};
 chalkos.nodes.w1.storage = {
   system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002";
   var.size = "200G";
+  volumes.longhorn = {
+    disk = { model = "Samsung SSD 870*"; type = "ssd"; };
+    format = "xfs";
+    mountPoint = "/var/lib/longhorn";
+  };
 };
 ```
 

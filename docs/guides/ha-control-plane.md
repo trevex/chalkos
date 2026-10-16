@@ -33,15 +33,17 @@ endpoint, so the endpoint has to follow the VIP from one control plane to the ne
   chalkos.cluster = {
     name = "prod";
     endpoint = "https://10.0.0.10:6443";
-    osCA = ./secrets.pub.json;
     kubernetes.vip.addresses = [ "10.0.0.10" ];
   };
 
-  chalkos.roles.controlplane.kubernetes.kind = "controlplane";
+  chalkos.osCA = ./secrets.pub.json;
+
+  chalkos.roles.node = { };
 
   chalkos.nodes = {
     cp1 = {
-      role = "controlplane";
+      role = "node";
+      kubernetes.kind = "controlplane";
       storage.system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001";
       network.networks."10-uplink" = {
         matchConfig.Name = "enp1s0";
@@ -157,9 +159,9 @@ nobody can win the election.
 
 ## Add a control plane
 
-Define the new node with the control-plane role and install it. It joins as cp2 and cp3 did,
-with no further command. Grow to five, not four: four voters need three for a quorum and so
-tolerate one failure, like three.
+Define the new node with `kubernetes.kind = "controlplane"` and install it. It joins as cp2 and
+cp3 did, with no further command. Grow to five, not four: four voters need three for a quorum and
+so tolerate one failure, like three.
 
 ## Remove a control plane
 

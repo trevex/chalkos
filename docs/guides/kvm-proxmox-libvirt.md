@@ -43,8 +43,9 @@ the device a virtio block disk gets, `/dev/vda`:
 ```nix title="nodes.nix"
 {
   chalkos.nodes.cp1 = {
-    role = "controlplane";
+    role = "node";
     platform = "kvm";
+    kubernetes.kind = "controlplane";
     storage.system.disk = "/dev/vda";
     network.networks."10-uplink" = {
       matchConfig.MACAddress = "52:54:00:12:00:11";
@@ -66,10 +67,10 @@ Build the role's image for `kvm` and sign a writable copy of it with
 [`chalkctl sign`](../reference/cli/chalkctl_sign.md), so the VM's firmware boots it:
 
 ```sh
-nix build .#chalkos.<cluster>.roles.controlplane.images.kvm
-cp --sparse=always result/chalkos_0.1.0.raw controlplane.raw
-chmod u+w controlplane.raw
-chalkctl sign --image=controlplane.raw --repart-json=result/repart-output.json \
+nix build .#chalkos.<cluster>.roles.node.images.kvm
+cp --sparse=always result/chalkos_0.1.0.raw node.raw
+chmod u+w node.raw
+chalkctl sign --image=node.raw --repart-json=result/repart-output.json \
   --key=db.key --cert=db.crt
 ```
 
@@ -88,7 +89,7 @@ A, and the install creates [VAR](../reference/glossary.md#var) in the rest of th
 disk must be larger than the image:
 
 ```sh
-qemu-img convert -f raw -O qcow2 controlplane.raw cp1.qcow2
+qemu-img convert -f raw -O qcow2 node.raw cp1.qcow2
 qemu-img resize cp1.qcow2 32G
 ```
 
@@ -232,14 +233,14 @@ as described for Proxmox below.
 
 ### Proxmox
 
-Copy the signed `controlplane.raw` to the Proxmox host and create the VM from it. Proxmox
+Copy the signed `node.raw` to the Proxmox host and create the VM from it. Proxmox
 imports the raw image into its storage, so no qcow2 is needed:
 
 ```sh
 qm create 111 --name cp1 --ostype l26 --machine q35 --bios ovmf --cores 2 --memory 3072 \
   --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=1 \
   --tpmstate0 local-lvm:1,version=v2.0 \
-  --virtio0 local-lvm:0,import-from=/root/controlplane.raw \
+  --virtio0 local-lvm:0,import-from=/root/node.raw \
   --net0 virtio=52:54:00:12:00:11,bridge=vmbr0 \
   --serial0 socket --vga serial0 --agent enabled=1 --boot order=virtio0
 qm disk resize 111 virtio0 32G

@@ -60,8 +60,8 @@ rather than merging its selector keys into the role's.
 
 ```nix title="cluster.nix"
 {
-  # Every worker carries a SATA SSD for Longhorn next to its NVMe system disk.
-  chalkos.roles.worker.storage.volumes.longhorn = {
+  # Every node of the storage role carries a SATA SSD for Longhorn next to its NVMe system disk.
+  chalkos.roles.storage.storage.volumes.longhorn = {
     disk = {
       model = "Samsung SSD 870*";
       type = "ssd";
@@ -177,7 +177,7 @@ A volume is encrypted like the node, by
 ```nix
 {
   # The replicas on this disk are not secret; they need no TPM-sealed key.
-  chalkos.roles.worker.storage.volumes.longhorn.encryption.mode = "none";
+  chalkos.roles.storage.storage.volumes.longhorn.encryption.mode = "none";
 }
 ```
 

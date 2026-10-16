@@ -78,7 +78,6 @@ images:
 ```nix title="cluster.nix"
 {
   chalkos.roles.gpu-worker = {
-    kubernetes.kind = "worker";
     nixosModules = [
       {
         chalkos.kernel.moduleGroups = [ "gpu" ];
@@ -207,7 +206,7 @@ vendor's agent, belong in a platform. chalkos defines `metal` and `kvm`;
   ];
 
   chalkos.nodes.w3 = {
-    role = "worker";
+    role = "node";
     platform = "r650";
     storage.system.disk = { model = "Dell BOSS-N1"; };
   };
@@ -233,7 +232,7 @@ at most 80% of the hash partition, and the UKIs the [ESP](../reference/glossary.
 image still fits. A role that grows past that fails the build:
 
 ```text
-error: worker: the store's data takes 2671771648 bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
+error: node: the store's data takes 2671771648 bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
 ```
 
 Leave out what the role does not need first. Raising

@@ -23,13 +23,12 @@ nodes fit together, and [The image](../concepts/image.md) what an image holds.
 
 ## Add a module to a role
 
-A role module is an ordinary NixOS module. This one runs a service on every [worker](../reference/glossary.md#worker), with the
-tools it calls in its own `path`:
+A role module is an ordinary NixOS module. This one runs a service on every node of the role
+`node`, with the tools it calls in its own `path`:
 
 ```nix title="cluster.nix"
 {
-  chalkos.roles.worker = {
-    kubernetes.kind = "worker";
+  chalkos.roles.node = {
     nixosModules = [
       (
         { pkgs, ... }:
@@ -167,7 +166,7 @@ let
   inherit (config.chalkos.site) enable;
 in
 {
-  options.chalkos.site.enable = lib.mkEnableOption "the site name on every worker";
+  options.chalkos.site.enable = lib.mkEnableOption "the site name on every node of the role node";
 
   options.chalkos.nodes = lib.mkOption {
     type = lib.types.attrsOf (
@@ -179,8 +178,8 @@ in
             example = "berlin-1";
             description = "Site the node runs at.";
           };
-          # Only the worker image declares the kind, and a node refuses a kind its image lacks.
-          config.documents = lib.mkIf (enable && config.role == "worker") [
+          # Only the node role's images declare the kind, and a node refuses a kind its image lacks.
+          config.documents = lib.mkIf (enable && config.role == "node") [
             {
               apiVersion = "site.example.org/v1alpha1";
               kind = "Site";
@@ -194,7 +193,7 @@ in
   };
 
   config = lib.mkIf enable {
-    chalkos.roles.worker.nixosModules = [
+    chalkos.roles.node.nixosModules = [
       (
         { config, pkgs, ... }:
         {
@@ -227,13 +226,14 @@ in
 }
 ```
 
-Import the file in the cluster definition, set `chalkos.site.enable = true`, and give each worker
-`site.name`. A change of a node's `site.name` needs no new image: `chalkctl apply-config <node>`
-delivers the new `Site` document, and chalkd restarts `site-name.service`. The extension adds the
-document to workers alone, because a node whose image lacks the kind refuses it: the role that
-declares a kind is the one whose nodes may carry its documents. The kind's group is a DNS name of
-your own, since chalkos keeps `chalkos.dev` and its subdomains for its own kinds. The namespace
-must not be a name chalkos declares under `chalkos`, in the cluster definition or inside images;
+Import the file in the cluster definition, set `chalkos.site.enable = true`, and give each node of
+the role `node` its `site.name`. A change of a node's `site.name` needs no new image:
+`chalkctl apply-config <node>` delivers the new `Site` document, and chalkd restarts
+`site-name.service`. The extension adds the document to the nodes of that role alone, because a
+node whose image lacks the kind refuses it: the role that declares a kind is the one whose nodes
+may carry its documents. The kind's group is a DNS name of your own, since chalkos keeps
+`chalkos.dev` and its subdomains for its own kinds. The namespace must not be a name chalkos
+declares under `chalkos`, in the cluster definition or inside images;
 [The cluster definition](../concepts/cluster-definition.md#how-does-an-extension-add-options) lists
 them, explains how extensions work and shows a larger one.
 
@@ -294,8 +294,9 @@ settings break the node:
 - chalkd, `chalkos-identity.service`, `chalkos-health.service` and systemd-networkd are what
   install, configure and upgrade the node. A role that disables or replaces them builds, and the
   node then cannot be installed or upgraded.
-- `chalkos.role.name`, `chalkos.role.kubernetes.kind` and `chalkos.platform.name` are set by the
-  role builder from the cluster definition; set the role's `kubernetes.kind` there instead.
+- `chalkos.role.name`, `chalkos.role.kubernetes.enable`, `chalkos.platform.name` and
+  `chalkos.maintenance.osCA` are set by the role builder from the cluster definition; set the
+  role's `kubernetes.enable` and `chalkos.osCA` there instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
   applies only to nodes installed afterwards, and an upgrade whose store does not fit a node's
   [slot](../reference/glossary.md#slot) is refused.

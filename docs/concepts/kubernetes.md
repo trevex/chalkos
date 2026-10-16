@@ -24,9 +24,14 @@ the same version. etcd, the pause image and CoreDNS have their own images under
 A Kubernetes upgrade is therefore an image [upgrade](../reference/glossary.md#upgrade), rolled
 through the cluster like any other, as [Upgrades](upgrades.md) describes.
 
-A node's [`kubernetes.kind`](../reference/options.md#chalkosnodeskuberneteskind) decides what it
-is in Kubernetes, and a [role](../reference/glossary.md#role) with
-[`kubernetes.enable`](../reference/options.md#chalkosroleskubernetesenable) false runs none:
+A node's [`kubernetes.kind`](../reference/options.md#chalkosnodeskuberneteskind) in the cluster
+definition decides what it is in Kubernetes. The kind reaches the node in its config as
+`Node.spec.type`, so control planes and workers of a [role](../reference/glossary.md#role) boot
+the same image. A node keeps its type once it holds its
+[Kubernetes share](../reference/glossary.md#kubernetes-share): chalkd refuses config that changes
+it, because the share holds certificates for that kind. A role with
+[`kubernetes.enable`](../reference/options.md#chalkosroleskubernetesenable) false runs no
+Kubernetes:
 
 | Kind | Runs |
 | --- | --- |

@@ -11,7 +11,7 @@ kubectl against it, upgrades both nodes to a new image and removes the cluster a
 with UEFI firmware, [Secure Boot](../reference/glossary.md#secure-boot) and a
 [TPM](../reference/glossary.md#tpm), so they go through the same install, bootstrap and upgrade
 steps as real machines. It takes about 15 minutes; most of that is Nix downloading and
-building the images the first time.
+building the image the first time.
 
 ## Before you begin
 
@@ -42,8 +42,8 @@ wrote: "/home/alice/lab/flake.nix"
 
 `flake.nix` pins chalkos as an input, declares the cluster `lab` with `chalkos.lib.mkCluster` and
 gives a development shell. `cluster.nix` is the
-[cluster definition](../reference/glossary.md#cluster-definition): two
-[roles](../reference/glossary.md#role) and two [nodes](../reference/glossary.md#node) on the
+[cluster definition](../reference/glossary.md#cluster-definition): one
+[role](../reference/glossary.md#role) and two [nodes](../reference/glossary.md#node) on the
 `kvm` [platform](../reference/glossary.md#platform), each with a static address on a private lab
 network.
 
@@ -65,23 +65,25 @@ in
     name = "lab";
     # cp1 on the lab network: the API server of the only control plane.
     endpoint = "https://192.168.123.11:6443";
-    # The public part of the cluster's secrets, which chalkctl gen secrets writes. The images
-    # carry its OS CA.
-    osCA = ./secrets.pub.json;
   };
 
-  chalkos.roles.controlplane.kubernetes.kind = "controlplane";
-  chalkos.roles.worker.kubernetes.kind = "worker";
+  # The public part of the cluster's secrets, which chalkctl gen secrets writes. The images carry
+  # its OS CA, so in maintenance mode they accept only the cluster's clients.
+  chalkos.osCA = ./secrets.pub.json;
+
+  # One image for both nodes; cp1's kind makes it the control plane.
+  chalkos.roles.node = { };
 
   chalkos.nodes = {
     cp1 = {
-      role = "controlplane";
+      role = "node";
       platform = "kvm";
+      kubernetes.kind = "controlplane";
       storage.system.disk = "/dev/vda";
       network = labNetwork "11";
     };
     w1 = {
-      role = "worker";
+      role = "node";
       platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = labNetwork "12";
@@ -124,8 +126,9 @@ warning: secrets.json holds the cluster's secrets unencrypted; protect it by oth
 `secrets.json` holds every secret of the cluster in plain text, including the
 [OS CA](../reference/glossary.md#os-ca)'s key, which grants admin access to every node. The
 template's `.gitignore` keeps it out of git. `secrets.pub.json` is the public part: `cluster.nix`
-reads it, so the images trust the OS CA. A real cluster encrypts its secrets with age:
-`--recipient` in place of `--plaintext` writes `secrets.age`, which can live in the repository.
+names it in `chalkos.osCA`, so the image trusts the OS CA. A real cluster encrypts its secrets
+with age: `--recipient` in place of `--plaintext` writes `secrets.age`, which can live in the
+repository.
 
 Commit the flake, including `flake.lock`, so the lab keeps the same chalkos version:
 
@@ -135,15 +138,13 @@ git add . && git commit -m "A chalkos lab"
 
 ## Create the lab
 
-[`chalklab create`](../reference/cli/chalklab_create.md) builds the images, starts the virtual
+[`chalklab create`](../reference/cli/chalklab_create.md) builds the image, starts the virtual
 machines, installs both nodes and bootstraps the cluster:
 
 ```console
 $ chalklab create
 evaluating .#chalkos."lab"
-building the kvm image of controlplane
-...
-building the kvm image of worker
+building the kvm image of node
 ...
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/keys
 starting cp1, w1
@@ -174,11 +175,11 @@ the lab of lab runs cp1, w1; next:
 
 The output follows the life of a node:
 
-1. Nix builds one [image](../reference/glossary.md#image) per role for the `kvm` platform. Both
-   nodes of a role would boot the same image; what differs between them travels separately as
+1. Nix builds one [image](../reference/glossary.md#image) for the `kvm` platform, which both nodes
+   boot; what differs between them, such as cp1 being the control plane, travels separately as
    their [config](../reference/glossary.md#config).
 2. chalklab creates Secure Boot keys for this lab, enrols them in the firmware of the virtual
-   machines and signs copies of the images with them.
+   machines and signs a copy of the image with them.
 3. Each virtual machine boots its image in
    [maintenance mode](../reference/glossary.md#maintenance-mode), where
    [chalkd](../reference/glossary.md#chalkd) prints its certificate's fingerprint on the console.
@@ -300,9 +301,9 @@ machines, their forwarded ports and the lab's files.
 ```console
 $ chalklab status
 lab of lab in /home/alice/.local/state/chalklab/lab; its supervisor runs as PID 1540233
-NODE  ROLE          VM       CHALKD           API SERVER       CONSOLE
-cp1   controlplane  running  127.0.0.1:46353  127.0.0.1:43323  /home/alice/.local/state/chalklab/lab/cp1/console.log
-w1    worker        running  127.0.0.1:44069  -                /home/alice/.local/state/chalklab/lab/w1/console.log
+NODE  ROLE  VM       CHALKD           API SERVER       CONSOLE
+cp1   node  running  127.0.0.1:46353  127.0.0.1:43323  /home/alice/.local/state/chalklab/lab/cp1/console.log
+w1    node  running  127.0.0.1:44069  -                /home/alice/.local/state/chalklab/lab/w1/console.log
 kubeconfig: /home/alice/.local/state/chalklab/lab/kubeconfig
 client file: /home/alice/.local/state/chalklab/lab/chalkctl.json
 Secure Boot db key: /home/alice/.local/state/chalklab/lab/keys/db.key
@@ -336,8 +337,8 @@ A node changes its software only by booting a new image. An
 [slot](../reference/glossary.md#slot) and reboots into it; if the new image does not become
 healthy, the node falls back to the image it ran before.
 
-A new image needs a new version, set with NixOS's `system.image.version` in a role's
-`nixosModules`. Edit `cluster.nix` so both roles build version 0.2.0, and turn on
+A new image needs a new version, set with NixOS's `system.image.version` in the role's
+`nixosModules`. Edit `cluster.nix` so the role builds version 0.2.0, and turn on
 [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in the same module, which adds
 the tools `kubectl debug` uses on a node:
 
@@ -353,17 +354,16 @@ the tools `kubectl debug` uses on a node:
  in
  {
    chalkos.cluster = {
-@@ -23,6 +27,10 @@ in
-   chalkos.roles.controlplane.kubernetes.kind = "controlplane";
-   chalkos.roles.worker.kubernetes.kind = "worker";
+@@ -22,7 +26,8 @@ in
+   chalkos.osCA = ./secrets.pub.json;
  
-+  # A new image version for both roles, with the tools for kubectl debug.
-+  chalkos.roles.controlplane.nixosModules = [ upgrade ];
-+  chalkos.roles.worker.nixosModules = [ upgrade ];
-+
+   # One image for both nodes; cp1's kind makes it the control plane.
+-  chalkos.roles.node = { };
++  # A new image version, with the tools for kubectl debug.
++  chalkos.roles.node.nixosModules = [ upgrade ];
+ 
    chalkos.nodes = {
      cp1 = {
-       role = "controlplane";
 ```
 
 Commit the change:
@@ -372,7 +372,7 @@ Commit the change:
 git commit -am "Upgrade to 0.2.0"
 ```
 
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) builds each role's new image, signs
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) builds the role's new image, signs
 it and rolls it through the cluster, one node at a time. The lab's firmware boots only images
 signed with the lab's Secure Boot key, so pass the key and certificate that `chalklab status`
 listed:
@@ -383,8 +383,7 @@ $ chalkctl upgrade --config ~/.local/state/chalklab/lab/chalkctl.json \
   --sign-cert ~/.local/state/chalklab/lab/keys/db.crt \
   --allow-downtime
 ...
-upgrading controlplane on kvm to chalkos 0.2.0: cp1
-upgrading worker on kvm to chalkos 0.2.0: w1
+upgrading node on kvm to chalkos 0.2.0: cp1, w1
 cp1: installing 0.2.0
 cp1: installed 0.2.0, which boots next as chalkos_0.2.0+3.efi
 cp1: cordoned, evicted 0 pods, kept 6
@@ -400,7 +399,7 @@ w1: uncordoned
 upgraded 2 nodes to 0.2.0
 ```
 
-The lines before `upgrading` are Nix building the images. `--allow-downtime` is needed because
+The lines before `upgrading` are Nix building the image. `--allow-downtime` is needed because
 the lab has a single control plane: while cp1 reboots, etcd has no quorum and the API server is
 down, and chalkctl refuses that unless told to accept it. In a cluster of three control planes,
 the other two keep etcd and the API server running while one reboots.
@@ -457,9 +456,8 @@ $ kubectl debug node/w1 -i --image=busybox -- chroot /host /run/current-system/s
 Creating debugging pod node-debugger-w1-lw2hn with container debugger on node w1.
 ...
 CHALKOS_BOOT_TRIES=3
-CHALKOS_CLUSTER=lab
 CHALKOS_PLATFORM=kvm
-CHALKOS_ROLE=worker
+CHALKOS_ROLE=node
 ...
 IMAGE_ID=chalkos
 IMAGE_VERSION="0.2.0"

@@ -73,9 +73,10 @@ Every option of a cluster lives under `chalkos`. The
 
 | Option | What it declares |
 | --- | --- |
-| `chalkos.cluster` | Name, API endpoint, OS CA, the system images are built for and the Kubernetes settings: version, subnets, [VIP](../reference/glossary.md#vip), registries, extra flags, manifests |
-| `chalkos.roles` | The kinds of node, each with its NixOS modules, Kubernetes kind and storage defaults |
-| `chalkos.nodes` | Every node by name, with its role, platform and own settings |
+| `chalkos.cluster` | Name, API endpoint, the system images are built for and the Kubernetes settings: version, subnets, [VIP](../reference/glossary.md#vip), registries, extra flags, manifests |
+| `chalkos.osCA` | The public part of the cluster's secrets, whose [OS CA](../reference/glossary.md#os-ca) the images and the installer carry for maintenance mode |
+| `chalkos.roles` | The images to build, each with its NixOS modules, whether it runs Kubernetes and storage defaults |
+| `chalkos.nodes` | Every node by name, with its role, platform, Kubernetes kind and own settings |
 | `chalkos.platforms` | The kinds of machine, each with the NixOS modules its images carry |
 | `chalkos.installer` | The [installer](../reference/glossary.md#installer)'s own NixOS modules and the installer image |
 | `chalkos.secureBoot` | The certificate of the [Secure Boot](../reference/glossary.md#secure-boot) signer: `chalkctl install` and `chalkctl upgrade` refuse an image whose UKI or boot loader it did not sign |
@@ -83,7 +84,7 @@ Every option of a cluster lives under `chalkos`. The
 | `chalkos.cni` | The pod network: flannel or none, and the CNI plugins the images ship |
 | `chalkos.manifest` | The generated manifest, read-only |
 
-The lab template's `cluster.nix` shows a small cluster: settings, two roles and two nodes.
+The lab template's `cluster.nix` shows a small cluster: settings, one role and two nodes.
 
 ```nix title="cluster.nix"
 let
@@ -98,21 +99,22 @@ in
   chalkos.cluster = {
     name = "lab";
     endpoint = "https://192.168.123.11:6443";
-    osCA = ./secrets.pub.json;
   };
 
-  chalkos.roles.controlplane.kubernetes.kind = "controlplane";
-  chalkos.roles.worker.kubernetes.kind = "worker";
+  chalkos.osCA = ./secrets.pub.json;
+
+  chalkos.roles.node = { };
 
   chalkos.nodes = {
     cp1 = {
-      role = "controlplane";
+      role = "node";
       platform = "kvm";
+      kubernetes.kind = "controlplane";
       storage.system.disk = "/dev/vda";
       network = labNetwork "11";
     };
     w1 = {
-      role = "worker";
+      role = "node";
       platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = labNetwork "12";
@@ -230,31 +232,24 @@ $ nix eval --json .#chalkos.homelab.manifest | jq '{schemaVersion, cluster, role
     "name": "homelab"
   },
   "roles": {
-    "controlplane": {
+    "node": {
       "images": {
-        "kvm": "roles.controlplane.images.kvm",
-        "metal": "roles.controlplane.images.metal"
-      },
-      "kind": "controlplane"
-    },
-    "worker": {
-      "images": {
-        "kvm": "roles.worker.images.kvm",
-        "metal": "roles.worker.images.metal"
-      },
-      "kind": "worker"
+        "kvm": "roles.node.images.kvm",
+        "metal": "roles.node.images.metal"
+      }
     }
   }
 }
 ```
 
-Besides these, it holds `secureBoot.signerCertificate` and, under `nodes`, each node's role,
-platform, identity and documents. The identity is what layer 1 renders from the node's options:
-hostname, network units, storage, Kubernetes and time settings. The documents are the config
-documents its extensions add. chalkctl generates the node's config from both. A role's images are
-attribute paths relative to the cluster, which chalkctl builds when a command needs an image.
-While `schemaVersion` is 0 the format may change between chalkos versions, which matters only to
-tools other than chalkctl and chalklab.
+Besides these, it holds `secureBoot.signerCertificate`, the Kubernetes and flannel settings every
+Kubernetes node's config carries and, under `nodes`, each node's role, Kubernetes kind (null on a
+role without Kubernetes), platform, identity and documents. The identity is what layer 1 renders
+from the node's options: hostname, network units, storage, Kubernetes and time settings. The
+documents are the config documents its extensions add. chalkctl generates the node's config from
+both. A role's images are attribute paths relative to the cluster, which chalkctl builds when a
+command needs an image. While `schemaVersion` is 0 the format may change between chalkos
+versions, which matters only to tools other than chalkctl and chalklab.
 
 `chalkctl --manifest=<file>` reads a manifest from a file instead of evaluating the flake. It
 cannot build images then, so commands that need one take `--image`.
@@ -272,7 +267,7 @@ documents the node's extensions add. The homelab's `cp1`, in part:
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: cp1}
-spec: {imageRef: controlplane-metal, type: controlplane}
+spec: {imageRef: node-metal, type: controlplane}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -292,10 +287,10 @@ on the node exactly what it would mean in NixOS; chalkctl reads each unit back i
 with sections and keys in camelCase.
 
 Before it sends anything, chalkctl checks the documents against the image they are for: the
-image directory's schemas when it installs from the installer, and otherwise those of the image
-the node runs, which the node returns with the image's cluster, role and platform through its
-[Contract](../reference/api.md#method-contract) method. chalkctl refuses an image of another
-cluster, role or platform than the cluster definition gives the node. It then translates the
+image directory's schemas and `image.json` when it installs from the installer, and otherwise
+those of the image the node runs, which the node returns with the image's role and platform through
+its [Contract](../reference/api.md#method-contract) method. chalkctl refuses an image of another
+role or platform than the cluster definition gives the node. It then translates the
 documents as chalkd does and refuses to deliver them unless they give back what the cluster
 definition declares for the node, so the config a node applies matches its definition.
 
@@ -371,7 +366,7 @@ in
   };
 
   config = lib.mkIf enable {
-    chalkos.roles = lib.genAttrs [ "controlplane" "worker" ] (_: {
+    chalkos.roles.node = {
       nixosModules = [
         (
           { config, pkgs, ... }:
@@ -405,7 +400,7 @@ in
           }
         )
       ];
-    });
+    };
   };
 }
 ```
@@ -424,22 +419,21 @@ The three parts reach the node by different paths:
 
 A namespace must not collide with a name chalkos declares under `chalkos`. In the cluster
 definition those are `cluster`, `cni`, `installer`, `manifest`, `nodes`, `platforms`, `roles`,
-`secureBoot`, `time` and `warnings`; inside images `consumers`, `debug`, `disk`, `kernel`,
-`kinds`, `platform`, `role` and `upgrade` are taken too. A kind's group must be a DNS name
-outside `chalkos.dev`, which chalkos keeps for its own kinds.
+`osCA`, `secureBoot`, `time` and `warnings`; inside images `consumers`, `debug`, `disk`, `kernel`,
+`kinds`, `maintenance`, `platform`, `role` and `upgrade` are taken too. A kind's group must be a
+DNS name outside `chalkos.dev`, which chalkos keeps for its own kinds.
 
 ## Where does the OS CA come from?
 
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) writes the cluster's
 [secrets file](../reference/glossary.md#secrets-file) and its public part, `secrets.pub.json`.
-[`chalkos.osCA`](../reference/options.md#chalkososca) points to the public part,
-which holds certificates and no keys, so it belongs in the repository. Role images and the
-installer then carry the cluster's
-[OS CA](../reference/glossary.md#os-ca), so chalkd in
+[`chalkos.osCA`](../reference/options.md#chalkososca) points to the public part, which holds
+certificates and no keys, so it belongs in the repository. It is an input of the images: the role
+images and the installer carry its [OS CA](../reference/glossary.md#os-ca), so chalkd in
 [maintenance mode](../reference/glossary.md#maintenance-mode) accepts only clients with a
-certificate from it. chalkos reads version 3 of the file only; evaluation fails on another
-version and says to generate new secrets. Left `null`, images accept any client until they are
-installed, which suits a lab on a private network and nothing else.
+certificate from it. chalkos reads version 3 of the file only; evaluation fails on another version
+and says to generate new secrets. Left `null`, images accept any client until they are installed,
+which suits a lab on a private network and nothing else.
 
 No module reads the secrets file itself. chalkctl reads it from the flake's directory, or the
 path `--secrets` names, when it installs a node or issues a certificate. The lab template's

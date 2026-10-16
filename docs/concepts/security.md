@@ -17,7 +17,7 @@ A node's trust rests on four anchors:
 | Anchor | Where it lives | What it vouches for |
 | --- | --- | --- |
 | The db signing certificate | The firmware's [db](../reference/glossary.md#db-and-dbx) | The boot loader and the [UKI](../reference/glossary.md#uki), and through the UKI the whole [store](../reference/glossary.md#store) |
-| The [OS CA](../reference/glossary.md#os-ca) | The [secrets file](../reference/glossary.md#secrets-file); its certificate is in every image | Every node certificate and client certificate of the node API |
+| The [OS CA](../reference/glossary.md#os-ca) | The [secrets file](../reference/glossary.md#secrets-file); its certificate is in every image built with [`chalkos.osCA`](../reference/options.md#chalkososca) | Every node certificate and client certificate of the node API |
 | The Kubernetes, front-proxy and etcd CAs | The secrets file; a [control plane](../reference/glossary.md#control-plane) holds them in its [Kubernetes share](../reference/glossary.md#kubernetes-share) | The control plane's certificates, the kubelets' and admin kubeconfigs |
 | The [TPM](../reference/glossary.md#tpm) | The machine | That the node booted under the same Secure Boot state it was installed under |
 
@@ -70,13 +70,13 @@ chalkctl also refuses to upgrade with an image this certificate's key did not si
 ## What does Secure Boot do for upgrades?
 
 Secure Boot limits what the [operator](../reference/glossary.md#operator) role can install to
-images the db key's holder signed. The [Upgrade](../reference/api.md#method-upgrade) method checks that an image belongs to the
-node's cluster, role and platform and that its UKI boots the store it carries. It cannot tell an
-image the cluster's owners built from one somebody else built. Without Secure Boot, anyone with
-an operator certificate can install an image of their own and run it as root, with STATE and VAR
-unlocked, because their keys are sealed to PCR 7 alone. With Secure Boot enforced, the firmware
-boots only images signed with the db key, so an operator can roll out only what the key holder
-signed.
+images the db key's holder signed. The [Upgrade](../reference/api.md#method-upgrade) method checks
+that an image belongs to the node's role and platform and that its UKI boots the store it carries.
+It cannot tell an image the cluster's owners built from one somebody else built. Without Secure
+Boot, anyone with an operator certificate can install an image of their own and run it as root,
+with STATE and VAR unlocked, because their keys are sealed to PCR 7 alone. With Secure Boot
+enforced, the firmware boots only images signed with the db key, so an operator can roll out only
+what the key holder signed.
 
 Before it installs anything, Upgrade checks the node's stored config against the schemas and
 `image.json` the request carries, which are not bound to the image. An operator can therefore test

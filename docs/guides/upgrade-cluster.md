@@ -36,12 +36,8 @@ Every role image carries a version, `system.image.version`, which names its
 modules, for every role whose image changes:
 
 ```nix title="cluster.nix"
-let
-  version = "1.5.0";
-in
 {
-  chalkos.roles.controlplane.nixosModules = [ { system.image.version = version; } ];
-  chalkos.roles.worker.nixosModules = [ { system.image.version = version; } ];
+  chalkos.roles.node.nixosModules = [ { system.image.version = "1.5.0"; } ];
 }
 ```
 
@@ -75,8 +71,8 @@ next to it or the directory `nix build` makes, on the nodes of that image's role
 Nodes of the role on another platform are skipped and named. Run it once per role.
 
 ```sh
-nix build .#chalkos.<cluster>.roles.worker.images.metal --out-link worker-image
-chalkctl upgrade --image=worker-image
+nix build .#chalkos.<cluster>.roles.node.images.metal --out-link node-image
+chalkctl upgrade --image=node-image
 ```
 
 On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's
@@ -94,8 +90,7 @@ Run the command in the flake's directory. It reads the secrets file there, or th
 
 ```console
 $ chalkctl upgrade --sign-key=<db-key> --sign-cert=<db-cert>
-upgrading controlplane on metal to chalkos 1.5.0: cp1, cp2, cp3
-upgrading worker on metal to chalkos 1.5.0: w1, w2, w3
+upgrading node on metal to chalkos 1.5.0: cp1, cp2, cp3, w1, w2, w3
 cp1: installing 1.5.0
 cp1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
 cp1: cordoned, evicted 2 pods, kept 6

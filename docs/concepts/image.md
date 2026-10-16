@@ -104,7 +104,6 @@ whose fields do not match the node:
 | --- | --- |
 | `IMAGE_ID` | `chalkos`, or `chalkos-installer` on the installer |
 | `IMAGE_VERSION` | the [image version](#what-may-an-image-version-be) |
-| `CHALKOS_CLUSTER` | the cluster's name |
 | `CHALKOS_ROLE` | the role's name, absent on the installer |
 | `CHALKOS_PLATFORM` | the platform's name, absent on the installer |
 | `CHALKOS_BOOT_TRIES` | [`chalkos.upgrade.bootTries`](../reference/options.md#chalkosupgradeboottries) of the image |
@@ -241,15 +240,19 @@ slot sizes it was installed with, and refuses a store that does not fit them.
 
 ## How is an image built?
 
-`nix build` builds one role's image for one platform. In the lab template's flake, the [worker](../reference/glossary.md#worker)'s
-`kvm` image:
+`nix build` builds one role's image for one platform. The lab template's flake has one role,
+`node`, whose `kvm` image both its [control plane](../reference/glossary.md#control-plane) and
+its [worker](../reference/glossary.md#worker) boot:
 
 ```console
-$ nix build .#chalkos.lab.roles.worker.images.kvm
+$ nix build .#chalkos.lab.roles.node.images.kvm
 $ ls result
 chalkos_0.1.0.raw
+image.json
+metadata.json
 repart.d
 repart-output.json
+schemas
 ```
 
 - `chalkos_<version>.raw` is the raw disk image.
@@ -257,6 +260,9 @@ repart-output.json
   and the root hash. chalkctl reads the store, the hash tree and the UKI at those offsets.
 - `repart.d` holds the role's partition definitions of the system region, which the installer
   lays out a target disk with.
+- `metadata.json`, `schemas` and `image.json` describe what the image is and what config it
+  accepts; [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build)
+  lists them.
 
 The image is unsigned, and the signing key never enters the Nix store. chalkctl signs at the
 last moment:
@@ -269,8 +275,8 @@ last moment:
   Nix store is read-only, so it signs a copy:
 
 ```sh
-install -m 644 result/chalkos_0.1.0.raw worker.raw
-chalkctl sign --image=worker.raw --repart-json=result/repart-output.json \
+install -m 644 result/chalkos_0.1.0.raw node.raw
+chalkctl sign --image=node.raw --repart-json=result/repart-output.json \
   --key=<db-key> --cert=<db-cert>
 ```
 

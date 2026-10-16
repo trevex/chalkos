@@ -66,15 +66,16 @@ What Nix decides at build time and what reaches a node at runtime:
 | --- | --- |
 | Kernel, kernel modules and initrd | Hostname |
 | NixOS services and the role's modules | systemd-networkd units |
-| Kubernetes version and the control plane's flags | Kubernetes node name, addresses, labels and taints |
-| Cluster name, endpoint and the [OS CA](../reference/glossary.md#os-ca) for maintenance mode | Storage: system disk, VAR, volumes and encryption |
-| Partition sizes of the system region | Time servers |
-| Boot tries and health timeout | Documents of the kinds [extensions](../reference/glossary.md#extension) declare |
+| Kubernetes version, the images of its components and the pod network | Kubernetes node name, kind, addresses, labels and taints |
+| The [OS CA](../reference/glossary.md#os-ca) for maintenance mode, an input of the images | Cluster name and endpoint, and the cluster's Kubernetes settings: ranges, extra flags, registry mirrors and manifests |
+| Partition sizes of the system region | Storage: system disk, VAR, volumes and encryption |
+| Boot tries and health timeout | Time servers |
+| | Documents of the kinds [extensions](../reference/glossary.md#extension) declare |
 
-The split keeps one image per role and platform, so a cluster of fifty
-[workers](../reference/glossary.md#worker) builds and signs one worker image. A change in the left
-column is an [upgrade](upgrades.md); a change in the right column is delivered with
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and needs no reboot. A
+The split keeps one image per role and platform, so a cluster of three control planes and fifty
+[workers](../reference/glossary.md#worker) in one role builds and signs one image per platform. A
+change in the left column is an [upgrade](upgrades.md); a change in the right column is delivered
+with [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and needs no reboot. A
 storage change that would destroy data, such as a volume moved to another disk, is refused there
 and needs [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md).
 
@@ -152,9 +153,9 @@ chalkd: addresses <addresses>; certificate fingerprint <fingerprint>
 ```
 
 It accepts only reads (node information, disks and logs), a reboot and an install. An image built
-with [`chalkos.osCA`](../reference/options.md#chalkososca) carries the cluster's
-OS CA and accepts only clients with a certificate from it. An image built without one prints
-`accepting any client` and accepts anyone until it is installed.
+with [`chalkos.osCA`](../reference/options.md#chalkososca) carries that OS CA and accepts only
+clients with a certificate from it. An image built without one prints `accepting any client`
+and accepts anyone until it is installed.
 
 In [normal mode](../reference/glossary.md#normal-mode), on an installed node, chalkd serves its
 [node certificate](../reference/glossary.md#node-certificate) and accepts only clients whose
@@ -284,7 +285,7 @@ healthy within its tries, the node falls back to the image it ran before.
 - Nodes have no shell access. Debugging goes through the node API's logs and status, or a
   privileged pod with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools).
 - An image without an OS CA accepts any client in maintenance mode. Build images with
-  `chalkos.cluster.osCA` set for machines on a network others can reach.
+  `chalkos.osCA` set for machines on a network others can reach.
 
 ## Related pages
 

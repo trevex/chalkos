@@ -30,13 +30,14 @@ Go code never evaluates Nix itself. The [cluster definition](../reference/glossa
   in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the
   `Manifest` documents after the add-ons.
 - Files the [role](../reference/glossary.md#role) image carries in `/etc/chalkos`, written by
-  the node modules: what the image fixes about Kubernetes in `kubernetes/image.json`, the
-  Kubernetes settings it was built with in `kubernetes/cluster.json`, the system region's repart
-  definitions in `repart.d`, the [OS CA](../reference/glossary.md#os-ca) certificate in
-  `os-ca.crt`, the JSON Schemas of the config kinds the image accepts in `schemas` and the
-  units that read them in `consumers.json`; and the image's own description in
-  `/etc/os-release`. chalkctl reads the schemas from the image directory, or from a running node
-  through the Contract method.
+  the node modules: what the image fixes about Kubernetes in `kubernetes/image.json`, the system
+  region's repart definitions in `repart.d`, the [OS CA](../reference/glossary.md#os-ca)
+  certificate in `os-ca.crt` when the images are built with `chalkos.osCA`, the JSON Schemas of
+  the config kinds the image accepts in `schemas` and the units that read them in
+  `consumers.json`; and the image's own description in `/etc/os-release`. The image directory
+  `nix build` makes holds the schemas as `schemas/` and the Kubernetes facts as `image.json`,
+  with `metadata.json`; chalkctl reads them from there, or from a running node through the
+  Contract method.
 
 The diagram follows a cluster definition to a running node.
 

@@ -121,18 +121,20 @@ of a group and a version, a `kind`, a `metadata.name` and a `spec`. The schema o
 
 ## Contract { #contract }
 
-What an image accepts as [config](#config): the cluster, role and platform it was built for, the
-JSON Schemas of its [kinds](#kind) and its Kubernetes settings. The image carries the schemas in
-`/etc/chalkos/schemas`, and its image directory has them as `schemas/` beside
-`kubernetes.json`. chalkctl reads the contract from the image directory when it installs from the
-[installer](#installer), and from the running node with the [Contract](api.md#method-contract)
-method otherwise. See [Image and partition layout](image-layout.md).
+What an image accepts as [config](#config): the role and platform it was built for, the JSON
+Schemas of its [kinds](#kind) and what it fixes about Kubernetes. The image carries the schemas in
+`/etc/chalkos/schemas` and the Kubernetes facts in `/etc/chalkos/kubernetes/image.json`, and its
+image directory has them as `schemas/` and `image.json`. chalkctl reads the contract from the
+image directory when it installs from the [installer](#installer) or upgrades a node, and from the
+running node with the [Contract](api.md#method-contract) method otherwise. See
+[Image and partition layout](image-layout.md).
 
 ## Control plane { #control-plane }
 
-A node whose role has the Kubernetes kind `controlplane`. It runs etcd, the API server, the
-controller-manager and the scheduler as static pods that chalkd renders, besides containerd and
-the kubelet. See [Kubernetes on chalkos](../concepts/kubernetes.md).
+A node whose Kubernetes kind is `controlplane`, set in the cluster definition and delivered as
+`Node.spec.type`. It runs etcd, the API server, the controller-manager and the scheduler as static
+pods that chalkd renders, besides containerd and the kubelet. See
+[Kubernetes on chalkos](../concepts/kubernetes.md).
 
 ## db and dbx { #db-and-dbx }
 
@@ -326,8 +328,9 @@ file never changes, and
 ## Role { #role }
 
 A kind of node, declared under [`chalkos.roles`](options.md#chalkosroles) with its NixOS
-modules, storage defaults and Kubernetes kind (`controlplane`, `worker` or none). Each role
-becomes one [image](#image) per platform. See
+modules, storage defaults and whether its images run Kubernetes. Each role becomes one
+[image](#image) per platform. Control planes and workers of a role boot the same image; each
+node's kind makes it one or the other. See
 [The cluster definition](../concepts/cluster-definition.md).
 
 ## Rollback { #rollback }
@@ -418,6 +421,7 @@ disk of its own, encrypted or not, formatted and mounted or left raw. See
 
 ## Worker { #worker }
 
-A node whose role has the Kubernetes kind `worker`: it runs containerd and the kubelet, which
-joins the cluster at the cluster endpoint with the certificate in its
-[Kubernetes share](#kubernetes-share). See [Kubernetes on chalkos](../concepts/kubernetes.md).
+A node whose Kubernetes kind is `worker`, set in the cluster definition and delivered as
+`Node.spec.type`. It runs containerd and the kubelet, which joins the cluster at the cluster
+endpoint with the certificate in its [Kubernetes share](#kubernetes-share). See
+[Kubernetes on chalkos](../concepts/kubernetes.md).
