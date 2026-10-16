@@ -249,7 +249,7 @@ func TestRedactedNamesThePlaceAndKeywordAlone(t *testing.T) {
 		t.Errorf("Redacted() = %q, want the document, the place and the keyword without the value", got)
 	}
 	err = s.Validate(decode(t, `{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Other", "metadata": {"name": "a"}}`))
-	if !errors.As(err, &verr) || !strings.Contains(verr.Redacted(), "no schema of the kind Other") {
+	if !errors.As(err, &verr) || !strings.Contains(verr.Redacted(), `Other "a": the image has no schema of its kind of apiVersion chalkos.dev/v1alpha1`) {
 		t.Errorf("unknown kind: %v", err)
 	}
 }

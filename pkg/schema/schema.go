@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -74,6 +75,7 @@ func LoadSchemas(dir string) (*Schemas, error) {
 	}
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
+	c.UseLoader(noLoader{})
 	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
@@ -83,27 +85,46 @@ func LoadSchemas(dir string) (*Schemas, error) {
 		path := filepath.Join(dir, name)
 		doc, err := readDoc(path)
 		if err != nil {
-			return nil, err
+			return nil, &LoadError{File: name, err: err}
 		}
 		k, err := kindOf(doc, path)
 		if err != nil {
-			return nil, err
+			return nil, &LoadError{File: name, err: err}
 		}
 		if _, dup := ss.schemas[key(k.APIVersion, k.Kind)]; dup {
-			return nil, fmt.Errorf("%s: duplicate kind %s %s", path, k.APIVersion, k.Kind)
+			return nil, &LoadError{File: name, err: fmt.Errorf("%s: duplicate kind %s %s", path, k.APIVersion, k.Kind)}
 		}
 		if want := fileName(k); want != name {
-			return nil, fmt.Errorf("%s: should be named %s for its kind %s %s", path, want, k.APIVersion, k.Kind)
+			return nil, &LoadError{File: name, err: fmt.Errorf("%s: should be named %s for its kind %s %s", path, want, k.APIVersion, k.Kind)}
 		}
 		s, err := compileSchema(c, doc, path, name)
 		if err != nil {
-			return nil, fmt.Errorf("schema of %s %s: %w", k.APIVersion, k.Kind, err)
+			return nil, &LoadError{File: name, err: fmt.Errorf("schema of %s %s: %w", k.APIVersion, k.Kind, err)}
 		}
 		ss.schemas[key(k.APIVersion, k.Kind)] = s
 		ss.raw[key(k.APIVersion, k.Kind)] = doc
 		ss.kinds = append(ss.kinds, k)
 	}
 	return ss, nil
+}
+
+// LoadError is a schema file that does not load.
+type LoadError struct {
+	// File is the file's name in its directory.
+	File string
+	err  error
+}
+
+func (e *LoadError) Error() string { return e.err.Error() }
+func (e *LoadError) Unwrap() error { return e.err }
+
+// noLoader fetches no schema: a schema may refer to itself, the image's other schemas and the
+// JSON Schema metaschemas, which the compiler holds, but never to a file or a URL, which the
+// compiler would otherwise read, as root on a node, for schemas its reader chose.
+type noLoader struct{}
+
+func (noLoader) Load(url string) (any, error) {
+	return nil, fmt.Errorf("a schema may refer only to the image's schemas, not to %s", url)
 }
 
 // fileName is the name a schema of k must have, as modules/node/kinds/schema.nix also builds it.
@@ -195,7 +216,7 @@ func (e *ValidationError) Error() string {
 // messages could show values the reader may not see.
 func (e *ValidationError) Redacted() string {
 	if e.err == nil {
-		return fmt.Sprintf("%s %q: no schema of the kind %s of apiVersion %s", e.Kind, e.Name, e.Kind, e.APIVersion)
+		return fmt.Sprintf("%s %q: the image has no schema of its kind of apiVersion %s", e.Kind, e.Name, e.APIVersion)
 	}
 	verr, ok := e.err.(*jsonschema.ValidationError)
 	if !ok {
@@ -207,9 +228,21 @@ func (e *ValidationError) Redacted() string {
 		if keyword == "" {
 			keyword = "schema"
 		}
-		lines = append(lines, fmt.Sprintf("- at '/%s': %s", strings.Join(leaf.InstanceLocation, "/"), keyword))
+		lines = append(lines, fmt.Sprintf("- at '%s': %s", pointer(leaf.InstanceLocation), keyword))
 	}
+	slices.Sort(lines)
+	lines = slices.Compact(lines)
 	return fmt.Sprintf("%s %q: %s", e.Kind, e.Name, strings.Join(lines, "\n"))
+}
+
+// pointer renders an instance location as a JSON pointer, as the library's messages do: ” for
+// the document itself.
+func pointer(location []string) string {
+	var b strings.Builder
+	for _, token := range location {
+		b.WriteString("/" + strings.NewReplacer("~", "~0", "/", "~1").Replace(token))
+	}
+	return b.String()
 }
 
 // Image is the config contract of one image build directory.
@@ -303,6 +336,8 @@ func explain(err error) string {
 	for _, leaf := range leafCauses(verr) {
 		lines = append(lines, "- "+leaf.Error())
 	}
+	// The causes come in the order the library walks maps in, which varies from run to run.
+	slices.Sort(lines)
 	return strings.Join(lines, "\n")
 }
 

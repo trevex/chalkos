@@ -29,70 +29,102 @@ func (s *Schemas) Default(doc any) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("does not accept kind %q of apiVersion %q", kind, apiVersion)
 	}
-	return fill(sch, doc), nil
+	return fill(sch, doc, 0)
 }
 
-func fill(sch *jsonschema.Schema, v any) any {
+// maxDepth bounds how deep Default follows a schema, in nested values and in $ref chains. A
+// schema that refers to itself, as one its reader chose may, would otherwise fill groups of
+// options without end, or follow its $refs round and round.
+const maxDepth = 128
+
+var errTooDeep = fmt.Errorf("the schema nests deeper than %d levels, or refers to itself without end", maxDepth)
+
+func fill(sch *jsonschema.Schema, v any, depth int) (any, error) {
+	if depth > maxDepth {
+		return nil, errTooDeep
+	}
 	// A schema with $ref carries no other keyword of its own: the generators never emit both.
-	for sch.Ref != nil {
-		sch = sch.Ref
+	sch, err := deref(sch)
+	if err != nil {
+		return nil, err
 	}
 	switch v := v.(type) {
 	case map[string]any:
 		if len(sch.AnyOf) > 0 {
-			return fill(branchFor(sch.AnyOf, v), v)
+			return fill(branchFor(sch.AnyOf, v), v, depth+1)
 		}
 		out := maps.Clone(v)
 		for name, prop := range sch.Properties {
+			var filled any
+			var err error
 			if val, ok := out[name]; ok {
-				out[name] = fill(prop, val)
+				filled, err = fill(prop, val, depth+1)
 			} else if d := defaultOf(prop); d != nil {
-				out[name] = fill(prop, deepCopy(*d))
+				filled, err = fill(prop, deepCopy(*d), depth+1)
 			} else if isGroup(prop) {
 				// A group of options, such as encryption, has no default of its own but exists
 				// whenever its options have defaults, as in the module system.
-				if group := fill(prop, map[string]any{}).(map[string]any); len(group) > 0 {
-					out[name] = group
+				if filled, err = fill(prop, map[string]any{}, depth+1); err == nil && len(filled.(map[string]any)) == 0 {
+					continue
 				}
+			} else {
+				continue
 			}
+			if err != nil {
+				return nil, err
+			}
+			out[name] = filled
 		}
 		if extra, ok := sch.AdditionalProperties.(*jsonschema.Schema); ok {
 			for name, val := range out {
 				if _, declared := sch.Properties[name]; !declared {
-					out[name] = fill(extra, val)
+					if out[name], err = fill(extra, val, depth+1); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}
-		return out
+		return out, nil
 	case []any:
 		if len(sch.AnyOf) > 0 {
-			return fill(branchFor(sch.AnyOf, v), v)
+			return fill(branchFor(sch.AnyOf, v), v, depth+1)
 		}
 		if sch.Items2020 == nil {
-			return v
+			return v, nil
 		}
 		out := make([]any, len(v))
 		for i, item := range v {
-			out[i] = fill(sch.Items2020, item)
+			if out[i], err = fill(sch.Items2020, item, depth+1); err != nil {
+				return nil, err
+			}
 		}
-		return out
+		return out, nil
 	default:
-		return v
+		return v, nil
 	}
+}
+
+// deref follows sch's $refs to the schema they end at.
+func deref(sch *jsonschema.Schema) (*jsonschema.Schema, error) {
+	for hops := 0; sch.Ref != nil; hops++ {
+		if hops > maxDepth {
+			return nil, errTooDeep
+		}
+		sch = sch.Ref
+	}
+	return sch, nil
 }
 
 // isGroup tells whether a schema is a plain object of declared properties, as a group of options
 // converts to, and not a map or a nullable value.
 func isGroup(sch *jsonschema.Schema) bool {
-	for sch.Ref != nil {
-		sch = sch.Ref
-	}
-	return len(sch.AnyOf) == 0 && len(sch.Properties) > 0
+	sch, err := deref(sch)
+	return err == nil && len(sch.AnyOf) == 0 && len(sch.Properties) > 0
 }
 
 // defaultOf returns the default a property's schema gives, following $ref.
 func defaultOf(sch *jsonschema.Schema) *any {
-	for sch.Default == nil && sch.Ref != nil {
+	for hops := 0; sch.Default == nil && sch.Ref != nil && hops <= maxDepth; hops++ {
 		sch = sch.Ref
 	}
 	return sch.Default
@@ -107,7 +139,7 @@ func branchFor(branches []*jsonschema.Schema, v any) *jsonschema.Schema {
 	}
 	for _, b := range branches {
 		r := b
-		for r.Ref != nil && r.Types == nil {
+		for hops := 0; r.Ref != nil && r.Types == nil && hops <= maxDepth; hops++ {
 			r = r.Ref
 		}
 		if hasType(r.Types, want) {

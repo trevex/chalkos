@@ -174,6 +174,18 @@ func checkSecretRefs(docs []Document, s *schema.Schemas, secrets map[string]map[
 // whose declared type matches the value's own: null, object or array. A key or index the schema
 // says nothing about is left alone, however it is shaped.
 func walkSchemaRefs(defs map[string]any, sch map[string]any, v any, f func(SecretRef) error) error {
+	return walkRefs(defs, sch, v, f, 0)
+}
+
+// maxSchemaDepth bounds how deep walkSchemaRefs follows a schema, in nested values, anyOf
+// branches and $ref chains. A schema that refers to itself, as one its reader chose may, would
+// otherwise be followed without end.
+const maxSchemaDepth = 128
+
+func walkRefs(defs map[string]any, sch map[string]any, v any, f func(SecretRef) error, depth int) error {
+	if depth > maxSchemaDepth {
+		return fmt.Errorf("the schema nests deeper than %d levels, or refers to itself without end", maxSchemaDepth)
+	}
 	sch = followRef(defs, sch)
 	if marked, _ := sch["x-chalkos-secret-ref"].(bool); marked {
 		if v == nil {
@@ -187,7 +199,7 @@ func walkSchemaRefs(defs map[string]any, sch map[string]any, v any, f func(Secre
 	}
 	if branches, ok := sch["anyOf"].([]any); ok {
 		branch, _ := pickBranch(defs, branches, v).(map[string]any)
-		return walkSchemaRefs(defs, branch, v, f)
+		return walkRefs(defs, branch, v, f, depth+1)
 	}
 	switch val := v.(type) {
 	case map[string]any:
@@ -201,7 +213,7 @@ func walkSchemaRefs(defs map[string]any, sch map[string]any, v any, f func(Secre
 			if prop == nil {
 				continue
 			}
-			if err := walkSchemaRefs(defs, prop, item, f); err != nil {
+			if err := walkRefs(defs, prop, item, f, depth+1); err != nil {
 				return err
 			}
 		}
@@ -211,7 +223,7 @@ func walkSchemaRefs(defs map[string]any, sch map[string]any, v any, f func(Secre
 			return nil
 		}
 		for _, item := range val {
-			if err := walkSchemaRefs(defs, items, item, f); err != nil {
+			if err := walkRefs(defs, items, item, f, depth+1); err != nil {
 				return err
 			}
 		}
@@ -220,9 +232,10 @@ func walkSchemaRefs(defs map[string]any, sch map[string]any, v any, f func(Secre
 }
 
 // followRef resolves a local "$ref": "#/$defs/Name", as the converter emits for a repeated
-// section, to the definition it names.
+// section, to the definition it names. A chain longer than maxSchemaDepth, as a cycle is, ends
+// at the $ref it stopped at, which describes nothing.
 func followRef(defs map[string]any, sch map[string]any) map[string]any {
-	for {
+	for range maxSchemaDepth {
 		ref, ok := sch["$ref"].(string)
 		if !ok {
 			return sch
@@ -234,6 +247,7 @@ func followRef(defs map[string]any, sch map[string]any) map[string]any {
 		}
 		sch = next
 	}
+	return sch
 }
 
 // pickBranch returns the anyOf branch whose declared type matches v's JSON type: null for a nil
