@@ -58,7 +58,7 @@ An entry with a tries counter in its name is being counted;
 The initrd prepares the root file system in four steps.
 
 - systemd-repart compares the boot disk with the image's partition definitions. On the first boot
-  of a role image it adds [slot](../reference/glossary.md#slot) B and an empty STATE; on later
+  of an image it adds [slot](../reference/glossary.md#slot) B and an empty STATE; on later
   boots everything is there and it changes nothing. It runs only on the disk systemd-boot was
   loaded from, which udev marks, so a second disk with the same image is never touched.
 - The kernel command line's `usrhash=` names the [store](../reference/glossary.md#store)'s
@@ -87,8 +87,8 @@ Stage 2 starts the node's own services in order:
 3. chalkd starts. It finds the `installed` marker on STATE and serves in
    [normal mode](../reference/glossary.md#normal-mode), or finds none and serves in
    [maintenance mode](../reference/glossary.md#maintenance-mode).
-4. On a Kubernetes role, `chalkos-kubernetes.service` waits for the node's addresses and prepares
-   its certificates and configuration, and containerd and the kubelet follow.
+4. On an image with Kubernetes, `chalkos-kubernetes.service` waits for the node's addresses and
+   prepares its certificates and configuration, and containerd and the kubelet follow.
 5. On a boot that systemd-boot counts, `chalkos-health.service` decides whether the boot is
    healthy.
 

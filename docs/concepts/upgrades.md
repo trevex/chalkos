@@ -24,7 +24,8 @@ installed like any other.
 The node receives three parts of the image, in this order:
 
 - the [store](../reference/glossary.md#store)'s data, the compressed erofs file system that the
-  [root hash](../reference/glossary.md#root-hash) covers, about 250 MiB for a Kubernetes role;
+  [root hash](../reference/glossary.md#root-hash) covers, about 250 MiB for an image with
+  Kubernetes;
 - the store's [dm-verity](../reference/glossary.md#dm-verity) hash tree, about 2 MiB;
 - the [UKI](../reference/glossary.md#uki), about 44 MiB, signed for
   [Secure Boot](../reference/glossary.md#secure-boot).

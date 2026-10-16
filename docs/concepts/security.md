@@ -61,11 +61,11 @@ Before a node writes an image's UKI or boot loader, [chalkd](../reference/glossa
 checks its signature against the firmware's db and dbx as the firmware will at the next boot,
 when Secure Boot is enforced. It refuses a binary that no db certificate signed, one whose digest
 or any certificate of its signature dbx lists, and any binary at all while dbx holds an entry it
-cannot read. A node therefore never reboots into an image its firmware would refuse. When the
-[cluster definition](../reference/glossary.md#cluster-definition) sets
-`chalkos.secureBoot.signerCertificate`,
-chalkctl also refuses to upgrade with an image this certificate's key did not sign. The
-[signing guide](../guides/secure-boot-signing.md) creates the key and enrols it.
+cannot read. A node therefore never reboots into an image its firmware would refuse. chalkctl
+checks earlier, on the operator's machine, when `install` or `upgrade` gets `--sign-cert`: it
+refuses an image whose UKI or boot loader that certificate's key did not sign before it sends
+any part of it. Without `--sign-cert` chalkctl checks no signature and leaves the check to
+the node. The [signing guide](../guides/secure-boot-signing.md) creates the key and enrols it.
 
 ## What does Secure Boot do for upgrades?
 
@@ -202,11 +202,11 @@ secrets over it, so the config, the node certificate and the Kubernetes share go
 whose fingerprint was printed. Every command that reaches a node in maintenance mode accepts
 `--insecure`.
 
-The node in turn decides whom it accepts. An image built with
-[`osCA`](../reference/options.md#osca), a role image or the
-cluster's [installer](../reference/glossary.md#installer), accepts in maintenance mode only
-clients with a certificate of that OS CA, so only the holder of the secrets file or a client file
-can install it. An image built without one accepts any client as an admin until it is installed.
+The node in turn decides whom it accepts. The images and the
+[installer](../reference/glossary.md#installer) of an mkImages call with
+[`osCA`](../reference/options.md#osca) carry that OS CA and accept in maintenance mode only
+clients with a certificate from it, so only the holder of the secrets file or a client file can
+install them. An image built without one accepts any client as an admin until it is installed.
 Use images with the OS CA on any network other people can reach.
 
 ## Can anyone log in to a node?
@@ -221,12 +221,10 @@ tools to an image for that.
 
 ## Limits
 
-- chalkos does not enrol Secure Boot keys. The operator enrols the db certificate in each machine's
-  firmware, as the [signing guide](../guides/secure-boot-signing.md) shows; only [chalklab](../reference/glossary.md#chalklab) enrols
-  keys, its own, in its virtual machines. The options
-  `chalkos.secureBoot.enrollment` and
-  `chalkos.secureBoot.require` are declared,
-  but nothing reads them yet, and installing does not check that Secure Boot is on.
+- chalkos does not enrol Secure Boot keys. The operator enrols the db certificate in each
+  machine's firmware, as the [signing guide](../guides/secure-boot-signing.md) shows; only
+  [chalklab](../reference/glossary.md#chalklab) enrols keys, its own, in its virtual machines.
+  Installing does not check that Secure Boot is on.
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it
   expires or its CA is rotated; rotation is how access is revoked, as
   [Certificates](certificates.md) explains.

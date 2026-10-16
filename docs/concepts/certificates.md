@@ -94,7 +94,7 @@ runs `kubectl exec`, comes from a request that chalkd on a control plane approve
 `/var/lib/kubelet/pki` on [VAR](../reference/glossary.md#var).
 
 An admin kubeconfig from [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) holds a
-client certificate in the group `chalkos:cluster-admins`, which the built-in manifests bind to
+client certificate in the group `chalkos:cluster-admins`, which chalkos's RBAC addon binds to
 `cluster-admin`. It is valid for one year unless `--ttl` says otherwise. The group is used instead
 of `system:masters` because RBAC can take a group's access away, which it cannot do for
 `system:masters`.
@@ -118,7 +118,7 @@ kubeconfigs are issued again by hand.
   `chalkos.dev/certificates`, so the kubelet starts each pod again on the new files.
 - Kubelet certificates: the kubelet renews both itself, as above.
 
-Nodes of a role without Kubernetes reach no control plane, so they do not renew their node
+Nodes whose image runs no Kubernetes reach no control plane, so they do not renew their node
 certificate automatically; [`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) does
 it.
 
@@ -144,10 +144,9 @@ it, so the certificates it issues get shorter in its last year.
 
 Certificates are checked against the node's clock, so a node whose clock is off refuses valid
 certificates. Nodes keep time with chrony, authenticated with NTS by default, against the
-Physikalisch-Technische Bundesanstalt's servers `ptbtime1.ptb.de` to `ptbtime3.ptb.de` unless
-`chalkos.time.servers` names others. chrony steps a
-clock that is more than a second off during its first three updates, instead of slewing it for
-hours. The status reports the clock as `time: synchronised to <source>, offset <seconds> s`, or
+Physikalisch-Technische Bundesanstalt's servers `ptbtime1.ptb.de` to `ptbtime3.ptb.de` unless the
+node's [`TimeSync`](../reference/kinds.md#timesync) document names others. chrony steps a clock
+that is more than a second off during its first three updates, instead of slewing it for hours. The status reports the clock as `time: synchronised to <source>, offset <seconds> s`, or
 `time: not synchronised; certificates are checked against this clock`.
 
 ## What if a certificate expired?
@@ -248,7 +247,7 @@ kubeconfigs limit how long a leak matters.
 - There is no revocation of a single certificate; revoking one revokes all of its CA.
 - The CAs live ten years and are not renewed automatically. A CA in its last year shows in the
   status, and rotation replaces it.
-- Nodes of a role without Kubernetes renew their node certificates only through
+- Nodes whose image runs no Kubernetes renew their node certificates only through
   `chalkctl node renew`.
 - Recovering a node whose certificate expired trusts the node's old key, as described above.
 - A control plane holds every Kubernetes CA key and the node CA. Taking one over gives full access
@@ -257,7 +256,7 @@ kubeconfigs limit how long a leak matters.
 
 ## Related pages
 
-- [Security model](security.md): roles, the secrets file and client files.
+- [Security model](security.md): client roles, the secrets file and client files.
 - [Kubernetes on chalkos](kubernetes.md): what the control plane runs with these certificates.
 - [Rotate certificates and CAs](../guides/rotate-certificates.md) and
   [Recover a node](../guides/recover-node.md).
