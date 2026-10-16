@@ -71,7 +71,7 @@ chalkctl also refuses to upgrade with an image this certificate's key did not si
 
 Secure Boot limits what the [operator](../reference/glossary.md#operator) role can install to
 images the db key's holder signed. The [Upgrade](../reference/api.md#method-upgrade) method checks
-that an image belongs to the node's role and platform and that its UKI boots the store it carries.
+that an image is built for the node's platform and that its UKI boots the store it carries.
 It cannot tell an image the cluster's owners built from one somebody else built. Without Secure
 Boot, anyone with an operator certificate can install an image of their own and run it as root,
 with STATE and VAR unlocked, because their keys are sealed to PCR 7 alone. With Secure Boot

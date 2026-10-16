@@ -279,12 +279,13 @@ a cluster setting, not a role:
 ```
 
 The [control planes](../reference/glossary.md#control-plane) apply them with server-side apply
-after chalkos's own objects, at bootstrap and at every boot. They travel in the nodes'
-[config](../reference/glossary.md#config) as `Manifest` documents, which chalkctl generates from
-the setting, so a change to the list leaves the images as they are and reaches the nodes with
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A control plane applies the
-changed list at once, without restarting a unit. An object removed from the list stays in the
-cluster; delete it with kubectl.
+after chalkos's own objects, at bootstrap and at every boot. They travel in the
+[config](../reference/glossary.md#config) of every Kubernetes node as `Addon` documents, which
+chalkctl generates from the setting, so a change to the list leaves the images as they are and
+reaches the nodes with [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A
+control plane applies the changed list at once, without restarting a unit; a worker holds the list
+and applies none of it. An object removed from the list stays in the cluster; delete it with
+kubectl.
 
 ## What a role may not change
 
@@ -294,10 +295,10 @@ below `/var`, which is [VAR](../reference/glossary.md#var), or on a
 [volume](../reference/glossary.md#volume). Within that, a role module can set anything, and a few
 settings break the node:
 
-- chalkd, `chalkos-identity.service`, `chalkos-health.service` and systemd-networkd are what
+- chalkd, `chalkos-config.service`, `chalkos-health.service` and systemd-networkd are what
   install, configure and upgrade the node. A role that disables or replaces them builds, and the
   node then cannot be installed or upgraded.
-- `chalkos.role.name`, `chalkos.role.kubernetes.enable`, `chalkos.platform.name` and
+- `chalkos.variant.name`, `chalkos.role.kubernetes.enable`, `chalkos.platform.name` and
   `chalkos.maintenance.osCA` are set by the role builder from the cluster definition; set
   `chalkos.roles.<role>.kubernetes.enable` and `chalkos.osCA` there instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
@@ -307,7 +308,9 @@ settings break the node:
   `sysinit.target` pulls in failed, so such a unit of yours that fails makes the next upgrade roll
   back. Jobs that timers and sockets start never count.
   [`chalkos.upgrade.healthIgnoreUnits`](../reference/options.md#chalkosupgradehealthignoreunits)
-  lists units whose failure does not count.
+  lists units whose failure does not count. The unit that applies the config is
+  `chalkos-config.service`, which earlier versions named `chalkos-identity.service`; a list that
+  names the old unit ignores nothing and needs the new name.
 
 ## Keep the image within its slot
 

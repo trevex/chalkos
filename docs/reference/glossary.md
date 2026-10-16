@@ -121,7 +121,7 @@ of a group and a version, a `kind`, a `metadata.name` and a `spec`. The schema o
 
 ## Contract { #contract }
 
-What an image accepts as [config](#config): the role and platform it was built for, the JSON
+What an image accepts as [config](#config): the variant and platform it was built for, the JSON
 Schemas of its [kinds](#kind) and what it fixes about Kubernetes. The image carries the schemas in
 `/etc/chalkos/schemas` and the Kubernetes facts in `/etc/chalkos/kubernetes/image.json`, and its
 image directory has them as `schemas/` and `image.json`. chalkctl reads the contract from the
@@ -331,7 +331,8 @@ The unit an [image](#image) is built for: the NixOS modules its nodes run, decla
 [`chalkos.roles`](options.md#chalkosroles) with storage defaults and whether its images run
 Kubernetes. Each role becomes one image per platform. Control planes and workers of a role boot the
 same image; each node's kind makes it one or the other. See
-[The cluster definition](../concepts/cluster-definition.md).
+[The cluster definition](../concepts/cluster-definition.md). A role's images have the role's name as
+their [variant](#variant).
 
 ## Rollback { #rollback }
 

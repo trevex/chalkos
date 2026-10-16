@@ -44,7 +44,7 @@ Kubernetes:
 The image fixes what it ships: the Kubernetes release, the images of its components and the pod
 network, recorded in `/etc/chalkos/kubernetes/image.json`. The rest of the cluster's settings reach
 the node as its [config](../reference/glossary.md#config): chalkctl generates the node's
-`Kubernetes`, `Flannel`, `RegistryMirror` and `Manifest` documents from the
+`Kubernetes`, `Flannel`, `RegistryMirror` and `Addon` documents from the
 [cluster definition](../reference/glossary.md#cluster-definition), and
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers them. chalkd builds
 the node's cluster from its `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and
@@ -198,7 +198,7 @@ request pending. [Certificates](certificates.md) lists every certificate and its
 After the API server is ready, chalkd applies a list of objects with server-side apply, as field
 manager `chalkd`, taking over fields other managers changed, so chalkos's objects always win.
 chalkd renders the first four from the node's cluster, and the last are the objects of the node's
-`Manifest` documents:
+`Addon` documents:
 
 1. RBAC: `chalkos:cluster-admins` bound to `cluster-admin` for admin kubeconfigs, the binding that
    lets kubelets renew their own client certificates, and the API server's access to kubelets.
@@ -208,14 +208,16 @@ chalkd renders the first four from the node's cluster, and the last are the obje
 4. CoreDNS, at the primary family's address of
    [`dnsIPs`](../reference/options.md#chalkosclusterkubernetesdnsipsipv4).
 5. The objects of [`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests),
-   in their order, which chalkctl turns into the node's `Manifest` documents.
+   in their order, which chalkctl turns into an `Addon` document of every Kubernetes node.
 
 chalkd applies the list at bootstrap and again on every bootstrapped control plane each time it
 starts its Kubernetes work: at boot, after the node's cluster changed, and when
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers changed `Manifest`
-documents, which restarts no unit. An image upgrade or a changed config therefore rolls out changed
-add-ons without a separate step. An object a `Manifest` document no longer holds is not deleted.
-Then chalkd runs the approver of kubelet serving certificates.
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers changed `Addon`
+documents, which restarts no unit. Every Kubernetes node holds the `Addon` documents; only control
+planes apply them, and a worker whose `Addon` documents change restarts nothing. An image upgrade
+or a changed config therefore rolls out changed add-ons without a separate step. An object an
+`Addon` document no longer holds is not deleted. Then chalkd runs the approver of kubelet serving
+certificates.
 
 ```nix
 chalkos.cluster.manifests = [

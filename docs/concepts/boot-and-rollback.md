@@ -81,7 +81,7 @@ The initrd prepares the root file system in four steps.
 
 Stage 2 starts the node's own services in order:
 
-1. `chalkos-identity.service` applies the [config](../reference/glossary.md#config) on STATE
+1. `chalkos-config.service` applies the [config](../reference/glossary.md#config) on STATE
    before networkd starts: hostname, network units, time servers and the documents services read.
 2. systemd-networkd brings up the network.
 3. chalkd starts. It finds the `installed` marker on STATE and serves in
@@ -196,7 +196,7 @@ stops at a node that rolled back, as [Upgrades](upgrades.md) describes.
 
 The health check runs late in the boot, after chalkd starts. A counted boot that hangs before
 then is never decided by it: for example at the initrd's console prompt for a disk's second key,
-or in `chalkos-identity.service`. The node stays in that boot until someone resets it. Only then
+or in `chalkos-config.service`. The node stays in that boot until someone resets it. Only then
 does systemd-boot take the next try, or fall back once the tries are used up. A BMC's power reset,
 or a hypervisor's, is enough.
 

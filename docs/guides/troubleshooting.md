@@ -79,7 +79,7 @@ The units that matter most:
 | Unit | Does |
 | --- | --- |
 | `chalkd.service` | The node agent: installs, upgrades, config, certificates, joining etcd, the VIP. |
-| `chalkos-identity.service` | Applies the node's config at boot: hostname, network, time servers, the documents services read. |
+| `chalkos-config.service` | Applies the node's config at boot: hostname, network, time servers, the documents services read. |
 | `chalkos-kubernetes.service` | Picks the node's addresses and writes the Kubernetes certificates and configuration before the kubelet starts. |
 | `chalkos-health.service` | Decides whether a boot after an upgrade is healthy. |
 | `kubelet.service` | The kubelet, which runs the static pods of etcd and the control plane, and every pod. |

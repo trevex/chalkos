@@ -28,7 +28,8 @@ type Metadata struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	ID            string `json:"id"`
 	Version       string `json:"version"`
-	// Variant is the name the image is built as; empty for the installer, which is no variant.
+	// Variant is the name the image is built as: a cluster definition's role images carry the
+	// role's name.
 	Variant string `json:"variant"`
 	// Platform is empty for the installer, which serves every platform.
 	Platform string `json:"platform"`

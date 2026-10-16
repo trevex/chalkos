@@ -28,7 +28,7 @@ Go code never evaluates Nix itself. The [cluster definition](../reference/glossa
   documents and the image's `image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
   chalkos's add-ons (RBAC, kube-proxy, flannel, CoreDNS) and the kubelet's configuration from it
   in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the
-  `Manifest` documents after the add-ons.
+  `Addon` documents after the add-ons.
 - Files the [role](../reference/glossary.md#role) image carries in `/etc/chalkos`, written by
   the node modules: what the image fixes about Kubernetes in `kubernetes/image.json`, the system
   region's repart definitions in `repart.d`, the [OS CA](../reference/glossary.md#os-ca)
@@ -61,7 +61,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalkctl` | Runs `chalkctl.NewCommand()` with a context that Ctrl+C cancels. |
 | `cmd/chalklab` | The same for `chalklab.NewCommand()`. |
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
-| `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-identity` (chalkos-identity.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
+| `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
 | `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, and runs as a systemd generator for the other volumes. |
 | `cmd/docgen` | Writes the command reference and checks the commands the documentation shows. |
@@ -78,7 +78,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `client` | Connections to chalkd: by fingerprint in [maintenance mode](../reference/glossary.md#maintenance-mode), by the OS CA otherwise. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, the translation into the identity the node applies, and the documents chalkctl generates from the manifest. |
 | `config/store` | Keeps a node's config set on STATE and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets their consumers load as credentials. |
-| `identity` | Applies what a node's config translates to: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the units that read them, and tells which units to restart. |
+| `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads, and the kinds of Kubernetes nodes. |
 | `image` | Reads the partitions of a raw image from `repart-output.json`. |
 | `imagesign` | Signs an image's boot loader and UKIs, and copies them off the image. |
 | `install` | Installs a node in place or from the [installer](../reference/glossary.md#installer), step by step and repeatable. |
@@ -91,8 +91,9 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs. |
 | `kubernetes/vip` | Adds a VIP to an interface and announces it. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the [lab](../reference/glossary.md#lab)'s supervisor, for chalklab and the end-to-end tests. |
-| `manifest` | The manifest's Go types. |
+| `manifest` | The manifest's Go types, which chalkctl and chalklab read; nothing on a node does. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
+| `nodeconfig` | Applies the node's stored config, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the units that read them, and tells which units to restart. |
 | `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
 | `storage` | Storage sections, disk references and pins, repart definitions, change classification. |

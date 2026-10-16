@@ -160,9 +160,12 @@ A [node](../reference/glossary.md#node) is a machine of the cluster under
 | [`time.servers`](../reference/options.md#chalkosnodestimeservers) | the cluster's | Time servers that replace the cluster's |
 
 A node's name is its name in Kubernetes too, which its kubelet certificate carries. Changing a
-node's role or platform means installing it again: the node refuses an image of another role or
-platform than the image it runs, and chalkctl refuses to deliver config to a node whose image
-has another role or platform than the definition gives it.
+node's platform means installing it again: the node refuses an image of another platform than the
+image it runs, and chalkctl refuses to deliver config to a node whose image is built for another
+platform than the definition gives it. A node changes its role with an upgrade:
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) gives it the image of the role the
+definition now gives it, and the node checks its stored config against that image before the image
+becomes its next boot.
 
 ## What is a platform?
 
@@ -290,17 +293,18 @@ with sections and keys in camelCase.
 
 Before it sends anything, chalkctl checks the documents against the image they are for: the
 image directory's schemas and `image.json` when it installs from the installer, and otherwise
-those of the image the node runs, which the node returns with the image's role and platform through
-its [Contract](../reference/api.md#method-contract) method. chalkctl refuses an image of another
-role or platform than the cluster definition gives the node. It then translates the
-documents as chalkd does and refuses to deliver them unless they give back what the cluster
-definition declares for the node, so the config a node applies matches its definition.
+those of the image the node runs, which the node returns with the image's variant and platform
+through its [Contract](../reference/api.md#method-contract) method. chalkctl refuses an image of
+another platform than the cluster definition gives the node and does not compare the variant. It
+then translates the documents as chalkd does and refuses to deliver them unless they give back
+what the cluster definition declares for the node, so the config a node applies matches its
+definition.
 
 chalkctl delivers the config at install, and later with
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md); the node's certificates and
 secrets travel beside it in the same request. [chalkd](../reference/glossary.md#chalkd) checks
 the documents again, fills in the schemas' defaults and keeps them on
-[STATE](../reference/glossary.md#state). At every boot, `chalkos-identity.service` applies them
+[STATE](../reference/glossary.md#state). At every boot, `chalkos-config.service` applies them
 before the network starts:
 
 - it writes the networkd units to `/run/systemd/network`, where they take precedence over the

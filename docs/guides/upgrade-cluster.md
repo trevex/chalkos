@@ -62,13 +62,14 @@ Then make the change itself:
 
 ## Decide how the images are built and signed
 
-Without `--image`, `chalkctl upgrade` asks each node which role and platform it runs, groups
-the nodes by them and builds each group's image from the flake with `nix build`, so it runs in
-the flake's directory or with `--flake`.
+Without `--image`, `chalkctl upgrade` asks each node which platform it runs, groups the nodes by
+the role the cluster definition gives them and that platform, and builds each group's image from
+the flake with `nix build`, so it runs in the flake's directory or with `--flake`.
 
 With `--image`, it installs an image you built before, a raw image with `repart-output.json`
-next to it or the directory `nix build` makes, on the nodes of that image's role and platform.
-Nodes of the role on another platform are skipped and named. Run it once per role.
+next to it or the directory `nix build` makes, on the nodes of that image's role, or on those
+`--nodes` names whatever their role. Nodes on another platform are skipped and named. Run it once
+per role.
 
 ```sh
 nix build .#chalkos.<cluster>.roles.node.images.metal --out-link node-image

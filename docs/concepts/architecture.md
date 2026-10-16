@@ -124,7 +124,7 @@ These units do chalkos's work at every boot:
 | --- | --- | --- |
 | `chalkos-state.service` | initrd | Unlocks and mounts STATE, with the TPM or with the second key the console asks for |
 | `chalkos-storage.service` | initrd | Creates the volumes recorded on STATE and mounts VAR |
-| `chalkos-identity.service` | before networkd | Applies the config on STATE: hostname, network units, time servers, the documents in `/run/chalkos/config` and the secrets their consumers read |
+| `chalkos-config.service` | before networkd | Applies the config on STATE: hostname, network units, time servers, the documents in `/run/chalkos/config` and the secrets their consumers read |
 | `chalkd.service` | after the network | Serves the node API and carries out its requests |
 | `chalkos-kubernetes.service` | on Kubernetes roles, once the network is online | Waits for the node's addresses and prepares its Kubernetes certificates, kubeconfigs and kubelet flags |
 | `chalkos-health.service` | only on a boot that systemd-boot counts | Decides whether a new image is healthy |
@@ -242,8 +242,8 @@ sequenceDiagram
 ```
 
 Before anything is written, the installer checks the config against the image's schemas,
-translates it for the image's role and platform, and checks that the image belongs to the
-config's cluster and to the machine's architecture. With Secure Boot enforced, it also checks the
+translates it for the image's platform, and checks that the image belongs to the config's cluster
+and to the machine's architecture. With Secure Boot enforced, it also checks the
 [UKI](../reference/glossary.md#uki)'s and the boot loader's signatures against the firmware's
 [db and dbx](../reference/glossary.md#db-and-dbx), as the firmware will at the next boot. The
 installer takes a disk on which blkid finds no signature, or one holding an unfinished install of
@@ -257,7 +257,7 @@ about 300 MiB for a Kubernetes role, instead of the multi-gigabyte raw image.
 ### First boot in normal mode
 
 The node reboots into its role image. The initrd unseals STATE and VAR with the TPM,
-`chalkos-identity.service` applies the config, and chalkd finds the `installed` marker and
+`chalkos-config.service` applies the config, and chalkd finds the `installed` marker and
 starts in normal mode with the node certificate from STATE.
 
 ### Joining Kubernetes

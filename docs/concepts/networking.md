@@ -18,7 +18,7 @@ NixOS's `systemd.network` options: `networks`, `netdevs` and `links`. chalkos re
 files with the role image's own NixOS renderer, so a unit means on the node what it means on
 NixOS. chalkctl reads each unit back into a `Network`, `NetDev` or `Link` document of the node's
 config, whose sections and keys are networkd's in camelCase, and checks that the document
-renders back into the same unit, as chalkd renders it on the node. At every boot `chalkos-identity.service` writes the units from the config
+renders back into the same unit, as chalkd renders it on the node. At every boot `chalkos-config.service` writes the units from the config
 on [STATE](../reference/glossary.md#state) to `/run/systemd/network`, where they take precedence
 over the image's.
 

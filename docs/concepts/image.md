@@ -98,13 +98,13 @@ The UKI is one EFI binary with four parts that matter here:
 
 Its os-release fields tell [chalkd](../reference/glossary.md#chalkd) what an image is before it
 installs it. chalkd reads them from the UKI, whose signature covers them, and refuses an image
-whose fields do not match the node:
+whose ID or platform does not match the node:
 
 | Field | Value |
 | --- | --- |
 | `IMAGE_ID` | `chalkos`, or `chalkos-installer` on the installer |
 | `IMAGE_VERSION` | the [image version](#what-may-an-image-version-be) |
-| `CHALKOS_ROLE` | the role's name, absent on the installer |
+| `CHALKOS_VARIANT` | the image's [variant](../reference/glossary.md#variant), the role's name; absent on the installer |
 | `CHALKOS_PLATFORM` | the platform's name, absent on the installer |
 | `CHALKOS_BOOT_TRIES` | [`chalkos.upgrade.bootTries`](../reference/options.md#chalkosupgradeboottries) of the image |
 

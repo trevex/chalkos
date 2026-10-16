@@ -457,7 +457,7 @@ Creating debugging pod node-debugger-w1-lw2hn with container debugger on node w1
 ...
 CHALKOS_BOOT_TRIES=3
 CHALKOS_PLATFORM=kvm
-CHALKOS_ROLE=node
+CHALKOS_VARIANT=node
 ...
 IMAGE_ID=chalkos
 IMAGE_VERSION="0.2.0"
