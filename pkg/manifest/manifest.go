@@ -98,8 +98,9 @@ type Node struct {
 // Identity is the node's identity without secrets, as delivered to the node.
 type Identity struct {
 	Hostname string `json:"hostname"`
-	// Cluster, Role and Platform are the cluster, the role and the platform the node's image is
-	// built for; the installer refuses an image of others, an installed node an identity of others.
+	// Cluster is the cluster's name, which the node's Cluster document carries. Role and Platform
+	// are the role and the platform the node's image is built for; the installer refuses an image
+	// of others, an installed node an identity of others.
 	Cluster  string         `json:"cluster"`
 	Role     string         `json:"role"`
 	Platform string         `json:"platform"`
