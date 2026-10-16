@@ -319,7 +319,9 @@ evaluation checks against the kind's options, or as files below `/run/chalkos/co
 the secrets they reference as its systemd credentials `secret_<secret>.<key>`. When
 `chalkctl apply-config` changes a document of one of its kinds, or a `Secret` one of them
 references, chalkd restarts the service, unless it sets
-[`restartOnChange = false`](../reference/options.md#chalkosconsumersrestartonchange).
+[`restartOnChange = false`](../reference/options.md#chalkosconsumersrestartonchange). It
+restarts a service that runs or stays active after it ran, and starts a failed one again, since
+the new config may be what it lacked; a service that never started or was stopped stays so.
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows whether a node runs the config the
 cluster definition gives, by comparing the SHA-256 of the documents it would deliver with the

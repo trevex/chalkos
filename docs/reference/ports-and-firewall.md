@@ -7,17 +7,17 @@ description: "Every port a chalkos node listens on, who needs to reach it, and h
 
 This page lists the ports a chalkos node accepts connections on, the ports its services listen
 on locally, the nftables tables on a node and the connections a node makes. The firewall rules
-come from `modules/node/chalkd.nix`, `modules/node/kubernetes.nix` and
-`modules/node/vxlan-rule.nix`; the listeners from `cmd/chalkd`,
-`pkg/kubernetes/manifests/manifests.go` and the cluster's Kubernetes modules.
+come from `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
+`modules/node/controlplane-ports.nix` and `modules/node/vxlan-rule.nix`; the listeners from
+`cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go` and the cluster's Kubernetes modules.
 [Networking](../concepts/networking.md) explains the network design and
 [Security model](../concepts/security.md) what each listener trusts.
 
 ## Open ports
 
 The firewall accepts new connections on these ports alone. Every node has the first; the others
-depend on the [role](glossary.md#role)'s Kubernetes kind (`controlplane`, `worker` or none)
-and on the CNI.
+depend on whether the image has Kubernetes, on the node's type (`Node.spec.type`:
+`controlplane` or `worker`) and on the CNI.
 
 | Port | Protocol | Service | Nodes | Connects to it |
 | --- | --- | --- | --- | --- |
@@ -29,8 +29,8 @@ and on the CNI.
 | 30000–32767 | TCP | NodePort services | control planes and workers | clients of NodePort services |
 | 8472 | UDP | flannel's VXLAN | control planes and workers, with flannel | the other nodes |
 
-Ports 2379 and 2380 accept only certificates of the cluster's etcd CA, but the firewall opens them
-to every source, not only to the other control planes' addresses.
+Ports 2379 and 2380 accept only certificates of the cluster's etcd CA, but a control plane's
+firewall opens them to every source, not only to the other control planes' addresses.
 
 The firewall opens the NodePort range for TCP only.
 
@@ -49,7 +49,11 @@ when that list is set. The rule has three parts:
 
 With source ranges set, a `forward` chain in the same table also drops VXLAN that pods send
 through the node to those ranges: the node masquerades pod traffic behind its own address,
-which is in the ranges, so other nodes would take it for this node's.
+which is in the ranges, so other nodes would take it for this node's. The chain takes the pod
+range of each family in `ipFamilies` and the source ranges from the node's `Kubernetes` document
+on every run, and skips ranges of a family the image does not use. While those ranges are
+unknown, because the node's config holds no `Kubernetes` document or chalkcfg cannot read it, or
+when they are not valid ranges, the chain drops all UDP 8472 the node forwards.
 
 `chalkos-vxlan-rule` fills the table from `/run/chalkos/kubernetes/vxlan`, which chalkd writes
 once it picked the node's addresses at boot. Without that file, or with one it cannot parse, the
@@ -90,13 +94,14 @@ table and leaves the others in place.
 
 | Table | Owner | Contents |
 | --- | --- | --- |
-| `inet nixos-fw` | NixOS firewall | The input policy: drop, except for the loopback interface, established and related connections, the open ports above, ICMP echo requests, ICMPv6 other than redirects and node information queries, DHCPv6 replies to link-local addresses, and VXLAN carrying the mark. A reverse-path check in prerouting drops packets from a source address the node has no route back to. |
-| `inet chalkos-vxlan` | chalkos | The VXLAN mark, its clearing and, with source ranges, the forward drop. |
+| `inet nixos-fw` | NixOS firewall | The input policy: drop, except for the loopback interface, established and related connections, the open ports above, ICMP echo requests, ICMPv6 other than redirects and node information queries, DHCPv6 replies to link-local addresses, and the control plane's ports and VXLAN carrying their marks. A reverse-path check in prerouting drops packets from a source address the node has no route back to. |
+| `inet chalkos-controlplane` | chalkos | On a control plane, the mark of the control plane's ports and its clearing. |
+| `inet chalkos-vxlan` | chalkos | The VXLAN mark, its clearing and the forward drop. |
 | `ip kube-proxy`, `ip6 kube-proxy` | kube-proxy | Service and NodePort translation, in kube-proxy's nftables mode. |
 | flannel's tables | flanneld | Masquerading of pod traffic, with `EnableNFTables`. |
 | the portmap plugin's table | CNI portmap plugin | Host ports of pods, with its nftables backend. |
 
-The worker's `input-allow` chain, as NixOS renders it for a node with flannel:
+The `input-allow` chain, as NixOS renders it for a node with Kubernetes and flannel:
 
 ```text
 chain input-allow {
@@ -105,11 +110,17 @@ chain input-allow {
    icmp type echo-request  accept comment "allow ping"
    icmpv6 type != { nd-redirect, 139 } accept comment "Accept all ICMPv6 messages except redirects and node information queries (type 139).  See RFC 4890, section 4.4."
    ip6 daddr fe80::/64 udp dport 546 accept comment "DHCPv6 client"
+   tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept
    udp dport 8472 meta mark & 0x01000000 == 0x01000000 accept
 }
 ```
 
-A control plane's chain also accepts 6443, 2379 and 2380.
+The chain also accepts 6443, 2379 and 2380 when they carry the mark `0x02000000`, which the
+table `inet chalkos-controlplane` sets on a node whose `Node.spec.type` is `controlplane`.
+`chalkos-controlplane.service` loads that table, or deletes it on a worker, at boot and whenever
+the node's `Node` document changes. The table clears the bit on every packet the node receives
+before it marks, and again after the firewall's chain, so a network plugin of the cluster's own
+must not use it.
 
 ## Connections a node makes
 

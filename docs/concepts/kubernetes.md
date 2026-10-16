@@ -78,7 +78,10 @@ adds flags.
 
 containerd pulls through the mirrors of
 [`chalkos.cluster.registries.mirrors`](../reference/options.md#chalkosclusterregistriesmirrors),
-tried in order before the registry itself. Mirrors must be `https://` URLs, because nothing
+tried in order before the registry itself. chalkctl delivers them as one `RegistryMirror`
+document per registry, and `chalkos-registry-mirrors.service` writes containerd's
+`/run/containerd/certs.d/<registry>/hosts.toml` from them before containerd starts and whenever
+they change; containerd reads those files on every pull. Mirrors must be `https://` URLs, because nothing
 authenticates what a plain HTTP mirror serves; `allowPlainHTTP` exists for test registries.
 
 ## How does the control plane run?
@@ -89,7 +92,10 @@ issued at every boot into `/run/chalkos/kubernetes/pki`, a tmpfs mounted into th
 `/etc/kubernetes/pki`. Each pod carries a hash of the certificates it mounts in the annotation
 `chalkos.dev/certificates`, so when chalkd renews the certificates the kubelet starts the pod
 again on the new files. etcd keeps its data on [VAR](../reference/glossary.md#var) in
-`/var/lib/etcd`.
+`/var/lib/etcd`, which `chalkos-controlplane.service` makes at boot on a node whose `Node`
+document has the type `controlplane`. The same unit opens the API server's and etcd's ports in
+the firewall on such a node and closes them on a worker, at boot and whenever the `Node`
+document changes, as [Ports and firewall](../reference/ports-and-firewall.md) describes.
 
 The flags are close to kubeadm's, with a few chalkos choices: the API server talks to its node's own
 [etcd member](../reference/glossary.md#etcd-member) only, authorises with `Node,RBAC` and admits with `NodeRestriction`, allows anonymous

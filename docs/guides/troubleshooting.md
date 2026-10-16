@@ -180,7 +180,9 @@ definition.
 Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the mirrors of
 [`chalkos.cluster.registries.mirrors`](../reference/options.md#chalkosclusterregistriesmirrors)
 and then the registry itself. Read `containerd.service`'s log on the node for the URL that
-failed. Mirrors must be `https://` unless
+failed. `chalkos-registry-mirrors.service` writes the mirrors from the node's `RegistryMirror`
+documents to `/run/containerd/certs.d/<registry>/hosts.toml`; its log shows when it could not.
+Mirrors must be `https://` unless
 [`allowPlainHTTP`](../reference/options.md#chalkosclusterregistriesallowplainhttp) is set, and a
 cluster without internet access needs every image in a mirror.
 

@@ -243,11 +243,13 @@ another disk carrying the same image or the same labels for its own.
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
 | `/run/chalkos/chrony/identity.sources` | The time servers of the config, for chrony. |
+| `/run/chalkos/chrony-dhcp/dhcp.sources` | The time servers DHCP announced, for chrony, when the node's `TimeSync` takes them with `spec.dhcp`; empty otherwise. |
+| `/run/containerd/certs.d/<registry>/hosts.toml` | The mirrors of a registry, which containerd reads on every pull, from the node's `RegistryMirror` documents. |
 | `/run/chalkos/kubernetes/manifests` | The static pods chalkd renders on a control plane. |
 | `/run/chalkos/kubernetes/pki` | The control plane's certificates and kubeconfigs. |
 | `/run/chalkos/kubernetes/kubelet` | The kubelet's `kubeconfig`, `config.json`, `flags` and `ca.crt`. |
 | `/run/chalkos/kubernetes/node-ip` | The addresses the node picked this boot, the primary family's first. |
 | `/run/chalkos/kubernetes/vxlan` | The addresses and source ranges the firewall's VXLAN rule accepts. |
-| `/var/lib/etcd` | etcd's data on a control plane. |
+| `/var/lib/etcd` | etcd's data on a control plane, whose directory `chalkos-controlplane.service` makes when the node's `Node.spec.type` is `controlplane`. |
 | `/var/lib/kubelet/pki` | The kubelet's client and serving certificates. |
 | `/var/lib/chalkd/failed-boot` | The log lines of the last boot that was not found healthy. |

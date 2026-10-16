@@ -259,7 +259,8 @@ A network without outbound NTP needs internal servers. Use NTS where your server
 ```
 
 [`chalkos.time.dhcpServers`](../reference/options.md#chalkostimedhcpservers) adds the servers
-DHCP announces, which nothing authenticates.
+DHCP announces, which nothing authenticates. It reaches each node as `spec.dhcp` of its
+`TimeSync` document, so `chalkctl apply-config` turns it on or off without a new image.
 
 ## Plan registry mirrors
 

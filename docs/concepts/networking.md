@@ -190,7 +190,8 @@ carry the mark. No VXLAN is accepted while the addresses are being picked or whe
 narrows this to sources in the given ranges, one or more per family, which must hold every node's
 addresses and may not overlap the pod or service ranges. With them, the node also drops VXLAN that
 pods send through it to those ranges. Without them, VXLAN is accepted from any source, so pods can
-reach the other nodes' VXLAN port too.
+reach the other nodes' VXLAN port too. The node reads the pod and source ranges from its
+`Kubernetes` document; while it cannot, it drops all VXLAN it forwards.
 
 flannel's devices get the MTU of the interface holding the node's address, minus 50.
 [`chalkos.cni.flannel.mtu`](../reference/options.md#chalkoscniflannelmtu) sets the network's MTU
@@ -208,7 +209,9 @@ Everything on a node runs on nftables: the NixOS firewall, kube-proxy, flannel a
 replaces its own table and leaves the others' alone. Its input chain drops what it does not
 accept, whatever other tables do. It accepts chalkd's port 50000 on every node; on nodes with
 Kubernetes the kubelet's port 10250, the NodePort range 30000 to 32767 and marked VXLAN; and on
-control planes the API server's port 6443 and etcd's ports 2379 and 2380.
+nodes whose `Node` document has the type `controlplane` the API server's port 6443 and etcd's
+ports 2379 and 2380, which a table of chalkos's own, `chalkos-controlplane`, marks for the
+firewall to accept.
 [Ports and firewall](../reference/ports-and-firewall.md) lists each port and who needs it.
 
 kube-proxy runs in nftables mode and serves NodePorts only on the node's own addresses, one per
@@ -231,8 +234,11 @@ prepare.
   the control planes must share one L2 network, through which clients reach the VIP. chalkos has
   no BGP announcement of the VIP; a load balancer or a DNS name in front of the control planes
   works instead.
-- etcd's ports 2379 and 2380 are open to every source, not only to the cluster's nodes. etcd
-  accepts only clients and peers with a certificate of its CA there.
+- On control planes, etcd's ports 2379 and 2380 are open to every source, not only to the
+  cluster's nodes. etcd accepts only clients and peers with a certificate of its CA there.
+- Packets a control plane receives lose the packet mark bit `0x02000000`, which the firewall's
+  rule for the control plane's ports uses, so a pod network of the cluster's own
+  (`chalkos.cni.provider = "none"`) must not use it.
 - The IP families and their order cannot change after the cluster is created.
 - Within `vxlanSourceSubnets` a source address can be forged. The kernel drops an IPv4 packet
   that claims the node's own address as its source, but has no such check for IPv6.
