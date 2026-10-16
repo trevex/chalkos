@@ -1,17 +1,17 @@
 ---
 title: "The image"
-description: "What a role image holds: the erofs store on dm-verity, the signed UKI and the A/B slots"
+description: "What an image holds: the erofs store on dm-verity, the signed UKI and the A/B slots"
 ---
 
 # The image
 
-A role [image](../reference/glossary.md#image) is the whole operating system of a node in one
+An [image](../reference/glossary.md#image) is the whole operating system of a node in one
 unsigned raw disk image: systemd-boot, a [UKI](../reference/glossary.md#uki) with the kernel and
-initrd, and a read-only Nix [store](../reference/glossary.md#store). chalkos builds one per
-[role](../reference/glossary.md#role) and [platform](../reference/glossary.md#platform), and every
-node of that role and platform boots the same bytes. One signature on the UKI covers the whole
-store, so the firmware's signature check extends to every block the node reads, and an upgrade
-replaces all of it at once.
+initrd, and a read-only Nix [store](../reference/glossary.md#store). `chalkos.lib.mkImages` builds
+one per [variant](../reference/glossary.md#variant) and
+[platform](../reference/glossary.md#platform), and every node whose `Image` document names it
+boots the same bytes. One signature on the UKI covers the whole store, so the firmware's signature
+check extends to every block the node reads, and an upgrade replaces all of it at once.
 
 ## What does an image hold?
 
@@ -27,15 +27,16 @@ The table names the x86-64 boot loader; an arm64 image has `BOOTAA64.EFI`.
 On its first boot, systemd-repart in the initrd adds slot B, two partitions of the same sizes
 labelled `_empty`, and [STATE](../reference/glossary.md#state), 128 MiB, encrypted and sealed to
 the [TPM](../reference/glossary.md#tpm). The [installer](../reference/glossary.md#installer) lays
-out the same partitions on its target disk in one run. [VAR](../reference/glossary.md#var) and further volumes come from the
-node's storage settings at install. The sizes are the defaults of
-[`chalkos.disk`](../reference/options.md#chalkosdiskstoresize); a slot's size is fixed at install
-and is the room every later upgrade has. [Image and partition layout](../reference/image-layout.md)
-lists every partition with its type and label.
+out the same partitions on its target disk in one run. [VAR](../reference/glossary.md#var) and
+further volumes come from the node's `SystemDisk` and `Volume` documents at install. The sizes are
+the defaults of [`chalkos.disk`](../reference/options.md#chalkosdiskstoresize); a slot's size is
+fixed at install and is the room every later upgrade has.
+[Image and partition layout](../reference/image-layout.md) lists every partition with its type
+and label.
 
 ## Why is the system read-only?
 
-A node built from an image cannot drift from it. Role images use NixOS's image-based appliance
+A node built from an image cannot drift from it. Images use NixOS's image-based appliance
 profile:
 
 - No Nix daemon and no `switch-to-configuration`: the system cannot be rebuilt on the node.
@@ -45,16 +46,16 @@ profile:
   a password or an SSH key.
 - The image avoids Perl and keeps interpreters out where it can.
 
-What a node must keep goes to two partitions: STATE for its [config](../reference/glossary.md#config), certificates and Kubernetes
-secrets, and VAR at `/var` for etcd, containerd, the kubelet and logs.
-[Storage and encryption](storage.md) describes both.
+What a node must keep goes to two partitions: STATE for its
+[config](../reference/glossary.md#config), certificates and Kubernetes secrets, and VAR at `/var`
+for etcd, containerd, the kubelet and logs. [Storage and encryption](storage.md) describes both.
 
 ## How is the store built?
 
-A slot's data partition holds the store as an erofs file system compressed with zstd at level 9 in 64 KiB clusters
-(`-zzstd,level=9 -C65536`), with 4 KiB blocks. These settings come within 3% of zstd level 15's
-size at a sixth of its build time, and the kernel's erofs reads zstd. An upgrade sends the
-compressed file system, so compression shrinks every transfer by the same factor.
+A slot's data partition holds the store as an erofs file system compressed with zstd at level 9
+in 64 KiB clusters (`-zzstd,level=9 -C65536`), with 4 KiB blocks. These settings come within 3% of
+zstd level 15's size at a sixth of its build time, and the kernel's erofs reads zstd. An upgrade
+sends the compressed file system, so compression shrinks every transfer by the same factor.
 
 The initrd mounts the store read-only at `/usr` and binds its `nix/store` to `/nix/store`. The
 store holds no kernel or initrd: the UKI carries both, and the build fails if anything brings
@@ -78,7 +79,7 @@ flowchart LR
 
 Both the data and the hash tree use 4 KiB blocks. dm-verity refuses blocks smaller than a disk's
 logical block size, so 512-byte blocks would not open on 4Kn disks; 4 KiB blocks also make the
-tree an eighth of the size, about 2 MiB for a Kubernetes role.
+tree an eighth of the size, about 2 MiB for an image with Kubernetes.
 
 The initrd finds the store by its partition UUIDs, never by its labels. systemd derives both from
 the root hash: the data partition's UUID is the hash's first 128 bits and the hash tree's its last
@@ -104,15 +105,15 @@ whose ID or platform does not match the node:
 | --- | --- |
 | `IMAGE_ID` | `chalkos`, or `chalkos-installer` on the installer |
 | `IMAGE_VERSION` | the [image version](#what-may-an-image-version-be) |
-| `CHALKOS_VARIANT` | the image's [variant](../reference/glossary.md#variant), the role's name; absent on the installer |
+| `CHALKOS_VARIANT` | the name of the image's variant in mkImages; absent on the installer |
 | `CHALKOS_PLATFORM` | the platform's name, absent on the installer |
 | `CHALKOS_BOOT_TRIES` | [`chalkos.upgrade.bootTries`](../reference/options.md#chalkosupgradeboottries) of the image |
 
 [os-release fields](../reference/os-release.md) lists them all.
 
-The UKI is about 44 MiB for a Kubernetes role, most of it the initrd, which carries the file
-system tools that systemd-repart needs to create volumes and the libraries of systemd's TPM and
-crypto support. The ESP holds a UKI per slot and, during an upgrade, a third, temporary copy.
+The UKI is about 44 MiB for an image with Kubernetes, most of it the initrd, which carries the
+file system tools that systemd-repart needs to create volumes and the libraries of systemd's TPM
+and crypto support. The ESP holds a UKI per slot and, during an upgrade, a third, temporary copy.
 
 ## How does systemd-boot pick the UKI?
 
@@ -150,8 +151,8 @@ the steps.
 ## What may an image version be?
 
 An image version, [`system.image.version`](https://search.nixos.org/options?query=system.image.version)
-in a role's modules and `0.1.0` by default, is 1 to 23 characters of `a-z`, `0-9`, `.`, `~`, `^`
-and `-`, starting with a letter or digit. The build refuses any other, and so do
+in a variant's modules and `0.1.0` by default, is 1 to 23 characters of `a-z`, `0-9`, `.`, `~`,
+`^` and `-`, starting with a letter or digit. The build refuses any other, and so do
 [chalkctl](../reference/glossary.md#chalkctl) and chalkd. The limits come from where the version
 appears:
 
@@ -167,12 +168,12 @@ installed and changes nothing.
 
 ## What does a platform add?
 
-A platform's NixOS modules come before the role's in each of its images. chalkos's `metal`
+A platform's NixOS modules come before the variant's in each of its images. chalkos's `metal`
 platform sets the console to the screen and the first serial port, where a BMC's serial-over-LAN
 shows it. Its `kvm` platform sets the console to the first serial port and adds the QEMU guest
-agent, about 6 MiB of store, limited to reporting on the node and shutting it down. A platform
-that a cluster declares adds firmware, kernel module groups or agents to the images for that kind
-of machine alone.
+agent, about 6 MiB of store, limited to reporting on the node and shutting it down. A platform the
+flake names in mkImages' [`platforms`](../reference/options.md#platforms) adds firmware, kernel
+module groups or agents to the images for that kind of machine alone.
 [Variants and platforms](variants.md#what-is-a-platform) explains platforms.
 
 ## Which kernel modules does an image carry?
@@ -186,9 +187,9 @@ subsystem's new drivers along.
 | Groups | Included by default | What they cover |
 | --- | --- | --- |
 | `storage`, `network`, `virtualisation`, `filesystems`, `kubernetes`, `platform` | yes | Disk controllers, wired Ethernet, virtio and other hypervisors' drivers, the file systems nodes and CSI drivers mount, netfilter and traffic control, TPM, watchdogs, IPMI, sensors and the console's keyboard |
-| `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can`, `industrial` | no | Added per role, for example `chalkos.kernel.moduleGroups = [ "gpu" ];` |
+| `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can`, `industrial` | no | Added per variant or platform, for example `chalkos.kernel.moduleGroups = [ "gpu" ];` |
 
-A role's definition adds to the base groups, and `lib.mkForce` replaces them.
+A variant's or platform's modules add to the base groups, and `lib.mkForce` replaces them.
 [`chalkos.kernel.extraModules`](../reference/options.md#chalkoskernelextramodules) adds single
 modules by name with their dependencies, and
 [`chalkos.kernel.allModules`](../reference/options.md#chalkoskernelallmodules) keeps the whole
@@ -203,10 +204,10 @@ module the image loads by name, and every dependency of a module in the tree, is
 
 Nodes have no logins, so the system path holds none of NixOS's default packages: only what the
 image's own modules put there, such as systemd, bash, less, nftables, kmod and the mount helpers,
-and what a role adds. Each service names the tools it runs in its own path.
+and what a variant adds. Each service names the tools it runs in its own path.
 
 [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) adds coreutils, grep, sed,
-findutils, procps, iproute2 and util-linux, and crictl on roles with Kubernetes. They are used
+findutils, procps, iproute2 and util-linux, and crictl on images with Kubernetes. They are used
 from a privileged pod that enters the node's root:
 
 ```sh
@@ -220,7 +221,7 @@ has no `/bin/bash`, so the command names the system path's.
 
 ## How large is an image?
 
-A Kubernetes role's image for `metal` measures about 246 MiB of store data, a 2 MiB hash tree and
+An image with Kubernetes for `metal` measures about 246 MiB of store data, a 2 MiB hash tree and
 a 44 MiB UKI; for `kvm`, 6 MiB more store. An upgrade sends those three parts, about 300 MiB per
 node. The raw image is 4.2 GiB of apparent size, mostly the empty room of its slot, and sparse on
 disk.
@@ -240,13 +241,16 @@ slot sizes it was installed with, and refuses a store that does not fit them.
 
 ## How is an image built?
 
-`nix build` builds one role's image for one platform. The lab template's flake has one role,
-`node`, whose `kvm` image both its [control plane](../reference/glossary.md#control-plane) and
-its [worker](../reference/glossary.md#worker) boot:
+`nix build` builds one [image directory](../reference/glossary.md#image-directory): the image of
+one variant on one platform, `images.<variant>-<platform>` of the flake's mkImages call. The lab
+template's flake exposes `images.node-kvm` as the package `node-kvm`, the image both its
+[control plane](../reference/glossary.md#control-plane) and its
+[worker](../reference/glossary.md#worker) boot, and its `Image` document names the directory the
+build is linked to:
 
 ```console
-$ nix build .#chalkos.lab.roles.node.images.kvm
-$ ls result
+$ nix build .#node-kvm -o images/node-kvm
+$ ls images/node-kvm
 chalkos_0.1.0.raw
 image.json
 metadata.json
@@ -258,11 +262,12 @@ schemas
 - `chalkos_<version>.raw` is the raw disk image.
 - `repart-output.json` is systemd-repart's report of its partitions, with their offsets, sizes
   and the root hash. chalkctl reads the store, the hash tree and the UKI at those offsets.
-- `repart.d` holds the role's partition definitions of the system region, which the installer
+- `repart.d` holds the image's partition definitions of the system region, which the installer
   lays out a target disk with.
 - `metadata.json`, `schemas` and `image.json` describe what the image is and what config it
-  accepts; [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build)
-  lists them.
+  accepts; `image.json` exists only on an image with Kubernetes. chalkctl reads them when it
+  validates, installs or upgrades a node whose `Image` names the directory.
+  [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build) lists them.
 
 The image is unsigned, and the signing key never enters the Nix store. chalkctl signs at the
 last moment:
@@ -275,36 +280,38 @@ last moment:
   Nix store is read-only, so it signs a copy:
 
 ```sh
-install -m 644 result/chalkos_0.1.0.raw node.raw
-chalkctl sign --image=node.raw --repart-json=result/repart-output.json \
+install -m 644 images/node-kvm/chalkos_0.1.0.raw node.raw
+chalkctl sign --image=node.raw --repart-json=images/node-kvm/repart-output.json \
   --key=<db-key> --cert=<db-cert>
 ```
 
 `<db-key>` and `<db-cert>` are the PEM key and certificate of a signer the machines' firmware
-trusts in [db](../reference/glossary.md#db-and-dbx). [Sign images for Secure Boot](../guides/secure-boot-signing.md) covers the keys.
+trusts in [db](../reference/glossary.md#db-and-dbx).
+[Sign images for Secure Boot](../guides/secure-boot-signing.md) covers the keys.
 
 chalkos does not wrap image conversion. `qemu-img convert -f raw -O qcow2` makes a qcow2 disk for
 KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it on a disk.
 
 ## Limits
 
-- An upgrade sends the whole compressed store, about 250 MiB for a Kubernetes role, to every
-  node; there are no delta updates.
+- An upgrade sends the whole compressed store, about 250 MiB for an image with Kubernetes, to
+  every node; there are no delta updates.
 - An upgrade never replaces systemd-boot. A node keeps the boot loader it was installed with.
 - Slot sizes are fixed at install. A store that outgrows the slots of installed nodes cannot be
   installed on them.
-- The image carries no firmware unless a role or platform adds it with NixOS's
+- The image carries no firmware unless a variant or platform adds it with NixOS's
   `hardware.firmware`.
 - Images are built and signed on the operator's machine and sent by chalkctl; chalkos publishes no
   images and pulls none from a registry.
 
 ## Related pages
 
+- [Variants and platforms](variants.md) for how mkImages builds the images.
 - [Boot, health and rollback](boot-and-rollback.md) for how a node boots the image.
 - [Upgrades](upgrades.md) for how a new image reaches a node.
 - [Security model](security.md) for what Secure Boot and dm-verity protect against.
 - [Image and partition layout](../reference/image-layout.md) and
   [os-release fields](../reference/os-release.md) for the details.
-- [Customise a role](../guides/customise-role.md),
+- [Customise an image](../guides/customise-role.md),
   [Support additional hardware](../guides/additional-hardware.md) and
   [Sign images for Secure Boot](../guides/secure-boot-signing.md) for the tasks.
