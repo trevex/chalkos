@@ -35,15 +35,17 @@ func (a *app) nodeRenew(ctx context.Context, n nodeCommand, pos []string) error 
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl node renew <node>")
 	}
+	// The certificate names the node's addresses, which only its config gives.
+	n.needs = "node renew"
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
 		return err
 	}
-	conn, err := dialNode(t, true)
+	names, err := t.cluster.certNames(t.name)
 	if err != nil {
 		return err
 	}
-	names, err := t.cluster.certNames(t.name)
+	conn, err := dialNode(t, true)
 	if err != nil {
 		return err
 	}

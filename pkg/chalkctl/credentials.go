@@ -81,8 +81,8 @@ const configExpiryWarning = 30 * 24 * time.Hour
 
 // loadCredentials picks the credentials of commands a client file may run: the client file
 // --config names, else the secrets file --secrets names; else the client file $CHALKOSCONFIG
-// names, so a lab's client file works where its inventory is; else the secrets file found beside
-// the inventory; else ~/.config/chalkos/config.
+// names, so a lab's client file works where its inventory is; else the secrets file the inventory
+// names, or else the one found beside it, when it exists; else ~/.config/chalkos/config.
 func (a *app) loadCredentials(ctx context.Context, s secretFlags, config string, c *cluster) (*credentials, error) {
 	if config != "" {
 		return a.configCredentials(config)
@@ -100,6 +100,11 @@ func (a *app) loadCredentials(ctx context.Context, s secretFlags, config string,
 	}
 	path := defaultConfigPath(a.home)
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		// Without a client file, the secrets file the inventory names is the one meant, and its
+		// error names it.
+		if c.inv != nil && c.inv.Spec.Secrets != "" {
+			return a.loadSecretCredentials(ctx, s, c)
+		}
 		return nil, fmt.Errorf("there is no secrets file in %s and no client file at %s; pass --secrets or --config", c.dir, path)
 	}
 	return a.configCredentials(path)

@@ -10,9 +10,10 @@ over mutual TLS. chalkctl never builds images: each node's Image document names 
 an image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
 or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
 reader role. Each command's help says which of the two it needs. Commands that accept both take
---config, else --secrets, else the client file $CHALKOSCONFIG names, else a secrets file beside
-the inventory, else ~/.config/chalkos/config. --manifest reads a cluster definition's manifest
-instead of an inventory.
+--config, else --secrets, else the client file $CHALKOSCONFIG names, else the secrets file the
+inventory names or, when it names none, a secrets file beside it, when that file exists, else
+~/.config/chalkos/config. --manifest reads a cluster definition's manifest instead of an
+inventory.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.`
@@ -264,7 +265,9 @@ const upgradeLong = `Installs on each node a new image: control planes one at a 
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
 Without --image each node (every node of the cluster, or those --nodes names) gets the image its
 Image document names, and a node that runs on another platform than that image stops the run
-before any node is sent anything. With --image the nodes that run the image's variant get it, or
+before any node is sent anything. An image directory whose image has another root hash than its
+metadata.json names, which status compares nodes with, is refused: rebuild the image or link its
+directory again. With --image the nodes that run the image's variant get it, or
 those --nodes names whatever they run, and nodes on another platform are skipped and named. A
 node may get an image of another variant than the one it runs, which chalkctl prints; the node
 checks its stored config against the image before the image becomes its next boot.

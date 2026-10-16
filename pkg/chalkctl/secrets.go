@@ -66,17 +66,20 @@ func (a *app) loadSecrets(ctx context.Context, s secretFlags, c *cluster) (pki.S
 }
 
 // secretsPath is the secrets file --secrets names, else the one the inventory names, else
-// secrets.age, else secrets.json, beside the inventory; found says whether it was given or
-// exists.
+// secrets.age, else secrets.json, beside the inventory; found says whether it was given with
+// --secrets or exists. The inventory's secrets file may be missing where a client file stands in
+// for it.
 func secretsPath(s secretFlags, c *cluster) (path string, found bool, err error) {
 	if s.path != "" {
 		return s.path, true, nil
 	}
+	var candidates []string
 	if c.inv != nil && c.inv.Spec.Secrets != "" {
-		return c.inv.Spec.Secrets, true, nil
+		candidates = []string{c.inv.Spec.Secrets}
+	} else {
+		candidates = []string{filepath.Join(c.dir, "secrets.age"), filepath.Join(c.dir, "secrets.json")}
 	}
-	for _, name := range []string{"secrets.age", "secrets.json"} {
-		path = filepath.Join(c.dir, name)
+	for _, path = range candidates {
 		switch _, err := os.Stat(path); {
 		case err == nil:
 			return path, true, nil

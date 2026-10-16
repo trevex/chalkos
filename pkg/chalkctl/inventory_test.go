@@ -415,3 +415,70 @@ func TestInventorySignerCertificate(t *testing.T) {
 		t.Errorf("an inventory and a manifest = %v", err)
 	}
 }
+
+// TestMissingSecretsOfTheInventory falls back to the user's client file when the secrets file
+// the inventory names does not exist, and without a client file names the missing secrets file.
+func TestMissingSecretsOfTheInventory(t *testing.T) {
+	ta := newTestApp(t)
+	path := writeInventory(t, ta.dir)
+	writeFile(t, path, strings.Replace(testInventoryYAML, "spec:\n", "spec:\n  secrets: admin/secrets.age\n", 1))
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	status := []string{"status", "n1", "--inventory", path, "--address", addr}
+	if err := ta.run(context.Background(), status); err == nil || !strings.Contains(err.Error(), filepath.Join(ta.dir, "admin", "secrets.age")) {
+		t.Errorf("status without the secrets file or a client file = %v, want the secrets file named", err)
+	}
+	reader := ta.writeConfig(t, "alice", pki.RoleReader, 24*time.Hour, time.Now())
+	if err := os.MkdirAll(filepath.Dir(defaultConfigPath(ta.home)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(reader, defaultConfigPath(ta.home)); err != nil {
+		t.Fatal(err)
+	}
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), status); err != nil || !strings.Contains(ta.stdout.String(), "(the inventory's)") {
+		t.Errorf("status with a reader's client file = %v, %q", err, ta.stdout)
+	}
+}
+
+// TestCommandsThatNeedAnInventory refuse a cluster without an inventory before they read any
+// credentials, and an upgrade without --image says that only an inventory names the images.
+func TestCommandsThatNeedAnInventory(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	for _, args := range [][]string{
+		{"install", "n1", "--insecure"}, {"apply-config", "n1"}, {"storage", "reset", "n1", "var"}, {"node", "renew", "n1"},
+	} {
+		err := ta.run(context.Background(), append(args, "--address", "127.0.0.1:1"))
+		if err == nil || !strings.Contains(err.Error(), "needs an inventory") {
+			t.Errorf("%s = %v, want a refusal naming the inventory", strings.Join(args, " "), err)
+		}
+	}
+	reader := ta.writeConfig(t, "alice", pki.RoleReader, 24*time.Hour, time.Now())
+	if err := ta.run(context.Background(), []string{"upgrade", "--config", reader}); err == nil || !strings.Contains(err.Error(), "which only an inventory gives") {
+		t.Errorf("upgrade without --image or an inventory = %v", err)
+	}
+}
+
+// TestImageLineOfAStagedImage advises a reboot to a node that has the image of its Image staged,
+// and says why the store is not compared when the Image's directory cannot be read.
+func TestImageLineOfAStagedImage(t *testing.T) {
+	dir := t.TempDir()
+	c, err := loadInventory(writeInventory(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := bytes.Repeat([]byte{0xcd}, 32)
+	if got := c.imageLine("n1", &nodev1.BootStatus{RootHash: other, Staged: "0.1.0"}); !strings.Contains(got, "it has 0.1.0 staged, which it boots with its next reboot: chalkctl reboot n1") {
+		t.Errorf("the line of a staged image = %q", got)
+	}
+	if err := os.Remove(filepath.Join(dir, "images", "test-metal", "metadata.json")); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = loadInventory(filepath.Join(dir, "chalkos.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.imageLine("n1", &nodev1.BootStatus{RootHash: other}); !strings.Contains(got, "its store is not compared with the image of its config: ") || !strings.Contains(got, "has no metadata.json") {
+		t.Errorf("the line without the Image's directory = %q", got)
+	}
+}

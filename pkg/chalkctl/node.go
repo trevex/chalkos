@@ -35,6 +35,9 @@ type nodeCommand struct {
 	address string
 	// config is the client file of commands that a client file may run.
 	config string
+	// needs names the command when it needs the nodes' config, which only an inventory gives: it
+	// is refused without one before any credentials are read.
+	needs string
 }
 
 func (n *nodeCommand) register(fs *pflag.FlagSet) {
@@ -70,7 +73,7 @@ type target struct {
 
 // target addresses a node with the secrets file.
 func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, error) {
-	c, err := loadCluster(n.cluster)
+	c, err := n.loadCluster()
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +86,7 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 
 // clientTarget addresses a node with the secrets file or a client file.
 func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*target, error) {
-	c, err := loadCluster(n.cluster)
+	c, err := n.loadCluster()
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +98,21 @@ func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*ta
 		return nil, err
 	}
 	return targetIn(c, n, name, creds)
+}
+
+// loadCluster loads the cluster the command's flags name, and refuses a partial one when the
+// command needs the nodes' config.
+func (n nodeCommand) loadCluster() (*cluster, error) {
+	c, err := loadCluster(n.cluster)
+	if err != nil {
+		return nil, err
+	}
+	if n.needs != "" {
+		if err := c.requireNodes(n.needs); err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
 }
 
 func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*target, error) {
@@ -284,11 +302,9 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl install <node> [flags]")
 	}
+	n.needs = "install"
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
-		return err
-	}
-	if err := t.cluster.requireNodes("install"); err != nil {
 		return err
 	}
 	cert := t.creds.cert
@@ -586,11 +602,9 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl apply-config <node> [--kubernetes-share]")
 	}
+	n.needs = "apply-config"
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
-		return err
-	}
-	if err := t.cluster.requireNodes("apply-config"); err != nil {
 		return err
 	}
 	conn, err := dialInstalled(t)
@@ -615,6 +629,9 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			return err
 		}
 		if share == nil {
+			if t.cluster.manifest != nil {
+				return fmt.Errorf("%s is no Kubernetes node: the cluster definition gives it no kind", t.name)
+			}
 			return fmt.Errorf("%s is no Kubernetes node: its Node names no type", t.name)
 		}
 	}
@@ -650,11 +667,9 @@ func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile strin
 	if len(pos) != 2 {
 		return errors.New("usage: chalkctl storage reset <node> <volume>")
 	}
+	n.needs = "storage reset"
 	t, err := a.clientTarget(ctx, n, pos[0])
 	if err != nil {
-		return err
-	}
-	if err := t.cluster.requireNodes("storage reset"); err != nil {
 		return err
 	}
 	conn, err := dialInstalled(t)

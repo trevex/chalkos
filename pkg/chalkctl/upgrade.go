@@ -343,6 +343,10 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	for _, key := range slices.Sorted(maps.Keys(groups)) {
 		r.groups = append(r.groups, groups[key])
 	}
+	// The control planes drain the nodes and keep etcd's quorum, so every node's type is read,
+	// also of nodes the run leaves alone. Loading the inventory read every node's files already,
+	// so a node whose files are broken stops every command, and this adds only a node whose
+	// documents do not form a Node of its name and its Image.
 	for _, name := range c.nodeNames() {
 		kind, err := c.kind(name)
 		if err != nil {

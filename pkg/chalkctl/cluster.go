@@ -262,7 +262,7 @@ func (c *cluster) sameBuild(name string, img *diskImage) error {
 		return err
 	}
 	if got := hex.EncodeToString(img.store.RootHash); got != md.RootHash {
-		return fmt.Errorf("%s: metadata.json names the root hash %s, but the image's store has %s", nc.ImageDir, md.RootHash, got)
+		return fmt.Errorf("%s: metadata.json names the root hash %s, but the image's store has %s; rebuild the image or link its directory again", nc.ImageDir, md.RootHash, got)
 	}
 	return nil
 }
@@ -409,7 +409,8 @@ func (c *cluster) configState(name, running string) string {
 }
 
 // imageLine is the status line of a node whose store has another root hash than the image its
-// config's Image names; empty when it has that one, or when either is unknown.
+// config's Image names, or whose Image's directory cannot be read; empty when it has that image,
+// or when the node or its config is unknown, which the config line reports.
 func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 	if c.inv == nil || len(boot.GetRootHash()) == 0 {
 		return ""
@@ -419,8 +420,17 @@ func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 		return ""
 	}
 	md, err := nc.Resolve()
-	if err != nil || hex.EncodeToString(boot.GetRootHash()) == md.RootHash {
+	switch {
+	case err != nil:
+		return fmt.Sprintf("its store is not compared with the image of its config: %v", err)
+	case hex.EncodeToString(boot.GetRootHash()) == md.RootHash:
 		return ""
 	}
-	return fmt.Sprintf("its store's root hash is %x, not that of the Image %s its config names, %s; chalkctl upgrade --nodes %s installs that image", boot.GetRootHash(), nc.ImageName, md.RootHash, name)
+	line := fmt.Sprintf("its store's root hash is %x, not that of the Image %s its config names, %s", boot.GetRootHash(), nc.ImageName, md.RootHash)
+	// After an upgrade with --no-reboot the image waits for the node's next boot. The node names
+	// what it staged by its version alone.
+	if boot.GetStaged() != "" && boot.GetStaged() == md.Version {
+		return fmt.Sprintf("%s; it has %s staged, which it boots with its next reboot: chalkctl reboot %s", line, md.Version, name)
+	}
+	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, name)
 }

@@ -112,8 +112,7 @@ func newTestAppAt(t *testing.T, now time.Time) *testApp {
 		stdin:  strings.NewReader(""),
 		stdout: ta.stdout,
 		stderr: ta.stderr,
-
-		home: dir,
+		home:   dir,
 	}
 	ta.readSecret = func(_ context.Context, prompt string) ([]byte, error) {
 		ta.prompts = append(ta.prompts, prompt)

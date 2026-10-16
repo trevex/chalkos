@@ -16,9 +16,10 @@ over mutual TLS. chalkctl never builds images: each node's Image document names 
 an image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
 or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
 reader role. Each command's help says which of the two it needs. Commands that accept both take
---config, else --secrets, else the client file $CHALKOSCONFIG names, else a secrets file beside
-the inventory, else ~/.config/chalkos/config. --manifest reads a cluster definition's manifest
-instead of an inventory.
+--config, else --secrets, else the client file $CHALKOSCONFIG names, else the secrets file the
+inventory names or, when it names none, a secrets file beside it, when that file exists, else
+~/.config/chalkos/config. --manifest reads a cluster definition's manifest instead of an
+inventory.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.
