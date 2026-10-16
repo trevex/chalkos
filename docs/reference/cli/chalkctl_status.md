@@ -9,12 +9,13 @@ Show an installed node's status
 
 ## Synopsis
 
-Shows an installed node's status: the config it runs and whether it is the one the cluster
-definition gives; its platform; the image version it booted and whether that boot was found
-healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled
-back, with the journal of the boot that failed; its volumes and their state; Kubernetes; the
-certificates it serves and when they expire; the CAs it trusts; its clock; and the units that
-failed. The command needs a reader client file or the secrets file.
+Shows an installed node's status: the config it runs and whether it is the one the inventory
+gives; its platform; the image version it booted and whether that boot was found healthy; an
+upgrade that is installed and boots next; an upgrade that failed and was rolled back, with the
+journal of the boot that failed; whether its store is the image its Image names; its volumes
+and their state; Kubernetes; the certificates it serves and when they expire; the CAs it trusts;
+its clock; and the units that failed. The command needs a reader client file or the secrets
+file.
 
 ```
 chalkctl status <node> [flags]
@@ -25,24 +26,23 @@ chalkctl status <node> [flags]
 ```
   chalkctl status cp1
 
-  # With the client file a lab writes.
-  chalkctl status cp1 --config ~/.local/state/chalklab/lab/chalkctl.json
+  # With the inventory a lab writes.
+  chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
 ```
 
 ## Options
 
 ```
-      --cluster string     cluster to use when the flake defines several
-      --config string      client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)
-      --endpoint string    address of the node's chalkd, host or host:port (default the node's first static address, or the address a client file that prefers its addresses names)
-      --flake string       directory of the flake that defines the cluster (default ".")
+      --address string     address of the node's chalkd, host or host:port (default the node's address in the inventory)
+      --config string      client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when no secrets file is beside the inventory)
   -h, --help               help for status
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --manifest string    read the cluster's manifest from this file instead of evaluating the flake
-      --secrets string     secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
+      --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
+      --manifest string    read the cluster's nodes from this cluster definition's manifest instead of an inventory
+      --secrets string     secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
 ```
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 

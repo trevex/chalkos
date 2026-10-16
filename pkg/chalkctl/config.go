@@ -105,24 +105,36 @@ type delivery struct {
 	identity identity.Identity
 }
 
-// configFor generates the target's config from the cluster definition and checks that, on the
-// image the contract describes, it gives back the node's identity. The node translates config for
-// the platform its image is built for, so an image of another platform than the definition gives
-// the node is refused, rather than checked as one thing and applied as another. The image's
-// variant is not compared: the image's schemas decide which config it takes.
-func configFor(t *target, c contract) (delivery, error) {
-	if err := samePlatform(t, c.platform); err != nil {
+// deliveryFor is a node's config as chalkctl delivers it for the image the contract describes,
+// checked as the node checks it. The node translates config for the platform its image is built
+// for, so an image of another platform than the node's is refused, rather than checked as one
+// thing and applied as another. The image's variant is not compared: the image's schemas decide
+// which config it takes. From a cluster definition, the documents must give back the identity the
+// definition renders.
+func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
+	if err := c.samePlatform(name, ct.platform); err != nil {
 		return delivery{}, err
 	}
-	b, err := config.FromManifest(t.cluster.manifest, t.name)
+	if c.manifest != nil {
+		b, err := config.FromManifest(c.manifest, name)
+		if err != nil {
+			return delivery{}, err
+		}
+		id, err := b.Check(c.manifest.Nodes[name].Identity, ct.schemas, config.Target{Platform: ct.platform, Image: ct.image})
+		if err != nil {
+			return delivery{}, fmt.Errorf("the config of %s: %w", name, err)
+		}
+		return delivery{Encoded: b.Encoded, identity: id}, nil
+	}
+	nc, err := c.config(name)
 	if err != nil {
 		return delivery{}, err
 	}
-	id, err := b.Check(t.node.Identity, c.schemas, config.Target{Platform: c.platform, Image: c.image})
+	d, err := checkNodeConfig(nc, ct)
 	if err != nil {
-		return delivery{}, fmt.Errorf("the config of %s: %w", t.name, err)
+		return delivery{}, fmt.Errorf("the config of %s: %w", name, err)
 	}
-	return delivery{Encoded: b.Encoded, identity: id}, nil
+	return d, nil
 }
 
 // checkNodeConfig checks a node's config as the node checks it on the image the contract

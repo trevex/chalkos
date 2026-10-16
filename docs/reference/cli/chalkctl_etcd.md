@@ -27,7 +27,7 @@ secrets file works for all three.
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 * [chalkctl etcd leave](chalkctl_etcd_leave.md)	 - Take a control plane out of etcd
 * [chalkctl etcd members](chalkctl_etcd_members.md)	 - List etcd's members and their health
 * [chalkctl etcd remove-member](chalkctl_etcd_remove-member.md)	 - Remove a node's etcd member, such as a stale one

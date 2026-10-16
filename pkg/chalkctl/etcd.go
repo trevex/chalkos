@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -14,29 +13,33 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
-	"github.com/trevex/chalkos/pkg/manifest"
 )
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
 func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip string, call func(conn *client.Conn) error) error {
-	creds, err := a.loadCredentials(ctx, n.secrets, n.config, n.cluster.flake)
+	c, err := loadCluster(n.cluster)
 	if err != nil {
 		return err
 	}
-	c, err := a.clusterFor(ctx, n.cluster, creds)
+	creds, err := a.loadCredentials(ctx, n.secrets, n.config, c)
 	if err != nil {
+		return err
+	}
+	if err := c.checkCredentials(creds); err != nil {
 		return err
 	}
 	names := []string{via}
 	if via == "" {
-		if n.endpoint != "" {
-			return errors.New("--endpoint reaches one node; name it with --via")
+		if n.address != "" {
+			return errors.New("--address reaches one node; name it with --via")
 		}
 		if c.partial {
-			return errors.New("a client file does not say which nodes are control planes; name one with --via, or pass --flake or --manifest")
+			return errors.New("an inventory names the control planes; name one with --via, or pass --inventory")
 		}
-		names = controlPlaneNodes(c.manifest, skip)
+		if names, err = c.nodesOf(identity.KindControlPlane, skip); err != nil {
+			return err
+		}
 		if len(names) == 0 {
 			return errors.New("the cluster has no other control-plane node to ask")
 		}
@@ -74,18 +77,6 @@ func tryNextControlPlane(err error) bool {
 		return errors.As(err, &ce) && strings.Contains(ce.Message(), "is not an etcd member")
 	}
 	return false
-}
-
-// controlPlaneNodes returns the cluster's control-plane nodes but skip, in name order.
-func controlPlaneNodes(m *manifest.Manifest, skip string) []string {
-	var names []string
-	for name, node := range m.Nodes {
-		if name != skip && node.Kind == identity.KindControlPlane {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return names
 }
 
 // etcdFlags are the flags of the etcd commands.

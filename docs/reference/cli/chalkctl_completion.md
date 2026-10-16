@@ -27,7 +27,7 @@ says how to load the script. The command needs no secrets file or client file.
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 * [chalkctl completion bash](chalkctl_completion_bash.md)	 - Generate the autocompletion script for bash
 * [chalkctl completion fish](chalkctl_completion_fish.md)	 - Generate the autocompletion script for fish
 * [chalkctl completion powershell](chalkctl_completion_powershell.md)	 - Generate the autocompletion script for powershell

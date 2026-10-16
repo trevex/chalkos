@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"time"
 
@@ -45,7 +43,11 @@ func (a *app) nodeRenew(ctx context.Context, n nodeCommand, pos []string) error 
 	if err != nil {
 		return err
 	}
-	cert, err := pki.IssueNode(t.secrets.NodeCA, nodeNames(t), time.Now())
+	names, err := t.cluster.certNames(t.name)
+	if err != nil {
+		return err
+	}
+	cert, err := pki.IssueNode(t.secrets.NodeCA, names, time.Now())
 	if err != nil {
 		return err
 	}
@@ -84,24 +86,25 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	if len(pos) != 0 {
 		return errors.New("usage: chalkctl node-ca rotate [--out FILE] [--public-out FILE] [--recipient R...]")
 	}
-	c, err := a.loadCluster(ctx, n.cluster)
+	c, err := loadCluster(n.cluster)
 	if err != nil {
 		return err
 	}
-	var controlPlanes []string
-	for _, name := range slices.Sorted(maps.Keys(c.manifest.Nodes)) {
-		if c.manifest.Nodes[name].Kind == identity.KindControlPlane {
-			controlPlanes = append(controlPlanes, name)
-		}
+	if err := c.requireNodes("node-ca rotate"); err != nil {
+		return err
+	}
+	controlPlanes, err := c.nodesOf(identity.KindControlPlane, "")
+	if err != nil {
+		return err
 	}
 	// A node CA no control plane holds renews nothing.
 	if len(controlPlanes) == 0 {
 		return errors.New("node-ca rotate: the cluster has no control-plane node to renew node certificates with the new node CA")
 	}
-	if n.endpoint != "" && len(controlPlanes) != 1 {
-		return errors.New("node-ca rotate: --endpoint names one node's chalkd, but the cluster has several control-plane nodes")
+	if n.address != "" && len(controlPlanes) != 1 {
+		return errors.New("node-ca rotate: --address names one node's chalkd, but the cluster has several control-plane nodes")
 	}
-	f, err := a.openSecrets(ctx, n.secrets, n.cluster.flake, change)
+	f, err := a.openSecrets(ctx, n.secrets, c, change)
 	if err != nil {
 		return err
 	}
@@ -129,7 +132,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	}
 	var failed []string
 	for _, name := range controlPlanes {
-		err := a.deliverNodeCA(ctx, c, n.endpoint, name, secrets, share)
+		err := a.deliverNodeCA(ctx, c, n.address, name, secrets, share)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
 			continue
@@ -143,20 +146,16 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 }
 
 // deliverNodeCA delivers the control-plane share with the new node CA to a node, and nothing else.
-func (a *app) deliverNodeCA(ctx context.Context, c *cluster, endpointFlag, name string, secrets pki.Secrets, share []byte) error {
-	node, err := c.node(name)
-	if err != nil {
-		return err
-	}
-	addr, source, err := c.endpoint(endpointFlag, nil, name)
-	if err != nil {
-		return err
-	}
+func (a *app) deliverNodeCA(ctx context.Context, c *cluster, address, name string, secrets pki.Secrets, share []byte) error {
 	creds, err := secretCredentials(secrets)
 	if err != nil {
 		return err
 	}
-	conn, err := dialInstalled(&target{cluster: c, name: name, node: node, creds: creds, secrets: secrets, addr: addr, source: source})
+	t, err := targetIn(c, nodeCommand{address: address}, name, creds)
+	if err != nil {
+		return err
+	}
+	conn, err := dialInstalled(t)
 	if err != nil {
 		return err
 	}

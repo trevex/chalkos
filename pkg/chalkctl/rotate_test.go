@@ -372,7 +372,7 @@ func newRotationLab(t *testing.T) *rotationLab {
 // rotate runs chalkctl rotate with the lab's cluster.
 func (l *rotationLab) rotate(args ...string) error {
 	args = append([]string{"rotate"}, args...)
-	args = append(args, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir)
+	args = append(args, "--manifest", filepath.Join(l.ta.dir, "manifest.json"))
 	for name, addr := range l.addrs {
 		args = append(args, "--endpoint", name+"="+addr)
 	}
@@ -425,7 +425,7 @@ func TestRotateOSCA(t *testing.T) {
 	}
 	// A client file issued at the pause carries both roots and works throughout.
 	carol := filepath.Join(l.ta.dir, "carol.json")
-	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol, "--manifest", filepath.Join(l.ta.dir, "manifest.json")}); err != nil {
 		t.Fatal(err)
 	}
 	if creds, err := l.ta.configCredentials(carol); err != nil || strings.Count(creds.osCA, "BEGIN CERTIFICATE") != 2 {
@@ -489,7 +489,7 @@ func TestRotateOSCA(t *testing.T) {
 		}
 	}
 	// A client file of the old OS CA is refused; one issued at the pause or now works.
-	if err := l.ta.run(context.Background(), []string{"status", "w1", "--config", oldConfig, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir, "--endpoint", l.addrs["w1"]}); err == nil {
+	if err := l.ta.run(context.Background(), []string{"status", "w1", "--config", oldConfig, "--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--endpoint", l.addrs["w1"]}); err == nil {
 		t.Error("a client file of the old OS CA reached a node after the finish")
 	}
 	if err := l.authenticatesWith(oldConfig, "w1"); err == nil {
@@ -720,7 +720,7 @@ func TestSecretsLockedWhileChanged(t *testing.T) {
 		// A second chalkctl with its own output, as another process would be.
 		second := *l.ta.app
 		second.stdout, second.stderr = &bytes.Buffer{}, &bytes.Buffer{}
-		base := []string{"--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--flake", l.ta.dir}
+		base := []string{"--manifest", filepath.Join(l.ta.dir, "manifest.json")}
 		for _, args := range [][]string{{"rotate", "kubernetes-ca", "--resume"}, {"rotate", "os-ca", "--finish"}, {"node-ca", "rotate"}} {
 			refused = append(refused, second.run(context.Background(), append(args, base...)))
 		}

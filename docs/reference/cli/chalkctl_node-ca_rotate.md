@@ -31,16 +31,15 @@ chalkctl node-ca rotate [flags]
 ## Options
 
 ```
-      --cluster string      cluster to use when the flake defines several
-      --endpoint string     address of the node's chalkd, host or host:port (default the node's first static address, or the address a client file that prefers its addresses names)
-      --flake string        directory of the flake that defines the cluster (default ".")
+      --address string      address of the node's chalkd, host or host:port (default the node's address in the inventory)
   -h, --help                help for rotate
       --identity strings    age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --manifest string     read the cluster's manifest from this file instead of evaluating the flake
+      --inventory string    inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
+      --manifest string     read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --out string          write the changed secrets file to this new file instead of updating the secrets file in place
       --public-out string   write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place
       --recipient strings   age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out
-      --secrets string      secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
+      --secrets string      secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
 ```
 
 ## SEE ALSO

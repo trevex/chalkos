@@ -25,6 +25,6 @@ Generates the files a cluster starts from. Its command needs no secrets file or 
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 * [chalkctl gen secrets](chalkctl_gen_secrets.md)	 - Generate the cluster's secrets file
 

@@ -21,8 +21,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -32,9 +30,9 @@ const chunkSize = 1 << 20
 
 // nodeCommand holds what commands addressing one node share.
 type nodeCommand struct {
-	cluster  clusterFlags
-	secrets  secretFlags
-	endpoint string
+	cluster clusterFlags
+	secrets secretFlags
+	address string
 	// config is the client file of commands that a client file may run.
 	config string
 }
@@ -42,13 +40,20 @@ type nodeCommand struct {
 func (n *nodeCommand) register(fs *pflag.FlagSet) {
 	n.cluster.register(fs)
 	n.secrets.register(fs)
-	fs.StringVar(&n.endpoint, "endpoint", "", "address of the node's chalkd, host or host:port (default the node's first static address, or the address a client file that prefers its addresses names)")
+	registerAddress(fs, &n.address, "address of the node's chalkd, host or host:port (default the node's address in the inventory)")
+}
+
+// registerAddress registers --address, and hidden --endpoint, its former name.
+func registerAddress(fs *pflag.FlagSet, p *string, usage string) {
+	fs.StringVar(p, "address", "", usage)
+	fs.StringVar(p, "endpoint", "", usage)
+	fs.MarkHidden("endpoint")
 }
 
 // registerClient registers the flags of a command that a client file may run.
 func (n *nodeCommand) registerClient(fs *pflag.FlagSet) {
 	n.register(fs)
-	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)")
+	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when no secrets file is beside the inventory)")
 }
 
 // target is a node of the cluster with the credentials chalkctl reaches it with. secrets holds
@@ -56,7 +61,6 @@ func (n *nodeCommand) registerClient(fs *pflag.FlagSet) {
 type target struct {
 	cluster *cluster
 	name    string
-	node    manifest.Node
 	creds   *credentials
 	secrets pki.Secrets
 	addr    string
@@ -66,11 +70,11 @@ type target struct {
 
 // target addresses a node with the secrets file.
 func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, error) {
-	c, err := a.loadCluster(ctx, n.cluster)
+	c, err := loadCluster(n.cluster)
 	if err != nil {
 		return nil, err
 	}
-	creds, err := a.loadSecretCredentials(ctx, n.secrets, n.cluster.flake)
+	creds, err := a.loadSecretCredentials(ctx, n.secrets, c)
 	if err != nil {
 		return nil, err
 	}
@@ -79,27 +83,29 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 
 // clientTarget addresses a node with the secrets file or a client file.
 func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*target, error) {
-	creds, err := a.loadCredentials(ctx, n.secrets, n.config, n.cluster.flake)
+	c, err := loadCluster(n.cluster)
 	if err != nil {
 		return nil, err
 	}
-	c, err := a.clusterFor(ctx, n.cluster, creds)
+	creds, err := a.loadCredentials(ctx, n.secrets, n.config, c)
 	if err != nil {
+		return nil, err
+	}
+	if err := c.checkCredentials(creds); err != nil {
 		return nil, err
 	}
 	return targetIn(c, n, name, creds)
 }
 
 func targetIn(c *cluster, n nodeCommand, name string, creds *credentials) (*target, error) {
-	node, err := c.node(name)
+	if err := c.node(name); err != nil {
+		return nil, err
+	}
+	addr, source, err := c.address(n.address, creds, name)
 	if err != nil {
 		return nil, err
 	}
-	addr, source, err := c.endpoint(n.endpoint, creds, name)
-	if err != nil {
-		return nil, err
-	}
-	t := &target{cluster: c, name: name, node: node, creds: creds, addr: addr, source: source}
+	t := &target{cluster: c, name: name, creds: creds, addr: addr, source: source}
 	if creds.secrets != nil {
 		t.secrets = *creds.secrets
 	}
@@ -155,7 +161,7 @@ func (a *app) fallbackSecret(ctx context.Context, t *target, fallback, passwordF
 		if t.creds.secrets == nil {
 			return "", fmt.Errorf("node %s unlocks with its recovery key when its TPM fails, which only the secrets file gives; pass --secrets", t.name)
 		}
-		return pki.RecoveryKey(t.secrets.RecoverySecret, t.cluster.manifest.Cluster.Name, t.name)
+		return pki.RecoveryKey(t.secrets.RecoverySecret, t.cluster.name, t.name)
 	case "password":
 		if passwordFile != "" {
 			data, err := os.ReadFile(passwordFile)
@@ -265,10 +271,10 @@ func (a *app) installCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.node.register(fs)
 	f.pin.register(fs)
-	fs.StringVar(&f.image, "image", "", "role image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or the directory nix build produces (default: build the node's role image)")
+	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory the node's Image names)")
 	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
 	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer")
-	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node's role or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
+	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	fs.StringVar(&f.passwordFile, "password-file", "", "file holding the password of a node whose fallback is a password")
 	return cmd
 }
@@ -280,6 +286,9 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	t, err := a.target(ctx, n, pos[0])
 	if err != nil {
+		return err
+	}
+	if err := t.cluster.requireNodes("install"); err != nil {
 		return err
 	}
 	cert := t.creds.cert
@@ -313,7 +322,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	path := f.image
 	if !info.Msg.Installer {
 		// The node runs its image already, which must be of the node's platform.
-		if err := samePlatform(t, info.Msg.Platform); err != nil {
+		if err := t.cluster.samePlatform(t.name, info.Msg.Platform); err != nil {
 			return err
 		}
 		if c, err = nodeContract(ctx, conn, t.name); err != nil {
@@ -321,8 +330,9 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 	} else {
-		if path == "" {
-			if path, err = a.buildImage(ctx, t.cluster, t.node.Role, t.node.Platform); err != nil {
+		fromInventory := path == ""
+		if fromInventory {
+			if path, err = t.cluster.imageDir(t.name); err != nil {
 				return err
 			}
 		}
@@ -330,6 +340,11 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 			return err
 		}
 		defer img.Close()
+		if fromInventory {
+			if err := t.cluster.sameBuild(t.name, img); err != nil {
+				return err
+			}
+		}
 		if header.SystemDefinitions, err = readDefinitions(img.definitions); err != nil {
 			return err
 		}
@@ -344,12 +359,16 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		c.platform = img.info.Platform()
 		header.Image, header.Schemas, header.KubernetesImage = img.header, c.files, c.kubernetesImage
 	}
-	d, err := configFor(t, c)
+	d, err := t.cluster.deliveryFor(t.name, c)
 	if err != nil {
 		return err
 	}
 	header.Config = d.Text
-	nodeCert, err := pki.IssueNode(t.secrets.NodeCA, nodeNames(t), time.Now())
+	names, err := t.cluster.certNames(t.name)
+	if err != nil {
+		return err
+	}
+	nodeCert, err := pki.IssueNode(t.secrets.NodeCA, names, time.Now())
 	if err != nil {
 		return err
 	}
@@ -486,22 +505,26 @@ func (a *app) disks(ctx context.Context, n nodeCommand, p pinning, pos []string)
 		if err != nil {
 			return err
 		}
-	case len(pos) == 0 && n.endpoint != "":
-		// A node not in the cluster definition yet: only maintenance mode, with a certificate when
-		// a secrets file or a client file is given, for an image with an OS CA.
+	case len(pos) == 0 && n.address != "":
+		// A node not in the inventory yet: only maintenance mode, with a certificate when a secrets
+		// file or a client file is given, for an image with an OS CA.
 		var cert *tls.Certificate
 		if n.secrets.path != "" || n.config != "" {
-			creds, err := a.loadCredentials(ctx, n.secrets, n.config, n.cluster.flake)
+			c, err := loadCluster(n.cluster)
+			if err != nil {
+				return err
+			}
+			creds, err := a.loadCredentials(ctx, n.secrets, n.config, c)
 			if err != nil {
 				return err
 			}
 			cert = creds.cert
 		}
-		if conn, err = p.dial(n.endpoint, "--endpoint", cert); err != nil {
+		if conn, err = p.dial(n.address, "--address", cert); err != nil {
 			return err
 		}
 	default:
-		return errors.New("usage: chalkctl disks (<node> | --endpoint ADDR) [--fingerprint FP | --insecure]")
+		return errors.New("usage: chalkctl disks (<node> | --address ADDR) [--fingerprint FP | --insecure]")
 	}
 	resp, err := conn.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
 	if err != nil {
@@ -567,6 +590,9 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
+	if err := t.cluster.requireNodes("apply-config"); err != nil {
+		return err
+	}
 	conn, err := dialInstalled(t)
 	if err != nil {
 		return err
@@ -575,7 +601,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	d, err := configFor(t, c)
+	d, err := t.cluster.deliveryFor(t.name, c)
 	if err != nil {
 		return err
 	}
@@ -589,7 +615,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			return err
 		}
 		if share == nil {
-			return fmt.Errorf("the role of %s has no Kubernetes", t.name)
+			return fmt.Errorf("%s is no Kubernetes node: its Node names no type", t.name)
 		}
 	}
 	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, KubernetesShare: share}))
@@ -628,8 +654,8 @@ func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile strin
 	if err != nil {
 		return err
 	}
-	if t.cluster.partial {
-		return errors.New("storage reset creates the volume as the node's config defines it, which only the cluster definition gives; pass --flake or --manifest")
+	if err := t.cluster.requireNodes("storage reset"); err != nil {
+		return err
 	}
 	conn, err := dialInstalled(t)
 	if err != nil {
@@ -639,7 +665,7 @@ func (a *app) resetVolume(ctx context.Context, n nodeCommand, passwordFile strin
 	if err != nil {
 		return err
 	}
-	d, err := configFor(t, c)
+	d, err := t.cluster.deliveryFor(t.name, c)
 	if err != nil {
 		return err
 	}
@@ -683,26 +709,18 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 		return err
 	}
 	s := resp.Msg
-	state := "no cluster definition to compare it with"
-	if !t.cluster.partial {
-		// A definition chalkctl cannot generate config from does not hide the rest of the status.
-		switch b, err := config.FromManifest(t.cluster.manifest, t.name); {
-		case err != nil:
-			state = "cannot generate the cluster definition's config: " + err.Error()
-		case b.Version != s.ConfigVersion:
-			state = "not the cluster definition's; chalkctl apply-config " + t.name + " delivers it"
-		default:
-			state = "the cluster definition's"
-		}
-	}
+	state := t.cluster.configState(t.name, s.ConfigVersion)
 	version := s.ConfigVersion
 	if version == "" {
 		// A node installed before config documents runs an identity alone.
 		version = "none"
 	}
 	fmt.Fprintf(a.stdout, "config %s (%s)\n", version, state)
-	fmt.Fprintln(a.stdout, platformLine(t, s.Platform))
+	fmt.Fprintln(a.stdout, t.cluster.platformLine(t.name, s.Platform))
 	for _, line := range bootLines(s.Boot) {
+		fmt.Fprintln(a.stdout, line)
+	}
+	if line := t.cluster.imageLine(t.name, s.Boot); line != "" {
 		fmt.Fprintln(a.stdout, line)
 	}
 	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
@@ -947,46 +965,4 @@ func imageFiles(path string) (raw, definitions string, err error) {
 		raw = raws[0]
 	}
 	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
-}
-
-// nodeNames are what the node certificate of the target is for: its name, its hostname and its
-// static addresses.
-func nodeNames(t *target) pki.NodeNames {
-	hostnames := []string{t.name}
-	if h := t.node.Identity.Hostname; h != "" && h != t.name {
-		hostnames = append(hostnames, h)
-	}
-	return pki.NodeNames{CommonName: t.name, DNSNames: hostnames, IPs: ipAddresses(t.node.Identity.StaticAddresses())}
-}
-
-// ipAddresses parses the addresses that are IPs, for the node certificate.
-func ipAddresses(addrs []string) []net.IP {
-	var ips []net.IP
-	for _, a := range addrs {
-		if ip := net.ParseIP(a); ip != nil {
-			ips = append(ips, ip)
-		}
-	}
-	return ips
-}
-
-// samePlatform refuses a node that runs an image of another platform than the cluster definition
-// declares: its identity and images would not fit the machine.
-func samePlatform(t *target, reported string) error {
-	if t.cluster.partial || reported == t.node.Platform {
-		return nil
-	}
-	return fmt.Errorf("%s runs an image built for %s, but the cluster definition declares it on %s; changing a node's platform is a reinstall", t.name, reported, t.node.Platform)
-}
-
-// platformLine is the status line of the platform the node runs on, compared with the cluster
-// definition's.
-func platformLine(t *target, reported string) string {
-	switch {
-	case t.cluster.partial:
-		return "platform " + reported
-	case reported != t.node.Platform:
-		return fmt.Sprintf("platform %s, but the cluster definition declares %s; changing a node's platform is a reinstall", reported, t.node.Platform)
-	}
-	return fmt.Sprintf("platform %s (the cluster definition's)", reported)
 }

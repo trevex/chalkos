@@ -3,13 +3,16 @@ package chalkctl
 // The long descriptions and examples of chalkctl's commands, which its help and the generated
 // reference pages show. They are kept together so they read as one text.
 
-const rootLong = `chalkctl builds, signs, installs and operates the nodes of a chalkos cluster. It reads the
-cluster definition from a flake, or from a manifest file with --manifest, and talks to chalkd on
-each node over mutual TLS. Commands authenticate with the cluster's secrets file, which holds
-every CA key, or with a client file (chalkctl config new), which holds a certificate of the
-admin, operator or reader role. Each command's help says which of the two it needs. Commands that
-accept both take --config, else --secrets, else the client file $CHALKOSCONFIG names, else a
-secrets file in the flake directory, else ~/.config/chalkos/config.
+const rootLong = `chalkctl signs, installs and operates the nodes of a chalkos cluster. It reads the cluster from
+an inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
+address chalkctl reaches it at and the config files it gets, and talks to chalkd on each node
+over mutual TLS. chalkctl never builds images: each node's Image document names the directory of
+an image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
+or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
+reader role. Each command's help says which of the two it needs. Commands that accept both take
+--config, else --secrets, else the client file $CHALKOSCONFIG names, else a secrets file beside
+the inventory, else ~/.config/chalkos/config. --manifest reads a cluster definition's manifest
+instead of an inventory.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.`
@@ -45,13 +48,13 @@ a client file needs the secrets file.`
 
 const configExample = `  chalkctl config new --name alice --role operator`
 
-const configNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, the OS
-CA that nodes' certificates chain to, and the nodes' addresses. A client file works for status,
-logs, disks, reboot, storage reset, bootstrap, the etcd commands and upgrade; every other command
-needs the secrets file. The role decides what chalkd allows: a reader may read nodes'
-information, disks, status and logs and etcd's members; an operator may also reboot, upgrade,
-drain and uncordon nodes; an admin may call every method of chalkd except RenewNodeCertificate,
-which needs the node role (nodes call it to renew their own certificates). The file is written to
+const configNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
+the OS CA that nodes' certificates chain to. A client file works for status, logs, disks,
+reboot, storage reset, bootstrap, the etcd commands and upgrade; every other command needs the
+secrets file. The role decides what chalkd allows: a reader may read nodes' information, disks,
+status and logs and etcd's members; an operator may also reboot, upgrade, drain and uncordon
+nodes; an admin may call every method of chalkd except RenewNodeCertificate, which needs the
+node role (nodes call it to renew their own certificates). The file is written to
 ~/.config/chalkos/config unless --out names another; commands read it from there, or from the
 path --config or $CHALKOSCONFIG names. The command needs the secrets file.`
 
@@ -147,10 +150,10 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
   chalkctl rotate kubernetes-ca --resume
   chalkctl rotate kubernetes-ca --finish`
 
-const upgradeExample = `  # Build each node's image from the flake and upgrade the whole cluster.
+const upgradeExample = `  # Upgrade the whole cluster, each node to the image its Image names.
   chalkctl upgrade
 
-  # Upgrade the workers of an image's role, two at a time, with a prebuilt image, which
+  # Upgrade the nodes that run an image's variant, two at a time, with a prebuilt image, which
   # chalkctl signs.
   chalkctl upgrade --image ./worker-image --max-unavailable 2 --sign-key db.key --sign-cert db.crt`
 
@@ -161,51 +164,47 @@ signing and can leave the image partly signed. The command needs no secrets file
 
 const signExample = `  chalkctl sign --image chalkos.raw --repart-json repart-output.json --key db.key --cert db.crt`
 
-const installLong = `Installs a node that waits in maintenance mode: a machine that booted the installer, or a role
-image booted for the first time. The node serves a self-signed certificate in maintenance mode, so
-chalkctl verifies it by the SHA-256 fingerprint the node prints on its console (--fingerprint),
-or accepts any certificate with --insecure and prints the fingerprint it saw, which can be checked
-against the console afterwards; the secrets go over a second connection pinned to that
-fingerprint.
+const installLong = `Installs a node that waits in maintenance mode: a machine that booted the installer, or a
+node's image booted for the first time. The node serves a self-signed certificate in maintenance
+mode, so chalkctl verifies it by the SHA-256 fingerprint the node prints on its console
+(--fingerprint), or accepts any certificate with --insecure and prints the fingerprint it saw,
+which can be checked against the console afterwards; the secrets go over a second connection
+pinned to that fingerprint.
 
-chalkctl sends the node its config, documents generated from the cluster definition and checked
+chalkctl sends the node its config, the documents of the files the inventory gives it, checked
 against the schemas of the image it installs, a node certificate, the OS CA, the secret of its
-encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes role,
-its Kubernetes share. A node that runs its role image already installs in place. A node that
-runs the installer gets the role image of its platform as well: --image, or the image chalkctl
-builds from the flake, signed for Secure Boot with --sign-key and --sign-cert when given. The
-installer writes it to the disk the node's SystemDisk names: a disk on which blkid finds no
-signature, or one holding an unfinished install of the node's role, which it continues; any
-other disk only with --wipe-disk. The node reboots into the installed image. The command needs
-the secrets file.`
+encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node,
+its Kubernetes share. A node that runs its image already installs in place. A node that runs the
+installer gets the image as well: --image, or the directory the node's Image names, signed for
+Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the disk the
+node's SystemDisk names: a disk on which blkid finds no signature, or one holding an unfinished
+install of the node, which it continues; any other disk only with --wipe-disk. The node reboots
+into the installed image. The command needs the secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
   # Install w1 at an address of the network it booted into, with a prebuilt image, which
   # chalkctl signs.
-  chalkctl install w1 --endpoint 192.168.1.50 --insecure --image ./worker-image \
+  chalkctl install w1 --address 192.168.1.50 --insecure --image ./worker-image \
     --sign-key db.key --sign-cert db.crt`
 
 const disksLong = `Lists a node's disks with their use, the partitions on them, and the properties a storage
 definition selects disks by: size, type, model, serial number and WWN. An installed node is
 reached with a reader client file or the secrets file; a node in maintenance mode with
---fingerprint or --insecure as well. A node that the cluster definition does not name yet is
-reached at --endpoint, in maintenance mode, and needs no secrets file or client file.`
+--fingerprint or --insecure as well. A node that the inventory does not name yet is reached at
+--address, in maintenance mode, and needs no secrets file or client file.`
 
 const disksExample = `  # The disks of an installed node.
   chalkctl disks w1
 
-  # The disks of a machine that booted the installer and is not in the cluster definition yet.
-  chalkctl disks --endpoint 192.168.1.50 --insecure`
+  # The disks of a machine that booted the installer and is not in the inventory yet.
+  chalkctl disks --address 192.168.1.50 --insecure`
 
-const applyConfigLong = `Delivers a node's config to the installed node: the documents chalkctl generates from the
-cluster definition, which set its hostname, networks, storage, time servers, Kubernetes settings
-(its kind, labels, taints, addresses and subnets, and the cluster's Kubernetes settings) and the
-documents of its extensions' kinds. chalkctl first asks the node for the contract of the image it
-runs: its platform, schemas and image.json. It refuses an image of another platform than the
-cluster definition gives the node, and checks that the documents give back what the cluster
-definition declares for the node. The node replaces its config as a whole, and applies
+const applyConfigLong = `Delivers a node's config to the installed node: the documents of the files the inventory gives
+it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
+image.json. It refuses an image of another platform than the node's Image, and checks the
+documents as the node does. The node replaces its config as a whole, and applies
 additive storage changes (a new volume, for example) while it runs. When the config changes a
 volume destructively, the node refuses the whole config and applies none of it; chalkctl storage
 reset recreates such a volume. Otherwise the node restarts the units that read what changed, and
@@ -222,23 +221,24 @@ const resetVolumeLong = `Wipes one volume of a node and creates it again, empty,
 Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
 node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
 A volume the config leaves unencrypted is created without encryption. The command needs the
-cluster definition, which defines the volume, and an admin client file or the secrets file. A
+inventory, which defines the volume, and an admin client file or the secrets file. A
 node whose fallback is its recovery key needs the secrets file, from which the key is derived.`
 
 const resetVolumeExample = `  # Recreate the data volume of w1.
   chalkctl storage reset w1 data`
 
-const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the cluster
-definition gives; its platform; the image version it booted and whether that boot was found
-healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled
-back, with the journal of the boot that failed; its volumes and their state; Kubernetes; the
-certificates it serves and when they expire; the CAs it trusts; its clock; and the units that
-failed. The command needs a reader client file or the secrets file.`
+const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the inventory
+gives; its platform; the image version it booted and whether that boot was found healthy; an
+upgrade that is installed and boots next; an upgrade that failed and was rolled back, with the
+journal of the boot that failed; whether its store is the image its Image names; its volumes
+and their state; Kubernetes; the certificates it serves and when they expire; the CAs it trusts;
+its clock; and the units that failed. The command needs a reader client file or the secrets
+file.`
 
 const statusExample = `  chalkctl status cp1
 
-  # With the client file a lab writes.
-  chalkctl status cp1 --config ~/.local/state/chalklab/lab/chalkctl.json`
+  # With the inventory a lab writes.
+  chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml`
 
 const logsLong = `Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
 keeps printing new entries until interrupted. The command needs a reader client file or the
@@ -260,16 +260,14 @@ file stores it. The command needs the secrets file.`
 
 const recoveryKeyExample = `  chalkctl recovery-key w1`
 
-const upgradeLong = `Installs on each node the image of its role and platform: control planes one at a time, each
-only while etcd keeps its quorum without it, then workers and nodes without Kubernetes in batches
-of --max-unavailable. Without --image the nodes (every node of the cluster, or those --nodes
-names) are grouped by the role the cluster definition gives them and the platform they run, and
-each group's image is built from the cluster definition; with --image the nodes of the image's
-role get it, or those --nodes names whatever their role, and nodes on another platform are
-skipped and named. A node that runs on another platform than the cluster definition declares
-stops the run before any node is sent anything. A node may get an image of another role than the
-one it runs, which chalkctl prints; the node checks its stored config against the image before
-the image becomes its next boot.
+const upgradeLong = `Installs on each node a new image: control planes one at a time, each only while etcd keeps its
+quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
+Without --image each node (every node of the cluster, or those --nodes names) gets the image its
+Image document names, and a node that runs on another platform than that image stops the run
+before any node is sent anything. With --image the nodes that run the image's variant get it, or
+those --nodes names whatever they run, and nodes on another platform are skipped and named. A
+node may get an image of another variant than the one it runs, which chalkctl prints; the node
+checks its stored config against the image before the image becomes its next boot.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
@@ -281,8 +279,7 @@ Run again, the command skips nodes that run the image and continues one it stopp
 uncordons only nodes it cordoned itself. etcd of one or two control planes loses its quorum while
 one reboots, and the API server is down, which --allow-downtime accepts. Pods with emptyDir
 volumes are evicted only with --delete-emptydir-data. The command needs an operator client file
-or the secrets file. Without --image it builds the images from the flake, so it runs in the
-flake's directory or with --flake.`
+or the secrets file.`
 
 const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
 status before the next one starts: accept (every node trusts the new value besides the old one),

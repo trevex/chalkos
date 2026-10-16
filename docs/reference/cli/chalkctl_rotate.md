@@ -37,23 +37,22 @@ chalkctl rotate <kind> [flags]
 ## Options
 
 ```
-      --cluster string       cluster to use when the flake defines several
-      --endpoint NODE=ADDR   address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's first static address)
-      --finish               remove the old value from every node and the secrets file
-      --flake string         directory of the flake that defines the cluster (default ".")
-      --force                with --finish, finish the service-account key's rotation within the hour after its switch
-  -h, --help                 help for rotate
-      --identity strings     age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --manifest string      read the cluster's manifest from this file instead of evaluating the flake
-      --out string           write the changed secrets file to this new file instead of updating the secrets file in place
-      --public-out string    write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place
-      --recipient strings    age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out
-      --resume               continue the rotation the secrets file records
-      --secrets string       secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
-      --timeout duration     how long to wait for each node to apply a phase (default 10m0s)
+      --address NODE=ADDR   address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's address in the inventory)
+      --finish              remove the old value from every node and the secrets file
+      --force               with --finish, finish the service-account key's rotation within the hour after its switch
+  -h, --help                help for rotate
+      --identity strings    age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
+      --inventory string    inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
+      --manifest string     read the cluster's nodes from this cluster definition's manifest instead of an inventory
+      --out string          write the changed secrets file to this new file instead of updating the secrets file in place
+      --public-out string   write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place
+      --recipient strings   age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out
+      --resume              continue the rotation the secrets file records
+      --secrets string      secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
+      --timeout duration    how long to wait for each node to apply a phase (default 10m0s)
 ```
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 

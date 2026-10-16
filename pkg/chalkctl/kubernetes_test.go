@@ -136,7 +136,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 func TestKubeconfig(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "kubeconfig")
-	args := []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir, "--out", out, "--server", "https://127.0.0.1:16443", "--ttl", "1h"}
+	args := []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--out", out, "--server", "https://127.0.0.1:16443", "--ttl", "1h"}
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestKubeconfigTrustsBothCAs(t *testing.T) {
 	issue := func() (ca []byte, client *x509.Certificate) {
 		t.Helper()
 		out := filepath.Join(t.TempDir(), "kubeconfig")
-		if err := ta.run(context.Background(), []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir, "--out", out}); err != nil {
+		if err := ta.run(context.Background(), []string{"kubeconfig", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--out", out}); err != nil {
 			t.Fatal(err)
 		}
 		data, _ := os.ReadFile(out)

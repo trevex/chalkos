@@ -18,10 +18,11 @@ import (
 
 // kubernetesShare issues the share of a node with Kubernetes; nil for one without.
 func kubernetesShare(t *target, now time.Time) ([]byte, error) {
-	if t.node.Kind == "" {
-		return nil, nil
+	kind, err := t.cluster.kind(t.name)
+	if err != nil || kind == "" {
+		return nil, err
 	}
-	share, err := kpki.ShareFor(&t.secrets, t.node.Kind, t.name, now)
+	share, err := kpki.ShareFor(&t.secrets, kind, t.name, now)
 	if err != nil {
 		return nil, err
 	}
@@ -50,9 +51,15 @@ func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duratio
 	if err != nil {
 		return err
 	}
-	// Without the cluster definition the node itself refuses when it is a worker.
-	if kind := t.node.Kind; !t.cluster.partial && kind != identity.KindControlPlane {
-		return fmt.Errorf("%s is not a control-plane node; bootstrap one of the cluster's control-plane nodes", t.name)
+	// Without an inventory the node itself refuses when it is a worker.
+	if !t.cluster.partial {
+		kind, err := t.cluster.kind(t.name)
+		if err != nil {
+			return err
+		}
+		if kind != identity.KindControlPlane {
+			return fmt.Errorf("%s is not a control-plane node; bootstrap one of the cluster's control-plane nodes", t.name)
+		}
 	}
 	conn, err := dialInstalled(t)
 	if err != nil {
@@ -101,11 +108,17 @@ func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) e
 	if len(pos) != 0 {
 		return errors.New("usage: chalkctl kubeconfig [--ttl 8760h] [--out FILE] [--server URL]")
 	}
-	c, err := a.loadCluster(ctx, cf)
+	c, err := loadCluster(cf)
 	if err != nil {
 		return err
 	}
-	secrets, err := a.loadSecrets(ctx, sf, cf.flake)
+	if err := c.requireNodes("kubeconfig"); err != nil {
+		return err
+	}
+	if c.endpoint == "" {
+		return fmt.Errorf("the Cluster %s names no endpoint, which a kubeconfig points clients at", c.name)
+	}
+	secrets, err := a.loadSecrets(ctx, sf, c)
 	if err != nil {
 		return err
 	}
@@ -114,9 +127,9 @@ func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) e
 	if err != nil {
 		return err
 	}
-	kc := kpki.Kubeconfig{Name: c.manifest.Cluster.Name, Server: c.manifest.Cluster.Endpoint, CA: []byte(k.CABundle()), Client: admin}
+	kc := kpki.Kubeconfig{Name: c.name, Server: c.endpoint, CA: []byte(k.CABundle()), Client: admin}
 	if f.server != "" {
-		endpoint, err := url.Parse(c.manifest.Cluster.Endpoint)
+		endpoint, err := url.Parse(c.endpoint)
 		if err != nil {
 			return fmt.Errorf("the cluster endpoint: %w", err)
 		}

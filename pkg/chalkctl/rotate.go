@@ -18,10 +18,10 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// endpointList is --endpoint NODE=ADDR, which may be given for each node.
-type endpointList map[string]string
+// addressList is --address NODE=ADDR, which may be given for each node.
+type addressList map[string]string
 
-func (l endpointList) String() string {
+func (l addressList) String() string {
 	var s []string
 	for _, name := range slices.Sorted(maps.Keys(l)) {
 		s = append(s, name+"="+l[name])
@@ -30,9 +30,9 @@ func (l endpointList) String() string {
 }
 
 // Type names the value in help.
-func (l endpointList) Type() string { return "node=addr" }
+func (l addressList) Type() string { return "node=addr" }
 
-func (l endpointList) Set(v string) error {
+func (l addressList) Set(v string) error {
 	name, addr, ok := strings.Cut(v, "=")
 	if !ok || name == "" || addr == "" {
 		return errors.New("want NODE=ADDR")
@@ -45,13 +45,13 @@ type rotateFlags struct {
 	cluster               clusterFlags
 	secrets               secretFlags
 	change                changeFlags
-	endpoints             endpointList
+	addresses             addressList
 	resume, finish, force bool
 	timeout               time.Duration
 }
 
 func (a *app) rotateCommand() *cobra.Command {
-	f := rotateFlags{endpoints: endpointList{}}
+	f := rotateFlags{addresses: addressList{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "rotate <kind>",
 		Short:   "Rotate os-ca, kubernetes-ca, service-account-key or encryption-key",
@@ -62,7 +62,9 @@ func (a *app) rotateCommand() *cobra.Command {
 	f.cluster.register(fs)
 	f.secrets.register(fs)
 	f.change.register(fs)
-	fs.Var(f.endpoints, "endpoint", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's first static address)")
+	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
+	fs.Var(f.addresses, "endpoint", "address of a node's chalkd, `NODE=ADDR`")
+	fs.MarkHidden("endpoint")
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
 	fs.BoolVar(&f.force, "force", false, "with --finish, finish the service-account key's rotation within the hour after its switch")
@@ -71,7 +73,7 @@ func (a *app) rotateCommand() *cobra.Command {
 }
 
 func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
-	cf, sf, change, endpoints := f.cluster, f.secrets, f.change, f.endpoints
+	cf, sf, change, addresses := f.cluster, f.secrets, f.change, f.addresses
 	if len(pos) != 1 || f.resume && f.finish || f.force && !f.finish {
 		return errors.New("usage: chalkctl rotate " + strings.Join(pki.RotationKinds, "|") + " [--resume | --finish [--force]]")
 	}
@@ -79,21 +81,28 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	if !slices.Contains(pki.RotationKinds, kind) {
 		return fmt.Errorf("rotate: unknown kind %q; rotate one of %s", kind, strings.Join(pki.RotationKinds, ", "))
 	}
-	c, err := a.loadCluster(ctx, cf)
+	c, err := loadCluster(cf)
 	if err != nil {
 		return err
 	}
-	for name := range endpoints {
-		if _, err := c.node(name); err != nil {
+	if err := c.requireNodes("rotate"); err != nil {
+		return err
+	}
+	for name := range addresses {
+		if err := c.node(name); err != nil {
 			return err
 		}
 	}
-	file, err := a.openSecrets(ctx, sf, cf.flake, change)
+	// Every node's kind is read before any node is sent anything.
+	if _, err := c.nodesOf("", ""); err != nil {
+		return err
+	}
+	file, err := a.openSecrets(ctx, sf, c, change)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	r := &rotation{a: a, cluster: c, file: file, endpoints: endpoints, timeout: f.timeout, poll: a.poll()}
+	r := &rotation{a: a, cluster: c, file: file, addresses: addresses, timeout: f.timeout, poll: a.poll()}
 	switch {
 	case f.finish:
 		return r.finish(ctx, kind, f.force)
@@ -125,8 +134,8 @@ type rotation struct {
 	a       *app
 	cluster *cluster
 	file    *secretsFile
-	// endpoints are the nodes' chalkd addresses that --endpoint gives.
-	endpoints map[string]string
+	// addresses are the nodes' chalkd addresses that --address gives.
+	addresses map[string]string
 	// timeout bounds each wait for a node; poll is the time between two looks.
 	timeout, poll time.Duration
 }
@@ -260,13 +269,8 @@ func (r *rotation) apply(ctx context.Context, kind, phase string) error {
 // nodesOf lists the cluster's nodes of a Kubernetes kind in name order: control planes,
 // workers, or with kind "" those without Kubernetes.
 func (r *rotation) nodesOf(kind string) []string {
-	m := r.cluster.manifest
-	var names []string
-	for _, name := range slices.Sorted(maps.Keys(m.Nodes)) {
-		if m.Nodes[name].Kind == kind {
-			names = append(names, name)
-		}
-	}
+	// rotate read every node's kind before it started, so no error is left to report.
+	names, _ := r.cluster.nodesOf(kind, "")
 	return names
 }
 
@@ -282,7 +286,7 @@ func (r *rotation) target(name string) (*target, error) {
 	if err != nil {
 		return nil, err
 	}
-	return targetIn(r.cluster, nodeCommand{endpoint: r.endpoints[name]}, name, creds)
+	return targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, creds)
 }
 
 // call runs fn against a node.
@@ -498,11 +502,11 @@ func (r *rotation) applyOSCA(ctx context.Context, phase string) error {
 				r.say("  %s serves a certificate of the new node CA already", name)
 				return nil
 			}
-			t, err := r.target(name)
+			names, err := r.cluster.certNames(name)
 			if err != nil {
 				return err
 			}
-			cert, err := pki.IssueNode(s.NodeCA, nodeNames(t), r.a.now())
+			cert, err := pki.IssueNode(s.NodeCA, names, r.a.now())
 			if err != nil {
 				return err
 			}

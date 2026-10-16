@@ -27,21 +27,20 @@ chalkctl logs <node> [flags]
 ## Options
 
 ```
-      --cluster string       cluster to use when the flake defines several
-      --config string        client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when the flake directory holds no secrets file)
-      --endpoint string      address of the node's chalkd, host or host:port (default the node's first static address, or the address a client file that prefers its addresses names)
+      --address string       address of the node's chalkd, host or host:port (default the node's address in the inventory)
+      --config string        client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when no secrets file is beside the inventory)
       --fingerprint string   SHA-256 fingerprint the node prints on its console in maintenance mode
-      --flake string         directory of the flake that defines the cluster (default ".")
   -f, --follow               keep printing new entries
   -h, --help                 help for logs
       --identity strings     age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --insecure             accept any certificate and print the node's fingerprint
-      --manifest string      read the cluster's manifest from this file instead of evaluating the flake
-      --secrets string       secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
+      --inventory string     inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
+      --manifest string      read the cluster's nodes from this cluster definition's manifest instead of an inventory
+      --secrets string       secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
       --unit string          show only this unit's entries
 ```
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 

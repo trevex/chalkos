@@ -468,9 +468,9 @@ var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprin
 // setUp installs each node in place, bootstraps the first control plane, and writes a kubeconfig
 // and a client file that reach the lab through its forwarded ports.
 func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) error {
-	cluster := []string{"--manifest", filepath.Join(dir, manifestFile), "--flake", f.flake}
-	if f.secrets != "" {
-		cluster = append(cluster, "--secrets", f.secrets)
+	cluster := []string{"--manifest", filepath.Join(dir, manifestFile)}
+	if secrets := secretsFile(f); secrets != "" {
+		cluster = append(cluster, "--secrets", secrets)
 	}
 	for _, n := range l.Nodes {
 		addr := "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
@@ -522,6 +522,22 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 	}
 	fmt.Fprintf(a.stdout, "  chalkctl status %s --config %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, filepath.Join(dir, clientFile))
 	return nil
+}
+
+// secretsFile is the secrets file chalkctl reads: --secrets, else secrets.age or secrets.json in
+// the flake directory, as an absolute path; empty when there is none, and chalkctl says so.
+func secretsFile(f createFlags) string {
+	if f.secrets != "" {
+		return f.secrets
+	}
+	for _, name := range []string{"secrets.age", "secrets.json"} {
+		if path, err := filepath.Abs(filepath.Join(f.flake, name)); err == nil {
+			if _, err := os.Stat(path); err == nil {
+				return path
+			}
+		}
+	}
+	return ""
 }
 
 // maintenanceFingerprint waits for a node's chalkd to come up in maintenance mode, and returns

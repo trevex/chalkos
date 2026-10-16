@@ -44,7 +44,7 @@ func (ta *testApp) withoutSecrets(t *testing.T) {
 func TestConfigNew(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "alice.json")
-	args := []string{"config", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir}
+	args := []string{"config", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json")}
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
@@ -69,14 +69,14 @@ func TestConfigNew(t *testing.T) {
 		t.Errorf("--force: %v", err)
 	}
 	// By default the file goes where chalkctl looks for it.
-	if err := ta.run(context.Background(), []string{"config", "new", "--name", "bob", "--role", "reader", "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir}); err != nil {
+	if err := ta.run(context.Background(), []string{"config", "new", "--name", "bob", "--role", "reader", "--manifest", filepath.Join(ta.dir, "manifest.json")}); err != nil {
 		t.Fatal(err)
 	}
 	if c, err := client.ReadConfig(defaultConfigPath(ta.home)); err != nil || c.Name != "bob" {
 		t.Errorf("default client file: %v, %v", c, err)
 	}
 	for _, bad := range [][]string{{"--name", "x", "--role", "root"}, {"--role", "reader"}, {"--name", "x", "--role", "node"}} {
-		args := append([]string{"config", "new", "--out", filepath.Join(ta.dir, "bad.json"), "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir}, bad...)
+		args := append([]string{"config", "new", "--out", filepath.Join(ta.dir, "bad.json"), "--manifest", filepath.Join(ta.dir, "manifest.json")}, bad...)
 		if err := ta.run(context.Background(), args); err == nil {
 			t.Errorf("config new %v: accepted", bad)
 		}
@@ -168,30 +168,30 @@ func TestClientFileExpiry(t *testing.T) {
 	}
 }
 
-func TestClientFileWithoutClusterDefinition(t *testing.T) {
+func TestClientFileWithoutAnInventory(t *testing.T) {
 	ta := newTestApp(t)
 	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
 	ta.withoutSecrets(t)
-	// No --manifest and no flake.nix: the client file names the nodes.
+	// No inventory: the client file names the cluster and its nodes.
 	without := func(args ...string) []string {
-		return append(args, "--flake", ta.dir, "--config", reader, "--endpoint", addr)
+		return append(args, "--config", reader, "--endpoint", addr)
 	}
 	if err := ta.run(context.Background(), without("status", "n1")); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "no cluster definition to compare it with") {
+	if !strings.Contains(ta.stdout.String(), "no inventory to compare it with") {
 		t.Errorf("stdout = %q", ta.stdout)
 	}
-	if err := ta.run(context.Background(), without("status", "n9")); err == nil || !strings.Contains(err.Error(), "no node n9") {
-		t.Errorf("an unknown node: %v", err)
+	if err := ta.run(context.Background(), without("status", "n9")); err == nil || !strings.Contains(err.Error(), "not n9") {
+		t.Errorf("a node of another name: %v", err)
 	}
-	if err := ta.run(context.Background(), without("storage", "reset", "n1", "var")); err == nil || !strings.Contains(err.Error(), "cluster definition") {
-		t.Errorf("storage reset: %v, want a refusal naming the cluster definition", err)
+	if err := ta.run(context.Background(), without("storage", "reset", "n1", "var")); err == nil || !strings.Contains(err.Error(), "inventory") {
+		t.Errorf("storage reset: %v, want a refusal naming the inventory", err)
 	}
-	if err := ta.run(context.Background(), []string{"etcd", "members", "--flake", ta.dir, "--config", reader}); err == nil || !strings.Contains(err.Error(), "--via") {
+	if err := ta.run(context.Background(), []string{"etcd", "members", "--config", reader}); err == nil || !strings.Contains(err.Error(), "--via") {
 		t.Errorf("etcd members: %v, want a refusal naming --via", err)
 	}
 
@@ -212,7 +212,7 @@ func TestConfigNewCreatesItsDirectoryPrivate(t *testing.T) {
 	ta := newTestApp(t)
 	for _, force := range []bool{false, true} {
 		dir := filepath.Join(ta.dir, fmt.Sprintf("new-%v", force), "chalkos")
-		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config"), "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir}
+		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config"), "--manifest", filepath.Join(ta.dir, "manifest.json")}
 		if force {
 			args = append(args, "--force")
 		}
@@ -244,7 +244,7 @@ func TestClientFileNodes(t *testing.T) {
 	path := filepath.Join(ta.dir, "alice.json")
 	writeFile(t, path, string(data))
 	ta.withoutSecrets(t)
-	if err := ta.run(context.Background(), []string{"status", "n1", "--config", path, "--flake", ta.dir}); err != nil {
+	if err := ta.run(context.Background(), []string{"status", "n1", "--config", path}); err != nil {
 		t.Fatalf("status through the client file's address: %v", err)
 	}
 	if !strings.Contains(ta.stdout.String(), "config ") {
@@ -272,7 +272,7 @@ func (ta *testApp) writeAddressConfig(t *testing.T, nodes map[string]string, pre
 
 // TestClientFileAddresses reaches a node at the address a client file that prefers its addresses
 // names, such as a forwarded port, before the static address of the cluster definition, and
-// --endpoint before both. An address that cannot be reached is named with where it came from.
+// --address before both. An address that cannot be reached is named with where it came from.
 func TestClientFileAddresses(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
@@ -286,26 +286,28 @@ func TestClientFileAddresses(t *testing.T) {
 	}
 	// Port 1 refuses the connection at once.
 	closed := ta.writeAddressConfig(t, map[string]string{"n1": "127.0.0.1:1"}, true)
-	if err := status(closed, "--endpoint", addr); err != nil {
-		t.Errorf("--endpoint after a client file naming another address: %v", err)
+	if err := status(closed, "--address", addr); err != nil {
+		t.Errorf("--address after a client file naming another address: %v", err)
 	}
 	err := status(closed)
 	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from the client file "+closed+")") {
 		t.Errorf("an unreachable address of the client file: %v, want it named with the client file", err)
 	}
-	if err := status(closed, "--endpoint", "127.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --endpoint)") {
-		t.Errorf("an unreachable --endpoint: %v, want it named with --endpoint", err)
+	if err := status(closed, "--address", "127.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --address)") {
+		t.Errorf("an unreachable --address: %v, want it named with --address", err)
 	}
 }
 
-// TestEndpointPrecedence picks --endpoint, then a client file's address when the file prefers
-// its addresses and names the node, then the cluster definition's first static address.
-func TestEndpointPrecedence(t *testing.T) {
+// TestAddressPrecedence picks --address, then a client file's address when the file prefers its
+// addresses and names the node, then the cluster definition's first static address; without a
+// cluster definition, the client file's address, and else --address alone.
+func TestAddressPrecedence(t *testing.T) {
 	ta := newTestApp(t)
-	def := &cluster{manifest: ta.manifest}
+	def := clusterOfManifest(ta.manifest, ta.dir)
 	file := func(nodes map[string]string, prefer bool) *credentials {
 		return &credentials{config: &client.Config{Nodes: nodes, PreferNodeAddresses: prefer}, configPath: "lab.json"}
 	}
+	partial := &cluster{dir: ".", partial: true}
 	for _, tc := range []struct {
 		name         string
 		c            *cluster
@@ -313,19 +315,21 @@ func TestEndpointPrecedence(t *testing.T) {
 		creds        *credentials
 		addr, source string
 	}{
-		{"--endpoint beats the client file", def, "10.9.9.9", file(map[string]string{"n1": "127.0.0.1:15001"}, true), "10.9.9.9", "--endpoint"},
+		{"--address beats the client file", def, "10.9.9.9", file(map[string]string{"n1": "127.0.0.1:15001"}, true), "10.9.9.9", "--address"},
 		{"the client file when it prefers its addresses", def, "", file(map[string]string{"n1": "127.0.0.1:15001"}, true), "127.0.0.1:15001", "the client file lab.json"},
 		{"a node the client file does not name", def, "", file(map[string]string{"n2": "127.0.0.1:15002"}, true), "10.0.0.11", "the cluster definition"},
 		{"the definition without the opt-in", def, "", file(map[string]string{"n1": "127.0.0.1:15001"}, false), "10.0.0.11", "the cluster definition"},
 		{"the secrets file", def, "", &credentials{}, "10.0.0.11", "the cluster definition"},
-		{"no cluster definition", clusterOfConfig(client.Config{Cluster: "lab", Nodes: map[string]string{"n1": "10.0.0.20"}}, clusterFlags{}), "", file(map[string]string{"n1": "10.0.0.20"}, false), "10.0.0.20", "the client file lab.json"},
-		{"no cluster definition nor credentials", clusterOfConfig(client.Config{Cluster: "lab", Nodes: map[string]string{"n1": "10.0.0.20"}}, clusterFlags{}), "", nil, "10.0.0.20", "the client file"},
+		{"no cluster definition", partial, "", file(map[string]string{"n1": "10.0.0.20"}, false), "10.0.0.20", "the client file lab.json"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			addr, source, err := tc.c.endpoint(tc.flag, tc.creds, "n1")
+			addr, source, err := tc.c.address(tc.flag, tc.creds, "n1")
 			if err != nil || addr != tc.addr || source != tc.source {
-				t.Errorf("endpoint = %q, %q, %v; want %q, %q", addr, source, err, tc.addr, tc.source)
+				t.Errorf("address = %q, %q, %v; want %q, %q", addr, source, err, tc.addr, tc.source)
 			}
 		})
+	}
+	if _, _, err := partial.address("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "pass --address") {
+		t.Errorf("no cluster definition nor credentials = %v", err)
 	}
 }

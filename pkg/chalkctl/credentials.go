@@ -14,9 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -69,8 +67,8 @@ func secretCredentials(s pki.Secrets) (*credentials, error) {
 }
 
 // loadSecretCredentials reads the secrets file for commands that need it.
-func (a *app) loadSecretCredentials(ctx context.Context, s secretFlags, flake string) (*credentials, error) {
-	secrets, err := a.loadSecrets(ctx, s, flake)
+func (a *app) loadSecretCredentials(ctx context.Context, s secretFlags, c *cluster) (*credentials, error) {
+	secrets, err := a.loadSecrets(ctx, s, c)
 	if err != nil {
 		return nil, err
 	}
@@ -83,26 +81,26 @@ const configExpiryWarning = 30 * 24 * time.Hour
 
 // loadCredentials picks the credentials of commands a client file may run: the client file
 // --config names, else the secrets file --secrets names; else the client file $CHALKOSCONFIG
-// names, so a lab's client file works in the lab's flake directory; else the secrets file found
-// in the flake directory; else ~/.config/chalkos/config.
-func (a *app) loadCredentials(ctx context.Context, s secretFlags, config, flake string) (*credentials, error) {
+// names, so a lab's client file works where its inventory is; else the secrets file found beside
+// the inventory; else ~/.config/chalkos/config.
+func (a *app) loadCredentials(ctx context.Context, s secretFlags, config string, c *cluster) (*credentials, error) {
 	if config != "" {
 		return a.configCredentials(config)
 	}
 	if s.path != "" {
-		return a.loadSecretCredentials(ctx, s, flake)
+		return a.loadSecretCredentials(ctx, s, c)
 	}
 	if path := os.Getenv("CHALKOSCONFIG"); path != "" {
 		return a.configCredentials(path)
 	}
-	if _, found, err := secretsPath(s, flake); err != nil {
+	if _, found, err := secretsPath(s, c); err != nil {
 		return nil, err
 	} else if found {
-		return a.loadSecretCredentials(ctx, s, flake)
+		return a.loadSecretCredentials(ctx, s, c)
 	}
 	path := defaultConfigPath(a.home)
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("there is no secrets file in %s and no client file at %s; pass --secrets or --config", flake, path)
+		return nil, fmt.Errorf("there is no secrets file in %s and no client file at %s; pass --secrets or --config", c.dir, path)
 	}
 	return a.configCredentials(path)
 }
@@ -136,35 +134,6 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 		return nil, err
 	}
 	return &credentials{config: &c, configPath: path, cert: cert, osCA: c.OSCA}, nil
-}
-
-// clusterFor loads the cluster definition for commands a client file may run. Without one, when
-// the credentials come from a client file, the nodes are those the file names.
-func (a *app) clusterFor(ctx context.Context, f clusterFlags, creds *credentials) (*cluster, error) {
-	if creds.config != nil && f.manifest == "" && f.cluster == "" {
-		if _, err := os.Stat(filepath.Join(f.flake, "flake.nix")); errors.Is(err, fs.ErrNotExist) {
-			return clusterOfConfig(*creds.config, f), nil
-		}
-	}
-	c, err := a.loadCluster(ctx, f)
-	if err != nil {
-		return nil, err
-	}
-	if creds.config != nil && creds.config.Cluster != c.manifest.Cluster.Name {
-		return nil, fmt.Errorf("%s is a client file of the cluster %s, not %s", creds.configPath, creds.config.Cluster, c.manifest.Cluster.Name)
-	}
-	return c, nil
-}
-
-// clusterOfConfig is the cluster as far as a client file knows it: its name and its nodes'
-// addresses.
-func clusterOfConfig(c client.Config, f clusterFlags) *cluster {
-	m := &manifest.Manifest{Cluster: manifest.Cluster{Name: c.Cluster}, Nodes: map[string]manifest.Node{}}
-	for name, addr := range c.Nodes {
-		network := map[string]any{"networks": map[string]any{"client-file": map[string]any{"address": []any{addr}}}}
-		m.Nodes[name] = manifest.Node{Identity: identity.Identity{Network: network}}
-	}
-	return &cluster{flags: f, manifest: m, partial: true}
 }
 
 // configNew issues a client file from the secrets file: a certificate of the role for a new
@@ -201,21 +170,28 @@ func (a *app) configNew(ctx context.Context, f configNewFlags, pos []string) err
 	if len(pos) != 0 || f.name == "" || f.role == "" {
 		return errors.New("usage: chalkctl config new --name NAME --role admin|operator|reader [--ttl 8760h] [--out FILE] [--force]")
 	}
-	c, err := a.loadCluster(ctx, cf)
+	c, err := loadCluster(cf)
 	if err != nil {
 		return err
 	}
-	secrets, err := a.loadSecrets(ctx, sf, cf.flake)
+	if err := c.requireNodes("config new"); err != nil {
+		return err
+	}
+	secrets, err := a.loadSecrets(ctx, sf, c)
 	if err != nil {
 		return err
 	}
+	// A cluster definition's client file names the nodes' addresses; an inventory's nodes are
+	// reached at the inventory's.
 	nodes := map[string]string{}
-	for node := range c.manifest.Nodes {
-		if addrs := c.addresses(node); len(addrs) > 0 {
-			nodes[node] = addrs[0]
+	if c.manifest != nil {
+		for _, node := range c.nodeNames() {
+			if addrs := c.staticAddresses(node); len(addrs) > 0 {
+				nodes[node] = addrs[0]
+			}
 		}
 	}
-	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.manifest.Cluster.Name, f.name, f.role, f.ttl, nodes, time.Now())
+	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.name, f.name, f.role, f.ttl, nodes, time.Now())
 	if err != nil {
 		return err
 	}

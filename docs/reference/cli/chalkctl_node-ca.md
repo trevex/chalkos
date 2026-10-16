@@ -26,6 +26,6 @@ file.
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 * [chalkctl node-ca rotate](chalkctl_node-ca_rotate.md)	 - Issue a new node CA and deliver it to the control planes
 

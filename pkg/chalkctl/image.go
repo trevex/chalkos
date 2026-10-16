@@ -245,12 +245,16 @@ func (img *diskImage) Close() {
 	img.cleanup()
 }
 
-// checkInstallImage checks the image against the node it installs: built for the node's platform,
-// and its signatures checked as an upgrade's image is. Its role may be any: the installer checks
-// the config against the image's schemas.
+// checkInstallImage checks the image against the node it installs: built for the platform of the
+// node's config's image, and its signatures checked as an upgrade's image is. Its variant may be
+// any: the installer checks the config against the image's schemas.
 func checkInstallImage(t *target, img *diskImage, signCert string) error {
-	if got := img.info.Platform(); got != t.node.Platform {
-		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, t.node.Platform, got)
+	want, err := t.cluster.platform(t.name)
+	if err != nil {
+		return err
+	}
+	if got := img.info.Platform(); got != want {
+		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, want, got)
 	}
 	return checkImage(t.cluster, img, signCert)
 }

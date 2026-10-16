@@ -264,7 +264,7 @@ func TestNodeCARotateNamesThePublicFile(t *testing.T) {
 func TestNodeCARotateNeedsAControlPlane(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "secrets.rotated.json")
-	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir})
+	err := ta.run(context.Background(), []string{"node-ca", "rotate", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json")})
 	if err == nil || !strings.Contains(err.Error(), "control-plane") {
 		t.Errorf("err = %v, want a refusal naming the missing control-plane node", err)
 	}
@@ -280,7 +280,7 @@ func TestNodeRenewHelp(t *testing.T) {
 		t.Fatal(err)
 	}
 	help := ta.stdout.String()
-	for _, want := range []string{"chalkctl node renew <node>", "old key", "--endpoint"} {
+	for _, want := range []string{"chalkctl node renew <node>", "old key", "--address"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help lacks %q:\n%s", want, help)
 		}

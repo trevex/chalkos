@@ -2,203 +2,425 @@ package chalkctl
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
+	"net"
 	"os"
+	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/spf13/pflag"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// clusterFlags select the cluster definition.
+// clusterFlags say where chalkctl learns the cluster from.
 type clusterFlags struct {
-	flake, cluster, manifest string
+	inventory, manifest string
 }
 
 func (c *clusterFlags) register(fs *pflag.FlagSet) {
-	fs.StringVar(&c.flake, "flake", ".", "directory of the flake that defines the cluster")
-	fs.StringVar(&c.cluster, "cluster", "", "cluster to use when the flake defines several")
-	fs.StringVar(&c.manifest, "manifest", "", "read the cluster's manifest from this file instead of evaluating the flake")
+	fs.StringVar(&c.inventory, "inventory", "", "inventory naming the cluster's nodes, their addresses and their config files (default "+inventory.DefaultFile+" in the current directory, when it exists)")
+	fs.StringVar(&c.manifest, "manifest", "", "read the cluster's nodes from this cluster definition's manifest instead of an inventory")
 }
 
-// cluster is an evaluated cluster definition.
+// cluster is what chalkctl knows of the cluster it operates: its name and endpoint, its nodes and
+// their config, from an inventory or from a cluster definition's manifest. Without either it is
+// partial: a client file names it, each command names its node, and --address or the client file
+// gives the node's address.
 type cluster struct {
-	flags clusterFlags
-	// attr is the flake attribute the manifest was evaluated from, such as chalkos.homelab.
-	attr     string
-	manifest *manifest.Manifest
-	// partial is set when a client file named the nodes, without a cluster definition: the
-	// manifest holds the cluster's name and the nodes' addresses alone.
+	name, endpoint string
+	// signerCertificate is the PEM certificate of the Secure Boot db key the nodes' images are
+	// signed with; empty when none is named.
+	signerCertificate string
+	// dir is where the secrets file is looked for when neither --secrets nor the inventory names
+	// one.
+	dir     string
 	partial bool
+	// clientNodes are the nodes a client file names, on a partial cluster.
+	clientNodes []string
+	inv         *inventory.Inventory
+	manifest    *manifest.Manifest
+	// configs holds each node's config, once read from the inventory.
+	configs map[string]*inventory.NodeConfig
 }
 
-// loadCluster reads the manifest with nix eval, or from the file --manifest names.
-func (a *app) loadCluster(ctx context.Context, f clusterFlags) (*cluster, error) {
-	if f.manifest != "" {
-		data, err := os.ReadFile(f.manifest)
-		if err != nil {
-			return nil, err
-		}
-		m, err := manifest.Decode(bytes.NewReader(data))
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", f.manifest, err)
-		}
-		return &cluster{flags: f, manifest: m}, nil
+// loadCluster reads the inventory --inventory names, the manifest --manifest names, or else
+// chalkos.yaml in the current directory; without any, the cluster is partial.
+func loadCluster(f clusterFlags) (*cluster, error) {
+	switch {
+	case f.inventory != "" && f.manifest != "":
+		return nil, errors.New("pass --inventory or --manifest, not both")
+	case f.manifest != "":
+		return loadManifest(f.manifest)
+	case f.inventory != "":
+		return loadInventory(f.inventory)
 	}
-	name := f.cluster
-	if name == "" {
-		out, err := a.nix(ctx, a.stderr, "eval", "--json", f.flake+"#chalkos", "--apply", "builtins.attrNames")
-		if err != nil {
-			return nil, err
-		}
-		var names []string
-		if err := json.Unmarshal(out, &names); err != nil {
-			return nil, fmt.Errorf("list the flake's clusters: %w", err)
-		}
-		switch len(names) {
-		case 0:
-			return nil, fmt.Errorf("the flake %s defines no cluster under chalkos", f.flake)
-		case 1:
-			name = names[0]
-		default:
-			return nil, fmt.Errorf("the flake %s defines the clusters %s; choose one with --cluster", f.flake, strings.Join(names, ", "))
-		}
+	switch _, err := os.Stat(inventory.DefaultFile); {
+	case err == nil:
+		return loadInventory(inventory.DefaultFile)
+	case !errors.Is(err, fs.ErrNotExist):
+		return nil, err
 	}
-	quoted, err := attrName(name)
+	return &cluster{dir: ".", partial: true}, nil
+}
+
+// loadInventory reads an inventory, the cluster its nodes' Cluster documents name and the
+// Secure Boot certificate it names.
+func loadInventory(path string) (*cluster, error) {
+	inv, err := inventory.Load(path)
 	if err != nil {
 		return nil, err
 	}
-	attr := "chalkos." + quoted
-	out, err := a.nix(ctx, a.stderr, "eval", "--json", f.flake+"#"+attr+".manifest")
+	name, endpoint, err := inv.Cluster()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	m, err := manifest.Decode(bytes.NewReader(out))
-	if err != nil {
-		return nil, err
-	}
-	return &cluster{flags: f, attr: attr, manifest: m}, nil
-}
-
-func (c *cluster) node(name string) (manifest.Node, error) {
-	n, ok := c.manifest.Nodes[name]
-	if !ok {
-		names := make([]string, 0, len(c.manifest.Nodes))
-		for n := range c.manifest.Nodes {
-			names = append(names, n)
+	c := &cluster{name: name, endpoint: endpoint, dir: inv.Dir(), inv: inv, configs: map[string]*inventory.NodeConfig{}}
+	if sb := inv.Spec.SecureBoot; sb != nil {
+		data, err := os.ReadFile(sb.SignerCertificate)
+		if err != nil {
+			return nil, fmt.Errorf("the Secure Boot signer certificate of %s: %w", path, err)
 		}
-		sort.Strings(names)
-		return manifest.Node{}, fmt.Errorf("the cluster %s has no node %s; its nodes are %s", c.manifest.Cluster.Name, name, strings.Join(names, ", "))
+		c.signerCertificate = string(data)
 	}
-	return n, nil
+	return c, nil
 }
 
-// buildImage builds a role's image for a platform and returns the directory holding it.
-func (a *app) buildImage(ctx context.Context, c *cluster, role, platform string) (string, error) {
-	r, ok := c.manifest.Roles[role]
-	if !ok {
-		return "", fmt.Errorf("the cluster has no role %s", role)
+// loadManifest reads a cluster definition's manifest from a file; its secrets file is beside it.
+func loadManifest(path string) (*cluster, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
-	image, ok := r.Images[platform]
-	if !ok {
-		return "", fmt.Errorf("the cluster has no platform %s; its platforms are %s", platform, strings.Join(slices.Sorted(maps.Keys(r.Images)), ", "))
+	m, err := manifest.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if c.attr == "" {
-		return "", errors.New("the manifest was read from a file, so the role image cannot be built; pass --image")
+	return clusterOfManifest(m, filepath.Dir(path)), nil
+}
+
+// clusterOfManifest is the cluster a manifest describes, whose secrets file is in dir.
+func clusterOfManifest(m *manifest.Manifest, dir string) *cluster {
+	return &cluster{name: m.Cluster.Name, endpoint: m.Cluster.Endpoint, signerCertificate: m.SecureBoot.SignerCertificate, dir: dir, manifest: m}
+}
+
+// checkCredentials names a partial cluster, and its nodes, after the client file, and refuses a
+// client file of another cluster.
+func (c *cluster) checkCredentials(creds *credentials) error {
+	if creds.config == nil {
+		return nil
 	}
-	// The manifest names the image by the role's name unquoted, which splits a name with dots.
-	if image == "roles."+role+".images."+platform {
-		quotedRole, err := attrName(role)
+	if c.partial {
+		c.name = creds.config.Cluster
+		c.clientNodes = slices.Sorted(maps.Keys(creds.config.Nodes))
+		return nil
+	}
+	if creds.config.Cluster != c.name {
+		return fmt.Errorf("%s is a client file of the cluster %s, not %s", creds.configPath, creds.config.Cluster, c.name)
+	}
+	return nil
+}
+
+// source is where the cluster comes from, as messages name it.
+func (c *cluster) source() string {
+	if c.manifest != nil {
+		return "the cluster definition"
+	}
+	return "the inventory"
+}
+
+// requireNodes refuses a partial cluster for a command that needs the nodes' config.
+func (c *cluster) requireNodes(command string) error {
+	if c.partial {
+		return fmt.Errorf("%s needs an inventory, which gives the cluster's nodes and their config; pass --inventory", command)
+	}
+	return nil
+}
+
+// nodeNames are the cluster's nodes, sorted.
+func (c *cluster) nodeNames() []string {
+	switch {
+	case c.inv != nil:
+		return c.inv.NodeNames()
+	case c.manifest != nil:
+		return slices.Sorted(maps.Keys(c.manifest.Nodes))
+	}
+	return c.clientNodes
+}
+
+// node refuses a node the cluster does not have. A partial cluster has every node a command
+// names.
+func (c *cluster) node(name string) error {
+	if c.partial || slices.Contains(c.nodeNames(), name) {
+		return nil
+	}
+	return fmt.Errorf("the cluster %s has no node %s; its nodes are %s", c.name, name, strings.Join(c.nodeNames(), ", "))
+}
+
+// config is a node's config as the inventory gives it, read once.
+func (c *cluster) config(name string) (*inventory.NodeConfig, error) {
+	if nc, ok := c.configs[name]; ok {
+		return nc, nil
+	}
+	nc, err := c.inv.Node(name)
+	if err != nil {
+		return nil, err
+	}
+	c.configs[name] = nc
+	return nc, nil
+}
+
+// kind is what a node is in Kubernetes: the type its Node document names, or the kind the
+// cluster definition gives it; empty without Kubernetes and on a partial cluster.
+func (c *cluster) kind(name string) (string, error) {
+	switch {
+	case c.manifest != nil:
+		return c.manifest.Nodes[name].Kind, nil
+	case c.inv != nil:
+		nc, err := c.config(name)
 		if err != nil {
 			return "", err
 		}
-		quotedPlatform, err := attrName(platform)
-		if err != nil {
-			return "", err
-		}
-		image = "roles." + quotedRole + ".images." + quotedPlatform
+		return nc.Type, nil
 	}
-	out, err := a.nix(ctx, a.stderr, "build", "--no-link", "--print-out-paths", c.flags.flake+"#"+c.attr+"."+image+"^out")
+	return "", nil
+}
+
+// nodesOf lists the cluster's nodes of a Kubernetes kind but skip, in name order; kind "" lists
+// those without Kubernetes.
+func (c *cluster) nodesOf(kind, skip string) ([]string, error) {
+	var names []string
+	for _, name := range c.nodeNames() {
+		k, err := c.kind(name)
+		if err != nil {
+			return nil, err
+		}
+		if k == kind && name != skip {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+// platform is the platform of a node's image: that of its Image's directory, or the one the
+// cluster definition declares.
+func (c *cluster) platform(name string) (string, error) {
+	if c.manifest != nil {
+		return c.manifest.Nodes[name].Platform, nil
+	}
+	nc, err := c.config(name)
 	if err != nil {
 		return "", err
 	}
-	paths := strings.Fields(string(out))
-	if len(paths) != 1 {
-		return "", fmt.Errorf("nix build printed %d paths for the image of role %s on %s, want one", len(paths), role, platform)
-	}
-	if _, err := os.Stat(paths[0]); err != nil {
-		return "", fmt.Errorf("the image of role %s on %s: %w", role, platform, err)
-	}
-	return paths[0], nil
+	md, err := nc.Resolve()
+	return md.Platform, err
 }
 
-// attrName quotes a name as one component of a flake attribute path, so dots do not split it.
-// Nix percent-decodes the fragment of a flake reference, so every byte but the URL-unreserved
-// ones is percent-encoded. A Nix attribute path has no escape for a double quote.
-func attrName(name string) (string, error) {
-	if strings.Contains(name, `"`) {
-		return "", fmt.Errorf("the name %q contains a double quote, which a Nix attribute path cannot express", name)
+// declares says where a node's platform comes from, for messages.
+func (c *cluster) declares(name, platform string) string {
+	if c.manifest != nil {
+		return "the cluster definition declares it on " + platform
 	}
-	var b strings.Builder
-	b.WriteByte('"')
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("-._~", c) >= 0 {
-			b.WriteByte(c)
-		} else {
-			fmt.Fprintf(&b, "%%%02X", c)
-		}
+	nc, err := c.config(name)
+	if err != nil {
+		return "its config declares " + platform
 	}
-	b.WriteByte('"')
-	return b.String(), nil
+	return fmt.Sprintf("its Image %s is built for %s", nc.ImageName, platform)
 }
 
-// endpoint returns where the node's chalkd is reached and where that address comes from:
-// --endpoint; else the address a client file names for the node when the file prefers its
-// addresses, as chalklab's does; else the node's first static address in the cluster definition,
-// which without a definition is the client file's.
-func (c *cluster) endpoint(flagValue string, creds *credentials, node string) (addr, source string, err error) {
+// imageDir is the directory of the image a node's Image names. A cluster definition names its
+// images by flake attributes, which chalkctl does not build.
+func (c *cluster) imageDir(name string) (string, error) {
+	if c.inv == nil {
+		return "", errors.New("the image comes from --image without an inventory, whose Image documents name the nodes' image directories")
+	}
+	nc, err := c.config(name)
+	if err != nil {
+		return "", err
+	}
+	return nc.ImageDir, nil
+}
+
+// sameBuild refuses an image taken from a node's Image directory whose store has another root hash
+// than the directory's metadata.json names, which the node stores in its Image.
+func (c *cluster) sameBuild(name string, img *diskImage) error {
+	nc, err := c.config(name)
+	if err != nil {
+		return err
+	}
+	md, err := nc.Resolve()
+	if err != nil {
+		return err
+	}
+	if got := hex.EncodeToString(img.store.RootHash); got != md.RootHash {
+		return fmt.Errorf("%s: metadata.json names the root hash %s, but the image's store has %s", nc.ImageDir, md.RootHash, got)
+	}
+	return nil
+}
+
+// address returns where a node's chalkd is reached and where that address comes from: --address;
+// else the inventory's address of the node; else, from a cluster definition, the address a client
+// file names when it prefers its addresses, as chalklab's does, or the node's first static
+// address; else, on a partial cluster, the address the client file names.
+func (c *cluster) address(flagValue string, creds *credentials, name string) (addr, source string, err error) {
 	if flagValue != "" {
-		return flagValue, "--endpoint", nil
+		return flagValue, "--address", nil
 	}
-	if creds != nil && creds.config != nil && creds.config.PreferNodeAddresses {
-		if addr := creds.config.Nodes[node]; addr != "" {
-			return addr, "the client file " + creds.configPath, nil
+	if c.inv != nil {
+		if a := c.inv.Spec.Nodes[name].Address; a != "" {
+			return a, "the inventory " + c.inv.Path, nil
 		}
+		return "", "", fmt.Errorf("the inventory %s names no address of %s; pass --address", c.inv.Path, name)
 	}
-	addrs := c.addresses(node)
-	if len(addrs) == 0 {
-		return "", "", fmt.Errorf("node %s has no static address; pass --endpoint", node)
+	if creds != nil && creds.config != nil && (c.partial || creds.config.PreferNodeAddresses) {
+		if a := creds.config.Nodes[name]; a != "" {
+			return a, "the client file " + creds.configPath, nil
+		}
 	}
 	if c.partial {
-		// A caller that passes no credentials does not know the file's path.
-		if creds == nil || creds.configPath == "" {
-			return addrs[0], "the client file", nil
-		}
-		return addrs[0], "the client file " + creds.configPath, nil
+		return "", "", fmt.Errorf("no address of %s is known; pass --address", name)
+	}
+	addrs := c.staticAddresses(name)
+	if len(addrs) == 0 {
+		return "", "", fmt.Errorf("node %s has no static address; pass --address", name)
 	}
 	return addrs[0], "the cluster definition", nil
 }
 
-// addresses returns a node's static addresses: those of the documents chalkctl delivers to it,
-// or the client file's for a cluster known from one alone. The documents give them without the
-// schemas of the node's image, which chalkctl can only ask the node for once it has reached it.
-// When chalkctl cannot generate the node's documents, the identity the cluster definition
-// renders gives the same addresses, so the node stays reachable, to status among others, which
-// reports why.
-func (c *cluster) addresses(name string) []string {
-	if !c.partial {
-		if b, err := config.FromManifest(c.manifest, name); err == nil {
-			return config.StaticAddresses(b.Documents)
-		}
+// staticAddresses returns a node's static addresses from a cluster definition: those of the
+// documents chalkctl delivers to it, or, when it cannot generate them, those of the identity the
+// definition renders, so the node stays reachable, to status among others, which reports why.
+func (c *cluster) staticAddresses(name string) []string {
+	if b, err := config.FromManifest(c.manifest, name); err == nil {
+		return config.StaticAddresses(b.Documents)
 	}
 	return c.manifest.Nodes[name].Identity.StaticAddresses()
+}
+
+// certNames are what a node's certificate is for: its name, its hostname and its static
+// addresses, as its config gives them.
+func (c *cluster) certNames(name string) (pki.NodeNames, error) {
+	var hostname string
+	var addrs []string
+	switch {
+	case c.manifest != nil:
+		id := c.manifest.Nodes[name].Identity
+		hostname, addrs = id.Hostname, id.StaticAddresses()
+	case c.inv != nil:
+		nc, err := c.config(name)
+		if err != nil {
+			return pki.NodeNames{}, err
+		}
+		hostname, addrs = nc.Hostname, nc.StaticAddresses()
+	default:
+		return pki.NodeNames{}, errors.New("a node certificate names the node's addresses, which an inventory gives; pass --inventory")
+	}
+	hostnames := []string{name}
+	if hostname != "" && hostname != name {
+		hostnames = append(hostnames, hostname)
+	}
+	return pki.NodeNames{CommonName: name, DNSNames: hostnames, IPs: ipAddresses(addrs)}, nil
+}
+
+// ipAddresses parses the addresses that are IPs, for the node certificate.
+func ipAddresses(addrs []string) []net.IP {
+	var ips []net.IP
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
+}
+
+// samePlatform refuses a node that runs an image of another platform than its config's image:
+// its config and images would not fit the machine.
+func (c *cluster) samePlatform(name, reported string) error {
+	if c.partial {
+		return nil
+	}
+	want, err := c.platform(name)
+	if err != nil {
+		return err
+	}
+	if reported == want {
+		return nil
+	}
+	return fmt.Errorf("%s runs an image built for %s, but %s; changing a node's platform is a reinstall", name, reported, c.declares(name, want))
+}
+
+// platformLine is the status line of the platform the node runs on, compared with its config's.
+func (c *cluster) platformLine(name, reported string) string {
+	if c.partial {
+		return "platform " + reported
+	}
+	want, err := c.platform(name)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("platform %s; the platform of its config's image is unknown: %v", reported, err)
+	case reported != want:
+		return fmt.Sprintf("platform %s, but %s; changing a node's platform is a reinstall", reported, c.declares(name, want))
+	}
+	return fmt.Sprintf("platform %s (%s's)", reported, c.source())
+}
+
+// version is the version of the config chalkctl delivers to a node.
+func (c *cluster) version(name string) (string, error) {
+	if c.manifest != nil {
+		b, err := config.FromManifest(c.manifest, name)
+		if err != nil {
+			return "", err
+		}
+		return b.Version, nil
+	}
+	nc, err := c.config(name)
+	if err != nil {
+		return "", err
+	}
+	e, err := config.Encode(nc.Documents)
+	if err != nil {
+		return "", err
+	}
+	return e.Version, nil
+}
+
+// configState says whether a node runs the config chalkctl delivers to it.
+func (c *cluster) configState(name, running string) string {
+	if c.partial {
+		return "no inventory to compare it with"
+	}
+	want, err := c.version(name)
+	switch {
+	case err != nil:
+		return "cannot read the config " + c.source() + " gives it: " + err.Error()
+	case want != running:
+		return "not " + c.source() + "'s; chalkctl apply-config " + name + " delivers it"
+	}
+	return c.source() + "'s"
+}
+
+// imageLine is the status line of a node whose store has another root hash than the image its
+// config's Image names; empty when it has that one, or when either is unknown.
+func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
+	if c.inv == nil || len(boot.GetRootHash()) == 0 {
+		return ""
+	}
+	nc, err := c.config(name)
+	if err != nil {
+		return ""
+	}
+	md, err := nc.Resolve()
+	if err != nil || hex.EncodeToString(boot.GetRootHash()) == md.RootHash {
+		return ""
+	}
+	return fmt.Sprintf("its store's root hash is %x, not that of the Image %s its config names, %s; chalkctl upgrade --nodes %s installs that image", boot.GetRootHash(), nc.ImageName, md.RootHash, name)
 }

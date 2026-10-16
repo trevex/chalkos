@@ -38,14 +38,14 @@ type secretFlags struct {
 }
 
 func (s *secretFlags) register(fs *pflag.FlagSet) {
-	fs.StringVar(&s.path, "secrets", "", "secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)")
+	fs.StringVar(&s.path, "secrets", "", "secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)")
 	fs.Var(&s.identities, "identity", "age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
 }
 
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
 // the file is encrypted.
-func (a *app) loadSecrets(ctx context.Context, s secretFlags, flake string) (pki.Secrets, error) {
-	path, _, err := secretsPath(s, flake)
+func (a *app) loadSecrets(ctx context.Context, s secretFlags, c *cluster) (pki.Secrets, error) {
+	path, _, err := secretsPath(s, c)
 	if err != nil {
 		return pki.Secrets{}, err
 	}
@@ -65,14 +65,18 @@ func (a *app) loadSecrets(ctx context.Context, s secretFlags, flake string) (pki
 	return secrets, nil
 }
 
-// secretsPath is the secrets file --secrets names, else secrets.age, else secrets.json, in the
-// flake directory; found says whether it was given or exists.
-func secretsPath(s secretFlags, flake string) (path string, found bool, err error) {
+// secretsPath is the secrets file --secrets names, else the one the inventory names, else
+// secrets.age, else secrets.json, beside the inventory; found says whether it was given or
+// exists.
+func secretsPath(s secretFlags, c *cluster) (path string, found bool, err error) {
 	if s.path != "" {
 		return s.path, true, nil
 	}
+	if c.inv != nil && c.inv.Spec.Secrets != "" {
+		return c.inv.Spec.Secrets, true, nil
+	}
 	for _, name := range []string{"secrets.age", "secrets.json"} {
-		path = filepath.Join(flake, name)
+		path = filepath.Join(c.dir, name)
 		switch _, err := os.Stat(path); {
 		case err == nil:
 			return path, true, nil
@@ -217,18 +221,21 @@ func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, 
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl recovery-key <node>")
 	}
-	c, err := a.loadCluster(ctx, cf)
+	c, err := loadCluster(cf)
 	if err != nil {
 		return err
 	}
-	if _, err := c.node(pos[0]); err != nil {
+	if err := c.requireNodes("recovery-key"); err != nil {
 		return err
 	}
-	secrets, err := a.loadSecrets(ctx, sf, cf.flake)
+	if err := c.node(pos[0]); err != nil {
+		return err
+	}
+	secrets, err := a.loadSecrets(ctx, sf, c)
 	if err != nil {
 		return err
 	}
-	key, err := pki.RecoveryKey(secrets.RecoverySecret, c.manifest.Cluster.Name, pos[0])
+	key, err := pki.RecoveryKey(secrets.RecoverySecret, c.name, pos[0])
 	if err != nil {
 		return err
 	}
@@ -427,12 +434,12 @@ func (f *secretsFile) inPlace() bool { return f.out == f.path }
 // the changes are written before anything is changed. The recipients come from inside the
 // encrypted file, or from --recipient, never from secrets.pub.json, which anyone who can write
 // beside the secrets file could change.
-func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c changeFlags) (*secretsFile, error) {
-	path, _, err := secretsPath(s, flake)
+func (a *app) openSecrets(ctx context.Context, s secretFlags, c *cluster, change changeFlags) (*secretsFile, error) {
+	path, _, err := secretsPath(s, c)
 	if err != nil {
 		return nil, err
 	}
-	if path == "-" && c.out == "" {
+	if path == "-" && change.out == "" {
 		return nil, errors.New("the secrets file from standard input cannot be updated in place; pass --out")
 	}
 	var lock *os.File
@@ -443,7 +450,7 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, flake string, c ch
 			return nil, err
 		}
 	}
-	f, err := a.readSecretsFile(ctx, s, path, c)
+	f, err := a.readSecretsFile(ctx, s, path, change)
 	if err != nil {
 		if lock != nil {
 			lock.Close()

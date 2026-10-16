@@ -1,21 +1,24 @@
 ---
 title: "chalkctl"
-description: "Build, sign, install and operate chalkos clusters"
+description: "Sign, install and operate chalkos clusters"
 ---
 
 # chalkctl
 
-Build, sign, install and operate chalkos clusters
+Sign, install and operate chalkos clusters
 
 ## Synopsis
 
-chalkctl builds, signs, installs and operates the nodes of a chalkos cluster. It reads the
-cluster definition from a flake, or from a manifest file with --manifest, and talks to chalkd on
-each node over mutual TLS. Commands authenticate with the cluster's secrets file, which holds
-every CA key, or with a client file (chalkctl config new), which holds a certificate of the
-admin, operator or reader role. Each command's help says which of the two it needs. Commands that
-accept both take --config, else --secrets, else the client file $CHALKOSCONFIG names, else a
-secrets file in the flake directory, else ~/.config/chalkos/config.
+chalkctl signs, installs and operates the nodes of a chalkos cluster. It reads the cluster from
+an inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
+address chalkctl reaches it at and the config files it gets, and talks to chalkd on each node
+over mutual TLS. chalkctl never builds images: each node's Image document names the directory of
+an image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
+or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
+reader role. Each command's help says which of the two it needs. Commands that accept both take
+--config, else --secrets, else the client file $CHALKOSCONFIG names, else a secrets file beside
+the inventory, else ~/.config/chalkos/config. --manifest reads a cluster definition's manifest
+instead of an inventory.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.

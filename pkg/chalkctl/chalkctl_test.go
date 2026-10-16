@@ -112,9 +112,7 @@ func newTestAppAt(t *testing.T, now time.Time) *testApp {
 		stdin:  strings.NewReader(""),
 		stdout: ta.stdout,
 		stderr: ta.stderr,
-		nix: func(context.Context, io.Writer, ...string) ([]byte, error) {
-			return nil, errors.New("nix is not available")
-		},
+
 		home: dir,
 	}
 	ta.readSecret = func(_ context.Context, prompt string) ([]byte, error) {
@@ -141,7 +139,7 @@ func writeFile(t *testing.T, path, content string) {
 
 // args prefixes the flags that point chalkctl at the test cluster and the node's address.
 func (ta *testApp) args(cmd []string, addr string) []string {
-	return append(cmd, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir, "--endpoint", addr)
+	return append(cmd, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--endpoint", addr)
 }
 
 // startNode serves a chalkd in the mode with the test cluster's OS CA. In normal mode it serves
@@ -285,7 +283,7 @@ func TestGenSecretsAgeAndRecoveryKey(t *testing.T) {
 	// The default secrets file next to the flake, decrypted with the default identity.
 	writeFile(t, filepath.Join(out, "manifest.json"), testManifest)
 	ta.stdout.Reset()
-	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--flake", out, "--manifest", filepath.Join(out, "manifest.json")}); err != nil {
+	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--manifest", filepath.Join(out, "manifest.json")}); err != nil {
 		t.Fatal(err)
 	}
 	secrets, _ := pki.ReadSecrets(encrypted, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
@@ -521,9 +519,7 @@ func TestInstallReportsNodeRefusal(t *testing.T) {
 
 func TestPasswordFileTrimsOneNewline(t *testing.T) {
 	ta := newTestApp(t)
-	node := ta.manifest.Nodes["n1"]
-	node.Identity.Storage.Fallback = "password"
-	tg := &target{cluster: &cluster{manifest: ta.manifest}, name: "n1", node: node, secrets: ta.secrets}
+	tg := &target{cluster: clusterOfManifest(ta.manifest, ta.dir), name: "n1", secrets: ta.secrets}
 	for content, want := range map[string]string{
 		"pw\n": "pw", "pw \n\n": "pw \n", "pw": "pw",
 		"pw\r\n": "pw", "pw\r": "pw", "pw\r\r\n": "pw\r", "pw\n\r\n": "pw\n",
@@ -640,7 +636,7 @@ func TestApplyConfigNamesResetCommand(t *testing.T) {
 	}
 }
 
-func TestEndpointNeedsAnAddress(t *testing.T) {
+func TestAddressNeedsAStaticAddress(t *testing.T) {
 	ta := newTestApp(t)
 	units := func(u map[string]string) {
 		ta.editManifest(t, func(m *manifest.Manifest) {
@@ -649,13 +645,13 @@ func TestEndpointNeedsAnAddress(t *testing.T) {
 			m.Nodes["n1"] = n
 		})
 	}
-	c := &cluster{manifest: ta.manifest}
+	c := clusterOfManifest(ta.manifest, ta.dir)
 	units(map[string]string{})
-	if _, _, err := c.endpoint("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "--endpoint") {
+	if _, _, err := c.address("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "--address") {
 		t.Errorf("err = %v", err)
 	}
 	units(map[string]string{"20-b.network": "[Network]\nAddress=10.0.1.5/24\n", "10-a.network": "[Network]\nAddress=10.0.0.11/24\n"})
-	if got, _, _ := c.endpoint("", nil, "n1"); got != "10.0.0.11" {
+	if got, _, _ := c.address("", nil, "n1"); got != "10.0.0.11" {
 		t.Errorf("endpoint = %q, want the first network's address", got)
 	}
 }
@@ -703,84 +699,9 @@ func TestInstalledNodeRequiresOSCA(t *testing.T) {
 	}
 }
 
-func TestLoadClusterEvaluatesFlake(t *testing.T) {
-	ta := newTestApp(t)
-	// Dots in cluster and role names are part of the names, not attribute separators.
-	ta.editManifest(t, func(m *manifest.Manifest) {
-		m.Roles = map[string]manifest.Role{"web.v2": {Images: map[string]string{"kvm": "roles.web.v2.images.kvm"}}}
-	})
-	manifestJSON, _ := json.Marshal(ta.manifest)
-	imageDir := t.TempDir()
-	var calls []string
-	ta.nix = func(_ context.Context, _ io.Writer, args ...string) ([]byte, error) {
-		calls = append(calls, strings.Join(args, " "))
-		switch {
-		case strings.HasSuffix(args[2], "#chalkos"):
-			return []byte(`["home.lab"]`), nil
-		case strings.HasSuffix(args[2], `#chalkos."home.lab".manifest`):
-			return manifestJSON, nil
-		case args[0] == "build":
-			return []byte(imageDir + "\n"), nil
-		}
-		return nil, errors.New("unexpected")
-	}
-	c, err := ta.loadCluster(context.Background(), clusterFlags{flake: "/src/lab"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err := ta.buildImage(context.Background(), c, "web.v2", "kvm")
-	if err != nil || dir != imageDir {
-		t.Fatalf("image = %q, %v", dir, err)
-	}
-	want := []string{
-		"eval --json /src/lab#chalkos --apply builtins.attrNames",
-		`eval --json /src/lab#chalkos."home.lab".manifest`,
-		`build --no-link --print-out-paths /src/lab#chalkos."home.lab".roles."web.v2".images."kvm"^out`,
-	}
-	if !reflect.DeepEqual(calls, want) {
-		t.Errorf("nix calls = %v, want %v", calls, want)
-	}
-}
-
-func TestAttrName(t *testing.T) {
-	for name, want := range map[string]string{
-		"lab":      `"lab"`,
-		"home.lab": `"home.lab"`,
-		"a b#c?d":  `"a%20b%23c%3Fd"`,
-		`50%\x`:    `"50%25%5Cx"`,
-		"ä":        `"%C3%A4"`,
-	} {
-		if got, err := attrName(name); err != nil || got != want {
-			t.Errorf("attrName(%q) = %s, %v, want %s", name, got, err, want)
-		}
-	}
-	if _, err := attrName(`a"b`); err == nil {
-		t.Error(`accepted a name with ", which a Nix attribute path cannot quote`)
-	}
-}
-
-func TestBuildImageChecksOutputPath(t *testing.T) {
-	ta := newTestApp(t)
-	c := &cluster{flags: clusterFlags{flake: "/src/lab"}, attr: `chalkos."lab"`, manifest: ta.manifest}
-	for name, out := range map[string]string{
-		"several paths":  t.TempDir() + "\n" + t.TempDir() + "\n",
-		"no path":        "\n",
-		"a missing path": filepath.Join(ta.dir, "missing") + "\n",
-	} {
-		t.Run(name, func(t *testing.T) {
-			ta.nix = func(context.Context, io.Writer, ...string) ([]byte, error) { return []byte(out), nil }
-			if dir, err := ta.buildImage(context.Background(), c, "test", "metal"); err == nil {
-				t.Errorf("image = %q, want an error", dir)
-			}
-		})
-	}
-}
-
 func TestPasswordPromptConfirms(t *testing.T) {
 	ta := newTestApp(t)
-	node := ta.manifest.Nodes["n1"]
-	node.Identity.Storage.Fallback = "password"
-	tg := &target{cluster: &cluster{manifest: ta.manifest}, name: "n1", node: node, secrets: ta.secrets}
+	tg := &target{cluster: clusterOfManifest(ta.manifest, ta.dir), name: "n1", secrets: ta.secrets}
 
 	ta.answers = []string{"secret one", "secret one"}
 	if got, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err != nil || got != "secret one" {
@@ -1081,28 +1002,6 @@ func TestExecuteFlagUsageErrors(t *testing.T) {
 	}
 }
 
-// A program running chalkctl's tree gets nix's errors on the command's standard error.
-func TestNixErrorsGoToTheCommand(t *testing.T) {
-	bin := t.TempDir()
-	writeFile(t, filepath.Join(bin, "nix"), "#!/bin/sh\necho 'error: the flake is broken' >&2\nexit 1\n")
-	if err := os.Chmod(filepath.Join(bin, "nix"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	ta := newTestApp(t)
-	root := NewCommand()
-	var stderr bytes.Buffer
-	root.SetArgs([]string{"status", "n1", "--flake", ta.dir})
-	root.SetOut(io.Discard)
-	root.SetErr(&stderr)
-	if err := root.ExecuteContext(context.Background()); err == nil {
-		t.Fatal("status succeeded with a failing nix")
-	}
-	if !strings.Contains(stderr.String(), "error: the flake is broken") {
-		t.Errorf("the command's stderr = %q, want nix's error", stderr.String())
-	}
-}
-
 func TestExecuteErrors(t *testing.T) {
 	ta := newTestApp(t)
 	if got := ta.execute(context.Background(), "status", "n1", "--manifest", filepath.Join(ta.dir, "missing.json")); got != 1 {
@@ -1152,15 +1051,15 @@ func TestExecuteFlags(t *testing.T) {
 	}
 }
 
-// The help names the value of --endpoint NODE=ADDR.
-func TestEndpointValueName(t *testing.T) {
+// The help names the value of --address NODE=ADDR.
+func TestAddressValueName(t *testing.T) {
 	for _, name := range []string{"rotate", "upgrade"} {
 		ta := newTestApp(t)
 		if got := ta.execute(context.Background(), name, "--help"); got != 0 {
 			t.Fatalf("%s --help exits with %d", name, got)
 		}
-		if !strings.Contains(ta.stdout.String(), "--endpoint NODE=ADDR ") {
-			t.Errorf("%s --help does not show --endpoint NODE=ADDR:\n%s", name, ta.stdout.String())
+		if !strings.Contains(ta.stdout.String(), "--address NODE=ADDR ") {
+			t.Errorf("%s --help does not show --address NODE=ADDR:\n%s", name, ta.stdout.String())
 		}
 	}
 }
@@ -1337,7 +1236,7 @@ func TestStatusWithoutTheDefinitionsConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := ta.stdout.String()
-	if !strings.Contains(out, "config none (cannot generate the cluster definition's config: ") || !strings.Contains(out, "platform metal") || !strings.Contains(out, "var") {
+	if !strings.Contains(out, "config none (cannot read the config the cluster definition gives it: ") || !strings.Contains(out, "platform metal") || !strings.Contains(out, "var") {
 		t.Errorf("status = %q", out)
 	}
 }
@@ -1355,12 +1254,12 @@ func TestAddressesWithoutTheDefinitionsConfig(t *testing.T) {
 	if _, err := config.FromManifest(ta.manifest, "n1"); err == nil {
 		t.Fatal("the bridge generated config from a unit it should refuse")
 	}
-	c := &cluster{manifest: ta.manifest}
-	if addr, source, err := c.endpoint("", nil, "n1"); err != nil || addr != "10.0.0.11" || source != "the cluster definition" {
+	c := clusterOfManifest(ta.manifest, ta.dir)
+	if addr, source, err := c.address("", nil, "n1"); err != nil || addr != "10.0.0.11" || source != "the cluster definition" {
 		t.Errorf("endpoint = %q, %q, %v; want the definition's 10.0.0.11", addr, source, err)
 	}
 	out := filepath.Join(ta.dir, "alice.json")
-	if err := ta.run(context.Background(), []string{"config", "new", "--name", "alice", "--role", "reader", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json"), "--flake", ta.dir}); err != nil {
+	if err := ta.run(context.Background(), []string{"config", "new", "--name", "alice", "--role", "reader", "--out", out, "--manifest", filepath.Join(ta.dir, "manifest.json")}); err != nil {
 		t.Fatal(err)
 	}
 	if f, err := client.ReadConfig(out); err != nil || f.Nodes["n1"] != "10.0.0.11" {

@@ -32,20 +32,19 @@ chalkctl kubeconfig [flags]
 ## Options
 
 ```
-      --cluster string     cluster to use when the flake defines several
-      --flake string       directory of the flake that defines the cluster (default ".")
       --force              replace an existing file
   -h, --help               help for kubeconfig
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --manifest string    read the cluster's manifest from this file instead of evaluating the flake
+      --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
+      --manifest string    read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --name string        user name in the admin certificate (default "admin")
       --out string         file to write, - for standard output (default "kubeconfig")
-      --secrets string     secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
+      --secrets string     secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
       --server string      URL clients reach the API server at, when it differs from the cluster endpoint; the certificate is still verified for the endpoint
       --ttl duration       validity of the admin certificate (default 8760h0m0s)
 ```
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 

@@ -329,8 +329,8 @@ func TestDirectorySyncedAfterWrites(t *testing.T) {
 
 // openUnlocked is openSecrets with the lock released at once, for tests that open one secrets
 // file several times in turn.
-func (ta *testApp) openUnlocked(ctx context.Context, s secretFlags, flake string, c changeFlags) (*secretsFile, error) {
-	f, err := ta.openSecrets(ctx, s, flake, c)
+func (ta *testApp) openUnlocked(ctx context.Context, s secretFlags, dir string, c changeFlags) (*secretsFile, error) {
+	f, err := ta.openSecrets(ctx, s, &cluster{dir: dir}, c)
 	if err == nil {
 		f.Close()
 	}

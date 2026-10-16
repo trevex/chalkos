@@ -87,12 +87,12 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 }
 
 func TestControlPlaneNodes(t *testing.T) {
-	m := &manifest.Manifest{
+	c := clusterOfManifest(&manifest.Manifest{
 		Nodes: map[string]manifest.Node{"cp3": {Role: "cp", Kind: identity.KindControlPlane}, "cp1": {Role: "cp", Kind: identity.KindControlPlane},
 			"w1": {Role: "w", Kind: identity.KindWorker}, "cp2": {Role: "cp", Kind: identity.KindControlPlane}},
-	}
-	if got := controlPlaneNodes(m, "cp2"); !slices.Equal(got, []string{"cp1", "cp3"}) {
-		t.Errorf("controlPlaneNodes() = %v", got)
+	}, "")
+	if got, err := c.nodesOf(identity.KindControlPlane, "cp2"); err != nil || !slices.Equal(got, []string{"cp1", "cp3"}) {
+		t.Errorf("nodesOf() = %v, %v", got, err)
 	}
 }
 

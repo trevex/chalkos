@@ -1,5 +1,5 @@
-// Package chalkctl is the chalkctl command, which builds, signs, installs and operates chalkos
-// clusters. NewCommand returns its command tree, which programs can run or add to their own.
+// Package chalkctl is the chalkctl command, which signs, installs and operates chalkos clusters.
+// NewCommand returns its command tree, which programs can run or add to their own.
 package chalkctl
 
 import (
@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -23,8 +21,6 @@ import (
 type app struct {
 	stdin          io.Reader
 	stdout, stderr io.Writer
-	// nix runs nix, writing its errors to stderr, and returns its standard output.
-	nix func(ctx context.Context, stderr io.Writer, args ...string) ([]byte, error)
 	// home is the user's home directory, where age and SSH keys are looked up.
 	home string
 	// readSecret asks for a secret on the terminal without echoing it.
@@ -35,11 +31,11 @@ type app struct {
 	pollInterval time.Duration
 }
 
-// NewCommand returns chalkctl's root command, with nix from PATH, age and SSH keys from the
-// user's home directory and secrets asked for on the terminal.
+// NewCommand returns chalkctl's root command, with age and SSH keys from the user's home directory
+// and secrets asked for on the terminal.
 func NewCommand() *cobra.Command {
 	home, _ := os.UserHomeDir()
-	return newCommand(&app{nix: runNix, home: home, readSecret: ttySecret})
+	return newCommand(&app{home: home, readSecret: ttySecret})
 }
 
 // with returns the environment with the streams of cmd.
@@ -52,7 +48,7 @@ func (a *app) with(cmd *cobra.Command) *app {
 func newCommand(a *app) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "chalkctl",
-		Short:         "Build, sign, install and operate chalkos clusters",
+		Short:         "Sign, install and operate chalkos clusters",
 		Long:          rootLong,
 		Example:       rootExample,
 		SilenceErrors: true,
@@ -165,18 +161,6 @@ func exitStatus(err error) int {
 		return 130
 	}
 	return 1
-}
-
-// runNix runs nix with its errors on the command's standard error, where evaluation errors are
-// most readable.
-func runNix(ctx context.Context, stderr io.Writer, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "nix", args...)
-	cmd.Stderr = stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("nix %s: %w", strings.Join(args, " "), err)
-	}
-	return out, nil
 }
 
 type signFlags struct {

@@ -26,6 +26,6 @@ a client file needs the secrets file.
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 * [chalkctl config new](chalkctl_config_new.md)	 - Write a client file, which operates the cluster without the secrets file
 

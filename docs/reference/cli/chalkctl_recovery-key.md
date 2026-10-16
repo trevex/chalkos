@@ -27,15 +27,14 @@ chalkctl recovery-key <node> [flags]
 ## Options
 
 ```
-      --cluster string     cluster to use when the flake defines several
-      --flake string       directory of the flake that defines the cluster (default ".")
   -h, --help               help for recovery-key
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --manifest string    read the cluster's manifest from this file instead of evaluating the flake
-      --secrets string     secrets file, - for standard input (default secrets.age, else secrets.json, in the flake directory)
+      --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
+      --manifest string    read the cluster's nodes from this cluster definition's manifest instead of an inventory
+      --secrets string     secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
 ```
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Build, sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
 
