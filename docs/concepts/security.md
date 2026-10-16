@@ -160,14 +160,15 @@ plugin recipients such as hardware tokens), or `secrets.json` in plaintext with 
 a file protected by other means. chalkctl reads it only where `--secrets` names it: no inventory
 names it, and chalkctl looks for none of its own accord. `--secrets -` reads it from standard
 input, encrypted or not, for example from a password manager, so a plaintext copy never touches
-the disk; `chalkctl gen secrets --out -` writes a new one to standard output for such a manager:
+the disk; `chalkctl gen secrets --out - --public-out secrets.pub.json` writes a new one to
+standard output for such a manager, and its public half to `secrets.pub.json`:
 
 ```sh
 chalkctl gen secrets --recipient=<age-public-key>
 ```
 
-A [client file](../reference/glossary.md#client-file) holds one certificate of one role, its key,
-the OS CA certificates and the nodes' addresses. It lets someone operate the cluster without the
+A [client file](../reference/glossary.md#client-file) holds one certificate of one role, its key
+and the OS CA certificates. It lets someone operate the cluster without the
 secrets file, limited to the role.
 [`chalkctl config new`](../reference/cli/chalkctl_config_new.md) issues it, valid for one year
 unless `--ttl` says otherwise, and writes it to `~/.config/chalkos/config` with mode 0600:

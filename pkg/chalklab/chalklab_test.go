@@ -76,7 +76,8 @@ spec:
 
 // TestLabNodes runs the nodes of the lab file, each with its MAC address and the machine its type
 // gives it unless the lab file says otherwise, from the image directory of its Image; it refuses a
-// node of a metal image, two nodes of one MAC address, and a node the inventory lacks.
+// node of a metal image, two nodes of one MAC address, a multicast or broadcast MAC address, and a
+// node the inventory lacks.
 func TestLabNodes(t *testing.T) {
 	dir := t.TempDir()
 	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
@@ -104,6 +105,8 @@ func TestLabNodes(t *testing.T) {
 	for name, tc := range map[string]struct{ lab, want string }{
 		"a metal image":     {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "chalklab runs kvm images, but the Image node-metal of m1 is built for metal"},
 		"one MAC address":   {strings.Replace(testLab, "52:54:00:7b:00:12", "52:54:00:7b:00:11", 1), "the same MAC address 52:54:00:7b:00:11"},
+		"a multicast MAC":   {strings.Replace(testLab, "52:54:00:7b:00:12", "01:00:5e:00:00:12", 1), "the MAC address 01:00:5e:00:00:12 of w1 is a multicast address"},
+		"the broadcast MAC": {strings.Replace(testLab, "52:54:00:7b:00:12", "ff:ff:ff:ff:ff:ff", 1), "the MAC address ff:ff:ff:ff:ff:ff of w1 is a multicast address"},
 		"no inventory node": {strings.Replace(testLab, "    w1:", "    x9: {mac: \"52:54:00:7b:00:19\"}\n    w1:", 1), "has no node x9"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -135,6 +138,64 @@ func TestReadLabFileRefuses(t *testing.T) {
 				t.Errorf("readLabFile = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestTheE2ELabFile reads the lab file of the e2e tests' main cluster, with a kvm image where
+// each of its nodes' Image points, and checks that each node's MAC address is the one its
+// Network documents match, so the lab file cannot drift from the inventory unnoticed.
+func TestTheE2ELabFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS("../../test/fixtures/clusters")); err != nil {
+		t.Fatal(err)
+	}
+	lf, err := readLabFile(filepath.Join(dir, "chalklab", "lab.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inventory.Load(lf.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range lf.nodes {
+		nc, err := inv.Node(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(nc.ImageDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		md := `{"schemaVersion": 0, "id": "chalkos", "version": "0.1.0", "variant": "k8s", "platform": "kvm", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
+		if err := os.WriteFile(filepath.Join(nc.ImageDir, "metadata.json"), []byte(md), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nodes, _, err := labNodes(inv, lf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) == 0 {
+		t.Fatal("the lab file runs no node")
+	}
+	for _, n := range nodes {
+		nc, err := inv.Node(n.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var matched []string
+		for _, d := range nc.Documents {
+			if d.Kind != "Network" {
+				continue
+			}
+			spec, _ := d.Object["spec"].(map[string]any)
+			match, _ := spec["match"].(map[string]any)
+			if mac, ok := match["macAddress"].(string); ok {
+				matched = append(matched, strings.ToLower(mac))
+			}
+		}
+		if !slices.Contains(matched, n.MAC) {
+			t.Errorf("lab.yaml gives %s the MAC address %s, but its Network documents match %q", n.Name, n.MAC, matched)
+		}
 	}
 }
 

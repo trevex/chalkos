@@ -13,7 +13,11 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" }
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "description": "The lab's name, for its readers. chalklab keys the lab's state by the name of the cluster's Cluster document, not by this one."
+        }
       }
     },
     "spec": {

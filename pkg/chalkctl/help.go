@@ -11,8 +11,8 @@ an image build. Commands authenticate with the cluster's secrets file, which hol
 or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
 reader role. Each command's help says which of the two it needs. The secrets file is read only
 where --secrets names it, as a path or as - for standard input, encrypted with age or not; the
-inventory names none. Commands that accept both take --config, else --secrets, else the client
-file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
+inventory names none. Commands that accept both take --config or --secrets, not both, else the
+client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.`
@@ -33,11 +33,12 @@ issues client certificates and the node CA; the node CA; the Kubernetes CAs and 
 secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the
 age recipients given with --recipient (age public keys, SSH public keys or age plugin
 recipients), or with --plaintext to secrets.json unencrypted, for files protected by other means.
-The public half goes to secrets.pub.json, which the cluster definition's chalkos.osCA names so
-images trust the OS CA in maintenance mode. The command refuses to overwrite any of these files:
-new secrets would lock out every installed node. With --out - the secrets file alone goes to
-standard output, for a secret manager to keep, and what the command says goes to standard
-error. It needs no secrets file or client file.`
+The public half goes to secrets.pub.json, or to --public-out, which the cluster definition's
+chalkos.osCA names so images trust the OS CA in maintenance mode. The command refuses to
+overwrite any of these files: new secrets would lock out every installed node. With --out - the
+secrets file goes to standard output, for a secret manager to keep, the public half to
+--public-out, which --out - needs, and what the command says to standard error. It needs no
+secrets file or client file.`
 
 const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
@@ -48,7 +49,7 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
 
   # Hand the encrypted secrets to a secret manager, which supplies them later with --secrets -.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
-    --out - | pass insert --multiline chalkos/secrets`
+    --out - --public-out secrets.pub.json | pass insert --multiline chalkos/secrets`
 
 const configLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
 a client file needs the secrets file.`

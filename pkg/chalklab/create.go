@@ -226,6 +226,10 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.LabNode, map[string]
 			return nil, nil, fmt.Errorf("%s: the MAC address of %s: %w", lf.path, name, err)
 		}
 		mac := hw.String()
+		// The I/G bit of the first octet marks a group address, which is no valid address of a NIC.
+		if hw[0]&1 != 0 {
+			return nil, nil, fmt.Errorf("%s: the MAC address %s of %s is a multicast address; a NIC's address has the lowest bit of its first octet clear, such as 52:54:00:…", lf.path, mac, name)
+		}
 		if other, ok := macs[mac]; ok {
 			return nil, nil, fmt.Errorf("%s gives %s and %s the same MAC address %s", lf.path, other, name, mac)
 		}
@@ -368,12 +372,18 @@ func (a *app) startSupervisor(ctx context.Context, dir string) error {
 // maintenanceRE is chalkd's line on the console in maintenance mode.
 var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprint ([0-9a-f]{64})`)
 
-// setUp installs each node in place, bootstraps the first control plane, and writes a kubeconfig
-// that reaches the lab through its forwarded ports and an admin client file. chalkctl reads the
-// lab's inventory, which names the nodes at their forwarded ports, and the secrets file, and checks
-// images against the lab's db certificate, which signs them.
+// setUp writes an admin client file, installs each node in place, bootstraps the first control
+// plane, and writes a kubeconfig that reaches the lab through its forwarded ports. chalkctl reads
+// the lab's inventory, which names the nodes at their forwarded ports, and the secrets file, and
+// checks images against the lab's db certificate, which signs them. The wait for the bootstrap
+// polls with the client file, so an encrypted secrets file is decrypted once per command rather
+// than once per poll.
 func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) error {
-	cluster := []string{"--inventory", filepath.Join(dir, inventoryFile), "--secrets", f.secrets}
+	inventory := filepath.Join(dir, inventoryFile)
+	cluster := []string{"--inventory", inventory, "--secrets", f.secrets}
+	if err := a.chalkctl(ctx, a.stdout, append([]string{"config", "new", "--name", "chalklab", "--role", "admin", "--out", filepath.Join(dir, clientFile)}, cluster...)...); err != nil {
+		return err
+	}
 	for _, n := range l.Nodes {
 		addr := "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
 		fmt.Fprintf(a.stdout, "waiting for %s to come up in maintenance mode\n", n.Name)
@@ -400,7 +410,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 	}
 	if cp != nil {
 		fmt.Fprintf(a.stdout, "waiting for %s to wait for its bootstrap\n", cp.Name)
-		if err := a.waitBootstrap(ctx, cp.Name, cluster); err != nil {
+		if err := a.waitBootstrap(ctx, cp.Name, []string{"--inventory", inventory, "--config", filepath.Join(dir, clientFile)}); err != nil {
 			return err
 		}
 		if err := a.chalkctl(ctx, a.stdout, append([]string{"bootstrap", cp.Name}, cluster...)...); err != nil {
@@ -410,15 +420,16 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 			return err
 		}
 	}
-	if err := a.chalkctl(ctx, a.stdout, append([]string{"config", "new", "--name", "chalklab", "--role", "admin", "--out", filepath.Join(dir, clientFile)}, cluster...)...); err != nil {
-		return err
-	}
 
 	fmt.Fprintf(a.stdout, "\nthe lab of %s runs %s; next:\n", l.Cluster, strings.Join(nodeNames(l), ", "))
 	if cp != nil {
 		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n  kubectl get nodes\n", filepath.Join(dir, kubeconfigFile))
 	}
-	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s --config %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, filepath.Join(dir, inventoryFile), filepath.Join(dir, clientFile))
+	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s --config %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, inventory, filepath.Join(dir, clientFile))
+	// The lab signed copies of the images; the Image documents still name the unsigned builds.
+	keys := filepath.Join(dir, "keys")
+	fmt.Fprintf(a.stdout, "The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with\nthe lab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s --config %s \\\n    --sign-key %s --sign-cert %s\n",
+		inventory, filepath.Join(dir, clientFile), filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
 	return nil
 }
 

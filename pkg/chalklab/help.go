@@ -14,7 +14,7 @@ needs /dev/kvm, which most distributions grant to the kvm group. It never builds
 create needs the cluster's secrets file; the other commands work on the lab's state alone.`
 
 const rootExample = `  # In a directory made from the lab template, once its image is built.
-  chalklab create --secrets secrets.age
+  chalklab create --secrets secrets.json
   chalklab status
   chalklab destroy`
 

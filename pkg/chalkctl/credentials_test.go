@@ -3,6 +3,7 @@ package chalkctl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -103,9 +104,9 @@ func TestClientFileRole(t *testing.T) {
 	}
 }
 
-// TestCredentialChoice takes --config, else --secrets, else the client file $CHALKOSCONFIG names,
-// else ~/.config/chalkos/config. A secrets file is read only where --secrets names it, also when
-// one is at hand.
+// TestCredentialChoice takes --config or --secrets, never both, else the client file
+// $CHALKOSCONFIG names, else ~/.config/chalkos/config. A secrets file is read only where --secrets
+// names it, also when one is at hand.
 func TestCredentialChoice(t *testing.T) {
 	ta := newTestApp(t)
 	current, _ := json.Marshal(ta.identity(t))
@@ -126,9 +127,12 @@ func TestCredentialChoice(t *testing.T) {
 	if err := reboot("--secrets", secrets); err != nil {
 		t.Errorf("with --secrets: %v", err)
 	}
-	// --config wins over --secrets.
-	if err := reboot("--config", reader, "--secrets", secrets); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if err := reboot("--config", reader); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("with --config: %v, want the reader refused", err)
+	}
+	// Both would leave one unread, as --secrets - would standard input.
+	if err := reboot("--config", reader, "--secrets", secrets); !errors.Is(err, errUsage) || !strings.Contains(err.Error(), "pass --secrets or --config, not both") {
+		t.Errorf("with --config and --secrets: %v, want a usage error", err)
 	}
 	// Without $CHALKOSCONFIG, ~/.config/chalkos/config, else nothing: the secrets file in the
 	// directory is not read.

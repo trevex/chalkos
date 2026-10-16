@@ -232,9 +232,9 @@ func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, 
 }
 
 type genSecretsFlags struct {
-	recipients stringList
-	plaintext  bool
-	out        string
+	recipients     stringList
+	plaintext      bool
+	out, publicOut string
 }
 
 func (a *app) genSecretsCommand() *cobra.Command {
@@ -249,6 +249,7 @@ func (a *app) genSecretsCommand() *cobra.Command {
 	fs.Var(&f.recipients, "recipient", "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
 	fs.BoolVar(&f.plaintext, "plaintext", false, "write secrets.json unencrypted, for files protected by other means")
 	fs.StringVar(&f.out, "out", ".", "directory to write the files to, or - to write the secrets file alone to standard output")
+	fs.StringVar(&f.publicOut, "public-out", "", "new file to write the public half to (default secrets.pub.json in --out; required with --out -)")
 	return cmd
 }
 
@@ -258,14 +259,20 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 		return errors.New("gen secrets: pass --recipient (one or more) or --plaintext")
 	}
 	if f.out == "-" {
-		return a.genSecretsToStdout(recipients, f.plaintext)
+		if f.publicOut == "" {
+			return fmt.Errorf("%w: gen secrets --out - needs --public-out, the file the public half goes to, which images trust the OS CA from", errUsage)
+		}
+		return a.genSecretsToStdout(recipients, f.plaintext, f.publicOut)
 	}
 	name := "secrets.age"
 	if f.plaintext {
 		name = "secrets.json"
 	}
 	secretsFile := filepath.Join(f.out, name)
-	publicPath := filepath.Join(f.out, "secrets.pub.json")
+	publicPath := f.publicOut
+	if publicPath == "" {
+		publicPath = filepath.Join(f.out, "secrets.pub.json")
+	}
 	// The secrets file is written once: a new one would orphan every installed node.
 	for _, p := range []string{filepath.Join(f.out, "secrets.age"), filepath.Join(f.out, "secrets.json"), publicPath} {
 		if _, err := os.Stat(p); err == nil {
@@ -287,10 +294,11 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 	return nil
 }
 
-// genSecretsToStdout writes new secrets to standard output, for a secret manager to keep, and
-// what it says to standard error. The public half, which only a cluster definition names, is not
-// written.
-func (a *app) genSecretsToStdout(recipients []string, plaintext bool) error {
+// genSecretsToStdout writes new secrets to standard output, for a secret manager to keep, their
+// public half to a new file, and what it says to standard error. The public half is written
+// first, and removed again when the secrets cannot be written, so it never belongs to secrets
+// nobody kept.
+func (a *app) genSecretsToStdout(recipients []string, plaintext bool, publicPath string) error {
 	secrets, err := pki.GenerateSecrets(time.Now())
 	if err != nil {
 		return err
@@ -299,7 +307,15 @@ func (a *app) genSecretsToStdout(recipients []string, plaintext bool) error {
 	if err != nil {
 		return err
 	}
+	public, err := encodePublic(secrets)
+	if err != nil {
+		return err
+	}
+	if err := writeNew(publicPath, public, 0o644); err != nil {
+		return err
+	}
 	if _, err := a.stdout.Write(data); err != nil {
+		os.Remove(publicPath)
 		return err
 	}
 	if plaintext {
@@ -307,6 +323,7 @@ func (a *app) genSecretsToStdout(recipients []string, plaintext bool) error {
 	} else {
 		fmt.Fprintf(a.stderr, "encrypted the secrets to %s\n", strings.Join(recipients, ", "))
 	}
+	fmt.Fprintf(a.stderr, "wrote %s\n", publicPath)
 	return nil
 }
 

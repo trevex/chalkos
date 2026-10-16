@@ -71,8 +71,8 @@ and the [quick start](../getting-started/index.md).
 
 ## Client file { #client-file }
 
-A JSON file holding a client certificate of one [client role](#client-role), its key, the
-[OS CA](#os-ca) certificate and the cluster's node addresses, issued with
+A JSON file holding a client certificate of one [client role](#client-role), its key and the
+[OS CA](#os-ca) certificate, issued with
 [`chalkctl config new`](cli/chalkctl_config_new.md). It lets someone operate nodes without the
 [secrets file](#secrets-file). See [Security model](../concepts/security.md).
 

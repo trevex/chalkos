@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"go.yaml.in/yaml/v3"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,14 +30,33 @@ import (
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
-// The cluster's nodes, as nix/testing/cluster.nix defines them, and their VMs' memory. They are
-// the memory lab.yaml gives the nodes.
-var kubernetesNodes = []struct {
-	name     string
-	memoryMB int
-}{
-	{"cp1", 2048},
-	{"w1", 1024},
+// labMemory is the memory in MiB of the VM of each node the main cluster's lab file runs, as the
+// lab file gives it.
+func labMemory(t *testing.T) map[string]int {
+	t.Helper()
+	path := filepath.Join(fixtures, "chalklab", "lab.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lf struct {
+		Spec struct {
+			Nodes map[string]struct {
+				Memory int `yaml:"memory"`
+			} `yaml:"nodes"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal(data, &lf); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	memory := map[string]int{}
+	for name, n := range lf.Spec.Nodes {
+		if n.Memory == 0 {
+			t.Fatalf("%s gives %s no memory, which the test's budget sets", path, name)
+		}
+		memory[name] = n.Memory
+	}
+	return memory
 }
 
 // probeDoneRE is the probe's last fact on the console, written once a boot is up.
@@ -564,14 +584,15 @@ func flannelStarted(ctx context.Context, cs kubernetes.Interface, name string, s
 // kubeProxyNFTables checks that kube-proxy runs in nftables mode on every node.
 func kubeProxyNFTables(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
+	nodes := labMemory(t)
 	var pods *corev1.PodList
 	waitFor(t, 2*time.Minute, "a kube-proxy pod on each node", func() error {
 		var err error
 		if pods, err = cs.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "k8s-app=kube-proxy"}); err != nil {
 			return err
 		}
-		if len(pods.Items) != len(kubernetesNodes) {
-			return fmt.Errorf("%d kube-proxy pods, want %d", len(pods.Items), len(kubernetesNodes))
+		if len(pods.Items) != len(nodes) {
+			return fmt.Errorf("%d kube-proxy pods, want %d", len(pods.Items), len(nodes))
 		}
 		return nil
 	})
@@ -604,8 +625,8 @@ func dnsService(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 // logMemory reports the memory each node uses, as its kubelet measures it.
 func logMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
-	for _, kn := range kubernetesNodes {
-		logNodeMemory(t, ctx, cs, kn.name, kn.memoryMB)
+	for name, memoryMB := range labMemory(t) {
+		logNodeMemory(t, ctx, cs, name, memoryMB)
 	}
 }
 

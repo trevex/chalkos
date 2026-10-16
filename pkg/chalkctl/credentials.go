@@ -80,13 +80,15 @@ func (a *app) loadSecretCredentials(ctx context.Context, s secretFlags) (*creden
 const configExpiryWarning = 30 * 24 * time.Hour
 
 // loadCredentials picks the credentials of commands a client file may run: the client file
-// --config names, else the secrets file --secrets names, else the client file $CHALKOSCONFIG
-// names, else ~/.config/chalkos/config.
+// --config names, or the secrets file --secrets names, but not both, which would leave one
+// unread; else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 func (a *app) loadCredentials(ctx context.Context, s secretFlags, config string) (*credentials, error) {
-	if config != "" {
+	switch {
+	case config != "" && s.path != "":
+		return nil, fmt.Errorf("%w: pass --secrets or --config, not both", errUsage)
+	case config != "":
 		return a.configCredentials(config)
-	}
-	if s.path != "" {
+	case s.path != "":
 		return a.loadSecretCredentials(ctx, s)
 	}
 	if path := os.Getenv("CHALKOSCONFIG"); path != "" {
@@ -131,7 +133,7 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 }
 
 // configNew issues a client file from the secrets file: a certificate of the role for a new
-// key, the OS CA, and the nodes' addresses.
+// key, and the OS CA.
 type configNewFlags struct {
 	cluster         clusterFlags
 	secrets         secretFlags

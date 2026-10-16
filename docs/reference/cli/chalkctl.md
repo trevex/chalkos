@@ -17,8 +17,8 @@ an image build. Commands authenticate with the cluster's secrets file, which hol
 or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
 reader role. Each command's help says which of the two it needs. The secrets file is read only
 where --secrets names it, as a path or as - for standard input, encrypted with age or not; the
-inventory names none. Commands that accept both take --config, else --secrets, else the client
-file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
+inventory names none. Commands that accept both take --config or --secrets, not both, else the
+client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.

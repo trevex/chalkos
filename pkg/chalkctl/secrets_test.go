@@ -338,22 +338,38 @@ func (ta *testApp) openUnlocked(ctx context.Context, s secretFlags, c changeFlag
 }
 
 // TestGenSecretsToStandardOutput writes the secrets file alone to standard output with --out -,
-// encrypted to the recipients or in plaintext, and says what it did on standard error.
+// encrypted to the recipients or in plaintext, and its public half to --public-out, which it
+// needs, and says what it did on standard error.
 func TestGenSecretsToStandardOutput(t *testing.T) {
 	ta := newTestApp(t)
 	id, _ := age.GenerateX25519Identity()
-	if err := ta.run(context.Background(), []string{"gen", "secrets", "--recipient", id.Recipient().String(), "--out", "-"}); err != nil {
+	if got := ta.execute(context.Background(), "gen", "secrets", "--recipient", id.Recipient().String(), "--out", "-"); got != 2 || ta.stdout.Len() != 0 || !strings.Contains(ta.stderr.String(), "--public-out") {
+		t.Errorf("gen secrets --out - without --public-out exits with %d, stdout %q, stderr %q", got, ta.stdout, ta.stderr)
+	}
+	ta.stderr.Reset()
+	public := filepath.Join(ta.dir, "age.pub.json")
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--recipient", id.Recipient().String(), "--out", "-", "--public-out", public}); err != nil {
 		t.Fatal(err)
 	}
 	secrets, err := pki.ReadSecrets(ta.stdout.Bytes(), only(id))
 	if err != nil || !slices.Equal(secrets.Recipients, []string{id.Recipient().String()}) {
 		t.Errorf("standard output holds secrets of the recipients %v, %v", secrets.Recipients, err)
 	}
-	if !strings.Contains(ta.stderr.String(), "encrypted the secrets to "+id.Recipient().String()) {
+	if !strings.Contains(ta.stderr.String(), "encrypted the secrets to "+id.Recipient().String()) || !strings.Contains(ta.stderr.String(), "wrote "+public) {
 		t.Errorf("stderr = %q", ta.stderr)
 	}
+	data, err := os.ReadFile(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := pki.ReadPublic(data); err != nil || p.OSCA.Certificate != secrets.OSCA.Certificate {
+		t.Errorf("%s holds %+v, %v; want the public half of the secrets on standard output", public, p, err)
+	}
 	ta.stdout.Reset()
-	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", "-"}); err != nil {
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", "-", "--public-out", public}); err == nil || ta.stdout.Len() != 0 {
+		t.Errorf("gen secrets over an existing public half: %v, stdout %q", err, ta.stdout)
+	}
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", "-", "--public-out", filepath.Join(ta.dir, "plain.pub.json")}); err != nil {
 		t.Fatal(err)
 	}
 	if format, err := pki.DetectFormat(ta.stdout.Bytes()); err != nil || format != pki.FormatJSON {
