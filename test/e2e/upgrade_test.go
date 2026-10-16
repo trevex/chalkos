@@ -33,7 +33,7 @@ func TestUpgrade(t *testing.T) {
 
 	keys := os.Getenv("CHALKLAB_SB_KEYS")
 	upgrade := func(env string) (string, error) {
-		return chalkctl(t, nil, "base", "upgrade", "--image", os.Getenv(env), "--nodes", "chalklab", "--endpoint", "chalklab="+n.addr,
+		return chalkctl(t, nil, "base", "upgrade", "--image", os.Getenv(env), "--nodes", "chalklab", "--address", "chalklab="+n.addr,
 			"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt"), "--timeout", "10m")
 	}
 	upgraded := time.Now()

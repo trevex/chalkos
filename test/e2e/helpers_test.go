@@ -8,6 +8,7 @@
 //	export CHALKLAB_CHALKCTL=$(nix build .#chalkctl --no-link --print-out-paths)/bin/chalkctl
 //	export CHALKLAB_CHALKLAB=$(nix build .#chalklab --no-link --print-out-paths)/bin/chalklab
 //	export CHALKLAB_SECRETS=$(nix build .#test-secrets --no-link --print-out-paths)/secrets.json
+//	export CHALKLAB_FIXTURES=$PWD/test/fixtures/clusters
 //	export CHALKLAB_MANIFESTS=$(nix build .#test-manifests --no-link --print-out-paths)
 package e2e
 
@@ -26,13 +27,82 @@ import (
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
-// TestMain denies io_uring to the QEMU the tests start, as chalklab does.
+// TestMain denies io_uring to the QEMU the tests start, as chalklab does, and copies the fixtures.
 func TestMain(m *testing.M) {
 	if err := lab.DenyIOURing(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	dir, err := copyFixtures()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fixtures = dir
+	code := m.Run()
+	if dir != "" {
+		os.RemoveAll(dir)
+	}
+	os.Exit(code)
+}
+
+// fixtures is a copy of CHALKLAB_FIXTURES, the e2e clusters' inventories and config files, with
+// the image directories the environment names linked where their Image documents point; empty
+// without CHALKLAB_FIXTURES.
+var fixtures string
+
+// fixtureImages are the variables naming the image directories, by where the fixtures' Image
+// documents point.
+var fixtureImages = map[string]string{
+	"chalklab/images/test-metal":    "CHALKLAB_IMAGE_DIR",
+	"chalklab/images/storage-metal": "CHALKLAB_STORAGE_IMAGE_DIR",
+	"chalklab/images/k8s-kvm":       "CHALKLAB_K8S_IMAGE_DIR",
+	"chalklab-ha/images/k8s-metal":  "CHALKLAB_K8S_HA_IMAGE_DIR",
+}
+
+// copyFixtures copies the fixtures to a new directory, which chalkctl may read beside the image
+// directories it links there.
+func copyFixtures() (string, error) {
+	src := os.Getenv("CHALKLAB_FIXTURES")
+	if src == "" {
+		return "", nil
+	}
+	dir, err := os.MkdirTemp("", "chalkos-fixtures-")
+	if err != nil {
+		return "", err
+	}
+	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+		return "", err
+	}
+	for link, env := range fixtureImages {
+		target := os.Getenv(env)
+		if target == "" {
+			continue
+		}
+		path := filepath.Join(dir, link)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.Symlink(target, path); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+// inventories are the fixtures' inventories by the names the tests give them: the main cluster,
+// the same with an additive and with a destructive change of chalklab's storage, and the HA
+// cluster.
+var inventories = map[string]string{
+	"base":        "chalklab/chalkos.yaml",
+	"added":       "chalklab/added.yaml",
+	"destructive": "chalklab/destructive.yaml",
+	"ha":          "chalklab-ha/chalkos.yaml",
+}
+
+// inventoryPath is the copied inventory of the name.
+func inventoryPath(name string) string {
+	return filepath.Join(fixtures, inventories[name])
 }
 
 func requireEnv(t *testing.T, names ...string) {

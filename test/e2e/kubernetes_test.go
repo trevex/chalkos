@@ -669,10 +669,10 @@ var (
 )
 
 // vxlanRules returns the marking and the dropping rules of the node's VXLAN table, as the node's
-// preparation logged them last in this boot; manifest names the cluster's manifest, base or ha.
-func vxlanRules(t *testing.T, n *node, manifest, name string) (marks, drops []string) {
+// preparation logged them last in this boot; inventory names the cluster's inventory, base or ha.
+func vxlanRules(t *testing.T, n *node, inventory, name string) (marks, drops []string) {
 	t.Helper()
-	out, err := chalkctl(t, n, manifest, "logs", name, "--unit", "chalkos-kubernetes")
+	out, err := chalkctl(t, n, inventory, "logs", name, "--unit", "chalkos-kubernetes")
 	if err != nil {
 		t.Fatal(err)
 	}

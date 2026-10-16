@@ -114,7 +114,7 @@ func (c *haCluster) reinstall(name, mac string) {
 	waitForNode(c.t, n.node, name)
 }
 
-// chalkctl runs chalkctl with the HA cluster's manifest against the node.
+// chalkctl runs chalkctl with the HA cluster's inventory against the node.
 func (c *haCluster) chalkctl(name string, args ...string) (string, error) {
 	return chalkctl(c.t, c.nodes[name].node, "ha", args...)
 }
@@ -559,9 +559,9 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 		}
 	}()
 	args := []string{"upgrade", "--image", os.Getenv("CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR"), "--config", config, "--nodes", strings.Join(upgraded, ","),
-		"--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), "ha.json"), "--timeout", "15m"}
+		"--inventory", inventoryPath("ha"), "--timeout", "15m"}
 	for _, name := range all {
-		args = append(args, "--endpoint", name+"="+c.nodes[name].addr)
+		args = append(args, "--address", name+"="+c.nodes[name].addr)
 	}
 	started := time.Now()
 	runCtx, cancel := context.WithTimeout(ctx, 25*time.Minute)

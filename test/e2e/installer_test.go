@@ -94,7 +94,7 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 		"var_boots":       "1",
 	})
 	waitForNode(t, n, "chalklab-target")
-	if out, err := chalkctl(t, n, "base", "status", "chalklab-target"); err != nil || !strings.Contains(out, "(the cluster definition's)") {
+	if out, err := chalkctl(t, n, "base", "status", "chalklab-target"); err != nil || !strings.Contains(out, "(the inventory's)") {
 		t.Errorf("status: %v", err)
 	}
 }

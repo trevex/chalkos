@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,9 +20,9 @@ import (
 )
 
 // chalkctlWith runs chalkctl for the node with a client file instead of the secrets file.
-func chalkctlWith(t *testing.T, n *node, manifest, config string, args ...string) (string, error) {
+func chalkctlWith(t *testing.T, n *node, inventory, config string, args ...string) (string, error) {
 	t.Helper()
-	args = append(args, "--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), manifest+".json"), "--config", config, "--endpoint", n.addr)
+	args = append(args, "--inventory", inventoryPath(inventory), "--config", config, "--address", n.addr)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...)

@@ -76,7 +76,7 @@ func TestInstallInPlace(t *testing.T) {
 	greeted("hello")
 
 	out, err := chalkctl(t, n, "base", "status", "chalklab")
-	if err != nil || !strings.Contains(out, "(the cluster definition's)") || !regexp.MustCompile(`\s/var\s+mounted`).MatchString(out) {
+	if err != nil || !strings.Contains(out, "(the inventory's)") || !regexp.MustCompile(`\s/var\s+mounted`).MatchString(out) {
 		t.Errorf("status: %v", err)
 	}
 	if err := info(anonymous); err == nil {
@@ -102,7 +102,7 @@ func TestInstallInPlace(t *testing.T) {
 	}
 	greeted("hello again")
 	out, err = chalkctl(t, n, "added", "status", "chalklab")
-	if err != nil || !strings.Contains(out, "(the cluster definition's)") || !regexp.MustCompile(`\s/srv/extra\s+mounted`).MatchString(out) {
+	if err != nil || !strings.Contains(out, "(the inventory's)") || !regexp.MustCompile(`\s/srv/extra\s+mounted`).MatchString(out) {
 		t.Errorf("the new volume is not mounted: %v", err)
 	}
 

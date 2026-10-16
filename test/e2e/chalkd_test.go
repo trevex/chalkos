@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,7 +21,7 @@ import (
 )
 
 // chalkdEnv is what tests that talk to chalkd need besides the firmware and an image.
-var chalkdEnv = []string{"CHALKLAB_CHALKCTL", "CHALKLAB_SECRETS", "CHALKLAB_MANIFESTS"}
+var chalkdEnv = []string{"CHALKLAB_CHALKCTL", "CHALKLAB_SECRETS", "CHALKLAB_MANIFESTS", "CHALKLAB_FIXTURES"}
 
 // node is a VM whose chalkd is reachable from the host.
 type node struct {
@@ -121,22 +120,20 @@ func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
 }
 
 // chalkctl runs the chalkctl binary for the node, or for the cluster when n is nil, against the
-// test cluster, with the named manifest of CHALKLAB_MANIFESTS.
-func chalkctl(t *testing.T, n *node, manifest string, args ...string) (string, error) {
+// test cluster, with the named inventory of the fixtures.
+func chalkctl(t *testing.T, n *node, inventory string, args ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	return chalkctlContext(ctx, t, n, manifest, args...)
+	return chalkctlContext(ctx, t, n, inventory, args...)
 }
 
 // chalkctlContext is chalkctl ended when ctx is.
-func chalkctlContext(ctx context.Context, t *testing.T, n *node, manifest string, args ...string) (string, error) {
+func chalkctlContext(ctx context.Context, t *testing.T, n *node, inventory string, args ...string) (string, error) {
 	t.Helper()
-	args = append(args,
-		"--manifest", filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), manifest+".json"),
-		"--secrets", os.Getenv("CHALKLAB_SECRETS"))
+	args = append(args, "--inventory", inventoryPath(inventory), "--secrets", os.Getenv("CHALKLAB_SECRETS"))
 	if n != nil {
-		args = append(args, "--endpoint", n.addr)
+		args = append(args, "--address", n.addr)
 	}
 	out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
 	t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
@@ -156,8 +153,8 @@ func install(t *testing.T, n *node, name string) error {
 	return installFrom(t, n, name, "base")
 }
 
-// installFrom installs the node as the named manifest of CHALKLAB_MANIFESTS defines it.
-func installFrom(t *testing.T, n *node, name, manifest string) error {
+// installFrom installs the node as the named inventory of the fixtures defines it.
+func installFrom(t *testing.T, n *node, name, inventory string) error {
 	info, err := chalkdInfo(n, 5*time.Minute)
 	if err != nil {
 		return err
@@ -165,7 +162,7 @@ func installFrom(t *testing.T, n *node, name, manifest string) error {
 	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("node %s is in mode %v, want maintenance", name, info.Mode)
 	}
-	if _, err := chalkctl(t, n, manifest, "install", name, "--insecure"); err != nil {
+	if _, err := chalkctl(t, n, inventory, "install", name, "--insecure"); err != nil {
 		return fmt.Errorf("install %s: %w", name, err)
 	}
 	return nil
