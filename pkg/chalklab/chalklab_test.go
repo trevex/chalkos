@@ -635,3 +635,32 @@ func TestCommandsDescribed(t *testing.T) {
 	}
 	walk(newCommand(a))
 }
+
+// TestPrintNext names the lab's client file in an export of CHALKOSCONFIG, so the chalkctl
+// commands after it name no client file, and the kubeconfig only once a control plane runs.
+func TestPrintNext(t *testing.T) {
+	a, out := testApp()
+	l := &lab.Lab{Cluster: "lab", Nodes: []lab.LabNode{{Name: "cp1"}, {Name: "w1"}}}
+	a.printNext("/state/lab", l, true)
+	want := `
+the lab of lab runs cp1, w1; next:
+  export KUBECONFIG=/state/lab/kubeconfig
+  export CHALKOSCONFIG=/state/lab/chalkctl.json
+  kubectl get nodes
+  chalkctl status cp1 --inventory /state/lab/chalkos.yaml
+  chalklab status
+  chalklab destroy
+The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with
+the lab's db key, or with --image of an image chalklab sign signed:
+  chalkctl upgrade --inventory /state/lab/chalkos.yaml \
+    --sign-key /state/lab/keys/db.key --sign-cert /state/lab/keys/db.crt
+`
+	if out.String() != want {
+		t.Errorf("output:\n%s\nwant:\n%s", out, want)
+	}
+	out.Reset()
+	a.printNext("/state/lab", l, false)
+	if s := out.String(); strings.Contains(s, "KUBECONFIG") || strings.Contains(s, "kubectl") || !strings.Contains(s, "export CHALKOSCONFIG=/state/lab/chalkctl.json\n") {
+		t.Errorf("output without Kubernetes:\n%s", s)
+	}
+}

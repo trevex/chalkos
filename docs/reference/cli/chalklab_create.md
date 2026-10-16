@@ -19,13 +19,15 @@ which the node's Network document must match; chalklab does not read the Network
 A node's memory, CPUs and disks default by its Node's type: 3072 MiB for a control plane, 2048 MiB
 for another node, 2 CPUs and one disk of 16G.
 
-Each node boots its image in maintenance mode; chalklab reads chalkd's certificate fingerprint
-from the console and installs the node in place with chalkctl install --fingerprint. When the
-lab has a control plane, chalklab bootstraps the first one and writes a kubeconfig that reaches
-its API server through the forwarded port. Last, it writes an admin client file. chalkctl reads
-the lab's inventory, chalkos.yaml in the lab's state directory: the lab file's inventory with
-its nodes at their forwarded ports. It names no secrets file: chalklab passes chalkctl --secrets,
-and --sign-cert with the lab's db certificate.
+chalklab first writes an admin client file. Each node boots its image in maintenance mode;
+chalklab reads chalkd's certificate fingerprint from the console and installs the node in place
+with chalkctl install --fingerprint. When the lab has a control plane, chalklab bootstraps the
+first one and writes a kubeconfig that reaches its API server through the forwarded port.
+chalkctl reads the lab's inventory, chalkos.yaml in the lab's state directory: the lab file's
+inventory with its nodes at their forwarded ports. It names no secrets file: chalklab passes
+chalkctl --secrets, and --sign-cert with the lab's db certificate. The closing output exports
+the client file as $CHALKOSCONFIG, which chalkctl reads when a command names no --config or
+--secrets, so the commands it prints name neither.
 
 The command needs the cluster's secrets file, --secrets, which chalkctl reads to install the
 nodes and to write the kubeconfig and the client file.

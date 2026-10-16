@@ -421,16 +421,28 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 		}
 	}
 
-	fmt.Fprintf(a.stdout, "\nthe lab of %s runs %s; next:\n", l.Cluster, strings.Join(nodeNames(l), ", "))
-	if cp != nil {
-		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n  kubectl get nodes\n", filepath.Join(dir, kubeconfigFile))
-	}
-	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s --config %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, inventory, filepath.Join(dir, clientFile))
-	// The lab signed copies of the images; the Image documents still name the unsigned builds.
-	keys := filepath.Join(dir, "keys")
-	fmt.Fprintf(a.stdout, "The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with\nthe lab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s --config %s \\\n    --sign-key %s --sign-cert %s\n",
-		inventory, filepath.Join(dir, clientFile), filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
+	a.printNext(dir, l, cp != nil)
 	return nil
+}
+
+// printNext prints the commands that use the lab: the kubeconfig when a control plane was
+// bootstrapped, and the client file as $CHALKOSCONFIG, which chalkctl reads when no --config or
+// --secrets is given, so the commands after it name neither. The lab's Image documents name the
+// unsigned builds, of which the lab signed copies, so an upgrade signs the images again.
+func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
+	inventory := filepath.Join(dir, inventoryFile)
+	fmt.Fprintf(a.stdout, "\nthe lab of %s runs %s; next:\n", l.Cluster, strings.Join(nodeNames(l), ", "))
+	if kubernetes {
+		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n", filepath.Join(dir, kubeconfigFile))
+	}
+	fmt.Fprintf(a.stdout, "  export CHALKOSCONFIG=%s\n", filepath.Join(dir, clientFile))
+	if kubernetes {
+		fmt.Fprintln(a.stdout, "  kubectl get nodes")
+	}
+	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, inventory)
+	keys := filepath.Join(dir, "keys")
+	fmt.Fprintf(a.stdout, "The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with\nthe lab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s \\\n    --sign-key %s --sign-cert %s\n",
+		inventory, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
 }
 
 // maintenanceFingerprint waits for a node's chalkd to come up in maintenance mode, and returns
