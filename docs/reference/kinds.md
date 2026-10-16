@@ -15,8 +15,8 @@ holds their schemas.
 
 Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,
 `-` and `.`, and a `spec`, whose fields the tables list. A field whose default reads "required"
-must be set. A field the tables do not list is refused, except within a Kubernetes object or an
-object whose type reads "any fields".
+must be set, and an object whose default reads "see below" takes the defaults of the fields
+that follow it. A field the tables do not list is refused, except within a Kubernetes object.
 
 ## Cluster { #cluster }
 
@@ -106,30 +106,30 @@ A node's config holds at most one.
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Let workloads run on control-plane nodes, which are otherwise tainted. |
-| `spec.dnsIPs` | object |  |  |
+| `spec.dnsIPs` | object | see below |  |
 | `spec.dnsIPs.ipv4` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.dnsIPs.ipv6` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster. |
-| `spec.extraArgs` | object |  |  |
+| `spec.extraArgs` | object | see below |  |
 | `spec.extraArgs.etcd` | map of string | `{}` | Extra flags of etcd, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-controller-manager` | map of string | `{}` | Extra flags of the controller-manager, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-scheduler` | map of string | `{}` | Extra flags of the scheduler, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kubelet` | map of string | `{}` | Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.ipFamilies` | list of one of `ipv4`, `ipv6` | `["ipv4"]` | Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created. |
-| `spec.nodeCIDRMaskSizes` | object |  |  |
+| `spec.nodeCIDRMaskSizes` | object | see below |  |
 | `spec.nodeCIDRMaskSizes.ipv4` | integer from 1 to 128 | `24` | Prefix length of each node's part of the family's pod range. |
 | `spec.nodeCIDRMaskSizes.ipv6` | integer from 1 to 128 | `64` | Prefix length of each node's part of the family's pod range. |
-| `spec.nodeIP` | object |  |  |
+| `spec.nodeIP` | object | see below |  |
 | `spec.nodeIP.timeout` | integer of at least 1 | `300` | Seconds a node waits at boot for its address. |
 | `spec.nodeIP.validSubnets` | list of string | `[]` | Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot; a leading `!` excludes one. Empty takes any global unicast address. |
-| `spec.podCIDRs` | object |  |  |
+| `spec.podCIDRs` | object | see below |  |
 | `spec.podCIDRs.ipv4` | string | `"10.244.0.0/16"` | Address range of the family's pods; each node gets a part of it. |
 | `spec.podCIDRs.ipv6` | string | `"fd00:10:244::/56"` | Address range of the family's pods; each node gets a part of it. |
-| `spec.serviceCIDRs` | object |  |  |
+| `spec.serviceCIDRs` | object | see below |  |
 | `spec.serviceCIDRs.ipv4` | string | `"10.96.0.0/12"` | Address range of the family's services, at most 2^20 addresses. |
 | `spec.serviceCIDRs.ipv6` | string | `"fd00:10:96::/112"` | Address range of the family's services, at most 2^20 addresses. |
-| `spec.vip` | object |  |  |
+| `spec.vip` | object | see below |  |
 | `spec.vip.addresses` | list of string | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
 | `spec.vip.interface` | string or null | `null` | Interface the addresses are added to; null means the one holding the node's address of their family. |
 | `spec.vip.mode` | `l2` | `"l2"` | How the holder announces the addresses. |
@@ -300,11 +300,11 @@ A node's config holds at most one.
 | `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`. |
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
-| `spec.encryption` | object |  |  |
+| `spec.encryption` | object | see below |  |
 | `spec.encryption.fallback` | one of `recovery-key`, `password`, `none` | `"recovery-key"` | Second keyslot asked for on the console when TPM2 unsealing fails. |
 | `spec.encryption.mode` | one of `tpm2`, `none` | `"tpm2"` | Encryption of STATE, VAR and volumes: `tpm2` seals a LUKS2 key to PCR 7, `none` uses no encryption. |
-| `spec.var` | object |  |  |
-| `spec.var.encryption` | object |  |  |
+| `spec.var` | object | see below |  |
+| `spec.var.encryption` | object | see below |  |
 | `spec.var.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for VAR. |
 | `spec.var.size` | string or null | `null` | Size of VAR; null fills the remaining space on the system disk. |
 
@@ -323,7 +323,7 @@ A node's config may hold several, each with a name of its own.
 | `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`. |
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
-| `spec.encryption` | object |  |  |
+| `spec.encryption` | object | see below |  |
 | `spec.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for this volume. |
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap` or null | `"ext4"` | File system of the volume; null leaves a raw block device. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. |
@@ -353,9 +353,9 @@ The nodes of a cluster, where chalkctl reaches each, and the config files each g
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.files` | list of string | none | Config files every node gets. |
-| `spec.groups` | map of object |  |  |
+| `spec.groups` | map of object | none |  |
 | `spec.groups.<name>.files` | list of string | none | Config files the group's nodes get. |
-| `spec.nodes` | map of object |  |  |
+| `spec.nodes` | map of object | none |  |
 | `spec.nodes.<name>.address` | string | none | Where chalkctl reaches the node's chalkd: a host or host:port. |
 | `spec.nodes.<name>.files` | list of string | none | The node's own config files. |
 | `spec.nodes.<name>.groups` | list of string | none | Groups whose files the node gets, in this order. |
@@ -371,8 +371,8 @@ The nodes of an inventory that chalklab runs as virtual machines, and their mach
 | `spec.inventory` | string | required | The inventory of the cluster, relative to the lab file. |
 | `spec.nodes` | map of object | required |  |
 | `spec.nodes.<name>.cpus` | integer of at least 1 | none | Virtual CPUs; default 2. |
-| `spec.nodes.<name>.disks` | list of object |  | The VM's disks: the first holds the node's image, the others start empty; default one of 16G. |
-| `spec.nodes.<name>.disks[].serial` | string | none |  |
-| `spec.nodes.<name>.disks[].size` | string | required |  |
+| `spec.nodes.<name>.disks` | list of object | none | The VM's disks: the first holds the node's image, the others start empty; default one of 16G. |
+| `spec.nodes.<name>.disks[].serial` | string | none | Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by; none by default. |
+| `spec.nodes.<name>.disks[].size` | string | required | Size of the disk in bytes, or with a K, M, G or T suffix, such as 16G. |
 | `spec.nodes.<name>.mac` | string | required | MAC address of the VM's NIC on the lab network, which the node's Network document must match. |
 | `spec.nodes.<name>.memory` | integer of at least 512 | none | Memory in MiB; default 3072 for a control plane, 2048 for another node. |

@@ -26,8 +26,8 @@ const kindsIntro = "# Config kinds\n\n" +
 	"holds their schemas.\n\n" +
 	"Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,\n" +
 	"`-` and `.`, and a `spec`, whose fields the tables list. A field whose default reads \"required\"\n" +
-	"must be set. A field the tables do not list is refused, except within a Kubernetes object or an\n" +
-	"object whose type reads \"any fields\".\n"
+	"must be set, and an object whose default reads \"see below\" takes the defaults of the fields\n" +
+	"that follow it. A field the tables do not list is refused, except within a Kubernetes object.\n"
 
 // kindSchema is the JSON Schema of a kind, as its file holds it, and the kind it declares.
 type kindSchema struct {
@@ -169,9 +169,10 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 		fieldPath := path + "." + name
 		inner := nested(root, fieldPath, child)
 		def := defaultOf(child, required[name])
-		// An object whose fields follow has no default of its own: its fields' defaults apply.
-		if def == "none" && len(inner) > 0 {
-			def = ""
+		// An object whose fields follow has no default of its own: the defaults of its fields apply.
+		// A list or map of objects has none, whatever its items' fields default to.
+		if _, isObject := child["properties"]; def == "none" && isObject {
+			def = "see below"
 		}
 		rows = append(rows, row{
 			path: fieldPath,

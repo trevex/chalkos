@@ -109,7 +109,8 @@ set. chalkctl checks the set against the schemas of the node's image and deliver
 and with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd checks it again, keeps it
 on [STATE](#state) and applies it at every boot. A new set replaces the node's previous one as a
 whole. Secrets travel as `Secret` documents and reach only the services that read the kinds
-referencing them. See [Config kinds](kinds.md).
+referencing them. See [Config and the inventory](../concepts/config.md) and
+[Config kinds](kinds.md).
 
 ## Config document { #config-document }
 
@@ -117,7 +118,8 @@ One object of a node's [config](#config), written in YAML in the style of a Kube
 `apiVersion` of a group and a version, a `kind`, a `metadata.name` and a `spec`. The schema of
 its [kind](#kind) defines the `spec`; [Config kinds](kinds.md) lists the fields of the built-in
 kinds. On the node, chalkd writes each document except `Secret`s and `Addon`s to
-`/run/chalkos/config/<group>/<Kind>/<name>.json`. See [Config kinds](kinds.md).
+`/run/chalkos/config/<group>/<Kind>/<name>.json`. See
+[Config and the inventory](../concepts/config.md#what-is-a-config-document).
 
 ## Contract { #contract }
 
@@ -213,8 +215,9 @@ See [The image](../concepts/image.md).
 
 The build output of an [image](#image), `images.<variant>-<platform>` of `chalkos.lib.mkImages`:
 the raw image, systemd-repart's report of its partitions, the definitions of the system region,
-`metadata.json`, which names the image's variant, platform, [root hash](#root-hash) and kinds, and
-the kinds' JSON Schemas in `schemas/`. A node's `Image` document names it in
+`metadata.json`, which names the image's variant, platform, [root hash](#root-hash) and kinds,
+the kinds' JSON Schemas in `schemas/` and, on an image with Kubernetes, what it fixes about
+Kubernetes in `image.json`. A node's `Image` document names it in
 `spec.source.directory`, and chalkctl reads it to validate config, sign, install and upgrade. See
 [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
@@ -237,6 +240,7 @@ The file that tells chalkctl about a cluster: each node by name, the address cha
 at, and the YAML files whose documents form its [config](#config), as files every node gets,
 files of named groups and each node's own. chalkctl reads `chalkos.yaml` in the current directory,
 or the file `--inventory` names. It stays on the operator's machine and names no secrets. See
+[Config and the inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes) and
 [Config kinds](kinds.md#inventory).
 
 ## Kind { #kind }
@@ -246,7 +250,9 @@ of its `apiVersion`. chalkos declares its own kinds in `chalkos.dev` and its sub
 [extension](#extension) declares more under [`chalkos.kinds`](options.md#chalkoskinds) in a
 variant's NixOS modules, with a group of its own. An image accepts the kinds its modules declare
 and refuses any other. A unit reads the documents of the kinds it names under
-[`chalkos.consumers`](options.md#chalkosconsumers). See [Config kinds](kinds.md).
+[`chalkos.consumers`](options.md#chalkosconsumers). See
+[Config and the inventory](../concepts/config.md#which-kinds-are-there) and
+[Config kinds](kinds.md).
 
 ## Kubernetes share { #kubernetes-share }
 

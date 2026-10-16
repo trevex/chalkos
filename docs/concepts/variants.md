@@ -9,8 +9,9 @@ description: "How mkImages builds a cluster's images from variants, platforms an
 NixOS modules: one image per [variant](../reference/glossary.md#variant) and
 [platform](../reference/glossary.md#platform), and one
 [installer](../reference/glossary.md#installer). An image fixes the software a node runs and
-nothing about the cluster, so one image serves every node of its variant and platform, control
-planes and workers alike. What differs between nodes, from their addresses to the cluster's
+nothing about the cluster, so one image serves every node of its variant and platform,
+[control planes](../reference/glossary.md#control-plane) and
+[workers](../reference/glossary.md#worker) alike. What differs between nodes, from their addresses to the cluster's
 endpoint, is their [config](../reference/glossary.md#config), YAML documents that
 [Config and the inventory](config.md) describes.
 
@@ -71,22 +72,22 @@ its name. `mkImages` returns three attribute sets:
 The flake pins the chalkos version in `flake.lock`, so its images change only when the lock file
 or the flake's own modules do. Nix is needed only to build images:
 [chalkctl](../reference/glossary.md#chalkctl) and [chalklab](../reference/glossary.md#chalklab)
-never evaluate the flake. A node's `Image` document names the directory a build was linked to,
+never evaluate the flake. A node's [`Image`](../reference/kinds.md#image) document names the directory a build was linked to,
 so the machine that runs chalkctl needs the directory and no Nix.
 
 ## What is a variant?
 
 A variant is a named set of NixOS modules, built for every platform as
-`images.<variant>-<platform>`. Its name, lower-case letters, digits and dashes, becomes
-`CHALKOS_VARIANT` in its images' os-release and `variant` in their `metadata.json`. A variant
-declares two things:
+`images.<variant>-<platform>`. Its name, of lower-case letters, digits and dashes and starting with
+a letter or digit, becomes `CHALKOS_VARIANT` in its images' os-release and `variant` in their
+`metadata.json`. A variant declares two things:
 
 - [`modules`](../reference/options.md#variantsmodules), plain NixOS modules for a GPU driver, a
   monitoring agent, more kernel [module groups](../reference/glossary.md#module-group) or an
   [extension](../reference/glossary.md#extension)'s kinds and services;
 - [`kubernetes`](../reference/options.md#variantskubernetes), whether its images run
-  Kubernetes, `true` by default. One image serves control planes and workers: each node's `Node`
-  document makes it one or the other.
+  Kubernetes, `true` by default. One image serves control planes and workers: each node's
+  [`Node`](../reference/kinds.md#node) document makes it one or the other.
 
 A cluster needs a second variant only for nodes that run other software, such as GPU nodes that
 need drivers the others should not carry. A cluster whose nodes run the same software has one
@@ -124,9 +125,9 @@ A platform is the kind of machine an image runs on, such as `metal` or `kvm`. It
 add what that machine needs and other machines do not: drivers, firmware, agents and the console.
 chalkos has modules for two:
 
-- `metal`: the base kernel module groups, with the console on the screen and the first serial
-  port, where a BMC's serial-over-LAN shows it.
-- `kvm`: the console on the first serial port, the virtio disk drivers in the initrd, and a QEMU
+- `metal`: the console on the screen and the first serial port, where a BMC's serial-over-LAN
+  shows it.
+- `kvm`: the console on the first serial port, the virtio disk drivers in the initrd and a QEMU
   guest agent that starts only under KVM. The host may ask the agent about the node and shut it
   down, never run commands or read and write files.
 
@@ -281,8 +282,6 @@ copies a flake's tracked files.
 
 - One image serves every node of its variant and platform, so a per-node kernel parameter, package
   or driver needs a variant or a platform of its own.
-- Config carries data, not code. A new service, or a change to how a service reads its value, is
-  an image change and an [upgrade](upgrades.md).
 - `mkImages` builds images for one Nix `system` per call; a cluster of x86-64 and arm64 machines
   calls it once for each.
 - A flake rebuilds an image whenever its modules or `flake.lock` change. Two builds of one

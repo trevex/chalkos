@@ -59,8 +59,16 @@
                   "additionalProperties": false,
                   "required": ["size"],
                   "properties": {
-                    "size": { "type": "string", "pattern": "^[0-9]+[KMGT]?$" },
-                    "serial": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,20}$" }
+                    "size": {
+                      "type": "string",
+                      "pattern": "^[0-9]+[KMGT]?$",
+                      "description": "Size of the disk in bytes, or with a K, M, G or T suffix, such as 16G."
+                    },
+                    "serial": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,20}$",
+                      "description": "Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by; none by default."
+                    }
                   }
                 }
               }

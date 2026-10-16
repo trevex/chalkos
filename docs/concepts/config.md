@@ -1,6 +1,6 @@
 ---
 title: "Config and the inventory"
-description: "How YAML config documents describe each node, how the inventory gives them out, and how a node applies them"
+description: "How YAML config documents describe each node, how the inventory gives them out and how a node applies them"
 ---
 
 # Config and the inventory
@@ -94,7 +94,7 @@ schemas.
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
 | [`Network`](../reference/kinds.md#network), [`NetDev`](../reference/kinds.md#netdev), [`Link`](../reference/kinds.md#link) | `networkd.chalkos.dev` | any | systemd-networkd's `.network`, `.netdev` and `.link` files, one document per file |
-| [`Kubernetes`](../reference/kinds.md#kubernetes) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on control planes and extra flags of the components |
+| [`Kubernetes`](../reference/kinds.md#kubernetes) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the components |
 | [`Kubelet`](../reference/kinds.md#kubelet) | `kubernetes.chalkos.dev` | at most one | The node's labels, taints and Kubernetes addresses |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | `kubernetes.chalkos.dev` | any | The mirrors of one container registry |
 | [`Flannel`](../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU |
@@ -111,7 +111,8 @@ Some kinds depend on the image or the node:
   `MACAddress=` is `match: {macAddress: …}`. A section that networkd allows more than once, such as
   `[Route]`, is a list.
 - An `Addon`'s objects go to the cluster's API, so chalkctl delivers `Addon` documents to control
-  planes alone. A shared file may hold them; a worker's set leaves them out.
+  planes alone. A shared file may hold them; a [worker](../reference/glossary.md#worker)'s set leaves
+  them out.
 
 An extension adds kinds of its own in a group outside `chalkos.dev`, declared in the NixOS modules
 of a [variant](../reference/glossary.md#variant), as
@@ -129,9 +130,10 @@ spec:
 
 ## How does the inventory assign files to nodes?
 
-The inventory is a YAML document of its own kind, `Inventory`, that chalkctl reads from
-`chalkos.yaml` in the current directory or from the file `--inventory` names. It stays on the
-operator's machine and never reaches a node. The lab template's:
+The inventory is a YAML document of its own kind, [`Inventory`](../reference/kinds.md#inventory),
+that chalkctl reads from `chalkos.yaml` in the current directory or from the file `--inventory`
+names. It stays on the operator's machine and never reaches a node. The lab template's inventory
+reads:
 
 ```yaml title="chalkos.yaml"
 # The lab's nodes, the address chalkctl reaches each at on the lab network, and their config
@@ -161,7 +163,8 @@ one file, so a typo fails instead of leaving documents out. A file named twice c
 
 The order decides nothing about values, because documents never merge: two documents of the same
 kind and name in one node's set are an error that names both files. A group is the place for what
-a subset of nodes shares, such as the `Kubelet` labels of GPU workers:
+a subset of nodes shares, such as the `Kubelet` labels of GPU workers. This inventory extends the
+homelab example's with a group `gpu` and a GPU worker `w2` in it:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -185,8 +188,10 @@ command. Each node's `Node` document carries the name the inventory gives the no
 refuses a set whose `Node` is named otherwise.
 
 The inventory names no secrets file. The commands that issue certificates or deliver config read
-the [secrets file](../reference/glossary.md#secrets-file) from `--secrets`; the others
-authenticate with a [client file](../reference/glossary.md#client-file).
+the [secrets file](../reference/glossary.md#secrets-file) from `--secrets FILE`, or from standard
+input with `--secrets -`. The others authenticate with the secrets file when `--secrets` is given,
+and otherwise with a [client file](../reference/glossary.md#client-file): the one `--config`
+names, else the one `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`.
 
 ## What makes a set valid?
 
@@ -195,7 +200,7 @@ A node's set is valid when:
 - it holds exactly one `Cluster`, one `Node` and one `SystemDisk`, and the `Image` that the `Node`'s
   `spec.imageRef` names;
 - every other kind appears at most once, unless the kind allows several (`Image`, `Secret`,
-  `Volume`, `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link`, and extension kinds declared
+  `Volume`, `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared
   with `multiple = true`);
 - every document's `apiVersion` and `kind` is one the node's image declares;
 - no two documents of a kind share a `metadata.name`;
@@ -207,8 +212,8 @@ A node's set is valid when:
 Beyond the schemas, chalkctl and chalkd translate the set as the node will use it, which checks
 what a schema cannot express: overlapping ranges, a VIP outside the node's networks, a volume that
 does not fit its disk, an extra flag that would override one chalkos sets. Every node of an
-inventory must hold a `Cluster` of the same name and endpoint, because the cluster's name and
-endpoint come from it.
+inventory must hold a `Cluster` of the same name and endpoint, because each node takes the
+cluster's name and endpoint from its own `Cluster`.
 
 ## How does an Image document name an image?
 
@@ -221,7 +226,7 @@ and its `schemas/` holds the schemas of the kinds the image accepts.
 
 The root hash stays on the operator's machine. chalkctl reads it from `metadata.json` when it
 needs it and never puts it into the config it delivers, so a new build of an image changes no
-node's config, and an upgrade needs no `apply-config` after it. The `Node`'s `spec.imageRef` names
+node's config, and an [upgrade](../reference/glossary.md#upgrade) needs no `apply-config` after it. The `Node`'s `spec.imageRef` names
 the `Image` by its `metadata.name`, so a shared file may hold the `Image` of every variant and each
 node picks its own.
 
@@ -240,7 +245,15 @@ chalkctl validate
 ```
 
 It prints a line for each node whose config is valid and names each error, and it warns of a node
-whose `SystemDisk` leaves STATE unencrypted. The commands that deliver config run the same check
+whose `SystemDisk` leaves STATE unencrypted. For the lab template:
+
+```text
+cp1: valid for the Image node-kvm (node on kvm, root hash 1044caccb099), config 7080d0996b95ef02999ede113b5fe02895fc1a3b87749fb5ad4a3ab28a105986
+w1: valid for the Image node-kvm (node on kvm, root hash 1044caccb099), config 0505d3467f8f64576cd78a10ed1c82f904e09f9229d588f402f630d2458f3861
+```
+
+Each line names the image's variant and platform, the start of its root hash, and the hash of the
+node's config that [`chalkctl status`](../reference/cli/chalkctl_status.md) compares. The commands that deliver config run the same check
 first, each against the image the config is for:
 
 - [`chalkctl install`](../reference/cli/chalkctl_install.md) against the image it installs: the
@@ -378,8 +391,6 @@ image with other defaults does not change it.
   differs in one label each hold a whole `Kubelet` of their own.
 - Config carries data, not code. A new service, or a change to how a service reads its value, is an
   image change and an [upgrade](upgrades.md).
-- An upgrade carries no config, so config that needs a kind of the new image is applied after the
-  upgrade, in a second step.
 - A kind has one version per image, and there is no conversion between versions. A new version of
   a kind is a new set of documents.
 
@@ -393,3 +404,5 @@ image with other defaults does not change it.
 - [Config kinds](../reference/kinds.md) for every field of every kind, the inventory's included.
 - [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and
   [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) for the commands.
+- The [quick start](../getting-started/index.md) and
+  [Install on bare metal](../guides/install-bare-metal.md) for config files in use.
