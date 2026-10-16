@@ -3,3 +3,5 @@ result
 result-*
 .claude/
 site/
+# Image directories linked into the e2e fixtures to validate them by hand.
+test/fixtures/clusters/*/images/

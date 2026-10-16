@@ -460,7 +460,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 				return err
 			}
 		}
-		if boot.GetStaged() == version {
+		if hasStaged(boot, version, n.image.header.RootHash) {
 			r.say("%s: %s is installed already", n.name, version)
 		} else if err := r.install(ctx, n); err != nil {
 			return err
@@ -485,6 +485,16 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		return err
 	}
 	return r.uncordon(ctx, n)
+}
+
+// hasStaged reports whether the node has the build of the version and root hash staged to boot
+// next. Builds of one version differ in their root hash alone, so a node that names the staged
+// store's root hash is judged by it; one that names the staged version alone, by that.
+func hasStaged(boot *nodev1.BootStatus, version string, rootHash []byte) bool {
+	if len(boot.GetStagedRootHash()) > 0 {
+		return bytes.Equal(boot.GetStagedRootHash(), rootHash)
+	}
+	return boot.GetStaged() != "" && boot.GetStaged() == version
 }
 
 // install sends the node its image.

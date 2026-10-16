@@ -456,7 +456,9 @@ func TestCommandsThatNeedAnInventory(t *testing.T) {
 }
 
 // TestImageLineOfAStagedImage advises a reboot to a node that has the image of its Image staged,
-// and says why the store is not compared when the Image's directory cannot be read.
+// by its root hash where the node names it, else by its version; another build of the version
+// staged is no reason to reboot. It says why the store is not compared when the Image's directory
+// cannot be read.
 func TestImageLineOfAStagedImage(t *testing.T) {
 	dir := t.TempDir()
 	c, err := loadInventory(writeInventory(t, dir))
@@ -464,8 +466,14 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := bytes.Repeat([]byte{0xcd}, 32)
-	if got := c.imageLine("n1", &nodev1.BootStatus{RootHash: other, Staged: "0.1.0"}); !strings.Contains(got, "it has 0.1.0 staged, which it boots with its next reboot: chalkctl reboot n1") {
-		t.Errorf("the line of a staged image = %q", got)
+	want, _ := hex.DecodeString(testRootHash)
+	for _, boot := range []*nodev1.BootStatus{{RootHash: other, Staged: "0.1.0"}, {RootHash: other, Staged: "0.1.0", StagedRootHash: want}} {
+		if got := c.imageLine("n1", boot); !strings.Contains(got, "it has 0.1.0 staged, which it boots with its next reboot: chalkctl reboot n1") {
+			t.Errorf("the line of a staged image = %q", got)
+		}
+	}
+	if got := c.imageLine("n1", &nodev1.BootStatus{RootHash: other, Staged: "0.1.0", StagedRootHash: other}); strings.Contains(got, "chalkctl reboot") || !strings.Contains(got, "chalkctl upgrade --nodes n1 installs that image") {
+		t.Errorf("the line of another build of the version staged = %q", got)
 	}
 	if err := os.Remove(filepath.Join(dir, "images", "test-metal", "metadata.json")); err != nil {
 		t.Fatal(err)

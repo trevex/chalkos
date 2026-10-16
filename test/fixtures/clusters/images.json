@@ -1,0 +1,6 @@
+{
+  "chalklab/images/test-metal": "CHALKLAB_IMAGE_DIR",
+  "chalklab/images/storage-metal": "CHALKLAB_STORAGE_IMAGE_DIR",
+  "chalklab/images/k8s-kvm": "CHALKLAB_K8S_IMAGE_DIR",
+  "chalklab-ha/images/k8s-metal": "CHALKLAB_K8S_HA_IMAGE_DIR"
+}

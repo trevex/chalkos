@@ -186,6 +186,7 @@ a node cordoned otherwise as it is.
 | `journal` | repeated `string` | The last lines chalkd and the health check logged during the failed version's last boot, as the check recorded them on VAR; empty without that record. |
 | `error` | `string` | Why the boot could not be read; empty when it was. |
 | `root_hash` | `bytes` | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which tells builds of one version apart; empty when it could not be read. |
+| `staged_root_hash` | `bytes` | The verity root hash of the store of the staged UKI, which tells builds of the staged version apart; empty without a staged UKI or when its store could not be read. |
 
 ### BootstrapRequest { #message-bootstraprequest }
 

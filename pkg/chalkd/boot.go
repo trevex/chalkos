@@ -46,7 +46,7 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 		case e.Bad():
 			failed = e
 		case e.TriesLeft > 0:
-			st.Staged = e.Version
+			st.Staged, st.StagedRootHash = e.Version, e.RootHash
 		}
 	}
 	if failed.Version != "" {

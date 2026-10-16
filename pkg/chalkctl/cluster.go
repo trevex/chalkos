@@ -414,9 +414,8 @@ func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 		return ""
 	}
 	line := fmt.Sprintf("its store's root hash is %x, not that of the Image %s its config names, %s", boot.GetRootHash(), nc.ImageName, md.RootHash)
-	// After an upgrade with --no-reboot the image waits for the node's next boot. The node names
-	// what it staged by its version alone.
-	if boot.GetStaged() != "" && boot.GetStaged() == md.Version {
+	// After an upgrade with --no-reboot the image waits for the node's next boot.
+	if want, err := hex.DecodeString(md.RootHash); err == nil && hasStaged(boot, md.Version, want) {
 		return fmt.Sprintf("%s; it has %s staged, which it boots with its next reboot: chalkctl reboot %s", line, md.Version, name)
 	}
 	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, name)

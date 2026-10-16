@@ -1908,9 +1908,12 @@ type BootStatus struct {
 	Error string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
 	// The verity root hash of the store the node runs, as its kernel command line's usrhash= names
 	// it, which tells builds of one version apart; empty when it could not be read.
-	RootHash      []byte `protobuf:"bytes,8,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RootHash []byte `protobuf:"bytes,8,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
+	// The verity root hash of the store of the staged UKI, which tells builds of the staged
+	// version apart; empty without a staged UKI or when its store could not be read.
+	StagedRootHash []byte `protobuf:"bytes,9,opt,name=staged_root_hash,json=stagedRootHash,proto3" json:"staged_root_hash,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *BootStatus) Reset() {
@@ -1995,6 +1998,13 @@ func (x *BootStatus) GetError() string {
 func (x *BootStatus) GetRootHash() []byte {
 	if x != nil {
 		return x.RootHash
+	}
+	return nil
+}
+
+func (x *BootStatus) GetStagedRootHash() []byte {
+	if x != nil {
+		return x.StagedRootHash
 	}
 	return nil
 }
@@ -3892,7 +3902,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\x12\x1a\n" +
 	"\bplatform\x18\n" +
 	" \x01(\tR\bplatform\x12%\n" +
-	"\x0econfig_version\x18\v \x01(\tR\rconfigVersionJ\x04\b\x01\x10\x02R\x10identity_version\"\xd3\x01\n" +
+	"\x0econfig_version\x18\v \x01(\tR\rconfigVersionJ\x04\b\x01\x10\x02R\x10identity_version\"\xfd\x01\n" +
 	"\n" +
 	"BootStatus\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x14\n" +
@@ -3902,7 +3912,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06failed\x18\x05 \x01(\tR\x06failed\x12\x18\n" +
 	"\ajournal\x18\x06 \x03(\tR\ajournal\x12\x14\n" +
 	"\x05error\x18\a \x01(\tR\x05error\x12\x1b\n" +
-	"\troot_hash\x18\b \x01(\fR\brootHash\"_\n" +
+	"\troot_hash\x18\b \x01(\fR\brootHash\x12(\n" +
+	"\x10staged_root_hash\x18\t \x01(\fR\x0estagedRootHash\"_\n" +
 	"\vTrustStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\"\n" +
 	"\ffingerprints\x18\x02 \x03(\tR\ffingerprints\x12\x18\n" +

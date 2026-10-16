@@ -12,13 +12,13 @@ Install new images on the cluster's nodes, one control plane at a time
 Installs on each node a new image: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
 Without --image each node (every node of the cluster, or those --nodes names) gets the image its
-Image document names, and a node that runs on another platform than that image stops the run
-before any node is sent anything. An image directory whose image has another root hash than its
-metadata.json names, which status compares nodes with, is refused: rebuild the image or link its
-directory again. With --image the nodes that run the image's variant get it, or
-those --nodes names whatever they run, and nodes on another platform are skipped and named. A
-node may get an image of another variant than the one it runs, which chalkctl prints; the node
-checks its stored config against the image before the image becomes its next boot.
+Image document names, which must be the build whose root hash its directory's metadata.json
+names, as status compares nodes with it: rebuild the image or link its directory again
+otherwise. A node that runs on another platform than its image stops the run before any node is
+sent anything. With --image the nodes that run the image's variant get it, or those --nodes
+names whatever they run, and nodes on another platform are skipped and named. A node may get an
+image of another variant than the one it runs, which chalkctl prints; the node checks its stored
+config against the image before the image becomes its next boot.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy

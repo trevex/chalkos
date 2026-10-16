@@ -64,13 +64,20 @@ let
       '';
   testImage.CHALKLAB_IMAGE_DIR = "${chalkPkgs.test-image}";
   # The image directories the e2e fixtures' Image documents point at, below
-  # test/fixtures/clusters, where the fixtures check links them.
-  fixtureImages = {
-    "chalklab/images/test-metal" = chalkPkgs.test-image;
-    "chalklab/images/storage-metal" = chalkPkgs.test-storage-image;
-    "chalklab/images/k8s-kvm" = chalkPkgs.test-kubernetes-image;
-    "chalklab-ha/images/k8s-metal" = chalkPkgs.test-kubernetes-ha-image;
-  };
+  # test/fixtures/clusters, where the fixtures check links them. images.json there names, by
+  # where each points, the variable that names the image in the e2e tests, which read it too.
+  fixtureImages =
+    let
+      images = {
+        CHALKLAB_IMAGE_DIR = chalkPkgs.test-image;
+        CHALKLAB_STORAGE_IMAGE_DIR = chalkPkgs.test-storage-image;
+        CHALKLAB_K8S_IMAGE_DIR = chalkPkgs.test-kubernetes-image;
+        CHALKLAB_K8S_HA_IMAGE_DIR = chalkPkgs.test-kubernetes-ha-image;
+      };
+    in
+    lib.mapAttrs (_: variable: images.${variable}) (
+      lib.importJSON ../test/fixtures/clusters/images.json
+    );
 in
 {
   go-unit = chalkPkgs.chalkctl.overrideAttrs (

@@ -251,7 +251,7 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{Version: n.version, RootHash: n.root, Entry: "chalkos_" + n.version + ".efi", Blessed: true, Staged: n.staged, Failed: n.failed}}
+	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{Version: n.version, RootHash: n.root, Entry: "chalkos_" + n.version + ".efi", Blessed: true, Staged: n.staged, StagedRootHash: n.stagedRoot, Failed: n.failed}}
 	n.lab.mu.Lock()
 	ready := "True"
 	if n.lab.notReady[n.name] {
@@ -329,9 +329,9 @@ func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequ
 		switch {
 		case n.staged == "":
 		case unhealthy:
-			n.failed, n.staged = n.staged, ""
+			n.failed, n.staged, n.stagedRoot = n.staged, "", nil
 		default:
-			n.version, n.root, n.staged = n.staged, n.stagedRoot, ""
+			n.version, n.root, n.staged, n.stagedRoot = n.staged, n.stagedRoot, "", nil
 		}
 	}()
 	return connect.NewResponse(&nodev1.RebootResponse{}), nil
@@ -712,6 +712,23 @@ func TestUpgradeContinues(t *testing.T) {
 		if v := l.versions()[w]; v != "0.2.0" {
 			t.Errorf("%s runs %s", w, v)
 		}
+	}
+}
+
+// TestUpgradeSendsAnotherBuild sends the image to a node that has another build of its version
+// staged, which differs in its root hash alone.
+func TestUpgradeSendsAnotherBuild(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.nodes["w3"].staged, l.nodes["w3"].stagedRoot = "0.2.0", bytes.Repeat([]byte{9}, 32)
+	if err := l.upgrade(img); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); !slices.Contains(got, "w3 upgrade") {
+		t.Errorf("events %q, want the image sent to w3", got)
+	}
+	if n := l.nodes["w3"]; n.version != "0.2.0" || bytes.Equal(n.root, bytes.Repeat([]byte{9}, 32)) {
+		t.Errorf("w3 runs %s of the root hash %x", n.version, n.root)
 	}
 }
 

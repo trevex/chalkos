@@ -175,7 +175,7 @@ func TestInstallerISOBoots(t *testing.T) {
 	var out []byte
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		out, err = exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "disks", "--endpoint", n.addr, "--fingerprint", m[1]).CombinedOutput()
+		out, err = exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "disks", "--address", n.addr, "--fingerprint", m[1]).CombinedOutput()
 		if err == nil || time.Now().After(deadline) {
 			break
 		}

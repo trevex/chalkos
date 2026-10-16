@@ -13,10 +13,13 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,21 +31,25 @@ import (
 
 // TestMain denies io_uring to the QEMU the tests start, as chalklab does, and copies the fixtures.
 func TestMain(m *testing.M) {
+	os.Exit(runTests(m))
+}
+
+// runTests runs the tests with a copy of the fixtures, which it removes once they ran.
+func runTests(m *testing.M) int {
 	if err := lab.DenyIOURing(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return 1
 	}
 	dir, err := copyFixtures()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return 1
+	}
+	if dir != "" {
+		defer os.RemoveAll(dir)
 	}
 	fixtures = dir
-	code := m.Run()
-	if dir != "" {
-		os.RemoveAll(dir)
-	}
-	os.Exit(code)
+	return m.Run()
 }
 
 // fixtures is a copy of CHALKLAB_FIXTURES, the e2e clusters' inventories and config files, with
@@ -50,30 +57,38 @@ func TestMain(m *testing.M) {
 // without CHALKLAB_FIXTURES.
 var fixtures string
 
-// fixtureImages are the variables naming the image directories, by where the fixtures' Image
-// documents point.
-var fixtureImages = map[string]string{
-	"chalklab/images/test-metal":    "CHALKLAB_IMAGE_DIR",
-	"chalklab/images/storage-metal": "CHALKLAB_STORAGE_IMAGE_DIR",
-	"chalklab/images/k8s-kvm":       "CHALKLAB_K8S_IMAGE_DIR",
-	"chalklab-ha/images/k8s-metal":  "CHALKLAB_K8S_HA_IMAGE_DIR",
-}
+// fixtureImagesFile names, by where each of the fixtures' Image documents points, the variable
+// that names the image directory to link there. The fixtures check reads it too.
+const fixtureImagesFile = "images.json"
 
 // copyFixtures copies the fixtures to a new directory, which chalkctl may read beside the image
-// directories it links there.
-func copyFixtures() (string, error) {
+// directories it links there. It removes the copy when it fails.
+func copyFixtures() (dir string, err error) {
 	src := os.Getenv("CHALKLAB_FIXTURES")
 	if src == "" {
 		return "", nil
 	}
-	dir, err := os.MkdirTemp("", "chalkos-fixtures-")
+	data, err := os.ReadFile(filepath.Join(src, fixtureImagesFile))
 	if err != nil {
 		return "", err
 	}
-	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+	var images map[string]string
+	if err := json.Unmarshal(data, &images); err != nil {
+		return "", fmt.Errorf("%s: %w", filepath.Join(src, fixtureImagesFile), err)
+	}
+	if dir, err = os.MkdirTemp("", "chalkos-fixtures-"); err != nil {
 		return "", err
 	}
-	for link, env := range fixtureImages {
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dir)
+			dir = ""
+		}
+	}()
+	if err := copyTree(src, dir); err != nil {
+		return "", err
+	}
+	for link, env := range images {
 		target := os.Getenv(env)
 		if target == "" {
 			continue
@@ -87,6 +102,44 @@ func copyFixtures() (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// copyTree copies the directories, regular files and links below src into dst, which exists. It
+// leaves out what lies below an images directory, such as image directories linked there to
+// validate the fixtures by hand: the environment names the images.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		switch {
+		case d.IsDir() && d.Name() == "images":
+			return fs.SkipDir
+		case d.IsDir():
+			return os.MkdirAll(target, 0o755)
+		case d.Type()&fs.ModeSymlink != 0:
+			if slices.Contains(strings.Split(rel, string(filepath.Separator)), "images") {
+				return nil
+			}
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		case !d.Type().IsRegular():
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
 }
 
 // inventories are the fixtures' inventories by the names the tests give them: the main cluster,

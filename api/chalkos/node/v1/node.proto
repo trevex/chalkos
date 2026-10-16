@@ -376,6 +376,9 @@ message BootStatus {
   // The verity root hash of the store the node runs, as its kernel command line's usrhash= names
   // it, which tells builds of one version apart; empty when it could not be read.
   bytes root_hash = 8;
+  // The verity root hash of the store of the staged UKI, which tells builds of the staged
+  // version apart; empty without a staged UKI or when its store could not be read.
+  bytes staged_root_hash = 9;
 }
 
 message TrustStatus {

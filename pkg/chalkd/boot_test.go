@@ -36,7 +36,7 @@ func TestStatusReportsTheBoot(t *testing.T) {
 		{"counted", []string{"chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"}, nil, "",
 			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0+2-1.efi"}},
 		{"staged", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+3.efi"}, nil, "",
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Staged: "0.3.0"}},
+			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Staged: "0.3.0", StagedRootHash: bytes.Repeat([]byte{0x33}, 32)}},
 		{"rolled back", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi"}, nil, header + journal,
 			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Failed: "0.3.0", Journal: strings.Split(strings.TrimSpace(journal), "\n")}},
 		{"rolled back, recorded another time", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi"}, nil, "version 0.2.1 usrhash=" + strings.Repeat("31", 32) + "\n" + journal,
