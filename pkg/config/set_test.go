@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -218,26 +217,5 @@ func TestCheckSecretRefsIgnoresAnUnmarkedUserMapEntry(t *testing.T) {
 	}}}
 	if err := checkSecretRefs(docs, extraSchemaDir(t), map[string]map[string]string{}); err != nil {
 		t.Fatalf("err = %v, want nil: the schema never marks spec.data as a secret reference", err)
-	}
-}
-
-// TestWalkSchemaRefsEndsOnASchemaThatRefersToItself: a raw schema whose $refs go round, or whose
-// anyOf holds itself, ends the walk for a secretRef with an error or nothing found, not a hang.
-func TestWalkSchemaRefsEndsOnASchemaThatRefersToItself(t *testing.T) {
-	for name, defs := range map[string]map[string]any{
-		"a $ref cycle":            {"a": map[string]any{"$ref": "#/$defs/b"}, "b": map[string]any{"$ref": "#/$defs/a"}},
-		"an anyOf holding itself": {"a": map[string]any{"anyOf": []any{map[string]any{"$ref": "#/$defs/a"}}}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			done := make(chan error, 1)
-			go func() {
-				done <- walkSchemaRefs(defs, map[string]any{"$ref": "#/$defs/a"}, map[string]any{"x": "y"}, func(SecretRef) error { return nil })
-			}()
-			select {
-			case <-done:
-			case <-time.After(10 * time.Second):
-				t.Fatal("the walk did not end")
-			}
-		})
 	}
 }

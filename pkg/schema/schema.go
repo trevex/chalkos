@@ -85,46 +85,27 @@ func LoadSchemas(dir string) (*Schemas, error) {
 		path := filepath.Join(dir, name)
 		doc, err := readDoc(path)
 		if err != nil {
-			return nil, &LoadError{File: name, err: err}
+			return nil, err
 		}
 		k, err := kindOf(doc, path)
 		if err != nil {
-			return nil, &LoadError{File: name, err: err}
+			return nil, err
 		}
 		if _, dup := ss.schemas[key(k.APIVersion, k.Kind)]; dup {
-			return nil, &LoadError{File: name, err: fmt.Errorf("%s: duplicate kind %s %s", path, k.APIVersion, k.Kind)}
+			return nil, fmt.Errorf("%s: duplicate kind %s %s", path, k.APIVersion, k.Kind)
 		}
 		if want := fileName(k); want != name {
-			return nil, &LoadError{File: name, err: fmt.Errorf("%s: should be named %s for its kind %s %s", path, want, k.APIVersion, k.Kind)}
+			return nil, fmt.Errorf("%s: should be named %s for its kind %s %s", path, want, k.APIVersion, k.Kind)
 		}
 		s, err := compileSchema(c, doc, path, name)
 		if err != nil {
-			return nil, &LoadError{File: name, err: fmt.Errorf("schema of %s %s: %w", k.APIVersion, k.Kind, err)}
+			return nil, fmt.Errorf("schema of %s %s: %w", k.APIVersion, k.Kind, err)
 		}
 		ss.schemas[key(k.APIVersion, k.Kind)] = s
 		ss.raw[key(k.APIVersion, k.Kind)] = doc
 		ss.kinds = append(ss.kinds, k)
 	}
 	return ss, nil
-}
-
-// LoadError is a schema file that does not load.
-type LoadError struct {
-	// File is the file's name in its directory.
-	File string
-	err  error
-}
-
-func (e *LoadError) Error() string { return e.err.Error() }
-func (e *LoadError) Unwrap() error { return e.err }
-
-// noLoader fetches no schema: a schema may refer to itself, the image's other schemas and the
-// JSON Schema metaschemas, which the compiler holds, but never to a file or a URL, which the
-// compiler would otherwise read, as root on a node, for schemas its reader chose.
-type noLoader struct{}
-
-func (noLoader) Load(url string) (any, error) {
-	return nil, fmt.Errorf("a schema may refer only to the image's schemas, not to %s", url)
 }
 
 // fileName is the name a schema of k must have, as modules/node/kinds/schema.nix also builds it.
@@ -183,66 +164,18 @@ func (s *Schemas) Validate(doc any) error {
 	}
 	apiVersion, _ := m["apiVersion"].(string)
 	docKind, _ := m["kind"].(string)
-	name := ""
-	if md, ok := m["metadata"].(map[string]any); ok {
-		name, _ = md["name"].(string)
-	}
 	sch, ok := s.schemas[key(apiVersion, docKind)]
 	if !ok {
-		return &ValidationError{APIVersion: apiVersion, Kind: docKind, Name: name}
+		return fmt.Errorf("does not accept kind %q of apiVersion %q", docKind, apiVersion)
 	}
 	if err := sch.Validate(doc); err != nil {
-		return &ValidationError{APIVersion: apiVersion, Kind: docKind, Name: name, err: err}
+		name := ""
+		if md, ok := m["metadata"].(map[string]any); ok {
+			name, _ = md["name"].(string)
+		}
+		return fmt.Errorf("%s %q: %s", docKind, name, explain(err))
 	}
 	return nil
-}
-
-// ValidationError is a document its kind's schema refuses, or one of a kind without a schema.
-type ValidationError struct {
-	APIVersion, Kind, Name string
-	// err is the schema's verdict; nil for a kind without a schema.
-	err error
-}
-
-func (e *ValidationError) Error() string {
-	if e.err == nil {
-		return fmt.Sprintf("does not accept kind %q of apiVersion %q", e.Kind, e.APIVersion)
-	}
-	return fmt.Sprintf("%s %q: %s", e.Kind, e.Name, explain(e.err))
-}
-
-// Redacted says where the document fails and which keyword refuses it, without the values the
-// schema's messages quote: for a document checked against schemas its reader chose, whose
-// messages could show values the reader may not see.
-func (e *ValidationError) Redacted() string {
-	if e.err == nil {
-		return fmt.Sprintf("%s %q: the image has no schema of its kind of apiVersion %s", e.Kind, e.Name, e.APIVersion)
-	}
-	verr, ok := e.err.(*jsonschema.ValidationError)
-	if !ok {
-		return fmt.Sprintf("%s %q: refused by its schema", e.Kind, e.Name)
-	}
-	var lines []string
-	for _, leaf := range leafCauses(verr) {
-		keyword := strings.Join(leaf.ErrorKind.KeywordPath(), "/")
-		if keyword == "" {
-			keyword = "schema"
-		}
-		lines = append(lines, fmt.Sprintf("- at '%s': %s", pointer(leaf.InstanceLocation), keyword))
-	}
-	slices.Sort(lines)
-	lines = slices.Compact(lines)
-	return fmt.Sprintf("%s %q: %s", e.Kind, e.Name, strings.Join(lines, "\n"))
-}
-
-// pointer renders an instance location as a JSON pointer, as the library's messages do: ” for
-// the document itself.
-func pointer(location []string) string {
-	var b strings.Builder
-	for _, token := range location {
-		b.WriteString("/" + strings.NewReplacer("~", "~0", "/", "~1").Replace(token))
-	}
-	return b.String()
 }
 
 // Image is the config contract of one image build directory.
@@ -323,10 +256,16 @@ func compileSchema(c *jsonschema.Compiler, doc any, path, name string) (s *jsons
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if err := checkSize(s); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
 	return s, nil
+}
+
+// noLoader fetches no schema: a schema may refer to itself, the image's other schemas and the
+// JSON Schema metaschemas, which the compiler holds, but never to a file or a URL, which the
+// compiler would otherwise read.
+type noLoader struct{}
+
+func (noLoader) Load(url string) (any, error) {
+	return nil, fmt.Errorf("a schema may refer only to the image's schemas, not to %s", url)
 }
 
 // The lookup key ignores Multiple, which the schema does not depend on.

@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,31 +224,5 @@ func TestValidateRejects(t *testing.T) {
 				t.Errorf("err = %v, want the library's header stripped", err)
 			}
 		})
-	}
-}
-
-// TestRedactedNamesThePlaceAndKeywordAlone: the redacted form of a refusal names the document,
-// where it fails and the keyword, and none of the values the schema's messages quote.
-func TestRedactedNamesThePlaceAndKeywordAlone(t *testing.T) {
-	s, err := LoadSchemas(builtin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = s.Validate(decode(t, `{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Image", "metadata": {"name": "metal"},
-		"spec": {"source": "./images/metal", "rootHash": "hunter2"}}`))
-	var verr *ValidationError
-	if !errors.As(err, &verr) {
-		t.Fatalf("err = %v, want a *ValidationError", err)
-	}
-	if !strings.Contains(err.Error(), "hunter2") {
-		t.Errorf("Error() = %q, want the schema's message with the value", err)
-	}
-	got := verr.Redacted()
-	if strings.Contains(got, "hunter2") || !strings.Contains(got, `Image "metal"`) || !strings.Contains(got, "at '/spec/rootHash': pattern") {
-		t.Errorf("Redacted() = %q, want the document, the place and the keyword without the value", got)
-	}
-	err = s.Validate(decode(t, `{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Other", "metadata": {"name": "a"}}`))
-	if !errors.As(err, &verr) || !strings.Contains(verr.Redacted(), `Other "a": the image has no schema of its kind of apiVersion chalkos.dev/v1alpha1`) {
-		t.Errorf("unknown kind: %v", err)
 	}
 }

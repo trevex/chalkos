@@ -29,113 +29,70 @@ func (s *Schemas) Default(doc any) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("does not accept kind %q of apiVersion %q", kind, apiVersion)
 	}
-	work := maxFillWork
-	return fill(sch, doc, 0, &work)
+	return fill(sch, doc), nil
 }
 
-// maxDepth bounds how deep Default follows a schema, in nested values and in $ref chains. A
-// schema that refers to itself, as one its reader chose may, would otherwise fill groups of
-// options without end, or follow its $refs round and round.
-const maxDepth = 128
-
-var errTooDeep = fmt.Errorf("the schema nests deeper than %d levels, or refers to itself without end", maxDepth)
-
-// maxFillWork bounds the schema nodes Default visits for one document. LoadSchemas refuses
-// schemas whose expanded size would make the work large; this guards Default on its own, since
-// a group of options it fills in visits schema nodes the document does not hold.
-const maxFillWork = 1 << 18
-
-var errTooMuchWork = fmt.Errorf("filling in the defaults takes more than %d steps", maxFillWork)
-
-func fill(sch *jsonschema.Schema, v any, depth int, work *int) (any, error) {
-	if depth > maxDepth {
-		return nil, errTooDeep
-	}
-	if *work--; *work < 0 {
-		return nil, errTooMuchWork
-	}
+func fill(sch *jsonschema.Schema, v any) any {
 	// A schema with $ref carries no other keyword of its own: the generators never emit both.
-	sch, err := deref(sch)
-	if err != nil {
-		return nil, err
+	for sch.Ref != nil {
+		sch = sch.Ref
 	}
 	switch v := v.(type) {
 	case map[string]any:
 		if len(sch.AnyOf) > 0 {
-			return fill(branchFor(sch.AnyOf, v), v, depth+1, work)
+			return fill(branchFor(sch.AnyOf, v), v)
 		}
 		out := maps.Clone(v)
 		for name, prop := range sch.Properties {
-			var filled any
-			var err error
 			if val, ok := out[name]; ok {
-				filled, err = fill(prop, val, depth+1, work)
+				out[name] = fill(prop, val)
 			} else if d := defaultOf(prop); d != nil {
-				filled, err = fill(prop, deepCopy(*d), depth+1, work)
+				out[name] = fill(prop, deepCopy(*d))
 			} else if isGroup(prop) {
 				// A group of options, such as encryption, has no default of its own but exists
 				// whenever its options have defaults, as in the module system.
-				if filled, err = fill(prop, map[string]any{}, depth+1, work); err == nil && len(filled.(map[string]any)) == 0 {
-					continue
+				if group := fill(prop, map[string]any{}).(map[string]any); len(group) > 0 {
+					out[name] = group
 				}
-			} else {
-				continue
 			}
-			if err != nil {
-				return nil, err
-			}
-			out[name] = filled
 		}
 		if extra, ok := sch.AdditionalProperties.(*jsonschema.Schema); ok {
 			for name, val := range out {
 				if _, declared := sch.Properties[name]; !declared {
-					if out[name], err = fill(extra, val, depth+1, work); err != nil {
-						return nil, err
-					}
+					out[name] = fill(extra, val)
 				}
 			}
 		}
-		return out, nil
+		return out
 	case []any:
 		if len(sch.AnyOf) > 0 {
-			return fill(branchFor(sch.AnyOf, v), v, depth+1, work)
+			return fill(branchFor(sch.AnyOf, v), v)
 		}
 		if sch.Items2020 == nil {
-			return v, nil
+			return v
 		}
 		out := make([]any, len(v))
 		for i, item := range v {
-			if out[i], err = fill(sch.Items2020, item, depth+1, work); err != nil {
-				return nil, err
-			}
+			out[i] = fill(sch.Items2020, item)
 		}
-		return out, nil
+		return out
 	default:
-		return v, nil
+		return v
 	}
-}
-
-// deref follows sch's $refs to the schema they end at.
-func deref(sch *jsonschema.Schema) (*jsonschema.Schema, error) {
-	for hops := 0; sch.Ref != nil; hops++ {
-		if hops > maxDepth {
-			return nil, errTooDeep
-		}
-		sch = sch.Ref
-	}
-	return sch, nil
 }
 
 // isGroup tells whether a schema is a plain object of declared properties, as a group of options
 // converts to, and not a map or a nullable value.
 func isGroup(sch *jsonschema.Schema) bool {
-	sch, err := deref(sch)
-	return err == nil && len(sch.AnyOf) == 0 && len(sch.Properties) > 0
+	for sch.Ref != nil {
+		sch = sch.Ref
+	}
+	return len(sch.AnyOf) == 0 && len(sch.Properties) > 0
 }
 
 // defaultOf returns the default a property's schema gives, following $ref.
 func defaultOf(sch *jsonschema.Schema) *any {
-	for hops := 0; sch.Default == nil && sch.Ref != nil && hops <= maxDepth; hops++ {
+	for sch.Default == nil && sch.Ref != nil {
 		sch = sch.Ref
 	}
 	return sch.Default
@@ -150,7 +107,7 @@ func branchFor(branches []*jsonschema.Schema, v any) *jsonschema.Schema {
 	}
 	for _, b := range branches {
 		r := b
-		for hops := 0; r.Ref != nil && r.Types == nil && hops <= maxDepth; hops++ {
+		for r.Ref != nil && r.Types == nil {
 			r = r.Ref
 		}
 		if hasType(r.Types, want) {
