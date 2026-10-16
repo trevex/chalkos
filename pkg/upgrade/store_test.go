@@ -69,15 +69,25 @@ type storeRunner struct {
 	node.Runner
 	calls   *[]string
 	mounted func(dir string)
+	// open, when set, tells whether the store's dm-verity device is open, as veritysetup leaves
+	// it; mountErr fails the mount.
+	open     *bool
+	mountErr error
 }
 
 func (r storeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	switch name {
 	case "veritysetup", "umount":
 		*r.calls = append(*r.calls, name+" "+strings.Join(args, " "))
+		if r.open != nil && name == "veritysetup" {
+			*r.open = args[0] == "open"
+		}
 		return nil, nil
 	case "mount":
 		*r.calls = append(*r.calls, name+" "+strings.Join(args, " "))
+		if r.mountErr != nil {
+			return nil, r.mountErr
+		}
 		r.mounted(args[len(args)-1])
 		return nil, nil
 	}
@@ -131,4 +141,68 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.boots(img, 2)
+}
+
+// TestALeftOpenStoreIsClosedFirst: a store an earlier check left open, as when chalkd was stopped
+// during it, holds the slot's partitions; the next upgrade closes it before it writes the slot.
+func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	l := newLab(t, old)
+	var calls []string
+	open := true
+	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mounted: func(dir string) { writeStore(t, dir) }, open: &open}
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	l.node.CheckStore = func(Store) error { return nil }
+	partitions := l.node.OpenPartition
+	l.node.OpenPartition = func(p Partition, write bool) (PartitionFile, error) {
+		if write && open {
+			return nil, errors.New("device or resource busy")
+		}
+		return partitions(p, write)
+	}
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.boots(img, 2)
+	if len(calls) < 2 || calls[0] != "umount "+l.node.StoreMount || calls[1] != "veritysetup close "+storeMapping {
+		t.Errorf("ran %q, want the store closed first", calls)
+	}
+}
+
+// TestAStoreThatDoesNotMountIsClosed: when the opened store does not mount, its dm-verity device
+// is closed, and nothing is unmounted.
+func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	l := newLab(t, old)
+	var calls []string
+	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mountErr: errors.New("wrong fs type")}
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	l.node.CheckStore = func(Store) error { t.Error("checked a store that did not mount"); return nil }
+	if _, err := l.install(img); err == nil || !strings.Contains(err.Error(), "mount the written store") {
+		t.Fatalf("install = %v", err)
+	}
+	i := slices.IndexFunc(calls, func(c string) bool { return strings.HasPrefix(c, "mount ") })
+	if i < 0 || !slices.Equal(calls[i+1:], []string{"veritysetup close " + storeMapping}) {
+		t.Errorf("ran %q, want the device closed and nothing unmounted after the mount", calls)
+	}
+	if e, version := l.boot(); version != old.version {
+		t.Errorf("the disk boots %s from %s", version, e.File)
+	}
+}
+
+func TestToplevel(t *testing.T) {
+	for cmdline, want := range map[string]string{
+		"init=/nix/store/x/init usrhash=ab":                   "/nix/store/x",
+		"init=/nix/store/a/init quiet init=/nix/store/b/init": "/nix/store/b",
+		"init=/nix/store/a/init -- init=/nix/store/b/init":    "/nix/store/a",
+		"quiet usrhash=ab":          "",
+		"init=init":                 "",
+		"init=":                     "",
+		"-- init=/nix/store/b/init": "",
+	} {
+		got, err := toplevel(cmdline)
+		if got != want || (want == "") != (err != nil) {
+			t.Errorf("toplevel(%q) = %q, %v; want %q", cmdline, got, err, want)
+		}
+	}
 }

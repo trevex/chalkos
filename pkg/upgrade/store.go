@@ -85,14 +85,33 @@ func (s Store) resolve(name string) (string, error) {
 	return filepath.Join(s.root, filepath.FromSlash(logical)), nil
 }
 
-// toplevel is the NixOS system a UKI's command line boots, the directory of its init=.
+// toplevel is the NixOS system a UKI's command line boots, the directory of its init=: the last
+// one before "--", as the kernel reads it, past which the arguments are init's own.
 func toplevel(cmdline string) (string, error) {
+	init := ""
 	for _, arg := range strings.Fields(cmdline) {
-		if init, ok := strings.CutPrefix(arg, "init="); ok && path.IsAbs(init) {
-			return path.Dir(init), nil
+		if arg == "--" {
+			break
+		}
+		if v, ok := strings.CutPrefix(arg, "init="); ok {
+			init = v
 		}
 	}
-	return "", errors.New("the UKI's command line names no init=")
+	if init == "" {
+		return "", errors.New("the UKI's command line names no init=")
+	}
+	if !path.IsAbs(init) || path.Base(init) == "/" {
+		return "", fmt.Errorf("the UKI's init=%s is no absolute path", init)
+	}
+	return path.Dir(path.Clean(init)), nil
+}
+
+// storeDir is where the store an upgrade checks is mounted.
+func (n *Node) storeDir() string {
+	if n.StoreMount != "" {
+		return n.StoreMount
+	}
+	return "/run/chalkd/upgrade-store"
 }
 
 // checkStore mounts the slot's store read-only through dm-verity with the image's root hash and
@@ -111,30 +130,30 @@ func (n *Node) checkStore(ctx context.Context, h Header, slot Slot, ukiPath stri
 	if err != nil {
 		return err
 	}
-	dir := n.StoreMount
-	if dir == "" {
-		dir = "/run/chalkd/upgrade-store"
-	}
-	// A check an earlier upgrade did not finish may have left the store open.
-	n.closeStore(ctx, dir, true)
+	dir := n.storeDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	if _, err := n.Run.Run(ctx, "veritysetup", "open", slot.Data.Node, storeMapping, slot.Verity.Node, hex.EncodeToString(h.RootHash)); err != nil {
 		return fmt.Errorf("open the written store through dm-verity: %w", err)
 	}
-	defer n.closeStore(ctx, dir, false)
+	mounted := false
+	defer func() { n.closeStore(ctx, dir, mounted, false) }()
 	if _, err := n.Run.Run(ctx, "mount", "-t", "erofs", "-o", "ro", "/dev/mapper/"+storeMapping, dir); err != nil {
 		return fmt.Errorf("mount the written store: %w", err)
 	}
+	mounted = true
 	return n.CheckStore(Store{root: dir, Toplevel: system})
 }
 
-// closeStore unmounts the checked store and closes its dm-verity device. Before a check, where
-// neither is there unless an earlier check was cut short, it says nothing of failing to.
-func (n *Node) closeStore(ctx context.Context, dir string, quiet bool) {
-	if _, err := n.Run.Run(ctx, "umount", dir); err != nil && !quiet {
-		log.Printf("unmount the checked store: %v", err)
+// closeStore unmounts the checked store, when mounted, and closes its dm-verity device. Before an
+// upgrade changes the disk, where neither is there unless an earlier check was cut short, it
+// says nothing of failing to.
+func (n *Node) closeStore(ctx context.Context, dir string, mounted, quiet bool) {
+	if mounted {
+		if _, err := n.Run.Run(ctx, "umount", dir); err != nil && !quiet {
+			log.Printf("unmount the checked store: %v", err)
+		}
 	}
 	if _, err := n.Run.Run(ctx, "veritysetup", "close", storeMapping); err != nil && !quiet {
 		log.Printf("close the checked store: %v", err)

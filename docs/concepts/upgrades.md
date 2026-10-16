@@ -123,7 +123,7 @@ the new one with all its tries.
    rules, each document's schema and, on an image with Kubernetes, the cluster it gives. An image
    that would not accept the config would fail its boot in `chalkos-identity`, and boot counting
    would fall back. When the check refuses, chalkd answers with the reason, removes the UKI and
-   leaves the slot retired, so the running image stays the next boot and the next upgrade
+   leaves the slot retired, so the running image stays the next boot and the next upgrade reuses or
    overwrites the slot. A node without stored config skips the check.
 5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
    `store_<version>` and `store-verity_<version>`, sets `LoaderEntryPreferred` to the new entry

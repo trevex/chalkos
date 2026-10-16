@@ -81,8 +81,9 @@ what the key holder signed.
 Once it has written the image to the inactive slot, and before the image becomes the next boot,
 Upgrade checks the node's stored config against the schemas and `image.json` inside the image,
 read through dm-verity from the store it wrote. The request carries no schemas of its own, so the
-check always uses those the image will translate the config with, and an operator learns from it
-no more than whether that image accepts the node's config.
+check always uses those the image will translate the config with. A refusal gives the reason in
+the reply and in the node's journal, as ApplyConfig's refusals do, and the reason can quote values
+of the stored config.
 
 ## Why are the disk keys sealed to PCR 7?
 

@@ -177,6 +177,11 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	// From here on the steps change the disk: a client that goes away must not kill sfdisk while it
 	// writes the partition table. Its stream ends, which stops the upgrade between steps.
 	ctx = context.WithoutCancel(ctx)
+	if n.CheckStore != nil {
+		// A check an earlier upgrade did not finish, as when chalkd was stopped during it, may have
+		// left the store it checked open, which keeps the slot's partitions busy for the write.
+		n.closeStore(ctx, n.storeDir(), true, true)
+	}
 	if err := n.retire(ctx, all, h.ImageID, booted, running, inactive); err != nil {
 		return Result{}, err
 	}
@@ -185,6 +190,17 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		return Result{}, err
 	}
 	tmp, tries, err := n.receiveUKI(h, stream)
+	// A UKI under its temporary name boots nothing, but takes space on the ESP that the next
+	// upgrade needs; once activated it has its name, and should this removal fail, the next
+	// retirement removes it.
+	defer func() {
+		if tmp == "" {
+			return
+		}
+		if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			log.Printf("remove %s: %v", tmp, rerr)
+		}
+	}()
 	if err == nil && n.CheckStore != nil {
 		err = n.checkStore(ctx, h, inactive, tmp)
 	}
@@ -193,13 +209,6 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		entry, err = n.activate(ctx, h, inactive, tmp, tries)
 	}
 	if err != nil {
-		// A UKI under its temporary name boots nothing, but takes space on the ESP that the next
-		// upgrade needs; should this fail, the next retirement removes it.
-		if tmp != "" {
-			if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-				log.Printf("remove %s: %v", tmp, rerr)
-			}
-		}
 		return Result{}, err
 	}
 	log.Printf("installed %s %s into partitions %d and %d; it boots next as %s", h.ImageID, h.Version, inactive.Verity.Number, inactive.Data.Number, entry)
