@@ -443,7 +443,7 @@ No fields.
 | `secure_boot` | [`SecureBoot`](#enum-secureboot) |  |
 | `fingerprint` | `string` | SHA-256 of the certificate chalkd serves, in lower-case hex. |
 | `hostname` | `string` |  |
-| `variant` | `string` | The variant the running image was built as, which a cluster definition names after the image's role; empty on the installer. |
+| `variant` | `string` | The mkImages variant the running image was built as; empty on the installer. |
 | `platform` | `string` | The platform the running image was built for, such as metal or kvm; empty on the installer, which installs images of every platform. |
 
 ### InstallHeader { #message-installheader }

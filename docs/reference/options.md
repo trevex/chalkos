@@ -525,7 +525,7 @@ true
 
 
 Add coreutils, grep, sed, findutils, procps, iproute2 and util-linux to the system path,
-and crictl on roles with Kubernetes; systemd, bash, less, nftables and kmod are on it
+and crictl on images with Kubernetes; systemd, bash, less, nftables and kmod are on it
 already\. Nodes have no logins; use them from a privileged pod on the node, for example
 ` kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- chroot /host /run/current-system/sw/bin/bash `\.
 
@@ -1072,8 +1072,8 @@ string
 Public part of the cluster’s secrets (` secrets.pub.json ` from ` chalkctl gen secrets `),
 whose OS CA the image carries, so chalkd in maintenance mode accepts only clients with a
 certificate from it\. null builds an image that accepts any client until it is installed\.
-The role builder and the installer set it from the cluster definition’s ` chalkos.osCA `,
-which checks the file’s version; the image’s build checks it again\.
+mkImages sets it, in every image and the installer, from its ` osCA `, which checks the
+file’s version; the image’s build checks it again\.
 
 
 
@@ -1097,9 +1097,9 @@ null
 
 
 
-The platform the image is built for, a name of ` chalkos.platforms `, set by the role
-builder; null on the installer, which installs images of every platform\. A node refuses
-an image of another platform, and translates its config for its own\.
+The platform the image is built for, a name of mkImages’s ` platforms `, which mkImages
+sets; null on the installer, which installs images of every platform\. A node refuses an
+image of another platform, and translates its config for its own\.
 
 
 
@@ -1210,8 +1210,8 @@ positive integer, meaning >0
 
 
 The image’s variant, which its os-release names as ` CHALKOS_VARIANT ` and its image
-directory’s ` metadata.json ` as ` variant `\. The role builder sets it to the role’s name\.
-null on the installer, which is no variant\. No check compares it: a node may change its
+directory’s ` metadata.json ` as ` variant `\. mkImages sets it to the variant’s name\. null
+on the installer, which is no variant\. No check compares it: a node may change its
 variant through an upgrade, and the image’s schemas decide which config it takes\.
 
 

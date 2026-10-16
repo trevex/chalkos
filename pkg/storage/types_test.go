@@ -2,7 +2,7 @@ package storage
 
 import "testing"
 
-// The expected types are what the cluster definition renders (see the golden manifest).
+// The expected types are those of the partitions installed nodes hold, so they never change.
 func TestPartitionType(t *testing.T) {
 	for label, want := range map[string]string{
 		"var":      "65f335d7-a1f7-f6df-b954-a97d9a5db9e6",

@@ -123,8 +123,7 @@ func refusedLabel(key string) bool {
 
 // kubelet fills in the node's Kubernetes settings from its Kubelet document, or the kind's
 // defaults without one, and refuses settings the kubelet would not start with. The errors come
-// in the cluster definition's order: refused labels and swap volumes by name, then the node's
-// addresses.
+// in this order: refused labels and swap volumes by name, then the node's addresses.
 func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) error {
 	var spec kubeletSpec
 	if d, ok := s.One("Kubelet"); ok {

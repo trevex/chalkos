@@ -11,8 +11,7 @@
       chalkosLib = import ./lib { inherit nixpkgs; };
     in
     {
-      lib = { inherit (chalkosLib) mkCluster mkImages; };
-      flakeModules.default = chalkosLib.flakeModule;
+      lib = { inherit (chalkosLib) mkImages; };
       templates.lab = {
         path = ./templates/lab;
         description = "A cluster of a control plane and a worker that chalklab runs as QEMU virtual machines";

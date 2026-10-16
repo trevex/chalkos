@@ -11,8 +11,8 @@ let
   inherit (config.chalkos.maintenance) osCA;
 in
 {
-  # The image's own name for the input differs from the cluster definition's chalkos.osCA, so the
-  # options reference names each once.
+  # The image's own name for the input differs from mkImages's osCA, so the options reference
+  # names each once.
   options.chalkos = lib.mkOption {
     type = lib.types.submodule {
       options.maintenance.osCA = lib.mkOption {
@@ -22,8 +22,8 @@ in
           Public part of the cluster's secrets (`secrets.pub.json` from `chalkctl gen secrets`),
           whose OS CA the image carries, so chalkd in maintenance mode accepts only clients with a
           certificate from it. null builds an image that accepts any client until it is installed.
-          The role builder and the installer set it from the cluster definition's `chalkos.osCA`,
-          which checks the file's version; the image's build checks it again.
+          mkImages sets it, in every image and the installer, from its `osCA`, which checks the
+          file's version; the image's build checks it again.
         '';
       };
     };

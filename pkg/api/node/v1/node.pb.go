@@ -250,8 +250,7 @@ type InfoResponse struct {
 	// SHA-256 of the certificate chalkd serves, in lower-case hex.
 	Fingerprint string `protobuf:"bytes,8,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
 	Hostname    string `protobuf:"bytes,9,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	// The variant the running image was built as, which a cluster definition names after the
-	// image's role; empty on the installer.
+	// The mkImages variant the running image was built as; empty on the installer.
 	Variant string `protobuf:"bytes,11,opt,name=variant,proto3" json:"variant,omitempty"`
 	// The platform the running image was built for, such as metal or kvm; empty on the installer,
 	// which installs images of every platform.

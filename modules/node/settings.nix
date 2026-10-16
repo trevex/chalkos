@@ -1,29 +1,17 @@
-# The chalkos namespace inside a role image. Cluster-wide settings from the cluster definition
-# arrive as read-only options under their layer 1 names (declared by the role builder); node
-# options are declared by the node modules; node-specific values do not exist here.
-# Cluster settings flow into every role image, so they must not be derived from `chalkos.roles`.
+# What an image is: its variant and its platform, which mkImages sets. One image serves every
+# node of its variant and platform, so nothing here is a node's: a node's values reach it as
+# config documents, which units read with the kinds declared under chalkos.kinds.
 { lib, ... }:
 {
   options.chalkos = lib.mkOption {
     type = lib.types.submodule {
-      options.nodes = lib.mkOption {
-        readOnly = true;
-        visible = false;
-        default = throw ''
-          config.chalkos.nodes is not available in a role image: one image serves every node of
-          the role. Read node-specific values at runtime from config documents: declare a kind
-          under chalkos.kinds, and the unit that reads it under chalkos.consumers.
-        '';
-        defaultText = lib.literalMD "unavailable in role images";
-        description = "Node definitions; available only in the cluster definition.";
-      };
       options.variant.name = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
         description = ''
           The image's variant, which its os-release names as `CHALKOS_VARIANT` and its image
-          directory's `metadata.json` as `variant`. The role builder sets it to the role's name.
-          null on the installer, which is no variant. No check compares it: a node may change its
+          directory's `metadata.json` as `variant`. mkImages sets it to the variant's name. null
+          on the installer, which is no variant. No check compares it: a node may change its
           variant through an upgrade, and the image's schemas decide which config it takes.
         '';
       };
@@ -31,22 +19,18 @@
         type = lib.types.nullOr (lib.types.strMatching "[a-z0-9][a-z0-9-]*");
         default = null;
         description = ''
-          The platform the image is built for, a name of `chalkos.platforms`, set by the role
-          builder; null on the installer, which installs images of every platform. A node refuses
-          an image of another platform, and translates its config for its own.
+          The platform the image is built for, a name of mkImages's `platforms`, which mkImages
+          sets; null on the installer, which installs images of every platform. A node refuses an
+          image of another platform, and translates its config for its own.
         '';
       };
     };
     default = { };
     description = ''
-      chalkos settings. Cluster-wide values (`chalkos.cluster`, `chalkos.secureBoot`,
-      `chalkos.time` and feature namespaces) are set read-only from the cluster definition; image
-      options (`chalkos.cni`, `chalkos.consumers`, `chalkos.debug`, `chalkos.disk`,
-      `chalkos.kernel`, `chalkos.kinds`, `chalkos.kubernetes`, `chalkos.maintenance`,
-      `chalkos.platform`, `chalkos.upgrade`, `chalkos.variant`) are declared by the node modules.
-      `cni`, `consumers`, `debug`, `disk`, `kernel`, `kinds`, `kubernetes`, `maintenance`,
-      `nodes`, `platform`, `upgrade` and `variant` are therefore reserved and cannot be used as
-      feature namespaces.
+      chalkos's options of the image: `chalkos.cni`, `chalkos.consumers`, `chalkos.debug`,
+      `chalkos.disk`, `chalkos.kernel`, `chalkos.kinds`, `chalkos.kubernetes`,
+      `chalkos.maintenance`, `chalkos.platform`, `chalkos.upgrade` and `chalkos.variant`, which the
+      node modules declare. Extensions declare options of their own under other names.
     '';
   };
 }

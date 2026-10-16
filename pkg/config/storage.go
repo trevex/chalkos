@@ -13,8 +13,8 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// uuidOf hashes input into the shape of a UUID, so the same input always gives the same UUID, as
-// the image derives partition types and the cluster definition derived seeds.
+// uuidOf hashes input into the shape of a UUID, so the same input always gives the same UUID: the
+// partition types, which the image derives too, and the disks' seeds installed nodes hold.
 func uuidOf(input string) string {
 	sum := sha256.Sum256([]byte(input))
 	h := hex.EncodeToString(sum[:])
@@ -51,7 +51,7 @@ func validMountPoint(p string) bool {
 	return !strings.HasPrefix(p, "/nix/") && !strings.HasPrefix(p, "/state/")
 }
 
-// definition renders a repart.d definition as the cluster definition's toINI did: keys in name
+// definition renders a repart.d definition as installed nodes hold it: keys in name
 // order, the typed ones replacing the passthrough, and = in a key escaped.
 func definition(label, format string, size *string, mode string, repart map[string]string) string {
 	keys := map[string]string{}
@@ -195,7 +195,7 @@ func (s *Set) storage() (storage.Section, error) {
 	return sec, nil
 }
 
-// storageErrors are the cluster definition's storage checks, all reported at once and in its
+// storageErrors are the storage checks of a node's config, all reported at once and in this
 // order: each volume's own problems by volume name, then shared disks, then volumes that fill
 // the system disk, then mount points used twice. vols are ordered by name.
 func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) error {

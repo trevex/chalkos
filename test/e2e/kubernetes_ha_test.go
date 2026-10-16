@@ -23,7 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
-// The HA cluster's control planes on the switch, as nix/testing/cluster.nix configures them.
+// The HA cluster's control planes on the switch, as the HA fixture's Network documents match them.
 var haNodes = []struct{ name, mac string }{
 	{"cp1", "52:54:00:00:02:11"},
 	{"cp2", "52:54:00:00:02:12"},

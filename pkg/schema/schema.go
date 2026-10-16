@@ -28,8 +28,7 @@ type Metadata struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	ID            string `json:"id"`
 	Version       string `json:"version"`
-	// Variant is the name the image is built as: a cluster definition's role images carry the
-	// role's name.
+	// Variant is the name of the mkImages variant the image is built as.
 	Variant string `json:"variant"`
 	// Platform is the platform the image is built for, such as metal or kvm.
 	Platform string `json:"platform"`

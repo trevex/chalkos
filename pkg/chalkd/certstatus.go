@@ -149,7 +149,7 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 }
 
 // nodeName is the node's name for the commands its messages advise: the subject of its node
-// certificate, which chalkctl issues to the name the cluster definition gives the node. A node
+// certificate, which chalkctl issues to the node's name in the inventory. A node
 // without one says <node>, which chalkctl replaces with the name it was called with.
 func (s *Server) nodeName() string {
 	if s.Certificate != nil {

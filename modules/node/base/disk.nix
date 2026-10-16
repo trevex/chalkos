@@ -10,7 +10,17 @@
 }:
 let
   cfg = config.chalkos.disk;
-  inherit (import ../../cluster/storage.nix { inherit lib; }) partitionType;
+  # The GPT type UUID of a partition with the label: a UUID-shaped hash, which pkg/storage's
+  # PartitionType computes the same way for VAR and the volumes. repart assigns existing
+  # partitions to definitions by type, so a type per label keeps a new partition from taking over
+  # another one.
+  partitionType =
+    label:
+    let
+      h = builtins.hashString "sha256" "chalkos-partition-type:${label}";
+      part = start: len: builtins.substring start len h;
+    in
+    "${part 0 8}-${part 8 4}-${part 12 4}-${part 16 4}-${part 20 12}";
   inherit (pkgs.stdenv.hostPlatform) efiArch;
   inherit (config.image.repart.verityStore) partitionIds;
   # The system region's repart definitions, built as NixOS builds them for the initrd.

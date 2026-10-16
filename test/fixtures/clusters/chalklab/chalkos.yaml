@@ -1,4 +1,4 @@
-# The e2e tests' main cluster, as the images of nix/testing/cluster.nix are built for it. The
+# The e2e tests' main cluster, whose nodes boot the images of nix/testing/images.nix. The
 # tests copy the fixture and link the image directories below images/ that the environment names.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory

@@ -8,7 +8,7 @@ import (
 )
 
 // ntpPort is where the test's NTP server listens on the host. The nodes reach it at 10.0.2.2,
-// the host's address on their user-mode network, as nix/testing/cluster.nix configures them; NTP's
+// the host's address on their user-mode network, as the fixtures' TimeSync names it; NTP's
 // own port needs privileges the test has not.
 const ntpPort = 12300
 

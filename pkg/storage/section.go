@@ -26,8 +26,8 @@ const (
 	FallbackNone = "none"
 )
 
-// Section is the storage section of a node identity, as rendered by the cluster definition and
-// recorded on the node in /state/storage/storage.json.
+// Section is the storage section of a node identity, as the node's config gives it and
+// /state/storage/storage.json records it on the node.
 type Section struct {
 	Disks   map[string]Disk   `json:"disks"`
 	Volumes map[string]Volume `json:"volumes"`
@@ -220,7 +220,7 @@ func (s Section) DiskNames() []string {
 }
 
 var (
-	// validName is the cluster definition's rule for volume names, which also name disks and
+	// validName is the rule for volume names, which also name disks and
 	// label partitions: at most 32 characters, starting and ending with a letter or digit.
 	validName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
 	// validDefinitionFile is a repart.d file name: no path, no hidden file.
@@ -239,8 +239,8 @@ var reservedNames = []string{"esp", "store", "store-verity", "state", VarVolume,
 // or below /nix and /state.
 var forbiddenMountPoints = []string{"/", "/nix", "/state", "/var"}
 
-// Validate checks a section the node did not render itself, as the cluster definition checks
-// it: names and labels that are safe in paths and unit names, no reserved labels, definition
+// Validate checks a section the node did not render itself, as the node's config checks it:
+// names and labels that are safe in paths and unit names, no reserved labels, definition
 // files that stay in their directory, and mount points that are unique and safe in unit files.
 func (s Section) Validate() error {
 	var problems []string

@@ -111,7 +111,7 @@ spec:
 `)
 	m := NetworkMap(docs)
 	nets := m["networks"].(map[string]any)["10-a"].(map[string]any)
-	// Only [Network] Address= counts, as the cluster definition's static addresses read it.
+	// Only [Network] Address= counts as a static address.
 	if got := nets["address"].([]any); len(got) != 1 || got[0] != "10.0.0.11/24" {
 		t.Errorf("address = %v", got)
 	}

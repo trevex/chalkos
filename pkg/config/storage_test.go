@@ -6,7 +6,7 @@ import (
 )
 
 func TestUUIDOf(t *testing.T) {
-	// The partition type of VAR, as the image and the Nix cluster definition derive it.
+	// The partition type of VAR, as the image derives it too.
 	if got := uuidOf("chalkos-partition-type:var"); got != "65f335d7-a1f7-f6df-b954-a97d9a5db9e6" {
 		t.Errorf("uuidOf = %s", got)
 	}
@@ -149,7 +149,7 @@ func TestOwnDiskDefinitionMatchesNix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The homelab worker's longhorn definition, as the cluster definition rendered it.
+	// The homelab worker's longhorn definition.
 	want := "[Partition]\nEncrypt=tpm2\nFormat=xfs\nLabel=longhorn\nTPM2PCRs=7\nType=4e6bd13b-2e2a-03b6-3fc9-fc66eae45cba\n"
 	if got := sec.Disks["longhorn"].Repart; len(got) != 1 || got["10-longhorn.conf"] != want {
 		t.Errorf("repart = %q, want 10-longhorn.conf = %q", got, want)

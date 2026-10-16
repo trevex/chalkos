@@ -136,11 +136,10 @@ func dig(m map[string]any, path ...string) map[string]any {
 	return m
 }
 
-// NetworkMap is what Go reads of the node's network besides its units, in the shape the
-// cluster definition delivered: each Network document's [Network] Address= values, the only
-// addresses the cluster definition counted as static, so a node's default nodeIPs and certificate
-// names stay what they were; and the MAC address its [Match] names, several joined by spaces
-// as networkd writes them.
+// NetworkMap is what Go reads of the node's network besides its units: each Network document's
+// [Network] Address= values, the only addresses that count as static, so a node's default nodeIPs
+// and certificate names stay what they were; and the MAC address its [Match] names, several
+// joined by spaces as networkd writes them.
 func NetworkMap(docs []Document) map[string]any {
 	networks := map[string]any{}
 	for _, d := range docs {

@@ -123,8 +123,7 @@ message InfoResponse {
   // SHA-256 of the certificate chalkd serves, in lower-case hex.
   string fingerprint = 8;
   string hostname = 9;
-  // The variant the running image was built as, which a cluster definition names after the
-  // image's role; empty on the installer.
+  // The mkImages variant the running image was built as; empty on the installer.
   string variant = 11;
   // The platform the running image was built for, such as metal or kvm; empty on the installer,
   // which installs images of every platform.
