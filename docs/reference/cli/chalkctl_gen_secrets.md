@@ -16,7 +16,9 @@ age recipients given with --recipient (age public keys, SSH public keys or age p
 recipients), or with --plaintext to secrets.json unencrypted, for files protected by other means.
 The public half goes to secrets.pub.json, which the cluster definition's chalkos.osCA names so
 images trust the OS CA in maintenance mode. The command refuses to overwrite any of these files:
-new secrets would lock out every installed node. It needs no secrets file or client file.
+new secrets would lock out every installed node. With --out - the secrets file alone goes to
+standard output, for a secret manager to keep, and what the command says goes to standard
+error. It needs no secrets file or client file.
 
 ```
 chalkctl gen secrets [flags]
@@ -31,13 +33,17 @@ chalkctl gen secrets [flags]
 
   # Write secrets.json unencrypted, kept out of version control.
   chalkctl gen secrets --plaintext
+
+  # Hand the encrypted secrets to a secret manager, which supplies them later with --secrets -.
+  chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
+    --out - | pass insert --multiline chalkos/secrets
 ```
 
 ## Options
 
 ```
   -h, --help                help for secrets
-      --out string          directory to write the files to (default ".")
+      --out string          directory to write the files to, or - to write the secrets file alone to standard output (default ".")
       --plaintext           write secrets.json unencrypted, for files protected by other means
       --recipient strings   age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated
 ```

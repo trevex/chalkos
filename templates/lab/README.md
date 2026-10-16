@@ -18,7 +18,7 @@ chalkctl gen secrets --plaintext
 # Commit flake.lock with the rest, so the lab keeps the same chalkos version.
 git add . && git commit -m "A chalkos lab"
 # Build the images, start the VMs, install and bootstrap the cluster.
-chalklab create
+chalklab create --secrets secrets.json
 ```
 
 `chalklab create` prints the next commands: the kubeconfig to use, `chalkctl status` with the

@@ -83,13 +83,13 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.cluster.register(fs)
 	f.secrets.register(fs)
-	fs.StringVar(&f.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when no secrets file is beside the inventory)")
+	fs.StringVar(&f.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
 	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
 	fs.Var(f.addresses, "endpoint", "address of a node's chalkd, `NODE=ADDR`")
 	fs.MarkHidden("endpoint")
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default each node's Image's directory)")
 	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
-	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer")
+	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer, to check the images' signatures against before they are sent")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
 	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many workers and nodes without Kubernetes upgrade at once")
 	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
@@ -109,7 +109,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
-	creds, err := a.loadCredentials(ctx, sf, f.config, c)
+	creds, err := a.loadCredentials(ctx, sf, f.config)
 	if err != nil {
 		return err
 	}

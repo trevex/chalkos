@@ -52,7 +52,7 @@ chalkctl upgrade [flags]
 ```
       --address NODE=ADDR      address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's address in the inventory)
       --allow-downtime         upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots
-      --config string          client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when no secrets file is beside the inventory)
+      --config string          client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)
       --delete-emptydir-data   evict pods with emptyDir volumes too, deleting their data
   -h, --help                   help for upgrade
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
@@ -63,8 +63,8 @@ chalkctl upgrade [flags]
       --no-reboot              install the images on the nodes without draining or rebooting them; they boot with their next reboot
       --nodes string           comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)
       --retry-failed           install an image again, once, on nodes that fell back from it
-      --secrets string         secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
-      --sign-cert string       PEM certificate of the Secure Boot db signer
+      --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
+      --sign-cert string       PEM certificate of the Secure Boot db signer, to check the images' signatures against before they are sent
       --sign-key string        PEM key of the Secure Boot db signer, to sign the images' UKIs
       --timeout duration       how long to wait for each node to come back healthy and for its drain (default 30m0s)
 ```

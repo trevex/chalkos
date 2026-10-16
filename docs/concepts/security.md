@@ -157,8 +157,10 @@ certificate from the OS CA, valid for one hour and never written to disk, so usi
 file leaves no admin certificate behind. The file is `secrets.age`, encrypted with age to the recipients given
 to [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) (age keys, SSH keys or age
 plugin recipients such as hardware tokens), or `secrets.json` in plaintext with `--plaintext`, for
-a file protected by other means. `--secrets -` reads it from standard input, for example from a
-password manager, so a plaintext copy never touches the disk:
+a file protected by other means. chalkctl reads it only where `--secrets` names it: no inventory
+names it, and chalkctl looks for none of its own accord. `--secrets -` reads it from standard
+input, encrypted or not, for example from a password manager, so a plaintext copy never touches
+the disk; `chalkctl gen secrets --out -` writes a new one to standard output for such a manager:
 
 ```sh
 chalkctl gen secrets --recipient=<age-public-key>
@@ -175,8 +177,7 @@ chalkctl config new --name=grafana --role=reader --ttl=720h --out=grafana.json
 ```
 
 Commands that accept both take the client file `--config` names, else the secrets file `--secrets`
-names, else the client file `$CHALKOSCONFIG` names, else a secrets file in the flake directory,
-else `~/.config/chalkos/config`. chalkctl refuses a client file whose certificate expired and
+names, else the client file `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`. chalkctl refuses a client file whose certificate expired and
 warns during its last 30 days. Installing nodes, delivering [config](../reference/glossary.md#config), issuing kubeconfigs and
 rotations need the secrets file, because they issue certificates or deliver keys.
 

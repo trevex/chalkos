@@ -25,7 +25,7 @@ chalkctl node-ca rotate [flags]
   chalkctl node-ca rotate
 
   # Write the changed secrets to a new file and keep the old one.
-  chalkctl node-ca rotate --out secrets.new.age --public-out secrets.pub.new.json
+  chalkctl node-ca rotate --secrets secrets.age --out secrets.new.age --public-out secrets.pub.new.json
 ```
 
 ## Options
@@ -39,7 +39,7 @@ chalkctl node-ca rotate [flags]
       --out string          write the changed secrets file to this new file instead of updating the secrets file in place
       --public-out string   write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place
       --recipient strings   age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out
-      --secrets string      secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
+      --secrets string      secrets file, encrypted with age or not, or - to read it from standard input
 ```
 
 ## SEE ALSO

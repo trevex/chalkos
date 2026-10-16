@@ -45,20 +45,14 @@ type Metadata struct {
 	Name string `json:"name"`
 }
 
-// Spec is what an inventory says of its cluster's nodes.
+// Spec is what an inventory says of its cluster's nodes. It names no secrets file and no
+// Secure Boot certificate: an inventory may be shared with whoever operates the nodes, and
+// chalkctl takes those from its flags.
 type Spec struct {
-	// Secrets is the secrets file; empty for secrets.age, else secrets.json, beside the inventory.
-	Secrets    string      `json:"secrets,omitempty"`
-	SecureBoot *SecureBoot `json:"secureBoot,omitempty"`
 	// Files are the config files every node gets, as paths or globs.
 	Files  []string         `json:"files,omitempty"`
 	Groups map[string]Group `json:"groups,omitempty"`
 	Nodes  map[string]Node  `json:"nodes,omitempty"`
-}
-
-// SecureBoot names the certificate of the Secure Boot db key the nodes' images are signed with.
-type SecureBoot struct {
-	SignerCertificate string `json:"signerCertificate"`
 }
 
 // Group is config files that the nodes in the group get.
@@ -130,10 +124,6 @@ func parse(path string, data []byte) (*Inventory, error) {
 	}
 	dir := filepath.Dir(path)
 	spec := d.Spec
-	spec.Secrets = absolute(dir, spec.Secrets)
-	if spec.SecureBoot != nil {
-		spec.SecureBoot = &SecureBoot{SignerCertificate: absolute(dir, spec.SecureBoot.SignerCertificate)}
-	}
 	spec.Files = absoluteAll(dir, spec.Files)
 	groups := map[string]Group{}
 	for name, g := range spec.Groups {

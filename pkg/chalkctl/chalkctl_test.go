@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -279,10 +280,10 @@ func TestGenSecretsAgeAndRecoveryKey(t *testing.T) {
 		t.Fatalf("secrets.age = %.20q, %v", encrypted, err)
 	}
 
-	// The default secrets file next to the flake, decrypted with the default identity.
+	// The encrypted file, decrypted with the default identity.
 	writeFile(t, filepath.Join(out, "manifest.json"), testManifest)
 	ta.stdout.Reset()
-	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--manifest", filepath.Join(out, "manifest.json")}); err != nil {
+	if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--secrets", filepath.Join(out, "secrets.age"), "--manifest", filepath.Join(out, "manifest.json")}); err != nil {
 		t.Fatal(err)
 	}
 	secrets, _ := pki.ReadSecrets(encrypted, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
@@ -518,7 +519,7 @@ func TestInstallReportsNodeRefusal(t *testing.T) {
 
 func TestPasswordFileTrimsOneNewline(t *testing.T) {
 	ta := newTestApp(t)
-	tg := &target{cluster: clusterOfManifest(ta.manifest, ta.dir), name: "n1", secrets: ta.secrets}
+	tg := &target{cluster: clusterOfManifest(ta.manifest), name: "n1", secrets: ta.secrets}
 	for content, want := range map[string]string{
 		"pw\n": "pw", "pw \n\n": "pw \n", "pw": "pw",
 		"pw\r\n": "pw", "pw\r": "pw", "pw\r\r\n": "pw\r", "pw\n\r\n": "pw\n",
@@ -644,7 +645,7 @@ func TestAddressNeedsAStaticAddress(t *testing.T) {
 			m.Nodes["n1"] = n
 		})
 	}
-	c := clusterOfManifest(ta.manifest, ta.dir)
+	c := clusterOfManifest(ta.manifest)
 	units(map[string]string{})
 	if _, _, err := c.address("", nil, "n1"); err == nil || !strings.Contains(err.Error(), "--address") {
 		t.Errorf("err = %v", err)
@@ -700,7 +701,7 @@ func TestInstalledNodeRequiresOSCA(t *testing.T) {
 
 func TestPasswordPromptConfirms(t *testing.T) {
 	ta := newTestApp(t)
-	tg := &target{cluster: clusterOfManifest(ta.manifest, ta.dir), name: "n1", secrets: ta.secrets}
+	tg := &target{cluster: clusterOfManifest(ta.manifest), name: "n1", secrets: ta.secrets}
 
 	ta.answers = []string{"secret one", "secret one"}
 	if got, err := ta.fallbackSecret(context.Background(), tg, "password", "", true); err != nil || got != "secret one" {
@@ -947,6 +948,36 @@ func (a *app) run(ctx context.Context, args []string) error {
 	root.SetOut(a.stdout)
 	root.SetErr(a.stderr)
 	return root.ExecuteContext(ctx)
+}
+
+// run runs chalkctl's command tree as a.run does, naming the test cluster's secrets file with
+// --secrets, as an operator does, when the command takes one, args name neither a secrets file nor
+// a client file, and the file exists.
+func (ta *testApp) run(ctx context.Context, args []string) error {
+	return ta.app.run(ctx, ta.withSecrets(args))
+}
+
+// withSecrets is args with the test cluster's secrets file named, where run names it.
+func (ta *testApp) withSecrets(args []string) []string {
+	path := filepath.Join(ta.dir, "secrets.json")
+	if _, err := os.Stat(path); err != nil {
+		return args
+	}
+	cmd, _, err := newCommand(ta.app).Find(args)
+	if err != nil || cmd.Flags().Lookup("secrets") == nil {
+		return args
+	}
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		for _, flag := range []string{"--secrets", "--config"} {
+			if arg == flag || strings.HasPrefix(arg, flag+"=") {
+				return args
+			}
+		}
+	}
+	return append(slices.Clone(args), "--secrets", path)
 }
 
 // execute runs args as the chalkctl program does and returns its exit status.
@@ -1253,7 +1284,7 @@ func TestAddressesWithoutTheDefinitionsConfig(t *testing.T) {
 	if _, err := config.FromManifest(ta.manifest, "n1"); err == nil {
 		t.Fatal("the bridge generated config from a unit it should refuse")
 	}
-	c := clusterOfManifest(ta.manifest, ta.dir)
+	c := clusterOfManifest(ta.manifest)
 	if addr, source, err := c.address("", nil, "n1"); err != nil || addr != "10.0.0.11" || source != "the cluster definition" {
 		t.Errorf("endpoint = %q, %q, %v; want the definition's 10.0.0.11", addr, source, err)
 	}

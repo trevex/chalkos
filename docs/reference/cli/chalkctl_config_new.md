@@ -27,10 +27,10 @@ chalkctl config new [flags]
 
 ```
   # A reader's client file for a dashboard.
-  chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json
+  chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
 
   # The operator's own client file, at ~/.config/chalkos/config.
-  chalkctl config new --name alice --role operator
+  chalkctl config new --name alice --role operator --secrets secrets.age
 ```
 
 ## Options
@@ -44,7 +44,7 @@ chalkctl config new [flags]
       --name string        the user's name, which the certificate carries
       --out string         file to write (default ~/.config/chalkos/config)
       --role string        the role the certificate grants: admin, operator or reader
-      --secrets string     secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
+      --secrets string     secrets file, encrypted with age or not, or - to read it from standard input
       --ttl duration       validity of the certificate (default 8760h0m0s)
 ```
 

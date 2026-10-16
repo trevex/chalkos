@@ -27,10 +27,10 @@ chalkctl apply-config <node> [flags]
 
 ```
   # Apply w1's changed network and labels.
-  chalkctl apply-config w1
+  chalkctl apply-config w1 --secrets secrets.age
 
   # Give w1 a new kubelet certificate.
-  chalkctl apply-config w1 --kubernetes-share
+  chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
 ```
 
 ## Options
@@ -43,7 +43,7 @@ chalkctl apply-config <node> [flags]
       --kubernetes-share       also deliver a new Kubernetes share, such as a new kubelet certificate for a worker
       --manifest string        read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --password-file string   file holding the password of a node whose fallback is a password
-      --secrets string         secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
+      --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
 ```
 
 ## SEE ALSO

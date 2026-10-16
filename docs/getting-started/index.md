@@ -142,7 +142,7 @@ git add . && git commit -m "A chalkos lab"
 machines, installs both nodes and bootstraps the cluster:
 
 ```console
-$ chalklab create
+$ chalklab create --secrets secrets.json
 evaluating .#chalkos."lab"
 building the kvm image of node
 ...

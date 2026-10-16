@@ -24,8 +24,6 @@ const homelab = `apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}
 spec:
-  secrets: ./secrets.age
-  secureBoot: {signerCertificate: keys/db.crt}
   files: [cluster/*.yaml]
   groups:
     gpu: {files: [gpu/*.yaml]}
@@ -42,8 +40,7 @@ func TestLoadMakesPathsAbsolute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inv.Name != "homelab" || inv.Dir() != dir || inv.Spec.Secrets != filepath.Join(dir, "secrets.age") ||
-		inv.Spec.SecureBoot.SignerCertificate != filepath.Join(dir, "keys", "db.crt") {
+	if inv.Name != "homelab" || inv.Dir() != dir {
 		t.Errorf("inventory = %+v", inv)
 	}
 	if got := inv.Spec.Files; !slices.Equal(got, []string{filepath.Join(dir, "cluster", "*.yaml")}) {
@@ -71,6 +68,7 @@ func TestLoadRefuses(t *testing.T) {
 		"an empty file list":  {strings.Replace(homelab, "files: [nodes/cp1.yaml]", "files: [\"\"]", 1), "nodes"},
 		"an unknown group":    {strings.Replace(homelab, "groups: [gpu]", "groups: [gpus]", 1), "the group gpus, which the inventory does not define"},
 		"two documents":       {homelab + "---\n" + homelab, "holds 2 documents"},
+		"a secrets file":      {strings.Replace(homelab, "spec:\n", "spec:\n  secrets: ./secrets.age\n", 1), "secrets"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "chalkos.yaml")

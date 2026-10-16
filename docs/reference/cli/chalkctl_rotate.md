@@ -29,9 +29,9 @@ chalkctl rotate <kind> [flags]
 ```
   # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
   # trust the new CA before it issues certificates. It pauses again after the refresh.
-  chalkctl rotate kubernetes-ca
-  chalkctl rotate kubernetes-ca --resume
-  chalkctl rotate kubernetes-ca --finish
+  chalkctl rotate kubernetes-ca --secrets secrets.age
+  chalkctl rotate kubernetes-ca --secrets secrets.age --resume
+  chalkctl rotate kubernetes-ca --secrets secrets.age --finish
 ```
 
 ## Options
@@ -48,7 +48,7 @@ chalkctl rotate <kind> [flags]
       --public-out string   write the public half to this new file instead of updating secrets.pub.json beside the secrets file in place
       --recipient strings   age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out
       --resume              continue the rotation the secrets file records
-      --secrets string      secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
+      --secrets string      secrets file, encrypted with age or not, or - to read it from standard input
       --timeout duration    how long to wait for each node to apply a phase (default 10m0s)
 ```
 

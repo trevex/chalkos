@@ -15,11 +15,11 @@ address chalkctl reaches it at and the config files it gets, and talks to chalkd
 over mutual TLS. chalkctl never builds images: each node's Image document names the directory of
 an image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
 or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
-reader role. Each command's help says which of the two it needs. Commands that accept both take
---config, else --secrets, else the client file $CHALKOSCONFIG names, else the secrets file the
-inventory names or, when it names none, a secrets file beside it, when that file exists, else
-~/.config/chalkos/config. --manifest reads a cluster definition's manifest instead of an
-inventory.
+reader role. Each command's help says which of the two it needs. The secrets file is read only
+where --secrets names it, as a path or as - for standard input, encrypted with age or not; the
+inventory names none. Commands that accept both take --config, else --secrets, else the client
+file $CHALKOSCONFIG names, else ~/.config/chalkos/config. --manifest reads a cluster
+definition's manifest instead of an inventory.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.
@@ -29,9 +29,10 @@ argument after it is read as a positional argument.
 ```
   # Generate the cluster's secrets, install and bootstrap a control plane, write a kubeconfig.
   chalkctl gen secrets --recipient age1...
-  chalkctl install cp1 --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-  chalkctl bootstrap cp1
-  chalkctl kubeconfig
+  chalkctl install cp1 --secrets secrets.age \
+    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+  chalkctl bootstrap cp1 --secrets secrets.age
+  chalkctl kubeconfig --secrets secrets.age
 ```
 
 ## Options

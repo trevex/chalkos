@@ -22,7 +22,7 @@ func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip 
 	if err != nil {
 		return err
 	}
-	creds, err := a.loadCredentials(ctx, n.secrets, n.config, c)
+	creds, err := a.loadCredentials(ctx, n.secrets, n.config)
 	if err != nil {
 		return err
 	}

@@ -56,7 +56,7 @@ func registerAddress(fs *pflag.FlagSet, p *string, usage string) {
 // registerClient registers the flags of a command that a client file may run.
 func (n *nodeCommand) registerClient(fs *pflag.FlagSet) {
 	n.register(fs)
-	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG unless --secrets is given; else ~/.config/chalkos/config when no secrets file is beside the inventory)")
+	fs.StringVar(&n.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
 }
 
 // target is a node of the cluster with the credentials chalkctl reaches it with. secrets holds
@@ -77,7 +77,7 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 	if err != nil {
 		return nil, err
 	}
-	creds, err := a.loadSecretCredentials(ctx, n.secrets, c)
+	creds, err := a.loadSecretCredentials(ctx, n.secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*ta
 	if err != nil {
 		return nil, err
 	}
-	creds, err := a.loadCredentials(ctx, n.secrets, n.config, c)
+	creds, err := a.loadCredentials(ctx, n.secrets, n.config)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +291,7 @@ func (a *app) installCommand() *cobra.Command {
 	f.pin.register(fs)
 	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory the node's Image names)")
 	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
-	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer")
+	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer, to check the image's signatures against before it is sent")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	fs.StringVar(&f.passwordFile, "password-file", "", "file holding the password of a node whose fallback is a password")
 	return cmd
@@ -526,11 +526,7 @@ func (a *app) disks(ctx context.Context, n nodeCommand, p pinning, pos []string)
 		// file or a client file is given, for an image with an OS CA.
 		var cert *tls.Certificate
 		if n.secrets.path != "" || n.config != "" {
-			c, err := loadCluster(n.cluster)
-			if err != nil {
-				return err
-			}
-			creds, err := a.loadCredentials(ctx, n.secrets, n.config, c)
+			creds, err := a.loadCredentials(ctx, n.secrets, n.config)
 			if err != nil {
 				return err
 			}

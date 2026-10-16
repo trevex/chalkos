@@ -9,7 +9,6 @@ import (
 	"maps"
 	"net"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -39,12 +38,9 @@ func (c *clusterFlags) register(fs *pflag.FlagSet) {
 type cluster struct {
 	name, endpoint string
 	// signerCertificate is the PEM certificate of the Secure Boot db key the nodes' images are
-	// signed with; empty when none is named.
+	// signed with, as a manifest names it; empty for an inventory, which leaves it to --sign-cert.
 	signerCertificate string
-	// dir is where the secrets file is looked for when neither --secrets nor the inventory names
-	// one.
-	dir     string
-	partial bool
+	partial           bool
 	// clientNodes are the nodes a client file names, on a partial cluster.
 	clientNodes []string
 	inv         *inventory.Inventory
@@ -70,11 +66,10 @@ func loadCluster(f clusterFlags) (*cluster, error) {
 	case !errors.Is(err, fs.ErrNotExist):
 		return nil, err
 	}
-	return &cluster{dir: ".", partial: true}, nil
+	return &cluster{partial: true}, nil
 }
 
-// loadInventory reads an inventory, the cluster its nodes' Cluster documents name and the
-// Secure Boot certificate it names.
+// loadInventory reads an inventory and the cluster its nodes' Cluster documents name.
 func loadInventory(path string) (*cluster, error) {
 	inv, err := inventory.Load(path)
 	if err != nil {
@@ -84,18 +79,10 @@ func loadInventory(path string) (*cluster, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	c := &cluster{name: name, endpoint: endpoint, dir: inv.Dir(), inv: inv, configs: map[string]*inventory.NodeConfig{}}
-	if sb := inv.Spec.SecureBoot; sb != nil {
-		data, err := os.ReadFile(sb.SignerCertificate)
-		if err != nil {
-			return nil, fmt.Errorf("the Secure Boot signer certificate of %s: %w", path, err)
-		}
-		c.signerCertificate = string(data)
-	}
-	return c, nil
+	return &cluster{name: name, endpoint: endpoint, inv: inv, configs: map[string]*inventory.NodeConfig{}}, nil
 }
 
-// loadManifest reads a cluster definition's manifest from a file; its secrets file is beside it.
+// loadManifest reads a cluster definition's manifest from a file.
 func loadManifest(path string) (*cluster, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -105,12 +92,12 @@ func loadManifest(path string) (*cluster, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	return clusterOfManifest(m, filepath.Dir(path)), nil
+	return clusterOfManifest(m), nil
 }
 
-// clusterOfManifest is the cluster a manifest describes, whose secrets file is in dir.
-func clusterOfManifest(m *manifest.Manifest, dir string) *cluster {
-	return &cluster{name: m.Cluster.Name, endpoint: m.Cluster.Endpoint, signerCertificate: m.SecureBoot.SignerCertificate, dir: dir, manifest: m}
+// clusterOfManifest is the cluster a manifest describes.
+func clusterOfManifest(m *manifest.Manifest) *cluster {
+	return &cluster{name: m.Cluster.Name, endpoint: m.Cluster.Endpoint, signerCertificate: m.SecureBoot.SignerCertificate, manifest: m}
 }
 
 // checkCredentials names a partial cluster, and its nodes, after the client file, and refuses a

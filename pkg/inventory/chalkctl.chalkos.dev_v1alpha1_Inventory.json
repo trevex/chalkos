@@ -20,23 +20,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "secrets": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The secrets file; default secrets.age, else secrets.json, beside the inventory."
-        },
-        "secureBoot": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["signerCertificate"],
-          "properties": {
-            "signerCertificate": {
-              "type": "string",
-              "minLength": 1,
-              "description": "PEM certificate of the Secure Boot db key the nodes' images must be signed with."
-            }
-          }
-        },
         "files": { "$ref": "#/$defs/files", "description": "Config files every node gets." },
         "groups": {
           "type": "object",

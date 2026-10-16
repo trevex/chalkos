@@ -34,12 +34,13 @@ chalkctl install <node> [flags]
 
 ```
   # Install cp1, comparing the certificate with the fingerprint on its console.
-  chalkctl install cp1 --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+  chalkctl install cp1 --secrets secrets.age \
+    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
   # Install w1 at an address of the network it booted into, with a prebuilt image, which
   # chalkctl signs.
-  chalkctl install w1 --address 192.168.1.50 --insecure --image ./worker-image \
-    --sign-key db.key --sign-cert db.crt
+  chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --insecure \
+    --image ./worker-image --sign-key db.key --sign-cert db.crt
 ```
 
 ## Options
@@ -54,8 +55,8 @@ chalkctl install <node> [flags]
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --manifest string        read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --password-file string   file holding the password of a node whose fallback is a password
-      --secrets string         secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
-      --sign-cert string       PEM certificate of the Secure Boot db signer
+      --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
+      --sign-cert string       PEM certificate of the Secure Boot db signer, to check the image's signatures against before it is sent
       --sign-key string        PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader
       --wipe-disk              let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data
 ```

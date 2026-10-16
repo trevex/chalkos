@@ -359,27 +359,29 @@ func TestAddressFromTheInventory(t *testing.T) {
 	}
 }
 
-// TestSecretsBesideTheInventory reads the secrets file beside the inventory, or the one it names.
-func TestSecretsBesideTheInventory(t *testing.T) {
+// TestSecretsOnlyFromTheFlag reads the secrets file --secrets names, or standard input for -,
+// and no secrets file beside the inventory.
+func TestSecretsOnlyFromTheFlag(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeInventory(t, ta.dir)
 	want, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "lab", "n1")
-	for _, step := range []func(){
-		func() {},
-		func() {
-			if err := os.Rename(filepath.Join(ta.dir, "secrets.json"), filepath.Join(ta.dir, "other.json")); err != nil {
-				t.Fatal(err)
-			}
-			writeFile(t, path, strings.Replace(testInventoryYAML, "spec:\n", "spec:\n  secrets: other.json\n", 1))
-		},
-	} {
-		step()
+	recoveryKey := []string{"recovery-key", "n1", "--inventory", path}
+	// The app's own run names no secrets file of the test's.
+	if err := ta.app.run(context.Background(), recoveryKey); err == nil || !strings.Contains(err.Error(), "--secrets") {
+		t.Errorf("recovery-key with secrets.json beside the inventory = %v, want --secrets named", err)
+	}
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secrets := range []string{filepath.Join(ta.dir, "secrets.json"), "-"} {
+		ta.stdin = bytes.NewReader(data)
 		ta.stdout.Reset()
-		if err := ta.run(context.Background(), []string{"recovery-key", "n1", "--inventory", path}); err != nil {
+		if err := ta.app.run(context.Background(), append(recoveryKey, "--secrets", secrets)); err != nil {
 			t.Fatal(err)
 		}
 		if got := strings.TrimSpace(ta.stdout.String()); got != want {
-			t.Errorf("recovery key = %q, want %q", got, want)
+			t.Errorf("recovery key from %s = %q, want %q", secrets, got, want)
 		}
 	}
 }
@@ -401,32 +403,25 @@ func TestNodesOfTheInventory(t *testing.T) {
 	}
 }
 
-// TestInventorySignerCertificate checks images with the certificate the inventory names.
-func TestInventorySignerCertificate(t *testing.T) {
-	dir := t.TempDir()
-	path := writeInventory(t, dir)
-	writeFile(t, filepath.Join(dir, "db.crt"), "PEM")
-	writeFile(t, path, strings.Replace(testInventoryYAML, "spec:\n", "spec:\n  secureBoot: {signerCertificate: db.crt}\n", 1))
-	c, err := loadInventory(path)
-	if err != nil || c.signerCertificate != "PEM" {
-		t.Errorf("signer certificate = %q, %v", c.signerCertificate, err)
-	}
+// TestLoadClusterRefusesBoth refuses an inventory and a manifest together.
+func TestLoadClusterRefusesBoth(t *testing.T) {
+	path := writeInventory(t, t.TempDir())
 	if _, err := loadCluster(clusterFlags{inventory: path, manifest: "m.json"}); err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Errorf("an inventory and a manifest = %v", err)
 	}
 }
 
-// TestMissingSecretsOfTheInventory falls back to the user's client file when the secrets file
-// the inventory names does not exist, and without a client file names the missing secrets file.
-func TestMissingSecretsOfTheInventory(t *testing.T) {
+// TestStatusWithTheUsersClientFile reaches a node of the inventory with the user's client file
+// when no secrets file is named, and without one names --config and --secrets.
+func TestStatusWithTheUsersClientFile(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeInventory(t, ta.dir)
-	writeFile(t, path, strings.Replace(testInventoryYAML, "spec:\n", "spec:\n  secrets: admin/secrets.age\n", 1))
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
 	status := []string{"status", "n1", "--inventory", path, "--address", addr}
-	if err := ta.run(context.Background(), status); err == nil || !strings.Contains(err.Error(), filepath.Join(ta.dir, "admin", "secrets.age")) {
-		t.Errorf("status without the secrets file or a client file = %v, want the secrets file named", err)
+	// The app's own run names no secrets file of the test's.
+	if err := ta.app.run(context.Background(), status); err == nil || !strings.Contains(err.Error(), "pass --config or --secrets") {
+		t.Errorf("status without a secrets file or a client file = %v, want --config and --secrets named", err)
 	}
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, 24*time.Hour, time.Now())
 	if err := os.MkdirAll(filepath.Dir(defaultConfigPath(ta.home)), 0o700); err != nil {
@@ -436,7 +431,7 @@ func TestMissingSecretsOfTheInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	ta.stdout.Reset()
-	if err := ta.run(context.Background(), status); err != nil || !strings.Contains(ta.stdout.String(), "(the inventory's)") {
+	if err := ta.app.run(context.Background(), status); err != nil || !strings.Contains(ta.stdout.String(), "(the inventory's)") {
 		t.Errorf("status with a reader's client file = %v, %q", err, ta.stdout)
 	}
 }

@@ -38,14 +38,14 @@ type secretFlags struct {
 }
 
 func (s *secretFlags) register(fs *pflag.FlagSet) {
-	fs.StringVar(&s.path, "secrets", "", "secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)")
+	fs.StringVar(&s.path, "secrets", "", "secrets file, encrypted with age or not, or - to read it from standard input")
 	fs.Var(&s.identities, "identity", "age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
 }
 
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
 // the file is encrypted.
-func (a *app) loadSecrets(ctx context.Context, s secretFlags, c *cluster) (pki.Secrets, error) {
-	path, _, err := secretsPath(s, c)
+func (a *app) loadSecrets(ctx context.Context, s secretFlags) (pki.Secrets, error) {
+	path, err := secretsPath(s)
 	if err != nil {
 		return pki.Secrets{}, err
 	}
@@ -65,29 +65,14 @@ func (a *app) loadSecrets(ctx context.Context, s secretFlags, c *cluster) (pki.S
 	return secrets, nil
 }
 
-// secretsPath is the secrets file --secrets names, else the one the inventory names, else
-// secrets.age, else secrets.json, beside the inventory; found says whether it was given with
-// --secrets or exists. The inventory's secrets file may be missing where a client file stands in
-// for it.
-func secretsPath(s secretFlags, c *cluster) (path string, found bool, err error) {
-	if s.path != "" {
-		return s.path, true, nil
+// secretsPath is the secrets file --secrets names, - for standard input. chalkctl looks for no
+// secrets file of its own accord: the file holds every key of the cluster, so it is read only
+// where it is named.
+func secretsPath(s secretFlags) (string, error) {
+	if s.path == "" {
+		return "", errors.New("pass the secrets file with --secrets FILE, or --secrets - to read it from standard input")
 	}
-	var candidates []string
-	if c.inv != nil && c.inv.Spec.Secrets != "" {
-		candidates = []string{c.inv.Spec.Secrets}
-	} else {
-		candidates = []string{filepath.Join(c.dir, "secrets.age"), filepath.Join(c.dir, "secrets.json")}
-	}
-	for _, path = range candidates {
-		switch _, err := os.Stat(path); {
-		case err == nil:
-			return path, true, nil
-		case !errors.Is(err, fs.ErrNotExist):
-			return "", false, err
-		}
-	}
-	return path, false, nil
+	return s.path, nil
 }
 
 // ageIdentities parses the given identity files, which must all load, or the default ones that
@@ -234,7 +219,7 @@ func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, 
 	if err := c.node(pos[0]); err != nil {
 		return err
 	}
-	secrets, err := a.loadSecrets(ctx, sf, c)
+	secrets, err := a.loadSecrets(ctx, sf)
 	if err != nil {
 		return err
 	}
@@ -263,7 +248,7 @@ func (a *app) genSecretsCommand() *cobra.Command {
 	fs := cmd.Flags()
 	fs.Var(&f.recipients, "recipient", "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
 	fs.BoolVar(&f.plaintext, "plaintext", false, "write secrets.json unencrypted, for files protected by other means")
-	fs.StringVar(&f.out, "out", ".", "directory to write the files to")
+	fs.StringVar(&f.out, "out", ".", "directory to write the files to, or - to write the secrets file alone to standard output")
 	return cmd
 }
 
@@ -271,6 +256,9 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 	recipients := f.recipients
 	if (len(recipients) == 0) == !f.plaintext {
 		return errors.New("gen secrets: pass --recipient (one or more) or --plaintext")
+	}
+	if f.out == "-" {
+		return a.genSecretsToStdout(recipients, f.plaintext)
 	}
 	name := "secrets.age"
 	if f.plaintext {
@@ -295,6 +283,29 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 	fmt.Fprintf(a.stdout, "wrote %s and %s\n", secretsFile, publicPath)
 	if f.plaintext {
 		fmt.Fprintf(a.stderr, "warning: %s holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry\n", secretsFile)
+	}
+	return nil
+}
+
+// genSecretsToStdout writes new secrets to standard output, for a secret manager to keep, and
+// what it says to standard error. The public half, which only a cluster definition names, is not
+// written.
+func (a *app) genSecretsToStdout(recipients []string, plaintext bool) error {
+	secrets, err := pki.GenerateSecrets(time.Now())
+	if err != nil {
+		return err
+	}
+	data, err := a.encodeSecrets(secrets, recipients, plaintext)
+	if err != nil {
+		return err
+	}
+	if _, err := a.stdout.Write(data); err != nil {
+		return err
+	}
+	if plaintext {
+		fmt.Fprintln(a.stderr, "warning: the secrets went to standard output unencrypted; protect them by other means")
+	} else {
+		fmt.Fprintf(a.stderr, "encrypted the secrets to %s\n", strings.Join(recipients, ", "))
 	}
 	return nil
 }
@@ -341,18 +352,7 @@ func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext b
 			return fmt.Errorf("%s exists; secrets are always written to a new file", p)
 		}
 	}
-	var data []byte
-	var err error
-	if plaintext {
-		data, err = secrets.Encode()
-	} else {
-		var parsed []age.Recipient
-		if parsed, err = a.ageRecipients(recipients); err != nil {
-			return err
-		}
-		secrets.Recipients = recipients
-		data, err = secrets.Encrypt(parsed...)
-	}
+	data, err := a.encodeSecrets(secrets, recipients, plaintext)
 	if err != nil {
 		return err
 	}
@@ -370,6 +370,20 @@ func (a *app) writeSecrets(secrets pki.Secrets, recipients []string, plaintext b
 		return err
 	}
 	return writeNew(publicPath, public, 0o644)
+}
+
+// encodeSecrets encodes the secrets as a secrets file: encrypted to the recipients, which it
+// records inside it, unless plaintext.
+func (a *app) encodeSecrets(secrets pki.Secrets, recipients []string, plaintext bool) ([]byte, error) {
+	if plaintext {
+		return secrets.Encode()
+	}
+	parsed, err := a.ageRecipients(recipients)
+	if err != nil {
+		return nil, err
+	}
+	secrets.Recipients = recipients
+	return secrets.Encrypt(parsed...)
 }
 
 // sayRecipients names whom an encrypted secrets file was encrypted to, so an operator notices a
@@ -437,8 +451,8 @@ func (f *secretsFile) inPlace() bool { return f.out == f.path }
 // the changes are written before anything is changed. The recipients come from inside the
 // encrypted file, or from --recipient, never from secrets.pub.json, which anyone who can write
 // beside the secrets file could change.
-func (a *app) openSecrets(ctx context.Context, s secretFlags, c *cluster, change changeFlags) (*secretsFile, error) {
-	path, _, err := secretsPath(s, c)
+func (a *app) openSecrets(ctx context.Context, s secretFlags, change changeFlags) (*secretsFile, error) {
+	path, err := secretsPath(s)
 	if err != nil {
 		return nil, err
 	}

@@ -106,7 +106,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	if n.address != "" && len(controlPlanes) != 1 {
 		return errors.New("node-ca rotate: --address names one node's chalkd, but the cluster has several control-plane nodes")
 	}
-	f, err := a.openSecrets(ctx, n.secrets, c, change)
+	f, err := a.openSecrets(ctx, n.secrets, change)
 	if err != nil {
 		return err
 	}

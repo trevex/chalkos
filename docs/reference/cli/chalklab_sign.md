@@ -23,7 +23,9 @@ chalklab sign <image> [flags]
 ```
   # Sign a copy of an image in the Nix store and upgrade the lab's nodes of its variant with it.
   chalklab sign /nix/store/...-chalkos-node-image --out node-image
-  chalkctl upgrade --image node-image --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+  chalkctl upgrade --image node-image --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
+    --config ~/.local/state/chalklab/lab/chalkctl.json \
+    --sign-cert ~/.local/state/chalklab/lab/keys/db.crt
 ```
 
 ## Options

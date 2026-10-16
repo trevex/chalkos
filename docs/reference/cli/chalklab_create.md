@@ -24,10 +24,11 @@ from the console and installs the node in place with chalkctl install --fingerpr
 lab has a control plane, chalklab bootstraps the first one and writes a kubeconfig that reaches
 its API server through the forwarded port. Last, it writes an admin client file. chalkctl reads
 the lab's inventory, chalkos.yaml in the lab's state directory: the lab file's inventory with
-its nodes at their forwarded ports and the lab's db certificate as the Secure Boot signer.
+its nodes at their forwarded ports. It names no secrets file: chalklab passes chalkctl --secrets,
+and --sign-cert with the lab's db certificate.
 
-The command needs the cluster's secrets file, which chalkctl reads to install the nodes and to
-write the kubeconfig and the client file: --secrets, else the inventory's secrets file.
+The command needs the cluster's secrets file, --secrets, which chalkctl reads to install the
+nodes and to write the kubeconfig and the client file.
 
 ```
 chalklab create [flags]
@@ -36,10 +37,10 @@ chalklab create [flags]
 ## Examples
 
 ```
-  chalklab create
+  chalklab create --secrets secrets.age
 
   # Make a registry on the host's port 5000 reachable at 10.0.2.100:5000 in the VMs.
-  chalklab create --guest-forward 10.0.2.100:5000=127.0.0.1:5000
+  chalklab create --secrets secrets.age --guest-forward 10.0.2.100:5000=127.0.0.1:5000
 ```
 
 ## Options
@@ -48,7 +49,7 @@ chalklab create [flags]
       --guest-forward strings   GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated
   -h, --help                    help for create
       --lab string              lab file naming the inventory and the nodes the lab runs (default chalklab.yaml in the current directory)
-      --secrets string          secrets file chalkctl reads (default the inventory's)
+      --secrets string          the cluster's secrets file, which chalkctl reads to install the nodes
 ```
 
 ## SEE ALSO

@@ -61,14 +61,14 @@ func (a *app) createCommand() *cobra.Command {
 	}, func(a *app, ctx context.Context, pos []string) error { return a.create(ctx, f, pos) })
 	fs := cmd.Flags()
 	fs.StringVar(&f.lab, "lab", "", "lab file naming the inventory and the nodes the lab runs (default "+defaultLabFile+" in the current directory)")
-	fs.StringVar(&f.secrets, "secrets", "", "secrets file chalkctl reads (default the inventory's)")
+	fs.StringVar(&f.secrets, "secrets", "", "the cluster's secrets file, which chalkctl reads to install the nodes")
 	fs.Var(&f.guestForwards, "guest-forward", "GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated")
 	return cmd
 }
 
 func (a *app) create(ctx context.Context, f createFlags, pos []string) (err error) {
 	if len(pos) != 0 {
-		return errors.New("usage: chalklab create [--lab chalklab.yaml] [--secrets FILE] [--guest-forward GUEST=HOST]")
+		return errors.New("usage: chalklab create --secrets FILE [--lab chalklab.yaml] [--guest-forward GUEST=HOST]")
 	}
 	code, vars := os.Getenv("CHALKLAB_OVMF_CODE"), os.Getenv("CHALKLAB_OVMF_VARS")
 	if code == "" || vars == "" {
@@ -76,6 +76,16 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	}
 	if err := checkKVM(); err != nil {
 		return err
+	}
+	// chalklab runs chalkctl several times, so the secrets file is a file, which every run reads.
+	if f.secrets == "" || f.secrets == "-" {
+		return errors.New("chalklab create needs the cluster's secrets file: pass --secrets FILE")
+	}
+	if f.secrets, err = filepath.Abs(f.secrets); err != nil {
+		return err
+	}
+	if _, err := os.Stat(f.secrets); err != nil {
+		return fmt.Errorf("the secrets file: %w", err)
 	}
 	var guestForwards []lab.GuestForward
 	for _, fw := range f.guestForwards {
@@ -175,7 +185,7 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	if err := l.Write(dir); err != nil {
 		return err
 	}
-	if err := writeLabInventory(filepath.Join(dir, inventoryFile), inv, l, filepath.Join(dir, "keys", "db.crt")); err != nil {
+	if err := writeLabInventory(filepath.Join(dir, inventoryFile), inv, l); err != nil {
 		return err
 	}
 
@@ -243,10 +253,9 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.LabNode, map[string]
 }
 
 // writeLabInventory writes the inventory chalkctl reaches the lab with: the lab file's inventory
-// with its paths absolute, so it reads the same from the lab's state directory; its nodes those the
-// lab runs, at their forwarded ports; the secrets file it found beside the lab file's inventory;
-// and the lab's db certificate, which signs the lab's images.
-func writeLabInventory(path string, inv *inventory.Inventory, l *lab.Lab, dbCert string) error {
+// with its paths absolute, so it reads the same from the lab's state directory, and its nodes those
+// the lab runs, at their forwarded ports.
+func writeLabInventory(path string, inv *inventory.Inventory, l *lab.Lab) error {
 	spec := inv.Spec
 	spec.Nodes = map[string]inventory.Node{}
 	for _, n := range l.Nodes {
@@ -254,25 +263,11 @@ func writeLabInventory(path string, inv *inventory.Inventory, l *lab.Lab, dbCert
 		node.Address = "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
 		spec.Nodes[n.Name] = node
 	}
-	if spec.Secrets == "" {
-		for _, name := range []string{"secrets.age", "secrets.json"} {
-			if p := filepath.Join(inv.Dir(), name); fileExists(p) {
-				spec.Secrets = p
-				break
-			}
-		}
-	}
-	spec.SecureBoot = &inventory.SecureBoot{SignerCertificate: dbCert}
 	data, err := inventory.Encode(inv.Name, spec)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, data, 0o600)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func nodeNames(l *lab.Lab) []string {
@@ -375,12 +370,10 @@ var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprin
 
 // setUp installs each node in place, bootstraps the first control plane, and writes a kubeconfig
 // that reaches the lab through its forwarded ports and an admin client file. chalkctl reads the
-// lab's inventory, which names the nodes at their forwarded ports.
+// lab's inventory, which names the nodes at their forwarded ports, and the secrets file, and checks
+// images against the lab's db certificate, which signs them.
 func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) error {
-	cluster := []string{"--inventory", filepath.Join(dir, inventoryFile)}
-	if f.secrets != "" {
-		cluster = append(cluster, "--secrets", f.secrets)
-	}
+	cluster := []string{"--inventory", filepath.Join(dir, inventoryFile), "--secrets", f.secrets}
 	for _, n := range l.Nodes {
 		addr := "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
 		fmt.Fprintf(a.stdout, "waiting for %s to come up in maintenance mode\n", n.Name)
@@ -393,7 +386,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 			return fmt.Errorf("%s: %w", n.Name, err)
 		}
 		fmt.Fprintf(a.stdout, "%s runs in maintenance mode with the certificate fingerprint %s\n", n.Name, fp)
-		if err := a.chalkctl(ctx, a.stdout, append([]string{"install", n.Name, "--fingerprint", fp}, cluster...)...); err != nil {
+		if err := a.chalkctl(ctx, a.stdout, append([]string{"install", n.Name, "--fingerprint", fp, "--sign-cert", filepath.Join(dir, "keys", "db.crt")}, cluster...)...); err != nil {
 			return fmt.Errorf("install %s: %w", n.Name, err)
 		}
 	}
@@ -425,7 +418,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 	if cp != nil {
 		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n  kubectl get nodes\n", filepath.Join(dir, kubeconfigFile))
 	}
-	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, filepath.Join(dir, inventoryFile))
+	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s --config %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, filepath.Join(dir, inventoryFile), filepath.Join(dir, clientFile))
 	return nil
 }
 

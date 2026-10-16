@@ -103,46 +103,43 @@ func TestClientFileRole(t *testing.T) {
 	}
 }
 
+// TestCredentialChoice takes --config, else --secrets, else the client file $CHALKOSCONFIG names,
+// else ~/.config/chalkos/config. A secrets file is read only where --secrets names it, also when
+// one is at hand.
 func TestCredentialChoice(t *testing.T) {
 	ta := newTestApp(t)
 	current, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity)
 	s, _ := installedNode(t, ta, current)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
+	secrets := filepath.Join(ta.dir, "secrets.json")
 	t.Setenv("CHALKOSCONFIG", reader)
-	reboot := ta.args([]string{"reboot", "n1"}, addr)
+	// The app's own run names no secrets file of the test's.
+	reboot := func(args ...string) error {
+		return ta.app.run(context.Background(), append(ta.args([]string{"reboot", "n1"}, addr), args...))
+	}
 
-	// $CHALKOSCONFIG wins over the secrets file found in the flake directory.
-	if err := ta.run(context.Background(), reboot); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("with $CHALKOSCONFIG and secrets.json in the directory: %v, want the reader refused", err)
+	if err := reboot(); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("with $CHALKOSCONFIG: %v, want the reader refused", err)
 	}
 	// --secrets wins over $CHALKOSCONFIG.
-	if err := ta.run(context.Background(), append(reboot, "--secrets", filepath.Join(ta.dir, "secrets.json"))); err != nil {
+	if err := reboot("--secrets", secrets); err != nil {
 		t.Errorf("with --secrets: %v", err)
 	}
 	// --config wins over --secrets.
-	if err := ta.run(context.Background(), append(reboot, "--config", reader, "--secrets", filepath.Join(ta.dir, "secrets.json"))); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if err := reboot("--config", reader, "--secrets", secrets); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("with --config: %v, want the reader refused", err)
 	}
-	// Without $CHALKOSCONFIG, the secrets file found in the directory.
+	// Without $CHALKOSCONFIG, ~/.config/chalkos/config, else nothing: the secrets file in the
+	// directory is not read.
 	t.Setenv("CHALKOSCONFIG", "")
-	if err := ta.run(context.Background(), reboot); err != nil {
-		t.Errorf("with secrets.json in the directory: %v", err)
-	}
-	// Without a secrets file, $CHALKOSCONFIG, else ~/.config/chalkos/config.
-	ta.withoutSecrets(t)
-	t.Setenv("CHALKOSCONFIG", reader)
-	if err := ta.run(context.Background(), reboot); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("with $CHALKOSCONFIG: %v, want the reader refused", err)
-	}
-	t.Setenv("CHALKOSCONFIG", "")
-	if err := ta.run(context.Background(), reboot); err == nil || !strings.Contains(err.Error(), "--config") {
-		t.Errorf("without credentials: %v, want an error naming --config", err)
+	if err := reboot(); err == nil || !strings.Contains(err.Error(), "--config") || !strings.Contains(err.Error(), "--secrets") {
+		t.Errorf("without credentials: %v, want an error naming --config and --secrets", err)
 	}
 	operator := ta.writeConfig(t, "bob", pki.RoleOperator, time.Hour*24*365, time.Now())
 	data, _ := os.ReadFile(operator)
 	writeFile(t, defaultConfigPath(ta.home), string(data))
-	if err := ta.run(context.Background(), reboot); err != nil {
+	if err := reboot(); err != nil {
 		t.Errorf("with ~/.config/chalkos/config of an operator: %v", err)
 	}
 }
@@ -303,11 +300,11 @@ func TestClientFileAddresses(t *testing.T) {
 // cluster definition, the client file's address, and else --address alone.
 func TestAddressPrecedence(t *testing.T) {
 	ta := newTestApp(t)
-	def := clusterOfManifest(ta.manifest, ta.dir)
+	def := clusterOfManifest(ta.manifest)
 	file := func(nodes map[string]string, prefer bool) *credentials {
 		return &credentials{config: &client.Config{Nodes: nodes, PreferNodeAddresses: prefer}, configPath: "lab.json"}
 	}
-	partial := &cluster{dir: ".", partial: true}
+	partial := &cluster{partial: true}
 	for _, tc := range []struct {
 		name         string
 		c            *cluster

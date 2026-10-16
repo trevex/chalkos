@@ -14,7 +14,7 @@ needs /dev/kvm, which most distributions grant to the kvm group. It never builds
 create needs the cluster's secrets file; the other commands work on the lab's state alone.`
 
 const rootExample = `  # In a directory made from the lab template, once its image is built.
-  chalklab create
+  chalklab create --secrets secrets.age
   chalklab status
   chalklab destroy`
 
@@ -33,15 +33,16 @@ from the console and installs the node in place with chalkctl install --fingerpr
 lab has a control plane, chalklab bootstraps the first one and writes a kubeconfig that reaches
 its API server through the forwarded port. Last, it writes an admin client file. chalkctl reads
 the lab's inventory, chalkos.yaml in the lab's state directory: the lab file's inventory with
-its nodes at their forwarded ports and the lab's db certificate as the Secure Boot signer.
+its nodes at their forwarded ports. It names no secrets file: chalklab passes chalkctl --secrets,
+and --sign-cert with the lab's db certificate.
 
-The command needs the cluster's secrets file, which chalkctl reads to install the nodes and to
-write the kubeconfig and the client file: --secrets, else the inventory's secrets file.`
+The command needs the cluster's secrets file, --secrets, which chalkctl reads to install the
+nodes and to write the kubeconfig and the client file.`
 
-const createExample = `  chalklab create
+const createExample = `  chalklab create --secrets secrets.age
 
   # Make a registry on the host's port 5000 reachable at 10.0.2.100:5000 in the VMs.
-  chalklab create --guest-forward 10.0.2.100:5000=127.0.0.1:5000`
+  chalklab create --secrets secrets.age --guest-forward 10.0.2.100:5000=127.0.0.1:5000`
 
 const statusLong = `Shows the lab's supervisor, each VM with its node's type, whether it runs, the forwarded ports
 of its chalkd and API server and its console log, and the paths of the lab's kubeconfig,
@@ -73,7 +74,9 @@ secrets file or client file.`
 
 const signExample = `  # Sign a copy of an image in the Nix store and upgrade the lab's nodes of its variant with it.
   chalklab sign /nix/store/...-chalkos-node-image --out node-image
-  chalkctl upgrade --image node-image --inventory ~/.local/state/chalklab/lab/chalkos.yaml`
+  chalkctl upgrade --image node-image --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
+    --config ~/.local/state/chalklab/lab/chalkctl.json \
+    --sign-cert ~/.local/state/chalklab/lab/keys/db.crt`
 
 const destroyLong = `Stops the lab's supervisor, VMs, TPMs and network switch and removes its state: disks,
 firmware variables, TPM state, keys, console logs, kubeconfig, inventory and client file. The

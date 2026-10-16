@@ -23,10 +23,10 @@ chalkctl kubeconfig [flags]
 ## Examples
 
 ```
-  chalkctl kubeconfig --out lab.kubeconfig
+  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
 
   # Through a port forwarded to the API server.
-  chalkctl kubeconfig --server https://127.0.0.1:6443 --out -
+  chalkctl kubeconfig --secrets secrets.age --server https://127.0.0.1:6443 --out -
 ```
 
 ## Options
@@ -39,7 +39,7 @@ chalkctl kubeconfig [flags]
       --manifest string    read the cluster's nodes from this cluster definition's manifest instead of an inventory
       --name string        user name in the admin certificate (default "admin")
       --out string         file to write, - for standard output (default "kubeconfig")
-      --secrets string     secrets file, - for standard input (default the inventory's, else secrets.age, else secrets.json, beside the inventory)
+      --secrets string     secrets file, encrypted with age or not, or - to read it from standard input
       --server string      URL clients reach the API server at, when it differs from the cluster endpoint; the certificate is still verified for the endpoint
       --ttl duration       validity of the admin certificate (default 8760h0m0s)
 ```

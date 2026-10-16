@@ -23,7 +23,7 @@ create needs the cluster's secrets file; the other commands work on the lab's st
 
 ```
   # In a directory made from the lab template, once its image is built.
-  chalklab create
+  chalklab create --secrets secrets.age
   chalklab status
   chalklab destroy
 ```

@@ -139,15 +139,11 @@ func TestReadLabFileRefuses(t *testing.T) {
 }
 
 // TestLabInventory writes the inventory chalkctl reaches the lab with: the lab's nodes alone at
-// their forwarded ports, every path absolute, the secrets file beside the lab file's inventory and
-// the lab's db certificate.
+// their forwarded ports, and every path absolute.
 func TestLabInventory(t *testing.T) {
 	dir := t.TempDir()
 	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	inv, err := inventory.Load(lf.inventory)
@@ -156,7 +152,7 @@ func TestLabInventory(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "chalkos.yaml")
 	l := &lab.Lab{Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001}}}
-	if err := writeLabInventory(path, inv, l, "/state/keys/db.crt"); err != nil {
+	if err := writeLabInventory(path, inv, l); err != nil {
 		t.Fatal(err)
 	}
 	got, err := inventory.Load(path)
@@ -164,7 +160,6 @@ func TestLabInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.NodeNames(), []string{"cp1"}) || got.Spec.Nodes["cp1"].Address != "127.0.0.1:15001" ||
-		got.Spec.Secrets != filepath.Join(dir, "secrets.json") || got.Spec.SecureBoot.SignerCertificate != "/state/keys/db.crt" ||
 		!slices.Equal(got.Spec.Files, []string{filepath.Join(dir, "cluster.yaml")}) {
 		t.Errorf("the lab's inventory = %+v", got.Spec)
 	}
@@ -223,7 +218,7 @@ func TestCreateKeys(t *testing.T) {
 }
 
 // TestCreateLeavesNothingWhenItFails refuses a lab that exists, and removes what a failed create
-// made before anything ran.
+// made before anything ran. It needs a secrets file.
 func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	fakeKVM(t)
 	// Short, as the lab's socket paths must be.
@@ -236,10 +231,20 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	t.Setenv("CHALKLAB_OVMF_CODE", "/fw/CODE.fd")
 	t.Setenv("CHALKLAB_OVMF_VARS", "/fw/VARS.fd")
 	path := writeLabFiles(t, t.TempDir(), testLab)
+	secrets := filepath.Join(filepath.Dir(path), "secrets.json")
 	dir, _ := lab.StateDir("lab")
 	a, _ := testApp()
+	for _, args := range [][]string{{}, {"--secrets", "-"}, {"--secrets", secrets}} {
+		err = a.run(context.Background(), append([]string{"create", "--lab", path}, args...))
+		if err == nil || !strings.Contains(err.Error(), "secrets file") {
+			t.Errorf("create with %q = %v, want the secrets file asked for", args, err)
+		}
+	}
+	if err := os.WriteFile(secrets, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	// The test app runs no virt-fw-vars, so creating the lab's keys fails.
-	err = a.run(context.Background(), []string{"create", "--lab", path})
+	err = a.run(context.Background(), []string{"create", "--lab", path, "--secrets", secrets})
 	if err == nil || !strings.Contains(err.Error(), "not in the test") {
 		t.Fatalf("create = %v, want the keys' enrolment to fail", err)
 	}
@@ -249,7 +254,7 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err = a.run(context.Background(), []string{"create", "--lab", path})
+	err = a.run(context.Background(), []string{"create", "--lab", path, "--secrets", secrets})
 	if err == nil || !strings.Contains(err.Error(), "chalklab destroy removes it") {
 		t.Fatalf("create over a lab = %v", err)
 	}

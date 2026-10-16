@@ -358,7 +358,8 @@ Rotation is also how access is revoked. See [Certificates](../concepts/certifica
 The file [`chalkctl gen secrets`](cli/chalkctl_gen_secrets.md) writes once with every secret of
 a cluster: the OS CA and node CA, the Kubernetes CAs and keys, and the secret recovery keys
 derive from. It is `secrets.age`, encrypted with age, or `secrets.json`; its public part is
-`secrets.pub.json`. See [Security model](../concepts/security.md).
+`secrets.pub.json`. chalkctl reads it only where `--secrets` names it, or from standard input
+with `--secrets -`; an inventory names none. See [Security model](../concepts/security.md).
 
 ## Secure Boot { #secure-boot }
 

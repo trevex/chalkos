@@ -720,7 +720,7 @@ func TestSecretsLockedWhileChanged(t *testing.T) {
 		// A second chalkctl with its own output, as another process would be.
 		second := *l.ta.app
 		second.stdout, second.stderr = &bytes.Buffer{}, &bytes.Buffer{}
-		base := []string{"--manifest", filepath.Join(l.ta.dir, "manifest.json")}
+		base := []string{"--manifest", filepath.Join(l.ta.dir, "manifest.json"), "--secrets", path}
 		for _, args := range [][]string{{"rotate", "kubernetes-ca", "--resume"}, {"rotate", "os-ca", "--finish"}, {"node-ca", "rotate"}} {
 			refused = append(refused, second.run(context.Background(), append(args, base...)))
 		}

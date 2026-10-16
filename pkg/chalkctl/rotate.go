@@ -97,7 +97,7 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	if _, err := c.nodesOf("", ""); err != nil {
 		return err
 	}
-	file, err := a.openSecrets(ctx, sf, c, change)
+	file, err := a.openSecrets(ctx, sf, change)
 	if err != nil {
 		return err
 	}

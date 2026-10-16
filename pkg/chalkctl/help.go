@@ -9,20 +9,21 @@ address chalkctl reaches it at and the config files it gets, and talks to chalkd
 over mutual TLS. chalkctl never builds images: each node's Image document names the directory of
 an image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
 or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
-reader role. Each command's help says which of the two it needs. Commands that accept both take
---config, else --secrets, else the client file $CHALKOSCONFIG names, else the secrets file the
-inventory names or, when it names none, a secrets file beside it, when that file exists, else
-~/.config/chalkos/config. --manifest reads a cluster definition's manifest instead of an
-inventory.
+reader role. Each command's help says which of the two it needs. The secrets file is read only
+where --secrets names it, as a path or as - for standard input, encrypted with age or not; the
+inventory names none. Commands that accept both take --config, else --secrets, else the client
+file $CHALKOSCONFIG names, else ~/.config/chalkos/config. --manifest reads a cluster
+definition's manifest instead of an inventory.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.`
 
 const rootExample = `  # Generate the cluster's secrets, install and bootstrap a control plane, write a kubeconfig.
   chalkctl gen secrets --recipient age1...
-  chalkctl install cp1 --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-  chalkctl bootstrap cp1
-  chalkctl kubeconfig`
+  chalkctl install cp1 --secrets secrets.age \
+    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+  chalkctl bootstrap cp1 --secrets secrets.age
+  chalkctl kubeconfig --secrets secrets.age`
 
 const genLong = `Generates the files a cluster starts from. Its command needs no secrets file or client file.`
 
@@ -35,14 +36,20 @@ age recipients given with --recipient (age public keys, SSH public keys or age p
 recipients), or with --plaintext to secrets.json unencrypted, for files protected by other means.
 The public half goes to secrets.pub.json, which the cluster definition's chalkos.osCA names so
 images trust the OS CA in maintenance mode. The command refuses to overwrite any of these files:
-new secrets would lock out every installed node. It needs no secrets file or client file.`
+new secrets would lock out every installed node. With --out - the secrets file alone goes to
+standard output, for a secret manager to keep, and what the command says goes to standard
+error. It needs no secrets file or client file.`
 
 const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
     --recipient "$(cat ~/.ssh/id_ed25519.pub)"
 
   # Write secrets.json unencrypted, kept out of version control.
-  chalkctl gen secrets --plaintext`
+  chalkctl gen secrets --plaintext
+
+  # Hand the encrypted secrets to a secret manager, which supplies them later with --secrets -.
+  chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
+    --out - | pass insert --multiline chalkos/secrets`
 
 const configLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
 a client file needs the secrets file.`
@@ -60,10 +67,10 @@ node role (nodes call it to renew their own certificates). The file is written t
 path --config or $CHALKOSCONFIG names. The command needs the secrets file.`
 
 const configNewExample = `  # A reader's client file for a dashboard.
-  chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json
+  chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
 
   # The operator's own client file, at ~/.config/chalkos/config.
-  chalkctl config new --name alice --role operator`
+  chalkctl config new --name alice --role operator --secrets secrets.age`
 
 const storageLong = `Manages the volumes of an installed node. Its command needs an admin client file or the
 secrets file.`
@@ -90,7 +97,7 @@ a new file. The command needs the secrets file.`
 const nodeCARotateExample = `  chalkctl node-ca rotate
 
   # Write the changed secrets to a new file and keep the old one.
-  chalkctl node-ca rotate --out secrets.new.age --public-out secrets.pub.new.json`
+  chalkctl node-ca rotate --secrets secrets.age --out secrets.new.age --public-out secrets.pub.new.json`
 
 const etcdLong = `Manages the members of the cluster's etcd, which runs on the control planes. etcd members
 needs a reader client file, and etcd remove-member and etcd leave need an admin client file; the
@@ -140,16 +147,16 @@ and valid for --ttl. The file holds the certificate's private key and is written
 example), while they still verify the API server's certificate for the endpoint. The command
 needs the secrets file.`
 
-const kubeconfigExample = `  chalkctl kubeconfig --out lab.kubeconfig
+const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
 
   # Through a port forwarded to the API server.
-  chalkctl kubeconfig --server https://127.0.0.1:6443 --out -`
+  chalkctl kubeconfig --secrets secrets.age --server https://127.0.0.1:6443 --out -`
 
 const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
   # trust the new CA before it issues certificates. It pauses again after the refresh.
-  chalkctl rotate kubernetes-ca
-  chalkctl rotate kubernetes-ca --resume
-  chalkctl rotate kubernetes-ca --finish`
+  chalkctl rotate kubernetes-ca --secrets secrets.age
+  chalkctl rotate kubernetes-ca --secrets secrets.age --resume
+  chalkctl rotate kubernetes-ca --secrets secrets.age --finish`
 
 const upgradeExample = `  # Upgrade the whole cluster, each node to the image its Image names.
   chalkctl upgrade
@@ -183,12 +190,13 @@ install of the node, which it continues; any other disk only with --wipe-disk. T
 into the installed image. The command needs the secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
-  chalkctl install cp1 --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+  chalkctl install cp1 --secrets secrets.age \
+    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
   # Install w1 at an address of the network it booted into, with a prebuilt image, which
   # chalkctl signs.
-  chalkctl install w1 --address 192.168.1.50 --insecure --image ./worker-image \
-    --sign-key db.key --sign-cert db.crt`
+  chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --insecure \
+    --image ./worker-image --sign-key db.key --sign-cert db.crt`
 
 const disksLong = `Lists a node's disks with their use, the partitions on them, and the properties a storage
 definition selects disks by: size, type, model, serial number and WWN. An installed node is
@@ -213,10 +221,10 @@ chalkctl prints the changes and the units. --kubernetes-share also delivers a ne
 share: for example a worker's new kubelet certificate. The command needs the secrets file.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
-  chalkctl apply-config w1
+  chalkctl apply-config w1 --secrets secrets.age
 
   # Give w1 a new kubelet certificate.
-  chalkctl apply-config w1 --kubernetes-share`
+  chalkctl apply-config w1 --secrets secrets.age --kubernetes-share`
 
 const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's config defines it.
 Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
@@ -226,7 +234,7 @@ inventory, which defines the volume, and an admin client file or the secrets fil
 node whose fallback is its recovery key needs the secrets file, from which the key is derived.`
 
 const resetVolumeExample = `  # Recreate the data volume of w1.
-  chalkctl storage reset w1 data`
+  chalkctl storage reset w1 data --secrets secrets.age`
 
 const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the inventory
 gives; its platform; the image version it booted and whether that boot was found healthy; an
@@ -238,8 +246,9 @@ file.`
 
 const statusExample = `  chalkctl status cp1
 
-  # With the inventory a lab writes.
-  chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml`
+  # With the inventory and the client file a lab writes.
+  chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
+    --config ~/.local/state/chalklab/lab/chalkctl.json`
 
 const logsLong = `Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
 keeps printing new entries until interrupted. The command needs a reader client file or the
