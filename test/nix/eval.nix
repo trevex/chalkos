@@ -1,145 +1,14 @@
-# Evaluation tests for the cluster definition; returns lib.runTests failures (empty on success).
+# Evaluation tests of chalkos.lib.mkImages and the images it builds; returns lib.runTests failures
+# (empty on success).
 {
   lib,
   pkgs,
-  mkCluster,
   mkImages,
-  flakeModule,
 }:
 let
-  cluster =
-    modules:
-    mkCluster {
-      modules = [
-        {
-          chalkos.cluster = {
-            name = "t";
-            endpoint = "https://10.0.0.1:6443";
-          };
-          chalkos.roles.worker = { };
-        }
-      ]
-      ++ modules;
-    };
-  role = c: c.roles.worker.nixos.metal.config;
-  # The cluster's Kubernetes settings as the manifest carries them into every Kubernetes node's
-  # Kubernetes document; evaluating them runs the options' checks.
-  kubernetesSettings = modules: (cluster modules).manifest.kubernetes;
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
-  defaultTimeServers = [
-    "ptbtime1.ptb.de"
-    "ptbtime2.ptb.de"
-    "ptbtime3.ptb.de"
-  ];
-
-  demoExtension =
-    { config, lib, ... }:
-    {
-      options.chalkos.demo.enable = lib.mkEnableOption "demo";
-      config.chalkos.demo.enable = true;
-    };
-
-  rackExtension =
-    { lib, ... }:
-    {
-      options.chalkos.nodes = lib.mkOption {
-        type = lib.types.attrsOf (
-          lib.types.submodule (
-            { config, ... }:
-            {
-              options.rack.location = lib.mkOption { type = lib.types.str; };
-              config.documents = [
-                {
-                  apiVersion = "rack.example.org/v1alpha1";
-                  kind = "Rack";
-                  metadata.name = "rack";
-                  spec.location = config.rack.location;
-                }
-              ];
-            }
-          )
-        );
-      };
-    };
-  twoNodes = cluster [
-    rackExtension
-    {
-      chalkos.nodes.n1 = {
-        role = "worker";
-        rack.location = "a1";
-        storage.system.disk = "/dev/vda";
-        taints = [
-          {
-            key = "dedicated";
-            effect = "NoSchedule";
-          }
-        ];
-      };
-    }
-  ];
-
-  # A cluster with node n1 of role worker on /dev/vda plus the given modules.
-  storageCluster =
-    modules:
-    cluster (
-      [
-        {
-          chalkos.nodes.n1 = {
-            role = "worker";
-            storage.system.disk = lib.mkDefault "/dev/vda";
-          };
-        }
-      ]
-      ++ modules
-    );
-  # Node n1's storage options with the given definitions.
-  nodeOptions =
-    storage: (storageCluster [ { chalkos.nodes.n1.storage = storage; } ]).nodes.n1.storage;
-  roleStorage = {
-    system.disk = "/dev/sda";
-    encryption.mode = "none";
-    var.size = "4G";
-    volumes.data = {
-      disk = {
-        model = "Samsung SSD 870*";
-        type = "ssd";
-      };
-      size = "10G";
-      format = "xfs";
-      mountPoint = "/srv/data";
-    };
-  };
-  # Node n1 of a role with roleStorage, plus the node's own storage definitions.
-  withRoleStorage =
-    storage:
-    (cluster [
-      {
-        chalkos.roles.worker.storage = roleStorage;
-        chalkos.nodes.n1 = {
-          role = "worker";
-          inherit storage;
-        };
-      }
-    ]).nodes.n1.storage;
-  # Node n1 with the given networkd configuration.
-  networkCluster =
-    network:
-    cluster [
-      {
-        chalkos.nodes.n1 = {
-          role = "worker";
-          storage.system.disk = "/dev/vda";
-          inherit network;
-        };
-      }
-    ];
-  storageOf = c: c.manifest.nodes.n1.identity.storage;
-  # Node n1's rendered storage section with the given definitions.
-  nodeStorage = storage: storageOf (storageCluster [ { chalkos.nodes.n1.storage = storage; } ]);
-  invalidStorage = storage: fails (nodeStorage storage);
-  storageErrors = (import ../../modules/cluster/storage.nix { inherit lib; }).errors;
-  # Partition types hash the label; see modules/cluster/storage.nix.
-  varType = "65f335d7-a1f7-f6df-b954-a97d9a5db9e6";
+  # The metal image of a variant worker, which runs Kubernetes, with the NixOS modules given.
+  worker = modules: (mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config;
 in
 lib.runTests {
   # mkImages builds each variant on each platform, metal and kvm unless the arguments name
@@ -381,56 +250,22 @@ lib.runTests {
       etcd = "registry.example/etcd:1";
     };
   };
-  testRoleReadsClusterEndpoint = {
-    expr = (role (cluster [ ])).chalkos.cluster.endpoint;
-    expected = "https://10.0.0.1:6443";
-  };
-  testRoleReadsFeatureNamespace = {
-    expr = (role (cluster [ demoExtension ])).chalkos.demo.enable;
+  testImageRejectsUnknownSetting = {
+    expr = fails (worker [ { chalkos.disks.espSize = "1G"; } ]).chalkos.disk;
     expected = true;
   };
-  testRoleCannotReadNodes = {
-    expr = fails (role (cluster [ ])).chalkos.nodes;
-    expected = true;
-  };
-  testRoleRejectsUnknownSetting = {
-    expr =
-      fails
-        (role (cluster [
-          { chalkos.roles.worker.nixosModules = [ { chalkos.disks.espSize = "1G"; } ]; }
-        ])).chalkos.cluster.endpoint;
-    expected = true;
-  };
-  testRoleCannotOverrideClusterSetting = {
-    expr =
-      fails
-        (role (cluster [
-          {
-            chalkos.roles.worker.nixosModules = [
-              { chalkos.cluster.endpoint = lib.mkForce "https://10.0.0.2:6443"; }
-            ];
-          }
-        ])).chalkos.cluster.endpoint;
-    expected = true;
-  };
-  testRoleSetsDiskOptions = {
-    expr =
-      (role (cluster [
-        { chalkos.roles.worker.nixosModules = [ { chalkos.disk.espSize = "256M"; } ]; }
-      ])).chalkos.disk.espSize;
+  testVariantSetsDiskOptions = {
+    expr = (worker [ { chalkos.disk.espSize = "256M"; } ]).chalkos.disk.espSize;
     expected = "256M";
   };
-  testRoleModulesApply = {
-    expr =
-      (role (cluster [
-        { chalkos.roles.worker.nixosModules = [ { networking.hostName = "shared"; } ]; }
-      ])).networking.hostName;
+  testVariantModulesApply = {
+    expr = (worker [ { networking.hostName = "shared"; } ]).networking.hostName;
     expected = "shared";
   };
-  testRoleRunsChalkd = {
+  testImageRunsChalkd = {
     expr =
       let
-        services = (role (cluster [ ])).systemd.services;
+        services = (worker [ ]).systemd.services;
       in
       {
         chalkd = services.chalkd.wantedBy;
@@ -457,7 +292,7 @@ lib.runTests {
   testNodesResolveNoLinkLocalNames = {
     expr =
       let
-        c = cluster [ ];
+        i = mkImages { variants.worker = { }; };
         conf = config: lib.splitString "\n" config.environment.etc."systemd/resolved.conf".text;
       in
       map
@@ -466,27 +301,31 @@ lib.runTests {
           mdns = lib.elem "MulticastDNS=false" lines;
         })
         [
-          (conf (role c))
-          (conf c.installer.nixos.config)
+          (conf i.nixos.worker-metal.config)
+          (conf i.nixos.installer.config)
         ];
     expected = lib.replicate 2 {
       llmnr = true;
       mdns = true;
     };
   };
-  # The OS CA is an input of the images, which the role images and the installer carry; the
-  # cluster settings the images receive do not hold it.
+  # The OS CA is an argument of mkImages, which every image and the installer carry as a file; the
+  # images have no setting of it besides chalkos.maintenance.osCA.
   testImagesCarryOSCA = {
     expr =
       let
         pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
-        c = cluster [ { chalkos.osCA = pub; } ];
+        withCA = mkImages {
+          osCA = pub;
+          variants.worker = { };
+        };
+        has = config: config.environment.etc ? "chalkos/os-ca.crt";
       in
       {
-        withCA = (role c).environment.etc ? "chalkos/os-ca.crt";
-        installer = c.installer.nixos.config.environment.etc ? "chalkos/os-ca.crt";
-        withoutCA = (role (cluster [ ])).environment.etc ? "chalkos/os-ca.crt";
-        setting = (role c).chalkos ? osCA;
+        withCA = has withCA.nixos.worker-metal.config;
+        installer = has withCA.nixos.installer.config;
+        withoutCA = has (worker [ ]);
+        setting = withCA.nixos.worker-metal.config.chalkos ? osCA;
       };
     expected = {
       withCA = true;
@@ -495,241 +334,9 @@ lib.runTests {
       setting = false;
     };
   };
-  # A cluster's runtime settings and its nodes reach the nodes as config, so two clusters that
-  # differ in their nodes and in the runtime settings below build the same role images and
-  # installer. The VIP's mode has one value, and the Kubernetes release and the CNI provider are
-  # image inputs, so they are left alone; the OS CA is an image input too, and the same in both.
-  testImagesAreClusterAgnostic = {
-    expr =
-      let
-        osCA = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
-        base = cluster [
-          {
-            chalkos.osCA = osCA;
-            chalkos.nodes.n1 = {
-              role = "worker";
-              kubernetes.kind = "controlplane";
-              storage.system.disk = "/dev/vda";
-              kubernetes.nodeIP = "10.0.0.1";
-            };
-          }
-        ];
-        other = mkCluster {
-          modules = [
-            {
-              chalkos.osCA = osCA;
-              chalkos.cluster = {
-                name = "u";
-                endpoint = "https://[fd00::10]:6443";
-                kubernetes = {
-                  ipFamilies = [
-                    "ipv6"
-                    "ipv4"
-                  ];
-                  podCIDRs = {
-                    ipv4 = "10.32.0.0/16";
-                    ipv6 = "fd00:32::/56";
-                  };
-                  serviceCIDRs = {
-                    ipv4 = "10.16.0.0/16";
-                    ipv6 = "fd00:16::/112";
-                  };
-                  dnsIPs = {
-                    ipv4 = "10.16.0.53";
-                    ipv6 = "fd00:16::35";
-                  };
-                  nodeCIDRMaskSizes = {
-                    ipv4 = 26;
-                    ipv6 = 72;
-                  };
-                  domain = "u.example";
-                  allowSchedulingOnControlPlanes = true;
-                  vip = {
-                    addresses = [ "fd00::10" ];
-                    interface = "bond0";
-                  };
-                  vxlanSourceSubnets = [
-                    "fd00:100::/64"
-                    "192.168.100.0/24"
-                  ];
-                  nodeIP = {
-                    validSubnets = [
-                      "fd00:100::/64"
-                      "192.168.100.0/24"
-                    ];
-                    timeout = 30;
-                  };
-                  extraArgs = {
-                    kubelet.v = "2";
-                    etcd.log-level = "debug";
-                    kube-apiserver.audit-log-maxage = "30";
-                    kube-controller-manager.v = "2";
-                    kube-scheduler.v = "2";
-                  };
-                };
-                registries = {
-                  mirrors."docker.io" = [ "http://mirror.example" ];
-                  allowPlainHTTP = true;
-                };
-                manifests = [
-                  {
-                    apiVersion = "v1";
-                    kind = "Namespace";
-                    metadata.name = "apps";
-                  }
-                ];
-              };
-              chalkos.time = {
-                servers = [ { host = "ntp.example"; } ];
-                dhcpServers = true;
-              };
-              chalkos.cni.flannel.mtu = 1430;
-              chalkos.roles.worker = { };
-              chalkos.nodes = {
-                x1 = {
-                  role = "worker";
-                  storage.system.disk = "/dev/sda";
-                  network.networks."10-uplink" = {
-                    matchConfig.Name = "eth0";
-                    address = [
-                      "fd00:100::21/64"
-                      "192.168.100.21/24"
-                    ];
-                  };
-                  labels.team = "a";
-                };
-                x2 = {
-                  role = "worker";
-                  kubernetes.kind = "controlplane";
-                  storage.system.disk = "/dev/nvme0n1";
-                  kubernetes.nodeIPs = [
-                    "fd00:100::22"
-                    "192.168.100.22"
-                  ];
-                };
-              };
-            }
-          ];
-        };
-        same = f: f base == f other;
-      in
-      {
-        # Both evaluate, so the comparison is of two real clusters.
-        manifests = (builtins.deepSeq base.manifest true) && (builtins.deepSeq other.manifest true);
-        metal = same (c: c.roles.worker.images.metal.drvPath);
-        kvm = same (c: c.roles.worker.images.kvm.drvPath);
-        installer = same (c: c.installer.image.drvPath);
-      };
-    expected = {
-      manifests = true;
-      metal = true;
-      kvm = true;
-      installer = true;
-    };
-  };
-  testOSCARefusesOlderSecrets = {
-    expr =
-      let
-        osCA =
-          version:
-          (role (cluster [
-            {
-              chalkos.osCA = builtins.toFile "secrets.pub.json" ''{"version": ${toString version}, "osCA": {"certificate": "PEM"}}'';
-            }
-          ])).environment.etc."chalkos/os-ca.crt".source.drvPath;
-      in
-      map (v: fails (osCA v)) [
-        1
-        2
-        3
-      ];
-    expected = [
-      true
-      true
-      false
-    ];
-  };
-  testTimeServers = {
-    expr =
-      let
-        timeOf =
-          modules:
-          lib.mapAttrs (_: n: n.identity.time.servers)
-            (cluster (
-              [
-                {
-                  chalkos.nodes.n1 = {
-                    role = "worker";
-                    storage.system.disk = "/dev/vda";
-                  };
-                  chalkos.nodes.n2 = {
-                    role = "worker";
-                    storage.system.disk = "/dev/vda";
-                    time.servers = [
-                      {
-                        host = "10.0.2.2";
-                        nts = false;
-                        port = 12300;
-                      }
-                    ];
-                  };
-                }
-              ]
-              ++ modules
-            )).manifest.nodes;
-      in
-      {
-        default = timeOf [ ];
-        cluster = timeOf [ { chalkos.time.servers = [ { host = "time.example.org"; } ]; } ];
-        invalidHost = fails (timeOf [ { chalkos.time.servers = [ { host = "a b"; } ]; } ]);
-        # A newline would end chrony's source line and start another.
-        newlineHost = fails (timeOf [
-          { chalkos.time.servers = [ { host = "time.example.org\nserver evil.example.org"; } ]; }
-        ]);
-        newlineNodeHost = fails (timeOf [
-          { chalkos.nodes.n1.time.servers = [ { host = "time.example.org\nserver evil.example.org"; } ]; }
-        ]);
-      };
-    expected = {
-      default = {
-        n1 = map (host: {
-          inherit host;
-          nts = true;
-          port = null;
-        }) defaultTimeServers;
-        n2 = [
-          {
-            host = "10.0.2.2";
-            nts = false;
-            port = 12300;
-          }
-        ];
-      };
-      cluster = {
-        n1 = [
-          {
-            host = "time.example.org";
-            nts = true;
-            port = null;
-          }
-        ];
-        n2 = [
-          {
-            host = "10.0.2.2";
-            nts = false;
-            port = 12300;
-          }
-        ];
-      };
-      invalidHost = true;
-      newlineHost = true;
-      newlineNodeHost = true;
-    };
-  };
   testChrony = {
     expr =
       let
-        image = modules: role (cluster modules);
         summary = c: {
           chrony = c.services.chrony.enable;
           timesyncd = c.services.timesyncd.enable;
@@ -763,43 +370,32 @@ lib.runTests {
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
         };
       in
-      {
-        default = summary (image [ ]);
-        # The units are always there; TimeSync.spec.dhcp decides at runtime.
-        sameWithDhcpOption =
-          summary (image [ { chalkos.time.dhcpServers = true; } ]) == summary (image [ ]);
-      };
-    expected =
-      let
-        base = {
-          chrony = true;
-          timesyncd = false;
-          servers = [ ];
-          makestep = [
-            true
-            1
-            3
-          ];
-          sourcedirs = [
-            "sourcedir /run/chalkos/chrony"
-            "sourcedir /run/chalkos/chrony-dhcp"
-          ];
-          certTimeCheck = true;
-          ntsDump = true;
-          dhcpPath = true;
-          dhcpAtBoot = true;
-          dhcpDir = true;
-          dhcpConsumer = [ "TimeSync" ];
-          dhcpReadsConfig = true;
-          dhcpRerunsOnChange = true;
-          chalkdHasChronyc = true;
-          chalkdProtectsClock = true;
-        };
-      in
-      {
-        default = base;
-        sameWithDhcpOption = true;
-      };
+      # The units are always there; TimeSync.spec.dhcp decides at runtime.
+      summary (worker [ ]);
+    expected = {
+      chrony = true;
+      timesyncd = false;
+      servers = [ ];
+      makestep = [
+        true
+        1
+        3
+      ];
+      sourcedirs = [
+        "sourcedir /run/chalkos/chrony"
+        "sourcedir /run/chalkos/chrony-dhcp"
+      ];
+      certTimeCheck = true;
+      ntsDump = true;
+      dhcpPath = true;
+      dhcpAtBoot = true;
+      dhcpDir = true;
+      dhcpConsumer = [ "TimeSync" ];
+      dhcpReadsConfig = true;
+      dhcpRerunsOnChange = true;
+      chalkdHasChronyc = true;
+      chalkdProtectsClock = true;
+    };
   };
   # The renewal hook of chalkd exists on the test image alone.
   testRenewalHookOnTestImagesOnly = {
@@ -808,44 +404,31 @@ lib.runTests {
         hook = c: c.systemd.services.chalkd.environment ? CHALKD_TEST_RENEW_ON_APPLY_CONFIG;
       in
       {
-        role = hook (role (cluster [ ]));
-        testImage = hook (
-          role (cluster [ { chalkos.roles.worker.nixosModules = [ ../../modules/testing/test-image.nix ]; } ])
-        );
+        image = hook (worker [ ]);
+        testImage = hook (worker [ ../../modules/testing/test-image.nix ]);
       };
     expected = {
-      role = false;
+      image = false;
       testImage = true;
     };
   };
-  testClusterBuildsInstaller = {
-    expr =
-      let
-        pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
-        installer = (cluster [ { chalkos.osCA = pub; } ]).installer.image;
-      in
-      lib.isDerivation installer && lib.hasInfix "chalkos-installer" installer.name;
-    expected = true;
-  };
   # The installer's modules reach its image, whose console is on the screen and the first serial
-  # port; it belongs to no role and no platform, as it installs images of every one.
+  # port; it is no variant and belongs to no platform, as it installs images of every one.
   testInstallerModules = {
     expr =
       let
-        c = cluster [
-          {
-            chalkos.installer.nixosModules = [
-              {
-                systemd.network.networks."10-uplink" = {
-                  matchConfig.MACAddress = "52:54:00:12:34:56";
-                  address = [ "10.0.0.5/24" ];
-                };
-                chalkos.kernel.moduleGroups = [ "wireless" ];
-              }
-            ];
-          }
-        ];
-        inherit (c.installer.nixos) config;
+        i = mkImages {
+          installer.modules = [
+            {
+              systemd.network.networks."10-uplink" = {
+                matchConfig.MACAddress = "52:54:00:12:34:56";
+                address = [ "10.0.0.5/24" ];
+              };
+              chalkos.kernel.moduleGroups = [ "wireless" ];
+            }
+          ];
+        };
+        inherit (i.nixos.installer) config;
       in
       {
         uplink = config.systemd.network.networks."10-uplink".matchConfig.MACAddress;
@@ -854,7 +437,7 @@ lib.runTests {
         osRelease = lib.filterAttrs (
           k: _: lib.hasPrefix "CHALKOS_" k
         ) config.system.nixos.extraOSReleaseArgs;
-        image = c.installer.image.drvPath == config.system.build.chalkosInstaller.drvPath;
+        image = i.installer.drvPath == config.system.build.chalkosInstaller.drvPath;
       };
     expected = {
       uplink = "52:54:00:12:34:56";
@@ -869,25 +452,12 @@ lib.runTests {
       image = true;
     };
   };
-  testWrongNodeTypeFails = {
-    expr =
-      fails
-        (cluster [
-          {
-            chalkos.nodes.n1 = {
-              role = "worker";
-              labels = 5;
-            };
-          }
-        ]).nodes;
-    expected = true;
-  };
-  # A role is built for each platform, metal and kvm unless a definition adds one; each image names
-  # its platform in os-release and carries that platform's console and agents alone.
+  # A variant is built for each platform, metal and kvm unless the arguments name others; each
+  # image names its platform in os-release and carries that platform's console and agents alone.
   testPlatformImages = {
     expr =
       let
-        c = cluster [ ];
+        i = mkImages { variants.worker = { }; };
         summary = c: {
           platform = c.system.nixos.extraOSReleaseArgs.CHALKOS_PLATFORM;
           consoles = lib.filter (lib.hasPrefix "console=") c.boot.kernelParams;
@@ -896,15 +466,15 @@ lib.runTests {
         };
       in
       {
-        images = lib.attrNames c.roles.worker.images;
-        imagesBuild = lib.all lib.isDerivation (lib.attrValues c.roles.worker.images);
-        metal = summary c.roles.worker.nixos.metal.config;
-        kvm = summary c.roles.worker.nixos.kvm.config;
+        images = lib.attrNames i.images;
+        imagesBuild = lib.all lib.isDerivation (lib.attrValues i.images);
+        metal = summary i.nixos.worker-metal.config;
+        kvm = summary i.nixos.worker-kvm.config;
       };
     expected = {
       images = [
-        "kvm"
-        "metal"
+        "worker-kvm"
+        "worker-metal"
       ];
       imagesBuild = true;
       metal = {
@@ -929,7 +499,7 @@ lib.runTests {
   # from /sbin.
   testGuestAgentRestricted =
     let
-      config = (cluster [ ]).roles.worker.nixos.kvm.config;
+      config = (mkImages { variants.worker = { }; }).nixos.worker-kvm.config;
       service = config.systemd.services.qemu-guest-agent.serviceConfig;
     in
     {
@@ -959,24 +529,24 @@ lib.runTests {
       };
     };
   # A kvm image finds its disks at boot: the initrd loads virtio's PCI transport and its block and
-  # SCSI drivers, for the image the lab template's nodes run. A metal image
-  # leaves them out, as real machines have no virtio disks.
+  # SCSI drivers, for the image the lab template's nodes run. A metal image leaves them out, as
+  # real machines have no virtio disks.
   testKvmInitrdVirtio = {
     expr =
       let
-        c = cluster [ ];
+        i = mkImages { variants.worker = { }; };
         virtio =
-          platform: role:
+          platform:
           lib.sort lib.lessThan (
             lib.unique (
               lib.filter (lib.hasPrefix "virtio")
-                c.roles.${role}.nixos.${platform}.config.boot.initrd.availableKernelModules
+                i.nixos."worker-${platform}".config.boot.initrd.availableKernelModules
             )
           );
       in
       {
-        kvm = virtio "kvm" "worker";
-        metal = virtio "metal" "worker";
+        kvm = virtio "kvm";
+        metal = virtio "metal";
       };
     expected =
       let
@@ -991,51 +561,54 @@ lib.runTests {
         metal = [ ];
       };
   };
-  # A definition adds a platform of its own, or modules to one of chalkos's. A role overrides a
-  # value its platform sets by priority, as module order does not: lib.mkForce for a value the
+  # The arguments add a platform of their own, or modules to one of chalkos's. A variant overrides
+  # a value its platform sets by priority, as module order does not: lib.mkForce for a value the
   # platform defines plainly, lib.mkOverride below 50 for the guest agent's ExecStart, which kvm
   # forces. Both add to a list.
   testCustomPlatform = {
     expr =
       let
-        c = cluster [
-          {
-            chalkos.platforms.esxi.nixosModules = [
+        i = mkImages {
+          platforms = {
+            esxi = [
               {
                 services.openssh.enable = true;
                 environment.variables.PLATFORM_TEST = "esxi";
               }
             ];
-            chalkos.platforms.metal.nixosModules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ];
-            chalkos.roles.worker.nixosModules = [
-              {
-                boot.kernelParams = [ "role" ];
-                environment.variables.PLATFORM_TEST = lib.mkForce "role";
-                systemd.services.qemu-guest-agent.serviceConfig.ExecStart = lib.mkOverride 49 "role-agent";
-              }
-            ];
-          }
-        ];
-        nixos = c.roles.worker.nixos;
+            metal = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ];
+            kvm = [ ];
+          };
+          variants.worker.modules = [
+            {
+              boot.kernelParams = [ "variant" ];
+              environment.variables.PLATFORM_TEST = lib.mkForce "variant";
+              systemd.services.qemu-guest-agent.serviceConfig.ExecStart = lib.mkOverride 49 "variant-agent";
+            }
+          ];
+        };
+        esxi = i.nixos.worker-esxi.config;
+        kvm = i.nixos.worker-kvm.config;
+        metal = i.nixos.worker-metal.config;
       in
       {
-        images = lib.attrNames c.roles.worker.images;
-        esxi = nixos.esxi.config.services.openssh.enable;
-        esxiPlatform = nixos.esxi.config.system.nixos.extraOSReleaseArgs.CHALKOS_PLATFORM;
-        kvm = nixos.kvm.config.services.openssh.enable;
-        metalGPU = lib.elem "gpu" nixos.metal.config.chalkos.kernel.moduleGroups;
-        kvmGPU = lib.elem "gpu" nixos.kvm.config.chalkos.kernel.moduleGroups;
+        images = lib.attrNames i.images;
+        esxi = esxi.services.openssh.enable;
+        esxiPlatform = esxi.system.nixos.extraOSReleaseArgs.CHALKOS_PLATFORM;
+        kvm = kvm.services.openssh.enable;
+        metalGPU = lib.elem "gpu" metal.chalkos.kernel.moduleGroups;
+        kvmGPU = lib.elem "gpu" kvm.chalkos.kernel.moduleGroups;
         kernelParams = lib.sort lib.lessThan (
-          lib.filter (p: p == "role" || p == "console=ttyS0,115200") nixos.kvm.config.boot.kernelParams
+          lib.filter (p: p == "variant" || p == "console=ttyS0,115200") kvm.boot.kernelParams
         );
-        overridden = nixos.esxi.config.environment.variables.PLATFORM_TEST;
-        agent = nixos.kvm.config.systemd.services.qemu-guest-agent.serviceConfig.ExecStart;
+        overridden = esxi.environment.variables.PLATFORM_TEST;
+        agent = kvm.systemd.services.qemu-guest-agent.serviceConfig.ExecStart;
       };
     expected = {
       images = [
-        "esxi"
-        "kvm"
-        "metal"
+        "worker-esxi"
+        "worker-kvm"
+        "worker-metal"
       ];
       esxi = true;
       esxiPlatform = "esxi";
@@ -1044,67 +617,17 @@ lib.runTests {
       kvmGPU = false;
       kernelParams = [
         "console=ttyS0,115200"
-        "role"
+        "variant"
       ];
-      overridden = "role";
-      agent = "role-agent";
-    };
-  };
-  # A node runs on metal unless it names a defined platform, which its identity carries.
-  testNodePlatform = {
-    expr =
-      let
-        node = platform: {
-          chalkos.nodes.n1 = {
-            role = "worker";
-            inherit platform;
-            storage.system.disk = "/dev/vda";
-          };
-        };
-        manifest = modules: (cluster modules).manifest.nodes.n1;
-      in
-      {
-        default = (storageCluster [ ]).manifest.nodes.n1.platform;
-        kvm = {
-          inherit (manifest [ (node "kvm") ]) platform;
-          identity = (manifest [ (node "kvm") ]).identity.platform;
-        };
-        unknown = fails (manifest [ (node "esxi") ]);
-        defined =
-          (manifest [
-            (node "esxi")
-            { chalkos.platforms.esxi = { }; }
-          ]).platform;
-      };
-    expected = {
-      default = "metal";
-      kvm = {
-        platform = "kvm";
-        identity = "kvm";
-      };
-      unknown = true;
-      defined = "esxi";
-    };
-  };
-  # A platform's name becomes CHALKOS_PLATFORM in its images's os-release.
-  testPlatformNames = {
-    expr = {
-      bad = fails (cluster [ { chalkos.platforms.Bad = { }; } ]).manifest;
-      dotted = fails (cluster [ { chalkos.platforms."x.y" = { }; } ]).manifest;
-      good = (cluster [ { chalkos.platforms.esxi-8 = { }; } ]).manifest.roles.worker.images.esxi-8;
-    };
-    expected = {
-      bad = true;
-      dotted = true;
-      good = "roles.worker.images.esxi-8";
+      overridden = "variant";
+      agent = "variant-agent";
     };
   };
   # The installer runs chalkd in installer mode and belongs to no platform, whatever its modules
   # say.
   testInstallerEssentials =
     let
-      installer =
-        modules: (cluster [ { chalkos.installer.nixosModules = modules; } ]).installer.image.drvPath;
+      installer = modules: (mkImages { installer.modules = modules; }).installer.drvPath;
     in
     {
       expr = {
@@ -1120,2008 +643,21 @@ lib.runTests {
         platform = true;
       };
     };
-  testManifestVersion = {
-    expr = twoNodes.manifest.schemaVersion;
-    expected = 0;
-  };
-  testManifestRoleImagePaths = {
-    expr = twoNodes.manifest.roles.worker.images;
-    expected = {
-      kvm = "roles.worker.images.kvm";
-      metal = "roles.worker.images.metal";
-    };
-  };
-  testManifestIdentity = {
-    expr = removeAttrs twoNodes.manifest.nodes.n1.identity [ "storage" ];
-    expected = {
-      hostname = "n1";
-      cluster = "t";
-      platform = "metal";
-      network = { };
-      networkUnits = { };
-      labels = { };
-      taints = [
-        {
-          key = "dedicated";
-          value = null;
-          effect = "NoSchedule";
-        }
-      ];
-      kubernetes = {
-        nodeName = "n1";
-        nodeIPs = [ ];
-        validSubnets = null;
-      };
-      time.servers = map (host: {
-        inherit host;
-        nts = true;
-        port = null;
-      }) defaultTimeServers;
-    };
-  };
-  # An extension's per-node option reaches the node as a document of its kind.
-  testManifestDocuments = {
-    expr = twoNodes.manifest.nodes.n1.documents;
-    expected = [
-      {
-        apiVersion = "rack.example.org/v1alpha1";
-        kind = "Rack";
-        metadata.name = "rack";
-        spec.location = "a1";
-      }
-    ];
-  };
-  testManifestWithoutDocuments = {
-    expr = (storageCluster [ ]).manifest.nodes.n1.documents;
-    expected = [ ];
-  };
-  # The cluster-wide settings chalkctl turns into each node's Kubernetes, Flannel, RegistryMirror,
-  # Addon and TimeSync documents.
-  testManifestCarriesTheClusterSettings = {
-    expr =
-      let
-        m =
-          (cluster [
-            {
-              chalkos.cluster.kubernetes.vip.addresses = [ "10.0.0.1" ];
-              chalkos.cluster.registries.mirrors."docker.io" = [ "https://mirror.example" ];
-              chalkos.cluster.manifests = [
-                {
-                  apiVersion = "v1";
-                  kind = "Namespace";
-                  metadata.name = "apps";
-                }
-              ];
-              chalkos.cni.flannel.mtu = 1430;
-              chalkos.time.dhcpServers = true;
-            }
-          ]).manifest;
-      in
-      {
-        inherit (m.kubernetes) domain ipFamilies;
-        vip = m.kubernetes.vip.addresses;
-        dnsIP = m.kubernetes.dnsIPs.ipv4;
-        kubeletFlags = m.kubernetes.extraArgs.kubelet;
-        inherit (m) flannel registries time;
-        manifests = map (o: o.metadata.name) m.manifests;
-        noFlannel = (cluster [ { chalkos.cni.provider = "none"; } ]).manifest.flannel;
-      };
-    expected = {
-      domain = "cluster.local";
-      ipFamilies = [ "ipv4" ];
-      vip = [ "10.0.0.1" ];
-      dnsIP = "10.96.0.10";
-      kubeletFlags = { };
-      flannel.mtu = 1430;
-      registries = {
-        mirrors."docker.io" = [ "https://mirror.example" ];
-        allowPlainHTTP = false;
-      };
-      time.dhcpServers = true;
-      manifests = [ "apps" ];
-      noFlannel = null;
-    };
-  };
-  testNetworkUnits = {
-    expr =
-      (networkCluster {
-        networks."10-uplink" = {
-          name = "enp1s0";
-          DHCP = "no";
-          address = [ "10.0.0.11/24" ];
-          gateway = [ "10.0.0.1" ];
-          routes = [
-            {
-              Destination = "10.1.0.0/16";
-              Gateway = "10.0.0.2";
-            }
-          ];
-        };
-        networks."20-off".enable = false;
-        netdevs."30-vlan" = {
-          netdevConfig = {
-            Name = "vlan10";
-            Kind = "vlan";
-          };
-          vlanConfig.Id = 10;
-        };
-        links."40-nic" = {
-          matchConfig.MACAddress = "aa:bb:cc:dd:ee:01";
-          linkConfig.Name = "uplink";
-        };
-      }).manifest.nodes.n1.identity.networkUnits;
-    expected = {
-      "10-uplink.network" = ''
-        [Match]
-        Name=enp1s0
-
-        [Network]
-        DHCP=no
-        Address=10.0.0.11/24
-        Gateway=10.0.0.1
-
-        [Route]
-        Destination=10.1.0.0/16
-        Gateway=10.0.0.2
-
-      '';
-      "30-vlan.netdev" = ''
-        [NetDev]
-        Kind=vlan
-        Name=vlan10
-
-        [VLAN]
-        Id=10
-
-      '';
-      "40-nic.link" = ''
-        [Match]
-        MACAddress=aa:bb:cc:dd:ee:01
-
-        [Link]
-        Name=uplink
-
-      '';
-    };
-  };
-  testNetworkRejectsUnknownKind = {
-    expr = fails (networkCluster { network = { }; }).manifest.nodes.n1.identity.networkUnits;
-    expected = true;
-  };
-  testManifestIsJson = {
-    expr = builtins.isString (builtins.toJSON twoNodes.manifest);
-    expected = true;
-  };
-  testUnknownRoleFails = {
-    expr =
-      fails
-        (cluster [
-          {
-            chalkos.nodes.n1.role = "nope";
-          }
-        ]).nodes.n1.role;
-    expected = true;
-  };
-  testMkClusterPassesNixpkgsToModules = {
-    expr =
-      (mkCluster {
-        nixpkgs = {
-          inherit lib;
-          marker = "custom";
-        };
-        modules = [
-          (
-            { nixpkgs, ... }:
-            {
-              chalkos.cluster = {
-                name = nixpkgs.marker;
-                endpoint = "https://10.0.0.1:6443";
-              };
-            }
-          )
-        ];
-      }).cluster.name;
-    expected = "custom";
-  };
-  testFlakeModuleNamesClusters = {
-    expr =
-      (lib.evalModules {
-        modules = [
-          flakeModule
-          # Stand-in for flake-parts' `flake` option.
-          { options.flake = lib.mkOption { type = lib.types.lazyAttrsOf lib.types.raw; }; }
-          {
-            chalkos.clusters.demo = {
-              chalkos.cluster.endpoint = "https://10.0.0.1:6443";
-            };
-          }
-        ];
-      }).config.flake.chalkos.demo.manifest.cluster.name;
-    expected = "demo";
-  };
-  testFlakeModulePassesNixpkgs = {
-    expr =
-      (lib.evalModules {
-        modules = [
-          flakeModule
-          { options.flake = lib.mkOption { type = lib.types.lazyAttrsOf lib.types.raw; }; }
-          {
-            chalkos.nixpkgs = {
-              inherit lib;
-              marker = "https://10.0.0.2:6443";
-            };
-            chalkos.clusters.demo =
-              { nixpkgs, ... }:
-              {
-                chalkos.cluster.endpoint = nixpkgs.marker;
-              };
-          }
-        ];
-      }).config.flake.chalkos.demo.cluster.endpoint;
-    expected = "https://10.0.0.2:6443";
-  };
-  testStorageRequiresSystemDisk = {
-    expr = fails (cluster [ { chalkos.nodes.n1.role = "worker"; } ]).nodes.n1.storage.system.disk;
-    expected = true;
-  };
-  testStorageOptionDefaults = {
-    expr = removeAttrs (nodeOptions { volumes.data = { }; }) [ "system" ];
-    expected = {
-      encryption = {
-        mode = "tpm2";
-        fallback = "recovery-key";
-      };
-      var = {
-        size = null;
-        encryption.mode = null;
-      };
-      volumes.data = {
-        enable = true;
-        disk = null;
-        size = null;
-        format = "ext4";
-        mountPoint = null;
-        encryption.mode = null;
-        repart = { };
-      };
-    };
-  };
-  testStorageRoleDefaults = {
-    expr = withRoleStorage { };
-    expected = roleStorage // {
-      encryption = {
-        mode = "none";
-        fallback = "recovery-key";
-      };
-      var = {
-        size = "4G";
-        encryption.mode = null;
-      };
-      volumes.data = roleStorage.volumes.data // {
-        enable = true;
-        encryption.mode = null;
-        repart = { };
-      };
-    };
-  };
-  testStorageNodeOverridesRoleAttributes = {
-    expr =
-      let
-        s = withRoleStorage {
-          encryption.mode = "tpm2";
-          volumes.data.size = "20G";
-          volumes.extra.size = "1G";
-        };
-      in
-      {
-        inherit (s.system) disk;
-        inherit (s.encryption) mode;
-        inherit (s.volumes.data) size format mountPoint;
-        volumes = lib.attrNames s.volumes;
-      };
-    expected = {
-      disk = "/dev/sda";
-      mode = "tpm2";
-      size = "20G";
-      format = "xfs";
-      mountPoint = "/srv/data";
-      volumes = [
-        "data"
-        "extra"
-      ];
-    };
-  };
-  testStorageNodeReplacesRoleDisk = {
-    expr =
-      (withRoleStorage {
-        volumes.data.disk = {
-          serial = "S1";
-        };
-      }).volumes.data.disk;
-    expected = {
-      serial = "S1";
-    };
-  };
-  testStorageAcceptsDiskReferences = {
-    expr = map (disk: (nodeOptions { system.disk = disk; }).system.disk) [
-      "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001"
-      {
-        model = "Samsung SSD 990*";
-        type = "nvme";
-      }
-      { size = ">= 1T"; }
-      { wwn = "0x5002538e40a1b2c3"; }
-    ];
-    expected = [
-      "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001"
-      {
-        model = "Samsung SSD 990*";
-        type = "nvme";
-      }
-      { size = ">= 1T"; }
-      { wwn = "0x5002538e40a1b2c3"; }
-    ];
-  };
-  testStorageRejectsDiskReference = {
-    expr = map (disk: fails (nodeOptions { system.disk = disk; }).system.disk) [
-      "sda"
-      { }
-      { vendor = "x"; }
-      { type = "tape"; }
-      { size = "about 1T"; }
-    ];
-    expected = lib.replicate 5 true;
-  };
-  testStorageRejectsSize = {
-    expr = fails (nodeOptions { var.size = "10 GB"; }).var.size;
-    expected = true;
-  };
-  testStorageWarnsUnencryptedState = {
-    expr =
-      lib.any (lib.hasInfix "STATE")
-        (storageCluster [
-          { chalkos.nodes.n1.storage.encryption.mode = "none"; }
-        ]).warnings;
-    expected = true;
-  };
-  testStorageNoWarningWhenEncrypted = {
-    expr = (storageCluster [ ]).warnings;
-    expected = [ ];
-  };
-  testStorageDefaultLayout = {
-    expr = nodeStorage { };
-    expected = {
-      disks.system = {
-        ref = "/dev/vda";
-        seed = "2bbba487-cd05-5f11-064a-2a1f1faff0e3";
-        repart."50-var.conf" = ''
-          [Partition]
-          Encrypt=tpm2
-          Format=ext4
-          Label=var
-          TPM2PCRs=7
-          Type=${varType}
-        '';
-      };
-      volumes.var = {
-        disk = "system";
-        label = "var";
-        format = "ext4";
-        mountPoint = "/var";
-        encryption = "tpm2";
-        size = null;
-      };
-      fallback = "recovery-key";
-      encryption = "tpm2";
-    };
-  };
-  testStorageVarSize = {
-    expr = (nodeStorage { var.size = "8G"; }).disks.system.repart."50-var.conf";
-    expected = ''
-      [Partition]
-      Encrypt=tpm2
-      Format=ext4
-      Label=var
-      SizeMaxBytes=8G
-      SizeMinBytes=8G
-      TPM2PCRs=7
-      Type=${varType}
-    '';
-  };
-  testStorageUnencryptedVolume = {
-    expr =
-      (nodeStorage {
-        var.size = "8G";
-        volumes.plain = {
-          mountPoint = "/srv/plain";
-          encryption.mode = "none";
-        };
-      }).disks.system.repart."60-plain.conf";
-    expected = ''
-      [Partition]
-      Format=ext4
-      Label=plain
-      Type=47422e04-fdc4-6cef-975b-d2f7794454ed
-    '';
-  };
-  testStorageRawVolume = {
-    expr =
-      let
-        s = nodeStorage {
-          volumes.raw = {
-            size = "1G";
-            format = null;
-          };
-        };
-      in
-      {
-        definition = s.disks.system.repart."60-raw.conf";
-        volume = s.volumes.raw;
-      };
-    expected = {
-      definition = ''
-        [Partition]
-        Encrypt=tpm2
-        Label=raw
-        SizeMaxBytes=1G
-        SizeMinBytes=1G
-        TPM2PCRs=7
-        Type=357ddd11-f8dd-4a47-8d2b-9573d2595f0d
-      '';
-      volume = {
-        disk = "system";
-        label = "raw";
-        format = null;
-        mountPoint = null;
-        encryption = "tpm2";
-        size = "1G";
-      };
-    };
-  };
-  testStoragePassthrough = {
-    expr =
-      (nodeStorage {
-        volumes.data = {
-          size = "1G";
-          repart = {
-            Weight = 2000;
-            CopyFiles = [
-              "/a"
-              "/b"
-            ];
-          };
-        };
-      }).disks.system.repart."60-data.conf";
-    expected = ''
-      [Partition]
-      CopyFiles=/a
-      CopyFiles=/b
-      Encrypt=tpm2
-      Format=ext4
-      Label=data
-      SizeMaxBytes=1G
-      SizeMinBytes=1G
-      TPM2PCRs=7
-      Type=63dd1eb4-1dd2-0d0b-0c1e-27c204214ec8
-      Weight=2000
-    '';
-  };
-  testStorageVolumeOnOwnDisk = {
-    expr =
-      let
-        s = nodeStorage {
-          volumes.data = {
-            disk = {
-              serial = "chalk-data";
-              size = ">= 1G";
-            };
-            format = "xfs";
-            mountPoint = "/var/lib/data";
-          };
-        };
-      in
-      {
-        inherit (s.disks.data) ref seed;
-        files = lib.attrNames s.disks.data.repart;
-        volume = s.volumes.data;
-      };
-    expected = {
-      ref = {
-        serial = "chalk-data";
-        size = ">= 1G";
-      };
-      seed = "308311fb-9c22-3be4-b458-3ff560058604";
-      files = [ "10-data.conf" ];
-      volume = {
-        disk = "data";
-        label = "data";
-        format = "xfs";
-        mountPoint = "/var/lib/data";
-        encryption = "tpm2";
-        size = null;
-      };
-    };
-  };
-  testStorageNodeModeNone = {
-    expr =
-      let
-        s = nodeStorage {
-          encryption.mode = "none";
-          var.size = "8G";
-          volumes.secret = {
-            mountPoint = "/srv/secret";
-            encryption.mode = "tpm2";
-          };
-        };
-      in
-      {
-        state = s.encryption;
-        var = s.volumes.var.encryption;
-        secret = s.volumes.secret.encryption;
-        varEncrypted = lib.hasInfix "Encrypt=" s.disks.system.repart."50-var.conf";
-      };
-    expected = {
-      state = "none";
-      var = "none";
-      secret = "tpm2";
-      varEncrypted = false;
-    };
-  };
-  testStorageVarModeOverride = {
-    expr = (nodeStorage { var.encryption.mode = "none"; }).volumes.var.encryption;
-    expected = "none";
-  };
-  testStorageFallback = {
-    expr = (nodeStorage { encryption.fallback = "password"; }).fallback;
-    expected = "password";
-  };
-  testStorageAllowsMountBelowVar = {
-    expr =
-      (nodeStorage {
-        volumes.data = {
-          size = "1G";
-          mountPoint = "/var/lib/data";
-        };
-      }).volumes.data.mountPoint;
-    expected = "/var/lib/data";
-  };
-  testStorageRejectsVolumeName = {
-    expr = map invalidStorage [
-      { volumes.Data.size = "1G"; }
-      { volumes."-data".size = "1G"; }
-      { volumes.${lib.concatStrings (lib.replicate 33 "a")}.size = "1G"; }
-      { volumes.var.size = "1G"; }
-      { volumes.state.size = "1G"; }
-      { volumes.esp.size = "1G"; }
-      { volumes.store.size = "1G"; }
-      { volumes.store-verity.size = "1G"; }
-      { volumes.system.size = "1G"; }
-    ];
-    expected = lib.replicate 9 true;
-  };
-  testStorageRejectsMountPoint = {
-    expr =
-      map
-        (
-          p:
-          invalidStorage {
-            volumes.data = {
-              size = "1G";
-              mountPoint = p;
-            };
-          }
-        )
-        [
-          "srv/data"
-          "/"
-          "/nix"
-          "/nix/store/x"
-          "/state"
-          "/state/x"
-          "/var"
-          "/srv/../nix"
-          "/srv/"
-          "/srv/my data"
-          "/srv/d\\x2data"
-          "/srv/dätä"
-          "/srv/a:b"
-          "/srv/a\nb"
-        ];
-    expected = lib.replicate 14 true;
-  };
-  testStorageAllowsMountPointCharacters = {
-    expr =
-      (nodeStorage {
-        volumes.data = {
-          size = "1G";
-          mountPoint = "/srv/My_data-2.0";
-        };
-      }).volumes.data.mountPoint;
-    expected = "/srv/My_data-2.0";
-  };
   testStateHasItsOwnPartitionType = {
-    expr = (role (cluster [ ])).systemd.repart.partitions."50-state".Type;
+    expr = (worker [ ]).systemd.repart.partitions."50-state".Type;
     expected = "480b7842-1236-1abb-0339-e5503b43122a";
   };
-  testStorageRejectsDuplicateMountPoints = {
-    expr = map invalidStorage [
-      {
-        volumes.a = {
-          size = "1G";
-          mountPoint = "/srv/data";
-        };
-        volumes.b = {
-          size = "1G";
-          mountPoint = "/srv/data";
-        };
-      }
-      {
-        volumes.a = {
-          size = "1G";
-          mountPoint = "/var";
-        };
-      }
-      {
-        volumes.a = {
-          size = "1G";
-          mountPoint = "/srv/data";
-        };
-        volumes.b = {
-          enable = false;
-          size = "1G";
-          mountPoint = "/srv/data";
-        };
-      }
-    ];
-    expected = [
-      true
-      true
-      false
-    ];
-  };
-  testStorageDuplicateMountPointError = {
-    expr = storageErrors (nodeOptions {
-      volumes.a = {
-        size = "1G";
-        mountPoint = "/srv/data";
-      };
-      volumes.b = {
-        size = "1G";
-        mountPoint = "/srv/data";
-      };
-    });
-    expected = [
-      "volumes.a and volumes.b have the same mountPoint /srv/data"
-    ];
-  };
-  testStorageRejectsMountedRawOrSwap = {
-    expr = map invalidStorage [
-      {
-        volumes.data = {
-          size = "1G";
-          format = null;
-          mountPoint = "/srv/data";
-        };
-      }
-      {
-        volumes.swap = {
-          size = "1G";
-          format = "swap";
-          mountPoint = "/srv/swap";
-        };
-      }
-    ];
-    expected = [
-      true
-      true
-    ];
-  };
-  testStorageRejectsReservedRepartKeys = {
-    expr =
-      map
-        (
-          key:
-          invalidStorage {
-            volumes.data = {
-              size = "1G";
-              repart.${key} = "x";
-            };
-          }
-        )
-        [
-          "Type"
-          "Label"
-          "Encrypt"
-          "Format"
-          "SizeMinBytes"
-          "SizeMaxBytes"
-          "MountPoint"
-        ];
-    expected = lib.replicate 7 true;
-  };
-  testStorageRejectsTwoFillingVolumes = {
-    expr = invalidStorage { volumes.data = { }; };
-    expected = true;
-  };
-  testStorageRejectsSharedDisk = {
-    expr = map invalidStorage [
-      {
-        volumes.a.disk = "/dev/sdb";
-        volumes.b.disk = "/dev/sdb";
-      }
-      { volumes.a.disk = "/dev/vda"; }
-    ];
-    expected = [
-      true
-      true
-    ];
-  };
-  testStorageNodeDropsRoleVolume = {
-    expr =
-      let
-        c = cluster [
-          {
-            chalkos.roles.worker.storage.volumes.scratch = {
-              size = "1G";
-              mountPoint = "/srv/scratch";
-            };
-            chalkos.nodes.n1 = {
-              role = "worker";
-              storage.system.disk = "/dev/vda";
-              storage.volumes.scratch.enable = false;
-            };
-            chalkos.nodes.n2 = {
-              role = "worker";
-              storage.system.disk = "/dev/vdb";
-            };
-          }
-        ];
-        s1 = c.manifest.nodes.n1.identity.storage;
-        s2 = c.manifest.nodes.n2.identity.storage;
-      in
-      {
-        n1Volumes = lib.attrNames s1.volumes;
-        n1Files = lib.attrNames s1.disks.system.repart;
-        n2HasScratch = lib.hasAttr "scratch" s2.volumes;
-      };
-    expected = {
-      n1Volumes = [ "var" ];
-      n1Files = [ "50-var.conf" ];
-      n2HasScratch = true;
-    };
-  };
-  testNodeKindDefaultsToWorker = {
-    expr = {
-      manifest = twoNodes.manifest.nodes.n1.kind;
-      roleKind = twoNodes.manifest.roles.worker ? kind;
-      image = (role (cluster [ ])).chalkos.kubernetes.enable;
-    };
-    expected = {
-      manifest = "worker";
-      roleKind = false;
-      image = true;
-    };
-  };
-  testRoleWithoutKubernetes = {
-    expr =
-      let
-        c =
-          kind:
-          cluster [
-            {
-              chalkos.roles.worker.kubernetes.enable = false;
-              chalkos.nodes.n1 = {
-                role = "worker";
-                storage.system.disk = "/dev/vda";
-                kubernetes.kind = kind;
-              };
-            }
-          ];
-      in
-      {
-        manifest = (c "worker").manifest.nodes.n1.kind;
-        identity = (c "worker").manifest.nodes.n1.identity.kubernetes;
-        image = (role (c "worker")).chalkos.kubernetes.enable;
-        controlPlane = fails (c "controlplane").manifest;
-      };
-    expected = {
-      manifest = null;
-      identity = null;
-      image = false;
-      controlPlane = true;
-    };
-  };
-  testNodeIPDefaultsToFirstStaticAddress = {
-    expr =
-      (networkCluster {
-        networks."20-b".address = [ "10.0.1.5/24" ];
-        networks."10-a".address = [ "10.0.0.5/24" ];
-      }).manifest.nodes.n1.identity.kubernetes;
-    expected = {
-      nodeName = "n1";
-      nodeIPs = [ "10.0.0.5" ];
-      validSubnets = null;
-    };
-  };
-  # Subnets that apply to a node replace the default from its static address: the node picks its
-  # address at boot.
-  testValidSubnets = {
-    expr =
-      let
-        node = modules: (cluster modules).manifest.nodes.n1.identity.kubernetes;
-        static = {
-          chalkos.nodes.n1 = {
-            role = "worker";
-            storage.system.disk = "/dev/vda";
-            network.networks."10-a".address = [ "10.0.0.5/24" ];
-          };
-        };
-        clusterSubnets.chalkos.cluster.kubernetes.nodeIP.validSubnets = [
-          "10.0.0.0/8"
-          "!10.0.0.10/32"
-        ];
-      in
-      {
-        nodeSubnets = node [
-          static
-          { chalkos.nodes.n1.kubernetes.validSubnets = [ "192.168.100.0/24" ]; }
-        ];
-        clusterSubnets = node [
-          static
-          clusterSubnets
-        ];
-        # An empty list is the default filter, which the static address stands for.
-        nodeOverridesCluster = node [
-          static
-          clusterSubnets
-          { chalkos.nodes.n1.kubernetes.validSubnets = [ ]; }
-        ];
-        fixedWins = node [
-          static
-          clusterSubnets
-          { chalkos.nodes.n1.kubernetes.nodeIP = "10.0.0.5"; }
-        ];
-        clusterFile = (kubernetesSettings [ clusterSubnets ]).nodeIP;
-        notASubnet = fails (node [
-          static
-          { chalkos.nodes.n1.kubernetes.validSubnets = [ "192.168.100.0" ]; }
-        ]);
-        notAClusterSubnet = fails (kubernetesSettings [
-          { chalkos.cluster.kubernetes.nodeIP.validSubnets = [ "eth0" ]; }
-        ]);
-      };
-    expected = {
-      nodeSubnets = {
-        nodeName = "n1";
-        nodeIPs = [ ];
-        validSubnets = [ "192.168.100.0/24" ];
-      };
-      clusterSubnets = {
-        nodeName = "n1";
-        nodeIPs = [ ];
-        validSubnets = null;
-      };
-      nodeOverridesCluster = {
-        nodeName = "n1";
-        nodeIPs = [ "10.0.0.5" ];
-        validSubnets = [ ];
-      };
-      fixedWins = {
-        nodeName = "n1";
-        nodeIPs = [ "10.0.0.5" ];
-        validSubnets = null;
-      };
-      clusterFile = {
-        validSubnets = [
-          "10.0.0.0/8"
-          "!10.0.0.10/32"
-        ];
-        timeout = 300;
-      };
-      notASubnet = true;
-      notAClusterSubnet = true;
-    };
-  };
-  # Every node has one address per family: fixed ones default to the first static address of each
-  # family, and a family without one must be in the subnets the node picks from.
-  testIPFamilies = {
-    expr =
-      let
-        node =
-          modules:
-          (cluster (
-            [
-              {
-                chalkos.nodes.n1 = {
-                  role = "worker";
-                  storage.system.disk = "/dev/vda";
-                  network.networks."10-a".address = [
-                    "fd00::5/64"
-                    "10.0.0.5/24"
-                  ];
-                };
-              }
-            ]
-            ++ modules
-          )).manifest.nodes.n1.identity.kubernetes.nodeIPs;
-        families = f: { chalkos.cluster.kubernetes.ipFamilies = f; };
-        dual = families [
-          "ipv4"
-          "ipv6"
-        ];
-        set = k: { chalkos.nodes.n1.kubernetes = k; };
-        clusterFile = modules: (kubernetesSettings modules).ipFamilies;
-      in
-      {
-        ipv4 = node [ ];
-        dual = node [ dual ];
-        ipv6Primary = node [
-          (families [
-            "ipv6"
-            "ipv4"
-          ])
-        ];
-        shorthand = node [ (set { nodeIP = "10.0.0.7"; }) ];
-        # The other family is picked from the default filter.
-        oneFixed = node [
-          dual
-          (set {
-            nodeIPs = [ "10.0.0.7" ];
-          })
-        ];
-        clusterFile = clusterFile [ dual ];
-        twoOfOneFamily = fails (node [
-          (set {
-            nodeIPs = [
-              "10.0.0.5"
-              "10.0.0.6"
-            ];
-          })
-        ]);
-        notAnAddress = fails (node [ (set { nodeIPs = [ "10.0.0.5/24" ]; }) ]);
-        both = fails (node [
-          (set {
-            nodeIP = "10.0.0.7";
-            nodeIPs = [ "10.0.0.5" ];
-          })
-        ]);
-        otherFamily = fails (node [ (set { nodeIPs = [ "fd00::5" ]; }) ]);
-        unpickable = fails (node [
-          dual
-          (set {
-            nodeIPs = [ "10.0.0.5" ];
-            validSubnets = [ "10.0.0.0/8" ];
-          })
-        ]);
-        noFamily = fails (clusterFile [ (families [ ]) ]);
-        familyTwice = fails (clusterFile [
-          (families [
-            "ipv4"
-            "ipv4"
-          ])
-        ]);
-        unknownFamily = fails (clusterFile [ (families [ "ipx" ]) ]);
-      };
-    expected = {
-      ipv4 = [ "10.0.0.5" ];
-      dual = [
-        "10.0.0.5"
-        "fd00::5"
-      ];
-      ipv6Primary = [
-        "fd00::5"
-        "10.0.0.5"
-      ];
-      shorthand = [ "10.0.0.7" ];
-      oneFixed = [ "10.0.0.7" ];
-      clusterFile = [
-        "ipv4"
-        "ipv6"
-      ];
-      twoOfOneFamily = true;
-      notAnAddress = true;
-      both = true;
-      otherFamily = true;
-      unpickable = true;
-      noFamily = true;
-      familyTwice = true;
-      unknownFamily = true;
-    };
-  };
-  # The ranges of the families in use, and the DNS address by default the 10th of the service range.
-  testAddressRanges = {
-    expr =
-      let
-        setup =
-          families:
-          let
-            k = kubernetesSettings [ { chalkos.cluster.kubernetes.ipFamilies = families; } ];
-            ofFamilies = byFamily: lib.genAttrs k.ipFamilies (family: byFamily.${family});
-          in
-          {
-            inherit (k) ipFamilies;
-            podCIDRs = ofFamilies k.podCIDRs;
-            serviceCIDRs = ofFamilies k.serviceCIDRs;
-            dnsIPs = ofFamilies k.dnsIPs;
-            nodeCIDRMaskSizes = ofFamilies k.nodeCIDRMaskSizes;
-          };
-        # The DNS address defaults to the 10th address of the service range, written as Go writes
-        # addresses.
-        dnsIPs =
-          serviceCIDRs:
-          (cluster [
-            {
-              chalkos.cluster.kubernetes = {
-                ipFamilies = [
-                  "ipv4"
-                  "ipv6"
-                ];
-                inherit serviceCIDRs;
-              };
-            }
-          ]).cluster.kubernetes.dnsIPs;
-      in
-      {
-        ipv4 = setup [ "ipv4" ];
-        dual = setup [
-          "ipv4"
-          "ipv6"
-        ];
-        ipv6Primary = setup [
-          "ipv6"
-          "ipv4"
-        ];
-        ipv6 = setup [ "ipv6" ];
-        defaultDNSIPs = dnsIPs {
-          ipv4 = "10.100.0.0/16";
-          ipv6 = "fd00:0:0:5::/112";
-        };
-        firstLongestZeros = (dnsIPs { ipv6 = "fd00:0:0:5:0:0:1:0/112"; }).ipv6;
-        # A service range of fewer than ten addresses needs a DNS address set.
-        tooSmallForDefault = fails (dnsIPs { ipv4 = "10.100.0.248/29"; }).ipv4;
-      };
-    expected = {
-      ipv4 = {
-        ipFamilies = [ "ipv4" ];
-        podCIDRs.ipv4 = "10.244.0.0/16";
-        serviceCIDRs.ipv4 = "10.96.0.0/12";
-        dnsIPs.ipv4 = "10.96.0.10";
-        nodeCIDRMaskSizes.ipv4 = 24;
-      };
-      dual = {
-        ipFamilies = [
-          "ipv4"
-          "ipv6"
-        ];
-        podCIDRs = {
-          ipv4 = "10.244.0.0/16";
-          ipv6 = "fd00:10:244::/56";
-        };
-        serviceCIDRs = {
-          ipv4 = "10.96.0.0/12";
-          ipv6 = "fd00:10:96::/112";
-        };
-        dnsIPs = {
-          ipv4 = "10.96.0.10";
-          ipv6 = "fd00:10:96::a";
-        };
-        nodeCIDRMaskSizes = {
-          ipv4 = 24;
-          ipv6 = 64;
-        };
-      };
-      ipv6Primary = {
-        ipFamilies = [
-          "ipv6"
-          "ipv4"
-        ];
-        podCIDRs = {
-          ipv4 = "10.244.0.0/16";
-          ipv6 = "fd00:10:244::/56";
-        };
-        serviceCIDRs = {
-          ipv4 = "10.96.0.0/12";
-          ipv6 = "fd00:10:96::/112";
-        };
-        dnsIPs = {
-          ipv4 = "10.96.0.10";
-          ipv6 = "fd00:10:96::a";
-        };
-        nodeCIDRMaskSizes = {
-          ipv4 = 24;
-          ipv6 = 64;
-        };
-      };
-      ipv6 = {
-        ipFamilies = [ "ipv6" ];
-        podCIDRs.ipv6 = "fd00:10:244::/56";
-        serviceCIDRs.ipv6 = "fd00:10:96::/112";
-        dnsIPs.ipv6 = "fd00:10:96::a";
-        nodeCIDRMaskSizes.ipv6 = 64;
-      };
-      defaultDNSIPs = {
-        ipv4 = "10.100.0.10";
-        ipv6 = "fd00:0:0:5::a";
-      };
-      firstLongestZeros = "fd00::5:0:0:1:a";
-      tooSmallForDefault = true;
-    };
-  };
-  # The ranges are checked as kubeadm checks them, for the families in use only, and the removed
-  # options name their replacements.
-  testAddressRangeChecks = {
-    expr =
-      let
-        dual = kubernetes: {
-          chalkos.cluster.kubernetes = {
-            ipFamilies = [
-              "ipv4"
-              "ipv6"
-            ];
-          }
-          // kubernetes;
-        };
-        refused =
-          kubernetes:
-          let
-            c = cluster [ (dual kubernetes) ];
-          in
-          fails (removeAttrs c.cluster.kubernetes [ "package" ]) && fails c.manifest.kubernetes;
-      in
-      {
-        valid =
-          !refused {
-            podCIDRs = {
-              ipv4 = "10.32.0.0/12";
-              ipv6 = "fd00:32::/48";
-            };
-            serviceCIDRs = {
-              ipv4 = "10.16.0.0/16";
-              ipv6 = "fd00:16::/108";
-            };
-            nodeCIDRMaskSizes = {
-              ipv4 = 28;
-              ipv6 = 64;
-            };
-          };
-        # Entries of a family not in use are ignored.
-        otherFamily =
-          !fails (kubernetesSettings [
-            {
-              chalkos.cluster.kubernetes = {
-                podCIDRs.ipv6 = "10.244.0.0";
-                dnsIPs.ipv6 = "dns";
-                nodeCIDRMaskSizes.ipv6 = 0;
-              };
-            }
-          ]);
-        notARange = refused { podCIDRs.ipv4 = "10.244.0.0"; };
-        exclusion = refused { podCIDRs.ipv4 = "!10.244.0.0/16"; };
-        wrongFamily = refused { podCIDRs.ipv6 = "10.244.0.0/16"; };
-        ipv4Mapped = refused { podCIDRs.ipv6 = "::ffff:10.244.0.0/112"; };
-        hostBits = refused { serviceCIDRs.ipv4 = "10.96.0.1/12"; };
-        overlap = refused { serviceCIDRs.ipv4 = "10.244.128.0/20"; };
-        overlapIPv6 = refused { podCIDRs.ipv6 = "fd00:10::/32"; };
-        tooManyServices = refused { serviceCIDRs.ipv4 = "10.96.0.0/11"; };
-        tooManyServicesIPv6 = refused {
-          serviceCIDRs.ipv6 = "fd00:10:96::/107";
-          dnsIPs.ipv6 = "fd00:10:96::a";
-        };
-        maskNotLonger = refused { nodeCIDRMaskSizes.ipv4 = 16; };
-        maskTooLong = refused { nodeCIDRMaskSizes.ipv6 = 73; };
-        maskBeyondAddress = refused {
-          podCIDRs.ipv4 = "10.244.0.0/24";
-          nodeCIDRMaskSizes.ipv4 = 33;
-        };
-        maskBeyondAddressIPv6 = refused {
-          podCIDRs.ipv6 = "fd00:10:244::/120";
-          nodeCIDRMaskSizes.ipv6 = 129;
-        };
-        dnsOutside = refused { dnsIPs.ipv4 = "10.112.0.10"; };
-        dnsNotAnAddress = refused { dnsIPs.ipv6 = "dns"; };
-        dnsWrongFamily = refused { dnsIPs.ipv6 = "10.96.0.10"; };
-        dnsKubernetesService = refused { dnsIPs.ipv4 = "10.96.0.1"; };
-        dnsNetwork = refused { dnsIPs.ipv6 = "fd00:10:96::"; };
-        podCIDR = refused { podCIDR = "10.244.0.0/16"; };
-        serviceCIDR = refused { serviceCIDR = "10.96.0.0/12"; };
-        dnsIP = refused { dnsIP = "10.96.0.10"; };
-      };
-    expected = {
-      valid = true;
-      otherFamily = true;
-      notARange = true;
-      exclusion = true;
-      wrongFamily = true;
-      ipv4Mapped = true;
-      hostBits = true;
-      overlap = true;
-      overlapIPv6 = true;
-      tooManyServices = true;
-      tooManyServicesIPv6 = true;
-      maskNotLonger = true;
-      maskTooLong = true;
-      maskBeyondAddress = true;
-      maskBeyondAddressIPv6 = true;
-      dnsOutside = true;
-      dnsNotAnAddress = true;
-      dnsWrongFamily = true;
-      dnsKubernetesService = true;
-      dnsNetwork = true;
-      podCIDR = true;
-      serviceCIDR = true;
-      dnsIP = true;
-    };
-  };
-  # flannel's MTU reaches the nodes in their Flannel document and must leave pods their family's
-  # minimum; containerd runs portmap, which needs nft.
-  testFlannelSettings = {
-    expr = {
-      flannel = map (modules: (cluster modules).manifest.flannel) [
-        [ ]
-        [ { chalkos.cni.flannel.mtu = 1430; } ]
-        [ { chalkos.cni.provider = "none"; } ]
-      ];
-      notAnMTU = fails (cluster [ { chalkos.cni.flannel.mtu = 0; } ]).cni.flannel.mtu;
-      # Pods get the MTU minus 50, which must leave IPv6 its 1280 and IPv4 its 576.
-      tooSmall =
-        map
-          (
-            { families, mtu }:
-            fails
-              (cluster [
-                {
-                  chalkos.cluster.kubernetes.ipFamilies = families;
-                  chalkos.cni.flannel.mtu = mtu;
-                }
-              ]).cni.flannel.mtu
-          )
-          [
-            {
-              families = [ "ipv4" ];
-              mtu = 625;
-            }
-            {
-              families = [ "ipv4" ];
-              mtu = 626;
-            }
-            {
-              families = [
-                "ipv4"
-                "ipv6"
-              ];
-              mtu = 1329;
-            }
-            {
-              families = [
-                "ipv4"
-                "ipv6"
-              ];
-              mtu = 1330;
-            }
-            {
-              families = [ "ipv6" ];
-              mtu = 1329;
-            }
-            {
-              families = [ "ipv6" ];
-              mtu = 1330;
-            }
-          ];
-      # containerd runs portmap, which needs nft.
-      portmapFindsNft =
-        lib.any (p: (p.pname or "") == "nftables")
-          (role (cluster [ ])).systemd.services.containerd.path;
-    };
-    expected = {
-      flannel = [
-        { mtu = null; }
-        { mtu = 1430; }
-        null
-      ];
-      notAnMTU = true;
-      tooSmall = [
-        true
-        false
-        true
-        false
-        true
-        false
-      ];
-      portmapFindsNft = true;
-    };
-  };
-  # VXLAN source ranges are networks of the cluster's families, one at least of each, and hold
-  # every address a node may have; they reach the nodes in their Kubernetes document.
-  testVXLANSourceSubnets = {
-    expr =
-      let
-        dual = kubernetes: {
-          chalkos.cluster.kubernetes = {
-            ipFamilies = [
-              "ipv4"
-              "ipv6"
-            ];
-          }
-          // kubernetes;
-        };
-        sources = subnets: dual { vxlanSourceSubnets = subnets; };
-        both = sources [
-          "192.168.0.0/16"
-          "fd00:100::/64"
-        ];
-        clusterFile = modules: (kubernetesSettings modules).vxlanSourceSubnets;
-        # Node n1 with a static address of each family, and the settings of its kubernetes.
-        node =
-          modules: kubernetes:
-          (cluster (
-            modules
-            ++ [
-              {
-                chalkos.nodes.n1 = {
-                  role = "worker";
-                  storage.system.disk = "/dev/vda";
-                  network.networks."10-a".address = [
-                    "192.168.100.5/24"
-                    "fd00:100::5/64"
-                  ];
-                  inherit kubernetes;
-                };
-              }
-            ]
-          )).manifest.nodes.n1.identity.kubernetes.nodeIPs;
-      in
-      {
-        none = clusterFile [ ];
-        set = clusterFile [ both ];
-        notARange = fails (clusterFile [
-          (sources [
-            "192.168.0.0"
-            "fd00:100::/64"
-          ])
-        ]);
-        hostBits = fails (clusterFile [
-          (sources [
-            "192.168.0.1/16"
-            "fd00:100::/64"
-          ])
-        ]);
-        ipv4Mapped = fails (clusterFile [
-          (sources [
-            "192.168.0.0/16"
-            "::ffff:10.0.0.0/104"
-          ])
-        ]);
-        exclusion = fails (clusterFile [
-          (sources [
-            "192.168.0.0/16"
-            "!fd00:100::/64"
-          ])
-        ]);
-        tooLong = fails (clusterFile [
-          (sources [
-            "192.168.0.0/33"
-            "fd00:100::/64"
-          ])
-        ]);
-        missingFamily = fails (clusterFile [ (sources [ "192.168.0.0/16" ]) ]);
-        # Pods could pass the source check from ranges overlapping the pod or service ranges.
-        holdsPods = fails (clusterFile [
-          (sources [
-            "10.0.0.0/8"
-            "fd00:100::/64"
-          ])
-        ]);
-        inPods = fails (clusterFile [
-          (sources [
-            "192.168.0.0/16"
-            "fd00:10:244:1::/64"
-          ])
-        ]);
-        inServices = fails (clusterFile [
-          (sources [
-            "10.100.0.0/16"
-            "fd00:100::/64"
-          ])
-        ]);
-        inServicesIPv6 = fails (clusterFile [
-          (sources [
-            "192.168.0.0/16"
-            "fd00:10:96::/120"
-          ])
-        ]);
-        otherFamily = fails (clusterFile [
-          {
-            chalkos.cluster.kubernetes.vxlanSourceSubnets = [
-              "192.168.0.0/16"
-              "fd00::/48"
-            ];
-          }
-        ]);
-        # The node's static addresses, its fixed nodeIPs by default, are in the ranges.
-        staticInside = node [ both ] { };
-        fixedOutside = fails (node [ both ] { nodeIPs = [ "10.0.0.5" ]; });
-        subnetInside = node [ both ] {
-          validSubnets = [
-            "192.168.100.0/24"
-            "fd00:100::/64"
-          ];
-        };
-        subnetOutside = fails (
-          node [ both ] {
-            validSubnets = [
-              "192.168.0.0/15"
-              "fd00:100::/64"
-            ];
-          }
-        );
-        # Exclusions need not be inside.
-        exclusionOutside = node [ both ] {
-          validSubnets = [
-            "192.168.100.0/24"
-            "fd00:100::/64"
-            "!10.0.0.0/8"
-          ];
-        };
-        clusterSubnetOutside = fails (
-          node [
-            both
-            { chalkos.cluster.kubernetes.nodeIP.validSubnets = [ "10.0.0.0/8" ]; }
-          ] { }
-        );
-        withoutSources = node [ ] { nodeIPs = [ "10.0.0.5" ]; };
-      };
-    expected = {
-      none = [ ];
-      set = [
-        "192.168.0.0/16"
-        "fd00:100::/64"
-      ];
-      notARange = true;
-      hostBits = true;
-      ipv4Mapped = true;
-      exclusion = true;
-      tooLong = true;
-      missingFamily = true;
-      holdsPods = true;
-      inPods = true;
-      inServices = true;
-      inServicesIPv6 = true;
-      otherFamily = true;
-      staticInside = [
-        "192.168.100.5"
-        "fd00:100::5"
-      ];
-      fixedOutside = true;
-      subnetInside = [ ];
-      subnetOutside = true;
-      exclusionOutside = [ ];
-      clusterSubnetOutside = true;
-      withoutSources = [ "10.0.0.5" ];
-    };
-  };
-  # A node joining changes nothing on the others: their cluster file and image stay the same as
-  # long as no cluster-wide option changes.
-  testNodeJoinChangesNoOtherNode = {
-    expr =
-      let
-        base = [
-          {
-            chalkos.cluster.kubernetes.vxlanSourceSubnets = [ "192.168.0.0/16" ];
-            chalkos.nodes.n1 = {
-              role = "worker";
-              storage.system.disk = "/dev/vda";
-              network.networks."10-a".address = [ "192.168.100.5/24" ];
-            };
-          }
-        ];
-        joined = base ++ [
-          {
-            chalkos.nodes.n2 = {
-              role = "worker";
-              storage.system.disk = "/dev/vda";
-              network.networks."10-a".address = [ "192.168.100.6/24" ];
-            };
-          }
-        ];
-        image = modules: (cluster modules).roles.worker.images.metal.drvPath;
-        identity = modules: (cluster modules).manifest.nodes.n1;
-      in
-      {
-        image = image base == image joined;
-        identity = identity base == identity joined;
-      };
-    expected = {
-      image = true;
-      identity = true;
-    };
-  };
-  # The VIPs reach the nodes in their Kubernetes document; the endpoint is one of them.
-  testVIP = {
-    expr =
-      let
-        vipCluster =
-          endpoint: vip:
-          cluster [
-            {
-              chalkos.cluster.endpoint = lib.mkForce endpoint;
-              chalkos.cluster.kubernetes.vip = vip;
-              chalkos.nodes.cp1 = {
-                role = "worker";
-                kubernetes.kind = "controlplane";
-                storage.system.disk = "/dev/vda";
-                kubernetes.nodeIP = "10.0.0.11";
-              };
-            }
-          ];
-        clusterFile = c: c.manifest.kubernetes.vip;
-        warns = c: lib.any (lib.hasInfix "must reach a control-plane node") c.warnings;
-      in
-      {
-        clusterFile = clusterFile (vipCluster "https://10.0.0.10:6443" { addresses = [ "10.0.0.10" ]; });
-        withInterface = clusterFile (
-          vipCluster "https://10.0.0.10:6443" {
-            addresses = [ "10.0.0.10" ];
-            interface = "bond0";
-          }
-        );
-        # The VIP is the endpoint, which no node's address is.
-        warns = warns (vipCluster "https://10.0.0.10:6443" { addresses = [ "10.0.0.10" ]; });
-        hostname = clusterFile (vipCluster "https://k8s.example.com:6443" { addresses = [ "10.0.0.10" ]; });
-        endpointNotAVIP = fails (
-          clusterFile (vipCluster "https://10.0.0.20:6443" { addresses = [ "10.0.0.10" ]; })
-        );
-        twoOfOneFamily = fails (
-          clusterFile (
-            vipCluster "https://10.0.0.10:6443" {
-              addresses = [
-                "10.0.0.10"
-                "10.0.0.11"
-              ];
-            }
-          )
-        );
-        otherFamily = fails (
-          clusterFile (vipCluster "https://[fd00::10]:6443" { addresses = [ "fd00::10" ]; })
-        );
-        notAnAddress = fails (
-          clusterFile (vipCluster "https://10.0.0.10:6443" { addresses = [ "10.0.0.10/32" ]; })
-        );
-        unknownMode = fails (
-          clusterFile (
-            vipCluster "https://10.0.0.10:6443" {
-              addresses = [ "10.0.0.10" ];
-              mode = "bgp";
-            }
-          )
-        );
-      };
-    expected = {
-      clusterFile = {
-        addresses = [ "10.0.0.10" ];
-        mode = "l2";
-        interface = null;
-      };
-      withInterface = {
-        addresses = [ "10.0.0.10" ];
-        mode = "l2";
-        interface = "bond0";
-      };
-      warns = false;
-      hostname = {
-        addresses = [ "10.0.0.10" ];
-        mode = "l2";
-        interface = null;
-      };
-      endpointNotAVIP = true;
-      twoOfOneFamily = true;
-      otherFamily = true;
-      notAnAddress = true;
-      unknownMode = true;
-    };
-  };
-  # A subnet every node would refuse at boot is refused before any image is built.
-  testSubnetsAreChecked =
-    let
-      good = [
-        "10.0.0.0/8"
-        "!10.0.0.10/32"
-        "0.0.0.0/0"
-        "192.168.100.12/24"
-        "fd00::/64"
-        "!fd00::1/128"
-        "FD00:0:0:0:0:0:0:1/128"
-        "::/0"
-        "::1/128"
-        "fd00::/8"
-        "64:ff9b::192.0.2.1/128"
-      ];
-      bad = [
-        "999.1.1.1/40"
-        "a/1"
-        "::::/999"
-        "10.0.0.0/33"
-        "fd00::/129"
-        "10.0.0/8"
-        "010.0.0.0/8"
-        "10.0.0.0/08"
-        "fd00::1::/64"
-        "fd00:1:2:3:4:5:6:7:8/64"
-        "1:2:3:4:5:6:7::8/64"
-        "fd00:12345::/64"
-        "!!10.0.0.0/8"
-        " 10.0.0.0/8"
-        "fd00::/"
-        # IPv4-mapped: the node compares its addresses in their IPv4 form.
-        "::ffff:10.0.0.0/104"
-        "!::ffff:10.0.0.10/128"
-        "::ffff:a00:a/128"
-      ];
-      accepted =
-        subnet:
-        let
-          c = cluster [
-            {
-              chalkos.cluster.kubernetes.nodeIP.validSubnets = [ subnet ];
-              # The node picks the address of the subnet's family.
-              chalkos.cluster.kubernetes.ipFamilies = [ (if lib.hasInfix ":" subnet then "ipv6" else "ipv4") ];
-              chalkos.nodes.n1 = {
-                role = "worker";
-                storage.system.disk = "/dev/vda";
-                kubernetes.validSubnets = [ subnet ];
-              };
-            }
-          ];
-        in
-        {
-          cluster = !fails c.manifest.kubernetes;
-          node = !fails c.manifest.nodes.n1.identity.kubernetes;
-        };
-      all = value: _: {
-        cluster = value;
-        node = value;
-      };
-    in
-    {
-      expr = {
-        good = lib.genAttrs good accepted;
-        bad = lib.genAttrs bad accepted;
-      };
-      expected = {
-        good = lib.genAttrs good (all true);
-        bad = lib.genAttrs bad (all false);
-      };
-    };
-  testEndpointWarnsWithoutControlPlaneAddress = {
-    expr =
-      let
-        warns =
-          endpoint:
-          lib.any (lib.hasInfix "must reach a control-plane node")
-            (cluster [
-              {
-                chalkos.cluster.endpoint = lib.mkForce endpoint;
-                chalkos.cluster.kubernetes.ipFamilies = [
-                  "ipv4"
-                  "ipv6"
-                ];
-                chalkos.roles.cp = { };
-                chalkos.nodes.cp1 = {
-                  role = "cp";
-                  kubernetes.kind = "controlplane";
-                  storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIPs = [
-                    "10.0.0.11"
-                    "fd00::12"
-                  ];
-                };
-                chalkos.nodes.ip6 = {
-                  role = "cp";
-                  kubernetes.kind = "controlplane";
-                  storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIPs = [
-                    "fd00::11"
-                    "10.0.0.12"
-                  ];
-                };
-                chalkos.nodes.w1 = {
-                  role = "worker";
-                  storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIPs = [
-                    "10.0.0.20"
-                    "fd00::20"
-                  ];
-                };
-              }
-            ]).warnings;
-        # A control-plane node that picks its address at boot may hold the endpoint's.
-        picked =
-          lib.any (lib.hasInfix "must reach a control-plane node")
-            (cluster [
-              {
-                chalkos.cluster.endpoint = lib.mkForce "https://10.0.0.10:6443";
-                chalkos.roles.cp = { };
-                chalkos.nodes.cp1 = {
-                  role = "cp";
-                  kubernetes.kind = "controlplane";
-                  storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIP = "10.0.0.11";
-                };
-                chalkos.nodes.cp2 = {
-                  role = "cp";
-                  kubernetes.kind = "controlplane";
-                  storage.system.disk = "/dev/vda";
-                  kubernetes.validSubnets = [ "10.0.0.0/24" ];
-                };
-              }
-            ]).warnings;
-        # Control-plane nodes that pick their address at boot hold the endpoint's only when it lies
-        # in the subnets that apply to them. The nodes have the endpoint's family alone.
-        picks =
-          endpoint: clusterSubnets: nodeSubnets:
-          let
-            ipv6 = lib.hasInfix "[" endpoint;
-          in
-          lib.any (lib.hasInfix "must reach a control-plane node")
-            (cluster [
-              {
-                chalkos.cluster.endpoint = lib.mkForce endpoint;
-                chalkos.cluster.kubernetes.nodeIP.validSubnets = clusterSubnets;
-                chalkos.cluster.kubernetes.ipFamilies = [ (if ipv6 then "ipv6" else "ipv4") ];
-                chalkos.roles.cp = { };
-                chalkos.nodes.cp1 = {
-                  role = "cp";
-                  kubernetes.kind = "controlplane";
-                  storage.system.disk = "/dev/vda";
-                  kubernetes.nodeIPs = [ (if ipv6 then "fd00:1::11" else "10.0.0.11") ];
-                };
-                chalkos.nodes.cp2 = {
-                  role = "cp";
-                  kubernetes.kind = "controlplane";
-                  storage.system.disk = "/dev/vda";
-                  kubernetes.validSubnets = nodeSubnets;
-                };
-              }
-            ]).warnings;
-      in
-      {
-        inherit picked;
-        picksOutside = picks "https://10.0.0.10:6443" [ ] [ "192.168.0.0/24" ];
-        picksExcluded =
-          picks "https://10.0.0.10:6443"
-            [ ]
-            [
-              "10.0.0.0/24"
-              "!10.0.0.8/29"
-            ];
-        picksOnlyExclusions = picks "https://10.0.0.10:6443" [ ] [ "!192.168.0.0/16" ];
-        picksAny = picks "https://10.0.0.10:6443" [ ] [ ];
-        picksClusterSubnets = picks "https://10.0.0.10:6443" [ "10.0.0.0/8" ] null;
-        picksOutsideClusterSubnets = picks "https://10.0.0.10:6443" [ "192.168.0.0/16" ] null;
-        picksIPv6 = picks "https://[fd00::10]:6443" [ ] [ "fd00::/64" ];
-        # A node of the endpoint's family alone whose subnets hold none of that family is refused.
-        picksOtherFamily = fails (picks "https://[fd00::10]:6443" [ ] [ "10.0.0.0/8" ]);
-        picksIPv6Outside = picks "https://[fd00:0:0:1::10]:6443" [ ] [ "fd00::/64" ];
-        vip = warns "https://10.0.0.10:6443";
-        worker = warns "https://10.0.0.20:6443";
-        controlPlane = warns "https://10.0.0.11:6443";
-        controlPlaneWithoutPort = warns "https://10.0.0.11";
-        ipv6 = warns "https://[fd00::10]:6443";
-        ipv6ControlPlane = warns "https://[fd00::11]:6443";
-        hostname = warns "https://k8s.example.com:6443";
-      };
-    expected = {
-      picked = false;
-      picksOutside = true;
-      picksExcluded = true;
-      picksOnlyExclusions = false;
-      picksAny = false;
-      picksClusterSubnets = false;
-      picksOutsideClusterSubnets = true;
-      picksIPv6 = false;
-      picksOtherFamily = true;
-      picksIPv6Outside = true;
-      vip = true;
-      worker = true;
-      controlPlane = false;
-      controlPlaneWithoutPort = false;
-      ipv6 = true;
-      ipv6ControlPlane = false;
-      hostname = false;
-    };
-  };
-  testKubernetesNodeRejectsSwap = {
-    expr =
-      let
-        # A node of the kind, or with null on a role without Kubernetes.
-        kindOf =
-          kind:
-          if kind == null then
-            { chalkos.roles.worker.kubernetes.enable = false; }
-          else
-            { chalkos.nodes.n1.kubernetes.kind = kind; };
-        swapManifest =
-          kind:
-          (cluster [
-            (kindOf kind)
-            {
-              chalkos.nodes.n1 = {
-                role = "worker";
-                storage.system.disk = "/dev/vda";
-                kubernetes.nodeIP = "10.0.0.5";
-                storage.volumes.swap = {
-                  size = "1G";
-                  format = "swap";
-                };
-              };
-            }
-          ]).manifest;
-      in
-      {
-        worker = fails (swapManifest "worker");
-        controlPlane = fails (swapManifest "controlplane");
-        withoutKubernetes = fails (swapManifest null);
-        disabled =
-          fails
-            (cluster [
-              {
-                chalkos.roles.worker.storage.volumes.swap = {
-                  size = "1G";
-                  format = "swap";
-                };
-                chalkos.nodes.n1 = {
-                  role = "worker";
-                  storage.system.disk = "/dev/vda";
-                  storage.volumes.swap.enable = false;
-                };
-              }
-            ]).manifest;
-      };
-    expected = {
-      worker = true;
-      controlPlane = true;
-      withoutKubernetes = false;
-      disabled = false;
-    };
-  };
-  testKubernetesNodeRejectsRestrictedLabels = {
-    expr =
-      let
-        # A node of the kind, or with null on a role without Kubernetes.
-        kindOf =
-          kind:
-          if kind == null then
-            { chalkos.roles.worker.kubernetes.enable = false; }
-          else
-            { chalkos.nodes.n1.kubernetes.kind = kind; };
-        rejects =
-          kind: label:
-          fails
-            (cluster [
-              (kindOf kind)
-              {
-                chalkos.nodes.n1 = {
-                  role = "worker";
-                  storage.system.disk = "/dev/vda";
-                  labels.${label} = "x";
-                };
-              }
-            ]).manifest;
-      in
-      {
-        refused = map (rejects "worker") [
-          "kubernetes.io/role"
-          "node-role.kubernetes.io/control-plane"
-          "beta.kubernetes.io/fluentd"
-          "k8s.io/team"
-          "storage.k8s.io/class"
-        ];
-        allowed = map (rejects "worker") [
-          "kubernetes.io/hostname"
-          "kubernetes.io/arch"
-          "kubernetes.io/os"
-          "beta.kubernetes.io/arch"
-          "beta.kubernetes.io/os"
-          "beta.kubernetes.io/instance-type"
-          "failure-domain.beta.kubernetes.io/region"
-          "failure-domain.beta.kubernetes.io/zone"
-          "topology.kubernetes.io/region"
-          "topology.kubernetes.io/zone"
-          "node.kubernetes.io/instance-type"
-          "node.kubernetes.io/storage"
-          "kubelet.kubernetes.io/pool"
-          "a.node.kubernetes.io/b"
-          "a.kubelet.kubernetes.io/b"
-          "example.com/team"
-          "team"
-        ];
-        withoutKubernetes = rejects null "node-role.kubernetes.io/control-plane";
-      };
-    expected = {
-      refused = lib.replicate 5 true;
-      allowed = lib.replicate 17 false;
-      withoutKubernetes = false;
-    };
-  };
-  # A control-plane node picks its address at boot like any other node.
-  testControlPlaneWithoutNodeIP = {
-    expr =
-      (cluster [
-        {
-          chalkos.nodes.n1 = {
-            role = "worker";
-            kubernetes.kind = "controlplane";
-            storage.system.disk = "/dev/vda";
-          };
-        }
-      ]).manifest.nodes.n1.identity.kubernetes;
-    expected = {
-      nodeName = "n1";
-      nodeIPs = [ ];
-      validSubnets = null;
-    };
-  };
-  testKubernetesOptionDefaults = {
-    expr = removeAttrs (cluster [ ]).cluster.kubernetes [
-      "package"
-      "extraArgs"
-    ];
-    expected = {
-      podCIDRs = {
-        ipv4 = "10.244.0.0/16";
-        ipv6 = "fd00:10:244::/56";
-      };
-      serviceCIDRs = {
-        ipv4 = "10.96.0.0/12";
-        ipv6 = "fd00:10:96::/112";
-      };
-      dnsIPs = {
-        ipv4 = "10.96.0.10";
-        ipv6 = "fd00:10:96::a";
-      };
-      nodeCIDRMaskSizes = {
-        ipv4 = 24;
-        ipv6 = 64;
-      };
-      # Removed: they only name their replacements.
-      podCIDR = null;
-      serviceCIDR = null;
-      dnsIP = null;
-      domain = "cluster.local";
-      allowSchedulingOnControlPlanes = false;
-      ipFamilies = [ "ipv4" ];
-      vxlanSourceSubnets = [ ];
-      nodeIP = {
-        validSubnets = [ ];
-        timeout = 300;
-      };
-      vip = {
-        addresses = [ ];
-        mode = "l2";
-        interface = null;
-      };
-      images = {
-        etcd = "registry.k8s.io/etcd:3.7.0-0";
-        pause = "registry.k8s.io/pause:3.10.2";
-        coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
-      };
-    };
-  };
-  testRejectsUnknownComponentFlags = {
-    expr = fails (cluster [ { chalkos.cluster.kubernetes.extraArgs.kube-dns.v = "2"; } ]).cluster;
+  # containerd runs portmap, which needs nft.
+  testContainerdFindsNft = {
+    expr = lib.any (p: (p.pname or "") == "nftables") (worker [ ]).systemd.services.containerd.path;
     expected = true;
   };
   # The image fixes its Kubernetes release, the images of etcd, the pod sandbox and CoreDNS, and
-  # its pod network, as options of its own, which the role builder sets from the cluster
-  # definition.
+  # its pod network, as options of its own; testVariantSetsKubernetesImageOptions sets them.
   testImageKubernetesOptions = {
     expr =
       let
-        c = role (cluster [
-          {
-            chalkos.cni.provider = "none";
-            chalkos.cluster.kubernetes.images.etcd = "registry.example/etcd:1";
-          }
-        ]);
+        c = worker [ ];
       in
       {
         inherit (c.chalkos.kubernetes) enable;
@@ -3129,24 +665,21 @@ lib.runTests {
         inherit (c.chalkos.kubernetes.images) etcd pause coredns;
         inherit (c.chalkos.cni) provider;
         flannel = c.chalkos.cni.flannel.image;
-        withoutKubernetes =
-          (role (cluster [ { chalkos.roles.worker.kubernetes.enable = false; } ])).chalkos.kubernetes.enable;
       };
     expected = {
       enable = true;
       version = pkgs.kubernetes.version;
-      etcd = "registry.example/etcd:1";
+      etcd = "registry.k8s.io/etcd:3.7.0-0";
       pause = "registry.k8s.io/pause:3.10.2";
       coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
-      provider = "none";
+      provider = "flannel";
       flannel = "ghcr.io/flannel-io/flannel:v0.28.9";
-      withoutKubernetes = false;
     };
   };
-  testKubernetesOnlyInKubernetesRoles = {
+  testKubernetesOnlyInKubernetesVariants = {
     expr =
       let
-        image = enable: role (cluster [ { chalkos.roles.worker.kubernetes.enable = enable; } ]);
+        image = enable: (mkImages { variants.worker.kubernetes = enable; }).nixos.worker-metal.config;
         services = config: {
           kubelet = config.systemd.services ? kubelet;
           containerd = config.virtualisation.containerd.enable;
@@ -3176,18 +709,7 @@ lib.runTests {
   testKubernetesImage = {
     expr =
       let
-        c = cluster [
-          {
-            chalkos.cluster.manifests = [
-              {
-                apiVersion = "v1";
-                kind = "Namespace";
-                metadata.name = "apps";
-              }
-            ];
-          }
-        ];
-        config = role c;
+        config = worker [ ];
       in
       {
         clusterFile = config.environment.etc ? "chalkos/kubernetes/cluster.json";
@@ -3215,12 +737,7 @@ lib.runTests {
         # Without the firewall the unit makes etcd's directory alone, and does not wait for it.
         afterAbsentFirewall =
           let
-            unit =
-              (role (cluster [
-                {
-                  chalkos.roles.worker.nixosModules = [ { networking.firewall.enable = false; } ];
-                }
-              ])).systemd.services.chalkos-controlplane;
+            unit = (worker [ { networking.firewall.enable = false; } ]).systemd.services.chalkos-controlplane;
           in
           lib.elem "nftables.service" unit.after;
       };
@@ -3238,13 +755,13 @@ lib.runTests {
       afterAbsentFirewall = false;
     };
   };
-  # One directory with the plugins the cluster names, copied out of nixpkgs's packages: those
+  # One directory with the plugins the image names, copied out of nixpkgs's packages: those
   # flannel's network runs, plus flannel's own plugin, or with no network every reference plugin;
-  # a cluster adds to them or narrows them.
+  # a variant adds to them or narrows them.
   testCNIPluginsFollowProvider = {
     expr =
       let
-        image = settings: role (cluster [ { chalkos.cni = settings; } ]);
+        image = settings: worker [ { chalkos.cni = settings; } ];
         plugins =
           settings:
           let
@@ -3287,8 +804,7 @@ lib.runTests {
       binDirs =
         let
           dir =
-            provider:
-            "${(role (cluster [ { chalkos.cni.provider = provider; } ])).system.build.chalkosCNIPlugins}/bin";
+            provider: "${(worker [ { chalkos.cni.provider = provider; } ]).system.build.chalkosCNIPlugins}/bin";
         in
         [
           [ (dir "flannel") ]
@@ -3307,13 +823,13 @@ lib.runTests {
       unknown = true;
     };
   };
-  # A role carries the base groups of kernel modules plus what it adds; the initrd takes its
+  # An image carries the base groups of kernel modules plus what it adds; the initrd takes its
   # modules from the same tree, and a module the image loads must be in it. The build check
   # kernel-modules runs the filter and the check.
   testKernelModules = {
     expr =
       let
-        image = modules: role (cluster [ { chalkos.roles.worker.nixosModules = modules; } ]);
+        image = worker;
         c = image [ ];
         gpu = image [
           {
@@ -3364,7 +880,7 @@ lib.runTests {
   testTrimmedTools = {
     expr =
       let
-        c = role (cluster [ ]);
+        c = worker [ ];
         named = name: lib.findFirst (p: lib.getName p == name) null;
         xfsprogs = named "xfsprogs" c.systemd.services.chalkd.path;
         containerd = named "containerd" c.systemd.services.containerd.path;
@@ -3395,9 +911,7 @@ lib.runTests {
   # Mirrors come from the RegistryMirror documents, written to /run before containerd starts.
   testRegistryMirrorsFromConfig =
     let
-      config = role (cluster [
-        { chalkos.cluster.registries.mirrors."docker.io" = [ "https://mirror.example" ]; }
-      ]);
+      config = worker [ ];
       unit = config.systemd.services.chalkos-registry-mirrors;
       consumers = builtins.fromJSON config.environment.etc."chalkos/consumers.json".text;
     in
@@ -3419,42 +933,13 @@ lib.runTests {
         afterConfig = true;
       };
     };
-  testRegistryMirrorsRequireHTTPS = {
-    expr =
-      let
-        # The cluster option refuses plain mirrors when the cluster is evaluated.
-        mirrors =
-          registries:
-          (cluster [ { chalkos.cluster = { inherit registries; }; } ]).manifest.registries.mirrors;
-      in
-      {
-        plain = fails (mirrors {
-          mirrors."docker.io" = [
-            "https://mirror.example.com"
-            "http://10.0.2.100:5000"
-          ];
-        });
-        allowed = fails (mirrors {
-          allowPlainHTTP = true;
-          mirrors."docker.io" = [ "http://10.0.2.100:5000" ];
-        });
-        https = fails (mirrors {
-          mirrors."docker.io" = [ "https://mirror.example.com" ];
-        });
-      };
-    expected = {
-      plain = true;
-      allowed = false;
-      https = false;
-    };
-  };
   # The image's build-time facts, which chalkd reads with the node's config.
   testImageFacts =
     let
-      image = builtins.fromJSON (role (cluster [ ])).environment.etc."chalkos/kubernetes/image.json".text;
+      image = builtins.fromJSON (worker [ ]).environment.etc."chalkos/kubernetes/image.json".text;
       noFlannel =
         builtins.fromJSON
-          (role (cluster [ { chalkos.cni.provider = "none"; } ]))
+          (worker [ { chalkos.cni.provider = "none"; } ])
           .environment.etc."chalkos/kubernetes/image.json".text;
     in
     {
@@ -3489,7 +974,7 @@ lib.runTests {
   testKubeletUnit = {
     expr =
       let
-        config = role (cluster [ ]);
+        config = worker [ ];
         inherit (config.systemd.services.kubelet.serviceConfig) ExecStart;
       in
       {
@@ -3520,171 +1005,6 @@ lib.runTests {
       noFullPackage = true;
     };
   };
-  # The kubelet's extra flags come after chalkos's own, so they cannot override where it finds its
-  # configuration, credentials and static pods, the node's name, addresses, labels and taints, or
-  # who may use its API. The kubelet takes _ for -, so either spelling is refused.
-  testKubeletExtraArgsCannotOverrideProtectedFlags = {
-    expr =
-      let
-        clusterFile =
-          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ];
-        protected = [
-          "anonymous-auth"
-          "authentication-token-webhook"
-          "authorization-mode"
-          "bootstrap-kubeconfig"
-          "cert-dir"
-          "client-ca-file"
-          "config"
-          "config-dir"
-          "hostname-override"
-          "kubeconfig"
-          "node-ip"
-          "node-labels"
-          "pod-manifest-path"
-          "read-only-port"
-          "register-with-taints"
-          "rotate-certificates"
-          "tls-cert-file"
-          "tls-private-key-file"
-        ];
-        underscored = map (builtins.replaceStrings [ "-" ] [ "_" ]) protected;
-      in
-      lib.filter (
-        flag:
-        !fails (clusterFile {
-          ${flag} = "x";
-        })
-      ) (protected ++ underscored);
-    expected = [ ];
-  };
-  testKubeletExtraArgsAcceptOtherFlags = {
-    expr =
-      let
-        clusterFile =
-          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ];
-      in
-      {
-        other = fails (clusterFile {
-          v = "2";
-          max-pods = "50";
-          max_open_files = "100";
-        });
-        dashed = fails (clusterFile {
-          "--v" = "2";
-        });
-      };
-    expected = {
-      other = false;
-      dashed = true;
-    };
-  };
-  # Flags reach the components as --name=value, so a name with its dashes, an = or whitespace
-  # would set another flag than it names, such as a protected one.
-  testExtraArgsRefuseOtherNames = {
-    expr =
-      let
-        clusterFile =
-          component: flags:
-          kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.${component} = flags; } ];
-        components = [
-          "etcd"
-          "kube-apiserver"
-          "kube-controller-manager"
-          "kube-scheduler"
-          "kubelet"
-        ];
-        names = [
-          "--v"
-          "-v"
-          ""
-          "register-with-taints=dedicated"
-          "kubeconfig=/var/lib/x"
-          "v 2"
-          ".v"
-        ];
-      in
-      lib.concatMap (
-        component:
-        map (name: "${component} ${name}") (
-          lib.filter (name: !fails (clusterFile component { ${name} = "2"; })) names
-        )
-      ) components;
-    expected = [ ];
-  };
-  testAPIServerExtraArgsCannotOverrideAuthentication = {
-    expr =
-      let
-        clusterFile =
-          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kube-apiserver = flags; } ];
-      in
-      {
-        authorization = fails (clusterFile {
-          authorization-mode = "AlwaysAllow";
-        });
-        anonymous = fails (clusterFile {
-          anonymous-auth = "true";
-        });
-        authenticationConfig = fails (clusterFile {
-          authentication-config = "/tmp/a.json";
-        });
-        bootstrapTokens = fails (clusterFile {
-          enable-bootstrap-token-auth = "true";
-        });
-        underscored = fails (clusterFile {
-          anonymous_auth = "true";
-        });
-        other = fails (clusterFile {
-          audit-log-maxage = "30";
-        });
-      };
-    expected = {
-      authorization = true;
-      anonymous = true;
-      authenticationConfig = true;
-      bootstrapTokens = true;
-      underscored = true;
-      other = false;
-    };
-  };
-  # The kubelet's flags reach it through an environment variable that ExecStart splits at
-  # whitespace, read from an environment file that drops backslashes.
-  testKubeletExtraArgsRefuseWhitespaceAndBackslashes = {
-    expr =
-      let
-        clusterFile =
-          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ];
-      in
-      {
-        space = fails (clusterFile {
-          eviction-hard = "a=b c=d";
-        });
-        tab = fails (clusterFile {
-          v = "2\t";
-        });
-        newline = fails (clusterFile {
-          v = "2\nX=1";
-        });
-        backslash = fails (clusterFile {
-          eviction-hard = "a=b\\c";
-        });
-        nameWithSpace = fails (clusterFile {
-          "v 2" = "2";
-        });
-        other = fails (clusterFile {
-          v = "2";
-          eviction-hard = "a=b,c=d";
-        });
-      };
-    expected = {
-      space = true;
-      tab = true;
-      newline = true;
-      backslash = true;
-      nameWithSpace = true;
-      other = false;
-    };
-  };
   # VXLAN is accepted only to the addresses chalkd picks: its preparation fills a table of its own
   # that marks such packets, and the firewall accepts the mark. The firewall runs on nftables and
   # its reloads replace its own table only.
@@ -3694,7 +1014,7 @@ lib.runTests {
         vxlan =
           modules:
           let
-            config = role (cluster modules);
+            config = worker modules;
             inherit (config.networking) firewall nftables;
             prepare = config.systemd.services.chalkos-kubernetes;
           in
@@ -3724,7 +1044,7 @@ lib.runTests {
         none = vxlan [ { chalkos.cni.provider = "none"; } ];
         # Without a firewall there is nothing to accept the mark.
         withoutFirewall = removeAttrs (vxlan [
-          { chalkos.roles.worker.nixosModules = [ { networking.firewall.enable = false; } ]; }
+          { networking.firewall.enable = false; }
         ]) [ "bothFamilies" ];
       };
     expected = {
@@ -3761,7 +1081,7 @@ lib.runTests {
   testChalkdStartsWithoutKubernetesPreparation = {
     expr =
       let
-        chalkd = (role (cluster [ ])).systemd.services.chalkd;
+        chalkd = (worker [ ]).systemd.services.chalkd;
       in
       {
         after = lib.elem "chalkos-kubernetes.service" chalkd.after;
@@ -3790,7 +1110,7 @@ lib.runTests {
             serviceConfig.ExecStart = "/bin/true";
           };
         };
-        config = role (cluster [ { chalkos.roles.worker.nixosModules = [ bgp ]; } ]);
+        config = worker [ bgp ];
         target = config.systemd.targets.chalkos-node-addresses;
         prepare = config.systemd.services.chalkos-kubernetes;
       in
@@ -3814,20 +1134,19 @@ lib.runTests {
       extensionBefore = true;
     };
   };
-  # A role's images are the role's variant; the installer is no variant, and its os-release
-  # names none.
+  # The installer is no variant, and its os-release names none.
   testInstallerIsNoVariant = {
     expr =
       let
-        c = cluster [ ];
+        i = mkImages { variants.worker = { }; };
       in
       {
-        role = (role c).chalkos.variant.name;
-        installer = c.installer.nixos.config.chalkos.variant.name;
-        installerOSRelease = c.installer.nixos.config.system.nixos.extraOSReleaseArgs ? CHALKOS_VARIANT;
+        variant = i.nixos.worker-metal.config.chalkos.variant.name;
+        installer = i.nixos.installer.config.chalkos.variant.name;
+        installerOSRelease = i.nixos.installer.config.system.nixos.extraOSReleaseArgs ? CHALKOS_VARIANT;
       };
     expected = {
-      role = "worker";
+      variant = "worker";
       installer = null;
       installerOSRelease = false;
     };
@@ -3836,7 +1155,7 @@ lib.runTests {
   testImageDescribesItself = {
     expr =
       let
-        image = modules: role (cluster [ { chalkos.roles.worker.nixosModules = modules; } ]);
+        image = worker;
         summary = c: {
           osRelease = lib.filterAttrs (k: _: lib.hasPrefix "CHALKOS_" k) c.system.nixos.extraOSReleaseArgs;
           labels = map (p: p.repartConfig.Label) [
@@ -3884,9 +1203,7 @@ lib.runTests {
   testHealthGate = {
     expr =
       let
-        config = role (cluster [
-          { chalkos.roles.worker.nixosModules = [ { chalkos.upgrade.healthTimeout = 30; } ]; }
-        ]);
+        config = worker [ { chalkos.upgrade.healthTimeout = 30; } ];
         health = config.systemd.services.chalkos-health;
       in
       {
@@ -3903,40 +1220,20 @@ lib.runTests {
       bless = true;
     };
   };
-  # The manifest carries the db certificate that signs the images, for chalkctl upgrade.
-  testManifestNamesTheImageSigner = {
-    expr = map (c: c.manifest.secureBoot.signerCertificate) [
-      (cluster [ ])
-      (cluster [ { chalkos.secureBoot.signerCertificate = builtins.toFile "db.crt" "PEM"; } ])
-    ];
-    expected = [
-      null
-      "PEM"
-    ];
-  };
   # Versions fit the store labels and systemd-boot's entry IDs unchanged.
   testImageVersions = {
-    expr =
-      lib.genAttrs
-        [
-          "0.2.0"
-          "1.0~rc1"
-          "2026.10.9-1"
-          "0.2.0+3"
-          "0.2.0_1"
-          "V1"
-          ""
-          ".1"
-          "1.0.0-abcdefghijklmnopqr"
-          "1.0.0-abcdefghijklmnopq"
-        ]
-        (
-          version:
-          lib.all (a: a.assertion)
-            (role (cluster [
-              { chalkos.roles.worker.nixosModules = [ { system.image.version = version; } ]; }
-            ])).assertions
-        );
+    expr = lib.genAttrs [
+      "0.2.0"
+      "1.0~rc1"
+      "2026.10.9-1"
+      "0.2.0+3"
+      "0.2.0_1"
+      "V1"
+      ""
+      ".1"
+      "1.0.0-abcdefghijklmnopqr"
+      "1.0.0-abcdefghijklmnopq"
+    ] (version: lib.all (a: a.assertion) (worker [ { system.image.version = version; } ]).assertions);
     expected = {
       "0.2.0" = true;
       "1.0~rc1" = true;
@@ -3952,25 +1249,16 @@ lib.runTests {
   };
   # systemd-repart formats a vfat ESP with no less than 260 MiB, so a smaller one is refused.
   testESPMinimum = {
-    expr =
-      lib.genAttrs
-        [
-          "1G"
-          "260M"
-          "1.5G"
-          "266240K"
-          "256M"
-          "0.25G"
-          "100M"
-          "a lot"
-        ]
-        (
-          size:
-          lib.all (a: a.assertion)
-            (role (cluster [
-              { chalkos.roles.worker.nixosModules = [ { chalkos.disk.espSize = size; } ]; }
-            ])).assertions
-        );
+    expr = lib.genAttrs [
+      "1G"
+      "260M"
+      "1.5G"
+      "266240K"
+      "256M"
+      "0.25G"
+      "100M"
+      "a lot"
+    ] (size: lib.all (a: a.assertion) (worker [ { chalkos.disk.espSize = size; } ]).assertions);
     expected = {
       "1G" = true;
       "260M" = true;
@@ -3985,24 +1273,15 @@ lib.runTests {
   # systemd-repart makes a new LUKS2-encrypted ext4 partition no smaller than 64 MiB, so a smaller
   # STATE is refused.
   testStateMinimum = {
-    expr =
-      lib.genAttrs
-        [
-          "128M"
-          "64M"
-          "65536K"
-          "1G"
-          "63M"
-          "32M"
-          "a lot"
-        ]
-        (
-          size:
-          lib.all (a: a.assertion)
-            (role (cluster [
-              { chalkos.roles.worker.nixosModules = [ { chalkos.disk.stateSize = size; } ]; }
-            ])).assertions
-        );
+    expr = lib.genAttrs [
+      "128M"
+      "64M"
+      "65536K"
+      "1G"
+      "63M"
+      "32M"
+      "a lot"
+    ] (size: lib.all (a: a.assertion) (worker [ { chalkos.disk.stateSize = size; } ]).assertions);
     expected = {
       "128M" = true;
       "64M" = true;
@@ -4018,7 +1297,7 @@ lib.runTests {
   testESPMount = {
     expr =
       let
-        c = role (cluster [ ]);
+        c = worker [ ];
       in
       {
         inherit (c.fileSystems."/efi") device fsType options;
@@ -4039,7 +1318,7 @@ lib.runTests {
     };
   };
   testStoreCompression = {
-    expr = (role (cluster [ ])).image.repart.mkfsOptions.erofs;
+    expr = (worker [ ]).image.repart.mkfsOptions.erofs;
     expected = [
       "-b 4096"
       "-zzstd,level=9"
@@ -4051,7 +1330,7 @@ lib.runTests {
   testStoreVerityBlocks = {
     expr =
       let
-        c = role (cluster [ ]);
+        c = worker [ ];
         inherit (c.image.repart.verityStore) partitionIds;
       in
       lib.intersectAttrs {
@@ -4069,7 +1348,7 @@ lib.runTests {
   testImageFitCheck = {
     expr =
       let
-        c = cluster [ ];
+        i = mkImages { variants.worker = { }; };
         summary = fits: {
           inherit (fits)
             ukis
@@ -4080,11 +1359,11 @@ lib.runTests {
         };
       in
       {
-        role = summary (role c).system.build.chalkosImage.fits;
-        installer = summary c.installer.image.fits;
+        image = summary i.images.worker-metal.fits;
+        installer = summary i.installer.fits;
       };
     expected = {
-      role = {
+      image = {
         ukis = 3;
         storeSize = "3G";
         storeVeritySize = "128M";
@@ -4099,7 +1378,7 @@ lib.runTests {
     };
   };
   testInitrdCompression = {
-    expr = with (role (cluster [ ])).boot.initrd; [
+    expr = with (worker [ ]).boot.initrd; [
       compressor
       compressorArgs
     ];
@@ -4116,7 +1395,7 @@ lib.runTests {
   testStoreLeavesOutKernelAndInitrd = {
     expr =
       let
-        c = role (cluster [ ]);
+        c = worker [ ];
         forbidden =
           path: lib.any (r: builtins.match r "${path}" != null) c.system.forbiddenDependenciesRegexes;
       in
@@ -4139,33 +1418,31 @@ lib.runTests {
       ];
     };
   };
-  # The system path holds what the image's modules and the role put there, such as the mount
+  # The system path holds what the image's modules and the variant put there, such as the mount
   # helpers util-linux looks up there, and none of NixOS's default packages. The debug tools add a
-  # shell's tools, and crictl where the role runs Kubernetes. Units name their own tools.
+  # shell's tools, and crictl where the variant runs Kubernetes. Units name their own tools.
   testSystemPath = {
     expr =
       let
         image =
-          roleConfig: modules:
-          role (cluster [
-            {
-              chalkos.roles.worker = roleConfig // {
-                nixosModules = modules;
-              };
-            }
-          ]);
+          variant: modules:
+          (mkImages {
+            variants.worker = variant // {
+              inherit modules;
+            };
+          }).nixos.worker-metal.config;
         names = c: map lib.getName c.environment.systemPackages;
-        # What modules add to a role's system path.
+        # What modules add to a variant's system path.
         added =
-          roleConfig: modules:
+          variant: modules:
           lib.sort lib.lessThan (
-            lib.subtractLists (names (image roleConfig [ ])) (names (image roleConfig modules))
+            lib.subtractLists (names (image variant [ ])) (names (image variant modules))
           );
         debug = [ { chalkos.debug.tools = true; } ];
         c = image { } [ ];
       in
       {
-        roleAdds = added { } [ ({ pkgs, ... }: { environment.systemPackages = [ pkgs.hello ]; }) ];
+        variantAdds = added { } [ ({ pkgs, ... }: { environment.systemPackages = [ pkgs.hello ]; }) ];
         nixosDefaults = lib.intersectLists [
           "nano"
           "sudo"
@@ -4179,14 +1456,14 @@ lib.runTests {
         ] (names c);
         nfs = lib.elem "nfs-utils" (names (image { } [ { boot.supportedFilesystems.nfs = true; } ]));
         debug = added { } debug;
-        debugWithoutKubernetes = added { kubernetes.enable = false; } debug;
+        debugWithoutKubernetes = added { kubernetes = false; } debug;
         # D-Bus finds systemd's services and policies through the system path.
         dbus = lib.elem c.system.path c.services.dbus.packages && lib.elem "systemd" (names c);
         locales = c.i18n.supportedLocales;
         chalkd = lib.sort lib.lessThan (map lib.getName c.systemd.services.chalkd.path);
       };
     expected = {
-      roleAdds = [ "hello" ];
+      variantAdds = [ "hello" ];
       nixosDefaults = [ ];
       nfs = true;
       debug = [
@@ -4228,4 +1505,5 @@ lib.runTests {
       ];
     };
   };
+
 }
