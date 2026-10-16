@@ -967,47 +967,50 @@ in
         touch $out
       '';
 
-  # The lab template: its flake gives the cluster, which runs every node on kvm with the one MAC
-  # address chalklab connects to the lab network, and its kvm images build; its dev shell brings
-  # chalklab, chalkctl and kubectl. Its secrets.pub.json, which chalkctl gen secrets writes, is the
-  # test secrets'.
+  # The lab template: its flake builds the nodes' kvm image, which finds its virtio disks at boot,
+  # and its dev shell brings chalklab, chalkctl and kubectl. chalkctl validate accepts the
+  # template's nodes with that image where their Image points, and each node's MAC address in
+  # chalklab.yaml is the one its Network matches. The image carries the test secrets' OS CA in
+  # place of the secrets.pub.json chalkctl gen secrets writes.
   template-lab =
     let
+      system = pkgs.stdenv.hostPlatform.system;
       template = (import ../templates/lab/flake.nix).outputs { chalkos = self; };
-      shell = template.devShells.${pkgs.stdenv.hostPlatform.system}.default;
+      shell = template.devShells.${system}.default;
       c = self.lib.mkCluster {
         modules = [
           ../templates/lab/cluster.nix
           { chalkos.osCA = lib.mkForce "${chalkPkgs.test-secrets}/secrets.pub.json"; }
         ];
       };
-      macs = lib.mapAttrs (
-        _: n:
-        lib.mapAttrsToList (_: network: network.matchConfig.MACAddress or null) (
-          n.identity.network.networks or { }
-        )
-      ) c.manifest.nodes;
     in
-    assert template.chalkos.lab.cluster.name == "lab";
+    assert template.packages.${system} ? node-kvm;
     assert lib.all (p: lib.elem p shell.nativeBuildInputs) [
       chalkPkgs.chalklab
       chalkPkgs.chalkctl
       pkgs.kubectl
     ];
     assert lib.isString shell.drvPath;
-    assert lib.all (n: n.platform == "kvm") (lib.attrValues c.manifest.nodes);
-    assert lib.all (m: lib.length (lib.filter (x: x != null) m) == 1) (lib.attrValues macs);
-    # Its images find their virtio disks at boot.
-    assert lib.all (
-      r:
-      lib.all (m: lib.elem m r.nixos.kvm.config.boot.initrd.availableKernelModules) [
-        "virtio_pci"
-        "virtio_blk"
-      ]
-    ) (lib.attrValues c.roles);
-    pkgs.runCommand "chalkos-template-lab" {
-      images = lib.mapAttrsToList (_: r: r.images.kvm) c.roles;
-    } "touch $out";
+    assert lib.all (m: lib.elem m c.roles.node.nixos.kvm.config.boot.initrd.availableKernelModules) [
+      "virtio_pci"
+      "virtio_blk"
+    ];
+    pkgs.runCommand "chalkos-template-lab" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''
+      cp -r ${../templates/lab} lab
+      chmod -R u+w lab
+      mkdir -p lab/images
+      ln -s ${c.roles.node.images.kvm} lab/images/node-kvm
+      cd lab
+      chalkctl validate
+      for node in cp1 w1; do
+        mac=$(sed -n 's/.*macAddress: "\(.*\)".*/\1/p' nodes/$node.yaml)
+        grep -q "$node: {mac: \"$mac\"}" chalklab.yaml || {
+          echo "error: chalklab.yaml does not give $node the MAC address $mac, which nodes/$node.yaml matches" >&2
+          exit 1
+        }
+      done
+      touch $out
+    '';
 
   manifest-golden =
     let

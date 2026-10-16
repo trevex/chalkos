@@ -1,0 +1,10 @@
+# The nodes chalklab runs as virtual machines. Each VM's card on the lab network gets the MAC
+# address its node's Network document matches; memory, CPUs and disks follow the node's type.
+apiVersion: chalklab.chalkos.dev/v1alpha1
+kind: Lab
+metadata: {name: lab}
+spec:
+  inventory: ./chalkos.yaml
+  nodes:
+    cp1: {mac: "52:54:00:7b:00:11"}
+    w1: {mac: "52:54:00:7b:00:12"}

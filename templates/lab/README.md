@@ -8,6 +8,13 @@ You need an x86-64 Linux machine with Nix and flakes, about 5 GiB of free memory
 control plane, 2 GiB for the worker), and access to `/dev/kvm`, which on most distributions means
 being in the `kvm` group; not root.
 
+The files:
+
+- `flake.nix` and `cluster.nix` build the image the nodes run.
+- `chalkos.yaml` is the inventory: the nodes, their addresses and their config files.
+- `cluster/` holds the config every node gets, `nodes/` each node's own.
+- `chalklab.yaml` names the nodes chalklab runs and the MAC address of each.
+
 ```sh
 # The flake sees the files git tracks.
 git init && git add .
@@ -17,25 +24,28 @@ nix develop
 chalkctl gen secrets --plaintext
 # Commit flake.lock with the rest, so the lab keeps the same chalkos version.
 git add . && git commit -m "A chalkos lab"
-# Build the images, start the VMs, install and bootstrap the cluster.
+# Build the image where the Image document points, and check the nodes' config against it.
+nix build .#node-kvm -o images/node-kvm
+chalkctl validate
+# Start the VMs, install and bootstrap the cluster.
 chalklab create --secrets secrets.json
 ```
 
 `chalklab create` prints the next commands: the kubeconfig to use, `chalkctl status` with the
-lab's client file, `chalklab status` and `chalklab destroy`. `chalklab status` names the lab's
-files: the kubeconfig, the client file and the Secure Boot db key and certificate the lab's
-firmware trusts. After a reboot of this machine, `chalklab start` starts the lab again; a node
-that powered off stops alone, and `chalklab start` starts it again.
+lab's inventory and client file, `chalklab status` and `chalklab destroy`. `chalklab status` names
+the lab's files: the kubeconfig, the inventory, the client file and the Secure Boot db key and
+certificate the lab's firmware trusts. After a reboot of this machine, `chalklab start` starts the
+lab again; a node that powered off stops alone, and `chalklab start` starts it again.
 
-To upgrade, edit `cluster.nix` and let chalkctl build each node's image, sign it with the lab's
-db key and install it, with the files `chalklab status` names:
+To upgrade, edit `cluster.nix`, build the image again with `nix build .#node-kvm -o
+images/node-kvm`, and let chalkctl sign it with the lab's db key and install it, with the files
+`chalklab status` names:
 
 ```sh
-chalkctl upgrade --config <client file> --sign-key <db key> --sign-cert <db certificate> --allow-downtime
+chalkctl upgrade --inventory <lab inventory> --config <client file> \
+  --sign-key <db key> --sign-cert <db certificate> --allow-downtime
 ```
 
 The lab has a single control plane: while it reboots, etcd and the API server are down, which
-`--allow-downtime` accepts.
-
-An image built otherwise is signed for the lab with `chalklab sign <image> --out <role>-image` and
-installed with `chalkctl upgrade --image <role>-image` and the same `--config`.
+`--allow-downtime` accepts. `chalkctl status` then shows each node running the image
+`images/node-kvm` holds, and says so when a node runs another build.

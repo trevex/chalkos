@@ -348,14 +348,5 @@ in
         chalkos.cni.provider = "none";
       }
     ]);
-    lab = bridgeOf (
-      self.lib.mkCluster {
-        modules = [
-          ../../templates/lab/cluster.nix
-          # The template's own secrets.pub.json is written by chalkctl gen secrets.
-          { chalkos.osCA = lib.mkForce "${secrets}/secrets.pub.json"; }
-        ];
-      }
-    );
   };
 }

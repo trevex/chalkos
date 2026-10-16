@@ -1,0 +1,21 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w1}
+spec:
+  type: worker
+  imageRef: node-kvm
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/vda}
+---
+# The card on the lab network, between the VMs. The other card reaches the internet and the
+# ports chalklab forwards from 127.0.0.1, configured by DHCP.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lab}
+spec:
+  match: {macAddress: "52:54:00:7b:00:12"}
+  network: {address: [192.168.123.12/24]}

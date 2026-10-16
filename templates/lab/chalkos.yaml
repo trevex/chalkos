@@ -1,0 +1,11 @@
+# The lab's nodes, the address chalkctl reaches each at on the lab network, and their config
+# files: every node gets cluster/, each its own file in nodes/. chalklab reaches the nodes at
+# ports it forwards instead, through the inventory it writes into the lab's state directory.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: lab}
+spec:
+  files: [cluster/*.yaml]
+  nodes:
+    cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
+    w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}

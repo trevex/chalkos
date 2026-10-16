@@ -10,7 +10,10 @@
       pkgs = chalkos.inputs.nixpkgs.legacyPackages.${system};
     in
     {
-      chalkos.lab = chalkos.lib.mkCluster { modules = [ ./cluster.nix ]; };
+      # nix build .#node-kvm -o images/node-kvm: the image both nodes run, where the Image
+      # document in cluster/cluster.yaml points.
+      packages.${system}.node-kvm =
+        (chalkos.lib.mkCluster { modules = [ ./cluster.nix ]; }).roles.node.images.kvm;
 
       # nix develop: chalklab and chalkctl of the chalkos this flake pins, and kubectl.
       devShells.${system}.default = pkgs.mkShellNoCC {

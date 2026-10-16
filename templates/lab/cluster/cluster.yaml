@@ -1,0 +1,20 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: lab}
+spec:
+  # cp1 on the lab network: the API server of the only control plane.
+  endpoint: https://192.168.123.11:6443
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: node-kvm}
+spec:
+  # nix build .#node-kvm -o images/node-kvm puts the image here.
+  source: {directory: ../images/node-kvm}
+---
+# Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
+# 10.96.0.0/12.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec: {}
