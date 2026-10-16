@@ -1,5 +1,5 @@
-# The cluster whose images the e2e tests boot, its secrets, and the bridge the fixtures are
-# compared with. Each role has a node standing for the VM that runs it.
+# The cluster whose images the e2e tests boot, and its secrets. Each role has a node standing for
+# the VM that runs it.
 { self, pkgs }:
 let
   inherit (pkgs) lib;
@@ -211,59 +211,6 @@ let
       };
     };
   };
-  # The test cluster with the modules given, with the mirrors its Kubernetes images are built with.
-  clusterOf =
-    modules:
-    self.lib.mkCluster {
-      modules = [
-        definition
-        mirrored
-      ]
-      ++ modules;
-    };
-  # A new encrypted volume on an empty disk: an additive change. The Greeting changes too, so its
-  # consumer restarts.
-  added = [
-    {
-      chalkos.nodes.chalklab = {
-        storage.volumes.extra = {
-          disk.serial = "chalk-extra";
-          mountPoint = "/srv/extra";
-        };
-        documents = lib.mkForce (greeting "hello again");
-      };
-    }
-  ];
-  # VAR with a fixed size where it filled its disk: a destructive change.
-  destructive = [ { chalkos.nodes.chalklab.storage.var.size = "1G"; } ];
-  # What an image accepts as config, as its image directory holds it: its schemas and its
-  # image.json, without building the image.
-  contractOf =
-    nixos:
-    let
-      image = nixos.config.environment.etc."chalkos/kubernetes/image.json".source or null;
-    in
-    pkgs.runCommand "chalkos-contract" { } ''
-      mkdir $out
-      ln -s ${nixos.config.system.build.chalkosSchemas} $out/schemas
-      ${lib.optionalString (image != null) "ln -s ${image} $out/image.json"}
-    '';
-  # A cluster's manifest, with the contract of each image its nodes run by role and platform.
-  bridgeOf =
-    c:
-    pkgs.linkFarm "chalkos-bridge-${c.manifest.cluster.name}" (
-      {
-        "manifest.json" = pkgs.writeText "manifest.json" (builtins.toJSON c.manifest);
-      }
-      // lib.listToAttrs (
-        map (
-          n:
-          lib.nameValuePair "contracts/${n.role}-${n.platform}" (
-            contractOf c.roles.${n.role}.nixos.${n.platform}
-          )
-        ) (lib.attrValues c.manifest.nodes)
-      )
-    );
   cluster = self.lib.mkCluster {
     modules = [
       definition
@@ -326,27 +273,4 @@ in
     kubernetesVersion = cluster.cluster.kubernetes.package.version;
   };
   inherit secrets;
-  # Every manifest the repository has, each with the contracts of its images, for the test that
-  # chalkctl's documents give back each node's identity.
-  bridge = pkgs.linkFarm "chalkos-test-bridge" {
-    homelab = bridgeOf (self.lib.mkCluster { modules = [ ../../examples/homelab/cluster.nix ]; });
-    base = bridgeOf (clusterOf [ ]);
-    added = bridgeOf (clusterOf added);
-    destructive = bridgeOf (clusterOf destructive);
-    ha = bridgeOf haCluster;
-    # The testing cluster with what the others leave at their defaults: IPv6 primary in dual stack,
-    # another cluster domain and no pod network of chalkos's.
-    variant = bridgeOf (clusterOf [
-      {
-        chalkos.cluster.kubernetes = {
-          ipFamilies = lib.mkForce [
-            "ipv6"
-            "ipv4"
-          ];
-          domain = "chalklab.example";
-        };
-        chalkos.cni.provider = "none";
-      }
-    ]);
-  };
 }

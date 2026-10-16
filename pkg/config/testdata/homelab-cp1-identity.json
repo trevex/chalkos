@@ -1,0 +1,74 @@
+{
+  "hostname": "cp1",
+  "cluster": "homelab",
+  "platform": "metal",
+  "network": {
+    "networks": {
+      "10-uplink": {
+        "matchConfig": {
+          "Name": "enp1s0"
+        },
+        "address": [
+          "10.0.0.11/24"
+        ],
+        "gateway": [
+          "10.0.0.1"
+        ]
+      }
+    }
+  },
+  "networkUnits": {
+    "10-uplink.network": "[Match]\nName=enp1s0\n\n[Network]\nAddress=10.0.0.11/24\nGateway=10.0.0.1\n\n"
+  },
+  "labels": {},
+  "taints": [],
+  "storage": {
+    "disks": {
+      "system": {
+        "ref": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001",
+        "seed": "4ddbee6c-635c-dcb9-bb95-26d82d7c4cff",
+        "repart": {
+          "50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"
+        }
+      }
+    },
+    "volumes": {
+      "var": {
+        "disk": "system",
+        "label": "var",
+        "format": "ext4",
+        "mountPoint": "/var",
+        "encryption": "tpm2",
+        "size": null
+      }
+    },
+    "fallback": "recovery-key",
+    "encryption": "tpm2"
+  },
+  "kubernetes": {
+    "nodeName": "cp1",
+    "nodeIPs": [
+      "10.0.0.11"
+    ],
+    "validSubnets": null
+  },
+  "time": {
+    "servers": [
+      {
+        "host": "ptbtime1.ptb.de",
+        "nts": true,
+        "port": null
+      },
+      {
+        "host": "ptbtime2.ptb.de",
+        "nts": true,
+        "port": null
+      },
+      {
+        "host": "ptbtime3.ptb.de",
+        "nts": true,
+        "port": null
+      }
+    ]
+  }
+}

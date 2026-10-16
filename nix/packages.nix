@@ -20,7 +20,6 @@ in
 {
   test-secureboot = import ./testing/secureboot.nix { inherit pkgs; };
   test-secrets = testing.secrets;
-  test-bridge = testing.bridge;
 
   chalkctl = goModule {
     pname = "chalkctl";

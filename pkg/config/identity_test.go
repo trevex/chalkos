@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/identity"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -57,21 +56,22 @@ func homelabSet(t *testing.T, node string) *Set {
 	return s
 }
 
+// golden is the identity testdata/homelab-<node>-identity.json holds for the homelab's node, which
+// the node's documents must give.
 func golden(t *testing.T, node string) identity.Identity {
 	t.Helper()
-	f, err := os.Open("../../test/fixtures/homelab-manifest.json")
+	data, err := os.ReadFile("testdata/homelab-" + node + "-identity.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	m, err := manifest.Decode(f)
-	if err != nil {
+	var id identity.Identity
+	if err := json.Unmarshal(data, &id); err != nil {
 		t.Fatal(err)
 	}
-	return m.Nodes[node].Identity
+	return id
 }
 
-func TestIdentityMatchesTheClusterDefinition(t *testing.T) {
+func TestIdentityMatchesTheGoldenIdentity(t *testing.T) {
 	for _, node := range []string{"cp1", "w1"} {
 		t.Run(node, func(t *testing.T) {
 			want := golden(t, node)

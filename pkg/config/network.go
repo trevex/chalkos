@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -182,4 +183,11 @@ func joinValues(v any) any {
 		parts = append(parts, fmt.Sprint(item))
 	}
 	return strings.Join(parts, " ")
+}
+
+// StaticAddresses returns the addresses Set.Identity counts as the node's static ones, in network
+// name order and without prefix lengths, read from the documents alone, so a client finds a node
+// before it has the schemas of the node's image.
+func StaticAddresses(docs []Document) []string {
+	return identity.Identity{Network: NetworkMap(docs)}.StaticAddresses()
 }

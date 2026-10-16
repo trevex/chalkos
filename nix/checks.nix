@@ -97,9 +97,6 @@ in
       postFixup = "";
     }
     // testEnv.vars
-    // {
-      CHALKOS_TEST_BRIDGE = "${chalkPkgs.test-bridge}";
-    }
   );
 
   e2e-firmware = e2e "firmware" "^TestFirmwareBoots$" { };

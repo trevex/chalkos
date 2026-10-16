@@ -12,7 +12,6 @@ callPackage ./go-module.nix { } {
     ../pkg/identity
     ../pkg/install
     ../pkg/kubernetes
-    ../pkg/manifest
     ../pkg/networkdschema
     ../pkg/nodeconfig
     ../pkg/pki
