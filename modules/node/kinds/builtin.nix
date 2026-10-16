@@ -169,7 +169,7 @@ in
       spec = {
         source.directory = mkOption {
           type = types.nonEmptyStr;
-          description = "Directory of an image build, as nix build makes it; a relative path is relative to the file that holds the document.";
+          description = "Directory of an image build, as nix build makes it; a relative path is relative to the directory of the file that holds the document, as the inventory names that file, without following a symlink to it.";
         };
       };
     };

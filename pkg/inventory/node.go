@@ -3,6 +3,7 @@ package inventory
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -21,7 +22,9 @@ type NodeConfig struct {
 	// empty for the node's name.
 	Type, Hostname string
 	// ImageName is the name of the Image document the Node names, and ImageDir the directory its
-	// source names, resolved against the file that holds the Image.
+	// source names. A relative source is resolved against the directory of the file that holds
+	// the Image, as the inventory names that file: a symlink to the file is not followed, so a
+	// shared file linked into several directories points each at its own images.
 	ImageName, ImageDir string
 	// Image is ImageDir's metadata.json, once Resolve read it. It stays on the operator's machine:
 	// the documents chalkctl delivers carry no root hash.
@@ -44,6 +47,9 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 			return nil, err
 		}
 		for _, d := range read {
+			// The inventory reads a file once for every node that gets it; each node gets its own
+			// copy, so that changing one node's documents changes no other's.
+			d.Object = cloneValue(d.Object).(map[string]any)
 			key := d.APIVersion + " " + d.Kind + " " + d.Name
 			if other, ok := seen[key]; ok {
 				return nil, fmt.Errorf("node %s: %s and %s both hold %s", name, inv.rel(other), inv.rel(f), d)
@@ -83,6 +89,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 			if err != nil {
 				return nil, fmt.Errorf("node %s: %w", name, err)
 			}
+			// The file's directory as named, not where a symlink to it points.
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(filepath.Dir(sources[i]), dir)
 			}
@@ -96,6 +103,25 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	return c, nil
 }
 
+// cloneValue copies a document's value, its maps and lists included.
+func cloneValue(v any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			out[k] = cloneValue(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, e := range v {
+			out[i] = cloneValue(e)
+		}
+		return out
+	}
+	return v
+}
+
 // sourceDirectory is the directory an Image document's source names.
 func sourceDirectory(d config.Document) (string, error) {
 	spec, _ := d.Object["spec"].(map[string]any)
@@ -106,6 +132,9 @@ func sourceDirectory(d config.Document) (string, error) {
 	}
 	return dir, nil
 }
+
+// rootHash is a store's dm-verity root hash as metadata.json writes it.
+var rootHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // StaticAddresses are the node's static addresses, as its Network documents give them.
 func (c *NodeConfig) StaticAddresses() []string { return config.StaticAddresses(c.Documents) }
@@ -122,8 +151,14 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	if err != nil {
 		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %w", c.ImageName, c.Name, err)
 	}
-	if md.RootHash == "" {
-		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names no root hash", c.ImageName, c.Name, filepath.Join(c.ImageDir, "metadata.json"))
+	file := filepath.Join(c.ImageDir, "metadata.json")
+	switch {
+	case md.RootHash == "":
+		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names no root hash", c.ImageName, c.Name, file)
+	case !rootHash.MatchString(md.RootHash):
+		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names the root hash %q, which is not 64 lower-case hex digits", c.ImageName, c.Name, file, md.RootHash)
+	case md.Platform == "":
+		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names no platform", c.ImageName, c.Name, file)
 	}
 	c.Image = &md
 	return md, nil

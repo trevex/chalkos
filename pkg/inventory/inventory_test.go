@@ -115,3 +115,83 @@ func TestFilesInOrder(t *testing.T) {
 		t.Errorf("files of w1 without gpu's = %v", err)
 	}
 }
+
+// TestFilesOnce gives a node a file that several paths, globs or groups name once, where it is
+// named first.
+func TestFilesOnce(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "chalkos.yaml"), strings.Replace(homelab, "groups: [gpu], files: [nodes/w1.yaml]", "groups: [gpu, gpu], files: [nodes/w1.yaml, cluster/a.yaml, gpu/*.yaml]", 1))
+	for _, f := range []string{"cluster/a.yaml", "cluster/b.yaml", "gpu/driver.yaml", "nodes/w1.yaml", "nodes/cp1.yaml"} {
+		write(t, filepath.Join(dir, f), "")
+	}
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := inv.Files("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for _, f := range []string{"cluster/a.yaml", "cluster/b.yaml", "gpu/driver.yaml", "nodes/w1.yaml"} {
+		want = append(want, filepath.Join(dir, f))
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("files of w1 = %q, want %q", got, want)
+	}
+}
+
+// TestFilesBelowAGlobsDirectory reads the files of an inventory whose directory's name holds
+// characters a glob reads as a pattern's, and an absolute glob as written.
+func TestFilesBelowAGlobsDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "lab[1]*?")
+	other := t.TempDir()
+	write(t, filepath.Join(dir, "chalkos.yaml"), strings.Replace(homelab, "files: [nodes/w1.yaml]", "files: [nodes/w1.yaml, "+filepath.Join(other, "*.yaml")+"]", 1))
+	for _, f := range []string{"cluster/a.yaml", "gpu/driver.yaml", "nodes/w1.yaml"} {
+		write(t, filepath.Join(dir, f), "")
+	}
+	write(t, filepath.Join(other, "extra.yaml"), "")
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := inv.Files("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(dir, "cluster", "a.yaml"), filepath.Join(dir, "gpu", "driver.yaml"), filepath.Join(dir, "nodes", "w1.yaml"), filepath.Join(other, "extra.yaml")}
+	if !slices.Equal(got, want) {
+		t.Errorf("files of w1 = %q, want %q", got, want)
+	}
+	if _, err := inv.Files("cp1"); err == nil || !strings.Contains(err.Error(), "nodes/cp1.yaml names no file") {
+		t.Errorf("files of cp1 = %v, want nodes/cp1.yaml named relative to the inventory", err)
+	}
+}
+
+// TestFilesSkipDirectories leaves out the directories a glob matches, and refuses a path or glob
+// that names directories alone.
+func TestFilesSkipDirectories(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "chalkos.yaml"), strings.Replace(homelab, "files: [nodes/w1.yaml]", "files: [nodes/*]", 1))
+	for _, f := range []string{"cluster/a.yaml", "gpu/driver.yaml", "nodes/w1.yaml", "nodes/old/w1.yaml"} {
+		write(t, filepath.Join(dir, f), "")
+	}
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := inv.Files("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "nodes", "w1.yaml"); got[len(got)-1] != want || slices.Contains(got, filepath.Join(dir, "nodes", "old")) {
+		t.Errorf("files of w1 = %q, want %s last and no directory", got, want)
+	}
+	write(t, filepath.Join(dir, "chalkos.yaml"), strings.Replace(homelab, "files: [nodes/w1.yaml]", "files: [nodes/old]", 1))
+	if inv, err = Load(filepath.Join(dir, "chalkos.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inv.Files("w1"); err == nil || !strings.Contains(err.Error(), "nodes/old names only the directory nodes/old; name its files, such as nodes/old/*.yaml") {
+		t.Errorf("files of w1 naming a directory = %v", err)
+	}
+}

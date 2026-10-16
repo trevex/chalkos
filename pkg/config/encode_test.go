@@ -29,3 +29,29 @@ func TestEncode(t *testing.T) {
 		t.Errorf("version %s of %d documents, want %s of 2", e.Version, len(e.Documents), v)
 	}
 }
+
+// TestEncodeVersionIgnoresOrder gives documents the same version in every order, so the order of
+// the files that hold them does not change a node's config version.
+func TestEncodeVersionIgnoresOrder(t *testing.T) {
+	docs, err := Parse(strings.NewReader("apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: b}\nspec: {source: {directory: ./b}}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: a}\nspec: {source: {directory: ./a}}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := Encode(docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, order := range [][]int{{0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
+		var permuted []Document
+		for _, i := range order {
+			permuted = append(permuted, docs[i])
+		}
+		e, err := Encode(permuted)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Version != first.Version {
+			t.Errorf("version in order %v = %s, want %s", order, e.Version, first.Version)
+		}
+	}
+}

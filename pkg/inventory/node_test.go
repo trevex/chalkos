@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -190,5 +191,105 @@ func TestCluster(t *testing.T) {
 	}
 	if name, _, err := inv.Cluster(); err != nil || name != "homelab" {
 		t.Errorf("cluster without nodes = %q, %v", name, err)
+	}
+}
+
+// TestNodeImageDirectory resolves an Image's relative source against the directory of the file
+// that holds it, as the inventory names the file, and takes an absolute source as written.
+func TestNodeImageDirectory(t *testing.T) {
+	images := t.TempDir()
+	for name, tc := range map[string]struct{ source, want string }{
+		"absolute":        {filepath.Join(images, "node-metal"), filepath.Join(images, "node-metal")},
+		"up and down":     {"../images/../builds/./node-metal", "builds/node-metal"},
+		"beside the file": {"node-metal", "cluster/node-metal"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := homelabDir(t)
+			write(t, filepath.Join(dir, "cluster", "all.yaml"), strings.Replace(clusterFiles, "../images/node-metal", tc.source, 1))
+			inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cp1, err := inv.Node("cp1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := tc.want
+			if !filepath.IsAbs(want) {
+				want = filepath.Join(dir, want)
+			}
+			if cp1.ImageDir != want {
+				t.Errorf("image directory = %s, want %s", cp1.ImageDir, want)
+			}
+		})
+	}
+	// A shared file linked into the cluster's directory points at the images beside the link.
+	dir := homelabDir(t)
+	shared := filepath.Join(t.TempDir(), "all.yaml")
+	write(t, shared, clusterFiles)
+	if err := os.Remove(filepath.Join(dir, "cluster", "all.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, filepath.Join(dir, "cluster", "all.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp1, err := inv.Node("cp1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "images", "node-metal"); cp1.ImageDir != want {
+		t.Errorf("image directory through a symlink = %s, want %s", cp1.ImageDir, want)
+	}
+}
+
+// TestNodesOwnTheirDocuments gives each node its own copy of the documents of a file they share.
+func TestNodesOwnTheirDocuments(t *testing.T) {
+	dir := homelabDir(t)
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp1, err := inv.Node("cp1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp1.Documents[0].Object["spec"].(map[string]any)["endpoint"] = "https://changed:6443"
+	w1, err := inv.Node("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := w1.Documents[0].Object["spec"].(map[string]any)["endpoint"]; got != "https://10.0.0.11:6443" {
+		t.Errorf("w1's Cluster endpoint = %v after a change to cp1's", got)
+	}
+}
+
+// TestResolveRefusesMetadata refuses metadata.json whose root hash is not one, or that names no
+// platform.
+func TestResolveRefusesMetadata(t *testing.T) {
+	for name, tc := range map[string]struct{ hash, platform, want string }{
+		"a short root hash":       {"abcd", "metal", `names the root hash "abcd", which is not 64 lower-case hex digits`},
+		"an upper-case root hash": {strings.Repeat("AB", 32), "metal", "which is not 64 lower-case hex digits"},
+		"no platform":             {strings.Repeat("ab", 32), "", "names no platform"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := homelabDir(t)
+			write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
+				`{"schemaVersion": 0, "id": "chalkos", "version": "0.3.0", "variant": "node", "platform": "`+tc.platform+`", "rootHash": "`+tc.hash+`", "kinds": []}`)
+			inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cp1, err := inv.Node("cp1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := cp1.Resolve(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Resolve = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

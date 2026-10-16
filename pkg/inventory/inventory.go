@@ -74,7 +74,8 @@ type Node struct {
 	Files   []string `json:"files,omitempty"`
 }
 
-// Inventory is an inventory as chalkctl reads it: its spec with every path absolute.
+// Inventory is an inventory as chalkctl reads it: its spec with every path absolute. Its files
+// are globs, in which the inventory's directory is escaped.
 type Inventory struct {
 	// Path is the inventory file's absolute path.
 	Path string
@@ -164,12 +165,27 @@ func absolute(dir, p string) string {
 	return filepath.Join(dir, p)
 }
 
-func absoluteAll(dir string, paths []string) []string {
+// absoluteAll resolves paths and globs of the inventory against its directory. The directory
+// joins them escaped, so that a directory such as lab[1] stays a literal part of each glob; a
+// glob written absolute stays as written.
+func absoluteAll(dir string, patterns []string) []string {
 	var out []string
-	for _, p := range paths {
-		out = append(out, absolute(dir, p))
+	for _, p := range patterns {
+		out = append(out, absolute(escapeGlob(dir), p))
 	}
 	return out
+}
+
+// escapeGlob escapes the characters filepath.Match reads as a pattern's.
+func escapeGlob(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune(`*?[\`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // Dir is the inventory's directory.
@@ -180,7 +196,8 @@ func (inv *Inventory) NodeNames() []string { return slices.Sorted(maps.Keys(inv.
 
 // Files are the config files of a node, in the order their documents form its set: the shared
 // files, then its groups' files in the order it names the groups, then its own. Each path or glob
-// must name at least one file; a glob's files come in name order.
+// must name at least one file; a glob's files come in name order, and a file named twice counts
+// where it is named first.
 func (inv *Inventory) Files(node string) ([]string, error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {
@@ -194,18 +211,41 @@ func (inv *Inventory) Files(node string) ([]string, error) {
 	return inv.expand(patterns)
 }
 
-// expand lists the files of paths and globs, each of which must name one at least.
+// expand lists the files of paths and globs, each of which must name one at least, once each in
+// the order they are first named. A glob skips the directories it matches; a path that names a
+// directory alone is refused.
 func (inv *Inventory) expand(patterns []string) ([]string, error) {
 	var files []string
+	seen := map[string]bool{}
 	for _, p := range patterns {
 		matches, err := filepath.Glob(p)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", inv.rel(p), err)
 		}
-		if len(matches) == 0 {
+		var named, dirs []string
+		for _, m := range matches {
+			info, err := os.Stat(m)
+			if err != nil {
+				return nil, err
+			}
+			if info.IsDir() {
+				dirs = append(dirs, m)
+				continue
+			}
+			named = append(named, m)
+		}
+		if len(named) == 0 {
+			if len(dirs) > 0 {
+				return nil, fmt.Errorf("%s names only the directory %s; name its files, such as %s", inv.rel(p), inv.rel(dirs[0]), filepath.Join(inv.rel(dirs[0]), "*.yaml"))
+			}
 			return nil, fmt.Errorf("%s names no file", inv.rel(p))
 		}
-		files = append(files, matches...)
+		for _, f := range named {
+			if !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+			}
+		}
 	}
 	return files, nil
 }
@@ -228,10 +268,13 @@ func (inv *Inventory) read(file string) ([]config.Document, error) {
 	return docs, nil
 }
 
-// rel is a path as messages name it: relative to the inventory's directory where it is below it.
+// rel is a path or glob as messages name it: relative to the inventory's directory where it is
+// below it.
 func (inv *Inventory) rel(p string) string {
-	if r, err := filepath.Rel(inv.Dir(), p); err == nil && !strings.HasPrefix(r, "..") {
-		return r
+	for _, dir := range []string{inv.Dir(), escapeGlob(inv.Dir())} {
+		if r, err := filepath.Rel(dir, p); err == nil && !strings.HasPrefix(r, "..") {
+			return r
+		}
 	}
 	return p
 }
