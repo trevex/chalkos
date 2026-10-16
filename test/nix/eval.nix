@@ -256,8 +256,9 @@ lib.runTests {
     };
   };
   # A cluster's runtime settings and its nodes reach the nodes as config, so two clusters that
-  # differ in every one of them build the same role images and installer. The OS CA is the same
-  # in both: it is an input of the images.
+  # differ in their nodes and in the runtime settings below build the same role images and
+  # installer. The VIP's mode has one value, and the Kubernetes release and the CNI provider are
+  # image inputs, so they are left alone; the OS CA is an image input too, and the same in both.
   testImagesAreClusterAgnostic = {
     expr =
       let
@@ -293,9 +294,20 @@ lib.runTests {
                     ipv4 = "10.16.0.0/16";
                     ipv6 = "fd00:16::/112";
                   };
+                  dnsIPs = {
+                    ipv4 = "10.16.0.53";
+                    ipv6 = "fd00:16::35";
+                  };
+                  nodeCIDRMaskSizes = {
+                    ipv4 = 26;
+                    ipv6 = 72;
+                  };
                   domain = "u.example";
                   allowSchedulingOnControlPlanes = true;
-                  vip.addresses = [ "fd00::10" ];
+                  vip = {
+                    addresses = [ "fd00::10" ];
+                    interface = "bond0";
+                  };
                   vxlanSourceSubnets = [
                     "fd00:100::/64"
                     "192.168.100.0/24"

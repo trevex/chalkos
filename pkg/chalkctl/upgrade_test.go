@@ -485,7 +485,8 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 
 // TestUpgradeOneRoleControlPlanesFirst upgrades control planes and workers that share a role and
 // its image: the control planes one at a time, each back before the next, and the workers after
-// them all, although their names sort first, each drained before it gets the image.
+// them all, although their names sort first, each drained before it gets the image and without a
+// check of etcd's quorum.
 func TestUpgradeOneRoleControlPlanesFirst(t *testing.T) {
 	l := newUpgradeLabOf(t, upgradeManifestOf(3, []string{"a1", "a2"}, "k8s", "k8s"))
 	if err := l.upgrade(testUpgradeImage(t, "k8s", "0.2.0")); err != nil {
@@ -515,9 +516,16 @@ func TestUpgradeOneRoleControlPlanesFirst(t *testing.T) {
 		if !(at(w+" drain") < at(w+" upgrade") && at(w+" upgrade") < at(w+" reboot") && at(w+" reboot") < at(w+" uncordon")) {
 			t.Errorf("%s out of order: %q", w, events)
 		}
-		if slices.Contains(events, w+" members") {
-			t.Errorf("the run asked worker %s for etcd's members: %q", w, events)
+	}
+	// etcd's quorum is checked before each control plane reboots, and for no worker.
+	var members []int
+	for i, e := range events {
+		if strings.HasSuffix(e, " members") {
+			members = append(members, i)
 		}
+	}
+	if len(members) != 3 || members[2] > at("a1 drain") || members[2] > at("a2 drain") {
+		t.Errorf("etcd's members were asked at %v, want three times before any worker is drained: %q", members, events)
 	}
 	for name, v := range l.versions() {
 		if want := map[bool]string{true: "0.1.0", false: "0.2.0"}[name == "n1"]; v != want {
