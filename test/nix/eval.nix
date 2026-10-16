@@ -2670,7 +2670,6 @@ lib.runTests {
     expr = removeAttrs (cluster [ ]).cluster.kubernetes [
       "package"
       "extraArgs"
-      "addons"
     ];
     expected = {
       podCIDRs = {
