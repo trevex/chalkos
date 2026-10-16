@@ -1,0 +1,59 @@
+{
+  "allowSchedulingOnControlPlanes": true,
+  "dnsIPs": {
+    "ipv4": "10.96.0.10",
+    "ipv6": "fd00:10:96::a"
+  },
+  "domain": "chalklab.example",
+  "endpoint": "https://192.168.100.11:6443",
+  "extraArgs": {
+    "etcd": {},
+    "kube-apiserver": {},
+    "kube-controller-manager": {},
+    "kube-scheduler": {},
+    "kubelet": {}
+  },
+  "flannel": null,
+  "images": {
+    "coredns": "registry.k8s.io/coredns/coredns:v1.14.6",
+    "etcd": "registry.k8s.io/etcd:3.7.0-0",
+    "flannel": "",
+    "kubeAPIServer": "registry.k8s.io/kube-apiserver:v1.37.1",
+    "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1",
+    "kubeProxy": "registry.k8s.io/kube-proxy:v1.37.1",
+    "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1"
+  },
+  "ipFamilies": [
+    "ipv6",
+    "ipv4"
+  ],
+  "kind": "controlplane",
+  "nodeCIDRMaskSizes": {
+    "ipv4": 24,
+    "ipv6": 64
+  },
+  "nodeIP": {
+    "timeout": 300,
+    "validSubnets": []
+  },
+  "podCIDRs": {
+    "ipv4": "10.244.0.0/16",
+    "ipv6": "fd00:10:244::/56"
+  },
+  "serviceCIDRs": {
+    "ipv4": "10.96.0.0/12",
+    "ipv6": "fd00:10:96::/112"
+  },
+  "version": "1.37.1",
+  "vip": {
+    "addresses": [],
+    "interface": null,
+    "mode": "l2"
+  },
+  "vxlanSourceSubnets": [
+    "192.168.100.0/24",
+    "fd00:100::/64",
+    "192.168.200.0/24",
+    "fd00:200::/64"
+  ]
+}

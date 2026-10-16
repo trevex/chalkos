@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -1265,5 +1266,42 @@ func TestPrepareWritesTheKubeletConfig(t *testing.T) {
 	}
 	if want := filepath.Join(p.KubeletDir(), "ca.crt"); config.Authentication.X509.ClientCAFile != want {
 		t.Errorf("clientCAFile = %q, want %q", config.Authentication.X509.ClientCAFile, want)
+	}
+}
+
+// TestKubeletConfig is the kubelet's whole configuration: clients authenticate with certificates
+// or tokens the API server checks, the kernel's tunables are the image's, and pods resolve
+// through the cluster DNS address of the primary family.
+func TestKubeletConfig(t *testing.T) {
+	p := Paths{Run: "/run/chalkos/kubernetes"}
+	c := kubernetes.Cluster{Domain: "lab.local", IPFamilies: []string{"ipv6", "ipv4"},
+		DNSIPs: kubernetes.ByFamily[string]{IPv4: "10.100.0.10", IPv6: "fd00:10:96::a"}}
+	want := map[string]any{
+		"apiVersion": "kubelet.config.k8s.io/v1beta1",
+		"kind":       "KubeletConfiguration",
+		"authentication": map[string]any{
+			"anonymous": map[string]any{"enabled": false},
+			"webhook":   map[string]any{"enabled": true},
+			"x509":      map[string]any{"clientCAFile": "/run/chalkos/kubernetes/kubelet/ca.crt"},
+		},
+		"authorization":            map[string]any{"mode": "Webhook"},
+		"readOnlyPort":             0,
+		"tlsMinVersion":            "VersionTLS12",
+		"protectKernelDefaults":    true,
+		"cgroupDriver":             "systemd",
+		"clusterDNS":               []any{"fd00:10:96::a"},
+		"clusterDomain":            "lab.local",
+		"containerRuntimeEndpoint": "unix:///run/containerd/containerd.sock",
+		"rotateCertificates":       true,
+		"serverTLSBootstrap":       true,
+		"staticPodPath":            "/run/chalkos/kubernetes/manifests",
+		"resolvConf":               "/run/systemd/resolve/resolv.conf",
+	}
+	if got := KubeletConfig(p, c); !reflect.DeepEqual(got, want) {
+		t.Errorf("config =\n%#v\nwant\n%#v", got, want)
+	}
+	c.IPFamilies = []string{"ipv4", "ipv6"}
+	if got := KubeletConfig(p, c)["clusterDNS"]; !reflect.DeepEqual(got, []any{"10.100.0.10"}) {
+		t.Errorf("clusterDNS with IPv4 primary = %v", got)
 	}
 }
