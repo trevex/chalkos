@@ -40,7 +40,7 @@ spec: {}
 apiVersion: chalkos.dev/v1alpha1
 kind: Image
 metadata: {name: metal}
-spec: {source: ./images/metal}
+spec: {source: {directory: ./images/metal}}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
@@ -128,7 +128,7 @@ func TestNewSetRejects(t *testing.T) {
 		"unknown kind": {minimal + "---\napiVersion: x.example.org/v1\nkind: Thing\nmetadata: {name: a}\nspec: {}\n",
 			`does not accept kind "Thing"`},
 		"missing image": {strings.Replace(minimal, "imageRef: metal", "imageRef: kvm", 1), `Image "kvm"`},
-		"duplicate name": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: metal}\nspec: {source: ./x}\n",
+		"duplicate name": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: metal}\nspec: {source: {directory: ./x}}\n",
 			`two Image documents named "metal"`},
 		"invalid document": {strings.Replace(minimal, "{path: /dev/vda}", "{path: vda}", 1), "SystemDisk"},
 	} {

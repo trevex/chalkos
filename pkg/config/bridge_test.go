@@ -99,7 +99,7 @@ func TestFromManifestDocuments(t *testing.T) {
 		}
 		return nil
 	}
-	if got := spec("Image")["source"]; got != "roles.node.images.metal" {
+	if got := spec("Image")["source"]; !reflect.DeepEqual(got, map[string]any{"directory": "roles.node.images.metal"}) {
 		t.Errorf("image source = %v", got)
 	}
 	wantVolume := map[string]any{
@@ -578,7 +578,7 @@ spec: {}
 apiVersion: chalkos.dev/v1alpha1
 kind: Image
 metadata: {name: img}
-spec: {source: /images/plain}
+spec: {source: {directory: /images/plain}}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Node

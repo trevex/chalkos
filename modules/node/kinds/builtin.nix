@@ -167,14 +167,9 @@ in
     Image = builtin "chalkos.dev" // {
       multiple = true;
       spec = {
-        source = mkOption {
+        source.directory = mkOption {
           type = types.nonEmptyStr;
-          description = "Where the image is: a directory of an image build.";
-        };
-        rootHash = mkOption {
-          type = types.nullOr (types.strMatching "[0-9a-f]{64}");
-          default = null;
-          description = "Root hash of the image's store, which the source must have; null accepts any.";
+          description = "Directory of an image build, as nix build makes it; a relative path is relative to the file that holds the document.";
         };
       };
     };

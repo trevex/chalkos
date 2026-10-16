@@ -33,7 +33,7 @@ spec: {}
 apiVersion: chalkos.dev/v1alpha1
 kind: Image
 metadata: {name: metal}
-spec: {source: ./images/metal}
+spec: {source: {directory: ./images/metal}}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Node

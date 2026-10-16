@@ -45,9 +45,9 @@ type Bridged struct {
 // SystemDisk and Volume, Network, NetDev and Link, and Kubelet documents mapped back from the
 // identity the cluster definition rendered; on a node with Kubernetes the Kubernetes, Flannel,
 // RegistryMirror and Addon documents of the manifest's cluster-wide settings; then the
-// documents the node's extensions add. The Image is named <role>-<platform>, and its source is the
-// flake attribute path the manifest gives the role's image of the platform. Check tells whether
-// the documents give back that identity.
+// documents the node's extensions add. The Image is named <role>-<platform>, and its source
+// directory is the flake attribute path the manifest gives the role's image of the platform.
+// Check tells whether the documents give back that identity.
 func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 	n, ok := m.Nodes[name]
 	if !ok {
@@ -72,7 +72,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 	}
 	objects := []map[string]any{
 		object(CoreAPI, "Cluster", m.Cluster.Name, cluster),
-		object(CoreAPI, "Image", image, map[string]any{"source": role.Images[n.Platform]}),
+		object(CoreAPI, "Image", image, map[string]any{"source": map[string]any{"directory": role.Images[n.Platform]}}),
 		object(CoreAPI, "Node", name, node),
 		object(TimeAPI, "TimeSync", "time", map[string]any{"servers": timeServers(id.Time.Servers), "dhcp": m.Time.DHCPServers}),
 	}
