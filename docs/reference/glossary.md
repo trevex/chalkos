@@ -115,8 +115,8 @@ also puts its values in the manifest and the Nix store. See
 
 One object of a node's [config](#config), in the style of a Kubernetes object: an `apiVersion`
 of a group and a version, a `kind`, a `metadata.name` and a `spec`. The schema of its
-[kind](#kind) defines the `spec`. On the node, chalkd writes each document except `Secret`s to
-`/run/chalkos/config/<group>/<Kind>/<name>.json`. See
+[kind](#kind) defines the `spec`. On the node, chalkd writes each document except `Secret`s and
+`Addon`s to `/run/chalkos/config/<group>/<Kind>/<name>.json`. See
 [The cluster definition](../concepts/cluster-definition.md).
 
 ## Contract { #contract }

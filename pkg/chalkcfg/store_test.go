@@ -23,7 +23,7 @@ func writeFile(t *testing.T, path, data string) {
 
 // testNode is a node's config directory and its image's schemas, laid out as chalkd and the image
 // lay them out. The node has two Peers, backup with neighbors, and a Rack. The image also declares
-// Site, of which the node has no document, and Secret.
+// Site, of which the node has no document, Secret and Addon.
 func testNode(t *testing.T) store {
 	t.Helper()
 	dir := t.TempDir()
@@ -33,9 +33,13 @@ func testNode(t *testing.T) store {
 		"rack.example.org_v1alpha1_Rack.json",
 		"site.example.org_v1alpha1_Site.json",
 		"chalkos.dev_v1alpha1_Secret.json",
+		"kubernetes.chalkos.dev_v1alpha1_Addon.json",
 	} {
 		writeFile(t, filepath.Join(s.schemas, name), "{}\n")
 	}
+	// An Addon file below /run: chalkcfg never prints one, wherever it came from.
+	writeFile(t, filepath.Join(s.config, "kubernetes.chalkos.dev", "Addon", "manifests.json"),
+		`{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Addon","metadata":{"name":"manifests"},"spec":{"objects":[]}}`+"\n")
 	writeFile(t, filepath.Join(s.config, "rack.example.org", "Rack", "rack.json"),
 		`{"apiVersion":"rack.example.org/v1alpha1","kind":"Rack","metadata":{"name":"rack"},"spec":{"location":"rack-a/u12"}}`+"\n")
 	writeFile(t, filepath.Join(s.config, "bgp.example.org", "Peer", "uplink.json"),
@@ -63,6 +67,7 @@ func TestKinds(t *testing.T) {
 		"Rack":   {groups: []string{"rack.example.org"}, documents: 1},
 		"Site":   {groups: []string{"site.example.org"}, documents: 0},
 		"Secret": {groups: []string{"chalkos.dev"}, documents: 0},
+		"Addon":  {groups: []string{"kubernetes.chalkos.dev"}, documents: 1},
 	}
 	got := map[string]kindInfo{}
 	for k, v := range kinds {
@@ -109,6 +114,7 @@ func TestDocumentsRefused(t *testing.T) {
 		{"Rack", "../Rack/rack", `the node has no Rack named "../Rack/rack"`},
 		{"Site", "main", `the node has no Site named "main"`},
 		{"Secret", "", "Secrets are never printed"},
+		{"Addon", "", "Addon documents are never printed"},
 	} {
 		_, err := s.documents(c.kind, c.name)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -117,6 +123,9 @@ func TestDocumentsRefused(t *testing.T) {
 	}
 	if _, err := s.documents("Secret", ""); !errors.Is(err, errSecret) {
 		t.Errorf("Secret: err = %v, want errSecret", err)
+	}
+	if _, err := s.documents("Addon", "manifests"); !errors.Is(err, errAddon) {
+		t.Errorf("Addon: err = %v, want errAddon", err)
 	}
 }
 

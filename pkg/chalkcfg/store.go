@@ -43,6 +43,11 @@ var namePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
 var errSecret = errors.New("Secrets are never printed: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
 
+var errAddon = errors.New("Addon documents are never printed: chalkd keeps them in the node's stored config, readable by root alone, and applies their objects on control planes")
+
+// hidden are the kinds chalkcfg never prints, by name, with why.
+var hidden = map[string]error{"Secret": errSecret, "Addon": errAddon}
+
 // readDir is os.ReadDir with a directory that does not exist read as empty: a node without config
 // has no /run/chalkos/config, and a test may have no schemas.
 func readDir(dir string) ([]os.DirEntry, error) {
@@ -121,14 +126,16 @@ func (s store) names(group, kind string) ([]string, error) {
 
 // group returns the group of a kind named by its name alone.
 func (s store) group(kind string) (string, error) {
-	if kind == "Secret" {
-		return "", errSecret
+	if err, ok := hidden[kind]; ok {
+		return "", err
 	}
 	kinds, err := s.kinds()
 	if err != nil {
 		return "", err
 	}
-	delete(kinds, "Secret")
+	for kind := range hidden {
+		delete(kinds, kind)
+	}
 	k, ok := kinds[kind]
 	if !ok {
 		return "", fmt.Errorf("the image declares no kind %s; it declares %s", kind, strings.Join(slices.Sorted(maps.Keys(kinds)), ", "))

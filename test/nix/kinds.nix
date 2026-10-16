@@ -778,6 +778,11 @@ lib.runTests {
     expr = fails (consumersOf (consumerOf [ "Secret" ]));
     expected = true;
   };
+  # Addon documents never reach /run, so no unit reads them.
+  testKindConsumerOfAddonFails = {
+    expr = fails (consumersOf (consumerOf [ "Addon" ]));
+    expected = true;
+  };
   testUnknownKindFailsTheUnits = {
     expr = fails (consumerOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
     expected = true;

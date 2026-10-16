@@ -281,8 +281,8 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		// A control plane applies the objects of changed Addon documents at once, as its loop
-		// does whenever it starts. A worker holds them and applies none, so they change nothing it
-		// runs.
+		// does whenever it starts. A worker applies none: chalkctl delivers none to it, and one it is
+		// given anyway changes nothing it runs.
 		if act == keepLoops && addonsChanged && cluster.Kind == k8s.KindControlPlane {
 			act = reloadLoops
 		}

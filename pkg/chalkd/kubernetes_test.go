@@ -1046,9 +1046,9 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 	}
 }
 
-// TestObjectsAreChalkosAddonsThenTheAddonDocuments: chalkd applies the addons it renders for the
+// TestObjectsAreTheAddOnsThenTheAddonDocuments: chalkd applies the add-ons it renders for the
 // cluster, then the objects of the stored Addon documents.
-func TestObjectsAreChalkosAddonsThenTheAddonDocuments(t *testing.T) {
+func TestObjectsAreTheAddOnsThenTheAddonDocuments(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
 	k := NewKubernetes()
 	k.Config = s.Kubernetes.Config
@@ -1345,7 +1345,7 @@ func TestApplyConfigAppliesChangedAddons(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := <-applied; got != "kube-dns" {
-		t.Errorf("applied up to %s, want chalkos's addons alone", got)
+		t.Errorf("applied up to %s, want chalkos's add-ons alone", got)
 	}
 
 	r.calls = nil
@@ -1405,7 +1405,8 @@ func TestApproverRunsWhileObjectsFail(t *testing.T) {
 	}
 }
 
-// A worker holds Addon documents without applying them: a changed one restarts no unit.
+// A worker applies no Addon documents: chalkctl delivers none to it, and a changed one it is
+// given anyway restarts no unit.
 func TestApplyConfigOnAWorkerKeepsChangedAddons(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
 	if _, err := sendConfig(s, workerConfig); err != nil {

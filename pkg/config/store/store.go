@@ -183,11 +183,15 @@ func fillDir(tmp string, fill func(string) error) error {
 	})
 }
 
-// writeDocuments writes each document as JSON below root: Secrets to secrets/<name>.json when
-// withSecrets is set and not at all otherwise, every other document to
-// <group>/<Kind>/<name>.json.
-func writeDocuments(root string, docs []config.Document, withSecrets bool) error {
+// writeDocuments writes each document as JSON below root: Secrets to secrets/<name>.json, every
+// other document to <group>/<Kind>/<name>.json, those that stay stored, such as Addons, readable
+// by root alone. stored is set for the set the node keeps on STATE; the copy for the node's
+// services leaves out the Secrets and the documents that stay stored.
+func writeDocuments(root string, docs []config.Document, stored bool) error {
 	for _, d := range docs {
+		if !stored && d.StaysStored() {
+			continue
+		}
 		group, _, _ := strings.Cut(d.APIVersion, "/")
 		for _, part := range []string{group, d.Kind, d.Name} {
 			if !validName(part) {
@@ -200,7 +204,7 @@ func writeDocuments(root string, docs []config.Document, withSecrets bool) error
 		}
 		data = append(data, '\n')
 		if d.IsSecret() {
-			if !withSecrets {
+			if !stored {
 				continue
 			}
 			dir := filepath.Join(root, secretsDir)
@@ -212,7 +216,18 @@ func writeDocuments(root string, docs []config.Document, withSecrets bool) error
 			}
 			continue
 		}
-		if err := writeFile(filepath.Join(root, group, d.Kind, d.Name+".json"), data, 0o644); err != nil {
+		dir, perm := filepath.Join(root, group, d.Kind), fs.FileMode(0o644)
+		// A document that stays stored may hold Kubernetes Secrets, so root alone reads it.
+		if d.StaysStored() {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				return err
+			}
+			if err := os.Chmod(dir, 0o700); err != nil {
+				return err
+			}
+			perm = 0o600
+		}
+		if err := writeFile(filepath.Join(dir, d.Name+".json"), data, perm); err != nil {
 			return err
 		}
 	}

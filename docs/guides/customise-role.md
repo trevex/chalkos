@@ -279,13 +279,14 @@ a cluster setting, not a role:
 ```
 
 The [control planes](../reference/glossary.md#control-plane) apply them with server-side apply
-after chalkos's own objects, at bootstrap and at every boot. They travel in the
-[config](../reference/glossary.md#config) of every Kubernetes node as `Addon` documents, which
-chalkctl generates from the setting, so a change to the list leaves the images as they are and
-reaches the nodes with [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). A
-control plane applies the changed list at once, without restarting a unit; a worker holds the list
-and applies none of it. An object removed from the list stays in the cluster; delete it with
-kubectl.
+after chalkos's own objects, at bootstrap and at every boot. They travel in the control planes'
+[config](../reference/glossary.md#config) as `Addon` documents, which chalkctl generates from the
+setting, so a change to the list leaves the images as they are and reaches the control planes with
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). Workers never receive them.
+A control plane applies the changed list at once, without restarting a unit. It keeps the `Addon`
+documents in its stored config on STATE, readable by root alone, because the objects may include
+Secrets: they never appear below `/run/chalkos/config`, and `chalkcfg` does not print them. An
+object removed from the list stays in the cluster; delete it with kubectl.
 
 ## What a role may not change
 

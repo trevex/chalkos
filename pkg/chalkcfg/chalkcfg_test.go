@@ -103,6 +103,7 @@ func TestGetFails(t *testing.T) {
 		{[]string{"get", "Nope"}, 1, "chalkcfg: the image declares no kind Nope; it declares Peer, Rack, Site\n"},
 		{[]string{"get", "Rack", "other"}, 1, `chalkcfg: the node has no Rack named "other"` + "\n"},
 		{[]string{"get", "Secret"}, 1, "chalkcfg: Secrets are never printed: a service gets"},
+		{[]string{"get", "Addon"}, 1, "chalkcfg: Addon documents are never printed"},
 		{[]string{"get", "Rack", "rack", "-o", "jsonpath={.spec.nope}"}, 1, "chalkcfg: Rack rack: nope is not found\n"},
 		{[]string{"get", "Rack", "rack", "-o", "jsonpath={.spec["}, 1, "chalkcfg: the jsonpath expression {.spec[: unterminated array\n"},
 		{[]string{"get", "Rack", "rack", "-o", "go-template={{.spec.nope}}"}, 1, `map has no entry for key "nope"`},

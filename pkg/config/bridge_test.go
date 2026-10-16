@@ -672,8 +672,7 @@ spec: {servers: [{host: ntp.example.org, nts: false, port: 4460}, {host: nts.exa
 }
 
 // TestFromManifestKubernetesDocuments: registries become RegistryMirrors named after them, the
-// cluster's manifests one Addon on every Kubernetes node, and every TimeSync carries the DHCP
-// flag.
+// cluster's manifests one Addon on each control plane, and every TimeSync carries the DHCP flag.
 func TestFromManifestKubernetesDocuments(t *testing.T) {
 	m := homelabManifest(t)
 	m.Registries = manifest.Registries{Mirrors: map[string][]string{
@@ -685,8 +684,8 @@ func TestFromManifestKubernetesDocuments(t *testing.T) {
 	}, AllowPlainHTTP: true}
 	m.Manifests = []json.RawMessage{json.RawMessage(`{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "apps"}}`)}
 	m.Time.DHCPServers = true
-	// Every Kubernetes node holds the cluster's manifests; only control planes apply them.
-	for _, node := range []string{"w1", "cp1"} {
+	// Only control planes apply the cluster's manifests, so workers do not get them.
+	for node, addons := range map[string][]string{"w1": nil, "cp1": {"manifests"}} {
 		b, err := FromManifest(m, node)
 		if err != nil {
 			t.Fatal(err)
@@ -695,7 +694,7 @@ func TestFromManifestKubernetesDocuments(t *testing.T) {
 		for _, d := range b.Documents {
 			names[d.Kind] = append(names[d.Kind], d.Name)
 		}
-		if !slices.Equal(names["RegistryMirror"], []string{"fd00--1-5000", "docker.io", "localhost-5000"}) || !slices.Equal(names["Addon"], []string{"manifests"}) {
+		if !slices.Equal(names["RegistryMirror"], []string{"fd00--1-5000", "docker.io", "localhost-5000"}) || !slices.Equal(names["Addon"], addons) {
 			t.Errorf("%s: documents = %v", node, names)
 		}
 		if _, err := b.Check(m.Nodes[node].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes[node])); err != nil {

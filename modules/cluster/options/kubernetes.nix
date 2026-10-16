@@ -820,8 +820,10 @@ in
     '';
     description = ''
       Kubernetes objects the control plane applies with server-side apply after the built-in
-      ones, in this order, at bootstrap and at every boot. Every Kubernetes node holds them in its
-      config as an `Addon` document, so a Secret among them is stored on workers too.
+      ones, in this order, at bootstrap and at every boot. chalkctl delivers them as an `Addon`
+      document to the control planes alone; workers never hold them. A control plane keeps the
+      document in its stored config, readable by root alone, and never writes it below
+      /run/chalkos/config, so a Secret among the objects stays on STATE.
     '';
   };
 

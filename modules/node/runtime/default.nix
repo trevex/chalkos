@@ -42,6 +42,7 @@ let
   );
   unknown = lib.filter (r: !lib.elem r.kind declaredKinds) requested;
   secretKinds = lib.filter (r: r.kind == "Secret") requested;
+  addonKinds = lib.filter (r: r.kind == "Addon") requested;
   # The consumers, once their kinds are known: a unit must not start without the documents it
   # expects, so a misspelled kind fails the evaluation.
   checkedConsumers =
@@ -52,6 +53,8 @@ let
       throw "chalkos.consumers.${r.unit}.kinds: the image declares no kind ${r.kind}; it declares ${lib.concatStringsSep ", " (lib.sort lib.lessThan declaredKinds)}"
     else if secretKinds != [ ] then
       throw "chalkos.consumers.${(lib.head secretKinds).unit}.kinds: a unit does not read Secret documents; it gets the values the secretRef fields of its kinds name"
+    else if addonKinds != [ ] then
+      throw "chalkos.consumers.${(lib.head addonKinds).unit}.kinds: a unit does not read Addon documents; they stay in the node's stored config, and chalkd applies their objects on control planes"
     else
       consumers;
 

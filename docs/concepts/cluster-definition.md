@@ -310,7 +310,7 @@ before the network starts:
 - it writes the networkd units to `/run/systemd/network`, where they take precedence over the
   image's;
 - it writes the time servers for chrony and sets the hostname;
-- it writes each document, `Secret`s excepted, to `/run/chalkos/config/<group>/<Kind>/<name>.json`;
+- it writes each document, `Secret`s and `Addon`s excepted, to `/run/chalkos/config/<group>/<Kind>/<name>.json`;
 - it writes, for each service that reads config kinds, the values the `secretRef` fields of those
   kinds name to `/run/chalkos/credentials/<unit>/`.
 

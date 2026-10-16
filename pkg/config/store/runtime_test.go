@@ -3,10 +3,12 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -119,5 +121,53 @@ spec: {name: two, token: {secretRef: {name: a, key: b.c}}}
 `
 	if err := CheckCredentials(parse(t, clash), s); err == nil || !strings.Contains(err.Error(), "a.b.c") {
 		t.Errorf("two references of one file: %v", err)
+	}
+}
+
+// Addon documents stay in the stored set, readable by root alone: their objects, Secrets among
+// them, are chalkd's to apply, so no file below /run holds them, and one an earlier write left
+// is removed.
+func TestWriteRuntimeLeavesOutAddons(t *testing.T) {
+	run := t.TempDir()
+	consumers := map[string][]string{"demo": {"Demo"}}
+	if err := WriteRuntime(run, parse(t, set), demoSchemas(t), consumers); err != nil {
+		t.Fatal(err)
+	}
+	addons := filepath.Join(run, "config", "kubernetes.chalkos.dev", "Addon")
+	if err := os.MkdirAll(addons, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(addons, "old.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withAddon := set + `---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Addon
+metadata: {name: manifests}
+spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}}]}
+`
+	if err := WriteRuntime(run, parse(t, withAddon), demoSchemas(t), consumers); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(run, "config", "kubernetes.chalkos.dev")); !os.IsNotExist(err) {
+		t.Errorf("wrote Addon documents below config/: %v", err)
+	}
+	if got := readFile(t, filepath.Join(run, "config", "demo.example.org", "Demo", "one.json")); !strings.Contains(got, `"name":"first"`) {
+		t.Errorf("Demo = %s", got)
+	}
+
+	stored := filepath.Join(t.TempDir(), "config")
+	if err := Write(stored, Stored{Documents: parse(t, withAddon), Version: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := Read(stored)
+	if err != nil || !slices.ContainsFunc(got.Documents, func(d config.Document) bool { return d.Kind == "Addon" }) {
+		t.Errorf("the stored set lost its Addon: %v", err)
+	}
+	if m := mode(t, filepath.Join(stored, "kubernetes.chalkos.dev", "Addon")); m != 0o700 {
+		t.Errorf("stored Addon directory mode = %v", m)
+	}
+	if m := mode(t, filepath.Join(stored, "kubernetes.chalkos.dev", "Addon", "manifests.json")); m != 0o600 {
+		t.Errorf("stored Addon mode = %v", m)
 	}
 }

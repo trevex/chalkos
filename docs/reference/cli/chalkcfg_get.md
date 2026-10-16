@@ -10,8 +10,8 @@ Print the node's documents of a kind, or list the kinds
 ## Synopsis
 
 Prints the node's documents of a kind, or the one with the given name. Without a kind, lists the
-kinds the image declares, other than Secret, with their groups and the node's number of
-documents of each.
+kinds the image declares, other than Secret and Addon, with their groups and the node's number
+of documents of each.
 
 Without --output, get prints the documents' names, one per line. -o json and -o yaml print the
 document named, or else a list {"items": [...], "kind": "List"} of all documents of the kind.
@@ -23,9 +23,9 @@ the document lacks is an error in both, also with a template's index.
 
 A kind the image declares but the node has no documents of gives an empty result: no names, an
 empty list, or no lines. get exits with 0 on success and with 2 for a usage error. It exits with
-1 for a kind the image does not declare, for Secret, for a name the node has no document of, for
-a kind in more than one group, for a jsonpath expression or template that fails to parse or run,
-and for an error reading the config.
+1 for a kind the image does not declare, for Secret and Addon, for a name the node has no document
+of, for a kind in more than one group, for a jsonpath expression or template that fails to parse
+or run, and for an error reading the config.
 
 ```
 chalkcfg get [<kind> [<name>]] [flags]

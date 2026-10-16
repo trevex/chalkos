@@ -422,7 +422,7 @@ in
       multiple = true;
       spec.objects = mkOption {
         type = types.listOf kubernetesObject;
-        description = "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. Every Kubernetes node may hold them; workers apply none.";
+        description = "Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. chalkctl delivers them to control planes alone, and a worker applies none.";
       };
     };
   }

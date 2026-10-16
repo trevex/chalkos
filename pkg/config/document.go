@@ -209,6 +209,11 @@ func FromObject(m map[string]any) Document {
 // them.
 func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == "Secret" }
 
+// StaysStored tells whether d stays in the node's stored set alone, never written below /run for
+// the node's services: an Addon, whose objects, Secrets among them, chalkd reads from the stored
+// set and applies on control planes, and which no service reads.
+func (d Document) StaysStored() bool { return d.APIVersion == KubernetesAPI && d.Kind == "Addon" }
+
 // SortDocuments orders docs by apiVersion, kind and name.
 func SortDocuments(docs []Document) {
 	slices.SortStableFunc(docs, func(a, b Document) int {

@@ -238,7 +238,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and `image.json` at boot and on every apply. |
-| `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s excepted, which chalkcfg prints. |
+| `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
 | `/run/chalkos/chrony/identity.sources` | The time servers of the config, for chrony. |

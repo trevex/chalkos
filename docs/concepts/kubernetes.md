@@ -44,8 +44,8 @@ Kubernetes:
 The image fixes what it ships: the Kubernetes release, the images of its components and the pod
 network, recorded in `/etc/chalkos/kubernetes/image.json`. The rest of the cluster's settings reach
 the node as its [config](../reference/glossary.md#config): chalkctl generates the node's
-`Kubernetes`, `Flannel`, `RegistryMirror` and `Addon` documents from the
-[cluster definition](../reference/glossary.md#cluster-definition), and
+`Kubernetes`, `Flannel` and `RegistryMirror` documents, and a control plane's `Addon` documents,
+from the [cluster definition](../reference/glossary.md#cluster-definition), and
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers them. chalkd builds
 the node's cluster from its `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and
 `image.json` into `/run/chalkos/kubernetes/cluster.json`, at boot and on every apply. On an image
@@ -208,16 +208,21 @@ chalkd renders the first four from the node's cluster, and the last are the obje
 4. CoreDNS, at the primary family's address of
    [`dnsIPs`](../reference/options.md#chalkosclusterkubernetesdnsipsipv4).
 5. The objects of [`chalkos.cluster.manifests`](../reference/options.md#chalkosclustermanifests),
-   in their order, which chalkctl turns into an `Addon` document of every Kubernetes node.
+   in their order, which chalkctl turns into an `Addon` document of each control plane.
 
 chalkd applies the list at bootstrap and again on every bootstrapped control plane each time it
 starts its Kubernetes work: at boot, after the node's cluster changed, and when
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers changed `Addon`
-documents, which restarts no unit. Every Kubernetes node holds the `Addon` documents; only control
-planes apply them, and a worker whose `Addon` documents change restarts nothing. An image upgrade
-or a changed config therefore rolls out changed add-ons without a separate step. An object an
-`Addon` document no longer holds is not deleted. Then chalkd runs the approver of kubelet serving
-certificates.
+documents, which restarts no unit. An image upgrade or a changed config therefore rolls out changed
+add-ons without a separate step. An object an `Addon` document no longer holds is not deleted. Then
+chalkd runs the approver of kubelet serving certificates.
+
+Only control planes apply the `Addon` objects to the cluster's API, so chalkctl delivers `Addon`
+documents to control planes alone and workers never hold them; a worker given one anyway applies
+nothing and restarts nothing. The objects may include Secrets, so a control plane keeps its
+`Addon` documents in its stored config on [STATE](../reference/glossary.md#state), readable by
+root alone: chalkd never writes them below `/run/chalkos/config` for the node's services, and
+`chalkcfg` does not print them.
 
 ```nix
 chalkos.cluster.manifests = [
