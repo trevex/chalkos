@@ -26,11 +26,11 @@
       "properties": {
         "allowPlainHTTP": {
           "default": false,
-          "description": "Allow mirrors that are not https:// URLs. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.",
+          "description": "Allow mirrors that are not https:// URLs: http:// URLs and hosts without a scheme. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.",
           "type": "boolean"
         },
         "mirrors": {
-          "description": "Mirrors of the registry, which containerd tries in order before the registry itself: URLs, or hosts with an optional port, which containerd reaches with HTTPS.",
+          "description": "Mirrors of the registry, which containerd tries in order before the registry itself: https:// URLs, or with allowPlainHTTP also http:// URLs and hosts with an optional port, which containerd reaches with HTTPS.",
           "examples": [
             [
               "https://mirror.example.com"

@@ -143,8 +143,8 @@ A node's config may hold several, each with a name of its own.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.allowPlainHTTP` | boolean | `false` | Allow mirrors that are not https:// URLs. It exists for test registries: nothing authenticates what a plain HTTP mirror serves. |
-| `spec.mirrors` | list of string | required | Mirrors of the registry, which containerd tries in order before the registry itself: URLs, or hosts with an optional port, which containerd reaches with HTTPS. |
+| `spec.allowPlainHTTP` | boolean | `false` | Allow mirrors that are not https:// URLs: http:// URLs and hosts without a scheme. It exists for test registries: nothing authenticates what a plain HTTP mirror serves. |
+| `spec.mirrors` | list of string | required | Mirrors of the registry, which containerd tries in order before the registry itself: https:// URLs, or with allowPlainHTTP also http:// URLs and hosts with an optional port, which containerd reaches with HTTPS. |
 | `spec.registry` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. |
 
 ## Link { #link }

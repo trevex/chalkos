@@ -404,12 +404,12 @@ in
             types.strMatching "(https?://)?${host}(:[0-9]+)?(/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]*)?"
           );
           example = [ "https://mirror.example.com" ];
-          description = "Mirrors of the registry, which containerd tries in order before the registry itself: URLs, or hosts with an optional port, which containerd reaches with HTTPS.";
+          description = "Mirrors of the registry, which containerd tries in order before the registry itself: https:// URLs, or with allowPlainHTTP also http:// URLs and hosts with an optional port, which containerd reaches with HTTPS.";
         };
         allowPlainHTTP = mkOption {
           type = types.bool;
           default = false;
-          description = "Allow mirrors that are not https:// URLs. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.";
+          description = "Allow mirrors that are not https:// URLs: http:// URLs and hosts without a scheme. It exists for test registries: nothing authenticates what a plain HTTP mirror serves.";
         };
       };
     };
