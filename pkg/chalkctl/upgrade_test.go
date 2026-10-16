@@ -702,6 +702,24 @@ func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 	}
 }
 
+// TestUpgradeChecksEveryNodesConfigFirst: when the config of a later node does not suit the
+// image, no node is drained or sent it, not even those before it.
+func TestUpgradeChecksEveryNodesConfigFirst(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.ta.editManifest(t, func(m *manifest.Manifest) {
+		n := m.Nodes["w2"]
+		n.Identity.Labels = map[string]string{"kubernetes.io/role": "edge"}
+		m.Nodes["w2"] = n
+	})
+	err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2")
+	if err == nil || !strings.Contains(err.Error(), "w2") || !strings.Contains(err.Error(), "kubernetes.io/role") {
+		t.Fatalf("upgrade = %v, want w2's config refused", err)
+	}
+	if events := l.takeEvents(); len(events) != 0 {
+		t.Errorf("the nodes were asked %q", events)
+	}
+}
+
 // TestImageContractRefusesAnOlderImageDirectory: a directory with the cluster file older
 // chalkos images carried, and no image.json, is refused rather than read as an image without
 // Kubernetes.

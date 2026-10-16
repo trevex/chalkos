@@ -167,8 +167,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 
 // checkConfig checks, before any node is drained or sent its image, that the config the cluster
 // definition gives each node suits the image it gets, as an install checks the config it
-// delivers. Each node checks its stored config against the image again before it installs it,
-// which is all a client file without the definition leaves.
+// delivers. Nodes that run the image already are checked too, as one the run would only wait
+// for or uncordon. Each node checks its stored config against the image again before it
+// installs it, which is all a client file without the definition leaves.
 func (r *upgradeRun) checkConfig() error {
 	if r.cluster.partial {
 		return nil
