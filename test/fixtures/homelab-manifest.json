@@ -51,7 +51,6 @@
       "identity": {
         "hostname": "cp1",
         "cluster": "homelab",
-        "role": "node",
         "platform": "metal",
         "network": {
           "networks": {
@@ -108,7 +107,6 @@
       "identity": {
         "hostname": "w1",
         "cluster": "homelab",
-        "role": "node",
         "platform": "metal",
         "network": {},
         "networkUnits": {},

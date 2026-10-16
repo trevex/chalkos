@@ -230,7 +230,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	var id manifest.Identity
-	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Hostname != "n1" || id.Role != "worker" || id.Platform != "metal" {
+	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Hostname != "n1" || id.Platform != "metal" {
 		t.Errorf("identity = %s, %v", got.Identity, err)
 	}
 	if got.Section.Disks[storage.SystemDisk].Ref.Path != "/dev/vda" {
@@ -260,7 +260,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	var id manifest.Identity
-	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Role != "worker" || id.Platform != "metal" {
+	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Platform != "metal" {
 		t.Errorf("identity = %s, %v", got.Identity, err)
 	}
 	if k := got.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {

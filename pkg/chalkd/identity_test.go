@@ -44,7 +44,7 @@ func section(varSize, extraFormat string) string {
 }
 
 func identityWith(storageSection string) string {
-	return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "storage": ` + storageSection + `}`
+	return `{"hostname": "n1", "cluster": "lab", "platform": "metal", "networkUnits": {}, "storage": ` + storageSection + `}`
 }
 
 // installedServer is a normal-mode server whose STATE records the section and its pins.
@@ -678,7 +678,7 @@ func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 func TestApplyConfigReloadsTimeServers(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	withTime := func(host string) string {
-		return `{"hostname": "n1", "cluster": "lab", "role": "worker", "platform": "metal", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "` + host + `", "nts": true}]}}`
+		return `{"hostname": "n1", "cluster": "lab", "platform": "metal", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "` + host + `", "nts": true}]}}`
 	}
 	count := func() int {
 		n := 0

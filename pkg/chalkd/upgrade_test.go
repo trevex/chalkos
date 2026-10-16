@@ -175,7 +175,7 @@ func TestUpgradeChecksTheStoredConfig(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
-			err := s.checkStoredConfig(imageWith(t, tc.schemas, tc.facts), "/nix/store/x", "worker", "metal")
+			err := s.checkStoredConfig(imageWith(t, tc.schemas, tc.facts), "/nix/store/x", "metal")
 			if tc.want == "" {
 				if err != nil {
 					t.Fatal(err)
@@ -193,7 +193,7 @@ func TestUpgradeChecksTheStoredConfig(t *testing.T) {
 // translates none at boot.
 func TestUpgradeWithoutStoredConfig(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
-	if err := s.checkStoredConfig(imageWith(t, nil, testImage), "/nix/store/x", "worker", "metal"); err != nil {
+	if err := s.checkStoredConfig(imageWith(t, nil, testImage), "/nix/store/x", "metal"); err != nil {
 		t.Fatal(err)
 	}
 }

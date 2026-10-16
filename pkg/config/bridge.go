@@ -645,8 +645,8 @@ func identityDiff(want, got manifest.Identity) []string {
 	if want.Hostname != got.Hostname {
 		differ("hostname", want.Hostname, got.Hostname)
 	}
-	if want.Cluster != got.Cluster || want.Role != got.Role || want.Platform != got.Platform {
-		differ("cluster, role and platform", []string{want.Cluster, want.Role, want.Platform}, []string{got.Cluster, got.Role, got.Platform})
+	if want.Cluster != got.Cluster || want.Platform != got.Platform {
+		differ("cluster and platform", []string{want.Cluster, want.Platform}, []string{got.Cluster, got.Platform})
 	}
 	if w, g := want.StaticAddresses(), got.StaticAddresses(); !slices.Equal(w, g) {
 		differ("static addresses", w, g)

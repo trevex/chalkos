@@ -14,8 +14,7 @@ import (
 
 // Target is the image a set is translated for.
 type Target struct {
-	// Role and Platform are the image's, as its os-release names them.
-	Role     string
+	// Platform is the image's, as its os-release names it.
 	Platform string
 	// Image is the image's Kubernetes facts, its image.json, which the cluster its documents give
 	// is built with; nil on an image without Kubernetes.
@@ -57,7 +56,6 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 	id := manifest.Identity{
 		Hostname:     nodeDoc.Name,
 		Cluster:      cluster.Name,
-		Role:         t.Role,
 		Platform:     t.Platform,
 		Network:      NetworkMap(networkDocs),
 		NetworkUnits: units,

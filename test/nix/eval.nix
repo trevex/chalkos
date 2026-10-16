@@ -896,7 +896,6 @@ lib.runTests {
     expected = {
       hostname = "n1";
       cluster = "t";
-      role = "worker";
       platform = "metal";
       network = { };
       networkUnits = { };

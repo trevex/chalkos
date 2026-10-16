@@ -54,7 +54,6 @@ const testManifest = `{
       "identity": {
         "hostname": "n1",
         "cluster": "lab",
-        "role": "test",
         "platform": "metal",
         "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}},
         "networkUnits": {"10-uplink.network": "[Network]\nAddress=10.0.0.11/24\n"},

@@ -91,9 +91,9 @@ type imageStore interface {
 // store is written to the inactive slot and before the image becomes the next boot, and reads
 // the schemas and image.json from that store, whose content the image's root hash covers, so
 // the config is checked against exactly what the image will translate it with. system is the
-// image's NixOS system in st, and role and platform are the image's. A node without config
+// image's NixOS system in st, and platform is the image's. A node without config
 // translates none at boot, whatever the image.
-func (s *Server) checkStoredConfig(st imageStore, system, role, platform string) error {
+func (s *Server) checkStoredConfig(st imageStore, system, platform string) error {
 	// ApplyConfig replaces the stored set under the same lock.
 	s.mu.Lock()
 	stored, found, err := store.Read(s.Identity.Config)
@@ -125,7 +125,7 @@ func (s *Server) checkStoredConfig(st imageStore, system, role, platform string)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("the image's Kubernetes facts: %w", err)
 	}
-	t, err := imageTarget(role, platform, facts)
+	t, err := imageTarget(platform, facts)
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, image io.Re
 		// ApplyConfig and ResetVolume change the boot disk's partitions under the same lock.
 		TableLock: &s.mu,
 		CheckStore: func(st upgrade.Store) error {
-			return s.checkStoredConfig(st, st.Toplevel, h.Role, h.Platform)
+			return s.checkStoredConfig(st, st.Toplevel, h.Platform)
 		},
 	}
 	return n.Install(ctx, h, image)

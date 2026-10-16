@@ -44,7 +44,7 @@ func homelabManifest(t *testing.T) *manifest.Manifest {
 // Kubernetes the facts of a flannel image.
 func homelabTarget(t *testing.T, m *manifest.Manifest, n manifest.Node) Target {
 	t.Helper()
-	target := Target{Role: n.Role, Platform: n.Platform}
+	target := Target{Platform: n.Platform}
 	if n.Kind != "" {
 		img := testImage
 		target.Image = &img
@@ -403,7 +403,7 @@ func TestBridgeGivesBackEveryManifest(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				target := Target{Role: n.Role, Platform: n.Platform}
+				target := Target{Platform: n.Platform}
 				data, err := os.ReadFile(filepath.Join(contract, "image.json"))
 				switch {
 				case err == nil:
@@ -592,7 +592,7 @@ spec: {disk: {path: /dev/vda}, encryption: {mode: tpm2, fallback: recovery-key},
 
 func TestFromManifestRoundTrips(t *testing.T) {
 	s := bridgeSchemas(t)
-	target := Target{Role: "plain", Platform: "kvm"}
+	target := Target{Platform: "kvm"}
 	for name, extra := range map[string]string{
 		"raw volume": `apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume

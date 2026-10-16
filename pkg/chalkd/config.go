@@ -81,7 +81,7 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 		return config.Target{}, nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
 	}
 	release := readOSRelease(s.Paths.OSRelease)
-	t := config.Target{Role: release["CHALKOS_ROLE"], Platform: release["CHALKOS_PLATFORM"]}
+	t := config.Target{Platform: release["CHALKOS_PLATFORM"]}
 	// The facts the node builds its cluster from at boot, so the config is checked against
 	// exactly those; an image without them runs no Kubernetes.
 	img, err := k8s.ReadImage(s.Identity.KubernetesImage)
@@ -213,14 +213,14 @@ func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, erro
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
 	}
-	t, err := imageTarget(h.Image.GetRole(), h.Image.GetPlatform(), h.KubernetesImage)
+	t, err := imageTarget(h.Image.GetPlatform(), h.KubernetesImage)
 	return t, schemas, err
 }
 
-// imageTarget is the image of the role and platform an install or upgrade writes, as config for
-// it is translated, with its image.json, empty for an image without Kubernetes.
-func imageTarget(role, platform string, kubernetesImage []byte) (config.Target, error) {
-	t := config.Target{Role: role, Platform: platform}
+// imageTarget is the image of the platform an install or upgrade writes, as config for it is
+// translated, with its image.json, empty for an image without Kubernetes.
+func imageTarget(platform string, kubernetesImage []byte) (config.Target, error) {
+	t := config.Target{Platform: platform}
 	if len(kubernetesImage) > 0 {
 		facts, err := k8s.ParseImage(kubernetesImage)
 		if err != nil {

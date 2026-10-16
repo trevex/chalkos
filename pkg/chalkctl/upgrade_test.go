@@ -61,13 +61,13 @@ func upgradeManifestOf(controlPlanes int, workers []string, cpRole, wRole string
 		if role != "plain" {
 			k = fmt.Sprintf(`{"nodeName": %q, "nodeIPs": ["10.0.0.%d"]}`, name, n)
 		}
-		return fmt.Sprintf(`%q: {"role": %q, "kind": %q, "platform": "metal", "identity": {"hostname": %q, "cluster": "lab", "role": %q, "platform": "metal",
+		return fmt.Sprintf(`%q: {"role": %q, "kind": %q, "platform": "metal", "identity": {"hostname": %q, "cluster": "lab", "platform": "metal",
 		  "network": {"networks": {"10-uplink": {"address": ["10.0.0.%d/24"]}}}, "networkUnits": {"10-uplink.network": "[Network]\nAddress=10.0.0.%d/24\n"},
 		  "labels": {}, "taints": [], "kubernetes": %s, "time": {"servers": []},
 		  "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": %q,
 		    "repart": {"50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"}}},
 		    "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null}},
-		    "fallback": "recovery-key", "encryption": "tpm2"}}}`, name, role, kind, name, role, n, n, k, diskSeed(name))
+		    "fallback": "recovery-key", "encryption": "tpm2"}}}`, name, role, kind, name, n, n, k, diskSeed(name))
 	}
 	var nodes []string
 	for i := 1; i <= controlPlanes; i++ {

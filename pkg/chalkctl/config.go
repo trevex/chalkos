@@ -116,7 +116,7 @@ func configFor(t *target, c contract) (delivery, error) {
 	if err != nil {
 		return delivery{}, err
 	}
-	id, err := b.Check(t.node.Identity, c.schemas, config.Target{Role: c.role, Platform: c.platform, Image: c.image})
+	id, err := b.Check(t.node.Identity, c.schemas, config.Target{Platform: c.platform, Image: c.image})
 	if err != nil {
 		return delivery{}, fmt.Errorf("the config of %s: %w", t.name, err)
 	}

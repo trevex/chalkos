@@ -138,11 +138,10 @@ let
           null;
       identity = {
         inherit (n) hostname network labels;
-        # The cluster's name, which the node's Cluster document carries, and the role and the
-        # platform the node's image is built for: the installer refuses an image of others, and an
-        # installed node an identity of others.
+        # The cluster's name, which the node's Cluster document carries, and the platform the
+        # node's image is built for, which its config is translated for.
         cluster = cfg.cluster.name;
-        inherit (n) role platform;
+        inherit (n) platform;
         networkUnits = renderNetwork name n;
         storage = renderStorage name n;
         taints = map strip n.taints;

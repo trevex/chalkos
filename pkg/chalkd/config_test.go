@@ -138,7 +138,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := configure(baseConfig, schemas, config.Target{Role: "worker", Platform: "metal"})
+	c, err := configure(baseConfig, schemas, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestApplyConfig(t *testing.T) {
 	}
 	var id manifest.Identity
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))), &id); err != nil ||
-		id.Hostname != "n1" || id.Cluster != "lab" || id.Role != "worker" || id.Platform != "metal" {
+		id.Hostname != "n1" || id.Cluster != "lab" || id.Platform != "metal" {
 		t.Errorf("identity on STATE = %+v, %v", id, err)
 	}
 	if got := readFile(t, filepath.Join(s.Identity.RunDir, "credentials", "demo", "demo.token")); got != "n3w" {
@@ -387,7 +387,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := configure(extraConfig("ext4"), schemas, config.Target{Role: "worker", Platform: "metal"})
+	c, err := configure(extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -73,7 +74,7 @@ func TestIdentityMatchesTheClusterDefinition(t *testing.T) {
 	for _, node := range []string{"cp1", "w1"} {
 		t.Run(node, func(t *testing.T) {
 			want := golden(t, node)
-			got, err := homelabSet(t, node).Identity(Target{Role: want.Role, Platform: want.Platform, Image: &testImage})
+			got, err := homelabSet(t, node).Identity(Target{Platform: want.Platform, Image: &testImage})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -231,7 +232,7 @@ func TestSwapVolumeOnKubernetesNodeFails(t *testing.T) {
 
 func TestIdentityWithoutKubeletUsesDefaults(t *testing.T) {
 	s := kubernetesSet(t, "{}", "")
-	id, err := s.Identity(Target{Role: "worker", Platform: "kvm", Image: &testImage})
+	id, err := s.Identity(Target{Platform: "kvm", Image: &testImage})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,4 +248,20 @@ func mustParse(t *testing.T, yaml string) []Document {
 		t.Fatal(err)
 	}
 	return docs
+}
+
+// The identity names the platform its image is built for and no role: the image's schemas, not a
+// role, decide which config a node takes.
+func TestIdentityNamesNoRole(t *testing.T) {
+	id, err := kubernetesSet(t, "{}", "").Identity(Target{Platform: "kvm", Image: &testImage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"role"`) || id.Platform != "kvm" {
+		t.Errorf("identity = %s, want the platform kvm and no role", data)
+	}
 }
