@@ -207,6 +207,8 @@ in
       ];
 
       system.build.chalkosCNIPlugins = cniPlugins;
+      # What the image fixes about Kubernetes, which its image directory's metadata.json names.
+      system.build.chalkosKubernetesImage = imageFile;
       # The objects and the kubelet configuration as the cluster definition renders them, which
       # chalkd renders from the node's config; tests compare the two.
       system.build.chalkosAddons = k.addons;

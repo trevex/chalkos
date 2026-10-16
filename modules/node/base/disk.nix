@@ -89,6 +89,12 @@ let
       schemaVersion = 0;
       inherit (config.system.image) id version;
       platform = config.chalkos.platform.name;
+      # The Kubernetes release and pod network, null on an image without Kubernetes.
+      kubernetes =
+        let
+          facts = config.system.build.chalkosKubernetesImage or null;
+        in
+        if facts == null then null else { inherit (facts) version cni; };
       kinds = config.system.build.chalkosKinds;
     }
   );

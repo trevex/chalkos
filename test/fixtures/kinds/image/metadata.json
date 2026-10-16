@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "platform": "metal",
   "rootHash": "2ece03b0fa094b775ee5bf2e1f6f9eb66d6f0dc06f30f49f2f978f00e1173942",
+  "kubernetes": { "version": "1.37.1", "cni": "flannel" },
   "kinds": [
     { "apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "multiple": true }
   ]

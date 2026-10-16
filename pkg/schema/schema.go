@@ -31,7 +31,10 @@ type Metadata struct {
 	Platform string `json:"platform"`
 	// RootHash is the store's dm-verity root hash, in hex; it identifies the image's content.
 	RootHash string `json:"rootHash"`
-	Kinds    []Kind `json:"kinds"`
+	// Kubernetes is the Kubernetes release and pod network the image is built with; nil on an
+	// image without Kubernetes.
+	Kubernetes *MetadataKubernetes `json:"kubernetes"`
+	Kinds      []Kind              `json:"kinds"`
 }
 
 // Kind is a config kind an image accepts.
@@ -40,6 +43,13 @@ type Kind struct {
 	Kind       string `json:"kind"`
 	// Multiple tells whether a node's config may hold more than one document of the kind.
 	Multiple bool `json:"multiple"`
+}
+
+// MetadataKubernetes is what metadata.json says of an image's Kubernetes: its release, such as
+// 1.37.1, and its CNI provider, flannel or none.
+type MetadataKubernetes struct {
+	Version string `json:"version"`
+	CNI     string `json:"cni"`
 }
 
 // Schemas is the compiled schema of every kind named by the *.json files of a schemas directory,

@@ -1077,6 +1077,7 @@ in
           and .platform == "metal"
           and (.rootHash | test("^[0-9a-f]{64}$"))
           and ([.kinds[].kind] | index("Network") != null)
+          and .kubernetes == null
         ' $dir/metadata.json
         for k in $(jq -r '.kinds[] | "\(.apiVersion | sub("/"; "_"))_\(.kind).json"' $dir/metadata.json); do
           test -f $dir/schemas/$k || { echo "error: metadata.json lists $k, which schemas/ lacks" >&2; exit 1; }
@@ -1087,6 +1088,8 @@ in
         fi
         k=${chalkPkgs.test-kubernetes-worker-image}
         jq -e '.cni == "flannel" and (. as $i | $i.images.kubeProxy | endswith(":v" + $i.version))' $k/image.json
+        jq -e --slurpfile img $k/image.json \
+          '.kubernetes == {version: $img[0].version, cni: $img[0].cni}' $k/metadata.json
         if [ -e $k/kubernetes.json ]; then
           echo "error: the Kubernetes image's directory has kubernetes.json" >&2
           exit 1
