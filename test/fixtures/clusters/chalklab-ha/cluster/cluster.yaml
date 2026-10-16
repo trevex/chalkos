@@ -1,0 +1,24 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: chalklab-ha}
+spec:
+  endpoint: https://[fd00:100::10]:6443
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: k8s-metal}
+spec:
+  source: {directory: ../images/k8s-metal}
+---
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec:
+  dhcp: false
+  servers:
+    - host: ptbtime1.ptb.de
+      nts: true
+    - host: ptbtime2.ptb.de
+      nts: true
+    - host: ptbtime3.ptb.de
+      nts: true

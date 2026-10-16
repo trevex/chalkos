@@ -1,0 +1,82 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Image
+metadata: {name: k8s-kvm}
+spec:
+  source: {directory: ../images/k8s-kvm}
+---
+# Dual stack; the cluster network and w1's routed addresses take VXLAN.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec:
+  allowSchedulingOnControlPlanes: true
+  dnsIPs:
+    ipv4: 10.96.0.10
+    ipv6: fd00:10:96::a
+  domain: cluster.local
+  extraArgs:
+    etcd: {}
+    kube-apiserver: {}
+    kube-controller-manager: {}
+    kube-scheduler: {}
+    kubelet: {}
+  ipFamilies:
+    - ipv4
+    - ipv6
+  nodeCIDRMaskSizes:
+    ipv4: 24
+    ipv6: 64
+  nodeIP:
+    timeout: 300
+    validSubnets: []
+  podCIDRs:
+    ipv4: 10.244.0.0/16
+    ipv6: fd00:10:244::/56
+  serviceCIDRs:
+    ipv4: 10.96.0.0/12
+    ipv6: fd00:10:96::/112
+  vip:
+    addresses: []
+    interface: null
+    mode: l2
+  vxlanSourceSubnets:
+    - 192.168.100.0/24
+    - fd00:100::/64
+    - 192.168.200.0/24
+    - fd00:200::/64
+---
+# w1's addresses are on a dummy interface, whose MTU flannel would take: the cluster network's
+# 1500 less IPv6's VXLAN overhead of 70.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Flannel
+metadata: {name: flannel}
+spec:
+  mtu: 1430
+---
+# The nodes pull every image through the test's registry, which serves plain HTTP.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: docker.io}
+spec:
+  allowPlainHTTP: true
+  mirrors:
+    - http://10.0.2.100:5000
+  registry: docker.io
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: ghcr.io}
+spec:
+  allowPlainHTTP: true
+  mirrors:
+    - http://10.0.2.100:5000
+  registry: ghcr.io
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: registry.k8s.io}
+spec:
+  allowPlainHTTP: true
+  mirrors:
+    - http://10.0.2.100:5000
+  registry: registry.k8s.io

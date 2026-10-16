@@ -1,0 +1,13 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: chalklab}
+spec:
+  imageRef: test-metal
+---
+# The token of the Greeting.
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: greeting}
+spec:
+  data:
+    token: s3cret

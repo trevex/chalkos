@@ -1,0 +1,13 @@
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    path: /dev/vda
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2
+    size: 1G

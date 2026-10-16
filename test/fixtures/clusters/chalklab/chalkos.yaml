@@ -1,0 +1,19 @@
+# The e2e tests' main cluster, as the images of nix/testing/cluster.nix are built for it. The
+# tests copy the fixture and link the image directories below images/ that the environment names.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  files: [cluster/*.yaml]
+  groups:
+    test: {files: [groups/test.yaml]}
+    storage: {files: [groups/storage.yaml]}
+    k8s: {files: [groups/k8s.yaml]}
+  nodes:
+    chalklab:
+      groups: [test]
+      files: [nodes/chalklab/node.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting.yaml]
+    chalklab-target: {groups: [test], files: [nodes/chalklab-target.yaml]}
+    chalklab-storage: {groups: [storage], files: [nodes/chalklab-storage.yaml]}
+    cp1: {address: 192.168.100.11, groups: [k8s], files: [nodes/cp1.yaml]}
+    w1: {address: 192.168.100.12, groups: [k8s], files: [nodes/w1.yaml]}

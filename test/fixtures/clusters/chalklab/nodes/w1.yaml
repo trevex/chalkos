@@ -1,0 +1,63 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w1}
+spec:
+  imageRef: k8s-kvm
+  type: worker
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    path: /dev/vda
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-cluster}
+spec:
+  match:
+    macAddress: "52:54:00:00:01:12"
+  network:
+    address:
+      - 192.168.100.12/24
+      - fd00:100::12/64
+---
+# w1's addresses are on a dummy interface, as a routing daemon announces them; it picks them at
+# boot, neither its user-mode NIC's nor its cluster network's.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-bgp0}
+spec:
+  netDev:
+    kind: dummy
+    mtuBytes: "1500"
+    name: bgp0
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-bgp0}
+spec:
+  match:
+    name: bgp0
+  network:
+    address:
+      - 192.168.200.12/32
+      - fd00:200::12/128
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubelet
+metadata: {name: kubelet}
+spec:
+  labels: {}
+  nodeIPs: []
+  taints: []
+  validSubnets:
+    - 192.168.200.0/24
+    - fd00:200::/64

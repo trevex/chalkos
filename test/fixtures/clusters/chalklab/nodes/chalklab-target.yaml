@@ -1,0 +1,19 @@
+# The node the installer installs onto the disk with this serial.
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: chalklab-target}
+spec:
+  imageRef: test-metal
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    serial: chalk-target
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2

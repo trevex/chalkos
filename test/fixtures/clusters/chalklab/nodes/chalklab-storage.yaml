@@ -1,0 +1,50 @@
+# A fixed VAR, an unencrypted and a raw volume next to it, and a volume on a second disk.
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: chalklab-storage}
+spec:
+  imageRef: storage-metal
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    path: /dev/vda
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2
+    size: 2G
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: data}
+spec:
+  disk:
+    serial: chalk-data
+  encryption:
+    mode: tpm2
+  format: xfs
+  mountPoint: /var/lib/data
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: plain}
+spec:
+  encryption:
+    mode: none
+  format: ext4
+  mountPoint: /srv/plain
+  size: 256M
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: raw}
+spec:
+  encryption:
+    mode: tpm2
+  format: null
+  size: 128M

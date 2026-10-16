@@ -1,0 +1,39 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: cp3}
+spec:
+  imageRef: k8s-metal
+  type: controlplane
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    path: /dev/vda
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-cluster}
+spec:
+  match:
+    macAddress: "52:54:00:00:02:13"
+  network:
+    address:
+      - 192.168.100.13/24
+      - fd00:100::13/64
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubelet
+metadata: {name: kubelet}
+spec:
+  labels: {}
+  nodeIPs:
+    - fd00:100::13
+  taints: []

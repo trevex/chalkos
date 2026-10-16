@@ -1,0 +1,20 @@
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: extra}
+spec:
+  disk:
+    serial: chalk-extra
+  encryption:
+    mode: tpm2
+  format: ext4
+  mountPoint: /srv/extra
+---
+apiVersion: greeting.example.org/v1alpha1
+kind: Greeting
+metadata: {name: hello}
+spec:
+  message: hello again
+  token:
+    secretRef:
+      key: token
+      name: greeting

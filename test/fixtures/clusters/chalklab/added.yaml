@@ -1,0 +1,13 @@
+# The main cluster with a new encrypted volume on an empty disk for chalklab, an additive
+# change, and another Greeting, whose consumer restarts.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  files: [cluster/*.yaml]
+  groups:
+    test: {files: [groups/test.yaml]}
+  nodes:
+    chalklab:
+      groups: [test]
+      files: [nodes/chalklab/node.yaml, nodes/chalklab/system.yaml, nodes/chalklab/extra.yaml]

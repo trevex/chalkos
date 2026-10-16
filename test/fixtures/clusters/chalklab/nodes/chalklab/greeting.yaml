@@ -1,0 +1,10 @@
+# The test image's Greeting, which chalktest-greeting reads with its token.
+apiVersion: greeting.example.org/v1alpha1
+kind: Greeting
+metadata: {name: hello}
+spec:
+  message: hello
+  token:
+    secretRef:
+      key: token
+      name: greeting

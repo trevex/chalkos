@@ -1,0 +1,10 @@
+# The tests answer NTP on the host, which the user-mode NIC reaches at 10.0.2.2, without NTS.
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec:
+  dhcp: false
+  servers:
+    - host: 10.0.2.2
+      nts: false
+      port: 12300

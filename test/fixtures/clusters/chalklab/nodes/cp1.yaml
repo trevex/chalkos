@@ -1,0 +1,47 @@
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: cp1}
+spec:
+  imageRef: k8s-kvm
+  type: controlplane
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    path: /dev/vda
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2
+---
+# The cluster network between the VMs, without a router; cp1 reaches w1's routed addresses
+# through w1's address on it, as a routing daemon would install the routes.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-cluster}
+spec:
+  match:
+    macAddress: "52:54:00:00:01:11"
+  network:
+    address:
+      - 192.168.100.11/24
+      - fd00:100::11/64
+  route:
+    - destination: 192.168.200.12/32
+      gateway: 192.168.100.12
+    - destination: fd00:200::12/128
+      gateway: fd00:100::12
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubelet
+metadata: {name: kubelet}
+spec:
+  labels: {}
+  nodeIPs:
+    - 192.168.100.11
+    - fd00:100::11
+  taints: []

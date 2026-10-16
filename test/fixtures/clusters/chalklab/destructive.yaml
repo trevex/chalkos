@@ -1,0 +1,12 @@
+# The main cluster with VAR of a fixed size where it filled chalklab's disk: a destructive change.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  files: [cluster/*.yaml]
+  groups:
+    test: {files: [groups/test.yaml]}
+  nodes:
+    chalklab:
+      groups: [test]
+      files: [nodes/chalklab/node.yaml, nodes/chalklab/var-1g.yaml, nodes/chalklab/greeting.yaml]

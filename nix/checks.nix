@@ -63,6 +63,14 @@ let
         touch $out
       '';
   testImage.CHALKLAB_IMAGE_DIR = "${chalkPkgs.test-image}";
+  # The image directories the e2e fixtures' Image documents point at, below
+  # test/fixtures/clusters, where the fixtures check links them.
+  fixtureImages = {
+    "chalklab/images/test-metal" = chalkPkgs.test-image;
+    "chalklab/images/storage-metal" = chalkPkgs.test-storage-image;
+    "chalklab/images/k8s-kvm" = chalkPkgs.test-kubernetes-image;
+    "chalklab-ha/images/k8s-metal" = chalkPkgs.test-kubernetes-ha-image;
+  };
 in
 {
   go-unit = chalkPkgs.chalkctl.overrideAttrs (
@@ -1113,4 +1121,22 @@ in
         fi
         touch $out
       '';
+
+  # Every node of the e2e fixtures has config its image accepts, as chalkctl validate checks it
+  # against the image directory its Image names.
+  fixtures = pkgs.runCommand "chalkos-fixtures" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''
+    cp -r ${../test/fixtures/clusters} clusters
+    chmod -R u+w clusters
+    ${lib.concatStrings (
+      lib.mapAttrsToList (link: image: ''
+        mkdir -p "$(dirname clusters/${link})"
+        ln -s ${image} clusters/${link}
+      '') fixtureImages
+    )}
+    for inventory in clusters/chalklab/chalkos.yaml clusters/chalklab/added.yaml \
+      clusters/chalklab/destructive.yaml clusters/chalklab-ha/chalkos.yaml; do
+      chalkctl validate --inventory "$inventory"
+    done
+    touch $out
+  '';
 }

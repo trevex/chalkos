@@ -1,0 +1,65 @@
+# The test boots a pinned node without its address; it gives up after nodeIP.timeout.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec:
+  allowSchedulingOnControlPlanes: true
+  dnsIPs:
+    ipv6: fd00:10:96::a
+  domain: cluster.local
+  extraArgs:
+    etcd: {}
+    kube-apiserver: {}
+    kube-controller-manager: {}
+    kube-scheduler: {}
+    kubelet: {}
+  ipFamilies:
+    - ipv6
+  nodeCIDRMaskSizes:
+    ipv6: 64
+  nodeIP:
+    timeout: 30
+    validSubnets: []
+  podCIDRs:
+    ipv6: fd00:10:244::/56
+  serviceCIDRs:
+    ipv6: fd00:10:96::/112
+  vip:
+    addresses:
+      - fd00:100::10
+    interface: null
+    mode: l2
+  vxlanSourceSubnets: []
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Flannel
+metadata: {name: flannel}
+spec:
+  mtu: null
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: docker.io}
+spec:
+  allowPlainHTTP: true
+  mirrors:
+    - http://10.0.2.100:5000
+  registry: docker.io
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: ghcr.io}
+spec:
+  allowPlainHTTP: true
+  mirrors:
+    - http://10.0.2.100:5000
+  registry: ghcr.io
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: registry.k8s.io}
+spec:
+  allowPlainHTTP: true
+  mirrors:
+    - http://10.0.2.100:5000
+  registry: registry.k8s.io
