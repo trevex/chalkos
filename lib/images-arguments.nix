@@ -95,17 +95,30 @@ in
       '';
       apply =
         platforms:
-        lib.mapAttrs (name: modules: builtinPlatforms.${name} or [ ] ++ modules) (
-          checkNames "platforms" (
-            if builtins.isList platforms then lib.genAttrs platforms (_: [ ]) else platforms
-          )
-        );
+        let
+          names = if builtins.isList platforms then platforms else lib.attrNames platforms;
+          # A list names a platform twice silently, as genAttrs keeps one.
+          duplicate = lib.findFirst (n: lib.count (m: m == n) names > 1) null names;
+        in
+        if names == [ ] then
+          throw "mkImages: platforms names no platform, so no variant would be built; name at least one, such as metal or kvm"
+        else if duplicate != null then
+          throw "mkImages: platforms names ${duplicate} twice"
+        else
+          lib.mapAttrs (name: modules: builtinPlatforms.${name} or [ ] ++ modules) (
+            checkNames "platforms" (
+              if builtins.isList platforms then lib.genAttrs platforms (_: [ ]) else platforms
+            )
+          );
       description = ''
-        Platforms every variant is built for: a list of names, or by name the NixOS modules a
-        platform's images carry besides chalkos's own. chalkos defines `metal` and `kvm`; any
-        other name is a platform of the modules given. An image carries one platform's drivers,
-        agents and console; a node refuses an image of another platform than its own. A
-        platform's name becomes `CHALKOS_PLATFORM` in its images' os-release.
+        The platforms every variant is built for, exactly those named: a list of names, or an
+        attribute set of each platform's NixOS modules. Either form replaces the default, so
+        `{ dell-r650 = [ ./r650.nix ]; }` builds dell-r650 alone, and `metal` and `kvm` are built
+        only when named. chalkos has modules of its own for `metal` and `kvm`, which their images
+        carry before the modules given; any other name is a platform of the modules given alone.
+        An image carries one platform's drivers, agents and console; a node refuses an image of
+        another platform than its own. A platform's name becomes `CHALKOS_PLATFORM` in its
+        images' os-release.
       '';
     };
     variants = mkOption {

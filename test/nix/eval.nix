@@ -255,7 +255,7 @@ lib.runTests {
       {
         node = lib.sort lib.lessThan (marks i.nixos.node-metal);
         installer = marks i.nixos.installer;
-        # metal's own modules come first.
+        # metal's modules of chalkos stay when platforms.metal gives more: console=tty0 is theirs.
         console = lib.elem "console=tty0" i.nixos.node-metal.config.boot.kernelParams;
       };
     expected = {
@@ -289,6 +289,16 @@ lib.runTests {
           }).images
       );
       unknown = fails (lib.attrNames (mkImages { roles.node = { }; }).images);
+      noPlatform = fails (lib.attrNames (mkImages { platforms = [ ]; }).images);
+      duplicatePlatform = fails (
+        lib.attrNames
+          (mkImages {
+            platforms = [
+              "kvm"
+              "kvm"
+            ];
+          }).images
+      );
       custom = (mkImages { platforms.esxi-8 = [ ]; }).nixos.node-esxi-8.config.chalkos.platform.name;
     };
     expected = {
@@ -297,6 +307,8 @@ lib.runTests {
       variant = true;
       collision = true;
       unknown = true;
+      noPlatform = true;
+      duplicatePlatform = true;
       custom = "esxi-8";
     };
   };
@@ -3122,7 +3134,7 @@ lib.runTests {
       };
     expected = {
       enable = true;
-      version = "1.37.1";
+      version = pkgs.kubernetes.version;
       etcd = "registry.example/etcd:1";
       pause = "registry.k8s.io/pause:3.10.2";
       coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
@@ -3460,10 +3472,10 @@ lib.runTests {
         };
       };
       expected = {
-        version = "1.37.1";
+        version = pkgs.kubernetes.version;
         cni = "flannel";
-        kubeAPIServer = "registry.k8s.io/kube-apiserver:v1.37.1";
-        kubeProxy = "registry.k8s.io/kube-proxy:v1.37.1";
+        kubeAPIServer = "registry.k8s.io/kube-apiserver:v${pkgs.kubernetes.version}";
+        kubeProxy = "registry.k8s.io/kube-proxy:v${pkgs.kubernetes.version}";
         coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
         flannel = "ghcr.io/flannel-io/flannel:v0.28.9";
         noFlannel = {
@@ -3493,7 +3505,7 @@ lib.runTests {
           lib.hasSuffix "$KUBELET_ARGS" ExecStart
           && lib.hasInfix "--config=/run/chalkos/kubernetes/kubelet/config.json" ExecStart
           && !(config.environment.etc ? "chalkos/kubernetes/kubelet.json");
-        noFullPackage = !lib.hasInfix "-kubernetes-1.37.1/" ExecStart;
+        noFullPackage = !lib.hasInfix "-kubernetes-${pkgs.kubernetes.version}/" ExecStart;
       };
     expected = {
       sysctl = {

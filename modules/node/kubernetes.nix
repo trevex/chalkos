@@ -125,7 +125,7 @@ in
           etcd = lib.mkOption {
             type = lib.types.str;
             default = "registry.k8s.io/etcd:3.7.0-0";
-            description = "Image of etcd; the default is the version kubeadm uses with this Kubernetes release.";
+            description = "Image of etcd. The default is the version kubeadm uses with the release of the default `chalkos.kubernetes.package`; an image with another release may need another.";
           };
           pause = lib.mkOption {
             type = lib.types.str;

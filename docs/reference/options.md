@@ -123,11 +123,14 @@ null
 
 
 
-Platforms every variant is built for: a list of names, or by name the NixOS modules a
-platform’s images carry besides chalkos’s own\. chalkos defines ` metal ` and ` kvm `; any
-other name is a platform of the modules given\. An image carries one platform’s drivers,
-agents and console; a node refuses an image of another platform than its own\. A
-platform’s name becomes ` CHALKOS_PLATFORM ` in its images’ os-release\.
+The platforms every variant is built for, exactly those named: a list of names, or an
+attribute set of each platform’s NixOS modules\. Either form replaces the default, so
+` { dell-r650 = [ ./r650.nix ]; } ` builds dell-r650 alone, and ` metal ` and ` kvm ` are built
+only when named\. chalkos has modules of its own for ` metal ` and ` kvm `, which their images
+carry before the modules given; any other name is a platform of the modules given alone\.
+An image carries one platform’s drivers, agents and console; a node refuses an image of
+another platform than its own\. A platform’s name becomes ` CHALKOS_PLATFORM ` in its
+images’ os-release\.
 
 
 
@@ -964,7 +967,7 @@ string
 
 
 
-Image of etcd; the default is the version kubeadm uses with this Kubernetes release\.
+Image of etcd\. The default is the version kubeadm uses with the release of the default ` chalkos.kubernetes.package `; an image with another release may need another\.
 
 
 
