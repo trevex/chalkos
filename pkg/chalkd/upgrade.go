@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
+	"os"
+	"path/filepath"
 	"runtime"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -71,31 +75,84 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	return connect.NewResponse(resp), nil
 }
 
+// secretSchema is the schema file of the Secret kind, as an image's schemas/ names it.
+const secretSchema = "chalkos.dev_v1alpha1_Secret.json"
+
+// redactedSecret replaces every Secret value the upgrade's check of the stored config sees.
+const redactedSecret = "redacted"
+
 // checkStoredConfig refuses an upgrade to an image that would not accept the node's stored
 // config: the node boots the image with that config, which chalkos-identity would refuse, and
 // boot counting would fall back once the image's tries are used up. The stored set is checked
 // against the schemas and image.json the header carries, as an install from the installer
 // checks the config it delivers, before anything is written.
+//
+// Like an install's, the header's schemas and image.json are not bound to the image: they are
+// what the operator's chalkctl read from the image directory. An operator may not read the
+// node's Secrets, but a schema of their choosing could quote a value in its error, which goes
+// back to them and into the journal readers see, or tell a value apart by refusing it. So the
+// Secrets are checked against the running image's Secret schema, whatever the header carries,
+// and with every value replaced: a secretRef still resolves by key, and no value reaches a schema
+// the header supplies. The other documents are no secret from an operator, who reads them in the
+// cluster definition.
 func (s *Server) checkStoredConfig(h *nodev1.UpgradeHeader) error {
 	if len(h.Schemas) == 0 {
 		return failed(connect.CodeInvalidArgument, "the header carries no schemas of the image, which the node checks its config against; upgrade with the chalkctl of this chalkos")
 	}
-	t, schemas, err := imageTarget(h.Image, h.Schemas, h.KubernetesImage)
-	if err != nil {
-		return err
-	}
+	// ApplyConfig replaces the stored set under the same lock.
+	s.mu.Lock()
 	stored, found, err := store.Read(s.Identity.Config)
+	s.mu.Unlock()
 	if err != nil {
 		return failed(connect.CodeInternal, "read the stored config: %v", err)
+	}
+	files := h.Schemas
+	if found {
+		own, err := os.ReadFile(filepath.Join(s.Identity.Schemas, secretSchema))
+		if err != nil {
+			return failed(connect.CodeInternal, "read the running image's Secret schema: %v", err)
+		}
+		files = maps.Clone(files)
+		files[secretSchema] = own
+	}
+	t, schemas, err := imageTarget(h.Image, files, h.KubernetesImage)
+	if err != nil {
+		return err
 	}
 	// A node without config translates none at boot, whatever the image.
 	if !found {
 		return nil
 	}
-	if _, _, err := translate(stored.Documents, schemas, t); err != nil {
+	if _, _, err := translate(redactSecrets(stored.Documents), schemas, t); err != nil {
 		return failed(connect.CodeFailedPrecondition, "the node's config does not suit the image: %v; apply config both images accept with chalkctl apply-config, then upgrade", err)
 	}
 	return nil
+}
+
+// redactSecrets returns docs with the value of every key of each Secret replaced by
+// redactedSecret, leaving docs as they are.
+func redactSecrets(docs []config.Document) []config.Document {
+	out := make([]config.Document, len(docs))
+	for i, d := range docs {
+		out[i] = d
+		if !d.IsSecret() {
+			continue
+		}
+		object := maps.Clone(d.Object)
+		if spec, ok := object["spec"].(map[string]any); ok {
+			spec = maps.Clone(spec)
+			if data, ok := spec["data"].(map[string]any); ok {
+				redacted := make(map[string]any, len(data))
+				for key := range data {
+					redacted[key] = redactedSecret
+				}
+				spec["data"] = redacted
+			}
+			object["spec"] = spec
+		}
+		out[i].Object = object
+	}
+	return out
 }
 
 // imageHeader is the image an install or upgrade header describes.

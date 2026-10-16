@@ -3,8 +3,12 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -175,6 +179,88 @@ func TestUpgradeChecksTheStoredConfig(t *testing.T) {
 				t.Errorf("upgrade = %v, installed %v; want %v naming %q", err, installed.Load(), tc.code, tc.want)
 			}
 		})
+	}
+}
+
+// upgradeOnce streams an upgrade header without chunks to s as an operator, and tells whether the
+// node went on to install the image.
+func upgradeOnce(t *testing.T, s *Server, h *nodev1.UpgradeHeader) (bool, error) {
+	t.Helper()
+	c := newCreds(t)
+	var installed atomic.Bool
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, r io.Reader) (upgrade.Result, error) {
+		installed.Store(true)
+		_, err := io.Copy(io.Discard, r)
+		return upgrade.Result{Entry: "chalkos_0.2.0+3.efi"}, err
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
+	stream := conn.Upgrade(context.Background())
+	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}})
+	_, err := stream.CloseAndReceive()
+	return installed.Load(), err
+}
+
+// TestUpgradeWithoutStoredConfig installs on a node that holds no config, which translates none
+// at boot, also an image with Kubernetes.
+func TestUpgradeWithoutStoredConfig(t *testing.T) {
+	s, _ := newTestServer(t, normal, vda)
+	installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{
+		Image:           &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
+		Schemas:         fixtureSchemas(t),
+		KubernetesImage: []byte(testImage),
+	})
+	if err != nil || !installed {
+		t.Fatalf("upgrade = %v, installed %v", err, installed)
+	}
+}
+
+// patternSecretSchema is the Secret schema with a pattern that refuses every value but "", so a
+// refusal would quote the value checked.
+func patternSecretSchema(t *testing.T) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(fixtureSchemas(t)[secretSchema], &doc); err != nil {
+		t.Fatal(err)
+	}
+	spec := doc["properties"].(map[string]any)["spec"].(map[string]any)
+	data := spec["properties"].(map[string]any)["data"].(map[string]any)
+	data["additionalProperties"] = map[string]any{"type": "string", "pattern": "^$"}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestUpgradeKeepsSecretsFromTheHeadersSchemas: an operator may not read the node's Secrets, so
+// the check of the stored config never shows a Secret's value to a schema the header carries,
+// nor quotes one in the reply or the journal.
+func TestUpgradeKeepsSecretsFromTheHeadersSchemas(t *testing.T) {
+	var journal bytes.Buffer
+	log.SetOutput(&journal)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	attack := fixtureSchemas(t)
+	attack[secretSchema] = patternSecretSchema(t)
+	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: attack}
+
+	// The header's Secret schema is not the one the Secrets are checked against.
+	s, _ := configServer(t)
+	if installed, err := upgradeOnce(t, s, header); err != nil || !installed {
+		t.Errorf("upgrade = %v, installed %v; want the running image's Secret schema used", err, installed)
+	}
+
+	// Even a schema that refuses a value sees none.
+	s, _ = configServer(t)
+	write(t, filepath.Join(s.Identity.Schemas, secretSchema), string(patternSecretSchema(t)))
+	installed, err := upgradeOnce(t, s, header)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || installed {
+		t.Fatalf("upgrade = %v, installed %v; want the redacted value refused", err, installed)
+	}
+	if strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), redactedSecret) {
+		t.Errorf("err = %v, want the redacted value and not the Secret's", err)
+	}
+	if strings.Contains(journal.String(), "s3cret") {
+		t.Errorf("the journal holds the Secret's value:\n%s", journal.String())
 	}
 }
 

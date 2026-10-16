@@ -38,7 +38,8 @@ const (
 	// maxMessageBytes limits each request message, as received and after decompression. The
 	// largest is an install message: a header carries the identity or config, certificates,
 	// repart definitions and, from the installer, the target image's schemas, under 1 MiB
-	// together; an image chunk from chalkctl is 1 MiB.
+	// together. An upgrade's header carries the new image's schemas and image.json, and an image
+	// chunk from chalkctl is 1 MiB.
 	maxMessageBytes = 4 << 20
 	// maxLogStreams limits concurrent Logs calls, each of which holds a journalctl process
 	// until the client goes away.
