@@ -12,7 +12,7 @@ NixOS modules: one image per [variant](../reference/glossary.md#variant) and
 nothing about the cluster, so one image serves every node of its variant and platform, control
 planes and workers alike. What differs between nodes, from their addresses to the cluster's
 endpoint, is their [config](../reference/glossary.md#config), YAML documents that
-[Config and the inventory](cluster-definition.md) describes.
+[Config and the inventory](config.md) describes.
 
 ## How does a flake build images?
 
@@ -249,8 +249,8 @@ The module does three things:
   printing nothing on the node.
 
 Each node's value is a `Rack` document in its YAML files; [Config and the
-inventory](cluster-definition.md) shows one, and
-[How do secrets reach a service?](cluster-definition.md) covers fields that
+inventory](config.md#what-is-a-config-document) shows one, and
+[How do secrets reach a service?](config.md#how-do-secrets-reach-a-service) covers fields that
 reference a `Secret`. Only images of a variant that carries the module accept `Rack` documents,
 so a node of another variant refuses a config that holds one.
 
@@ -291,7 +291,7 @@ copies a flake's tracked files.
 
 ## Related pages
 
-- [Config and the inventory](cluster-definition.md) for the YAML documents nodes receive.
+- [Config and the inventory](config.md) for the YAML documents nodes receive.
 - [The image](image.md) for what an image directory and a disk image hold.
 - [Customise an image](../guides/customise-role.md) and
   [Support additional hardware](../guides/additional-hardware.md) for the tasks.

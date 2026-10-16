@@ -16,8 +16,8 @@ this order:
   cluster definition becomes installed, running nodes.
 - [Variants and platforms](variants.md): how mkImages builds a cluster's images from variants,
   platforms and NixOS modules, and how an extension adds a config kind.
-- [The cluster definition](cluster-definition.md): flakes, roles, nodes and platforms, and how
-  chalkos evaluates them into images and config documents.
+- [Config and the inventory](config.md): the YAML documents that describe each node, how the
+  inventory gives them out, and how chalkctl and chalkd check and apply them.
 - [The image](image.md): the erofs store on dm-verity, the signed UKI and the A/B slots.
 - [Boot, health and rollback](boot-and-rollback.md): how a node boots, decides whether a boot is
   healthy, and falls back from an image that is not.

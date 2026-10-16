@@ -18,7 +18,7 @@ change reaches running nodes as an [upgrade](../reference/glossary.md#upgrade) t
 
 You need a [cluster definition](../reference/glossary.md#cluster-definition) in a flake and, to roll the change out, a running cluster with an
 operator [client file](../reference/glossary.md#client-file) or the [secrets file](../reference/glossary.md#secrets-file).
-[The cluster definition](../concepts/cluster-definition.md) explains how roles, platforms and
+[Variants and platforms](../concepts/variants.md) explains how roles, platforms and
 nodes fit together, and [The image](../concepts/image.md) what an image holds.
 
 ## Add a module to a role
@@ -237,7 +237,7 @@ node whose image lacks the kind refuses it: the role that declares a kind is the
 may carry its documents. The kind's group is a DNS name of your own, since chalkos keeps
 `chalkos.dev` and its subdomains for its own kinds. The namespace must not be a name chalkos
 declares under `chalkos`, in the cluster definition or inside images;
-[The cluster definition](../concepts/cluster-definition.md#how-does-an-extension-add-options) lists
+[Variants and platforms](../concepts/variants.md#how-does-an-extension-add-a-kind) lists
 them, explains how extensions work and shows a larger one.
 
 ## Add kernel modules and debug tools
@@ -358,7 +358,7 @@ chalkctl logs w1 --unit=disk-report.service
 
 ## What next
 
-- [The cluster definition](../concepts/cluster-definition.md) explains roles, platforms, config
+- [Variants and platforms](../concepts/variants.md) explains roles, platforms, config
   documents and extensions.
 - [The image](../concepts/image.md) describes what a role's image holds.
 - [Support additional hardware](additional-hardware.md) adds drivers and firmware.

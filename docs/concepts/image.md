@@ -173,7 +173,7 @@ shows it. Its `kvm` platform sets the console to the first serial port and adds 
 agent, about 6 MiB of store, limited to reporting on the node and shutting it down. A platform
 that a cluster declares adds firmware, kernel module groups or agents to the images for that kind
 of machine alone.
-[The cluster definition](cluster-definition.md#what-is-a-platform) explains platforms.
+[Variants and platforms](variants.md#what-is-a-platform) explains platforms.
 
 ## Which kernel modules does an image carry?
 

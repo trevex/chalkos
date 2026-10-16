@@ -327,7 +327,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 
 ## What next
 
-- [The cluster definition](../concepts/cluster-definition.md#what-is-a-platform) explains
+- [Variants and platforms](../concepts/variants.md#what-is-a-platform) explains
   platforms and how a role's image is built for each, and
   [Architecture](../concepts/architecture.md#how-does-a-machine-become-a-node) the install in
   place.

@@ -9,7 +9,7 @@ Each guide solves one task on a real cluster, from a starting point it names at 
 assume a [cluster definition](../reference/glossary.md#cluster-definition) in a flake and the
 cluster's [secrets file](../reference/glossary.md#secrets-file); the
 [quick start](../getting-started/index.md) creates both for a lab, and
-[The cluster definition](../concepts/cluster-definition.md) explains what they hold.
+[Config and the inventory](../concepts/config.md) explains what they hold.
 
 ## Install a cluster
 

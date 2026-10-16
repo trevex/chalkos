@@ -20,7 +20,7 @@ You need:
 - A [cluster definition](../reference/glossary.md#cluster-definition) in a flake, with the nodes
   declared under `chalkos.nodes`: their role, their
   network and, on `metal`, the default [platform](../reference/glossary.md#platform). The
-  [cluster definition concept](../concepts/cluster-definition.md) shows a complete one, and
+  [config concept](../concepts/config.md) shows a complete one, and
   [Plan a production cluster](production-cluster.md) helps decide what goes into it.
 - The cluster's [secrets file](../reference/glossary.md#secrets-file), written once with
   [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md), and

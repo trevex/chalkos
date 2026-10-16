@@ -31,7 +31,7 @@ its nodes. `chalkos.lib.mkCluster` evaluates them, and the [flake](../reference/
 exposes the result as `chalkos.<cluster>`. Part of that result is the
 [manifest](../reference/glossary.md#manifest), a JSON document that chalkctl reads with
 `nix eval`, so the flake is the only inventory of the cluster.
-See [The cluster definition](../concepts/cluster-definition.md).
+See [Config and the inventory](../concepts/config.md).
 
 ## Roles become images, nodes get config
 

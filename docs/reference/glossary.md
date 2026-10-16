@@ -90,7 +90,7 @@ only renew its node certificate. See [Security model](../concepts/security.md).
 The Nix modules that declare a cluster: its settings, [roles](#role), [platforms](#platform) and
 [nodes](#node) under the `chalkos.*` options, evaluated by `chalkos.lib.mkCluster` and exposed
 by a [flake](#flake). It is the only inventory chalkctl reads. See
-[The cluster definition](../concepts/cluster-definition.md).
+[Config and the inventory](../concepts/config.md).
 
 ## Cluster endpoint { #cluster-endpoint }
 
@@ -181,7 +181,7 @@ the node's [recovery key](#recovery-key) by default, a password, or none, as
 
 A Nix flake that exposes a cluster as `chalkos.<cluster>`, the result of `mkCluster`, and pins
 the chalkos version through `flake.lock`. chalkctl and chalklab evaluate it to read the cluster.
-See [The cluster definition](../concepts/cluster-definition.md).
+See [Variants and platforms](../concepts/variants.md).
 
 ## Health check { #health-check }
 
@@ -274,7 +274,7 @@ reboots and an install. See [Architecture](../concepts/architecture.md).
 The JSON document `mkCluster` generates from the cluster definition (`chalkos.<cluster>.manifest`):
 the cluster's settings, its roles' image paths, every node's [identity](#identity) and the
 documents its extensions add, from which chalkctl generates each node's [config](#config). It is
-how Go code reads what Nix declared. See [The cluster definition](../concepts/cluster-definition.md).
+how Go code reads what Nix declared. See [Config and the inventory](../concepts/config.md).
 
 ## Module group { #module-group }
 
@@ -355,7 +355,7 @@ The unit an [image](#image) is built for: the NixOS modules its nodes run, decla
 [`chalkos.roles`](options.md#variants) with storage defaults and whether its images run
 Kubernetes. Each role becomes one image per platform. Control planes and workers of a role boot the
 same image; each node's kind makes it one or the other. See
-[The cluster definition](../concepts/cluster-definition.md). A role's images have the role's name as
+[Variants and platforms](../concepts/variants.md). A role's images have the role's name as
 their [variant](#variant).
 
 ## Rollback { #rollback }

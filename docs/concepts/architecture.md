@@ -58,7 +58,7 @@ modules, and becomes one unsigned raw disk [image](../reference/glossary.md#imag
 layer cannot see the nodes: `config.chalkos.nodes` throws inside a role image, because one image
 serves every node of the role on that platform. The installer is a second-layer system too, built
 from the node modules and the cluster's settings, and belongs to no role or platform.
-[The cluster definition](cluster-definition.md) explains both layers.
+[Variants and platforms](variants.md) explains both layers.
 
 What Nix decides at build time and what reaches a node at runtime:
 
@@ -291,7 +291,7 @@ healthy within its tries, the node falls back to the image it ran before.
 
 ## Related pages
 
-- [The cluster definition](cluster-definition.md) and [The image](image.md) for the Nix side.
+- [Variants and platforms](variants.md), [Config and the inventory](config.md) and [The image](image.md) for the Nix side.
 - [Security model](security.md) for the client roles and what Secure Boot and the TPM protect.
 - [Install on bare metal](../guides/install-bare-metal.md) for the install as a task.
 - [`chalkctl install`](../reference/cli/chalkctl_install.md) and the [node API](../reference/api.md)

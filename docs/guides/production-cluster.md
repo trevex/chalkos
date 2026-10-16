@@ -18,7 +18,7 @@ and what it costs.
   are familiar.
 - Know the machines: their disks, network segments and whether their firmware lets you enrol
   your own Secure Boot keys.
-- Read [The cluster definition](../concepts/cluster-definition.md) for how roles, platforms and
+- Read [Config and the inventory](../concepts/config.md) for how roles, platforms and
   nodes fit together.
 
 ## Choose the number of control planes
