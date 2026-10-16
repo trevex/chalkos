@@ -168,7 +168,8 @@ let
   };
   # Three control planes of an IPv6-only cluster behind the VIP fd00:100::10, connected through
   # the switch of the HA test. The definition is a cluster of its own, whose manifest gives the
-  # endpoint and the VIP; its images are built from the same role as the main cluster's.
+  # endpoint and the VIP; its role k8s has the name and the modules of the main cluster's, and
+  # builds images of its own.
   haDefinition = {
     chalkos.cluster = {
       name = "chalklab-ha";

@@ -48,9 +48,15 @@ func diskSeed(node string) string {
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
-// upgradeManifest is a cluster of three control planes, three workers and a node without
+// upgradeManifest is a cluster of the control planes, three workers and a node without
 // Kubernetes, whose identities the config generated from them gives back.
 func upgradeManifest(controlPlanes int) string {
+	return upgradeManifestOf(controlPlanes, 3, "cp", "w")
+}
+
+// upgradeManifestOf is a cluster of the control planes and workers, of the roles cpRole and wRole,
+// which may be one, and a node without Kubernetes.
+func upgradeManifestOf(controlPlanes, workers int, cpRole, wRole string) string {
 	node := func(name, role, kind string, n int) string {
 		k := "null"
 		if role != "plain" {
@@ -66,14 +72,25 @@ func upgradeManifest(controlPlanes int) string {
 	}
 	var nodes []string
 	for i := 1; i <= controlPlanes; i++ {
-		nodes = append(nodes, node(fmt.Sprintf("cp%d", i), "cp", "controlplane", 10+i))
+		nodes = append(nodes, node(fmt.Sprintf("cp%d", i), cpRole, "controlplane", 10+i))
 	}
-	for i := 1; i <= 3; i++ {
-		nodes = append(nodes, node(fmt.Sprintf("w%d", i), "w", "worker", 20+i))
+	for i := 1; i <= workers; i++ {
+		nodes = append(nodes, node(fmt.Sprintf("w%d", i), wRole, "worker", 20+i))
 	}
 	nodes = append(nodes, node("n1", "plain", "", 31))
+	images := func(role string, platforms ...string) string {
+		var entries []string
+		for _, p := range platforms {
+			entries = append(entries, fmt.Sprintf(`%q: "roles.%s.images.%s"`, p, role, p))
+		}
+		return fmt.Sprintf(`%q: {"images": {%s}}, `, role, strings.Join(entries, ", "))
+	}
+	roles := images(cpRole, "metal") + images(wRole, "metal", "kvm")
+	if cpRole == wRole {
+		roles = images(cpRole, "metal", "kvm")
+	}
 	return `{"schemaVersion": 0, "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-	  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}}, "w": {"images": {"metal": "roles.w.images.metal", "kvm": "roles.w.images.kvm"}}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
+	  "roles": {` + roles + `"plain": {"images": {"metal": "roles.plain.images.metal"}}},
 	  "nodes": {` + strings.Join(nodes, ",\n") + `}}`
 }
 
@@ -136,10 +153,10 @@ func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, bloc
 		{Type: "usr-x86-64", Label: "store_" + version, Offset: espSize + treeSize, RawSize: storeSize, RootHash: hex.EncodeToString(root)},
 	})
 	writeFile(t, filepath.Join(imgDir, "repart-output.json"), string(parts))
-	// The contract an upgrade sends with the image: the upgrade lab's roles cp and w run
+	// The contract an upgrade sends with the image: the upgrade lab's roles cp, w and k8s run
 	// Kubernetes.
 	copySchemas(t, filepath.Join(imgDir, "schemas"))
-	if role == "cp" || role == "w" {
+	if role == "cp" || role == "w" || role == "k8s" {
 		writeFile(t, filepath.Join(imgDir, "image.json"), testImageJSON)
 	}
 	return imgDir
@@ -383,9 +400,14 @@ func (n *upgradeFake) UncordonNode(_ context.Context, req *connect.Request[nodev
 
 func newUpgradeLab(t *testing.T, controlPlanes int) *upgradeLab {
 	t.Helper()
+	return newUpgradeLabOf(t, upgradeManifest(controlPlanes))
+}
+
+// newUpgradeLabOf runs a fake chalkd for every node of the manifest m.
+func newUpgradeLabOf(t *testing.T, m string) *upgradeLab {
+	t.Helper()
 	ta := newTestApp(t)
 	ta.pollInterval = 5 * time.Millisecond
-	m := upgradeManifest(controlPlanes)
 	writeFile(t, filepath.Join(ta.dir, "manifest.json"), m)
 	ta.manifest, _ = manifest.Decode(strings.NewReader(m))
 	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
@@ -458,6 +480,43 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	}
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Errorf("a second run asked %q", got)
+	}
+}
+
+// TestUpgradeOneRoleControlPlanesFirst upgrades control planes and workers that share a role and
+// its image: the control planes one at a time, each back before the next, and the workers after
+// them all.
+func TestUpgradeOneRoleControlPlanesFirst(t *testing.T) {
+	l := newUpgradeLabOf(t, upgradeManifestOf(3, 2, "k8s", "k8s"))
+	if err := l.upgrade(testUpgradeImage(t, "k8s", "0.2.0")); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	events := l.takeEvents()
+	at := func(e string) int {
+		i := slices.Index(events, e)
+		if i < 0 {
+			t.Fatalf("no %q in %q", e, events)
+		}
+		return i
+	}
+	cps := []string{"cp1", "cp2", "cp3"}
+	for i, cp := range cps {
+		if !(at(cp+" upgrade") < at(cp+" drain") && at(cp+" drain") < at(cp+" reboot") && at(cp+" reboot") < at(cp+" uncordon")) {
+			t.Errorf("%s out of order: %q", cp, events)
+		}
+		if i > 0 && at(cps[i-1]+" uncordon") > at(cp+" upgrade") {
+			t.Errorf("%s started before %s was back: %q", cp, cps[i-1], events)
+		}
+	}
+	for _, w := range []string{"w1", "w2"} {
+		if at(w+" drain") < at("cp3 uncordon") {
+			t.Errorf("%s was drained before the control planes were upgraded: %q", w, events)
+		}
+	}
+	for name, v := range l.versions() {
+		if want := map[bool]string{true: "0.1.0", false: "0.2.0"}[name == "n1"]; v != want {
+			t.Errorf("%s runs %s, want %s", name, v, want)
+		}
 	}
 }
 
