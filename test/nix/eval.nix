@@ -722,8 +722,9 @@ lib.runTests {
         ];
         apiServerPort = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
         markedPorts = lib.hasInfix "tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept" config.networking.firewall.extraInputRules;
-        # chalkd renders the addons and reads the manifests from the config.
-        manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
+        # chalkd renders the add-ons and reads the Addon documents from the config; the image
+        # ships no objects of its own.
+        addonObjects = config.environment.etc ? "chalkos/kubernetes/manifests.json";
         etcdDir = lib.elem "d /var/lib/etcd 0700 root root -" config.systemd.tmpfiles.rules;
         consumer =
           (builtins.fromJSON config.environment.etc."chalkos/consumers.json".text).chalkos-controlplane.kinds;
@@ -746,7 +747,7 @@ lib.runTests {
       firewall = false;
       apiServerPort = false;
       markedPorts = true;
-      manifests = false;
+      addonObjects = false;
       etcdDir = false;
       consumer = [ "Node" ];
       beforeKubernetes = true;

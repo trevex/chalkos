@@ -167,37 +167,41 @@ func TestDefinitionEscapesEqualsInKeys(t *testing.T) {
 
 // TestStorageRefusesNamesMountPointsAndKeys refuses volume names that cannot name a partition or
 // that chalkos's own partitions hold, mount points outside the paths a volume may take, and the
-// repart keys the typed fields set.
+// repart keys the typed fields set, each with its own error, and takes what lies within.
 func TestStorageRefusesNamesMountPointsAndKeys(t *testing.T) {
 	vol := func(name, spec string) string {
 		return "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: \"" + name + "\"}\nspec: " + spec + "\n"
 	}
-	refused := func(extra string) bool {
+	// check translates the volume and wants an error holding want, or none for "".
+	check := func(label, extra, want string) {
+		t.Helper()
 		s, err := parseSet(t, minimal+extra)
-		if err != nil {
-			return true
+		if err == nil {
+			_, err = s.storage()
 		}
-		_, err = s.storage()
-		return err != nil
+		switch {
+		case want == "" && err != nil:
+			t.Errorf("%s: %v", label, err)
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%s: err = %v, want one mentioning %q", label, err, want)
+		}
 	}
-	for _, name := range []string{"Data", "-data", strings.Repeat("a", 33), "var", "state", "esp", "store", "store-verity", "system"} {
-		if !refused(vol(name, "{size: 1G}")) {
-			t.Errorf("took the volume name %q", name)
-		}
+	// The schema refuses what cannot be a document's name at all.
+	for _, name := range []string{"Data", "-data"} {
+		check(name, vol(name, "{size: 1G}"), "does not match pattern")
+	}
+	check("33 characters", vol(strings.Repeat("a", 33), "{size: 1G}"), "have at most 32 characters")
+	for _, name := range []string{"var", "state", "esp", "store", "store-verity", "system"} {
+		check(name, vol(name, "{size: 1G}"), "the name "+name+" is reserved")
 	}
 	for _, p := range []string{"srv/data", "/", "/nix", "/nix/store/x", "/state", "/state/x", "/var", "/srv/../nix", "/srv/", "/srv/my data", `/srv/d\\x2data`, "/srv/dätä", "/srv/a:b", `/srv/a\nb`} {
-		if !refused(vol("data", `{size: 1G, mountPoint: "`+p+`"}`)) {
-			t.Errorf("took the mount point %q", p)
-		}
+		check(p, vol("data", `{size: 1G, mountPoint: "`+p+`"}`), "Volume data: mountPoint must be an absolute path")
 	}
+	check("/srv/My_data-2.0", vol("data", "{size: 1G, mountPoint: /srv/My_data-2.0}"), "")
 	for _, key := range []string{"Type", "Label", "Encrypt", "Format", "SizeMinBytes", "SizeMaxBytes", "MountPoint"} {
-		if !refused(vol("data", "{size: 1G, repart: {"+key+": x}}")) {
-			t.Errorf("took the repart key %s", key)
-		}
+		check(key, vol("data", "{size: 1G, repart: {"+key+": x}}"), "repart must not set "+key)
 	}
-	if refused(vol("data", "{size: 1G, mountPoint: /srv/My_data-2.0}")) {
-		t.Error("refused the mount point /srv/My_data-2.0")
-	}
+	check("Weight", vol("data", `{size: 1G, repart: {Weight: "2000"}}`), "")
 }
 
 // TestStorageEncryptionModes encrypts VAR as the node's SystemDisk says unless VAR's own mode
