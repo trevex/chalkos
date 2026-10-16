@@ -307,13 +307,23 @@ func checkKindsMatch(metadataKinds, schemaKinds []Kind) error {
 // compiler, needed to resolve its internal $refs, is id, a URL built from the schema's file name
 // alone: jsonschema otherwise treats the filesystem path itself as a URL, which misreads or
 // rejects a path whose directory contains '%', '#' or '?'. Errors still name the real path.
-func compileSchema(c *jsonschema.Compiler, doc any, path, name string) (*jsonschema.Schema, error) {
+func compileSchema(c *jsonschema.Compiler, doc any, path, name string) (s *jsonschema.Schema, err error) {
+	// The library panics on some schemas, such as a multipleOf too small for math/big; a schema
+	// is data, which must not crash chalkd or chalkctl.
+	defer func() {
+		if r := recover(); r != nil {
+			s, err = nil, fmt.Errorf("%s: the schema does not compile: %v", path, r)
+		}
+	}()
 	id := "chalkos:///schemas/" + name
 	if err := c.AddResource(id, doc); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	s, err := c.Compile(id)
+	s, err = c.Compile(id)
 	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := checkSize(s); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return s, nil

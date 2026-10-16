@@ -29,7 +29,8 @@ func (s *Schemas) Default(doc any) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("does not accept kind %q of apiVersion %q", kind, apiVersion)
 	}
-	return fill(sch, doc, 0)
+	work := maxFillWork
+	return fill(sch, doc, 0, &work)
 }
 
 // maxDepth bounds how deep Default follows a schema, in nested values and in $ref chains. A
@@ -39,9 +40,19 @@ const maxDepth = 128
 
 var errTooDeep = fmt.Errorf("the schema nests deeper than %d levels, or refers to itself without end", maxDepth)
 
-func fill(sch *jsonschema.Schema, v any, depth int) (any, error) {
+// maxFillWork bounds the schema nodes Default visits for one document. LoadSchemas refuses
+// schemas whose expanded size would make the work large; this guards Default on its own, since
+// a group of options it fills in visits schema nodes the document does not hold.
+const maxFillWork = 1 << 18
+
+var errTooMuchWork = fmt.Errorf("filling in the defaults takes more than %d steps", maxFillWork)
+
+func fill(sch *jsonschema.Schema, v any, depth int, work *int) (any, error) {
 	if depth > maxDepth {
 		return nil, errTooDeep
+	}
+	if *work--; *work < 0 {
+		return nil, errTooMuchWork
 	}
 	// A schema with $ref carries no other keyword of its own: the generators never emit both.
 	sch, err := deref(sch)
@@ -51,20 +62,20 @@ func fill(sch *jsonschema.Schema, v any, depth int) (any, error) {
 	switch v := v.(type) {
 	case map[string]any:
 		if len(sch.AnyOf) > 0 {
-			return fill(branchFor(sch.AnyOf, v), v, depth+1)
+			return fill(branchFor(sch.AnyOf, v), v, depth+1, work)
 		}
 		out := maps.Clone(v)
 		for name, prop := range sch.Properties {
 			var filled any
 			var err error
 			if val, ok := out[name]; ok {
-				filled, err = fill(prop, val, depth+1)
+				filled, err = fill(prop, val, depth+1, work)
 			} else if d := defaultOf(prop); d != nil {
-				filled, err = fill(prop, deepCopy(*d), depth+1)
+				filled, err = fill(prop, deepCopy(*d), depth+1, work)
 			} else if isGroup(prop) {
 				// A group of options, such as encryption, has no default of its own but exists
 				// whenever its options have defaults, as in the module system.
-				if filled, err = fill(prop, map[string]any{}, depth+1); err == nil && len(filled.(map[string]any)) == 0 {
+				if filled, err = fill(prop, map[string]any{}, depth+1, work); err == nil && len(filled.(map[string]any)) == 0 {
 					continue
 				}
 			} else {
@@ -78,7 +89,7 @@ func fill(sch *jsonschema.Schema, v any, depth int) (any, error) {
 		if extra, ok := sch.AdditionalProperties.(*jsonschema.Schema); ok {
 			for name, val := range out {
 				if _, declared := sch.Properties[name]; !declared {
-					if out[name], err = fill(extra, val, depth+1); err != nil {
+					if out[name], err = fill(extra, val, depth+1, work); err != nil {
 						return nil, err
 					}
 				}
@@ -87,14 +98,14 @@ func fill(sch *jsonschema.Schema, v any, depth int) (any, error) {
 		return out, nil
 	case []any:
 		if len(sch.AnyOf) > 0 {
-			return fill(branchFor(sch.AnyOf, v), v, depth+1)
+			return fill(branchFor(sch.AnyOf, v), v, depth+1, work)
 		}
 		if sch.Items2020 == nil {
 			return v, nil
 		}
 		out := make([]any, len(v))
 		for i, item := range v {
-			if out[i], err = fill(sch.Items2020, item, depth+1); err != nil {
+			if out[i], err = fill(sch.Items2020, item, depth+1, work); err != nil {
 				return nil, err
 			}
 		}

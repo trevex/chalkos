@@ -2,11 +2,14 @@ package schema
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestLoadFiles(t *testing.T) {
@@ -73,46 +76,115 @@ func TestSchemasFetchNothing(t *testing.T) {
 	errOf("other.json")
 }
 
-// TestDefaultEndsOnASchemaThatRefersToItself: a schema whose group of options holds itself, or
-// whose $refs go round, is refused when it loads or when defaults are filled in, not with a
-// crash or a hang.
-func TestDefaultEndsOnASchemaThatRefersToItself(t *testing.T) {
-	doc := map[string]any{"apiVersion": "example.org/v1", "kind": "Probe", "metadata": map[string]any{"name": "p"}}
-	for name, body := range map[string]string{
-		"a group holding itself": `"type": "object", "properties": {"spec": {"$ref": "#/$defs/g"}},
-			"$defs": {"g": {"type": "object", "properties": {"spec": {"$ref": "#/$defs/g"}}}}`,
-		"a $ref cycle": `"type": "object", "properties": {"spec": {"$ref": "#/$defs/a"}},
-			"$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}`,
-		"an anyOf holding itself": `"type": "object", "properties": {"spec": {"$ref": "#/$defs/a"}},
-			"$defs": {"a": {"anyOf": [{"$ref": "#/$defs/a"}]}}`,
-	} {
+// selfReferring are schemas of the kind Probe whose spec refers to itself: a group of options
+// holding itself, a $ref cycle and an anyOf holding itself.
+var selfReferring = map[string]string{
+	"a group holding itself": `"type": "object", "properties": {"spec": {"$ref": "#/$defs/g"}},
+		"$defs": {"g": {"type": "object", "properties": {"spec": {"$ref": "#/$defs/g"}}}}`,
+	"a $ref cycle": `"type": "object", "properties": {"spec": {"$ref": "#/$defs/a"}},
+		"$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}`,
+	"an anyOf holding itself": `"type": "object", "properties": {"spec": {"$ref": "#/$defs/a"}},
+		"$defs": {"a": {"anyOf": [{"$ref": "#/$defs/a"}]}}`,
+}
+
+// chain is a schema of the kind Probe whose spec refers to the first of n definitions, each of
+// which refers to the next from two places, the way of, and the last of which is last.
+func chain(n int, way, last string) string {
+	var defs []string
+	for i := range n {
+		next := fmt.Sprintf(`{"$ref": "#/$defs/d%d"}`, i+1)
+		defs = append(defs, fmt.Sprintf(`"d%d": `+way, i, next, next))
+	}
+	defs = append(defs, fmt.Sprintf(`"d%d": %s`, n, last))
+	return `"type": "object", "properties": {"spec": {"$ref": "#/$defs/d0"}}, "$defs": {` + strings.Join(defs, ", ") + `}`
+}
+
+// The validation bomb: every definition holds the next twice in an allOf. The defaults bomb: every
+// definition is a group of options a and b, both the next, and the last has a default.
+var (
+	validationBomb = chain(30, `{"allOf": [%s, %s]}`, `{"type": "string"}`)
+	defaultsBomb   = chain(20, `{"type": "object", "properties": {"a": %s, "b": %s}}`, `{"type": "string", "default": "x"}`)
+)
+
+// within fails the test unless f returns within ten seconds.
+func within(t *testing.T, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { defer close(done); f() }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("did not end within ten seconds")
+	}
+}
+
+// TestLoadRefusesSchemasOfUnboundedWork: a schema that refers to itself, or expands through its
+// references to more schemas than any chalkos kind, is refused when it loads, quickly, before
+// a document is validated against it or filled in.
+func TestLoadRefusesSchemasOfUnboundedWork(t *testing.T) {
+	cases := map[string]struct{ body, want string }{
+		"the validation bomb": {validationBomb, "expands to more than"},
+		"the defaults bomb":   {defaultsBomb, "expands to more than"},
+	}
+	for name, body := range selfReferring {
+		cases[name] = struct{ body, want string }{body, "refers to itself"}
+	}
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			s, err := LoadFiles(kindSchema(body))
-			if err != nil {
-				// Refused when it loads is handled too.
-				t.Logf("LoadFiles = %v", err)
-				return
-			}
-			done := make(chan error, 1)
-			go func() {
-				d := map[string]any{}
-				for k, v := range doc {
-					d[k] = v
+			within(t, func() {
+				_, err := LoadFiles(kindSchema(tc.body))
+				var lerr *LoadError
+				if !errors.As(err, &lerr) || !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("err = %v, want a LoadError saying %q", err, tc.want)
 				}
-				d["spec"] = map[string]any{}
-				// Validation follows the library's own guard against cycles; it must end too.
-				_ = s.Validate(d)
-				_, err := s.Default(d)
-				done <- err
-			}()
-			select {
-			case err := <-done:
-				if err == nil {
-					t.Error("Default filled in a schema without end")
-				}
-			case <-time.After(10 * time.Second):
-				t.Fatal("Default did not end")
-			}
+			})
 		})
+	}
+}
+
+// uncheckedSchemas compiles the kind Probe's schema without the checks LoadSchemas makes, for the
+// guards Default keeps of its own.
+func uncheckedSchemas(t *testing.T, body string) *Schemas {
+	t.Helper()
+	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	c.UseLoader(noLoader{})
+	if err := c.AddResource("chalkos:///schemas/probe.json", decode(t, "{"+body+"}")); err != nil {
+		t.Fatal(err)
+	}
+	sch, err := c.Compile("chalkos:///schemas/probe.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Schemas{schemas: map[Kind]*jsonschema.Schema{key("example.org/v1", "Probe"): sch}}
+}
+
+// TestDefaultEndsOnItsOwn: Default refuses, quickly and in little memory, a schema that refers to
+// itself or whose groups of options expand without bound, should one reach it unchecked.
+func TestDefaultEndsOnItsOwn(t *testing.T) {
+	cases := map[string]string{"the defaults bomb": defaultsBomb}
+	for name, body := range selfReferring {
+		cases[name] = body
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := uncheckedSchemas(t, body)
+			within(t, func() {
+				doc := map[string]any{"apiVersion": "example.org/v1", "kind": "Probe", "metadata": map[string]any{"name": "p"}, "spec": map[string]any{}}
+				if _, err := s.Default(doc); err == nil {
+					t.Error("Default filled in a schema of unbounded work")
+				}
+			})
+		})
+	}
+}
+
+// TestLoadRefusesASchemaTheLibraryPanicsOn: a multipleOf too small for math/big makes the
+// library panic as it compiles; that is a LoadError, not a crash.
+func TestLoadRefusesASchemaTheLibraryPanicsOn(t *testing.T) {
+	_, err := LoadFiles(kindSchema(`"type": "object", "properties": {"n": {"type": "number", "multipleOf": 1e-5000000}}`))
+	var lerr *LoadError
+	if !errors.As(err, &lerr) || !strings.Contains(err.Error(), "does not compile") {
+		t.Fatalf("err = %v, want a LoadError for the library's panic", err)
 	}
 }
