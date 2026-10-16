@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/inventory"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -100,7 +101,7 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 // delivery is a node's config as chalkctl delivers it, checked against the image it is for, with
 // the identity it translates to there.
 type delivery struct {
-	config.Bridged
+	config.Encoded
 	identity identity.Identity
 }
 
@@ -121,5 +122,30 @@ func configFor(t *target, c contract) (delivery, error) {
 	if err != nil {
 		return delivery{}, fmt.Errorf("the config of %s: %w", t.name, err)
 	}
-	return delivery{Bridged: b, identity: id}, nil
+	return delivery{Encoded: b.Encoded, identity: id}, nil
+}
+
+// checkNodeConfig checks a node's config as the node checks it on the image the contract
+// describes: the set's rules, each document against its schema, the identity it translates
+// into, and on an image with Kubernetes the cluster it gives. It returns the config as chalkctl
+// delivers it.
+func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
+	set, err := config.NewSet(nc.Documents, c.schemas)
+	if err != nil {
+		return delivery{}, err
+	}
+	id, err := set.Identity(config.Target{Platform: c.platform, Image: c.image})
+	if err != nil {
+		return delivery{}, err
+	}
+	if c.image != nil {
+		if err := set.CheckKubernetes(*c.image); err != nil {
+			return delivery{}, err
+		}
+	}
+	e, err := config.Encode(nc.Documents)
+	if err != nil {
+		return delivery{}, err
+	}
+	return delivery{Encoded: e, identity: id}, nil
 }

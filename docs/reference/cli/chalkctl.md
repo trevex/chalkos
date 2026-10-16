@@ -57,4 +57,5 @@ argument after it is read as a positional argument.
 * [chalkctl status](chalkctl_status.md)	 - Show an installed node's status
 * [chalkctl storage](chalkctl_storage.md)	 - Manage a node's volumes
 * [chalkctl upgrade](chalkctl_upgrade.md)	 - Install new images on the cluster's nodes, one control plane at a time
+* [chalkctl validate](chalkctl_validate.md)	 - Check nodes' config against the schemas of their images
 

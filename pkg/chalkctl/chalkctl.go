@@ -95,6 +95,7 @@ func newCommand(a *app) *cobra.Command {
 		a.bootstrapCommand(),
 		a.kubeconfigCommand(),
 		a.upgradeCommand(),
+		a.validateCommand(),
 		signCommand(),
 	)
 	return root

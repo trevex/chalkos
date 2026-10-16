@@ -99,6 +99,7 @@ nav = [
           { "reset" = "reference/cli/chalkctl_storage_reset.md" },
         ] },
         { "upgrade" = "reference/cli/chalkctl_upgrade.md" },
+        { "validate" = "reference/cli/chalkctl_validate.md" },
       ] },
       { "chalklab" = [
         { "Overview" = "reference/cli/chalklab.md" },

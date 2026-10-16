@@ -301,3 +301,16 @@ start, so chalkctl trusts the node's old key: someone holding a leaked, expired 
 and sitting in its network path could receive the new certificate in its place. That is inherent
 to recovering a node; renewing node certificates before they expire avoids it. The command needs
 the secrets file.`
+
+const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
+check it on its image: the files the inventory gives the node form its set, every document is
+checked against the schemas of the image directory the node's Image names, and the set is
+translated as the node translates it. It prints a line for each node whose config is valid and
+names each node whose config is not. It reaches no node and needs no secrets file or client
+file.`
+
+const validateExample = `  # Check every node of chalkos.yaml.
+  chalkctl validate
+
+  # Check two nodes of another inventory.
+  chalkctl validate cp1 w1 --inventory lab/chalkos.yaml`
