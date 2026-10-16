@@ -1,10 +1,15 @@
 package config
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/networkdschema"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -178,5 +183,81 @@ spec: {network: {address: [10.0.0.11/24, fd00::11/64]}}
 `)
 	if got, want := StaticAddresses(docs), []string{"10.0.0.11", "fd00::11", "10.0.1.5"}; !slices.Equal(got, want) {
 		t.Errorf("addresses = %v, want %v", got, want)
+	}
+}
+
+// networkdSchema is the schema of a networkd kind whose spec holds the sections given, each with
+// its keys by YAML name, annotated as the image's schemas annotate them.
+func networkdSchema(kind string, sections map[string]map[string]string) map[string]any {
+	specProps := map[string]any{}
+	defs := map[string]any{}
+	for section, keys := range sections {
+		props := map[string]any{}
+		for yamlKey, key := range keys {
+			props[yamlKey] = map[string]any{"x-chalkos-networkd-key": key}
+		}
+		defs[section] = map[string]any{"type": "object", "properties": props, "x-chalkos-networkd-section": section}
+		specProps[networkdschema.CamelCase(section)] = map[string]any{"$ref": "#/$defs/" + section, "x-chalkos-networkd-section": section}
+	}
+	return map[string]any{
+		"$schema":        "https://json-schema.org/draft/2020-12/schema",
+		"title":          kind,
+		"type":           "object",
+		"x-chalkos-kind": map[string]any{"group": "networkd.chalkos.dev", "version": "v1alpha1", "kind": kind, "multiple": true},
+		"$defs":          defs,
+		"properties": map[string]any{
+			"apiVersion": map[string]any{"const": "networkd.chalkos.dev/v1alpha1"},
+			"kind":       map[string]any{"const": kind},
+			"metadata":   map[string]any{"type": "object"},
+			"spec":       map[string]any{"type": "object", "properties": specProps},
+		},
+	}
+}
+
+// TestRenderNetDevAndLinkUnits renders NetDev and Link documents as .netdev and .link units, as
+// NixOS writes systemd.network.netdevs and links.
+func TestRenderNetDevAndLinkUnits(t *testing.T) {
+	dir := t.TempDir()
+	for kind, sections := range map[string]map[string]map[string]string{
+		"NetDev": {"NetDev": {"kind": "Kind", "name": "Name"}, "VLAN": {"id": "Id"}},
+		"Link":   {"Match": {"macAddress": "MACAddress"}, "Link": {"name": "Name"}},
+	} {
+		data, err := json.Marshal(networkdSchema(kind, sections))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "networkd.chalkos.dev_v1alpha1_"+kind+".json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := schema.LoadSchemas(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := networkDocs(t, `
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 30-vlan}
+spec:
+  netDev: {name: vlan10, kind: vlan}
+  vlan: {id: 10}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 40-nic}
+spec:
+  match: {macAddress: "aa:bb:cc:dd:ee:01"}
+  link: {name: uplink}
+`)
+	units, err := renderNetworkUnits(docs, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"30-vlan.netdev": "[NetDev]\nKind=vlan\nName=vlan10\n\n[VLAN]\nId=10\n\n",
+		"40-nic.link":    "[Match]\nMACAddress=aa:bb:cc:dd:ee:01\n\n[Link]\nName=uplink\n\n",
+	}
+	if !reflect.DeepEqual(units, want) {
+		t.Errorf("units = %q, want %q", units, want)
 	}
 }

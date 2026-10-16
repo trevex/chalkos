@@ -164,3 +164,73 @@ func TestDefinitionEscapesEqualsInKeys(t *testing.T) {
 		t.Errorf("definition =\n%s\nwant\n%s", got, want)
 	}
 }
+
+// TestStorageRefusesNamesMountPointsAndKeys refuses volume names that cannot name a partition or
+// that chalkos's own partitions hold, mount points outside the paths a volume may take, and the
+// repart keys the typed fields set.
+func TestStorageRefusesNamesMountPointsAndKeys(t *testing.T) {
+	vol := func(name, spec string) string {
+		return "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: \"" + name + "\"}\nspec: " + spec + "\n"
+	}
+	refused := func(extra string) bool {
+		s, err := parseSet(t, minimal+extra)
+		if err != nil {
+			return true
+		}
+		_, err = s.storage()
+		return err != nil
+	}
+	for _, name := range []string{"Data", "-data", strings.Repeat("a", 33), "var", "state", "esp", "store", "store-verity", "system"} {
+		if !refused(vol(name, "{size: 1G}")) {
+			t.Errorf("took the volume name %q", name)
+		}
+	}
+	for _, p := range []string{"srv/data", "/", "/nix", "/nix/store/x", "/state", "/state/x", "/var", "/srv/../nix", "/srv/", "/srv/my data", `/srv/d\\x2data`, "/srv/dätä", "/srv/a:b", `/srv/a\nb`} {
+		if !refused(vol("data", `{size: 1G, mountPoint: "`+p+`"}`)) {
+			t.Errorf("took the mount point %q", p)
+		}
+	}
+	for _, key := range []string{"Type", "Label", "Encrypt", "Format", "SizeMinBytes", "SizeMaxBytes", "MountPoint"} {
+		if !refused(vol("data", "{size: 1G, repart: {"+key+": x}}")) {
+			t.Errorf("took the repart key %s", key)
+		}
+	}
+	if refused(vol("data", "{size: 1G, mountPoint: /srv/My_data-2.0}")) {
+		t.Error("refused the mount point /srv/My_data-2.0")
+	}
+}
+
+// TestStorageEncryptionModes encrypts VAR as the node's SystemDisk says unless VAR's own mode
+// says otherwise, and a volume as its own mode says.
+func TestStorageEncryptionModes(t *testing.T) {
+	for name, tc := range map[string]struct {
+		systemDisk, extra   string
+		state, var_, secret string
+	}{
+		"node none": {
+			"spec: {disk: {path: /dev/vda}, encryption: {mode: none}, var: {size: 8G}}",
+			"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: secret}\nspec: {mountPoint: /srv/secret, encryption: {mode: tpm2}}\n",
+			"none", "none", "tpm2",
+		},
+		"var none": {"spec: {disk: {path: /dev/vda}, var: {encryption: {mode: none}}}", "", "tpm2", "none", ""},
+		"default":  {"spec: {disk: {path: /dev/vda}}", "", "tpm2", "tpm2", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, err := parseSet(t, strings.Replace(minimal, "spec: {disk: {path: /dev/vda}}", tc.systemDisk, 1)+tc.extra)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sec, err := s.storage()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sec.Encryption != tc.state || sec.Volumes["var"].Encryption != tc.var_ || sec.Volumes["secret"].Encryption != tc.secret {
+				t.Errorf("state %q, var %q, secret %q; want %q, %q, %q", sec.Encryption, sec.Volumes["var"].Encryption, sec.Volumes["secret"].Encryption, tc.state, tc.var_, tc.secret)
+			}
+			conf, ok := sec.Disks["system"].Repart["50-var.conf"]
+			if !ok || strings.Contains(conf, "Encrypt=") != (tc.var_ == "tpm2") {
+				t.Errorf("50-var.conf =\n%s", conf)
+			}
+		})
+	}
+}

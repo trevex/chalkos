@@ -266,3 +266,87 @@ func TestIdentityNamesNoRole(t *testing.T) {
 		t.Errorf("identity = %s, want the platform kvm and no role", data)
 	}
 }
+
+// TestKubeletLabels refuses the labels the kubelet will not set on its own node, labels in the
+// kubernetes.io and k8s.io namespaces outside its allowlist, and takes every other label.
+func TestKubeletLabels(t *testing.T) {
+	label := func(key string) error {
+		s := kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\nspec: {labels: {\""+key+"\": x}}\n")
+		_, err := s.Identity(Target{Image: &testImage})
+		return err
+	}
+	for _, key := range []string{
+		"kubernetes.io/role",
+		"node-role.kubernetes.io/control-plane",
+		"beta.kubernetes.io/fluentd",
+		"k8s.io/team",
+		"storage.k8s.io/class",
+	} {
+		if err := label(key); err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("label %s: err = %v, want a refusal naming it", key, err)
+		}
+	}
+	for _, key := range []string{
+		"kubernetes.io/hostname",
+		"kubernetes.io/arch",
+		"kubernetes.io/os",
+		"beta.kubernetes.io/arch",
+		"beta.kubernetes.io/os",
+		"beta.kubernetes.io/instance-type",
+		"failure-domain.beta.kubernetes.io/region",
+		"failure-domain.beta.kubernetes.io/zone",
+		"topology.kubernetes.io/region",
+		"topology.kubernetes.io/zone",
+		"node.kubernetes.io/instance-type",
+		"node.kubernetes.io/storage",
+		"kubelet.kubernetes.io/pool",
+		"a.node.kubernetes.io/b",
+		"a.kubelet.kubernetes.io/b",
+		"example.com/team",
+		"team",
+	} {
+		if err := label(key); err != nil {
+			t.Errorf("label %s: %v", key, err)
+		}
+	}
+}
+
+// TestSwapVolumeWithoutKubernetes takes a swap volume on a node whose image runs no Kubernetes,
+// as no kubelet refuses it there.
+func TestSwapVolumeWithoutKubernetes(t *testing.T) {
+	s, err := parseSet(t, strings.Replace(minimal, "spec: {type: worker, imageRef: metal}", "spec: {imageRef: metal}", 1)+
+		"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: swap}\nspec: {size: 4G, format: swap}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Identity(Target{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestKubeletValidSubnets carries a Kubelet's own validSubnets into the identity, leaving every
+// address to be picked at boot, and an empty list takes the node's static addresses in place of
+// the cluster's subnets.
+func TestKubeletValidSubnets(t *testing.T) {
+	const network = "---\napiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-a}\nspec: {network: {address: [10.0.0.5/24]}}\n"
+	kubelet := func(spec string) string {
+		return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\nspec: " + spec + "\n"
+	}
+	for name, tc := range map[string]struct {
+		cluster, kubelet string
+		nodeIPs, subnets []string
+	}{
+		"own subnets":          {"{}", kubelet(`{validSubnets: ["192.168.100.0/24"]}`), []string{}, []string{"192.168.100.0/24"}},
+		"empty over cluster's": {`{nodeIP: {validSubnets: ["10.0.0.0/8", "!10.0.0.10/32"]}}`, kubelet(`{validSubnets: []}`), []string{"10.0.0.5"}, []string{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			id, err := kubernetesSet(t, tc.cluster, network+tc.kubelet).Identity(Target{Image: &testImage})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(id.Kubernetes.NodeIPs, tc.nodeIPs) || !reflect.DeepEqual(id.Kubernetes.ValidSubnets, tc.subnets) {
+				t.Errorf("nodeIPs = %#v, validSubnets = %#v, want %#v and %#v", id.Kubernetes.NodeIPs, id.Kubernetes.ValidSubnets, tc.nodeIPs, tc.subnets)
+			}
+		})
+	}
+}
