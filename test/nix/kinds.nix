@@ -160,7 +160,7 @@ let
     };
   resolvePeering = getLib.resolve (peeringSpec schema.types.secretRef);
   homelab =
-    (mkCluster { modules = [ ../../examples/homelab/cluster.nix ]; }).roles.worker.nixos.metal.config;
+    (mkCluster { modules = [ ../../examples/homelab/cluster.nix ]; }).roles.node.nixos.metal.config;
   kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
   builtinFixture =
     file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));

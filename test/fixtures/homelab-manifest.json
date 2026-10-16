@@ -31,16 +31,13 @@
   "manifests": [],
   "time": { "dhcpServers": false },
   "roles": {
-    "controlplane": {
-      "images": { "kvm": "roles.controlplane.images.kvm", "metal": "roles.controlplane.images.metal" }
-    },
-    "worker": {
-      "images": { "kvm": "roles.worker.images.kvm", "metal": "roles.worker.images.metal" }
+    "node": {
+      "images": { "kvm": "roles.node.images.kvm", "metal": "roles.node.images.metal" }
     }
   },
   "nodes": {
     "cp1": {
-      "role": "controlplane",
+      "role": "node",
       "platform": "metal",
       "kind": "controlplane",
       "documents": [
@@ -54,7 +51,7 @@
       "identity": {
         "hostname": "cp1",
         "cluster": "homelab",
-        "role": "controlplane",
+        "role": "node",
         "platform": "metal",
         "network": {
           "networks": {
@@ -97,7 +94,7 @@
       }
     },
     "w1": {
-      "role": "worker",
+      "role": "node",
       "platform": "metal",
       "kind": "worker",
       "documents": [
@@ -111,7 +108,7 @@
       "identity": {
         "hostname": "w1",
         "cluster": "homelab",
-        "role": "worker",
+        "role": "node",
         "platform": "metal",
         "network": {},
         "networkUnits": {},

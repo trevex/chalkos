@@ -118,16 +118,12 @@ let
     };
     # A control plane and a worker on KVM, which the Kubernetes test runs with chalklab, as the lab
     # template defines its nodes: chalklab connects them by the MAC address their network matches.
-    chalkos.roles.k8s-controlplane = {
-      nixosModules = [ ../../modules/testing/test-image.nix ];
-    };
-    chalkos.roles.k8s-worker = {
-      nixosModules = [ ../../modules/testing/test-image.nix ];
-    };
+    # Both boot the one image of the role; cp1's kind makes it the control plane.
+    chalkos.roles.k8s.nixosModules = [ ../../modules/testing/test-image.nix ];
     # cp1 reaches w1's addresses through w1's address on the cluster network, as a routing daemon
     # would install the routes.
     chalkos.nodes.cp1 = {
-      role = "k8s-controlplane";
+      role = "k8s";
       kubernetes.kind = "controlplane";
       platform = "kvm";
       storage.system.disk = "/dev/vda";
@@ -147,7 +143,7 @@ let
     # w1's addresses are on a dummy interface, as a routing daemon announces them; it picks them
     # at boot, neither its user-mode NIC's nor its cluster network's.
     chalkos.nodes.w1 = {
-      role = "k8s-worker";
+      role = "k8s";
       platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = pkgs.lib.recursiveUpdate (clusterNetwork "52:54:00:00:01:12" "12") {
@@ -171,8 +167,8 @@ let
     };
   };
   # Three control planes of an IPv6-only cluster behind the VIP fd00:100::10, connected through
-  # the switch of the HA test. The definition is a cluster of its own: the endpoint and the VIP
-  # are in the images.
+  # the switch of the HA test. The definition is a cluster of its own, whose manifest gives the
+  # endpoint and the VIP; its images are built from the same role as the main cluster's.
   haDefinition = {
     chalkos.cluster = {
       name = "chalklab-ha";
@@ -186,7 +182,7 @@ let
         nodeIP.timeout = 30;
       };
     };
-    chalkos.roles.k8s-ha = {
+    chalkos.roles.k8s = {
       nixosModules = [ ../../modules/testing/test-image.nix ];
     };
     chalkos.nodes = pkgs.lib.genAttrs [ "cp1" "cp2" "cp3" ] (
@@ -195,7 +191,7 @@ let
         n = pkgs.lib.removePrefix "cp" name;
       in
       {
-        role = "k8s-ha";
+        role = "k8s";
         kubernetes.kind = "controlplane";
         storage.system.disk = "/dev/vda";
         network = clusterNetwork "52:54:00:00:02:1${n}" "1${n}";
@@ -326,7 +322,7 @@ in
   haUpgradeImage = imageAt [
     haDefinition
     mirrored
-  ] "k8s-ha" "0.2.0" { };
+  ] "k8s" "0.2.0" { };
   kubernetesImages = import ./kubernetes-images.nix {
     inherit pkgs;
     kubernetesVersion = cluster.cluster.kubernetes.package.version;

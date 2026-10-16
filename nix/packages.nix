@@ -80,9 +80,8 @@ in
     testing.cluster.roles.test.nixos.metal.config.environment.etc."chalkos/repart.d".source;
   test-storage-image = testing.cluster.roles.storage.images.metal;
   test-installer = testing.cluster.installer.image;
-  test-kubernetes-controlplane-image = testing.cluster.roles.k8s-controlplane.images.kvm;
-  test-kubernetes-worker-image = testing.cluster.roles.k8s-worker.images.kvm;
-  test-kubernetes-ha-image = testing.haCluster.roles.k8s-ha.images.metal;
+  test-kubernetes-image = testing.cluster.roles.k8s.images.kvm;
+  test-kubernetes-ha-image = testing.haCluster.roles.k8s.images.metal;
   test-upgrade-image = testing.upgradeImage;
   test-unhealthy-image = testing.unhealthyImage;
   test-kubernetes-ha-upgrade-image = testing.haUpgradeImage;

@@ -20,19 +20,19 @@ in
     osCA = ./secrets.pub.json;
   };
 
-  chalkos.roles.controlplane = { };
-  chalkos.roles.worker = { };
+  # One image for both nodes; cp1's kind makes it the control plane.
+  chalkos.roles.node = { };
 
   chalkos.nodes = {
     cp1 = {
-      role = "controlplane";
-      kubernetes.kind = "controlplane";
+      role = "node";
       platform = "kvm";
+      kubernetes.kind = "controlplane";
       storage.system.disk = "/dev/vda";
       network = labNetwork "11";
     };
     w1 = {
-      role = "worker";
+      role = "node";
       platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = labNetwork "12";

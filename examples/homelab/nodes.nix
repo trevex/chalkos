@@ -1,7 +1,7 @@
 {
   chalkos.nodes = {
     cp1 = {
-      role = "controlplane";
+      role = "node";
       kubernetes.kind = "controlplane";
       storage.system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001";
       network.networks."10-uplink" = {
@@ -13,10 +13,19 @@
     };
 
     w1 = {
-      role = "worker";
+      role = "node";
       storage = {
         system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100002";
         var.size = "200G";
+        # A SATA SSD for Longhorn replicas next to the NVMe system disk.
+        volumes.longhorn = {
+          disk = {
+            model = "Samsung SSD 870*";
+            type = "ssd";
+          };
+          format = "xfs";
+          mountPoint = "/var/lib/longhorn";
+        };
       };
       labels."node.kubernetes.io/storage" = "ssd";
       taints = [

@@ -5,9 +5,8 @@ let
   testEnv = import ./testing/env.nix { inherit pkgs self; };
   docs = import ./docs.nix { inherit pkgs self; };
 
-  # The test cluster's worker, whose units the checks below run.
-  worker =
-    (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm.config;
+  # The test cluster's Kubernetes image, whose units the checks below run.
+  worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s.nixos.kvm.config;
   # The script NixOS runs to load and reload the worker's firewall.
   firewall =
     lib.findFirst (lib.hasSuffix "-nftables-rules")
@@ -111,8 +110,7 @@ in
   );
   e2e-kubernetes = e2e "kubernetes" "^TestKubernetesCluster$" {
     CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
-    CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR = "${chalkPkgs.test-kubernetes-controlplane-image}";
-    CHALKLAB_K8S_WORKER_IMAGE_DIR = "${chalkPkgs.test-kubernetes-worker-image}";
+    CHALKLAB_K8S_IMAGE_DIR = "${chalkPkgs.test-kubernetes-image}";
     CHALKLAB_K8S_IMAGES = "${chalkPkgs.test-kubernetes-images}/images.json";
   };
   e2e-kubernetes-ha = e2e "kubernetes-ha" "^TestKubernetesHA$" {
@@ -707,7 +705,7 @@ in
   # the build. Out-of-tree modules bring the in-tree modules they depend on.
   kernel-modules =
     let
-      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm;
+      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s.nixos.kvm;
       treeOf = nixos: nixos.config.system.build.chalkosKernelModules;
       tree = treeOf worker;
       gpu = treeOf (worker.extendModules { modules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ]; });
@@ -909,7 +907,7 @@ in
   # its kernel, the UKI on the ESP: the store holds neither the kernel nor the initrd.
   bootspec =
     let
-      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s-worker.nixos.kvm;
+      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s.nixos.kvm;
       bootJSON = "${worker.config.system.build.toplevel}/boot.json";
     in
     pkgs.runCommand "chalkos-bootspec" { nativeBuildInputs = [ pkgs.jq ]; } ''
@@ -1083,7 +1081,7 @@ in
           echo "error: the test image runs no Kubernetes, but its directory has image.json" >&2
           exit 1
         fi
-        k=${chalkPkgs.test-kubernetes-worker-image}
+        k=${chalkPkgs.test-kubernetes-image}
         jq -e '.cni == "flannel" and (. as $i | $i.images.kubeProxy | endswith(":v" + $i.version))' $k/image.json
         jq -e --slurpfile img $k/image.json \
           '.kubernetes == {version: $img[0].version, cni: $img[0].cni}' $k/metadata.json

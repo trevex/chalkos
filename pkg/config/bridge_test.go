@@ -78,7 +78,7 @@ func TestFromManifestDocuments(t *testing.T) {
 	}
 	want := []string{
 		`chalkos.dev/v1alpha1 Cluster "homelab"`,
-		`chalkos.dev/v1alpha1 Image "worker-metal"`,
+		`chalkos.dev/v1alpha1 Image "node-metal"`,
 		`chalkos.dev/v1alpha1 Node "w1"`,
 		`time.chalkos.dev/v1alpha1 TimeSync "time"`,
 		`storage.chalkos.dev/v1alpha1 SystemDisk "system"`,
@@ -98,7 +98,7 @@ func TestFromManifestDocuments(t *testing.T) {
 		}
 		return nil
 	}
-	if got := spec("Image")["source"]; got != "roles.worker.images.metal" {
+	if got := spec("Image")["source"]; got != "roles.node.images.metal" {
 		t.Errorf("image source = %v", got)
 	}
 	wantVolume := map[string]any{
@@ -322,7 +322,7 @@ func TestCheckRefusesExtensionsThatCollide(t *testing.T) {
 		want string
 	}{
 		"a second Node": {
-			docs: []string{`{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Node", "metadata": {"name": "other"}, "spec": {"imageRef": "controlplane-metal"}}`},
+			docs: []string{`{"apiVersion": "chalkos.dev/v1alpha1", "kind": "Node", "metadata": {"name": "other"}, "spec": {"imageRef": "node-metal"}}`},
 			want: "more than one Node",
 		},
 		"a second Rack of the same name": {

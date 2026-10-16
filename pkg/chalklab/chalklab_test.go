@@ -31,16 +31,15 @@ import (
 const labManifest = `{
   "schemaVersion": 0,
   "cluster": {"name": "lab", "endpoint": "https://192.168.123.11:6443"},
-  "roles": {"controlplane": {"images": {"kvm": "roles.controlplane.images.kvm", "metal": "roles.controlplane.images.metal"}},
-            "worker": {"images": {"kvm": "roles.worker.images.kvm", "metal": "roles.worker.images.metal"}}},
+  "roles": {"node": {"images": {"kvm": "roles.node.images.kvm", "metal": "roles.node.images.metal"}}},
   "nodes": {
-    "cp1": {"role": "controlplane", "kind": "controlplane", "platform": "kvm", "identity": {"hostname": "cp1", "platform": "kvm",
+    "cp1": {"role": "node", "kind": "controlplane", "platform": "kvm", "identity": {"hostname": "cp1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7b:00:11"}, "address": ["192.168.123.11/24"]}}},
       "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7b:00:11\n\n[Network]\nAddress=192.168.123.11/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "w1": {"role": "worker", "kind": "worker", "platform": "kvm", "identity": {"hostname": "w1", "platform": "kvm",
+    "w1": {"role": "node", "kind": "worker", "platform": "kvm", "identity": {"hostname": "w1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7B:00:12"}, "address": ["192.168.123.12/24"]}}},
       "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7B:00:12\n\n[Network]\nAddress=192.168.123.12/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "m1": {"role": "worker", "kind": "worker", "platform": "metal", "identity": {"hostname": "m1", "platform": "metal",
+    "m1": {"role": "node", "kind": "worker", "platform": "metal", "identity": {"hostname": "m1", "platform": "metal",
       "network": {}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
   }
 }`
@@ -71,8 +70,8 @@ func TestLabNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []lab.LabNode{
-		{Name: "cp1", Role: "controlplane", Kind: "controlplane", MAC: "52:54:00:7b:00:11"},
-		{Name: "w1", Role: "worker", Kind: "worker", MAC: "52:54:00:7b:00:12"},
+		{Name: "cp1", Role: "node", Kind: "controlplane", MAC: "52:54:00:7b:00:11"},
+		{Name: "w1", Role: "node", Kind: "worker", MAC: "52:54:00:7b:00:12"},
 	}
 	if !slices.Equal(nodes, want) {
 		t.Errorf("nodes = %+v, want %+v", nodes, want)
@@ -167,9 +166,9 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	}
 	dir, _ := lab.StateDir("lab")
 	a, _ := testApp()
-	err = a.run(context.Background(), []string{"create", "--manifest", path, "--nodes", "cp1,w1", "--image", "controlplane=/nix/store/x"})
-	if err == nil || !strings.Contains(err.Error(), "pass --image worker=DIR") {
-		t.Fatalf("create without the worker's image = %v", err)
+	err = a.run(context.Background(), []string{"create", "--manifest", path, "--nodes", "cp1,w1"})
+	if err == nil || !strings.Contains(err.Error(), "pass --image node=DIR") {
+		t.Fatalf("create without the role's image = %v", err)
 	}
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a failed create left %s: %v", dir, err)

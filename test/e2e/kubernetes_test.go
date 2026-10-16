@@ -63,7 +63,7 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // start that registry, so the nodes' mirror is unreachable and containerd falls back to pulling
 // from upstream.
 func TestKubernetesCluster(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR", "CHALKLAB_K8S_WORKER_IMAGE_DIR"}, chalkdEnv...)...)
+	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_K8S_IMAGE_DIR"}, chalkdEnv...)...)
 	online := os.Getenv("CHALKLAB_K8S_ONLINE") == "1"
 	if !online {
 		requireEnv(t, "CHALKLAB_K8S_IMAGES")
@@ -744,8 +744,7 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 	create := []string{"create",
 		"--manifest", base, "--secrets", os.Getenv("CHALKLAB_SECRETS"),
 		"--nodes", "cp1,w1",
-		"--image", "k8s-controlplane=" + os.Getenv("CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR"),
-		"--image", "k8s-worker=" + os.Getenv("CHALKLAB_K8S_WORKER_IMAGE_DIR"),
+		"--image", "k8s=" + os.Getenv("CHALKLAB_K8S_IMAGE_DIR"),
 		"--controlplane-memory", strconv.Itoa(kubernetesNodes[0].memoryMB), "--memory", strconv.Itoa(kubernetesNodes[1].memoryMB)}
 	out, err := chalklab(append(create, args...)...)
 	if err != nil {

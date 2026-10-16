@@ -91,8 +91,8 @@ exposes the images of its test cluster, defined in `nix/testing/cluster.nix`, as
 | `test-image` | The `test` role on `metal`, with small partitions and the test probe; most VM tests boot it. |
 | `test-storage-image` | A role with volumes on the system disk and on a second disk. |
 | `test-installer` | The test cluster's installer. |
-| `test-kubernetes-controlplane-image`, `test-kubernetes-worker-image` | The Kubernetes test's roles on `kvm`. |
-| `test-kubernetes-ha-image` | The HA test's control-plane role. |
+| `test-kubernetes-image` | The Kubernetes test's role on `kvm`, which its control plane and its worker boot. |
+| `test-kubernetes-ha-image` | The HA test's role on `metal`. |
 | `test-upgrade-image`, `test-unhealthy-image`, `test-kubernetes-ha-upgrade-image` | Images the [upgrade](../reference/glossary.md#upgrade) tests install. |
 | `installer` | An installer of a cluster without an [OS CA](../reference/glossary.md#os-ca), which accepts any client until it installs a node. |
 

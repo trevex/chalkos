@@ -10,18 +10,8 @@
     endpoint = "https://10.0.0.11:6443";
   };
 
-  chalkos.roles.controlplane = { };
-  chalkos.roles.worker = {
-    # Every worker carries a SATA SSD for Longhorn replicas next to its NVMe system disk.
-    storage.volumes.longhorn = {
-      disk = {
-        model = "Samsung SSD 870*";
-        type = "ssd";
-      };
-      format = "xfs";
-      mountPoint = "/var/lib/longhorn";
-    };
-  };
+  # One image for every node; cp1's kind makes it the control plane.
+  chalkos.roles.node = { };
 
   chalkos.rack.enable = true;
 }

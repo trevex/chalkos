@@ -5,13 +5,13 @@ spec: {endpoint: "https://10.0.0.11:6443"}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Image
-metadata: {name: worker-metal}
-spec: {source: ./images/worker-metal}
+metadata: {name: node-metal}
+spec: {source: ./images/node-metal}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: w1}
-spec: {type: worker, imageRef: worker-metal}
+spec: {type: worker, imageRef: node-metal}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk

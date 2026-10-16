@@ -32,7 +32,7 @@ in
   };
 
   config = lib.mkIf enable {
-    chalkos.roles = lib.genAttrs [ "controlplane" "worker" ] (_: {
+    chalkos.roles.node = {
       nixosModules = [
         (
           { config, pkgs, ... }:
@@ -66,6 +66,6 @@ in
           }
         )
       ];
-    });
+    };
   };
 }

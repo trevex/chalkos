@@ -4,19 +4,7 @@
 # one is a change to review. The kvm images carry the QEMU guest agent, about 6 MiB of store.
 {
   roles = {
-    k8s-controlplane = {
-      metal = {
-        storeData = 281;
-        hashTree = 2.2;
-        uki = 51;
-      };
-      kvm = {
-        storeData = 290;
-        hashTree = 2.3;
-        uki = 51;
-      };
-    };
-    k8s-worker = {
+    k8s = {
       metal = {
         storeData = 281;
         hashTree = 2.2;

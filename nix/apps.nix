@@ -21,8 +21,7 @@ let
             CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
             CHALKLAB_SECRETS = "${chalkPkgs.test-secrets}/secrets.json";
             CHALKLAB_MANIFESTS = "${chalkPkgs.test-manifests}";
-            CHALKLAB_K8S_CONTROLPLANE_IMAGE_DIR = "${chalkPkgs.test-kubernetes-controlplane-image}";
-            CHALKLAB_K8S_WORKER_IMAGE_DIR = "${chalkPkgs.test-kubernetes-worker-image}";
+            CHALKLAB_K8S_IMAGE_DIR = "${chalkPkgs.test-kubernetes-image}";
             CHALKLAB_K8S_ONLINE = "1";
           }
         )
