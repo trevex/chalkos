@@ -5,47 +5,50 @@ description: "Where the code lives: the Go packages, the Nix modules and how the
 
 # Architecture for developers
 
-chalkos is two halves: Nix modules that declare a cluster and build its images, and Go programs
-that install and operate the nodes. This page maps both to the repository and shows where they
-meet. [Architecture](../concepts/architecture.md) explains the system as a user sees it; this
-page is for changing it.
+chalkos is two halves: Nix modules that build a cluster's images, and Go programs that read the
+cluster's YAML and install and operate the nodes. This page maps both to the repository and shows
+where they meet. [Architecture](../concepts/architecture.md) explains the system as a user sees it;
+this page is for changing it.
 
 ## Where do Nix and Go meet?
 
-Go code never evaluates Nix itself. The [cluster definition](../reference/glossary.md#cluster-definition) reaches it as JSON, in four forms:
+Go code never evaluates Nix itself. Nix builds images; everything about a cluster or a node is
+YAML that Go reads. They meet in these places:
 
-- The [manifest](../reference/glossary.md#manifest), which `mkCluster` generates as
-  `chalkos.<cluster>.manifest`: the cluster's settings, the roles' image paths, every node's
-  [identity](../reference/glossary.md#identity) and the documents its extensions add.
-- A node's [config](../reference/glossary.md#config): documents `pkg/config` generates from the
-  node's entry in the manifest and checks against the image's schemas, which chalkctl delivers
-  to [chalkd](../reference/glossary.md#chalkd) and chalkd keeps on
-  [STATE](../reference/glossary.md#state). chalkd translates them back into the identity it
-  applies.
+- The [image](../reference/glossary.md#image) directory. `chalkos.lib.mkImages` builds one per
+  [variant](../reference/glossary.md#variant) and [platform](../reference/glossary.md#platform)
+  from the node modules (`lib/images.nix`, `modules/node`): the raw image with its partitions,
+  `metadata.json` (variant, platform, version, root hash), `image.json` (what the image fixes
+  about Kubernetes) and `schemas/`, the JSON Schemas of the
+  [config kinds](../reference/glossary.md#kind) the image accepts. chalkctl and chalklab read
+  them from there, or from a running node through the Contract method.
+- Files the image carries in `/etc/chalkos`, written by the node modules: the same
+  `kubernetes/image.json` and `schemas`, the units that read each kind in `consumers.json`, the
+  system region's repart definitions in `repart.d` and the
+  [OS CA](../reference/glossary.md#os-ca) certificate in `os-ca.crt` when `mkImages` has an
+  `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
+- A node's [config](../reference/glossary.md#config): the YAML
+  [config documents](../reference/glossary.md#config-document) an inventory gives the node,
+  which chalkctl reads (`pkg/inventory`), checks against the schemas of the image its `Image`
+  points at and translates into the [identity](../reference/glossary.md#identity) the node
+  applies (`pkg/config`). chalkctl delivers the documents to
+  [chalkd](../reference/glossary.md#chalkd), which checks them again against its own image's
+  schemas, keeps them on [STATE](../reference/glossary.md#state) and translates them the same
+  way.
 - The node's Kubernetes cluster, which chalkd builds from the `Kubernetes` and `Flannel`
   documents and the image's `image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
   chalkos's add-ons (RBAC, kube-proxy, flannel, CoreDNS) and the kubelet's configuration from it
   in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the
   `Addon` documents after the add-ons.
-- Files the [role](../reference/glossary.md#role) image carries in `/etc/chalkos`, written by
-  the node modules: what the image fixes about Kubernetes in `kubernetes/image.json`, the system
-  region's repart definitions in `repart.d`, the [OS CA](../reference/glossary.md#os-ca)
-  certificate in `os-ca.crt` when the images are built with `chalkos.osCA`, the JSON Schemas of
-  the config kinds the image accepts in `schemas` and the units that read them in
-  `consumers.json`; and the image's own description in `/etc/os-release`. The image directory
-  `nix build` makes holds the schemas as `schemas/` and the Kubernetes facts as `image.json`,
-  with `metadata.json`; chalkctl reads them from there, or from a running node through the
-  Contract method.
 
-The diagram follows a cluster definition to a running node.
+The diagram follows an image and a node's YAML to a running node.
 
 ```mermaid
 flowchart LR
-    def["cluster definition<br/>modules/cluster"] -->|mkCluster| manifest["manifest JSON"]
-    def -->|role builder| image["role image<br/>modules/node"]
-    manifest -->|reads| chalkctl["chalkctl<br/>pkg/chalkctl"]
-    image -->|nix build| chalkctl
-    chalkctl -->|node API| chalkd["chalkd<br/>pkg/chalkd"]
+    modules["node modules<br/>modules/node"] -->|mkImages, nix build| image["image directory<br/>schemas/, image.json, metadata.json"]
+    yaml["inventory and YAML documents"] -->|reads| chalkctl["chalkctl<br/>pkg/inventory, pkg/config"]
+    image -->|schemas, image.json| chalkctl
+    chalkctl -->|install, config over the node API| chalkd["chalkd<br/>pkg/chalkd"]
     image -->|/etc/chalkos, os-release| chalkd
     chalkd -->|config| state["STATE"]
 ```
