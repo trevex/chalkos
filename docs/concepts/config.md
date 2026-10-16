@@ -107,12 +107,12 @@ Some kinds depend on the image or the node:
   their pod network, so a document of one of them is an unknown kind on any other image.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
   suffix, so `10-uplink` becomes `/run/systemd/network/10-uplink.network` and networkd's order by
-  file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with
-  `MACAddress=` is `match: {macAddress: …}`. A section that networkd allows more than once, such as
-  `[Route]`, is a list.
+  file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with `MACAddress=`
+  is `match: {macAddress: …}`. A section that networkd allows more than once, such as `[Route]`,
+  is a list.
 - An `Addon`'s objects go to the cluster's API, so chalkctl delivers `Addon` documents to control
-  planes alone. A shared file may hold them; a [worker](../reference/glossary.md#worker)'s set leaves
-  them out.
+  planes alone. A shared file may hold them; a [worker](../reference/glossary.md#worker)'s set
+  leaves them out.
 
 An extension adds kinds of its own in a group outside `chalkos.dev`, declared in the NixOS modules
 of a [variant](../reference/glossary.md#variant), as
@@ -220,15 +220,15 @@ cluster's name and endpoint from its own `Cluster`.
 An `Image` document names the [image directory](../reference/glossary.md#image-directory) of one
 build in `spec.source.directory`, relative to the file that holds the document; a symbolic link to
 that file does not move the directory it resolves against. The directory is what `nix build` writes
-for one variant on one platform, such as `images/node-kvm` in the lab template. Its
-`metadata.json` names the image's variant, platform and [root hash](../reference/glossary.md#root-hash),
-and its `schemas/` holds the schemas of the kinds the image accepts.
+for one variant on one platform, such as `images/node-kvm` in the lab template. Its `metadata.json`
+names the image's variant, platform and [root hash](../reference/glossary.md#root-hash), and its
+`schemas/` holds the schemas of the kinds the image accepts.
 
-The root hash stays on the operator's machine. chalkctl reads it from `metadata.json` when it
-needs it and never puts it into the config it delivers, so a new build of an image changes no
-node's config, and an [upgrade](../reference/glossary.md#upgrade) needs no `apply-config` after it. The `Node`'s `spec.imageRef` names
-the `Image` by its `metadata.name`, so a shared file may hold the `Image` of every variant and each
-node picks its own.
+The root hash stays on the operator's machine. chalkctl reads it from `metadata.json` when it needs
+it and never puts it into the config it delivers, so a new build of an image changes no node's
+config, and an [upgrade](../reference/glossary.md#upgrade) needs no `apply-config` after it. The
+`Node`'s `spec.imageRef` names the `Image` by its `metadata.name`, so a shared file may hold the
+`Image` of every variant and each node picks its own.
 
 ## How is config checked?
 
@@ -253,8 +253,8 @@ w1: valid for the Image node-kvm (node on kvm, root hash 1044caccb099), config 0
 ```
 
 Each line names the image's variant and platform, the start of its root hash, and the hash of the
-node's config that [`chalkctl status`](../reference/cli/chalkctl_status.md) compares. The commands that deliver config run the same check
-first, each against the image the config is for:
+node's config that [`chalkctl status`](../reference/cli/chalkctl_status.md) compares. The commands
+that deliver config run the same check first, each against the image the config is for:
 
 - [`chalkctl install`](../reference/cli/chalkctl_install.md) against the image it installs: the
   image directory the `Image` names, or the one `--image` gives;

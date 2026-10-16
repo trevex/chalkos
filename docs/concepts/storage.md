@@ -20,23 +20,23 @@ The system disk starts with the system region, which every node of an image shar
 - the [ESP](../reference/glossary.md#esp), which holds systemd-boot and the
   [UKIs](../reference/glossary.md#uki) of both slots, 1 GiB by default;
 - two [slots](../reference/glossary.md#slot), A and B, each a pair of partitions for an image's
-  erofs [store](../reference/glossary.md#store) and its [dm-verity](../reference/glossary.md#dm-verity) hash tree, 3 GiB and 128 MiB by
-  default;
+  erofs [store](../reference/glossary.md#store) and its
+  [dm-verity](../reference/glossary.md#dm-verity) hash tree, 3 GiB and 128 MiB by default;
 - [STATE](../reference/glossary.md#state), 128 MiB by default.
 
 Their sizes are options of the image, such as
-[`chalkos.disk.stateSize`](../reference/options.md#chalkosdiskstatesize), because every node of the image
-must agree on them. VAR follows on the system disk and fills the rest of it by default. Volumes
-go on the system disk after VAR, or each on a disk of its own.
-[Image and partition layout](../reference/image-layout.md) shows the partition map.
+[`chalkos.disk.stateSize`](../reference/options.md#chalkosdiskstatesize), because every node of the
+image must agree on them. VAR follows on the system disk and fills the rest of it by default.
+Volumes go on the system disk after VAR, or each on a disk of its own. [Image and partition
+layout](../reference/image-layout.md) shows the partition map.
 
 STATE is small and holds what makes the node itself: its [config](../reference/glossary.md#config),
 its [node certificate](../reference/glossary.md#node-certificate) and key, the OS CAs it trusts, its
-[Kubernetes share](../reference/glossary.md#kubernetes-share), its storage section with the disks
-it pinned, its etcd markers and pinned addresses on a [control plane](../reference/glossary.md#control-plane), and the marker that the node
-is installed. VAR, mounted at `/var`, holds what the node writes while it runs: etcd's data,
-containerd's images, the kubelet's state and the journal. The root file system is a tmpfs, so
-nothing else survives a reboot.
+[Kubernetes share](../reference/glossary.md#kubernetes-share), its storage section with the disks it
+pinned, its etcd markers and pinned addresses on a [control
+plane](../reference/glossary.md#control-plane), and the marker that the node is installed. VAR,
+mounted at `/var`, holds what the node writes while it runs: etcd's data, containerd's images, the
+kubelet's state and the journal. The root file system is a tmpfs, so nothing else survives a reboot.
 
 ## How is a node's storage declared?
 
@@ -47,11 +47,10 @@ Two kinds of [config document](../reference/glossary.md#config-document) declare
 - A [`Volume`](../reference/kinds.md#volume) per further volume, named by its `metadata.name`: its
   disk, size, format, mount point and encryption.
 
-Each node's set holds its own storage documents, usually in the node's own file, since disks
-differ between machines. Nothing merges a node's documents with those of other files: a field a
-document leaves out takes the kind's default, and a set holds one `SystemDisk`. The homelab example gives its
-[worker](../reference/glossary.md#worker) w1 a VAR of 200 GiB and a volume on a SATA SSD of its
-own:
+Each node's set holds its own storage documents, usually in the node's own file, since disks differ
+between machines. Nothing merges a node's documents with those of other files: a field a document
+leaves out takes the kind's default, and a set holds one `SystemDisk`. The homelab example gives its
+[worker](../reference/glossary.md#worker) w1 a VAR of 200 GiB and a volume on a SATA SSD of its own:
 
 ```yaml
 apiVersion: storage.chalkos.dev/v1alpha1
@@ -71,16 +70,17 @@ spec:
   mountPoint: /var/lib/longhorn
 ```
 
-A volume is formatted `ext4` by default, or `xfs`, `btrfs` or `swap`; `format: null` leaves a
-raw block device, for software that wants one. A volume without a `disk` goes on the system disk
-after VAR; a volume with a `disk` occupies that disk alone. On each disk at most one partition,
-VAR included, may leave its size unset and fill the space left.
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a volume name that
-does not match `[a-z0-9]([a-z0-9-]*[a-z0-9])?` or is longer than 32 characters, the reserved names
-`esp`, `store`, `store-verity`, `state`, `var` and `system`, two volumes with one mount point or
-the same disk reference, a volume on the `SystemDisk`'s disk reference, and mount points at `/`, `/nix`, `/state` or `/var` or below `/nix` or `/state`.
-Two references that resolve to one disk are refused on the node, when it finds the disks.
-[Config kinds](../reference/kinds.md#volume) lists every field.
+A volume is formatted `ext4` by default, or `xfs`, `btrfs` or `swap`; `format: null` leaves a raw
+block device, for software that wants one. A volume without a `disk` goes on the system disk after
+VAR; a volume with a `disk` occupies that disk alone. On each disk at most one partition, VAR
+included, may leave its size unset and fill the space left. [`chalkctl
+validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a volume name that does not
+match `[a-z0-9]([a-z0-9-]*[a-z0-9])?` or is longer than 32 characters, the reserved names `esp`,
+`store`, `store-verity`, `state`, `var` and `system`, two volumes with one mount point or the same
+disk reference, a volume on the `SystemDisk`'s disk reference, and mount points at `/`, `/nix`,
+`/state` or `/var` or below `/nix` or `/state`. Two references that resolve to one disk are refused
+on the node, when it finds the disks. [Config kinds](../reference/kinds.md#volume) lists every
+field.
 
 ## How are disks found and pinned?
 
@@ -143,10 +143,10 @@ with `spec.encryption.fallback` of the `SystemDisk`:
 | `password` | A password chalkctl asks for on the terminal, or reads from `--password-file`, at install, with each later change that adds an encrypted volume and when `chalkctl storage reset` recreates one |
 | `none` | None: a volume the TPM does not unseal can only be recreated empty |
 
-[chalkd](../reference/glossary.md#chalkd) enrols the fallback with `systemd-cryptenroll` at install, unlocking each volume with the
-TPM, and enrols it on every encrypted volume added later. Before it enrols a secret on a new volume
-it checks that the secret opens an existing keyslot, so a mistyped password cannot leave volumes
-with different fallbacks.
+[chalkd](../reference/glossary.md#chalkd) enrols the fallback with `systemd-cryptenroll` at install,
+unlocking each volume with the TPM, and enrols it on every encrypted volume added later. Before it
+enrols a secret on a new volume it checks that the secret opens an existing keyslot, so a mistyped
+password cannot leave volumes with different fallbacks.
 
 ## What happens at boot?
 
@@ -170,10 +170,10 @@ STATE itself and cannot be known before it is mounted.
 
 ## What happens when the TPM does not unseal?
 
-When PCR 7 changed, after a change of the [Secure Boot](../reference/glossary.md#secure-boot) keys or with Secure Boot off, the TPM
-releases no key. The console then asks for the second keyslot: always for STATE, and for VAR and
-the volumes unless the fallback is `none`. Typing the recovery key or password boots the node as
-usual.
+When PCR 7 changed, after a change of the [Secure Boot](../reference/glossary.md#secure-boot) keys
+or with Secure Boot off, the TPM releases no key. The console then asks for the second keyslot:
+always for STATE, and for VAR and the volumes unless the fallback is `none`. Typing the recovery key
+or password boots the node as usual.
 
 With fallback `none`, nothing opens a volume the TPM does not unseal. A volume's unlock unit fails,
 and [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) recreates the volume
@@ -223,8 +223,8 @@ the volumes. Repart failures on a disk are recorded the same way.
 
 ## Limits
 
-- Volumes on other disks are set up in the initrd at every boot, so a storage controller whose driver
-  the initrd does not carry is not supported for them.
+- Volumes on other disks are set up in the initrd at every boot, so a storage controller whose
+  driver the initrd does not carry is not supported for them.
 - Volumes other than VAR are mounted with `nofail` and not ordered before `local-fs.target`. A
   workload that writes below a volume's mount point needs `RequiresMountsFor=` on that path, or it
   may write into the directory before the volume is mounted.

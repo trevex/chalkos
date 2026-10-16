@@ -798,9 +798,9 @@ instead of a path\. Run the command from a shell script, such as
 ` pkgs.writeShellScript `, since systemd expands ` $ ` and ` % ` in ` ExecStart= ` itself\.
 
 A path is checked against the kind’s options, not against the documents\. Where a
-document’s value is null or missing, or its list is shorter than the index, the
-command exits with status 1; without ` name `, one such document fails the whole
-command\. ` * ` over an attribute set prints the values in no particular order; for a
+document leaves the field out, or its list is shorter than the index, the command
+exits with status 1; without ` name `, one such document fails the whole command\. A
+field set to null prints ` null `\. ` * ` over an attribute set prints the values in no particular order; for a
 stable order, use an ` output ` such as
 ` go-template={{range $k, $v := .spec.labels}}{{$k}}={{$v}} {{end}} `, which goes
 through the keys sorted\. A path cannot address a key that contains ` . `, whitespace or

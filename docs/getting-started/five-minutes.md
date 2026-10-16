@@ -58,12 +58,12 @@ images carry only its public part. People who operate nodes without the whole fi
 
 ## A node starts in maintenance mode
 
-A machine booted from the [installer](../reference/glossary.md#installer), or a disk written
-with a role image, comes up in [maintenance mode](../reference/glossary.md#maintenance-mode):
-chalkd serves a self-signed certificate and prints its fingerprint and the node's addresses on
-the console. `chalkctl install` checks that fingerprint and sends the node its config, its
-certificates and its share of the secrets, plus the image when the node runs the installer.
-chalkd partitions the disk, seals [STATE](../reference/glossary.md#state) to the [TPM](../reference/glossary.md#tpm), marks the
+A machine booted from the [installer](../reference/glossary.md#installer), or a disk written with a
+role image, comes up in [maintenance mode](../reference/glossary.md#maintenance-mode): chalkd serves
+a self-signed certificate and prints its fingerprint and the node's addresses on the console.
+`chalkctl install` checks that fingerprint and sends the node its config, its certificates and its
+share of the secrets, plus the image when the node runs the installer. chalkd partitions the disk,
+seals [STATE](../reference/glossary.md#state) to the [TPM](../reference/glossary.md#tpm), marks the
 node installed and reboots it into [normal mode](../reference/glossary.md#normal-mode). See
 [Architecture](../concepts/architecture.md).
 
@@ -72,9 +72,10 @@ node installed and reboots it into [normal mode](../reference/glossary.md#normal
 A system disk holds the [ESP](../reference/glossary.md#esp), two
 [slots](../reference/glossary.md#slot) for the read-only [store](../reference/glossary.md#store),
 STATE with the node's config and certificates, and [VAR](../reference/glossary.md#var) for
-everything the node writes, such as etcd, containerd and logs. By default STATE and VAR are
-LUKS2 volumes whose keys the TPM unseals only under the same [Secure Boot](../reference/glossary.md#secure-boot) state. See
-[Storage and encryption](../concepts/storage.md).
+everything the node writes, such as etcd, containerd and logs. By default STATE and VAR are LUKS2
+volumes whose keys the TPM unseals only under the same [Secure
+Boot](../reference/glossary.md#secure-boot) state. See [Storage and
+encryption](../concepts/storage.md).
 
 ## One bootstrap, then nodes join on their own
 

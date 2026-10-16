@@ -42,11 +42,11 @@ You need:
 ## Give the nodes the kvm image
 
 A node runs the image its `Node` document's `imageRef` names, and its platform is that image's.
-Every image carries the virtio drivers; the `kvm` image also writes its console to the first
-serial port alone and runs the QEMU guest agent, which the `metal` image lacks. Build the `kvm`
-platform in the flake, `platforms = [ "kvm" ];` or `[ "metal" "kvm" ]` for a cluster of both,
-expose its image as a package, `packages.x86_64-linux.node-kvm = images.images.node-kvm;` as
-the lab template's flake does, and name its image directory in an [`Image`](../reference/kinds.md#image) document of
+Every image carries the virtio drivers; the `kvm` image also writes its console to the first serial
+port alone and runs the QEMU guest agent, which the `metal` image lacks. Build the `kvm` platform in
+the flake, `platforms = [ "kvm" ];` or `[ "metal" "kvm" ]` for a cluster of both, expose its image
+as a package, `packages.x86_64-linux.node-kvm = images.images.node-kvm;` as the lab template's flake
+does, and name its image directory in an [`Image`](../reference/kinds.md#image) document of
 `cluster/cluster.yaml`:
 
 ```yaml

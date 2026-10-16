@@ -21,9 +21,9 @@ does not unlock, boot, renew or rejoin, [Recover a node](recover-node.md) has th
 
 ## Read the node's status
 
-[`chalkctl status`](../reference/cli/chalkctl_status.md) is the first command to run. It asks
-the node's [chalkd](../reference/glossary.md#chalkd) for everything chalkd checks, and compares the node's config and image with the
-inventory. A healthy [worker](../reference/glossary.md#worker):
+[`chalkctl status`](../reference/cli/chalkctl_status.md) is the first command to run. It asks the
+node's [chalkd](../reference/glossary.md#chalkd) for everything chalkd checks, and compares the
+node's config and image with the inventory. A healthy [worker](../reference/glossary.md#worker):
 
 ```console
 $ chalkctl status w1
@@ -86,9 +86,9 @@ The units that matter most:
 | `kubelet.service` | The kubelet, which runs the static pods of etcd and the control plane, and every pod. |
 | `containerd.service` | The container runtime: image pulls and mirrors. |
 
-`chalkctl logs` shows the current boot only. For a boot that fell back after an upgrade, the
-health check keeps the last 30 lines that chalkd and the check logged on [VAR](../reference/glossary.md#var), and
-`chalkctl status` shows them.
+`chalkctl logs` shows the current boot only. For a boot that fell back after an upgrade, the health
+check keeps the last 30 lines that chalkd and the check logged on
+[VAR](../reference/glossary.md#var), and `chalkctl status` shows them.
 
 ## Watch the console
 
@@ -122,15 +122,17 @@ Each problem starts from what the status, the console or kubectl shows.
 
 ### The node is in maintenance mode after the install
 
-The console shows a fingerprint again, and `chalkctl status` cannot verify the node. The
-machine booted the [installer](../reference/glossary.md#installer) medium again, or the install did not finish.
-[Recover a node](recover-node.md#the-node-is-in-maintenance-mode) has both fixes.
+The console shows a fingerprint again, and `chalkctl status` cannot verify the node. The machine
+booted the [installer](../reference/glossary.md#installer) medium again, or the install did not
+finish. [Recover a node](recover-node.md#the-node-is-in-maintenance-mode) has both fixes.
 
 ### The console asks for a passphrase
 
-The [TPM](../reference/glossary.md#tpm) did not unseal [STATE](../reference/glossary.md#state), usually after a change to [Secure Boot](../reference/glossary.md#secure-boot) or the firmware. Type the
-node's [recovery key](../reference/glossary.md#recovery-key); [Recover a node](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
-explains the causes and what comes after.
+The [TPM](../reference/glossary.md#tpm) did not unseal [STATE](../reference/glossary.md#state),
+usually after a change to [Secure Boot](../reference/glossary.md#secure-boot) or the firmware. Type
+the node's [recovery key](../reference/glossary.md#recovery-key); [Recover a
+node](recover-node.md#the-console-asks-for-a-passphrase-at-boot) explains the causes and what comes
+after.
 
 ### The node has no address
 
@@ -239,7 +241,8 @@ issued, so a small offset does no harm, but a clock that is days off rejects val
 `chalklab create` and `chalklab start` run each node as a QEMU virtual machine on KVM.
 
 - `/dev/kvm does not exist`: the machine has no hardware virtualisation, it is disabled in the
-  firmware, or the kvm module is not loaded. [chalklab](../reference/glossary.md#chalklab) needs an x86-64 machine with KVM.
+  firmware, or the kvm module is not loaded. [chalklab](../reference/glossary.md#chalklab) needs an
+  x86-64 machine with KVM.
 - `you may not open /dev/kvm`: join the `kvm` group (on NixOS, add it to
   `users.users.<you>.extraGroups`) and log in again.
 - `<node> did not come up in maintenance mode`: the VM booted but chalkd did not print its

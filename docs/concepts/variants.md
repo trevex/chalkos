@@ -5,15 +5,15 @@ description: "How mkImages builds a cluster's images from variants, platforms an
 
 # Variants and platforms
 
-`chalkos.lib.mkImages` builds every [image](../reference/glossary.md#image) of a cluster from
-NixOS modules: one image per [variant](../reference/glossary.md#variant) and
+`chalkos.lib.mkImages` builds every [image](../reference/glossary.md#image) of a cluster from NixOS
+modules: one image per [variant](../reference/glossary.md#variant) and
 [platform](../reference/glossary.md#platform), and one
-[installer](../reference/glossary.md#installer). An image fixes the software a node runs and
-nothing about the cluster, so one image serves every node of its variant and platform,
-[control planes](../reference/glossary.md#control-plane) and
-[workers](../reference/glossary.md#worker) alike. What differs between nodes, from their addresses to the cluster's
-endpoint, is their [config](../reference/glossary.md#config), YAML documents that
-[Config and the inventory](config.md) describes.
+[installer](../reference/glossary.md#installer). An image fixes the software a node runs and nothing
+about the cluster, so one image serves every node of its variant and platform, [control
+planes](../reference/glossary.md#control-plane) and [workers](../reference/glossary.md#worker)
+alike. What differs between nodes, from their addresses to the cluster's endpoint, is their
+[config](../reference/glossary.md#config), YAML documents that [Config and the inventory](config.md)
+describes.
 
 ## How does a flake build images?
 
@@ -69,11 +69,11 @@ its name. `mkImages` returns three attribute sets:
 - `nixos.<variant>-<platform>` and `nixos.installer`, the evaluated NixOS systems, to read an
   image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
 
-The flake pins the chalkos version in `flake.lock`, so its images change only when the lock file
-or the flake's own modules do. Nix is needed only to build images:
+The flake pins the chalkos version in `flake.lock`, so its images change only when the lock file or
+the flake's own modules do. Nix is needed only to build images:
 [chalkctl](../reference/glossary.md#chalkctl) and [chalklab](../reference/glossary.md#chalklab)
-never evaluate the flake. A node's [`Image`](../reference/kinds.md#image) document names the directory a build was linked to,
-so the machine that runs chalkctl needs the directory and no Nix.
+never evaluate the flake. A node's [`Image`](../reference/kinds.md#image) document names the
+directory a build was linked to, so the machine that runs chalkctl needs the directory and no Nix.
 
 ## What is a variant?
 

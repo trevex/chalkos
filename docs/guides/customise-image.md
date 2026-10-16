@@ -7,29 +7,30 @@ description: "Add packages, services, kernel modules, variants and config kinds 
 
 A cluster's images are built by `chalkos.lib.mkImages` from chalkos's node modules, each
 [platform](../reference/glossary.md#platform)'s modules and NixOS modules of your own, which you
-give every [variant](../reference/glossary.md#variant) with [`modules`](../reference/options.md#modules)
-or one variant with [`variants.<name>.modules`](../reference/options.md#variantsmodules). They can
-add packages, services, kernel modules and anything else a NixOS module sets, within the limits
-an image-based node sets, and they can declare [config kinds](../reference/glossary.md#kind) whose
-documents give each node its own values. Every node of a variant and platform runs the same
-image, so a value that differs between nodes travels in the node's YAML
-[config](../reference/glossary.md#config), never in the image. A change to the modules reaches
-running nodes as an [upgrade](../reference/glossary.md#upgrade) to a new
-[image version](../reference/glossary.md#image-version). Kubernetes objects for the cluster are
-`Addon` documents in the YAML and need no image change;
-[Kubernetes on chalkos](../concepts/kubernetes.md) describes them.
+give every [variant](../reference/glossary.md#variant) with
+[`modules`](../reference/options.md#modules) or one variant with
+[`variants.<name>.modules`](../reference/options.md#variantsmodules). They can add packages,
+services, kernel modules and anything else a NixOS module sets, within the limits an image-based
+node sets, and they can declare [config kinds](../reference/glossary.md#kind) whose documents give
+each node its own values. Every node of a variant and platform runs the same image, so a value that
+differs between nodes travels in the node's YAML [config](../reference/glossary.md#config), never in
+the image. A change to the modules reaches running nodes as an
+[upgrade](../reference/glossary.md#upgrade) to a new [image
+version](../reference/glossary.md#image-version). Kubernetes objects for the cluster are `Addon`
+documents in the YAML and need no image change; [Kubernetes on chalkos](../concepts/kubernetes.md)
+describes them.
 
 ## Before you begin
 
-You need a flake that builds the cluster's images with `mkImages`, such as the lab template's or
-the [homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab)'s, and its
+You need a flake that builds the cluster's images with `mkImages`, such as the lab template's or the
+[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab)'s, and its
 [inventory](../reference/glossary.md#inventory), `chalkos.yaml`, with the nodes' config files. To
-roll the change out you need a running cluster and an operator
-[client file](../reference/glossary.md#client-file) or the
-[secrets file](../reference/glossary.md#secrets-file) for the upgrade, and the secrets file to
-deliver changed YAML. [Variants and platforms](../concepts/variants.md) explains how `mkImages` builds the
-images, [Config and the inventory](../concepts/config.md) how the YAML reaches the nodes, and
-[The image](../concepts/image.md) what an image holds.
+roll the change out you need a running cluster and an operator [client
+file](../reference/glossary.md#client-file) or the [secrets
+file](../reference/glossary.md#secrets-file) for the upgrade, and the secrets file to deliver
+changed YAML. [Variants and platforms](../concepts/variants.md) explains how `mkImages` builds the
+images, [Config and the inventory](../concepts/config.md) how the YAML reaches the nodes, and [The
+image](../concepts/image.md) what an image holds.
 
 This guide starts from the homelab example: one variant, `node`, built for `metal`, whose image
 both nodes run.
@@ -211,12 +212,12 @@ does not have, and the message lists the fields at that point:
 chalkos.kinds.Node.get: the path "spec.typ" does not follow the kind's options: spec has no field typ; its fields are hostname, imageRef, type
 ```
 
-The check covers the kind's options, not the documents. A document that leaves the path's field
-out, or whose list is shorter than the index, makes the command exit with status 1, and without
-`name` one such document fails the whole command; a field set to null prints `null`. `*` over an attribute set prints
-its values in no particular order; a `go-template` output that ranges over the keys prints them
-sorted. A key that contains `.`, whitespace or one of `'`, `\`, `@`, `$`, `,`, `[`, `]`, `{` and
-`}` cannot be part of a path, and only a `go-template` output reads it.
+The check covers the kind's options, not the documents. A document that leaves the path's field out,
+or whose list is shorter than the index, makes the command exit with status 1, and without `name`
+one such document fails the whole command; a field set to null prints `null`. `*` over an attribute
+set prints its values in no particular order; a `go-template` output that ranges over the keys
+prints them sorted. A key that contains `.`, whitespace or one of `'`, `\`, `@`, `$`, `,`, `[`, `]`,
+`{` and `}` cannot be part of a path, and only a `go-template` output reads it.
 
 Run the command from a shell script, as `pkgs.writeShellScript` makes one, because systemd
 expands `$` and `%` in `ExecStart=` itself. Without `name`, a kind the image declares but the

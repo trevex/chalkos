@@ -5,15 +5,15 @@ description: "Create a db signing key, enrol it in firmware and sign images and 
 
 # Sign images for Secure Boot
 
-A Secure Boot db key decides which images a cluster's machines boot. Firmware with
-[Secure Boot](../reference/glossary.md#secure-boot) on starts a boot binary only when a
-certificate in its [db](../reference/glossary.md#db-and-dbx) signed it. chalkos signs two
-binaries per image, systemd-boot and the [UKI](../reference/glossary.md#uki), and the UKI's
-signature covers the whole read-only store through the [root hash](../reference/glossary.md#root-hash)
-on its command line. This guide creates the key and certificate, gets the firmware of your
-machines to trust the certificate, and signs the [installer](../reference/glossary.md#installer) and the node images with the key.
-Nix builds images unsigned; you sign them on your workstation, so the key never enters the Nix
-store or a binary cache, and nodes never hold it.
+A Secure Boot db key decides which images a cluster's machines boot. Firmware with [Secure
+Boot](../reference/glossary.md#secure-boot) on starts a boot binary only when a certificate in its
+[db](../reference/glossary.md#db-and-dbx) signed it. chalkos signs two binaries per image,
+systemd-boot and the [UKI](../reference/glossary.md#uki), and the UKI's signature covers the whole
+read-only store through the [root hash](../reference/glossary.md#root-hash) on its command line.
+This guide creates the key and certificate, gets the firmware of your machines to trust the
+certificate, and signs the [installer](../reference/glossary.md#installer) and the node images with
+the key. Nix builds images unsigned; you sign them on your workstation, so the key never enters the
+Nix store or a binary cache, and nodes never hold it.
 
 !!! note "chalkos does not enrol keys"
 
@@ -50,10 +50,10 @@ The certificate in db may also be a CA that signed the signing certificate: chal
 signer that a db certificate issued. A CA lets you keep its key offline and sign with a
 short-lived one, at the cost of one more key to manage.
 
-`db.crt` is public; commit it to the cluster's repository, from where you pass it to `--sign-cert`. `db.key`
-lets anyone sign a boot image every machine of the cluster accepts, and any image signed with it
-unlocks the nodes' disks. Keep it out of the repository and out of the Nix store: in a secrets
-manager or on the machine that signs, readable by you alone.
+`db.crt` is public; commit it to the cluster's repository, from where you pass it to `--sign-cert`.
+`db.key` lets anyone sign a boot image every machine of the cluster accepts, and any image signed
+with it unlocks the nodes' disks. Keep it out of the repository and out of the Nix store: in a
+secrets manager or on the machine that signs, readable by you alone.
 
 ## Check images against the certificate
 
@@ -100,10 +100,11 @@ image's when a machine boots it directly, and each new UKI an upgrade brings. ch
 in three places.
 
 [`chalkctl sign`](../reference/cli/chalkctl_sign.md) signs a disk image in place: the boot loader
-(`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`) on its [ESP](../reference/glossary.md#esp), and nothing else, so no
-other file on the ESP gains the cluster's signature. It needs the image's partition description,
-`repart-output.json`, or `<name>.iso.json` for the installer's ISO. A build output in the Nix store
-is read-only, so sign a copy:
+(`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`) on its
+[ESP](../reference/glossary.md#esp), and nothing else, so no other file on the ESP gains the
+cluster's signature. It needs the image's partition description, `repart-output.json`, or
+`<name>.iso.json` for the installer's ISO. A build output in the Nix store is read-only, so sign a
+copy:
 
 ```sh
 cp --sparse=always result/chalkos-installer_0.1.0.iso installer.iso
@@ -141,12 +142,12 @@ which `chalklab status` names, work with `--sign-key` and `--sign-cert`.
 
 ## Why the key must not change for an installed node
 
-A node's [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and
-encrypted volumes are sealed to PCR 7, which measures the Secure Boot state and the db
-certificate that verified the boot binaries. An image signed with the same key boots with the
-same PCR 7, so upgrades unlock the disks without anyone typing a key. An image signed with
-another key that db also trusts boots, but PCR 7 differs, the [TPM](../reference/glossary.md#tpm) does not unseal, and the
-console asks for the node's [recovery key](../reference/glossary.md#recovery-key).
+A node's [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted
+volumes are sealed to PCR 7, which measures the Secure Boot state and the db certificate that
+verified the boot binaries. An image signed with the same key boots with the same PCR 7, so upgrades
+unlock the disks without anyone typing a key. An image signed with another key that db also trusts
+boots, but PCR 7 differs, the [TPM](../reference/glossary.md#tpm) does not unseal, and the console
+asks for the node's [recovery key](../reference/glossary.md#recovery-key).
 
 That has three consequences:
 

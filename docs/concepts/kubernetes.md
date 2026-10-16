@@ -55,14 +55,15 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 | [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes |
 | [`Addon`](../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |
 
-The cluster's documents go into the files the [inventory](../reference/glossary.md#inventory)
-gives every node, so all nodes hold the same ones, and a node's `Kubelet` goes into its own file,
-as [Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes.
-The node's config must hold one `Kubernetes` document on an image with Kubernetes, and its
-`Cluster` an endpoint: [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd
-refuse a set without one, with `no Kubernetes: the config of a node whose image runs Kubernetes
-holds one Kubernetes document`. Every field has a default, so a cluster on IPv4 with the default
-ranges needs no more than the lab template's document:
+The cluster's documents go into the files the [inventory](../reference/glossary.md#inventory) gives
+every node, so all nodes hold the same ones, and a node's `Kubelet` goes into its own file, as
+[Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes. The
+node's config must hold one `Kubernetes` document on an image with Kubernetes, and its
+[`Cluster`](../reference/kinds.md#cluster) an endpoint: [`chalkctl
+validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a set without one, with `no
+Kubernetes: the config of a node whose image runs Kubernetes holds one Kubernetes document`. Every
+field has a default, so a cluster on IPv4 with the default ranges needs no more than the lab
+template's document:
 
 ```yaml
 # Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
@@ -149,10 +150,11 @@ the firewall on such a node and closes them on a worker, at boot and whenever th
 document changes, as [Ports and firewall](../reference/ports-and-firewall.md) describes.
 
 The flags are close to kubeadm's, with a few chalkos choices: the API server talks to its node's own
-[etcd member](../reference/glossary.md#etcd-member) only, authorises with `Node,RBAC` and admits with `NodeRestriction`, allows anonymous
-requests only to `/livez`, `/readyz` and `/healthz`, has bootstrap-token authentication off, and
-encrypts Secrets in etcd with the cluster's encryption key. The controller-manager runs without the
-bootstrap-signer and token-cleaner controllers, since nothing uses bootstrap tokens.
+[etcd member](../reference/glossary.md#etcd-member) only, authorises with `Node,RBAC` and admits
+with `NodeRestriction`, allows anonymous requests only to `/livez`, `/readyz` and `/healthz`, has
+bootstrap-token authentication off, and encrypts Secrets in etcd with the cluster's encryption key.
+The controller-manager runs without the bootstrap-signer and token-cleaner controllers, since
+nothing uses bootstrap tokens.
 
 `extraArgs` of the `Kubernetes` document adds or overrides flags per component, `etcd`,
 `kube-apiserver`, `kube-controller-manager`, `kube-scheduler` and `kubelet`, each a map of flags
@@ -235,16 +237,18 @@ chalkctl etcd leave <node>
 ```
 
 `remove-member` removes another node's member and `leave` takes a node out itself, releasing its
-[VIPs](../reference/glossary.md#vip), stopping its control plane, deleting its etcd data and unpinning its addresses. Both refuse
-when the voters left would have fewer healthy members than their quorum; `remove-member --force`
-removes a member anyway. A node that left joins again only after a reinstall.
+[VIPs](../reference/glossary.md#vip), stopping its control plane, deleting its etcd data and
+unpinning its addresses. Both refuse when the voters left would have fewer healthy members than
+their quorum; `remove-member --force` removes a member anyway. A node that left joins again only
+after a reinstall.
 
 ## How do workers join?
 
 A [worker](../reference/glossary.md#worker) receives a kubelet client certificate for its own node
-name in its share at install, and its kubelet registers at the [cluster endpoint](../reference/glossary.md#cluster-endpoint) with it. There is
-no bootstrap token and no join step. The kubelet renews the certificate itself through a
-certificate request, which the controller-manager approves for nodes renewing their own.
+name in its share at install, and its kubelet registers at the [cluster
+endpoint](../reference/glossary.md#cluster-endpoint) with it. There is no bootstrap token and no
+join step. The kubelet renews the certificate itself through a certificate request, which the
+controller-manager approves for nodes renewing their own.
 
 Every kubelet also requests a serving certificate, which the API server checks when it fetches logs
 or execs into a pod. chalkd on the control planes approves such a request when a node asks for its
@@ -261,8 +265,8 @@ chalkd renders the first four from the node's cluster, and the last are the obje
 1. RBAC: `chalkos:cluster-admins` bound to `cluster-admin` for admin kubeconfigs, the binding that
    lets kubelets renew their own client certificates, and the API server's access to kubelets.
 2. kube-proxy, as a DaemonSet in nftables mode.
-3. The pod network, flannel unless [`chalkos.cni.provider`](../reference/options.md#chalkoscniprovider)
-   is `none`.
+3. The pod network, flannel unless
+   [`chalkos.cni.provider`](../reference/options.md#chalkoscniprovider) is `none`.
 4. CoreDNS, at the primary family's address of `dnsIPs`.
 5. The objects of the `Addon` documents, each document's `spec.objects` in their order and the
    documents in the order of their names.

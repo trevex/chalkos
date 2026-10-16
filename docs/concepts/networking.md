@@ -51,9 +51,9 @@ its units.
 
 ## Which addresses does a node use for Kubernetes?
 
-A node with Kubernetes registers one address of each IP family of the cluster. On a
-[control plane](../reference/glossary.md#control-plane), its certificates name the same addresses,
-and etcd and the API server advertise the primary family's. Before the kubelet starts, the preparation
+A node with Kubernetes registers one address of each IP family of the cluster. On a [control
+plane](../reference/glossary.md#control-plane), its certificates name the same addresses, and etcd
+and the API server advertise the primary family's. Before the kubelet starts, the preparation
 (`chalkos-kubernetes.service`) picks them and writes them to `/run/chalkos/kubernetes/node-ip`.
 
 A family's address is fixed or picked:
@@ -71,9 +71,9 @@ A family's address is fixed or picked:
   qualifies.
 
 The node never picks an address in the pod or service ranges or on an interface of the pod network
-or kube-proxy (`flannel*`, `cni*`, `veth*`, `kube-*`), and takes the endpoint's address or a VIP only
-when nothing else of the family matches, because those move between control planes. With flannel
-and two families, the node's IPv4 and IPv6 addresses must be on one interface.
+or kube-proxy (`flannel*`, `cni*`, `veth*`, `kube-*`), and takes the endpoint's address or a VIP
+only when nothing else of the family matches, because those move between control planes. With
+flannel and two families, the node's IPv4 and IPv6 addresses must be on one interface.
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -87,8 +87,9 @@ spec:
 A subnet that starts with `!` is quoted, because YAML reads an unquoted `!` as a tag.
 
 DHCP leases and addresses that a routing daemon adds can arrive late, so the node waits for its
-addresses up to `nodeIP.timeout` of the `Kubernetes` document, 300 seconds by default. A node that finds none runs neither the kubelet nor static pods, and the
-Kubernetes line of its status names the filter and the addresses the node has:
+addresses up to `nodeIP.timeout` of the `Kubernetes` document, 300 seconds by default. A node that
+finds none runs neither the kubelet nor static pods, and the Kubernetes line of its status names the
+filter and the addresses the node has:
 
 ```text
 kubernetes worker: preparation failed: no ipv4 node address matches validSubnets 10.0.0.0/24 (the node has 192.168.1.20 on enp1s0), 5m0s after chalkos-node-addresses.target
@@ -96,11 +97,11 @@ kubernetes worker: preparation failed: no ipv4 node address matches validSubnets
 
 ### Why are a control plane's addresses pinned?
 
-etcd's peers know a member by the address it joined with, and the control plane's certificates
-name that address. When a control plane becomes an [etcd member](../reference/glossary.md#etcd-member),
-by bootstrap or by joining, [chalkd](../reference/glossary.md#chalkd) pins the addresses it picked on STATE, and every later boot
-waits for exactly those, whatever the subnets say. A pinned address that does not come back stops
-the preparation:
+etcd's peers know a member by the address it joined with, and the control plane's certificates name
+that address. When a control plane becomes an [etcd member](../reference/glossary.md#etcd-member),
+by bootstrap or by joining, [chalkd](../reference/glossary.md#chalkd) pins the addresses it picked
+on STATE, and every later boot waits for exactly those, whatever the subnets say. A pinned address
+that does not come back stops the preparation:
 
 ```text
 pinned address 10.0.0.11 is not present, 5m0s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node
@@ -142,11 +143,11 @@ kubelet gives pods one name server; it still answers A and AAAA queries.
 
 ## How does the VIP move between control planes?
 
-A VIP is an address of the API server that no single machine owns: one healthy control plane
-holds it at a time, so the [cluster endpoint](../reference/glossary.md#cluster-endpoint) stays reachable while a control plane reboots or
-fails. `vip.addresses` of the `Kubernetes` document takes at most one address per family, and the
-`Cluster` document's endpoint is then one of them or a name that resolves to them. Both documents
-go into the files every node gets:
+A VIP is an address of the API server that no single machine owns: one healthy control plane holds
+it at a time, so the [cluster endpoint](../reference/glossary.md#cluster-endpoint) stays reachable
+while a control plane reboots or fails. `vip.addresses` of the `Kubernetes` document takes at most
+one address per family, and the [`Cluster`](../reference/kinds.md#cluster) document's endpoint is
+then one of them or a name that resolves to them. Both documents go into the files every node gets:
 
 ```yaml
 apiVersion: chalkos.dev/v1alpha1
@@ -164,10 +165,10 @@ spec:
 
 chalkd on every bootstrapped control plane takes part in an election held in etcd under
 `/chalkos/vip`. It campaigns only while its local API server answers `/readyz`. The winner adds
-every VIP to an interface as a /32 or /128 host address, on the interface
-`vip.interface` names or else the one holding the node's address of that family, and announces it with gratuitous ARP and
-unsolicited neighbour advertisements, so switches and neighbours send its traffic to the new
-holder at once.
+every VIP to an interface as a /32 or /128 host address, on the interface `vip.interface` names or
+else the one holding the node's address of that family, and announces it with gratuitous ARP and
+unsolicited neighbour advertisements, so switches and neighbours send its traffic to the new holder
+at once.
 
 The election runs on an etcd lease of 10 seconds, and the holder checks its API server every 2
 seconds:
@@ -184,8 +185,8 @@ seconds:
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows each control plane as
 `vip holder` or `vip standby` in its Kubernetes line.
 
-The diagram shows a cluster of three control planes and two [workers](../reference/glossary.md#worker) on one L2 network, with cp1
-holding the VIP.
+The diagram shows a cluster of three control planes and two
+[workers](../reference/glossary.md#worker) on one L2 network, with cp1 holding the VIP.
 
 ```mermaid
 flowchart TD
@@ -229,7 +230,9 @@ ranges. With them, the node also drops VXLAN that pods send through it to those 
 them, VXLAN is accepted from any source, so pods can reach the other nodes' VXLAN port too. The
 node reads the pod and source ranges from its `Kubernetes` document; while it cannot, it drops all
 VXLAN it forwards. [`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node
-whose fixed addresses, or the subnets it picks its addresses from, lie outside the ranges.
+whose fixed addresses, or the subnets it picks its addresses from, lie outside the ranges, and a
+node that picks its addresses at boot checks the picked ones against the ranges again, refusing
+to prepare Kubernetes when one lies outside.
 
 flannel's devices get the MTU of the interface holding the node's address, minus 50. `spec.mtu` of
 the [`Flannel`](../reference/kinds.md#flannel) document sets the network's MTU instead, and is
@@ -253,13 +256,13 @@ their own. Opening that network's ports is then up to the variant's NixOS module
 
 Everything on a node runs on nftables: the NixOS firewall, kube-proxy, flannel and the
 `chalkos-vxlan` table. The firewall is configured with `flushRuleset = false`, so reloading it
-replaces its own table and leaves the others' alone. Its input chain drops what it does not
-accept, whatever other tables do. It accepts chalkd's port 50000 on every node; on nodes with
-Kubernetes the kubelet's port 10250, the NodePort range 30000 to 32767 and marked VXLAN; and on
-nodes whose `Node` document has the type `controlplane` the API server's port 6443 and etcd's
-ports 2379 and 2380, which a table of chalkos's own, `chalkos-controlplane`, marks for the
-firewall to accept.
-[Ports and firewall](../reference/ports-and-firewall.md) lists each port and who needs it.
+replaces its own table and leaves the others' alone. Its input chain drops what it does not accept,
+whatever other tables do. It accepts chalkd's port 50000 on every node; on nodes with Kubernetes the
+kubelet's port 10250, the NodePort range 30000 to 32767 and marked VXLAN; and on nodes whose
+[`Node`](../reference/kinds.md#node) document has the type `controlplane` the API server's port 6443
+and etcd's ports 2379 and 2380, which a table of chalkos's own, `chalkos-controlplane`, marks for
+the firewall to accept. [Ports and firewall](../reference/ports-and-firewall.md) lists each port and
+who needs it.
 
 kube-proxy runs in nftables mode and serves NodePorts only on the node's own addresses, one per
 family, as the kubelet registered them.

@@ -113,11 +113,11 @@ not hold, so a missing driver shows at build time, not at the machine.
 
 ## Load drivers early for the system disk
 
-The initrd finds the store, [STATE](../reference/glossary.md#state) and the node's other disks before the system starts, so the
-driver of every disk controller a node's storage uses must be in the initrd, not only in the
-image. The initrd carries NixOS's common disk drivers, such as `ahci`, `nvme`, `sd_mod` and
-`mmc_block`. A system disk or an extra disk behind another controller, a hardware RAID adapter for
-example, needs its driver added:
+The initrd finds the store, [STATE](../reference/glossary.md#state) and the node's other disks
+before the system starts, so the driver of every disk controller a node's storage uses must be in
+the initrd, not only in the image. The initrd carries NixOS's common disk drivers, such as `ahci`,
+`nvme`, `sd_mod` and `mmc_block`. A system disk or an extra disk behind another controller, a
+hardware RAID adapter for example, needs its driver added:
 
 ```nix
 {
@@ -223,11 +223,11 @@ images = chalkos.lib.mkImages {
 
 Either form of `platforms` names exactly the platforms built, so `metal` stays only because it is
 named. Every variant is built for every platform, as `images.<variant>-<platform>`, here
-`images.node-metal` and `images.node-r650`, and each image is built only when asked for, so only
-the images of `r650` carry its drivers. `metal` and `kvm` carry chalkos's own modules for them
-before the ones given; a platform of your own starts from chalkos's node modules alone, without
-`metal`'s, so give it a console. Its name, lower-case letters, digits and dashes starting with a letter or digit, becomes
-`CHALKOS_PLATFORM` in the image's os-release.
+`images.node-metal` and `images.node-r650`, and each image is built only when asked for, so only the
+images of `r650` carry its drivers. `metal` and `kvm` carry chalkos's own modules for them before
+the ones given; a platform of your own starts from chalkos's node modules alone, without `metal`'s,
+so give it a console. Its name, lower-case letters, digits and dashes starting with a letter or
+digit, becomes `CHALKOS_PLATFORM` in the image's os-release.
 
 A node runs a platform's image through an `Image` document and its `Node`'s `imageRef`. Expose
 the image in `flake.nix` as `packages.x86_64-linux.node-r650 = images.images.node-r650;`, add its
@@ -265,10 +265,11 @@ modules come before the variants'; a variant overrides a value its platform sets
 
 ## Keep the image within its slot
 
-A larger module tree or firmware grows the [store](../reference/glossary.md#store). Each image
-build checks that the store's data takes at most 80% of a [slot](../reference/glossary.md#slot), 3 GiB by default, its hash tree
-at most 80% of the hash partition, and the UKIs the [ESP](../reference/glossary.md#esp) holds at most 80% of the ESP, so the next
-image still fits. An image that grows past that fails the build, naming its variant:
+A larger module tree or firmware grows the [store](../reference/glossary.md#store). Each image build
+checks that the store's data takes at most 80% of a [slot](../reference/glossary.md#slot), 3 GiB by
+default, its hash tree at most 80% of the hash partition, and the UKIs the
+[ESP](../reference/glossary.md#esp) holds at most 80% of the ESP, so the next image still fits. An
+image that grows past that fails the build, naming its variant:
 
 ```text
 error: node: the store's data takes 2671771648 bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
@@ -282,8 +283,8 @@ the node's slot is refused. Every MiB of the store is also sent to each node at 
 ## Check that it worked
 
 After the upgrade or install, the device works when its driver bound to it. Nodes have no logins;
-with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in the image's modules, a privileged
-pod reaches the node's tools:
+with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in the image's modules, a
+privileged pod reaches the node's tools:
 
 ```sh
 kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- \

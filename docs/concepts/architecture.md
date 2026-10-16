@@ -50,7 +50,7 @@ every variant shares and the variant's own, and builds each into an unsigned raw
 [image directory](../reference/glossary.md#image-directory). It also builds one installer, which
 installs images of every platform. mkImages takes no node, address or cluster setting; its only
 input of a cluster is the optional public part of its secrets, for the OS CA. So one image serves
-every node whose `Image` document names it, control planes and
+every node whose [`Image`](../reference/kinds.md#image) document names it, control planes and
 [workers](../reference/glossary.md#worker) alike.
 [Variants and platforms](variants.md) explains variants, platforms and the order of their modules.
 
@@ -73,8 +73,9 @@ The split keeps one image per variant and platform, so a cluster of three contro
 fifty workers of one variant builds and signs one image per platform. A change in the left column
 is a new image and an [upgrade](upgrades.md); a change in the right column is a change to YAML
 files, delivered with [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) without
-a reboot. A storage change that would destroy data, such as a volume moved to another disk, is
-refused there and needs [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md).
+a reboot. A storage change that would destroy data, such as a volume formatted otherwise, is
+refused there and needs [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md);
+removing a volume or moving it to another disk takes a reinstall.
 
 ## What runs on the operator's machine?
 
@@ -209,9 +210,9 @@ VAR and the volumes, enrols the second keyslot of every encrypted volume unless 
 `none`, writes the config and certificates, gives the [ESP](../reference/glossary.md#esp) a random
 partition UUID and writes the `installed` marker.
 
-On a node that runs the installer, chalkctl also sends the image the node's `Image` document
-names, or the one `--image` gives, in the same parts an upgrade sends, plus the boot loader. The sequence shows what the
-installer does with them.
+On a node that runs the installer, chalkctl also sends the image the node's `Image` document names,
+or the one `--image` gives, in the same parts an upgrade sends, plus the boot loader. The sequence
+shows what the installer does with them.
 
 ```mermaid
 sequenceDiagram
@@ -220,7 +221,7 @@ sequenceDiagram
     participant disk as Target disk and TPM
     participant fw as Firmware
     chalkd-->>chalkd: console shows fingerprint and addresses
-    chalkctl->>chalkd: Install header: config, the image's schemas, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
+    chalkctl->>chalkd: Install header: config, the image's schemas and image.json, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
     chalkd->>disk: check the disk is empty or an unfinished install
     chalkd->>disk: lay out ESP, slot A, slot B and STATE with systemd-repart, STATE sealed to PCR 7
     chalkctl->>chalkd: store and hash tree
@@ -265,12 +266,12 @@ chalkctl issued them at install. [Kubernetes on chalkos](kubernetes.md) describe
 
 ### Upgrades
 
-An upgrade replaces the whole image at once.
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) sends each node the image its `Image`
-document names, or the one `--image` gives, chalkd writes it into the inactive slot, and the node boots it with
-[boot counting](../reference/glossary.md#boot-counting). If the new image does not become
-healthy within its tries, the node falls back to the image it ran before.
-[Upgrades](upgrades.md) and [Boot, health and rollback](boot-and-rollback.md) explain both halves.
+An upgrade replaces the whole image at once. [`chalkctl
+upgrade`](../reference/cli/chalkctl_upgrade.md) sends each node the image its `Image` document
+names, or the one `--image` gives, chalkd writes it into the inactive slot, and the node boots it
+with [boot counting](../reference/glossary.md#boot-counting). If the new image does not become
+healthy within its tries, the node falls back to the image it ran before. [Upgrades](upgrades.md)
+and [Boot, health and rollback](boot-and-rollback.md) explain both halves.
 
 ## Limits
 

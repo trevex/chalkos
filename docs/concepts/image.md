@@ -5,13 +5,13 @@ description: "What an image holds: the erofs store on dm-verity, the signed UKI 
 
 # The image
 
-An [image](../reference/glossary.md#image) is the whole operating system of a node in one
-unsigned raw disk image: systemd-boot, a [UKI](../reference/glossary.md#uki) with the kernel and
-initrd, and a read-only Nix [store](../reference/glossary.md#store). `chalkos.lib.mkImages` builds
-one per [variant](../reference/glossary.md#variant) and
-[platform](../reference/glossary.md#platform), and every node whose `Image` document names it
-boots the same bytes. One signature on the UKI covers the whole store, so the firmware's signature
-check extends to every block the node reads, and an upgrade replaces all of it at once.
+An [image](../reference/glossary.md#image) is the whole operating system of a node in one unsigned
+raw disk image: systemd-boot, a [UKI](../reference/glossary.md#uki) with the kernel and initrd, and
+a read-only Nix [store](../reference/glossary.md#store). `chalkos.lib.mkImages` builds one per
+[variant](../reference/glossary.md#variant) and [platform](../reference/glossary.md#platform), and
+every node whose [`Image`](../reference/kinds.md#image) document names it boots the same bytes. One
+signature on the UKI covers the whole store, so the firmware's signature check extends to every
+block the node reads, and an upgrade replaces all of it at once.
 
 ## What does an image hold?
 
@@ -25,14 +25,14 @@ The table names the x86-64 boot loader; an arm64 image has `BOOTAA64.EFI`.
 | Slot A, data | 3 GiB | The store as erofs, labelled `store_<version>` |
 
 On its first boot, systemd-repart in the initrd adds slot B, two partitions of the same sizes
-labelled `_empty`, and [STATE](../reference/glossary.md#state), 128 MiB, encrypted and sealed to
-the [TPM](../reference/glossary.md#tpm). The [installer](../reference/glossary.md#installer) lays
-out the same partitions on its target disk in one run. [VAR](../reference/glossary.md#var) and
-further volumes come from the node's `SystemDisk` and `Volume` documents at install. The sizes are
-the defaults of [`chalkos.disk`](../reference/options.md#chalkosdiskstoresize); a slot's size is
-fixed at install and is the room every later upgrade has.
-[Image and partition layout](../reference/image-layout.md) lists every partition with its type
-and label.
+labelled `_empty`, and [STATE](../reference/glossary.md#state), 128 MiB, encrypted and sealed to the
+[TPM](../reference/glossary.md#tpm). The [installer](../reference/glossary.md#installer) lays out
+the same partitions on its target disk in one run. [VAR](../reference/glossary.md#var) and further
+volumes come from the node's [`SystemDisk`](../reference/kinds.md#systemdisk) and
+[`Volume`](../reference/kinds.md#volume) documents at install. The sizes are the defaults of
+[`chalkos.disk`](../reference/options.md#chalkosdiskstoresize); a slot's size is fixed at install
+and is the room every later upgrade has. [Image and partition layout](../reference/image-layout.md)
+lists every partition with its type and label.
 
 ## Why is the system read-only?
 
@@ -150,9 +150,10 @@ the steps.
 
 ## What may an image version be?
 
-An image version, [`system.image.version`](https://search.nixos.org/options?query=system.image.version)
-in a variant's modules and `0.1.0` by default, is 1 to 23 characters of `a-z`, `0-9`, `.`, `~`,
-`^` and `-`, starting with a letter or digit. The build refuses any other, and so do
+An image version,
+[`system.image.version`](https://search.nixos.org/options?query=system.image.version) in a variant's
+modules and `0.1.0` by default, is 1 to 23 characters of `a-z`, `0-9`, `.`, `~`, `^` and `-`,
+starting with a letter or digit. The build refuses any other, and so do
 [chalkctl](../reference/glossary.md#chalkctl) and chalkd. The limits come from where the version
 appears:
 

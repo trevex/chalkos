@@ -5,21 +5,21 @@ description: "How a new image reaches a node, how chalkctl rolls it through a cl
 
 # Upgrades
 
-An [upgrade](../reference/glossary.md#upgrade) installs a new [image](../reference/glossary.md#image)
-version on a node: the operating system, Kubernetes and [chalkd](../reference/glossary.md#chalkd)
-together. chalkd writes the image into the node's inactive [slot](../reference/glossary.md#slot),
-and the node boots it with a fixed number of tries; an image that does not become healthy is
-replaced by the one before.
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) rolls the upgrade through a cluster
-node by node, so the cluster keeps its etcd quorum and its workloads keep running.
+An [upgrade](../reference/glossary.md#upgrade) installs a new
+[image](../reference/glossary.md#image) version on a node: the operating system, Kubernetes and
+[chalkd](../reference/glossary.md#chalkd) together. chalkd writes the image into the node's inactive
+[slot](../reference/glossary.md#slot), and the node boots it with a fixed number of tries; an image
+that does not become healthy is replaced by the one before. [`chalkctl
+upgrade`](../reference/cli/chalkctl_upgrade.md) rolls the upgrade through a cluster node by node, so
+the cluster keeps its etcd quorum and its workloads keep running.
 
 ## What is an upgrade?
 
-An upgrade replaces the whole image with a new [image version](../reference/glossary.md#image-version).
-There are no packages to update on a node and no separate Kubernetes upgrade: a new Kubernetes
-release is a new image built with a new
-[`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage),
-installed like any other.
+An upgrade replaces the whole image with a new [image
+version](../reference/glossary.md#image-version). There are no packages to update on a node and no
+separate Kubernetes upgrade: a new Kubernetes release is a new image built with a new
+[`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage), installed like any
+other.
 
 The node receives three parts of the image, in this order:
 
@@ -77,8 +77,8 @@ Before it sends anything, chalkctl checks each image against the cluster:
   `--sign-key`. Without `--sign-cert`, chalkctl checks no signature.
 
 chalkctl checks every node's config before it drains the first node. It needs the inventory for
-that; with a client file alone, each node's own check of its stored config, before the image
-becomes its next boot, is all there is.
+that, whatever it authenticates with; without one, each node's own check of its stored config,
+before the image becomes its next boot, is all there is.
 
 A node may get an image of another [variant](../reference/glossary.md#variant) than the one it
 runs: the check of its stored config against the image's schemas decides whether the image suits
@@ -220,15 +220,15 @@ control plane always needs the flag.
 
 ### How are nodes drained?
 
-Drains run on a control plane's chalkd, through the [DrainNode](../reference/api.md#method-drainnode)
-method, because an operator's client file carries no Kubernetes credentials. chalkd cordons the
-node, marks it with the annotation `chalkos.dev/upgrade-cordon` and evicts its pods through the
-eviction API, so PodDisruptionBudgets hold. It keeps DaemonSet pods, mirror pods, finished pods and
-pods without a controller, which nothing would start elsewhere; chalkctl names those. Pods with
-emptyDir volumes are evicted only with `--delete-emptydir-data`, which deletes their data; without
-it, a node that runs such a pod is not drained, the run stops and the node stays cordoned. A drain
-that does not finish within `--timeout`, 30 minutes by default, stops the run and leaves the node
-cordoned.
+Drains run on a control plane's chalkd, through the
+[DrainNode](../reference/api.md#method-drainnode) method, because an operator's client file carries
+no Kubernetes credentials. chalkd cordons the node, marks it with the annotation
+`chalkos.dev/upgrade-cordon` and evicts its pods through the eviction API, so PodDisruptionBudgets
+hold. It keeps DaemonSet pods, mirror pods, finished pods and pods without a controller, which
+nothing would start elsewhere; chalkctl names those. Pods with emptyDir volumes are evicted only
+with `--delete-emptydir-data`, which deletes their data; without it, a node that runs such a pod is
+not drained, the run stops and the node stays cordoned. A drain that does not finish within
+`--timeout`, 30 minutes by default, stops the run and leaves the node cordoned.
 
 A worker is drained before its image is sent. A control plane gets its image first and is drained
 right before it reboots.
@@ -308,10 +308,11 @@ to any image, which then runs as root with [STATE](../reference/glossary.md#stat
 [PCR 7](../reference/glossary.md#pcr-7) alone.
 [Security model](security.md) explains the consequences.
 
-After a [rotation](../reference/glossary.md#rotation) of the [OS CA](../reference/glossary.md#os-ca), images rebuilt from the new
-`secrets.pub.json` and rolled out with `chalkctl upgrade` bring the trust of
-[maintenance mode](../reference/glossary.md#maintenance-mode) up to date, for nodes that are
-installed again later.
+After a [rotation](../reference/glossary.md#rotation) of the [OS
+CA](../reference/glossary.md#os-ca), images rebuilt from the new `secrets.pub.json` and rolled out
+with `chalkctl upgrade` bring the trust of [maintenance
+mode](../reference/glossary.md#maintenance-mode) up to date, for nodes that are installed again
+later.
 
 ## Limits
 
@@ -329,7 +330,8 @@ installed again later.
 
 ## Related pages
 
-- [Boot, health and rollback](boot-and-rollback.md) for [boot counting](../reference/glossary.md#boot-counting) and the health check.
+- [Boot, health and rollback](boot-and-rollback.md) for [boot
+  counting](../reference/glossary.md#boot-counting) and the health check.
 - [The image](image.md) for what an image holds and how versions are named.
 - [Kubernetes on chalkos](kubernetes.md) for etcd membership and the control plane.
 - [Upgrade a cluster](../guides/upgrade-cluster.md) for the task, step by step.

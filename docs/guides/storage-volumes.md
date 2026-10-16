@@ -333,15 +333,16 @@ var       system    /var               mounted
 ...
 ```
 
-`missing` means the node never created the volume's partition, `not mounted` that it exists but
-its mount failed or its disk is gone, and `present` that it exists and has no mount point, as a raw volume does. A line
-`disk <name>: <problem>` after the table names a disk chalkd could not use, such as one whose
-pinned disk is gone or one that carries other data.
+`missing` means the node never created the volume's partition, `not mounted` that it exists but its
+mount failed or its disk is gone, and `present` that it exists and has no mount point, as a raw
+volume does. A line `disk <name>: <problem>` after the table names a disk chalkd could not use, such
+as one whose pinned disk is gone or one that carries other data.
 
 ## If something goes wrong
 
-A disk whose storage controller has no driver in the initrd is not found at boot, so its volumes
-are not mounted, or missing when they were never created, and a `disk` line names it; chalkos supports only controllers whose drivers the initrd carries.
+A disk whose storage controller has no driver in the initrd is not found at boot, so its volumes are
+not mounted, or missing when they were never created, and a `disk` line names it; chalkos supports
+only controllers whose drivers the initrd carries.
 
 A pinned disk that failed and was replaced leaves its volumes `not mounted`, with a `disk` line
 that names the missing pinned disk. chalkd never moves a volume to

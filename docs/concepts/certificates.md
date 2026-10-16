@@ -74,12 +74,12 @@ behind.
 ### Certificates of Kubernetes
 
 A [control plane](../reference/glossary.md#control-plane) issues its own certificates from the CAs
-in its [Kubernetes share](../reference/glossary.md#kubernetes-share) at every boot: the API
-server's serving certificate, its clients of the kubelets and etcd, the front-proxy client, etcd's
-server and peer certificates, and the kubeconfigs of the controller-manager and the scheduler.
-Each lives one year. They are written to `/run/chalkos/kubernetes/pki`, a tmpfs, so they never
-reach a disk. The API server's certificate names the [cluster endpoint](../reference/glossary.md#cluster-endpoint), every
-[VIP](../reference/glossary.md#vip), the node's addresses and the `kubernetes` service names.
+in its [Kubernetes share](../reference/glossary.md#kubernetes-share) at every boot: the API server's
+serving certificate, its clients of the kubelets and etcd, the front-proxy client, etcd's server and
+peer certificates, and the kubeconfigs of the controller-manager and the scheduler. Each lives one
+year. They are written to `/run/chalkos/kubernetes/pki`, a tmpfs, so they never reach a disk. The
+API server's certificate names the [cluster endpoint](../reference/glossary.md#cluster-endpoint),
+every [VIP](../reference/glossary.md#vip), the node's addresses and the `kubernetes` service names.
 
 chalkd's own clients of the API server and of etcd are certificates it issues itself in memory,
 valid for one hour and replaced at half their lifetime. The API server client is in
@@ -145,9 +145,10 @@ it, so the certificates it issues get shorter in its last year.
 Certificates are checked against the node's clock, so a node whose clock is off refuses valid
 certificates. Nodes keep time with chrony, authenticated with NTS by default, against the
 Physikalisch-Technische Bundesanstalt's servers `ptbtime1.ptb.de` to `ptbtime3.ptb.de` unless the
-node's [`TimeSync`](../reference/kinds.md#timesync) document names others. chrony steps a clock
-that is more than a second off during its first three updates, instead of slewing it for hours. The status reports the clock as `time: synchronised to <source>, offset <seconds> s`, or
-`time: not synchronised; certificates are checked against this clock`.
+node's [`TimeSync`](../reference/kinds.md#timesync) document names others. chrony steps a clock that
+is more than a second off during its first three updates, instead of slewing it for hours. The
+status reports the clock as `time: synchronised to <source>, offset <seconds> s`, or `time: not
+synchronised; certificates are checked against this clock`.
 
 ## What if a certificate expired?
 
@@ -222,12 +223,12 @@ the same OS CA, and are renewed from the new one as they fall due.
 
 ### What happens to client files and kubeconfigs during a rotation?
 
-A client file and a kubeconfig hold the CA certificates they verify the servers with, and a
-rotation cannot reach those files. During an `os-ca` rotation, client files from before it stop
-verifying the nodes at the switch and are refused at the finish; files issued after the accept
-phase carry both OS CAs. During a `kubernetes-ca` rotation, kubeconfigs from before it stop
-verifying the API server at the switch and are refused at the finish. Images and [installer](../reference/glossary.md#installer) media
-carry the OS CA too, so after an `os-ca` rotation they are built again from the new
+A client file and a kubeconfig hold the CA certificates they verify the servers with, and a rotation
+cannot reach those files. During an `os-ca` rotation, client files from before it stop verifying the
+nodes at the switch and are refused at the finish; files issued after the accept phase carry both OS
+CAs. During a `kubernetes-ca` rotation, kubeconfigs from before it stop verifying the API server at
+the switch and are refused at the finish. Images and [installer](../reference/glossary.md#installer)
+media carry the OS CA too, so after an `os-ca` rotation they are built again from the new
 `secrets.pub.json`; older ones fail to install.
 
 Files issued during a rotation still trust the old CA when they verify the servers after the

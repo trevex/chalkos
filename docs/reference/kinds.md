@@ -16,7 +16,8 @@ holds their schemas.
 Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,
 `-` and `.`, and a `spec`, whose fields the tables list. A field whose default reads "required"
 must be set, and an object whose default reads "see below" takes the defaults of the fields
-that follow it. A field the tables do not list is refused, except within a Kubernetes object.
+that follow it. A field the tables do not list is refused, except within a Kubernetes object or
+an object whose type reads "object, any fields".
 
 ## Cluster { #cluster }
 

@@ -27,17 +27,18 @@ of `state`, and later of `var` and of each encrypted volume. The
 [STATE](../reference/glossary.md#state) and [VAR](../reference/glossary.md#var), because
 [PCR 7](../reference/glossary.md#pcr-7), which the keys are sealed to, changed. Common causes:
 
-- [Secure Boot](../reference/glossary.md#secure-boot) was turned off, or its keys changed: a new PK, KEK or [db](../reference/glossary.md#db-and-dbx), or a dbx update that
-  came with a firmware update.
+- [Secure Boot](../reference/glossary.md#secure-boot) was turned off, or its keys changed: a new PK,
+  KEK or [db](../reference/glossary.md#db-and-dbx), or a dbx update that came with a firmware
+  update.
 - The image was signed with another db key than the one the node was installed with.
 - The TPM was cleared, or the disk moved to another machine.
 
-The node stays at the prompt; it does not fall back to
-[maintenance mode](../reference/glossary.md#maintenance-mode), because that would let anyone
-with physical access give it a new [config](../reference/glossary.md#config). A boot that waits at the prompt also never
-reaches the [health check](../reference/glossary.md#health-check): after an upgrade, the node
-stays in that boot until you unlock it or reset the machine, and only then does the boot loader
-try the new image again or fall back.
+The node stays at the prompt; it does not fall back to [maintenance
+mode](../reference/glossary.md#maintenance-mode), because that would let anyone with physical access
+give it a new [config](../reference/glossary.md#config). A boot that waits at the prompt also never
+reaches the [health check](../reference/glossary.md#health-check): after an upgrade, the node stays
+in that boot until you unlock it or reset the machine, and only then does the boot loader try the
+new image again or fall back.
 
 Get the node's [recovery key](../reference/glossary.md#recovery-key):
 
@@ -107,17 +108,17 @@ $ chalkctl node renew w1
 w1 serves a new node certificate; it expires 2027-10-10T09:12:44Z
 ```
 
-For this command alone, chalkctl verifies the node's expired certificate as of its start date,
-so it trusts the node's old key; [Certificates](../concepts/certificates.md#what-if-a-certificate-expired)
+For this command alone, chalkctl verifies the node's expired certificate as of its start date, so it
+trusts the node's old key; [Certificates](../concepts/certificates.md#what-if-a-certificate-expired)
 explains what that risks. Fix the reason the renewal failed too, or the node expires again next
 year.
 
 ## The kubelet certificate was lost with VAR
 
-A [worker](../reference/glossary.md#worker) whose [VAR](../reference/glossary.md#var) lost its data falls back to the kubelet
-certificate in its [Kubernetes share](../reference/glossary.md#kubernetes-share) on
-STATE, which it received at install. When that one expired too, the kubelet cannot join, and
-`chalkctl status w1` says:
+A [worker](../reference/glossary.md#worker) whose [VAR](../reference/glossary.md#var) lost its data
+falls back to the kubelet certificate in its [Kubernetes
+share](../reference/glossary.md#kubernetes-share) on STATE, which it received at install. When that
+one expired too, the kubelet cannot join, and `chalkctl status w1` says:
 
 ```text
 certificates:
@@ -167,10 +168,10 @@ var       system    /var               mounted
 disk longhorn: pinned disk ... is missing
 ```
 
-The disk the volume was created on is gone: removed, dead or behind a controller that did not
-come up. [chalkd](../reference/glossary.md#chalkd) finds a disk by its pinned WWN, serial number and path, so another disk in its
-place is not used, even if it is empty. Put the disk back, or fix its controller, and reboot. A
-replacement disk needs the node reinstalled.
+The disk the volume was created on is gone: removed, dead or behind a controller that did not come
+up. [chalkd](../reference/glossary.md#chalkd) finds a disk by its pinned WWN, serial number and
+path, so another disk in its place is not used, even if it is empty. Put the disk back, or fix its
+controller, and reboot. A replacement disk needs the node reinstalled.
 
 ## The node is in maintenance mode
 

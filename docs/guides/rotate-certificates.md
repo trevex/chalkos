@@ -57,10 +57,11 @@ the API server.
 ## Renew a node certificate by hand
 
 Nodes with Kubernetes renew their [node certificates](../reference/glossary.md#node-certificate)
-through a [control plane](../reference/glossary.md#control-plane) once two thirds of the year's lifetime have passed. Two kinds of node
-need [`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose image
-has no Kubernetes, which has no control plane to ask, and a node whose certificate expired, for
-example after months switched off.
+through a [control plane](../reference/glossary.md#control-plane) once two thirds of the year's
+lifetime have passed. Two kinds of node need [`chalkctl node
+renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose image has no Kubernetes,
+which has no control plane to ask, and a node whose certificate expired, for example after months
+switched off.
 
 ```console
 $ chalkctl node renew w1
@@ -172,10 +173,11 @@ $ chalkctl rotate os-ca --resume
 Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from secrets.pub.json; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate os-ca --finish.
 ```
 
-At this pause, commit the new `secrets.pub.json` and rebuild the [installer](../reference/glossary.md#installer) and any images you
-keep for installs: images carry the OS CA that [maintenance mode](../reference/glossary.md#maintenance-mode) accepts. Running nodes need no
-new image, but the next image you build carries the new OS CA, so it needs a new version like any
-other change. Then finish:
+At this pause, commit the new `secrets.pub.json` and rebuild the
+[installer](../reference/glossary.md#installer) and any images you keep for installs: images carry
+the OS CA that [maintenance mode](../reference/glossary.md#maintenance-mode) accepts. Running nodes
+need no new image, but the next image you build carries the new OS CA, so it needs a new version
+like any other change. Then finish:
 
 ```sh
 chalkctl rotate os-ca --finish
@@ -228,8 +230,8 @@ because removing the key would lose them.
 
 ## Revoke access
 
-[chalkd](../reference/glossary.md#chalkd) and the API server check no revocation list. Access ends when what the certificate
-chains to is no longer trusted:
+[chalkd](../reference/glossary.md#chalkd) and the API server check no revocation list. Access ends
+when what the certificate chains to is no longer trusted:
 
 - To revoke a client file, rotate the OS CA, and issue new client files at its first pause to
   everyone else.
@@ -242,9 +244,9 @@ rotation.
 
 ## Check that it worked
 
-[`chalkctl status`](../reference/cli/chalkctl_status.md) lists what a node trusts, by the first
-16 hexadecimal digits of each fingerprint. A [worker](../reference/glossary.md#worker) in the middle of an OS CA rotation trusts
-two OS CAs:
+[`chalkctl status`](../reference/cli/chalkctl_status.md) lists what a node trusts, by the first 16
+hexadecimal digits of each fingerprint. A [worker](../reference/glossary.md#worker) in the middle of
+an OS CA rotation trusts two OS CAs:
 
 ```console
 $ chalkctl status w1
@@ -264,9 +266,9 @@ expiry, and the node certificate's line names a renewal that is failing.
 
 - `another chalkctl command is changing secrets.age; wait for it to end, then run this one again`:
   another command holds the lock, perhaps a rotation still waiting for a node.
-- `a rotation of the OS CA runs, in its accept phase; continue it with chalkctl rotate os-ca --resume or --finish`:
-  a rotation started earlier is not finished. Finish it before you start another or run
-  `chalkctl node-ca rotate`.
+- `a rotation of the OS CA runs, in its accept phase; continue it with chalkctl rotate os-ca
+  --resume or --finish`: a rotation started earlier is not finished. Finish it before you start
+  another or run `chalkctl node-ca rotate`.
 - `secrets.age changed since chalkctl read it and was left as it is`: something else, an editor
   or a `git checkout`, changed the file during the command. Look at what changed it, then run
   the command again.

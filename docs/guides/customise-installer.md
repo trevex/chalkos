@@ -176,10 +176,10 @@ modules.
 
 ## Change the console
 
-The installer writes its console to the screen and to the first serial port, `ttyS0`. Linux
-sends kernel messages to every console on the command line, but [chalkd](../reference/glossary.md#chalkd)'s lines, with the
-fingerprint and the addresses, go to the last one only. A machine whose BMC shows serial-over-LAN
-on the second port needs that port last:
+The installer writes its console to the screen and to the first serial port, `ttyS0`. Linux sends
+kernel messages to every console on the command line, but
+[chalkd](../reference/glossary.md#chalkd)'s lines, with the fingerprint and the addresses, go to the
+last one only. A machine whose BMC shows serial-over-LAN on the second port needs that port last:
 
 ```nix title="installer.nix"
 { lib, ... }:

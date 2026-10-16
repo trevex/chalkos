@@ -27,7 +27,8 @@ const kindsIntro = "# Config kinds\n\n" +
 	"Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,\n" +
 	"`-` and `.`, and a `spec`, whose fields the tables list. A field whose default reads \"required\"\n" +
 	"must be set, and an object whose default reads \"see below\" takes the defaults of the fields\n" +
-	"that follow it. A field the tables do not list is refused, except within a Kubernetes object.\n"
+	"that follow it. A field the tables do not list is refused, except within a Kubernetes object or\n" +
+	"an object whose type reads \"object, any fields\".\n"
 
 // kindSchema is the JSON Schema of a kind, as its file holds it, and the kind it declares.
 type kindSchema struct {

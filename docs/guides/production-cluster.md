@@ -128,8 +128,9 @@ spec:
 ```
 
 A node's set holds at most one document of most kinds, and exactly one `Cluster`, `Node` and
-`SystemDisk`, so each document lives in the one place that fits it: what every node shares in `cluster/`, what a kind of node shares in a group,
-the rest in the node's file. [The kinds reference](../reference/kinds.md) lists every field.
+`SystemDisk`, so each document lives in the one place that fits it: what every node shares in
+`cluster/`, what a kind of node shares in a group, the rest in the node's file. [The kinds
+reference](../reference/kinds.md) lists every field.
 
 ## Choose the variants
 
@@ -138,11 +139,12 @@ Use one variant, `node`, for control planes and workers. Each node's `Node` docu
 [worker](../reference/glossary.md#worker), so one image per platform serves the whole cluster
 and an upgrade builds and signs one image.
 
-Add a [variant](../reference/glossary.md#variant) only for nodes that need other software in
-their image, such as GPU drivers or an extension's service: `variants = { node = { }; gpu.modules = [ ... ]; }`
-in the flake adds images named `gpu-<platform>` beside the `node` ones, which a `variants` that
-names only `gpu` would drop, and the nodes that run them name an `Image` document of their own. Every variant is built for every platform the flake names, so name only the
-platforms you run. [Customise an image](customise-image.md) adds modules to a variant.
+Add a [variant](../reference/glossary.md#variant) only for nodes that need other software in their
+image, such as GPU drivers or an extension's service: `variants = { node = { }; gpu.modules = [ ...
+]; }` in the flake adds images named `gpu-<platform>` beside the `node` ones, which a `variants`
+that names only `gpu` would drop, and the nodes that run them name an `Image` document of their own.
+Every variant is built for every platform the flake names, so name only the platforms you run.
+[Customise an image](customise-image.md) adds modules to a variant.
 
 ## Choose the number of control planes
 
@@ -369,14 +371,16 @@ holding the old keys. Every command that changes the file holds `secrets.age.loc
 runs. Leave both out of version control. The file's recipients change only when one of those
 commands rewrites it with `--recipient`.
 
-Back the file up to a second place. Without it you cannot install or reinstall a node, renew a
-node certificate by hand, deliver config with `apply-config`, issue client files or
-kubeconfigs, rotate anything or derive a recovery key. [Recover a node](recover-node.md#the-secrets-file-is-lost) lists what still works.
+Back the file up to a second place. Without it you cannot install or reinstall a node, renew a node
+certificate by hand, deliver config with `apply-config`, issue client files or kubeconfigs, rotate
+anything or derive a recovery key. [Recover a node](recover-node.md#the-secrets-file-is-lost) lists
+what still works.
 
 ## Give each person a client file
 
 Status, logs, reboots, upgrades and the etcd commands do not need the secrets file; installs and
-config changes do. A [client file](../reference/glossary.md#client-file) holds a certificate of one [client role](../reference/glossary.md#client-role) for one person:
+config changes do. A [client file](../reference/glossary.md#client-file) holds a certificate of one
+[client role](../reference/glossary.md#client-role) for one person:
 
 ```sh
 chalkctl config new --name=alice --role=operator --out=alice.json --secrets=secrets.age
@@ -517,7 +521,8 @@ unchecked.
 
 ## What next
 
-- [Install on bare metal](install-bare-metal.md) or [run on KVM, Proxmox or libvirt](kvm-proxmox-libvirt.md).
+- [Install on bare metal](install-bare-metal.md) or [run on KVM, Proxmox or
+  libvirt](kvm-proxmox-libvirt.md).
 - [Run a highly available control plane](ha-control-plane.md).
 - [Security model](../concepts/security.md) and [Certificates](../concepts/certificates.md)
   explain what the keys protect.

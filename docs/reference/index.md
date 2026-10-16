@@ -8,9 +8,12 @@ description: "Commands, options, the node API and the layout of images, ports an
 Most reference pages are generated from the code, so they describe what the code does;
 `nix run .#docgen` writes them, and the `docs-generated` check fails when they are out of date.
 
-- [Command line](cli/index.md): every command of `chalkctl`, `chalklab` and `chalkcfg`, from their help.
-- [Config kinds](kinds.md): the fields of every config kind an image accepts, and of the inventory and the lab file, from their schemas.
-- [mkImages and image options](options.md): the arguments of `chalkos.lib.mkImages` and the options of the images it builds.
+- [Command line](cli/index.md): every command of `chalkctl`, `chalklab` and `chalkcfg`, from their
+  help.
+- [Config kinds](kinds.md): the fields of every config kind an image accepts, and of the inventory
+  and the lab file, from their schemas.
+- [mkImages and image options](options.md): the arguments of `chalkos.lib.mkImages` and the options
+  of the images it builds.
 - [Node API](api.md): the API chalkd serves on every node.
 
 The other pages are written by hand:

@@ -5,15 +5,15 @@ description: "Roll a new chalkos or Kubernetes version through a cluster, node b
 
 # Upgrade a cluster
 
-An [upgrade](../reference/glossary.md#upgrade) installs a new [image](../reference/glossary.md#image)
-on every node and reboots the node into it. Any change to what the image holds goes this way: a
-new chalkos release, a new Kubernetes release, a change to a
-[variant](../reference/glossary.md#variant)'s NixOS modules.
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) does it for the whole cluster: it
-writes each node's inactive [slot](../reference/glossary.md#slot), drains the node, reboots it
-and waits until the new image is found healthy, [control planes](../reference/glossary.md#control-plane) one at a time and the other nodes
-in batches. A node whose new image never becomes healthy boots its previous image again, and the
-run stops there.
+An [upgrade](../reference/glossary.md#upgrade) installs a new
+[image](../reference/glossary.md#image) on every node and reboots the node into it. Any change to
+what the image holds goes this way: a new chalkos release, a new Kubernetes release, a change to a
+[variant](../reference/glossary.md#variant)'s NixOS modules. [`chalkctl
+upgrade`](../reference/cli/chalkctl_upgrade.md) does it for the whole cluster: it writes each node's
+inactive [slot](../reference/glossary.md#slot), drains the node, reboots it and waits until the new
+image is found healthy, [control planes](../reference/glossary.md#control-plane) one at a time and
+the other nodes in batches. A node whose new image never becomes healthy boots its previous image
+again, and the run stops there.
 
 Each node reboots once. Workloads move off each node while it reboots, within their
 PodDisruptionBudgets.
@@ -23,9 +23,9 @@ PodDisruptionBudgets.
 - A running cluster, its inventory and the flake that builds its images, with the
   [secrets file](../reference/glossary.md#secrets-file)
   or an operator [client file](../reference/glossary.md#client-file).
-- The [Secure Boot](../reference/glossary.md#secure-boot) [db](../reference/glossary.md#db-and-dbx) key and certificate, when your nodes enforce Secure Boot and you sign the
-  images during the upgrade. [Sign images for Secure Boot](secure-boot-signing.md) explains the
-  keys.
+- The [Secure Boot](../reference/glossary.md#secure-boot) [db](../reference/glossary.md#db-and-dbx)
+  key and certificate, when your nodes enforce Secure Boot and you sign the images during the
+  upgrade. [Sign images for Secure Boot](secure-boot-signing.md) explains the keys.
 - Three control planes, for an upgrade without API downtime. A cluster with one or two needs
   `--allow-downtime`, described below.
 - [Upgrades](../concepts/upgrades.md) explains the mechanism this guide drives.
@@ -63,10 +63,10 @@ modules of every variant whose image changes, in the call of
 
 A version set in `modules`, beside `variants`, applies to every variant's images.
 
-Raise the version whenever the image changes, even when you only changed a module. A node
-refuses an image of the version it runs with a different store, because the version names its
-partitions and boot entry, and chalkctl stops before sending it:
-`w1 runs another build of 1.4.0, whose store has the root hash ..., not ...; build the image with a new version`.
+Raise the version whenever the image changes, even when you only changed a module. A node refuses an
+image of the version it runs with a different store, because the version names its partitions and
+boot entry, and chalkctl stops before sending it: `w1 runs another build of 1.4.0, whose store has
+the root hash ..., not ...; build the image with a new version`.
 
 Then make the change itself:
 
@@ -113,12 +113,12 @@ next to it or an image directory, on the nodes that run that image's variant, or
 chalkctl upgrade --image=images/node-metal
 ```
 
-On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's
-db, and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before the node can boot it. `--sign-key` and
-`--sign-cert` make chalkctl sign the UKIs it sends; an upgrade leaves the boot loader as it is.
-An image you sign beforehand with [`chalkctl sign`](../reference/cli/chalkctl_sign.md) needs no
-`--sign-key`. `--sign-cert` alone makes chalkctl check every image against the certificate
-before sending anything.
+On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's db,
+and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before the node can boot it.
+`--sign-key` and `--sign-cert` make chalkctl sign the UKIs it sends; an upgrade leaves the boot
+loader as it is. An image you sign beforehand with [`chalkctl
+sign`](../reference/cli/chalkctl_sign.md) needs no `--sign-key`. `--sign-cert` alone makes chalkctl
+check every image against the certificate before sending anything.
 
 ## Run the upgrade
 
@@ -181,15 +181,15 @@ capacity away for one reboot.
 
 ## Apply config that needs the new image
 
-An upgrade sends images, never config. With an inventory, chalkctl checks each node's files
-against the image the node gets before it drains any node, and stops the run with
-`the config of <node>: ...` when the image does not accept them, such as a document of a kind its
-variant no longer declares. The node checks the config it stores against the new image's schemas
-too, read from the slot it has just written, before the image becomes its next boot. A stored
-config the files no longer match, such as one whose removed documents were not delivered yet,
-stops the upgrade of that node with
-`the node's config does not suit the image: ...; apply config both images accept with chalkctl apply-config, then upgrade`.
-Remove such documents from the node's files and deliver the config before the upgrade:
+An upgrade sends images, never config. With an inventory, chalkctl checks each node's files against
+the image the node gets before it drains any node, and stops the run with `the config of <node>:
+...` when the image does not accept them, such as a document of a kind its variant no longer
+declares. The node checks the config it stores against the new image's schemas too, read from the
+slot it has just written, before the image becomes its next boot. A stored config the files no
+longer match, such as one whose removed documents were not delivered yet, stops the upgrade of that
+node with `the node's config does not suit the image: ...; apply config both images accept with
+chalkctl apply-config, then upgrade`. Remove such documents from the node's files and deliver the
+config before the upgrade:
 
 ```sh
 chalkctl apply-config <node> --secrets=secrets.age
@@ -220,9 +220,9 @@ image 1.5.0, booted from chalkos_1.5.0.efi
 ...
 ```
 
-A boot that was not found healthy yet says so: `image 1.5.0, booted from chalkos_1.5.0+2-1.efi, not found healthy yet`.
-A node that received its image with `--no-reboot` shows `upgrade to 1.5.0 installed; it boots next`.
-Then check the cluster from Kubernetes:
+A boot that was not found healthy yet says so: `image 1.5.0, booted from chalkos_1.5.0+2-1.efi, not
+found healthy yet`. A node that received its image with `--no-reboot` shows `upgrade to 1.5.0
+installed; it boots next`. Then check the cluster from Kubernetes:
 
 ```sh
 kubectl get nodes -o wide
@@ -246,9 +246,10 @@ The node runs its previous image, healthy, and stays cordoned so you can look at
 `chalkctl status w2` shows the same lines under `upgrade to 1.5.0 failed: rolled back to 1.4.0`
 for as long as the failed image stays on the disk. With them:
 
-1. Find the cause. The journal lines name what the health check found missing: a failed unit
-   on a node without Kubernetes, the kubelet, the Node's registration, the API server or the
-   [etcd member](../reference/glossary.md#etcd-member). [Troubleshooting](troubleshooting.md) helps from there.
+1. Find the cause. The journal lines name what the health check found missing: a failed unit on a
+   node without Kubernetes, the kubelet, the Node's registration, the API server or the [etcd
+   member](../reference/glossary.md#etcd-member). [Troubleshooting](troubleshooting.md) helps from
+   there.
 2. Fix the image's modules, raise the version, build the image again and run `chalkctl upgrade`
    again. chalkctl refuses to
    install 1.5.0 again on a node that fell back from it, so a known-bad image never boots twice
@@ -284,11 +285,11 @@ Keep the previous commit, or the image directory, until the new version has prov
 - `without cp2 etcd has 1 healthy voter of 3, fewer than the 2 its quorum needs`: another
   control plane is down or unhealthy. chalkctl does not reboot cp2 until enough of the others are
   healthy; `chalkctl etcd members` shows which one is not.
-- `etcd has 1 voter, and without cp1 fewer than the 1 its quorum needs: ...; pass --allow-downtime to accept that`:
-  the cluster has one or two control planes, so the API server is down while one reboots. Pass
-  `--allow-downtime` when that is acceptable.
-- `pods ... have emptyDir volumes, whose data an eviction deletes; pass --delete-emptydir-data to evict them`:
-  the drain refuses to delete those pods' scratch data unless you allow it.
+- `etcd has 1 voter, and without cp1 fewer than the 1 its quorum needs: ...; pass --allow-downtime
+  to accept that`: the cluster has one or two control planes, so the API server is down while one
+  reboots. Pass `--allow-downtime` when that is acceptable.
+- `pods ... have emptyDir volumes, whose data an eviction deletes; pass --delete-emptydir-data to
+  evict them`: the drain refuses to delete those pods' scratch data unless you allow it.
 - `etcd member cp3 is a learner yet; upgrade once it joined`: a control plane is still joining;
   run again once it finished.
 - `the boot of chalkos_1.5.0+2-1.efi has not been found healthy yet; upgrade once it is`: the node
@@ -296,16 +297,17 @@ Keep the previous commit, or the image directory, until the new version has prov
   falls back to. Wait for the check, at most `healthTimeout` per try.
 - `Secure Boot would refuse the UKI`: the image is unsigned or signed with a key the firmware's db
   does not hold. Sign it with the db key.
-- `w1 runs an image built for kvm, but its Image node-metal is built for metal; changing a node's platform is a reinstall`:
-  the node's `Image` names a build of another platform. Changing a node's platform is a
-  reinstall, not an upgrade.
+- `w1 runs an image built for kvm, but its Image node-metal is built for metal; changing a node's
+  platform is a reinstall`: the node's `Image` names a build of another platform. Changing a node's
+  platform is a reinstall, not an upgrade.
 - A drain that does not finish within `--timeout` leaves the node cordoned and stops the run.
   A PodDisruptionBudget that allows no eviction is the usual cause; `kubectl get pdb -A` shows
   it.
 
 ## What next
 
-- [Upgrades](../concepts/upgrades.md) and [Boot, health and rollback](../concepts/boot-and-rollback.md)
-  explain the slots, [boot counting](../reference/glossary.md#boot-counting) and the health check.
+- [Upgrades](../concepts/upgrades.md) and [Boot, health and
+  rollback](../concepts/boot-and-rollback.md) explain the slots, [boot
+  counting](../reference/glossary.md#boot-counting) and the health check.
 - [Troubleshooting](troubleshooting.md) starts from the symptoms of a failed boot.
 - [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists every flag.

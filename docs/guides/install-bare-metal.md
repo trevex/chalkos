@@ -218,9 +218,9 @@ On the machine, the installer:
 6. writes the boot loader, adds a UEFI boot entry named `chalkos` and boots it next, and writes
    the marker that the node is installed, last.
 
-The machine reboots into its image. The boot entry the install creates goes first in the boot
-order, so the stick may stay in; remove it before the next install elsewhere. After the reboot the node runs in
-[normal mode](../reference/glossary.md#normal-mode) with the network of its config, and
+The machine reboots into its image. The boot entry the install creates goes first in the boot order,
+so the stick may stay in; remove it before the next install elsewhere. After the reboot the node
+runs in [normal mode](../reference/glossary.md#normal-mode) with the network of its config, and
 chalkctl reaches it at the address the inventory names.
 
 `--fingerprint` is the way to pin the node. When reading the console is impractical, `--insecure`
@@ -239,8 +239,9 @@ written, the disk has nothing the firmware boots, so a machine never boots a hal
 
 ## Replace what a disk holds
 
-The installer takes a disk on which `blkid` finds no signature or only an empty partition table,
-or one an earlier attempt of this install left. It refuses any other with a message that names what it found, for example:
+The installer takes a disk on which `blkid` finds no signature or only an empty partition table, or
+one an earlier attempt of this install left. It refuses any other with a message that names what it
+found, for example:
 
 ```text
 the target disk /dev/nvme0n1 (model "...", size ..., serial "...") carries data (dos); pass --wipe-disk to replace it
