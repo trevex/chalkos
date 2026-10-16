@@ -316,7 +316,8 @@ const validateLong = `Checks the config of the nodes named, or of every node of 
 check it on its image: the files the inventory gives the node form its set, every document is
 checked against the schemas of the image directory the node's Image names, and the set is
 translated as the node translates it. It prints a line for each node whose config is valid and
-names each node whose config is not. It reaches no node and needs no secrets file or client
+names each node whose config is not, and warns of a node whose SystemDisk leaves STATE, which
+holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or client
 file.`
 
 const validateExample = `  # Check every node of chalkos.yaml.

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/inventory"
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 func (a *app) validateCommand() *cobra.Command {
@@ -26,7 +27,8 @@ func (a *app) validateCommand() *cobra.Command {
 
 // validate checks the config of the nodes named, or of every node of the inventory, and names
 // every node whose config is invalid. The nodes' Cluster documents are checked first, as every
-// other command reads them when it loads the inventory.
+// other command reads them when it loads the inventory. A valid config that leaves the node's
+// secrets unencrypted draws a warning.
 func (a *app) validate(path string, names []string) error {
 	if path == "" {
 		path = inventory.DefaultFile
@@ -56,12 +58,15 @@ func (a *app) validate(path string, names []string) error {
 	}
 	var failed []string
 	for _, name := range nodes {
-		line, err := validateNode(inv, name)
+		line, warnings, err := validateNode(inv, name)
 		if err != nil {
 			failed = append(failed, err.Error())
 			continue
 		}
 		fmt.Fprintln(a.stdout, line)
+		for _, w := range warnings {
+			fmt.Fprintln(a.stderr, "warning: "+w)
+		}
 	}
 	if len(failed) > 0 {
 		return errors.New("the config of " + count(len(failed), "node") + " is invalid:\n" + strings.Join(failed, "\n"))
@@ -69,25 +74,31 @@ func (a *app) validate(path string, names []string) error {
 	return nil
 }
 
-// validateNode checks a node's config against the image its Image names, as the node would. Its
-// errors name the node.
-func validateNode(inv *inventory.Inventory, name string) (string, error) {
+// validateNode checks a node's config against the image its Image names, as the node would, and
+// returns what a valid config warrants a warning for. Its errors and warnings name the node.
+func validateNode(inv *inventory.Inventory, name string) (string, []string, error) {
 	nc, err := inv.Node(name)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	md, err := nc.Resolve()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	c, err := imageContract(nc.ImageDir)
 	if err != nil {
-		return "", fmt.Errorf("node %s: %w", name, err)
+		return "", nil, fmt.Errorf("node %s: %w", name, err)
 	}
 	c.platform = md.Platform
 	d, err := checkNodeConfig(nc, c)
 	if err != nil {
-		return "", fmt.Errorf("node %s: %w", name, err)
+		return "", nil, fmt.Errorf("node %s: %w", name, err)
 	}
-	return fmt.Sprintf("%s: valid for the Image %s (%s on %s, root hash %.12s), config %s", name, nc.ImageName, md.Variant, md.Platform, md.RootHash, d.Version), nil
+	var warnings []string
+	// STATE follows the SystemDisk's encryption mode, and holds the node's keys and secrets.
+	if d.identity.Storage.Encryption == storage.EncryptionNone {
+		warnings = append(warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))
+	}
+	line := fmt.Sprintf("%s: valid for the Image %s (%s on %s, root hash %.12s), config %s", name, nc.ImageName, md.Variant, md.Platform, md.RootHash, d.Version)
+	return line, warnings, nil
 }

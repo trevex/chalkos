@@ -121,6 +121,32 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// TestValidateWarnsOfUnencryptedState warns of a node whose SystemDisk leaves STATE, which
+// holds the node's keys and secrets, unencrypted, and of no other.
+func TestValidateWarnsOfUnencryptedState(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	unencrypted := strings.Replace(n1SystemDisk, "spec: {disk: {serial: chalk-target}}", "spec: {disk: {serial: chalk-target}, encryption: {mode: none}}", 1)
+	path := writeInventory(t, ta.dir, n1Node, unencrypted, n1Network)
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "warning: node n1: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted\n"; ta.stderr.String() != want {
+		t.Errorf("stderr = %q, want %q", ta.stderr, want)
+	}
+	if !strings.Contains(ta.stdout.String(), "n1: valid") {
+		t.Errorf("stdout = %q, want n1 valid", ta.stdout)
+	}
+	ta.stderr.Reset()
+	path = writeInventory(t, ta.dir)
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
+		t.Fatal(err)
+	}
+	if ta.stderr.Len() != 0 {
+		t.Errorf("stderr = %q for an encrypted STATE, want nothing", ta.stderr)
+	}
+}
+
 // TestValidateTheCluster refuses an inventory whose nodes' Cluster documents differ, as every
 // other command does.
 func TestValidateTheCluster(t *testing.T) {
