@@ -52,6 +52,7 @@ in
   chalkos.consumers.chalkos-chrony-dhcp.kinds = [ "TimeSync" ];
   systemd.paths.chalkos-chrony-dhcp = {
     wantedBy = [ "multi-user.target" ];
+    after = [ "chalkos-identity.service" ];
     pathConfig = {
       PathChanged = "/run/systemd/netif/links";
       Unit = "chalkos-chrony-dhcp-links.service";
@@ -68,6 +69,7 @@ in
     description = "Pass the time servers DHCP announced to chrony";
     wantedBy = [ "multi-user.target" ];
     after = [
+      "chalkos-identity.service"
       "chronyd.service"
       "systemd-networkd.service"
     ];
@@ -81,8 +83,9 @@ in
       RemainAfterExit = true;
     };
     script = ''
-      # No TimeSync, or one chalkcfg cannot read, takes no servers from DHCP.
-      dhcp=$(${dhcpEnabled} 2>/dev/null) || dhcp=false
+      # No TimeSync takes no servers from DHCP, and chalkcfg prints nothing for it; one that
+      # chalkcfg cannot read takes none either, and its error is logged.
+      dhcp=$(${dhcpEnabled}) || dhcp=false
       tmp=$(mktemp ${dhcpSources}/.dhcp.XXXXXX)
       if [ "$dhcp" = true ]; then
         for link in /run/systemd/netif/links/*; do
