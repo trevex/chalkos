@@ -97,7 +97,7 @@ func (a *app) status(cluster string, pos []string) error {
 	fmt.Fprintf(a.stdout, "lab of %s in %s; %s\n", l.Cluster, dir, supervisor)
 	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 	var stopped []string
-	fmt.Fprintln(w, "NODE\tROLE\tVM\tCHALKD\tAPI SERVER\tCONSOLE")
+	fmt.Fprintln(w, "NODE\tTYPE\tVM\tCHALKD\tAPI SERVER\tCONSOLE")
 	for _, n := range l.Nodes {
 		c := l.VMConfig(dir, n)
 		state := "running"
@@ -109,7 +109,11 @@ func (a *app) status(cluster string, pos []string) error {
 		if n.APIPort != 0 {
 			api = "127.0.0.1:" + strconv.Itoa(n.APIPort)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t127.0.0.1:%d\t%s\t%s\n", n.Name, n.Role, state, n.ChalkdPort, api, c.ConsolePath())
+		kind := n.Kind
+		if kind == "" {
+			kind = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t127.0.0.1:%d\t%s\t%s\n", n.Name, kind, state, n.ChalkdPort, api, c.ConsolePath())
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -122,7 +126,7 @@ func (a *app) status(cluster string, pos []string) error {
 		fmt.Fprintf(a.stdout, "%s %s not run; chalklab start starts the lab again\n", joinNames(stopped), verb)
 	}
 	for _, f := range []struct{ what, file string }{
-		{"kubeconfig", kubeconfigFile}, {"client file", clientFile},
+		{"kubeconfig", kubeconfigFile}, {"inventory", inventoryFile}, {"client file", clientFile},
 		{"Secure Boot db key", filepath.Join("keys", "db.key")}, {"Secure Boot db certificate", filepath.Join("keys", "db.crt")},
 	} {
 		if _, err := os.Stat(filepath.Join(dir, f.file)); err == nil {

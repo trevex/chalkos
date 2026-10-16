@@ -35,8 +35,8 @@ func testLab(t *testing.T) (string, *Lab) {
 		t.Fatal(err)
 	}
 	l := &Lab{Cluster: "lab", FirmwareCode: "/fw/CODE.fd", FirmwareVars: vars, Nodes: []LabNode{
-		{Name: "cp1", Role: "controlplane", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443},
-		{Name: "w1", Role: "worker", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 2048, CPUs: 2, ChalkdPort: 15002},
+		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443},
+		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 2048, CPUs: 2, ChalkdPort: 15002},
 	}}
 	if err := l.Write(dir); err != nil {
 		t.Fatal(err)

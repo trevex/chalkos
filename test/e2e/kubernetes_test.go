@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -28,10 +27,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/trevex/chalkos/pkg/lab"
-	"github.com/trevex/chalkos/pkg/manifest"
 )
 
-// The cluster's nodes, as nix/testing/cluster.nix defines them, and their VMs' memory.
+// The cluster's nodes, as nix/testing/cluster.nix defines them, and their VMs' memory. They are
+// the memory lab.yaml gives the nodes.
 var kubernetesNodes = []struct {
 	name     string
 	memoryMB int
@@ -694,21 +693,12 @@ func vxlanRules(t *testing.T, n *node, inventory, name string) (marks, drops []s
 // createLab brings the cluster's control plane and worker up with chalklab create, in a state
 // directory below dir, and attaches to their VMs; it returns the nodes, the forwarded port of the
 // API server and the kubeconfig chalklab wrote. It checks that cp1 waited for its bootstrap at the
-// cluster's endpoint and that the lab's client file reaches it. chalklab destroy removes the lab
+// cluster's endpoint and that the lab's inventory reaches it. chalklab destroy removes the lab
 // once the test ends, after the console of each VM was logged on a failure.
 func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int, string) {
 	t.Helper()
 	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
-	base := filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), "base.json")
-	data, err := os.ReadFile(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := manifest.Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := lab.StateDir(m.Cluster.Name)
+	state, err := lab.StateDir("chalklab")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -741,11 +731,7 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 			}
 		}
 	})
-	create := []string{"create",
-		"--manifest", base, "--secrets", os.Getenv("CHALKLAB_SECRETS"),
-		"--nodes", "cp1,w1",
-		"--image", "k8s=" + os.Getenv("CHALKLAB_K8S_IMAGE_DIR"),
-		"--controlplane-memory", strconv.Itoa(kubernetesNodes[0].memoryMB), "--memory", strconv.Itoa(kubernetesNodes[1].memoryMB)}
+	create := []string{"create", "--lab", filepath.Join(fixtures, "chalklab", "lab.yaml"), "--secrets", os.Getenv("CHALKLAB_SECRETS")}
 	out, err := chalklab(append(create, args...)...)
 	if err != nil {
 		t.Fatalf("chalklab create: %v", err)
@@ -763,17 +749,17 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 	} else if !strings.Contains(out, "its supervisor runs") {
 		t.Error("chalklab status does not say that its supervisor runs the lab")
 	}
-	// The lab's client file reaches cp1 at its forwarded port, not at the cluster definition's
-	// address on the lab network, which the host does not reach.
+	// The lab's inventory names cp1 at its forwarded port, not at its address on the cluster
+	// network, which the host does not reach.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	status := []string{"status", "cp1", "--config", filepath.Join(state, "chalkctl.json"), "--manifest", base}
+	status := []string{"status", "cp1", "--config", filepath.Join(state, "chalkctl.json"), "--inventory", filepath.Join(state, "chalkos.yaml")}
 	statusOut, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), status...).CombinedOutput()
 	t.Logf("chalkctl %s:\n%s", strings.Join(status, " "), statusOut)
 	if err != nil {
-		t.Errorf("chalkctl status with the lab's client file: %v", err)
+		t.Errorf("chalkctl status with the lab's inventory and client file: %v", err)
 	} else if !strings.Contains(string(statusOut), "kubernetes controlplane: ") {
-		t.Error("chalkctl status with the lab's client file shows no Kubernetes status of cp1")
+		t.Error("chalkctl status with the lab's inventory and client file shows no Kubernetes status of cp1")
 	}
 	nodes := map[string]*node{}
 	apiPort := 0

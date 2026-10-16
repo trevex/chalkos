@@ -20,7 +20,6 @@ let
             CHALKLAB_CHALKCTL = lib.getExe chalkPkgs.chalkctl;
             CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
             CHALKLAB_SECRETS = "${chalkPkgs.test-secrets}/secrets.json";
-            CHALKLAB_MANIFESTS = "${chalkPkgs.test-manifests}";
             CHALKLAB_FIXTURES = "${../test/fixtures/clusters}";
             CHALKLAB_K8S_IMAGE_DIR = "${chalkPkgs.test-kubernetes-image}";
             CHALKLAB_K8S_ONLINE = "1";

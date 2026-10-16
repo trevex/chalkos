@@ -10,8 +10,9 @@ Stop the lab and remove its state
 ## Synopsis
 
 Stops the lab's supervisor, VMs, TPMs and network switch and removes its state: disks,
-firmware variables, TPM state, keys, console logs, kubeconfig and client file. The state is kept
-when anything of the lab is still running. The command needs no secrets file or client file.
+firmware variables, TPM state, keys, console logs, kubeconfig, inventory and client file. The
+state is kept when anything of the lab is still running. The command needs no secrets file or
+client file.
 
 ```
 chalklab destroy [flags]

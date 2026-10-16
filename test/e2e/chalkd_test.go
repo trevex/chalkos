@@ -21,7 +21,7 @@ import (
 )
 
 // chalkdEnv is what tests that talk to chalkd need besides the firmware and an image.
-var chalkdEnv = []string{"CHALKLAB_CHALKCTL", "CHALKLAB_SECRETS", "CHALKLAB_MANIFESTS", "CHALKLAB_FIXTURES"}
+var chalkdEnv = []string{"CHALKLAB_CHALKCTL", "CHALKLAB_SECRETS", "CHALKLAB_FIXTURES"}
 
 // node is a VM whose chalkd is reachable from the host.
 type node struct {

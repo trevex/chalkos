@@ -1,5 +1,5 @@
-# The cluster whose images the e2e tests boot, its secrets, and manifests the tests deliver with
-# chalkctl. Each role has a node standing for the VM that runs it.
+# The cluster whose images the e2e tests boot, its secrets, and the bridge the fixtures are
+# compared with. Each role has a node standing for the VM that runs it.
 { self, pkgs }:
 let
   inherit (pkgs) lib;
@@ -211,8 +211,7 @@ let
       };
     };
   };
-  # The test cluster with the modules given, as each manifest of CHALKLAB_MANIFESTS defines it,
-  # with the mirrors its Kubernetes images are built with.
+  # The test cluster with the modules given, with the mirrors its Kubernetes images are built with.
   clusterOf =
     modules:
     self.lib.mkCluster {
@@ -222,8 +221,6 @@ let
       ]
       ++ modules;
     };
-  manifestOf =
-    name: modules: pkgs.writeText "${name}.json" (builtins.toJSON (clusterOf modules).manifest);
   # A new encrypted volume on an empty disk: an additive change. The Greeting changes too, so its
   # consumer restarts.
   added = [
@@ -329,14 +326,6 @@ in
     kubernetesVersion = cluster.cluster.kubernetes.package.version;
   };
   inherit secrets;
-  manifests = pkgs.linkFarm "chalkos-test-manifests" {
-    "base.json" = manifestOf "base" [ ];
-    # A new encrypted volume on an empty disk: an additive change.
-    "added.json" = manifestOf "added" added;
-    # VAR with a fixed size where it filled its disk: a destructive change.
-    "destructive.json" = manifestOf "destructive" destructive;
-    "ha.json" = pkgs.writeText "ha.json" (builtins.toJSON haCluster.manifest);
-  };
   # Every manifest the repository has, each with the contracts of its images, for the test that
   # chalkctl's documents give back each node's identity.
   bridge = pkgs.linkFarm "chalkos-test-bridge" {

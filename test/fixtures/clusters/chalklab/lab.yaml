@@ -1,0 +1,10 @@
+# The Kubernetes e2e test's lab: cp1 and w1 of the main cluster, with the MAC addresses their
+# Network documents match on the cluster network and the memory the test's budget gives them.
+apiVersion: chalklab.chalkos.dev/v1alpha1
+kind: Lab
+metadata: {name: chalklab}
+spec:
+  inventory: ./chalkos.yaml
+  nodes:
+    cp1: {mac: "52:54:00:00:01:11", memory: 2048}
+    w1: {mac: "52:54:00:00:01:12", memory: 1024}

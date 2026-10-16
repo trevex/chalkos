@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Lab",
+  "description": "The nodes of an inventory that chalklab runs as virtual machines, and their machines.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "chalklab.chalkos.dev/v1alpha1" },
+    "kind": { "const": "Lab" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventory", "nodes"],
+      "properties": {
+        "inventory": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The inventory of the cluster, relative to the lab file."
+        },
+        "nodes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mac"],
+            "properties": {
+              "mac": {
+                "type": "string",
+                "pattern": "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$",
+                "description": "MAC address of the VM's NIC on the lab network, which the node's Network document must match."
+              },
+              "memory": {
+                "type": "integer",
+                "minimum": 512,
+                "description": "Memory in MiB; default 3072 for a control plane, 2048 for another node."
+              },
+              "cpus": { "type": "integer", "minimum": 1, "description": "Virtual CPUs; default 2." },
+              "disks": {
+                "type": "array",
+                "minItems": 1,
+                "description": "The VM's disks: the first holds the node's image, the others start empty; default one of 16G.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["size"],
+                  "properties": {
+                    "size": { "type": "string", "pattern": "^[0-9]+[KMGT]?$" },
+                    "serial": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,20}$" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-chalkos-kind": {
+    "group": "chalklab.chalkos.dev",
+    "version": "v1alpha1",
+    "kind": "Lab",
+    "multiple": false
+  }
+}

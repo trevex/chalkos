@@ -26,17 +26,34 @@ type Lab struct {
 // LabNode is the VM of a node of a lab.
 type LabNode struct {
 	Name string `json:"name"`
-	Role string `json:"role"`
 	// Kind is the node's Kubernetes kind: controlplane, worker, or empty.
 	Kind string `json:"kind,omitempty"`
 	// MAC is the address of the VM's NIC on the lab network.
 	MAC      string `json:"mac"`
 	MemoryMB int    `json:"memoryMB"`
 	CPUs     int    `json:"cpus"`
+	// Disks are the VM's disks: the first is backed by the node's image, the others start empty.
+	// A lab recorded without them has the first alone.
+	Disks []LabDisk `json:"disks,omitempty"`
 	// ChalkdPort is the port on 127.0.0.1 that reaches the node's chalkd, and APIPort the one that
 	// reaches its API server; zero on a node without one.
 	ChalkdPort int `json:"chalkdPort"`
 	APIPort    int `json:"apiPort,omitempty"`
+}
+
+// LabDisk is a disk of a lab's VM: its size, as qemu-img takes it, and the serial number the VM
+// sees, empty for none.
+type LabDisk struct {
+	Size   string `json:"size"`
+	Serial string `json:"serial,omitempty"`
+}
+
+// DiskPath is the file of disk i of a node's VM in the lab's state directory dir.
+func DiskPath(dir string, n LabNode, i int) string {
+	if i == 0 {
+		return filepath.Join(dir, n.Name, "disk.qcow2")
+	}
+	return filepath.Join(dir, n.Name, fmt.Sprintf("disk%d.qcow2", i))
 }
 
 const labFile = "lab.json"
@@ -119,7 +136,7 @@ func (l *Lab) VMConfig(dir string, n LabNode) VMConfig {
 		Dir:           filepath.Join(dir, n.Name),
 		FirmwareCode:  l.FirmwareCode,
 		FirmwareVars:  l.FirmwareVars,
-		Disks:         []Disk{{Path: filepath.Join(dir, n.Name, "disk.qcow2")}},
+		Disks:         vmDisks(dir, n),
 		MemoryMB:      n.MemoryMB,
 		CPUs:          n.CPUs,
 		TPM:           true,
@@ -129,6 +146,19 @@ func (l *Lab) VMConfig(dir string, n LabNode) VMConfig {
 		MAC:           n.MAC,
 		GuestAgent:    true,
 	}
+}
+
+// vmDisks are the disks of a node's VM.
+func vmDisks(dir string, n LabNode) []Disk {
+	disks := []Disk{{Path: DiskPath(dir, n, 0)}}
+	for i, d := range n.Disks {
+		if i == 0 {
+			disks[0].Serial = d.Serial
+			continue
+		}
+		disks = append(disks, Disk{Path: DiskPath(dir, n, i), Serial: d.Serial})
+	}
+	return disks
 }
 
 // Running reports whether the VM of the configuration runs.

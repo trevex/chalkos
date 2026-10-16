@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -22,13 +21,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
+	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/lab"
-	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -37,7 +34,7 @@ const platform = "kvm"
 
 // Files of a lab's state directory besides those pkg/lab keeps.
 const (
-	manifestFile   = "manifest.json"
+	inventoryFile  = "chalkos.yaml"
 	kubeconfigFile = "kubeconfig"
 	clientFile     = "chalkctl.json"
 )
@@ -50,11 +47,8 @@ func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }
 func (l *listFlag) Type() string       { return "strings" }
 
 type createFlags struct {
-	flake, cluster, manifest, secrets string
-	images, guestForwards             listFlag
-	nodes                             string
-	cpus, controlPlaneMemory, memory  int
-	diskSize                          string
+	lab, secrets  string
+	guestForwards listFlag
 }
 
 func (a *app) createCommand() *cobra.Command {
@@ -66,23 +60,15 @@ func (a *app) createCommand() *cobra.Command {
 		Example: createExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.create(ctx, f, pos) })
 	fs := cmd.Flags()
-	fs.StringVar(&f.flake, "flake", ".", "directory of the flake that defines the cluster")
-	fs.StringVar(&f.cluster, "cluster", "", "cluster to use when the flake defines several")
-	fs.StringVar(&f.manifest, "manifest", "", "read the cluster's manifest from this file instead of evaluating the flake; every role needs --image then")
-	fs.StringVar(&f.secrets, "secrets", "", "secrets file chalkctl reads (default secrets.age, else secrets.json, in the flake directory)")
-	fs.Var(&f.images, "image", "ROLE=DIR: the kvm image of a role (the directory nix build makes) instead of building it; may be repeated")
-	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to run (default every node of the cluster)")
-	fs.IntVar(&f.cpus, "cpus", 2, "virtual CPUs of each VM")
-	fs.IntVar(&f.controlPlaneMemory, "controlplane-memory", 3072, "memory of a control plane's VM, in MiB")
-	fs.IntVar(&f.memory, "memory", 2048, "memory of the other VMs, in MiB")
-	fs.StringVar(&f.diskSize, "disk-size", "16G", "size of each VM's sparse disk")
+	fs.StringVar(&f.lab, "lab", "", "lab file naming the inventory and the nodes the lab runs (default "+defaultLabFile+" in the current directory)")
+	fs.StringVar(&f.secrets, "secrets", "", "secrets file chalkctl reads (default the inventory's)")
 	fs.Var(&f.guestForwards, "guest-forward", "GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated")
 	return cmd
 }
 
 func (a *app) create(ctx context.Context, f createFlags, pos []string) (err error) {
-	if len(pos) != 0 || f.cpus < 1 || f.controlPlaneMemory < 1 || f.memory < 1 {
-		return errors.New("usage: chalklab create [--flake .] [--cluster NAME] [--nodes N,...] [--cpus 2] [--controlplane-memory 3072] [--memory 2048] [--disk-size 16G]")
+	if len(pos) != 0 {
+		return errors.New("usage: chalklab create [--lab chalklab.yaml] [--secrets FILE] [--guest-forward GUEST=HOST]")
 	}
 	code, vars := os.Getenv("CHALKLAB_OVMF_CODE"), os.Getenv("CHALKLAB_OVMF_VARS")
 	if code == "" || vars == "" {
@@ -90,14 +76,6 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	}
 	if err := checkKVM(); err != nil {
 		return err
-	}
-	images := map[string]string{}
-	for _, img := range f.images {
-		role, dir, ok := strings.Cut(img, "=")
-		if !ok || role == "" || dir == "" {
-			return fmt.Errorf("--image %q is not ROLE=DIR", img)
-		}
-		images[role] = dir
 	}
 	var guestForwards []lab.GuestForward
 	for _, fw := range f.guestForwards {
@@ -107,36 +85,36 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 		}
 		guestForwards = append(guestForwards, lab.GuestForward{Guest: guest, Host: host})
 	}
-
-	m, data, attr, err := a.loadManifest(ctx, f)
+	path := f.lab
+	if path == "" {
+		path = defaultLabFile
+	}
+	lf, err := readLabFile(path)
 	if err != nil {
 		return err
 	}
-	var named []string
-	if f.nodes != "" {
-		named = strings.Split(f.nodes, ",")
-	}
-	nodes, err := labNodes(m, named)
+	inv, err := inventory.Load(lf.inventory)
 	if err != nil {
 		return err
 	}
-	dir, err := lab.StateDir(m.Cluster.Name)
+	name, _, err := inv.Cluster()
+	if err != nil {
+		return fmt.Errorf("%s: %w", lf.inventory, err)
+	}
+	nodes, images, err := labNodes(inv, lf)
 	if err != nil {
 		return err
 	}
-	l := &lab.Lab{Cluster: m.Cluster.Name, FirmwareCode: code, FirmwareVars: filepath.Join(dir, "keys", "OVMF_VARS.fd"), GuestForwards: guestForwards}
-	for _, n := range nodes {
-		n.CPUs, n.MemoryMB = f.cpus, f.memory
-		if n.Kind == identity.KindControlPlane {
-			n.MemoryMB = f.controlPlaneMemory
-		}
-		l.Nodes = append(l.Nodes, n)
+	dir, err := lab.StateDir(name)
+	if err != nil {
+		return err
 	}
+	l := &lab.Lab{Cluster: name, FirmwareCode: code, FirmwareVars: filepath.Join(dir, "keys", "OVMF_VARS.fd"), GuestForwards: guestForwards, Nodes: nodes}
 	if err := l.CheckSockets(dir); err != nil {
 		return err
 	}
 	if _, err := os.Stat(dir); err == nil {
-		return fmt.Errorf("the lab of %s exists in %s; chalklab destroy removes it", m.Cluster.Name, dir)
+		return fmt.Errorf("the lab of %s exists in %s; chalklab destroy removes it", name, dir)
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
@@ -151,48 +129,35 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 			os.RemoveAll(dir)
 		}
 	}()
-	if err := os.WriteFile(filepath.Join(dir, manifestFile), data, 0o600); err != nil {
-		return err
-	}
 
-	roles := map[string]bool{}
-	for _, n := range l.Nodes {
-		roles[n.Role] = true
-	}
-	for _, role := range slices.Sorted(maps.Keys(roles)) {
-		if images[role] != "" {
-			continue
-		}
-		if attr == "" {
-			return fmt.Errorf("the manifest was read from a file, so the image of the role %s cannot be built; pass --image %s=DIR", role, role)
-		}
-		fmt.Fprintf(a.stdout, "building the %s image of %s\n", platform, role)
-		if images[role], err = a.buildImage(ctx, f.flake, attr, m, role); err != nil {
-			return err
-		}
-	}
 	fmt.Fprintf(a.stdout, "creating the lab's Secure Boot keys in %s\n", filepath.Join(dir, "keys"))
-	if err := a.createKeys(ctx, filepath.Join(dir, "keys"), m.Cluster.Name, vars); err != nil {
+	if err := a.createKeys(ctx, filepath.Join(dir, "keys"), name, vars); err != nil {
 		return err
 	}
 	if err := os.Mkdir(filepath.Join(dir, "images"), 0o700); err != nil {
 		return err
 	}
-	for _, role := range slices.Sorted(maps.Keys(roles)) {
-		raw := filepath.Join(dir, "images", role+".raw")
-		if err := copyImage(ctx, images[role], raw); err != nil {
-			return fmt.Errorf("the image of %s: %w", role, err)
+	for _, n := range l.Nodes {
+		raw := filepath.Join(dir, "images", n.Name+".raw")
+		fmt.Fprintf(a.stdout, "copying the image of %s from %s\n", n.Name, images[n.Name])
+		if err := copyImage(ctx, images[n.Name], raw); err != nil {
+			return fmt.Errorf("the image of %s: %w", n.Name, err)
 		}
-		if err := signImage(ctx, raw, filepath.Join(dir, "images", role+".json"), filepath.Join(dir, "keys")); err != nil {
-			return fmt.Errorf("sign the image of %s: %w", role, err)
+		if err := signImage(ctx, raw, filepath.Join(dir, "images", n.Name+".json"), filepath.Join(dir, "keys")); err != nil {
+			return fmt.Errorf("sign the image of %s: %w", n.Name, err)
 		}
 	}
 	for _, n := range l.Nodes {
 		if err := os.Mkdir(filepath.Join(dir, n.Name), 0o700); err != nil {
 			return err
 		}
-		if err := lab.CreateOverlay(ctx, filepath.Join(dir, "images", n.Role+".raw"), filepath.Join(dir, n.Name, "disk.qcow2"), f.diskSize); err != nil {
+		if err := lab.CreateOverlay(ctx, filepath.Join(dir, "images", n.Name+".raw"), lab.DiskPath(dir, n, 0), n.Disks[0].Size); err != nil {
 			return err
+		}
+		for i, d := range n.Disks[1:] {
+			if err := lab.CreateDisk(ctx, lab.DiskPath(dir, n, i+1), d.Size); err != nil {
+				return err
+			}
 		}
 	}
 	// The ports are picked last, so they are most likely still free when the VMs start.
@@ -210,6 +175,9 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	if err := l.Write(dir); err != nil {
 		return err
 	}
+	if err := writeLabInventory(filepath.Join(dir, inventoryFile), inv, l, filepath.Join(dir, "keys", "db.crt")); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(a.stdout, "starting %s\n", strings.Join(nodeNames(l), ", "))
 	started = true
@@ -222,149 +190,89 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	return nil
 }
 
-// loadManifest evaluates the cluster's manifest, or reads it from --manifest, and returns it, as
-// JSON too, and the flake attribute of the cluster, empty for a manifest file.
-func (a *app) loadManifest(ctx context.Context, f createFlags) (*manifest.Manifest, []byte, string, error) {
-	var data []byte
-	var attr string
-	if f.manifest != "" {
-		var err error
-		if data, err = os.ReadFile(f.manifest); err != nil {
-			return nil, nil, "", err
-		}
-	} else {
-		name := f.cluster
-		if name == "" {
-			out, err := a.output(ctx, "nix", "eval", "--json", f.flake+"#chalkos", "--apply", "builtins.attrNames")
-			if err != nil {
-				return nil, nil, "", err
-			}
-			var names []string
-			if err := json.Unmarshal(out, &names); err != nil {
-				return nil, nil, "", fmt.Errorf("list the flake's clusters: %w", err)
-			}
-			if len(names) != 1 {
-				return nil, nil, "", fmt.Errorf("the flake %s defines the clusters %v; choose one with --cluster", f.flake, names)
-			}
-			name = names[0]
-		}
-		quoted, err := attrName(name)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		attr = "chalkos." + quoted
-		fmt.Fprintf(a.stdout, "evaluating %s#%s\n", f.flake, attr)
-		if data, err = a.output(ctx, "nix", "eval", "--json", f.flake+"#"+attr+".manifest"); err != nil {
-			return nil, nil, "", err
-		}
-	}
-	m, err := manifest.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, nil, "", err
-	}
-	return m, data, attr, nil
-}
-
-// buildImage builds the kvm image of a role and returns the directory holding it.
-func (a *app) buildImage(ctx context.Context, flake, attr string, m *manifest.Manifest, role string) (string, error) {
-	if _, ok := m.Roles[role].Images[platform]; !ok {
-		return "", fmt.Errorf("the cluster builds no %s image of the role %s", platform, role)
-	}
-	quoted, err := attrName(role)
-	if err != nil {
-		return "", err
-	}
-	out, err := a.output(ctx, "nix", "build", "--no-link", "--print-out-paths", flake+"#"+attr+".roles."+quoted+".images."+platform+"^out")
-	if err != nil {
-		return "", err
-	}
-	paths := strings.Fields(string(out))
-	if len(paths) != 1 {
-		return "", fmt.Errorf("nix build printed %d paths for the image of %s, want one", len(paths), role)
-	}
-	return paths[0], nil
-}
-
-// attrName quotes a name as one component of a flake attribute path, as chalkctl does.
-func attrName(name string) (string, error) {
-	if strings.Contains(name, `"`) {
-		return "", fmt.Errorf("the name %q contains a double quote, which a Nix attribute path cannot express", name)
-	}
-	var b strings.Builder
-	b.WriteByte('"')
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("-._~", c) >= 0 {
-			b.WriteByte(c)
-		} else {
-			fmt.Fprintf(&b, "%%%02X", c)
-		}
-	}
-	b.WriteByte('"')
-	return b.String(), nil
-}
-
-// labNodes are the cluster's nodes the lab runs, those named or all, sorted: nodes on kvm, each
-// with the MAC address of its NIC on the lab network.
-func labNodes(m *manifest.Manifest, named []string) ([]lab.LabNode, error) {
-	if len(named) == 0 {
-		named = slices.Sorted(maps.Keys(m.Nodes))
-	}
-	if len(named) == 0 {
-		return nil, fmt.Errorf("the cluster %s has no nodes", m.Cluster.Name)
-	}
-	var nodes []lab.LabNode
+// labNodes are the VMs of the lab file's nodes, in name order, with each node's image directory:
+// its Image's, which must hold a kvm image. A VM gets the MAC address the lab file gives it, and
+// the machine the lab file gives it or else its type's: 3072 MiB for a control plane, 2048 MiB
+// otherwise, 2 CPUs and one disk of 16G.
+func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.LabNode, map[string]string, error) {
+	images := map[string]string{}
 	macs := map[string]string{}
-	for _, name := range slices.Sorted(slices.Values(named)) {
-		n, ok := m.Nodes[name]
-		if !ok {
-			return nil, fmt.Errorf("the cluster %s has no node %s", m.Cluster.Name, name)
-		}
-		if n.Platform != platform {
-			return nil, fmt.Errorf("chalklab runs %s images, but %s is declared on %s (chalkos.nodes.%s.platform)", platform, name, n.Platform, name)
-		}
-		b, err := config.FromManifest(m, name)
+	var nodes []lab.LabNode
+	for _, name := range slices.Sorted(maps.Keys(lf.nodes)) {
+		m := lf.nodes[name]
+		nc, err := inv.Node(name)
 		if err != nil {
-			return nil, err
+			return nil, nil, fmt.Errorf("%s: %w", lf.path, err)
 		}
-		mac, err := labMAC(name, b.Documents)
+		md, err := nc.Resolve()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		if md.Platform != platform {
+			return nil, nil, fmt.Errorf("chalklab runs %s images, but the Image %s of %s is built for %s", platform, nc.ImageName, name, md.Platform)
+		}
+		hw, err := net.ParseMAC(m.MAC)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: the MAC address of %s: %w", lf.path, name, err)
+		}
+		mac := hw.String()
 		if other, ok := macs[mac]; ok {
-			return nil, fmt.Errorf("%s and %s match the same MAC address %s", other, name, mac)
+			return nil, nil, fmt.Errorf("%s gives %s and %s the same MAC address %s", lf.path, other, name, mac)
 		}
 		macs[mac] = name
-		nodes = append(nodes, lab.LabNode{Name: name, Role: n.Role, Kind: n.Kind, MAC: mac})
+		n := lab.LabNode{Name: name, Kind: nc.Type, MAC: mac, MemoryMB: 2048, CPUs: 2, Disks: []lab.LabDisk{{Size: "16G"}}}
+		if nc.Type == identity.KindControlPlane {
+			n.MemoryMB = 3072
+		}
+		if m.Memory != 0 {
+			n.MemoryMB = m.Memory
+		}
+		if m.CPUs != 0 {
+			n.CPUs = m.CPUs
+		}
+		if len(m.Disks) > 0 {
+			n.Disks = nil
+			for _, d := range m.Disks {
+				n.Disks = append(n.Disks, lab.LabDisk{Size: d.Size, Serial: d.Serial})
+			}
+		}
+		nodes = append(nodes, n)
+		images[name] = nc.ImageDir
 	}
-	return nodes, nil
+	return nodes, images, nil
 }
 
-// labMAC is the MAC address the lab gives a node's NIC on the lab network: the one address the
-// node's Network documents match by. The lab network carries the node's static addresses, as its
-// definition configures them; the user-mode NIC of each VM is configured by DHCP.
-func labMAC(name string, docs []config.Document) (string, error) {
-	networks, _ := config.NetworkMap(docs)["networks"].(map[string]any)
-	var macs []string
-	for _, key := range slices.Sorted(maps.Keys(networks)) {
-		network, _ := networks[key].(map[string]any)
-		match, _ := network["matchConfig"].(map[string]any)
-		if mac, ok := match["MACAddress"].(string); ok {
-			hw, err := net.ParseMAC(mac)
-			if err != nil || len(hw) != 6 {
-				return "", fmt.Errorf("chalkos.nodes.%s.network.networks.%s matches %q, not one MAC address", name, key, mac)
+// writeLabInventory writes the inventory chalkctl reaches the lab with: the lab file's inventory
+// with its paths absolute, so it reads the same from the lab's state directory; its nodes those the
+// lab runs, at their forwarded ports; the secrets file it found beside the lab file's inventory;
+// and the lab's db certificate, which signs the lab's images.
+func writeLabInventory(path string, inv *inventory.Inventory, l *lab.Lab, dbCert string) error {
+	spec := inv.Spec
+	spec.Nodes = map[string]inventory.Node{}
+	for _, n := range l.Nodes {
+		node := inv.Spec.Nodes[n.Name]
+		node.Address = "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
+		spec.Nodes[n.Name] = node
+	}
+	if spec.Secrets == "" {
+		for _, name := range []string{"secrets.age", "secrets.json"} {
+			if p := filepath.Join(inv.Dir(), name); fileExists(p) {
+				spec.Secrets = p
+				break
 			}
-			macs = append(macs, hw.String())
 		}
 	}
-	slices.Sort(macs)
-	switch macs = slices.Compact(macs); len(macs) {
-	case 1:
-		return macs[0], nil
-	case 0:
-		return "", fmt.Errorf("chalklab connects %s to the lab network by the MAC address one of its networks matches (matchConfig.MACAddress), and chalkos.nodes.%s.network matches none", name, name)
+	spec.SecureBoot = &inventory.SecureBoot{SignerCertificate: dbCert}
+	data, err := inventory.Encode(inv.Name, spec)
+	if err != nil {
+		return err
 	}
-	return "", fmt.Errorf("chalklab connects %s to the lab network by the MAC address one of its networks matches, and chalkos.nodes.%s.network matches several: %s", name, name, strings.Join(macs, ", "))
+	return os.WriteFile(path, data, 0o600)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func nodeNames(l *lab.Lab) []string {
@@ -466,11 +374,12 @@ func (a *app) startSupervisor(ctx context.Context, dir string) error {
 var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprint ([0-9a-f]{64})`)
 
 // setUp installs each node in place, bootstraps the first control plane, and writes a kubeconfig
-// and a client file that reach the lab through its forwarded ports.
+// that reaches the lab through its forwarded ports and an admin client file. chalkctl reads the
+// lab's inventory, which names the nodes at their forwarded ports.
 func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) error {
-	cluster := []string{"--manifest", filepath.Join(dir, manifestFile)}
-	if secrets := secretsFile(f); secrets != "" {
-		cluster = append(cluster, "--secrets", secrets)
+	cluster := []string{"--inventory", filepath.Join(dir, inventoryFile)}
+	if f.secrets != "" {
+		cluster = append(cluster, "--secrets", f.secrets)
 	}
 	for _, n := range l.Nodes {
 		addr := "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
@@ -484,7 +393,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 			return fmt.Errorf("%s: %w", n.Name, err)
 		}
 		fmt.Fprintf(a.stdout, "%s runs in maintenance mode with the certificate fingerprint %s\n", n.Name, fp)
-		if err := a.chalkctl(ctx, a.stdout, append([]string{"install", n.Name, "--fingerprint", fp, "--endpoint", addr}, cluster...)...); err != nil {
+		if err := a.chalkctl(ctx, a.stdout, append([]string{"install", n.Name, "--fingerprint", fp}, cluster...)...); err != nil {
 			return fmt.Errorf("install %s: %w", n.Name, err)
 		}
 	}
@@ -497,12 +406,11 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 		}
 	}
 	if cp != nil {
-		addr := "127.0.0.1:" + strconv.Itoa(cp.ChalkdPort)
 		fmt.Fprintf(a.stdout, "waiting for %s to wait for its bootstrap\n", cp.Name)
-		if err := a.waitBootstrap(ctx, cp.Name, addr, cluster); err != nil {
+		if err := a.waitBootstrap(ctx, cp.Name, cluster); err != nil {
 			return err
 		}
-		if err := a.chalkctl(ctx, a.stdout, append([]string{"bootstrap", cp.Name, "--endpoint", addr}, cluster...)...); err != nil {
+		if err := a.chalkctl(ctx, a.stdout, append([]string{"bootstrap", cp.Name}, cluster...)...); err != nil {
 			return err
 		}
 		if err := a.chalkctl(ctx, a.stdout, append([]string{"kubeconfig", "--out", filepath.Join(dir, kubeconfigFile), "--server", "https://127.0.0.1:" + strconv.Itoa(cp.APIPort)}, cluster...)...); err != nil {
@@ -512,32 +420,13 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 	if err := a.chalkctl(ctx, a.stdout, append([]string{"config", "new", "--name", "chalklab", "--role", "admin", "--out", filepath.Join(dir, clientFile)}, cluster...)...); err != nil {
 		return err
 	}
-	if err := forwardedClientFile(filepath.Join(dir, clientFile), l); err != nil {
-		return err
-	}
 
 	fmt.Fprintf(a.stdout, "\nthe lab of %s runs %s; next:\n", l.Cluster, strings.Join(nodeNames(l), ", "))
 	if cp != nil {
 		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n  kubectl get nodes\n", filepath.Join(dir, kubeconfigFile))
 	}
-	fmt.Fprintf(a.stdout, "  chalkctl status %s --config %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, filepath.Join(dir, clientFile))
+	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, filepath.Join(dir, inventoryFile))
 	return nil
-}
-
-// secretsFile is the secrets file chalkctl reads: --secrets, else secrets.age or secrets.json in
-// the flake directory, as an absolute path; empty when there is none, and chalkctl says so.
-func secretsFile(f createFlags) string {
-	if f.secrets != "" {
-		return f.secrets
-	}
-	for _, name := range []string{"secrets.age", "secrets.json"} {
-		if path, err := filepath.Abs(filepath.Join(f.flake, name)); err == nil {
-			if _, err := os.Stat(path); err == nil {
-				return path
-			}
-		}
-	}
-	return ""
 }
 
 // maintenanceFingerprint waits for a node's chalkd to come up in maintenance mode, and returns
@@ -588,13 +477,13 @@ func chalkdAnswers(ctx context.Context, addr, fingerprint string) error {
 
 // waitBootstrap waits until the control plane's status says it waits for its bootstrap, and prints
 // the line that says so, which names the cluster's endpoint.
-func (a *app) waitBootstrap(ctx context.Context, name, addr string, cluster []string) error {
+func (a *app) waitBootstrap(ctx context.Context, name string, cluster []string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	var last bytes.Buffer
 	for {
 		last.Reset()
-		if err := a.chalkctl(ctx, &last, append([]string{"status", name, "--endpoint", addr}, cluster...)...); err == nil {
+		if err := a.chalkctl(ctx, &last, append([]string{"status", name}, cluster...)...); err == nil {
 			for line := range strings.Lines(last.String()) {
 				if strings.Contains(line, "waiting for bootstrap") {
 					fmt.Fprintf(a.stdout, "%s: %s", name, line)
@@ -608,29 +497,6 @@ func (a *app) waitBootstrap(ctx context.Context, name, addr string, cluster []st
 		case <-time.After(5 * time.Second):
 		}
 	}
-}
-
-// forwardedClientFile makes the client file name the lab's nodes at their forwarded ports, which
-// it prefers to the cluster definition's addresses on the lab network.
-func forwardedClientFile(path string, l *lab.Lab) error {
-	c, err := client.ReadConfig(path)
-	if err != nil {
-		return err
-	}
-	c.Nodes = map[string]string{}
-	c.PreferNodeAddresses = true
-	for _, n := range l.Nodes {
-		c.Nodes[n.Name] = "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
-	}
-	data, err := c.Encode()
-	if err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 // kvmDevice is the device the lab's VMs run on.

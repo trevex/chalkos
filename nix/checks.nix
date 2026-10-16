@@ -52,7 +52,6 @@ let
           # Tests install nodes with the real chalkctl, from the test clusters' fixtures.
           CHALKLAB_CHALKCTL = lib.getExe chalkPkgs.chalkctl;
           CHALKLAB_SECRETS = "${chalkPkgs.test-secrets}/secrets.json";
-          CHALKLAB_MANIFESTS = "${chalkPkgs.test-manifests}";
           CHALKLAB_FIXTURES = "${../test/fixtures/clusters}";
         }
         // images

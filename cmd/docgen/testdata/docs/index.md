@@ -5,8 +5,8 @@
 chalkctl install cp1 --fingerprint 00ff --image ./image
 chalkctl gen secrets --plaintext
 KUBECONFIG=kubeconfig sudo chalkctl status cp1 --config=client.json | less
-chalklab create --nodes cp1,w1 \
-  --memory 1024
+chalklab create --lab lab.yaml \
+  --secrets secrets.json
 chalkctl logs cp1 -f --unit chalkd.service > log.txt 2>&1
 chalklab console cp1 -f=false
 chalkctl etcd members --help
@@ -14,7 +14,7 @@ chalkctl upgrade --max-unavailable N # placeholders are not checked
 echo "$(chalkctl recovery-key w1)"
 echo "key: $(chalkctl recovery-key w2 --inventory "$(pwd)")"
 nix run .#chalkctl -- status cp1 --config client.json
-nix run github:trevex/chalkos#chalklab -- create --nodes cp1
+nix run github:trevex/chalkos#chalklab -- create --lab lab.yaml
 sudo -E chalkctl status cp2
 sudo -u root chalkctl status cp3
 env FOO=1 chalkctl status cp4

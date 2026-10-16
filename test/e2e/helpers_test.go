@@ -9,7 +9,6 @@
 //	export CHALKLAB_CHALKLAB=$(nix build .#chalklab --no-link --print-out-paths)/bin/chalklab
 //	export CHALKLAB_SECRETS=$(nix build .#test-secrets --no-link --print-out-paths)/secrets.json
 //	export CHALKLAB_FIXTURES=$PWD/test/fixtures/clusters
-//	export CHALKLAB_MANIFESTS=$(nix build .#test-manifests --no-link --print-out-paths)
 package e2e
 
 import (

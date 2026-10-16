@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -23,6 +22,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/lab"
 )
 
 // rotationSecret is the Secret whose data must survive every rotation, the encryption key's
@@ -57,16 +57,16 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 	if _, err := cs.CoreV1().Secrets("default").Create(ctx, rotationSecret, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	// Every node of the cluster definition takes part in a rotation; this test runs cp1 and w1
-	// alone of the nodes base.json defines.
-	manifest := clusterOf(t, dir, "cp1", "w1")
+	// Every node of the inventory takes part in a rotation: the lab's inventory names cp1 and w1
+	// alone, at their forwarded ports.
+	state, err := lab.StateDir("chalklab")
+	if err != nil {
+		t.Fatal(err)
+	}
 	rotate := func(args ...string) {
 		t.Helper()
 		args = append([]string{"rotate"}, args...)
-		args = append(args, "--manifest", manifest, "--secrets", secrets)
-		for _, name := range []string{"cp1", "w1"} {
-			args = append(args, "--endpoint", name+"="+nodes[name].addr)
-		}
+		args = append(args, "--inventory", filepath.Join(state, "chalkos.yaml"), "--secrets", secrets)
 		// A phase waits for the control plane's pods to restart, which takes minutes on a loaded
 		// machine.
 		rctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
@@ -168,37 +168,6 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 		works(cs, "the encryption key's rotation", time.Now())
 	})
 	logMemory(t, ctx, cs)
-}
-
-// clusterOf writes the cluster definition of base.json with the named nodes alone, and returns
-// its path.
-func clusterOf(t *testing.T, dir string, names ...string) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(os.Getenv("CHALKLAB_MANIFESTS"), "base.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatal(err)
-	}
-	all, _ := m["nodes"].(map[string]any)
-	nodes := map[string]any{}
-	for _, name := range names {
-		if all[name] == nil {
-			t.Fatalf("base.json has no node %s", name)
-		}
-		nodes[name] = all[name]
-	}
-	m["nodes"] = nodes
-	if data, err = json.Marshal(m); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "cluster.json")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 // copySecrets copies the test's secrets file and its public half to a directory of the test,

@@ -20,38 +20,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/lab"
-	"github.com/trevex/chalkos/pkg/manifest"
-	"github.com/trevex/chalkos/pkg/pki"
 )
-
-// labManifest is a cluster of a control plane and a worker on kvm, as the lab template defines
-// them, and a node on metal.
-const labManifest = `{
-  "schemaVersion": 0,
-  "cluster": {"name": "lab", "endpoint": "https://192.168.123.11:6443"},
-  "roles": {"node": {"images": {"kvm": "roles.node.images.kvm", "metal": "roles.node.images.metal"}}},
-  "nodes": {
-    "cp1": {"role": "node", "kind": "controlplane", "platform": "kvm", "identity": {"hostname": "cp1", "platform": "kvm",
-      "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7b:00:11"}, "address": ["192.168.123.11/24"]}}},
-      "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7b:00:11\n\n[Network]\nAddress=192.168.123.11/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "w1": {"role": "node", "kind": "worker", "platform": "kvm", "identity": {"hostname": "w1", "platform": "kvm",
-      "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7B:00:12"}, "address": ["192.168.123.12/24"]}}},
-      "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7B:00:12\n\n[Network]\nAddress=192.168.123.12/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "m1": {"role": "node", "kind": "worker", "platform": "metal", "identity": {"hostname": "m1", "platform": "metal",
-      "network": {}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
-  }
-}`
-
-func decodeManifest(t *testing.T) *manifest.Manifest {
-	t.Helper()
-	m, err := manifest.Decode(strings.NewReader(labManifest))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return m
-}
 
 func testApp() (*app, *bytes.Buffer) {
 	var out bytes.Buffer
@@ -61,44 +32,148 @@ func testApp() (*app, *bytes.Buffer) {
 	}, &out
 }
 
-// TestLabNodes runs the kvm nodes named, each with the MAC address its lab network matches, and
-// refuses nodes of another platform or without one MAC address.
+// writeLabFiles writes an inventory of cp1 and w1, whose Image node-kvm is images/node-kvm, and
+// m1, whose Image node-metal is a metal image, and the lab file given; it returns the lab file's
+// path.
+func writeLabFiles(t *testing.T, dir, labFile string) string {
+	t.Helper()
+	files := map[string]string{
+		"chalkos.yaml": "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n  files: [cluster.yaml]\n  nodes:\n" +
+			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {files: [m1.yaml]}\n",
+		"cluster.yaml": "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n---\n" +
+			"apiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: node-kvm}\nspec: {source: {directory: images/node-kvm}}\n---\n" +
+			"apiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: node-metal}\nspec: {source: {directory: images/node-metal}}\n",
+		"cp1.yaml":      "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: cp1}\nspec: {type: controlplane, imageRef: node-kvm}\n",
+		"w1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: w1}\nspec: {type: worker, imageRef: node-kvm}\n",
+		"m1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: m1}\nspec: {type: worker, imageRef: node-metal}\n",
+		"chalklab.yaml": labFile,
+	}
+	for _, p := range []string{"kvm", "metal"} {
+		files["images/node-"+p+"/metadata.json"] = `{"schemaVersion": 0, "id": "chalkos", "version": "0.1.0", "variant": "node", "platform": "` + p + `", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, "chalklab.yaml")
+}
+
+// testLab runs cp1 with the defaults of a control plane, and w1 with its own machine.
+const testLab = `apiVersion: chalklab.chalkos.dev/v1alpha1
+kind: Lab
+metadata: {name: lab}
+spec:
+  inventory: ./chalkos.yaml
+  nodes:
+    cp1: {mac: "52:54:00:7B:00:11"}
+    w1: {mac: "52:54:00:7b:00:12", memory: 1024, cpus: 1, disks: [{size: 20G}, {size: 1G, serial: chalk-data}]}
+`
+
+// TestLabNodes runs the nodes of the lab file, each with its MAC address and the machine its type
+// gives it unless the lab file says otherwise, from the image directory of its Image; it refuses a
+// node of a metal image, two nodes of one MAC address, and a node the inventory lacks.
 func TestLabNodes(t *testing.T) {
-	m := decodeManifest(t)
-	nodes, err := labNodes(m, []string{"w1", "cp1"})
+	dir := t.TempDir()
+	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inventory.Load(lf.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, images, err := labNodes(inv, lf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []lab.LabNode{
-		{Name: "cp1", Role: "node", Kind: "controlplane", MAC: "52:54:00:7b:00:11"},
-		{Name: "w1", Role: "node", Kind: "worker", MAC: "52:54:00:7b:00:12"},
+		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, Disks: []lab.LabDisk{{Size: "16G"}}},
+		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 1024, CPUs: 1, Disks: []lab.LabDisk{{Size: "20G"}, {Size: "1G", Serial: "chalk-data"}}},
 	}
-	if !slices.Equal(nodes, want) {
+	if !reflect.DeepEqual(nodes, want) {
 		t.Errorf("nodes = %+v, want %+v", nodes, want)
 	}
-	if _, err := labNodes(m, nil); err == nil || !strings.Contains(err.Error(), "m1 is declared on metal") {
-		t.Errorf("a lab of every node = %v, want m1 refused", err)
+	if images["cp1"] != filepath.Join(dir, "images", "node-kvm") {
+		t.Errorf("images = %v", images)
 	}
-	for name, units := range map[string]map[string]string{
-		"matches none": {},
-		"matches several": {
-			"a.network": "[Match]\nMACAddress=52:54:00:00:00:01\n",
-			"b.network": "[Match]\nMACAddress=52:54:00:00:00:02\n",
-		},
-		"not one MAC address": {"a.network": "[Match]\nMACAddress=52:54:00:00:00:01 52:54:00:00:00:02\n"},
+	for name, tc := range map[string]struct{ lab, want string }{
+		"a metal image":     {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "chalklab runs kvm images, but the Image node-metal of m1 is built for metal"},
+		"one MAC address":   {strings.Replace(testLab, "52:54:00:7b:00:12", "52:54:00:7b:00:11", 1), "the same MAC address 52:54:00:7b:00:11"},
+		"no inventory node": {strings.Replace(testLab, "    w1:", "    x9: {mac: \"52:54:00:7b:00:19\"}\n    w1:", 1), "has no node x9"},
 	} {
-		n := m.Nodes["w1"]
-		n.Identity.NetworkUnits = units
-		m.Nodes["w1"] = n
-		if _, err := labNodes(m, []string{"w1"}); err == nil || !strings.Contains(err.Error(), name) {
-			t.Errorf("a network that %s: %v", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			lf, err := readLabFile(writeLabFiles(t, t.TempDir(), tc.lab))
+			if err != nil {
+				t.Fatal(err)
+			}
+			inv, err := inventory.Load(lf.inventory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := labNodes(inv, lf); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("labNodes = %v, want %q", err, tc.want)
+			}
+		})
 	}
-	n := m.Nodes["w1"]
-	n.Identity.NetworkUnits = m.Nodes["cp1"].Identity.NetworkUnits
-	m.Nodes["w1"] = n
-	if _, err := labNodes(m, []string{"cp1", "w1"}); err == nil || !strings.Contains(err.Error(), "the same MAC address") {
-		t.Errorf("two nodes of one MAC address: %v", err)
+}
+
+// TestReadLabFileRefuses refuses a lab file its schema does not accept.
+func TestReadLabFileRefuses(t *testing.T) {
+	for name, tc := range map[string]struct{ lab, want string }{
+		"no MAC address":  {strings.Replace(testLab, `cp1: {mac: "52:54:00:7B:00:11"}`, "cp1: {memory: 2048}", 1), "mac"},
+		"a malformed MAC": {strings.Replace(testLab, "52:54:00:7B:00:11", "52-54-00-7b-00-11", 1), "52-54-00-7b-00-11"},
+		"no nodes":        {strings.SplitAfter(testLab, "  nodes:\n")[0] + "    {}\n", "nodes"},
+		"another kind":    {strings.Replace(testLab, "kind: Lab", "kind: Inventory", 1), `"Inventory"`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := readLabFile(writeLabFiles(t, t.TempDir(), tc.lab)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("readLabFile = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestLabInventory writes the inventory chalkctl reaches the lab with: the lab's nodes alone at
+// their forwarded ports, every path absolute, the secrets file beside the lab file's inventory and
+// the lab's db certificate.
+func TestLabInventory(t *testing.T) {
+	dir := t.TempDir()
+	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inventory.Load(lf.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "chalkos.yaml")
+	l := &lab.Lab{Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001}}}
+	if err := writeLabInventory(path, inv, l, "/state/keys/db.crt"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := inventory.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.NodeNames(), []string{"cp1"}) || got.Spec.Nodes["cp1"].Address != "127.0.0.1:15001" ||
+		got.Spec.Secrets != filepath.Join(dir, "secrets.json") || got.Spec.SecureBoot.SignerCertificate != "/state/keys/db.crt" ||
+		!slices.Equal(got.Spec.Files, []string{filepath.Join(dir, "cluster.yaml")}) {
+		t.Errorf("the lab's inventory = %+v", got.Spec)
+	}
+	nc, err := got.Node("cp1")
+	if err != nil || nc.ImageDir != filepath.Join(dir, "images", "node-kvm") {
+		t.Errorf("cp1's config = %+v, %v", nc, err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("the lab's inventory: %v, %v; want mode 0600", info.Mode(), err)
 	}
 }
 
@@ -160,15 +235,13 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", state)
 	t.Setenv("CHALKLAB_OVMF_CODE", "/fw/CODE.fd")
 	t.Setenv("CHALKLAB_OVMF_VARS", "/fw/VARS.fd")
-	path := filepath.Join(t.TempDir(), "manifest.json")
-	if err := os.WriteFile(path, []byte(labManifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	path := writeLabFiles(t, t.TempDir(), testLab)
 	dir, _ := lab.StateDir("lab")
 	a, _ := testApp()
-	err = a.run(context.Background(), []string{"create", "--manifest", path, "--nodes", "cp1,w1"})
-	if err == nil || !strings.Contains(err.Error(), "pass --image node=DIR") {
-		t.Fatalf("create without the role's image = %v", err)
+	// The test app runs no virt-fw-vars, so creating the lab's keys fails.
+	err = a.run(context.Background(), []string{"create", "--lab", path})
+	if err == nil || !strings.Contains(err.Error(), "not in the test") {
+		t.Fatalf("create = %v, want the keys' enrolment to fail", err)
 	}
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a failed create left %s: %v", dir, err)
@@ -176,47 +249,12 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err = a.run(context.Background(), []string{"create", "--manifest", path, "--nodes", "cp1,w1"})
+	err = a.run(context.Background(), []string{"create", "--lab", path})
 	if err == nil || !strings.Contains(err.Error(), "chalklab destroy removes it") {
 		t.Fatalf("create over a lab = %v", err)
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Errorf("create removed the existing lab: %v", err)
-	}
-}
-
-// TestForwardedClientFile names the lab's nodes at their forwarded ports in the client file and
-// keeps it its owner's alone.
-func TestForwardedClientFile(t *testing.T) {
-	secrets, err := pki.GenerateSecrets(time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := client.NewConfig(secrets.OSCA, secrets.OSCABundle(), "lab", "chalklab", pki.RoleAdmin, time.Hour, map[string]string{"cp1": "192.168.123.11", "m1": "10.0.0.5"}, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, _ := c.Encode()
-	path := filepath.Join(t.TempDir(), clientFile)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	l := &lab.Lab{Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001}, {Name: "w1", ChalkdPort: 15002}}}
-	if err := forwardedClientFile(path, l); err != nil {
-		t.Fatal(err)
-	}
-	got, err := client.ReadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.PreferNodeAddresses {
-		t.Error("the client file does not prefer its addresses to the cluster definition's")
-	}
-	if len(got.Nodes) != 2 || got.Nodes["cp1"] != "127.0.0.1:15001" || got.Nodes["w1"] != "127.0.0.1:15002" {
-		t.Errorf("nodes = %v", got.Nodes)
-	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("the client file: %v, %v; want mode 0600", info.Mode(), err)
 	}
 }
 
@@ -365,7 +403,7 @@ func TestCreateNeedsKVM(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "kvm")
 	kvmDevice = missing
 	a, _ := testApp()
-	err := a.run(context.Background(), []string{"create", "--manifest", "/nonexistent.json"})
+	err := a.run(context.Background(), []string{"create", "--lab", "/nonexistent.yaml"})
 	if err == nil || !strings.Contains(err.Error(), missing) || !strings.Contains(err.Error(), "KVM") {
 		t.Errorf("create without KVM = %v, want %s named", err, missing)
 	}
@@ -373,7 +411,7 @@ func TestCreateNeedsKVM(t *testing.T) {
 		if err := os.WriteFile(missing, nil, 0o000); err != nil {
 			t.Fatal(err)
 		}
-		if err := a.run(context.Background(), []string{"create", "--manifest", "/nonexistent.json"}); err == nil || !strings.Contains(err.Error(), "kvm group") {
+		if err := a.run(context.Background(), []string{"create", "--lab", "/nonexistent.yaml"}); err == nil || !strings.Contains(err.Error(), "kvm group") {
 			t.Errorf("create without access to KVM = %v, want the kvm group named", err)
 		}
 	}
@@ -407,11 +445,11 @@ func TestSignIntoAnExistingDirectory(t *testing.T) {
 	}
 }
 
-// TestStatusNamesTheLabsFiles names the kubeconfig, the client file and the db key and
+// TestStatusNamesTheLabsFiles names the kubeconfig, the inventory, the client file and the db key and
 // certificate an upgrade's images are signed with.
 func TestStatusNamesTheLabsFiles(t *testing.T) {
 	dir := writeLab(t)
-	for _, name := range []string{kubeconfigFile, clientFile, "keys/db.key", "keys/db.crt"} {
+	for _, name := range []string{kubeconfigFile, inventoryFile, clientFile, "keys/db.key", "keys/db.crt"} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -423,7 +461,7 @@ func TestStatusNamesTheLabsFiles(t *testing.T) {
 	if err := a.run(context.Background(), []string{"status"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"kubeconfig: " + dir + "/kubeconfig", "client file: " + dir + "/chalkctl.json", "Secure Boot db key: " + dir + "/keys/db.key", "Secure Boot db certificate: " + dir + "/keys/db.crt"} {
+	for _, want := range []string{"kubeconfig: " + dir + "/kubeconfig", "inventory: " + dir + "/chalkos.yaml", "client file: " + dir + "/chalkctl.json", "Secure Boot db key: " + dir + "/keys/db.key", "Secure Boot db certificate: " + dir + "/keys/db.crt"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("status = %q, want %q", out, want)
 		}
@@ -439,10 +477,10 @@ func TestWaitBootstrapPrintsTheStatus(t *testing.T) {
 		if args[0] != "status" || args[1] != "cp1" {
 			return errors.New("unexpected chalkctl " + strings.Join(args, " "))
 		}
-		_, err := io.WriteString(w, "config abc (the cluster definition's)\n"+line+"\n")
+		_, err := io.WriteString(w, "config abc (the inventory's)\n"+line+"\n")
 		return err
 	}
-	if err := a.waitBootstrap(context.Background(), "cp1", "127.0.0.1:15001", nil); err != nil {
+	if err := a.waitBootstrap(context.Background(), "cp1", nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := "cp1: " + line + "\n"; !strings.Contains(out.String(), want) {

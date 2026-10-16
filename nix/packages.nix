@@ -18,7 +18,6 @@ in
 {
   test-secureboot = import ./testing/secureboot.nix { inherit pkgs; };
   test-secrets = testing.secrets;
-  test-manifests = testing.manifests;
   test-bridge = testing.bridge;
 
   chalkctl = goModule {

@@ -21,9 +21,9 @@ chalklab sign <image> [flags]
 ## Examples
 
 ```
-  # Sign a copy of an image in the Nix store and upgrade the lab's nodes of its role with it.
-  chalklab sign /nix/store/...-chalkos-worker-image --out worker-image
-  chalkctl upgrade --image worker-image --config ~/.local/state/chalklab/lab/chalkctl.json
+  # Sign a copy of an image in the Nix store and upgrade the lab's nodes of its variant with it.
+  chalklab sign /nix/store/...-chalkos-node-image --out node-image
+  chalkctl upgrade --image node-image --inventory ~/.local/state/chalklab/lab/chalkos.yaml
 ```
 
 ## Options
