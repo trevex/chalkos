@@ -9,7 +9,7 @@
 }:
 let
   inherit (lib) mkOption types;
-  kubernetesKind = config.chalkos.role.kubernetes.kind;
+  kubernetes = config.chalkos.role.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
   # A host as registries are named: a DNS name, an IPv4 address or an IPv6 address in brackets.
   # The closing bracket stays unescaped: POSIX ERE has no \], and a lone ] is literal in ERE,
@@ -282,7 +282,7 @@ in
       };
     };
   }
-  // lib.optionalAttrs (kubernetesKind != null) {
+  // lib.optionalAttrs kubernetes {
     Kubelet = builtin "kubernetes.chalkos.dev" // {
       spec = {
         labels = mkOption {
@@ -426,7 +426,7 @@ in
       };
     };
   }
-  // lib.optionalAttrs (kubernetesKind != null && flannel) {
+  // lib.optionalAttrs (kubernetes && flannel) {
     Flannel = builtin "kubernetes.chalkos.dev" // {
       spec.mtu = mkOption {
         type = types.nullOr types.ints.positive;

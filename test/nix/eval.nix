@@ -580,17 +580,12 @@ lib.runTests {
       };
     };
   # A kvm image finds its disks at boot: the initrd loads virtio's PCI transport and its block and
-  # SCSI drivers, for a control plane and a worker as the lab template defines them. A metal image
+  # SCSI drivers, for the image the lab template's nodes run. A metal image
   # leaves them out, as real machines have no virtio disks.
   testKvmInitrdVirtio = {
     expr =
       let
-        c = cluster [
-          {
-            chalkos.roles.controlplane.kubernetes.kind = "controlplane";
-            chalkos.roles.worker.kubernetes.kind = "worker";
-          }
-        ];
+        c = cluster [ ];
         virtio =
           platform: role:
           lib.sort lib.lessThan (
@@ -601,10 +596,7 @@ lib.runTests {
           );
       in
       {
-        kvm = map (virtio "kvm") [
-          "controlplane"
-          "worker"
-        ];
+        kvm = virtio "kvm" "worker";
         metal = virtio "metal" "worker";
       };
     expected =
@@ -616,10 +608,7 @@ lib.runTests {
         ];
       in
       {
-        kvm = [
-          drivers
-          drivers
-        ];
+        kvm = drivers;
         metal = [ ];
       };
   };
@@ -1523,38 +1512,45 @@ lib.runTests {
       n2HasScratch = true;
     };
   };
-  testRoleKindDefaultsToWorker = {
+  testNodeKindDefaultsToWorker = {
     expr = {
-      manifest = twoNodes.manifest.roles.worker.kind;
-      image = (role (cluster [ ])).chalkos.role.kubernetes.kind;
+      manifest = twoNodes.manifest.nodes.n1.kind;
+      roleKind = twoNodes.manifest.roles.worker ? kind;
+      image = (role (cluster [ ])).chalkos.role.kubernetes.enable;
     };
     expected = {
       manifest = "worker";
-      image = "worker";
+      roleKind = false;
+      image = true;
     };
   };
   testRoleWithoutKubernetes = {
     expr =
       let
-        c = cluster [
-          {
-            chalkos.roles.worker.kubernetes.kind = null;
-            chalkos.nodes.n1 = {
-              role = "worker";
-              storage.system.disk = "/dev/vda";
-            };
-          }
-        ];
+        c =
+          kind:
+          cluster [
+            {
+              chalkos.roles.worker.kubernetes.enable = false;
+              chalkos.nodes.n1 = {
+                role = "worker";
+                storage.system.disk = "/dev/vda";
+                kubernetes.kind = kind;
+              };
+            }
+          ];
       in
       {
-        manifest = c.manifest.roles.worker.kind;
-        identity = c.manifest.nodes.n1.identity.kubernetes;
-        image = (role c).chalkos.role.kubernetes.kind;
+        manifest = (c "worker").manifest.nodes.n1.kind;
+        identity = (c "worker").manifest.nodes.n1.identity.kubernetes;
+        image = (role (c "worker")).chalkos.role.kubernetes.enable;
+        controlPlane = fails (c "controlplane").manifest;
       };
     expected = {
       manifest = null;
       identity = null;
-      image = null;
+      image = false;
+      controlPlane = true;
     };
   };
   testNodeIPDefaultsToFirstStaticAddress = {
@@ -2271,9 +2267,9 @@ lib.runTests {
             {
               chalkos.cluster.endpoint = lib.mkForce endpoint;
               chalkos.cluster.kubernetes.vip = vip;
-              chalkos.roles.worker.kubernetes.kind = "controlplane";
               chalkos.nodes.cp1 = {
                 role = "worker";
+                kubernetes.kind = "controlplane";
                 storage.system.disk = "/dev/vda";
                 kubernetes.nodeIP = "10.0.0.11";
               };
@@ -2430,9 +2426,10 @@ lib.runTests {
                   "ipv4"
                   "ipv6"
                 ];
-                chalkos.roles.cp.kubernetes.kind = "controlplane";
+                chalkos.roles.cp = { };
                 chalkos.nodes.cp1 = {
                   role = "cp";
+                  kubernetes.kind = "controlplane";
                   storage.system.disk = "/dev/vda";
                   kubernetes.nodeIPs = [
                     "10.0.0.11"
@@ -2441,6 +2438,7 @@ lib.runTests {
                 };
                 chalkos.nodes.ip6 = {
                   role = "cp";
+                  kubernetes.kind = "controlplane";
                   storage.system.disk = "/dev/vda";
                   kubernetes.nodeIPs = [
                     "fd00::11"
@@ -2463,14 +2461,16 @@ lib.runTests {
             (cluster [
               {
                 chalkos.cluster.endpoint = lib.mkForce "https://10.0.0.10:6443";
-                chalkos.roles.cp.kubernetes.kind = "controlplane";
+                chalkos.roles.cp = { };
                 chalkos.nodes.cp1 = {
                   role = "cp";
+                  kubernetes.kind = "controlplane";
                   storage.system.disk = "/dev/vda";
                   kubernetes.nodeIP = "10.0.0.11";
                 };
                 chalkos.nodes.cp2 = {
                   role = "cp";
+                  kubernetes.kind = "controlplane";
                   storage.system.disk = "/dev/vda";
                   kubernetes.validSubnets = [ "10.0.0.0/24" ];
                 };
@@ -2489,14 +2489,16 @@ lib.runTests {
                 chalkos.cluster.endpoint = lib.mkForce endpoint;
                 chalkos.cluster.kubernetes.nodeIP.validSubnets = clusterSubnets;
                 chalkos.cluster.kubernetes.ipFamilies = [ (if ipv6 then "ipv6" else "ipv4") ];
-                chalkos.roles.cp.kubernetes.kind = "controlplane";
+                chalkos.roles.cp = { };
                 chalkos.nodes.cp1 = {
                   role = "cp";
+                  kubernetes.kind = "controlplane";
                   storage.system.disk = "/dev/vda";
                   kubernetes.nodeIPs = [ (if ipv6 then "fd00:1::11" else "10.0.0.11") ];
                 };
                 chalkos.nodes.cp2 = {
                   role = "cp";
+                  kubernetes.kind = "controlplane";
                   storage.system.disk = "/dev/vda";
                   kubernetes.validSubnets = nodeSubnets;
                 };
@@ -2552,11 +2554,18 @@ lib.runTests {
   testKubernetesNodeRejectsSwap = {
     expr =
       let
+        # A node of the kind, or with null on a role without Kubernetes.
+        kindOf =
+          kind:
+          if kind == null then
+            { chalkos.roles.worker.kubernetes.enable = false; }
+          else
+            { chalkos.nodes.n1.kubernetes.kind = kind; };
         swapManifest =
           kind:
           (cluster [
+            (kindOf kind)
             {
-              chalkos.roles.worker.kubernetes.kind = kind;
               chalkos.nodes.n1 = {
                 role = "worker";
                 storage.system.disk = "/dev/vda";
@@ -2599,12 +2608,19 @@ lib.runTests {
   testKubernetesNodeRejectsRestrictedLabels = {
     expr =
       let
+        # A node of the kind, or with null on a role without Kubernetes.
+        kindOf =
+          kind:
+          if kind == null then
+            { chalkos.roles.worker.kubernetes.enable = false; }
+          else
+            { chalkos.nodes.n1.kubernetes.kind = kind; };
         rejects =
           kind: label:
           fails
             (cluster [
+              (kindOf kind)
               {
-                chalkos.roles.worker.kubernetes.kind = kind;
                 chalkos.nodes.n1 = {
                   role = "worker";
                   storage.system.disk = "/dev/vda";
@@ -2653,9 +2669,9 @@ lib.runTests {
     expr =
       (cluster [
         {
-          chalkos.roles.worker.kubernetes.kind = "controlplane";
           chalkos.nodes.n1 = {
             role = "worker";
+            kubernetes.kind = "controlplane";
             storage.system.disk = "/dev/vda";
           };
         }
@@ -2719,7 +2735,7 @@ lib.runTests {
   testKubernetesOnlyInKubernetesRoles = {
     expr =
       let
-        image = kind: role (cluster [ { chalkos.roles.worker.kubernetes.kind = kind; } ]);
+        image = enable: role (cluster [ { chalkos.roles.worker.kubernetes.enable = enable; } ]);
         services = config: {
           kubelet = config.systemd.services ? kubelet;
           containerd = config.virtualisation.containerd.enable;
@@ -2727,9 +2743,9 @@ lib.runTests {
         };
       in
       {
-        none = services (image null);
-        worker = services (image "worker");
-        prepare = lib.hasInfix "/bin/chalkd prepare-kubernetes" (image "worker")
+        none = services (image false);
+        worker = services (image true);
+        prepare = lib.hasInfix "/bin/chalkd prepare-kubernetes" (image true)
         .systemd.services.chalkos-kubernetes.serviceConfig.ExecStart;
       };
     expected = {
@@ -2746,12 +2762,11 @@ lib.runTests {
       prepare = true;
     };
   };
-  testControlPlaneImage = {
+  testKubernetesImage = {
     expr =
       let
         c = cluster [
           {
-            chalkos.roles.worker.kubernetes.kind = "controlplane";
             chalkos.cluster.manifests = [
               {
                 apiVersion = "v1";
@@ -2772,6 +2787,7 @@ lib.runTests {
           2379
           2380
         ];
+        apiServerPort = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
         markedPorts = lib.hasInfix "tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept" config.networking.firewall.extraInputRules;
         # chalkd renders the addons and reads the manifests from the config.
         manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
@@ -2791,7 +2807,6 @@ lib.runTests {
             unit =
               (role (cluster [
                 {
-                  chalkos.roles.worker.kubernetes.kind = "controlplane";
                   chalkos.roles.worker.nixosModules = [ { networking.firewall.enable = false; } ];
                 }
               ])).systemd.services.chalkos-controlplane;
@@ -2801,6 +2816,7 @@ lib.runTests {
     expected = {
       clusterFile = false;
       firewall = false;
+      apiServerPort = false;
       markedPorts = true;
       manifests = false;
       etcdDir = false;
@@ -2809,23 +2825,6 @@ lib.runTests {
       etcdMount = "/var/lib/etcd";
       kubeletEtcdMount = "/var/lib/etcd";
       afterAbsentFirewall = false;
-    };
-  };
-  testWorkerImageHasNoManifests = {
-    expr =
-      let
-        config = role (cluster [ ]);
-      in
-      {
-        manifests = config.environment.etc ? "chalkos/kubernetes/manifests.json";
-        apiServerPort = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
-        # The control plane's rule, which only a control plane's table makes match.
-        markedPorts = lib.hasInfix "tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept" config.networking.firewall.extraInputRules;
-      };
-    expected = {
-      manifests = false;
-      apiServerPort = false;
-      markedPorts = true;
     };
   };
   # One directory with the plugins the cluster names, copied out of nixpkgs's packages: those
@@ -3206,13 +3205,7 @@ lib.runTests {
     expr =
       let
         clusterFile =
-          flags:
-          kubernetesSettings [
-            {
-              chalkos.roles.worker.kubernetes.kind = "controlplane";
-              chalkos.cluster.kubernetes.extraArgs.kube-apiserver = flags;
-            }
-          ];
+          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kube-apiserver = flags; } ];
       in
       {
         authorization = fails (clusterFile {
@@ -3757,7 +3750,7 @@ lib.runTests {
         ] (names c);
         nfs = lib.elem "nfs-utils" (names (image { } [ { boot.supportedFilesystems.nfs = true; } ]));
         debug = added { } debug;
-        debugWithoutKubernetes = added { kubernetes.kind = null; } debug;
+        debugWithoutKubernetes = added { kubernetes.enable = false; } debug;
         # D-Bus finds systemd's services and policies through the system path.
         dbus = lib.elem c.system.path c.services.dbus.packages && lib.elem "systemd" (names c);
         locales = c.i18n.supportedLocales;

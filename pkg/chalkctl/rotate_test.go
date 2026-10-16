@@ -30,11 +30,11 @@ import (
 const rotationManifest = `{
   "schemaVersion": 0,
   "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}, "kind": "controlplane"}, "w": {"images": {"metal": "roles.w.images.metal"}, "kind": "worker"}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
+  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}}, "w": {"images": {"metal": "roles.w.images.metal"}}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
   "nodes": {
-    "cp1": {"role": "cp", "identity": {"hostname": "cp1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "cp2": {"role": "cp", "identity": {"hostname": "cp2", "network": {"networks": {"10-uplink": {"address": ["10.0.0.12/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "w1": {"role": "w", "identity": {"hostname": "w1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.21/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+    "cp1": {"role": "cp", "kind": "controlplane", "identity": {"hostname": "cp1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.11/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+    "cp2": {"role": "cp", "kind": "controlplane", "identity": {"hostname": "cp2", "network": {"networks": {"10-uplink": {"address": ["10.0.0.12/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
+    "w1": {"role": "w", "kind": "worker", "identity": {"hostname": "w1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.21/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
     "n1": {"role": "plain", "identity": {"hostname": "n1", "network": {"networks": {"10-uplink": {"address": ["10.0.0.31/24"]}}}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
   }
 }`
@@ -341,7 +341,7 @@ func newRotationLab(t *testing.T) *rotationLab {
 	}
 	l := &rotationLab{t: t, ta: ta, nodes: map[string]*fakeNode{}, addrs: map[string]string{}, encrypted: map[string]uint64{pki.DefaultEncryptionKeyName: 3}}
 	for name, node := range m.Nodes {
-		n := &fakeNode{lab: l, name: name, kind: m.Roles[node.Role].Kind}
+		n := &fakeNode{lab: l, name: name, kind: node.Kind}
 		dir := filepath.Join(t.TempDir(), "chalkd")
 		cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 		if err != nil {

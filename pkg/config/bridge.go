@@ -63,8 +63,8 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		cluster["endpoint"] = m.Cluster.Endpoint
 	}
 	node := map[string]any{"imageRef": image}
-	if role.Kind != "" {
-		node["type"] = role.Kind
+	if n.Kind != "" {
+		node["type"] = n.Kind
 	}
 	if id.Hostname != "" && id.Hostname != name {
 		node["hostname"] = id.Hostname
@@ -88,8 +88,8 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 	if id.Kubernetes != nil {
 		objects = append(objects, kubeletObject(id))
 	}
-	if role.Kind != "" {
-		docs, err := kubernetesObjects(m, role.Kind == manifest.KindControlPlane)
+	if n.Kind != "" {
+		docs, err := kubernetesObjects(m, n.Kind == manifest.KindControlPlane)
 		if err != nil {
 			return Bridged{}, err
 		}
@@ -107,7 +107,7 @@ func FromManifest(m *manifest.Manifest, name string) (Bridged, error) {
 		return Bridged{}, err
 	}
 	b.node, b.extensions = name, len(n.Documents)
-	b.kubernetes, b.controlPlane = role.Kind != "", role.Kind == manifest.KindControlPlane
+	b.kubernetes, b.controlPlane = n.Kind != "", n.Kind == manifest.KindControlPlane
 	b.registries, b.manifests, b.dhcp = m.Registries, m.Manifests, m.Time.DHCPServers
 	return b, nil
 }

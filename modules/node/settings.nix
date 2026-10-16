@@ -35,17 +35,12 @@
           an image of another platform, and translates its config for its own.
         '';
       };
-      options.role.kubernetes.kind = lib.mkOption {
-        type = lib.types.nullOr (
-          lib.types.enum [
-            "controlplane"
-            "worker"
-          ]
-        );
-        default = null;
+      options.role.kubernetes.enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
         description = ''
-          The role's `kubernetes.kind` from the cluster definition, set by the role builder;
-          null builds an image without Kubernetes, as the installer is.
+          Whether the image runs Kubernetes, from the role's `kubernetes.enable`, set by the role
+          builder; the installer runs none. A node's kind comes with its config.
         '';
       };
     };

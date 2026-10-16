@@ -72,7 +72,7 @@ let
     chalkos.cni.flannel.mtu = 1430;
     # The default layout: VAR fills the system disk.
     chalkos.roles.test = {
-      kubernetes.kind = null;
+      kubernetes.enable = false;
       nixosModules = [
         ../../modules/testing/test-image.nix
         ../../modules/testing/greeting.nix
@@ -90,7 +90,7 @@ let
     };
     # A fixed VAR, an unencrypted and a raw volume next to it, and a volume on a second disk.
     chalkos.roles.storage = {
-      kubernetes.kind = null;
+      kubernetes.enable = false;
       nixosModules = [ ../../modules/testing/test-image.nix ];
       storage = {
         var.size = "2G";
@@ -119,17 +119,16 @@ let
     # A control plane and a worker on KVM, which the Kubernetes test runs with chalklab, as the lab
     # template defines its nodes: chalklab connects them by the MAC address their network matches.
     chalkos.roles.k8s-controlplane = {
-      kubernetes.kind = "controlplane";
       nixosModules = [ ../../modules/testing/test-image.nix ];
     };
     chalkos.roles.k8s-worker = {
-      kubernetes.kind = "worker";
       nixosModules = [ ../../modules/testing/test-image.nix ];
     };
     # cp1 reaches w1's addresses through w1's address on the cluster network, as a routing daemon
     # would install the routes.
     chalkos.nodes.cp1 = {
       role = "k8s-controlplane";
+      kubernetes.kind = "controlplane";
       platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = pkgs.lib.recursiveUpdate (clusterNetwork "52:54:00:00:01:11" "11") {
@@ -188,7 +187,6 @@ let
       };
     };
     chalkos.roles.k8s-ha = {
-      kubernetes.kind = "controlplane";
       nixosModules = [ ../../modules/testing/test-image.nix ];
     };
     chalkos.nodes = pkgs.lib.genAttrs [ "cp1" "cp2" "cp3" ] (
@@ -198,6 +196,7 @@ let
       in
       {
         role = "k8s-ha";
+        kubernetes.kind = "controlplane";
         storage.system.disk = "/dev/vda";
         network = clusterNetwork "52:54:00:00:02:1${n}" "1${n}";
       }

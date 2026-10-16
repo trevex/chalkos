@@ -31,16 +31,16 @@ import (
 const labManifest = `{
   "schemaVersion": 0,
   "cluster": {"name": "lab", "endpoint": "https://192.168.123.11:6443"},
-  "roles": {"controlplane": {"images": {"kvm": "roles.controlplane.images.kvm", "metal": "roles.controlplane.images.metal"}, "kind": "controlplane"},
-            "worker": {"images": {"kvm": "roles.worker.images.kvm", "metal": "roles.worker.images.metal"}, "kind": "worker"}},
+  "roles": {"controlplane": {"images": {"kvm": "roles.controlplane.images.kvm", "metal": "roles.controlplane.images.metal"}},
+            "worker": {"images": {"kvm": "roles.worker.images.kvm", "metal": "roles.worker.images.metal"}}},
   "nodes": {
-    "cp1": {"role": "controlplane", "platform": "kvm", "identity": {"hostname": "cp1", "platform": "kvm",
+    "cp1": {"role": "controlplane", "kind": "controlplane", "platform": "kvm", "identity": {"hostname": "cp1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7b:00:11"}, "address": ["192.168.123.11/24"]}}},
       "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7b:00:11\n\n[Network]\nAddress=192.168.123.11/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "w1": {"role": "worker", "platform": "kvm", "identity": {"hostname": "w1", "platform": "kvm",
+    "w1": {"role": "worker", "kind": "worker", "platform": "kvm", "identity": {"hostname": "w1", "platform": "kvm",
       "network": {"networks": {"10-lab": {"matchConfig": {"MACAddress": "52:54:00:7B:00:12"}, "address": ["192.168.123.12/24"]}}},
       "networkUnits": {"10-lab.network": "[Match]\nMACAddress=52:54:00:7B:00:12\n\n[Network]\nAddress=192.168.123.12/24\n"}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}},
-    "m1": {"role": "worker", "platform": "metal", "identity": {"hostname": "m1", "platform": "metal",
+    "m1": {"role": "worker", "kind": "worker", "platform": "metal", "identity": {"hostname": "m1", "platform": "metal",
       "network": {}, "networkUnits": {}, "labels": {}, "taints": [], "storage": {"disks": {}, "volumes": {}, "fallback": "none", "encryption": "none"}}}
   }
 }`

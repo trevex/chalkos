@@ -20,7 +20,7 @@ import (
 // SchemaVersion is the manifest version this package understands.
 const SchemaVersion = 0
 
-// Kinds of Kubernetes nodes a role's nodes are.
+// Kinds of Kubernetes nodes.
 const (
 	KindControlPlane = "controlplane"
 	KindWorker       = "worker"
@@ -74,21 +74,22 @@ func IsNull(raw json.RawMessage) bool {
 	return len(raw) == 0 || string(raw) == "null"
 }
 
-// Role is a node role; all nodes of a role on a platform run the same image.
+// Role is a node role: all nodes of a role on a platform run the same image.
 type Role struct {
 	// Images are the attribute paths, relative to the cluster's attribute, that build the role's
 	// unsigned disk image for each platform; the CLI prepends the attribute path it evaluated the
 	// manifest from.
 	Images map[string]string `json:"images"`
-	// Kind is what the role's nodes are in Kubernetes: KindControlPlane, KindWorker, or empty.
-	Kind string `json:"kind"`
 }
 
 // Node is one machine of the cluster, by the role it runs, the platform it runs on and the values
 // unique to it.
 type Node struct {
-	Role     string   `json:"role"`
-	Platform string   `json:"platform"`
+	Role     string `json:"role"`
+	Platform string `json:"platform"`
+	// Kind is what the node is in Kubernetes: KindControlPlane, KindWorker, or empty on a role
+	// without Kubernetes.
+	Kind     string   `json:"kind"`
 	Identity Identity `json:"identity"`
 	// Documents are the config documents the node's extensions add, each one JSON object.
 	Documents []json.RawMessage `json:"documents"`

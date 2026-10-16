@@ -79,7 +79,7 @@ func tryNextControlPlane(err error) bool {
 func controlPlaneNodes(m *manifest.Manifest, skip string) []string {
 	var names []string
 	for name, node := range m.Nodes {
-		if name != skip && m.Roles[node.Role].Kind == manifest.KindControlPlane {
+		if name != skip && node.Kind == manifest.KindControlPlane {
 			names = append(names, name)
 		}
 	}

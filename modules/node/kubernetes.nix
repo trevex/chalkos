@@ -9,7 +9,7 @@
   ...
 }:
 let
-  inherit (config.chalkos.role.kubernetes) kind;
+  inherit (config.chalkos.role.kubernetes) enable;
   inherit (config.chalkos) cluster;
   k = cluster.kubernetes;
   chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
@@ -104,12 +104,12 @@ in
     # Apart from the rest: the condition reads chalkos, so it can guard values below chalkos but
     # not a definition of chalkos as a whole.
     {
-      chalkos.consumers = lib.mkIf (kind != null) {
+      chalkos.consumers = lib.mkIf enable {
         chalkos-registry-mirrors.kinds = [ "RegistryMirror" ];
         chalkos-controlplane.kinds = [ "Node" ];
       };
     }
-    (lib.mkIf (kind != null) {
+    (lib.mkIf enable {
       boot.kernelModules = [
         "overlay"
         "br_netfilter"

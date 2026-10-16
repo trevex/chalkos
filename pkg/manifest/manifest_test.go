@@ -121,8 +121,8 @@ func TestDecodeKubernetes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Roles["controlplane"].Kind != KindControlPlane || m.Roles["worker"].Kind != KindWorker {
-		t.Errorf("roles = %+v", m.Roles)
+	if m.Nodes["cp1"].Kind != KindControlPlane || m.Nodes["w1"].Kind != KindWorker {
+		t.Errorf("node kinds = %q, %q", m.Nodes["cp1"].Kind, m.Nodes["w1"].Kind)
 	}
 	if k := m.Nodes["cp1"].Identity.Kubernetes; k == nil || k.NodeName != "cp1" || !slices.Equal(k.NodeIPs, []string{"10.0.0.11"}) || k.ValidSubnets != nil {
 		t.Errorf("cp1 kubernetes = %+v", k)

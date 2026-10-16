@@ -258,12 +258,12 @@ func (r *rotation) apply(ctx context.Context, kind, phase string) error {
 }
 
 // nodesOf lists the cluster's nodes of a Kubernetes kind in name order: control planes,
-// workers, or with kind "" those of roles without Kubernetes.
+// workers, or with kind "" those without Kubernetes.
 func (r *rotation) nodesOf(kind string) []string {
 	m := r.cluster.manifest
 	var names []string
 	for _, name := range slices.Sorted(maps.Keys(m.Nodes)) {
-		if m.Roles[m.Nodes[name].Role].Kind == kind {
+		if m.Nodes[name].Kind == kind {
 			names = append(names, name)
 		}
 	}

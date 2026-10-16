@@ -32,18 +32,17 @@
   "time": { "dhcpServers": false },
   "roles": {
     "controlplane": {
-      "images": { "kvm": "roles.controlplane.images.kvm", "metal": "roles.controlplane.images.metal" },
-      "kind": "controlplane"
+      "images": { "kvm": "roles.controlplane.images.kvm", "metal": "roles.controlplane.images.metal" }
     },
     "worker": {
-      "images": { "kvm": "roles.worker.images.kvm", "metal": "roles.worker.images.metal" },
-      "kind": "worker"
+      "images": { "kvm": "roles.worker.images.kvm", "metal": "roles.worker.images.metal" }
     }
   },
   "nodes": {
     "cp1": {
       "role": "controlplane",
       "platform": "metal",
+      "kind": "controlplane",
       "documents": [
         {
           "apiVersion": "rack.example.org/v1alpha1",
@@ -100,6 +99,7 @@
     "w1": {
       "role": "worker",
       "platform": "metal",
+      "kind": "worker",
       "documents": [
         {
           "apiVersion": "rack.example.org/v1alpha1",

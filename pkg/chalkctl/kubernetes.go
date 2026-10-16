@@ -16,16 +16,12 @@ import (
 	"github.com/trevex/chalkos/pkg/manifest"
 )
 
-// kubernetesShare issues the share of a node whose role has Kubernetes; nil for one without.
+// kubernetesShare issues the share of a node with Kubernetes; nil for one without.
 func kubernetesShare(t *target, now time.Time) ([]byte, error) {
-	role, ok := t.cluster.manifest.Roles[t.node.Role]
-	if !ok {
-		return nil, fmt.Errorf("the cluster has no role %s", t.node.Role)
-	}
-	if role.Kind == "" {
+	if t.node.Kind == "" {
 		return nil, nil
 	}
-	share, err := kpki.ShareFor(&t.secrets, role.Kind, t.name, now)
+	share, err := kpki.ShareFor(&t.secrets, t.node.Kind, t.name, now)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +51,7 @@ func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duratio
 		return err
 	}
 	// Without the cluster definition the node itself refuses when it is a worker.
-	if kind := t.cluster.manifest.Roles[t.node.Role].Kind; !t.cluster.partial && kind != manifest.KindControlPlane {
+	if kind := t.node.Kind; !t.cluster.partial && kind != manifest.KindControlPlane {
 		return fmt.Errorf("%s is not a control-plane node; bootstrap one of the cluster's control-plane nodes", t.name)
 	}
 	conn, err := dialInstalled(t)

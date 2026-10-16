@@ -21,14 +21,12 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// withKind makes n1's role a Kubernetes role of the kind.
+// withKind makes n1 a Kubernetes node of the kind.
 func withKind(t *testing.T, ta *testApp, kind string) {
 	t.Helper()
 	ta.editManifest(t, func(m *manifest.Manifest) {
-		r := m.Roles["test"]
-		r.Kind = kind
-		m.Roles["test"] = r
 		n := m.Nodes["n1"]
+		n.Kind = kind
 		n.Identity.Kubernetes = &manifest.KubernetesIdentity{NodeName: "n1", NodeIPs: []string{"10.0.0.11"}}
 		m.Nodes["n1"] = n
 	})
@@ -39,7 +37,7 @@ func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	s := maintenanceNode()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
-	if kind := ta.manifest.Roles["test"].Kind; kind != "" {
+	if kind := ta.manifest.Nodes["n1"].Kind; kind != "" {
 		kubernetesImage(t, s)
 	}
 	addr := ta.startNode(t, s)
@@ -241,7 +239,7 @@ func TestBootstrapNeedsControlPlane(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"bootstrap", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "not a control-plane node") {
 		t.Errorf("err = %v, want a refusal for a worker", err)
 	}
-	// A control-plane role whose node runs no Kubernetes: the node refuses.
+	// A control-plane node that runs no Kubernetes: the node refuses.
 	withKind(t, ta, manifest.KindControlPlane)
 	plain, _ := installedNode(t, ta, []byte(`{}`))
 	addr = ta.startNode(t, plain)

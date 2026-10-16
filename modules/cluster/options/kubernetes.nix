@@ -65,7 +65,8 @@ let
       null;
   controlPlaneNodes = lib.attrValues (
     lib.filterAttrs (
-      _: node: config.chalkos.roles.${node.role}.kubernetes.kind == "controlplane"
+      _: node:
+      config.chalkos.roles.${node.role}.kubernetes.enable && node.kubernetes.kind == "controlplane"
     ) config.chalkos.nodes
   );
 
@@ -865,17 +866,12 @@ in
   options.chalkos.roles = mkOption {
     type = types.attrsOf (
       types.submodule {
-        options.kubernetes.kind = mkOption {
-          type = types.nullOr (
-            types.enum [
-              "controlplane"
-              "worker"
-            ]
-          );
-          default = "worker";
+        options.kubernetes.enable = mkOption {
+          type = types.bool;
+          default = true;
           description = ''
-            What the role's nodes are in Kubernetes. Control-plane nodes run etcd and the control
-            plane besides the kubelet; null leaves Kubernetes out of the role's image.
+            Whether the role's images run Kubernetes. One image serves control planes and workers:
+            each node's `kubernetes.kind` makes it one or the other at runtime.
           '';
         };
       }
@@ -908,6 +904,19 @@ in
             if config.kubernetes.validSubnets != null then config.kubernetes.validSubnets else clusterSubnets;
         in
         {
+          options.kubernetes.kind = mkOption {
+            type = types.enum [
+              "controlplane"
+              "worker"
+            ];
+            default = "worker";
+            description = ''
+              What the node is in Kubernetes. A control plane runs etcd and the control plane
+              besides the kubelet. It reaches the node as `Node.spec.type`, which a node keeps
+              once it holds its Kubernetes share. A role without Kubernetes takes no control
+              plane.
+            '';
+          };
           options.kubernetes.nodeIP = mkOption {
             type = types.nullOr types.str;
             default = null;

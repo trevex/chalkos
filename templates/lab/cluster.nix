@@ -20,12 +20,13 @@ in
     osCA = ./secrets.pub.json;
   };
 
-  chalkos.roles.controlplane.kubernetes.kind = "controlplane";
-  chalkos.roles.worker.kubernetes.kind = "worker";
+  chalkos.roles.controlplane = { };
+  chalkos.roles.worker = { };
 
   chalkos.nodes = {
     cp1 = {
       role = "controlplane";
+      kubernetes.kind = "controlplane";
       platform = "kvm";
       storage.system.disk = "/dev/vda";
       network = labNetwork "11";

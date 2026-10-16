@@ -87,8 +87,8 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 
 func TestControlPlaneNodes(t *testing.T) {
 	m := &manifest.Manifest{
-		Roles: map[string]manifest.Role{"cp": {Kind: manifest.KindControlPlane}, "w": {Kind: manifest.KindWorker}},
-		Nodes: map[string]manifest.Node{"cp3": {Role: "cp"}, "cp1": {Role: "cp"}, "w1": {Role: "w"}, "cp2": {Role: "cp"}},
+		Nodes: map[string]manifest.Node{"cp3": {Role: "cp", Kind: manifest.KindControlPlane}, "cp1": {Role: "cp", Kind: manifest.KindControlPlane},
+			"w1": {Role: "w", Kind: manifest.KindWorker}, "cp2": {Role: "cp", Kind: manifest.KindControlPlane}},
 	}
 	if got := controlPlaneNodes(m, "cp2"); !slices.Equal(got, []string{"cp1", "cp3"}) {
 		t.Errorf("controlPlaneNodes() = %v", got)

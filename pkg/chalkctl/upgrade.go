@@ -328,7 +328,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		r.groups = append(r.groups, groups[key])
 	}
 	for _, name := range slices.Sorted(maps.Keys(m.Nodes)) {
-		if probedCPs[name] || !r.cluster.partial && m.Roles[m.Nodes[name].Role].Kind == manifest.KindControlPlane {
+		if probedCPs[name] || !r.cluster.partial && m.Nodes[name].Kind == manifest.KindControlPlane {
 			r.controlPlanes = append(r.controlPlanes, name)
 		}
 	}

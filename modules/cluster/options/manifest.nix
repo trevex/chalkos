@@ -120,40 +120,51 @@ let
       "chalkos.nodes.${name}.storage.volumes.${volume}: a swap volume on a Kubernetes node; the kubelet refuses to run with swap (failSwapOn)"
     ) (lib.filterAttrs (_: v: v.enable && v.format == "swap") n.storage.volumes);
 
-  node = name: n: {
-    inherit (n) role platform documents;
-    identity = {
-      inherit (n) hostname network labels;
-      # The cluster, the role and the platform the node's image is built for: the installer refuses
-      # an image of others, and an installed node an identity of others.
-      cluster = cfg.cluster.name;
-      inherit (n) role platform;
-      networkUnits = renderNetwork name n;
-      storage = renderStorage name n;
-      taints = map strip n.taints;
-      # A node's name in Kubernetes is its name in the cluster, which its kubelet certificates
-      # carry; null on nodes of a role without Kubernetes.
-      kubernetes =
-        let
-          inherit (cfg.roles.${n.role}.kubernetes) kind;
-        in
-        if kind == null then
-          null
-        else if kubeletErrors name n != [ ] then
-          throw "chalkos.nodes.${name} is invalid:\n${
-            lib.concatMapStringsSep "\n" (e: "- ${e}") (kubeletErrors name n)
-          }"
+  node =
+    name: n:
+    let
+      inherit (cfg.roles.${n.role}.kubernetes) enable;
+    in
+    {
+      inherit (n) role platform documents;
+      # The node's Kubernetes kind, which reaches it as Node.spec.type; null on a role without
+      # Kubernetes.
+      kind =
+        if enable then
+          n.kubernetes.kind
+        else if n.kubernetes.kind == "controlplane" then
+          throw "chalkos.nodes.${name}.kubernetes.kind is controlplane, but its role ${n.role} runs no Kubernetes"
         else
-          {
-            nodeName = name;
-            # A node picks the addresses of the families without a fixed one at boot; the
-            # cluster's subnets are in the image, a node's own ones here.
-            inherit (n.kubernetes) nodeIPs validSubnets;
-          };
-      # A node's own servers replace the cluster's.
-      time.servers = map strip (if n.time.servers != null then n.time.servers else cfg.time.servers);
+          null;
+      identity = {
+        inherit (n) hostname network labels;
+        # The cluster, the role and the platform the node's image is built for: the installer refuses
+        # an image of others, and an installed node an identity of others.
+        cluster = cfg.cluster.name;
+        inherit (n) role platform;
+        networkUnits = renderNetwork name n;
+        storage = renderStorage name n;
+        taints = map strip n.taints;
+        # A node's name in Kubernetes is its name in the cluster, which its kubelet certificates
+        # carry; null on nodes of a role without Kubernetes.
+        kubernetes =
+          if !enable then
+            null
+          else if kubeletErrors name n != [ ] then
+            throw "chalkos.nodes.${name} is invalid:\n${
+              lib.concatMapStringsSep "\n" (e: "- ${e}") (kubeletErrors name n)
+            }"
+          else
+            {
+              nodeName = name;
+              # A node picks the addresses of the families without a fixed one at boot; the
+              # cluster's subnets are in the image, a node's own ones here.
+              inherit (n.kubernetes) nodeIPs validSubnets;
+            };
+        # A node's own servers replace the cluster's.
+        time.servers = map strip (if n.time.servers != null then n.time.servers else cfg.time.servers);
+      };
     };
-  };
 in
 {
   options.chalkos.manifest = lib.mkOption {
@@ -193,9 +204,8 @@ in
     time = { inherit (cfg.time) dhcpServers; };
     # Relative to the cluster's attribute, which only the evaluating CLI knows; the flake may
     # expose the cluster under any name.
-    roles = lib.mapAttrs (role: r: {
+    roles = lib.mapAttrs (role: _: {
       images = lib.mapAttrs (platform: _: "roles.${role}.images.${platform}") cfg.platforms;
-      inherit (r.kubernetes) kind;
     }) cfg.roles;
     nodes = lib.mapAttrs node cfg.nodes;
   };

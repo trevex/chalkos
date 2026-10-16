@@ -70,7 +70,7 @@ let
             name = "t";
             endpoint = "https://10.0.0.1:6443";
           };
-          chalkos.roles.worker.kubernetes.kind = "worker";
+          chalkos.roles.worker = { };
         }
       ];
     }).roles.worker.nixos.metal.config;
@@ -83,7 +83,7 @@ let
             name = "t";
             endpoint = "https://10.0.0.1:6443";
           };
-          chalkos.roles.worker.kubernetes.kind = null;
+          chalkos.roles.worker.kubernetes.enable = false;
         }
       ];
     }).roles.worker.nixos.metal.config;
@@ -622,7 +622,7 @@ lib.runTests {
                 endpoint = "https://10.0.0.1:6443";
               };
               chalkos.cni.provider = "none";
-              chalkos.roles.worker.kubernetes.kind = "worker";
+              chalkos.roles.worker = { };
             }
           ];
         }).roles.worker.nixos.metal.config

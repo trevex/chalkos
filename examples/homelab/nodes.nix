@@ -2,6 +2,7 @@
   chalkos.nodes = {
     cp1 = {
       role = "controlplane";
+      kubernetes.kind = "controlplane";
       storage.system.disk = "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001";
       network.networks."10-uplink" = {
         matchConfig.Name = "enp1s0";

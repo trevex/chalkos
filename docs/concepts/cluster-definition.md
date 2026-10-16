@@ -129,8 +129,10 @@ platform boots the same image. A role declares:
 - [`nixosModules`](../reference/options.md#chalkosrolesnixosmodules), plain NixOS modules added
   to the role's images, for a GPU driver, a monitoring agent or extra kernel
   [module groups](../reference/glossary.md#module-group);
-- [`kubernetes.kind`](../reference/options.md#chalkosroleskuberneteskind): `controlplane`,
-  `worker` (the default) or `null` for a role without Kubernetes;
+- [`kubernetes.enable`](../reference/options.md#chalkosroleskubernetesenable), whether its
+  images run Kubernetes (the default); each node's
+  [`kubernetes.kind`](../reference/options.md#chalkosnodeskuberneteskind) makes it a control
+  plane or a worker;
 - `storage`, defaults for its nodes' storage, applied leaf by leaf, so a node overrides one
   value or adds a volume without restating the rest.
 

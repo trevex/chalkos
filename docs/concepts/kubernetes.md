@@ -24,14 +24,15 @@ the same version. etcd, the pause image and CoreDNS have their own images under
 A Kubernetes upgrade is therefore an image [upgrade](../reference/glossary.md#upgrade), rolled
 through the cluster like any other, as [Upgrades](upgrades.md) describes.
 
-A [role](../reference/glossary.md#role) decides what its nodes are in Kubernetes with
-[`kubernetes.kind`](../reference/options.md#chalkosroleskuberneteskind):
+A node's [`kubernetes.kind`](../reference/options.md#chalkosnodeskuberneteskind) decides what it
+is in Kubernetes, and a [role](../reference/glossary.md#role) with
+[`kubernetes.enable`](../reference/options.md#chalkosroleskubernetesenable) false runs none:
 
 | Kind | Runs |
 | --- | --- |
 | `controlplane` | containerd, the kubelet, and etcd and the control plane as static pods |
 | `worker` (default) | containerd and the kubelet |
-| `null` | No Kubernetes at all; the image leaves it out |
+| A role without Kubernetes | No Kubernetes at all; the image leaves it out |
 
 ## Where do a node's Kubernetes settings come from?
 

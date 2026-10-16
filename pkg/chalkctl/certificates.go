@@ -90,7 +90,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	}
 	var controlPlanes []string
 	for _, name := range slices.Sorted(maps.Keys(c.manifest.Nodes)) {
-		if c.manifest.Roles[c.manifest.Nodes[name].Role].Kind == manifest.KindControlPlane {
+		if c.manifest.Nodes[name].Kind == manifest.KindControlPlane {
 			controlPlanes = append(controlPlanes, name)
 		}
 	}

@@ -45,7 +45,7 @@ func homelabManifest(t *testing.T) *manifest.Manifest {
 func homelabTarget(t *testing.T, m *manifest.Manifest, n manifest.Node) Target {
 	t.Helper()
 	target := Target{Role: n.Role, Platform: n.Platform}
-	if m.Roles[n.Role].Kind != "" {
+	if n.Kind != "" {
 		img := testImage
 		target.Image = &img
 	}

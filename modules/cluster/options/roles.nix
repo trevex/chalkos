@@ -56,7 +56,7 @@ let
               {
                 nixpkgs.hostPlatform = settings.cluster.system;
                 chalkos.role.name = name;
-                chalkos.role.kubernetes.kind = config.kubernetes.kind;
+                chalkos.role.kubernetes.enable = config.kubernetes.enable;
                 chalkos.platform.name = platform;
               }
             ]

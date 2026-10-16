@@ -334,7 +334,7 @@ func labNodes(m *manifest.Manifest, named []string) ([]lab.LabNode, error) {
 			return nil, fmt.Errorf("%s and %s match the same MAC address %s", other, name, mac)
 		}
 		macs[mac] = name
-		nodes = append(nodes, lab.LabNode{Name: name, Role: n.Role, Kind: m.Roles[n.Role].Kind, MAC: mac})
+		nodes = append(nodes, lab.LabNode{Name: name, Role: n.Role, Kind: n.Kind, MAC: mac})
 	}
 	return nodes, nil
 }

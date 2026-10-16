@@ -51,29 +51,29 @@ func diskSeed(node string) string {
 // upgradeManifest is a cluster of three control planes, three workers and a node without
 // Kubernetes, whose identities the config generated from them gives back.
 func upgradeManifest(controlPlanes int) string {
-	node := func(name, role string, n int) string {
+	node := func(name, role, kind string, n int) string {
 		k := "null"
 		if role != "plain" {
 			k = fmt.Sprintf(`{"nodeName": %q, "nodeIPs": ["10.0.0.%d"]}`, name, n)
 		}
-		return fmt.Sprintf(`%q: {"role": %q, "platform": "metal", "identity": {"hostname": %q, "cluster": "lab", "role": %q, "platform": "metal",
+		return fmt.Sprintf(`%q: {"role": %q, "kind": %q, "platform": "metal", "identity": {"hostname": %q, "cluster": "lab", "role": %q, "platform": "metal",
 		  "network": {"networks": {"10-uplink": {"address": ["10.0.0.%d/24"]}}}, "networkUnits": {"10-uplink.network": "[Network]\nAddress=10.0.0.%d/24\n"},
 		  "labels": {}, "taints": [], "kubernetes": %s, "time": {"servers": []},
 		  "storage": {"disks": {"system": {"ref": {"serial": "chalk-target"}, "seed": %q,
 		    "repart": {"50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"}}},
 		    "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null}},
-		    "fallback": "recovery-key", "encryption": "tpm2"}}}`, name, role, name, role, n, n, k, diskSeed(name))
+		    "fallback": "recovery-key", "encryption": "tpm2"}}}`, name, role, kind, name, role, n, n, k, diskSeed(name))
 	}
 	var nodes []string
 	for i := 1; i <= controlPlanes; i++ {
-		nodes = append(nodes, node(fmt.Sprintf("cp%d", i), "cp", 10+i))
+		nodes = append(nodes, node(fmt.Sprintf("cp%d", i), "cp", "controlplane", 10+i))
 	}
 	for i := 1; i <= 3; i++ {
-		nodes = append(nodes, node(fmt.Sprintf("w%d", i), "w", 20+i))
+		nodes = append(nodes, node(fmt.Sprintf("w%d", i), "w", "worker", 20+i))
 	}
-	nodes = append(nodes, node("n1", "plain", 31))
+	nodes = append(nodes, node("n1", "plain", "", 31))
 	return `{"schemaVersion": 0, "cluster": {"name": "lab", "endpoint": "https://10.0.0.10:6443"},
-	  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}, "kind": "controlplane"}, "w": {"images": {"metal": "roles.w.images.metal", "kvm": "roles.w.images.kvm"}, "kind": "worker"}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
+	  "roles": {"cp": {"images": {"metal": "roles.cp.images.metal"}}, "w": {"images": {"metal": "roles.w.images.metal", "kvm": "roles.w.images.kvm"}}, "plain": {"images": {"metal": "roles.plain.images.metal"}}},
 	  "nodes": {` + strings.Join(nodes, ",\n") + `}}`
 }
 
@@ -390,7 +390,7 @@ func newUpgradeLab(t *testing.T, controlPlanes int) *upgradeLab {
 	ta.manifest, _ = manifest.Decode(strings.NewReader(m))
 	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
 	for name, node := range ta.manifest.Nodes {
-		n := &upgradeFake{lab: l, name: name, role: node.Role, platform: node.Platform, kind: ta.manifest.Roles[node.Role].Kind, version: "0.1.0", root: bytes.Repeat([]byte{1}, 32)}
+		n := &upgradeFake{lab: l, name: name, role: node.Role, platform: node.Platform, kind: node.Kind, version: "0.1.0", root: bytes.Repeat([]byte{1}, 32)}
 		dir := filepath.Join(t.TempDir(), "chalkd")
 		cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 		if err != nil {

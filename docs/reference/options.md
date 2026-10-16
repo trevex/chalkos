@@ -1179,6 +1179,33 @@ string
 
 
 
+### chalkos\.nodes\.\<name>\.kubernetes\.kind
+
+
+
+What the node is in Kubernetes\. A control plane runs etcd and the control plane
+besides the kubelet\. It reaches the node as ` Node.spec.type `, which a node keeps
+once it holds its Kubernetes share\. A role without Kubernetes takes no control
+plane\.
+
+
+
+*Type:*
+one of “controlplane”, “worker”
+
+
+
+*Default:*
+
+```nix
+"worker"
+```
+
+*Declared by:*
+ - [modules/cluster/options/kubernetes\.nix](https://github.com/trevex/chalkos/blob/main/modules/cluster/options/kubernetes.nix)
+
+
+
 ### chalkos\.nodes\.\<name>\.kubernetes\.nodeIP
 
 
@@ -1980,24 +2007,24 @@ lazy attribute set of package *(read only)*
 
 
 
-### chalkos\.roles\.\<name>\.kubernetes\.kind
+### chalkos\.roles\.\<name>\.kubernetes\.enable
 
 
 
-What the role’s nodes are in Kubernetes\. Control-plane nodes run etcd and the control
-plane besides the kubelet; null leaves Kubernetes out of the role’s image\.
+Whether the role’s images run Kubernetes\. One image serves control planes and workers:
+each node’s ` kubernetes.kind ` makes it one or the other at runtime\.
 
 
 
 *Type:*
-null or one of “controlplane”, “worker”
+boolean
 
 
 
 *Default:*
 
 ```nix
-"worker"
+true
 ```
 
 *Declared by:*
@@ -3111,24 +3138,24 @@ null
 
 
 
-### chalkos\.role\.kubernetes\.kind
+### chalkos\.role\.kubernetes\.enable
 
 
 
-The role’s ` kubernetes.kind ` from the cluster definition, set by the role builder;
-null builds an image without Kubernetes, as the installer is\.
+Whether the image runs Kubernetes, from the role’s ` kubernetes.enable `, set by the role
+builder; the installer runs none\. A node’s kind comes with its config\.
 
 
 
 *Type:*
-null or one of “controlplane”, “worker”
+boolean
 
 
 
 *Default:*
 
 ```nix
-null
+false
 ```
 
 *Declared by:*
