@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -88,13 +90,21 @@ const redactedSecret = "redacted"
 // checks the config it delivers, before anything is written.
 //
 // Like an install's, the header's schemas and image.json are not bound to the image: they are
-// what the operator's chalkctl read from the image directory. An operator may not read the
-// node's Secrets, but a schema of their choosing could quote a value in its error, which goes
-// back to them and into the journal readers see, or tell a value apart by refusing it. So the
-// Secrets are checked against the running image's Secret schema, whatever the header carries,
-// and with every value replaced: a secretRef still resolves by key, and no value reaches a schema
-// the header supplies. The other documents are no secret from an operator, who reads them in the
-// cluster definition.
+// what the operator's chalkctl read from the image directory, and an operator may send any. The
+// check must therefore show an operator nothing of the stored config they could not read
+// otherwise, in its reply or in the journal readers see:
+//   - The Secrets are checked against the running image's Secret schema, whatever the header
+//     carries, and with every value under their spec replaced, so no Secret value reaches a
+//     schema the header supplies. A header schema can still mark a field as a secretRef
+//     (x-chalkos-secret-ref) and so probe which Secret names and keys the set holds, though not
+//     their values.
+//   - A refusal names the document, where it fails and the schema keyword that refuses it, or
+//     only the step of the translation that fails, never a value, since the schemas' messages
+//     and the translation's quote the values they refuse.
+//
+// Whether the check refuses remains an oracle on the documents other than Secrets: a schema of
+// the operator's choosing tells one value from another by refusing it. That holds until the
+// image's schemas are bound to the image.
 func (s *Server) checkStoredConfig(h *nodev1.UpgradeHeader) error {
 	if len(h.Schemas) == 0 {
 		return failed(connect.CodeInvalidArgument, "the header carries no schemas of the image, which the node checks its config against; upgrade with the chalkctl of this chalkos")
@@ -124,12 +134,27 @@ func (s *Server) checkStoredConfig(h *nodev1.UpgradeHeader) error {
 		return nil
 	}
 	if _, _, err := translate(redactSecrets(stored.Documents), schemas, t); err != nil {
-		return failed(connect.CodeFailedPrecondition, "the node's config does not suit the image: %v; apply config both images accept with chalkctl apply-config, then upgrade", err)
+		return failed(connect.CodeFailedPrecondition, "the node's config does not suit the image: %s; apply config both images accept with chalkctl apply-config, then upgrade", unsuitable(err))
 	}
 	return nil
 }
 
-// redactSecrets returns docs with the value of every key of each Secret replaced by
+// unsuitable says why translate refused the stored config without quoting a value of it: where a
+// document fails its schema and the keyword that refuses it, or else the step that fails, which
+// chalkctl upgrade's check of the cluster definition's config against the image explains.
+func unsuitable(err error) string {
+	var verr *schema.ValidationError
+	if errors.As(err, &verr) {
+		return verr.Redacted()
+	}
+	var terr *translateError
+	if errors.As(err, &terr) {
+		return "it fails " + terr.step + "; the reasons quote the config, so they are not shown here, and chalkctl upgrade checks the cluster definition's config against the image with them"
+	}
+	return "it fails its translation"
+}
+
+// redactSecrets returns docs with every string under each Secret's spec replaced by
 // redactedSecret, leaving docs as they are.
 func redactSecrets(docs []config.Document) []config.Document {
 	out := make([]config.Document, len(docs))
@@ -139,20 +164,34 @@ func redactSecrets(docs []config.Document) []config.Document {
 			continue
 		}
 		object := maps.Clone(d.Object)
-		if spec, ok := object["spec"].(map[string]any); ok {
-			spec = maps.Clone(spec)
-			if data, ok := spec["data"].(map[string]any); ok {
-				redacted := make(map[string]any, len(data))
-				for key := range data {
-					redacted[key] = redactedSecret
-				}
-				spec["data"] = redacted
-			}
-			object["spec"] = spec
+		if spec, ok := object["spec"]; ok {
+			object["spec"] = redactStrings(spec)
 		}
 		out[i].Object = object
 	}
 	return out
+}
+
+// redactStrings returns a copy of v with every string in it replaced by redactedSecret.
+func redactStrings(v any) any {
+	switch v := v.(type) {
+	case string:
+		return redactedSecret
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			out[k] = redactStrings(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, e := range v {
+			out[i] = redactStrings(e)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // imageHeader is the image an install or upgrade header describes.

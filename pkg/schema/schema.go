@@ -162,18 +162,54 @@ func (s *Schemas) Validate(doc any) error {
 	}
 	apiVersion, _ := m["apiVersion"].(string)
 	docKind, _ := m["kind"].(string)
+	name := ""
+	if md, ok := m["metadata"].(map[string]any); ok {
+		name, _ = md["name"].(string)
+	}
 	sch, ok := s.schemas[key(apiVersion, docKind)]
 	if !ok {
-		return fmt.Errorf("does not accept kind %q of apiVersion %q", docKind, apiVersion)
+		return &ValidationError{APIVersion: apiVersion, Kind: docKind, Name: name}
 	}
 	if err := sch.Validate(doc); err != nil {
-		name := ""
-		if md, ok := m["metadata"].(map[string]any); ok {
-			name, _ = md["name"].(string)
-		}
-		return fmt.Errorf("%s %q: %s", docKind, name, explain(err))
+		return &ValidationError{APIVersion: apiVersion, Kind: docKind, Name: name, err: err}
 	}
 	return nil
+}
+
+// ValidationError is a document its kind's schema refuses, or one of a kind without a schema.
+type ValidationError struct {
+	APIVersion, Kind, Name string
+	// err is the schema's verdict; nil for a kind without a schema.
+	err error
+}
+
+func (e *ValidationError) Error() string {
+	if e.err == nil {
+		return fmt.Sprintf("does not accept kind %q of apiVersion %q", e.Kind, e.APIVersion)
+	}
+	return fmt.Sprintf("%s %q: %s", e.Kind, e.Name, explain(e.err))
+}
+
+// Redacted says where the document fails and which keyword refuses it, without the values the
+// schema's messages quote: for a document checked against schemas its reader chose, whose
+// messages could show values the reader may not see.
+func (e *ValidationError) Redacted() string {
+	if e.err == nil {
+		return fmt.Sprintf("%s %q: no schema of the kind %s of apiVersion %s", e.Kind, e.Name, e.Kind, e.APIVersion)
+	}
+	verr, ok := e.err.(*jsonschema.ValidationError)
+	if !ok {
+		return fmt.Sprintf("%s %q: refused by its schema", e.Kind, e.Name)
+	}
+	var lines []string
+	for _, leaf := range leafCauses(verr) {
+		keyword := strings.Join(leaf.ErrorKind.KeywordPath(), "/")
+		if keyword == "" {
+			keyword = "schema"
+		}
+		lines = append(lines, fmt.Sprintf("- at '/%s': %s", strings.Join(leaf.InstanceLocation, "/"), keyword))
+	}
+	return fmt.Sprintf("%s %q: %s", e.Kind, e.Name, strings.Join(lines, "\n"))
 }
 
 // Image is the config contract of one image build directory.

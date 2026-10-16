@@ -78,6 +78,11 @@ unlocked, because their keys are sealed to PCR 7 alone. With Secure Boot enforce
 boots only images signed with the db key, so an operator can roll out only what the key holder
 signed.
 
+Before it installs anything, Upgrade checks the node's stored config against the schemas the
+request carries, which are not bound to the image. An operator can therefore test the node's
+stored config, except its Secrets, against schemas of their own: a refusal names where a document
+fails and why, though no value.
+
 ## Why are the disk keys sealed to PCR 7?
 
 [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted

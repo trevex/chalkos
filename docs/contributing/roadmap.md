@@ -98,6 +98,9 @@ These limits hold in the current code, grouped by area.
   running image. Once `chalkctl upgrade --no-reboot` installed an image, the node does not check
   config applied after it against that image, since a later run finds the image installed and
   does not send it again; only chalkctl checks the cluster definition's config against it.
+- An operator's upgrade request can test the node's stored config, except its Secrets, against
+  schemas the operator supplies, because those schemas are not bound to the image the request
+  installs.
 
 ### Networking
 

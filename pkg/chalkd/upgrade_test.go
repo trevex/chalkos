@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -149,7 +151,7 @@ func TestUpgradeChecksTheStoredConfig(t *testing.T) {
 	}{
 		"suits":                     {fixtureSchemas(t), "", 0, ""},
 		"an unknown kind":           {withoutDemo, "", connect.CodeFailedPrecondition, "Demo"},
-		"Kubernetes without a type": {fixtureSchemas(t), testImage, connect.CodeFailedPrecondition, "its image runs Kubernetes"},
+		"Kubernetes without a type": {fixtureSchemas(t), testImage, connect.CodeFailedPrecondition, "it fails the node's identity"},
 		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, connect.CodeInvalidArgument, "image.json"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -256,11 +258,86 @@ func TestUpgradeKeepsSecretsFromTheHeadersSchemas(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || installed {
 		t.Fatalf("upgrade = %v, installed %v; want the redacted value refused", err, installed)
 	}
-	if strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), redactedSecret) {
-		t.Errorf("err = %v, want the redacted value and not the Secret's", err)
+	if strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), `Secret "demo": - at '/spec/data/token': pattern`) {
+		t.Errorf("err = %v, want the place and keyword and not the Secret's value", err)
 	}
-	if strings.Contains(journal.String(), "s3cret") {
-		t.Errorf("the journal holds the Secret's value:\n%s", journal.String())
+	if !strings.Contains(journal.String(), "refused") || strings.Contains(journal.String(), "s3cret") {
+		t.Errorf("the journal holds no refusal, or the Secret's value:\n%s", journal.String())
+	}
+}
+
+// TestUpgradeRefusalQuotesNoValue: a header schema that refuses a value of a document other than
+// a Secret learns where and by which keyword, but neither the reply nor the journal quotes the
+// value; nor does a refusal of a later step, whose own message would.
+func TestUpgradeRefusalQuotesNoValue(t *testing.T) {
+	var journal bytes.Buffer
+	log.SetOutput(&journal)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	attack := fixtureSchemas(t)
+	var doc map[string]any
+	if err := json.Unmarshal(attack["demo.example.org_v1alpha1_Demo.json"], &doc); err != nil {
+		t.Fatal(err)
+	}
+	spec := doc["properties"].(map[string]any)["spec"].(map[string]any)
+	spec["properties"].(map[string]any)["name"] = map[string]any{"type": "string", "pattern": "^$"}
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attack["demo.example.org_v1alpha1_Demo.json"] = data
+
+	s, _ := configServer(t)
+	installed, err := upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"}, Schemas: attack})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || installed {
+		t.Fatalf("upgrade = %v, installed %v", err, installed)
+	}
+	if !strings.Contains(err.Error(), `Demo "one": - at '/spec/name': pattern`) || strings.Contains(err.Error(), "first") {
+		t.Errorf("err = %v, want the place and keyword and not the value", err)
+	}
+
+	// The node's identity on an image with Kubernetes fails for the Node's missing type; its
+	// message would quote the Node, the reply names the step alone.
+	s, _ = configServer(t)
+	installed, err = upgradeOnce(t, s, &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{Version: "0.2.0", Role: "worker", Platform: "metal"},
+		Schemas: fixtureSchemas(t), KubernetesImage: []byte(testImage)})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || installed {
+		t.Fatalf("upgrade = %v, installed %v", err, installed)
+	}
+	if !strings.Contains(err.Error(), "it fails the node's identity") || strings.Contains(err.Error(), `Node "n1"`) {
+		t.Errorf("err = %v, want the step and not its message", err)
+	}
+	if !strings.Contains(journal.String(), "refused") || strings.Contains(journal.String(), "first") || strings.Contains(journal.String(), `Node "n1"`) {
+		t.Errorf("the journal holds no refusal, or a value:\n%s", journal.String())
+	}
+}
+
+// TestRedactSecretsReplacesEveryStringOfTheirSpec: every string under a Secret's spec is
+// replaced, in fields besides data too, and the documents given are left as they are.
+func TestRedactSecretsReplacesEveryStringOfTheirSpec(t *testing.T) {
+	docs, err := config.Parse(strings.NewReader(`apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: s}
+spec: {data: {k: v1}, more: {list: [v2, {deep: v3}], n: 7}}
+---
+apiVersion: demo.example.org/v1alpha1
+kind: Demo
+metadata: {name: one}
+spec: {name: first}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := redactSecrets(docs)
+	want := map[string]any{"data": map[string]any{"k": redactedSecret},
+		"more": map[string]any{"list": []any{redactedSecret, map[string]any{"deep": redactedSecret}}, "n": json.Number("7")}}
+	if !reflect.DeepEqual(got[0].Object["spec"], want) || got[0].Object["metadata"].(map[string]any)["name"] != "s" {
+		t.Errorf("redacted Secret = %#v", got[0].Object)
+	}
+	if !reflect.DeepEqual(got[1], docs[1]) {
+		t.Errorf("redacted another document: %#v", got[1].Object)
+	}
+	if docs[0].Object["spec"].(map[string]any)["data"].(map[string]any)["k"] != "v1" {
+		t.Error("changed the documents given")
 	}
 }
 
