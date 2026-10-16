@@ -21,11 +21,8 @@ import (
 // Bridged is a node's config as chalkctl generates it from the cluster manifest, which renders
 // each node's identity: the documents, the text chalkctl sends and its version.
 type Bridged struct {
-	Documents []Document
-	// Text is the documents as a YAML stream: one JSON document each, separated by ---.
-	Text string
-	// Version is the hash of the documents Text holds, as chalkd computes it from the text.
-	Version string
+	// Encoded holds the documents, the text chalkctl sends and its version.
+	Encoded
 
 	// node is the node's name, and extensions the number of documents at the end of Documents
 	// that chalkos.nodes.<node>.documents added.
@@ -120,24 +117,15 @@ func object(apiVersion, kind, name string, spec map[string]any) map[string]any {
 // encode writes objects as the YAML stream chalkctl sends and reads it back as chalkd does, so
 // the documents and their version are those of the text.
 func encode(objects []map[string]any) (Bridged, error) {
-	parts := make([]string, 0, len(objects))
+	docs := make([]Document, 0, len(objects))
 	for _, o := range objects {
-		b, err := json.Marshal(o)
-		if err != nil {
-			return Bridged{}, err
-		}
-		parts = append(parts, string(b))
+		docs = append(docs, FromObject(o))
 	}
-	text := strings.Join(parts, "\n---\n") + "\n"
-	docs, err := Parse(strings.NewReader(text))
+	e, err := Encode(docs)
 	if err != nil {
 		return Bridged{}, err
 	}
-	version, err := Hash(docs)
-	if err != nil {
-		return Bridged{}, err
-	}
-	return Bridged{Documents: docs, Text: text, Version: version}, nil
+	return Bridged{Encoded: e}, nil
 }
 
 func timeServers(servers []identity.TimeServer) []any {

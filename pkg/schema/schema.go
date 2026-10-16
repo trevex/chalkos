@@ -187,19 +187,29 @@ type Image struct {
 	*Schemas
 }
 
-// Load reads metadata.json and the schemas it lists. It fails when metadata's kind list and the
-// kinds found in dir/schemas differ, naming every kind present on only one side.
-func Load(dir string) (*Image, error) {
+// ReadMetadata reads an image directory's metadata.json alone, refusing a version this package
+// does not read.
+func ReadMetadata(dir string) (Metadata, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "metadata.json"))
 	if err != nil {
-		return nil, err
+		return Metadata{}, err
 	}
 	var md Metadata
 	if err := json.Unmarshal(b, &md); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", filepath.Join(dir, "metadata.json"), err)
+		return Metadata{}, fmt.Errorf("parse %s: %w", filepath.Join(dir, "metadata.json"), err)
 	}
 	if md.SchemaVersion != metadataVersion {
-		return nil, fmt.Errorf("%s: metadata schemaVersion %d is not supported; this chalkos reads version %d", dir, md.SchemaVersion, metadataVersion)
+		return Metadata{}, fmt.Errorf("%s: metadata schemaVersion %d is not supported; this chalkos reads version %d", dir, md.SchemaVersion, metadataVersion)
+	}
+	return md, nil
+}
+
+// Load reads metadata.json and the schemas it lists. It fails when metadata's kind list and the
+// kinds found in dir/schemas differ, naming every kind present on only one side.
+func Load(dir string) (*Image, error) {
+	md, err := ReadMetadata(dir)
+	if err != nil {
+		return nil, err
 	}
 	schemas, err := LoadSchemas(filepath.Join(dir, "schemas"))
 	if err != nil {

@@ -226,3 +226,22 @@ func TestValidateRejects(t *testing.T) {
 		})
 	}
 }
+
+// TestReadMetadata reads an image directory's metadata.json alone and refuses a version it does
+// not know.
+func TestReadMetadata(t *testing.T) {
+	md, err := ReadMetadata("../../test/fixtures/kinds/image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md.ID == "" || md.Platform == "" {
+		t.Errorf("metadata = %+v", md)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte(`{"schemaVersion": 7}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadMetadata(dir); err == nil || !strings.Contains(err.Error(), "schemaVersion 7") {
+		t.Errorf("version 7: %v", err)
+	}
+}
