@@ -379,3 +379,37 @@ func TestGenSecretsToStandardOutput(t *testing.T) {
 		t.Errorf("gen secrets --out - wrote a file: %v", err)
 	}
 }
+
+// TestGenSecretsPublicOut writes the public half to --public-out beside a secrets file in --out,
+// readable by everyone, and refuses a --public-out whose directory does not exist before it
+// writes any secret.
+func TestGenSecretsPublicOut(t *testing.T) {
+	ta := newTestApp(t)
+	out := filepath.Join(ta.dir, "out")
+	os.Mkdir(out, 0o700)
+	missing := filepath.Join(ta.dir, "missing", "secrets.pub.json")
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", out, "--public-out", missing}); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("gen secrets with --public-out in a missing directory = %v", err)
+	}
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", "-", "--public-out", missing}); err == nil || ta.stdout.Len() != 0 {
+		t.Errorf("gen secrets --out - with --public-out in a missing directory = %v, stdout %q", err, ta.stdout)
+	}
+	if entries, _ := os.ReadDir(out); len(entries) != 0 {
+		t.Errorf("a refused gen secrets wrote %v", entries)
+	}
+	public := filepath.Join(ta.dir, "public.json")
+	if err := ta.run(context.Background(), []string{"gen", "secrets", "--plaintext", "--out", out, "--public-out", public}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(public)
+	if err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("%s: %v, %v; want mode 0644", public, info, err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "secrets.pub.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("secrets.pub.json was written beside the secrets file as well: %v", err)
+	}
+	data, _ := os.ReadFile(public)
+	if _, err := pki.ReadPublic(data); err != nil {
+		t.Errorf("%s: %v", public, err)
+	}
+}

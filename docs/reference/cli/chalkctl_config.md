@@ -15,7 +15,7 @@ a client file needs the secrets file.
 ## Examples
 
 ```
-  chalkctl config new --name alice --role operator
+  chalkctl config new --name alice --role operator --secrets secrets.age
 ```
 
 ## Options

@@ -31,18 +31,28 @@ chalkctl validate
 chalklab create --secrets secrets.json
 ```
 
-`chalklab create` prints the next commands: the kubeconfig to use, `chalkctl status` with the
-lab's inventory and client file, `chalklab status` and `chalklab destroy`. `chalklab status` names
-the lab's files: the kubeconfig, the inventory, the client file and the Secure Boot db key and
-certificate the lab's firmware trusts. After a reboot of this machine, `chalklab start` starts the
-lab again; a node that powered off stops alone, and `chalklab start` starts it again.
+`chalklab create` prints the next commands: the kubeconfig to export, the client file to export
+as `CHALKOSCONFIG`, `chalkctl status` with the lab's inventory, `chalklab status` and
+`chalklab destroy`. `chalklab status` names the lab's files: the kubeconfig, the inventory, the
+client file and the Secure Boot db key and certificate the lab's firmware trusts. After a reboot
+of this machine, `chalklab start` starts the lab again; a node that powered off stops alone, and
+`chalklab start` starts it again.
+
+To change a node's config, edit the YAML of `cluster/` or `nodes/`, check it, and deliver it to
+the node. The lab's inventory reads the files of this directory; delivering config needs the
+secrets file:
+
+```sh
+chalkctl validate
+chalkctl apply-config w1 --inventory <lab inventory> --secrets secrets.json
+```
 
 To upgrade, edit `cluster.nix`, build the image again with `nix build .#node-kvm -o
 images/node-kvm`, and let chalkctl sign it with the lab's db key and install it, with the files
-`chalklab status` names:
+`chalklab status` names and the client file `CHALKOSCONFIG` names:
 
 ```sh
-chalkctl upgrade --inventory <lab inventory> --config <client file> \
+chalkctl upgrade --inventory <lab inventory> \
   --sign-key <db key> --sign-cert <db certificate> --allow-downtime
 ```
 

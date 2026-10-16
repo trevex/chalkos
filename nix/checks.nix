@@ -969,9 +969,9 @@ in
 
   # The lab template: its flake builds the nodes' kvm image, which finds its virtio disks at boot,
   # and its dev shell brings chalklab, chalkctl and kubectl. chalkctl validate accepts the
-  # template's nodes with that image where their Image points, and each node's MAC address in
-  # chalklab.yaml is the one its Network matches. The image carries the test secrets' OS CA in
-  # place of the secrets.pub.json chalkctl gen secrets writes.
+  # template's nodes with that image where their Image points; TestTheLabFiles of go-unit checks
+  # chalklab.yaml's MAC addresses. The image carries the test secrets' OS CA in place of the
+  # secrets.pub.json chalkctl gen secrets writes.
   template-lab =
     let
       system = pkgs.stdenv.hostPlatform.system;
@@ -1002,13 +1002,6 @@ in
       ln -s ${c.roles.node.images.kvm} lab/images/node-kvm
       cd lab
       chalkctl validate
-      for node in cp1 w1; do
-        mac=$(sed -n 's/.*macAddress: "\(.*\)".*/\1/p' nodes/$node.yaml)
-        grep -q "$node: {mac: \"$mac\"}" chalklab.yaml || {
-          echo "error: chalklab.yaml does not give $node the MAC address $mac, which nodes/$node.yaml matches" >&2
-          exit 1
-        }
-      done
       touch $out
     '';
 

@@ -441,8 +441,20 @@ func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 	}
 	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, inventory)
 	keys := filepath.Join(dir, "keys")
-	fmt.Fprintf(a.stdout, "The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with\nthe lab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s \\\n    --sign-key %s --sign-cert %s\n",
-		inventory, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
+	// One or two control planes lose etcd's quorum while one reboots, which an upgrade accepts
+	// only with --allow-downtime.
+	controlPlanes := 0
+	for _, n := range l.Nodes {
+		if n.Kind == identity.KindControlPlane {
+			controlPlanes++
+		}
+	}
+	var downtime string
+	if controlPlanes == 1 || controlPlanes == 2 {
+		downtime = " --allow-downtime"
+	}
+	fmt.Fprintf(a.stdout, "The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with\nthe lab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s%s \\\n    --sign-key %s --sign-cert %s\n",
+		inventory, downtime, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
 }
 
 // maintenanceFingerprint waits for a node's chalkd to come up in maintenance mode, and returns

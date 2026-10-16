@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -490,3 +491,27 @@ func appendDocument(t *testing.T, path, doc string) {
 
 // passwordSystemDisk is n1's system disk with the password fallback.
 const passwordSystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}, encryption: {fallback: password}}\n"
+
+// TestPartialClusterRefusals refuses, without an inventory and with the secrets file at hand, the
+// commands that need the nodes' config or the cluster's name, and etcd members without --via.
+func TestPartialClusterRefusals(t *testing.T) {
+	ta := newTestApp(t)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"rotate", "os-ca"}, "rotate needs an inventory"},
+		{[]string{"node-ca", "rotate"}, "node-ca rotate needs an inventory"},
+		{[]string{"recovery-key", "n1"}, "recovery-key needs an inventory"},
+		{[]string{"kubeconfig"}, "kubeconfig needs an inventory"},
+		{[]string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(ta.dir, "alice.json")}, "reads the cluster's name from the Cluster document of an inventory's nodes; pass --inventory"},
+		{[]string{"etcd", "members"}, "--via"},
+	} {
+		if err := ta.run(context.Background(), tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s = %v, want %q", strings.Join(tc.args, " "), err, tc.want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(ta.dir, "alice.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("config new without an inventory wrote a client file: %v", err)
+	}
+}

@@ -330,14 +330,29 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	// The control planes drain the nodes and keep etcd's quorum, so every node's type is read,
 	// also of nodes the run leaves alone. Loading the inventory read every node's files already,
 	// so a node whose files are broken stops every command, and this adds only a node whose
-	// documents do not form a Node of its name and its Image.
+	// documents do not form a Node of its name and its Image. Without an inventory, the nodes
+	// --address names that the run leaves alone are asked.
 	for _, name := range r.nodeNames() {
+		if _, probed := probedCPs[name]; c.partial && !probed {
+			_, st, err := r.probe(ctx, name)
+			if err != nil {
+				return err
+			}
+			probedCPs[name] = st.Kubernetes.GetKind() == identity.KindControlPlane
+		}
 		kind, err := c.kind(name)
 		if err != nil {
 			return err
 		}
 		if probedCPs[name] || kind == identity.KindControlPlane {
 			r.controlPlanes = append(r.controlPlanes, name)
+		}
+	}
+	if len(r.controlPlanes) == 0 && !r.noReboot {
+		for _, n := range r.nodes {
+			if n.inCluster {
+				return fmt.Errorf("%s is drained through a control plane, but the cluster has none to ask; pass --inventory, or give a control plane's address with --address", n.name)
+			}
 		}
 	}
 	return nil

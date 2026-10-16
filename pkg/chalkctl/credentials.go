@@ -170,8 +170,8 @@ func (a *app) configNew(ctx context.Context, f configNewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
-	if err := c.requireNodes("config new"); err != nil {
-		return err
+	if c.partial {
+		return errors.New("config new reads the cluster's name from the Cluster document of an inventory's nodes; pass --inventory")
 	}
 	secrets, err := a.loadSecrets(ctx, sf)
 	if err != nil {

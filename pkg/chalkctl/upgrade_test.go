@@ -1025,6 +1025,14 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	if err := l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config}); err == nil || !strings.Contains(err.Error(), "--address NODE=ADDR") {
 		t.Errorf("upgrade without an inventory or addresses = %v", err)
 	}
+	// A worker is drained through a control plane, which only an address names.
+	err = l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--address", "w1=" + l.addrs["w1"]})
+	if err == nil || !strings.Contains(err.Error(), "give a control plane's address with --address") {
+		t.Errorf("upgrade of a worker without a control plane's address = %v", err)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("asked %q", got)
+	}
 	if err := l.ta.run(context.Background(), addressed("upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config)); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}

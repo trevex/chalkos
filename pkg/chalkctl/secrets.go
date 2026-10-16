@@ -262,6 +262,9 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 		if f.publicOut == "" {
 			return fmt.Errorf("%w: gen secrets --out - needs --public-out, the file the public half goes to, which images trust the OS CA from", errUsage)
 		}
+		if err := publicDirExists(f.publicOut); err != nil {
+			return err
+		}
 		return a.genSecretsToStdout(recipients, f.plaintext, f.publicOut)
 	}
 	name := "secrets.age"
@@ -279,6 +282,9 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 			return fmt.Errorf("%s exists; the secrets are generated once per cluster", p)
 		}
 	}
+	if err := publicDirExists(publicPath); err != nil {
+		return err
+	}
 
 	secrets, err := pki.GenerateSecrets(time.Now())
 	if err != nil {
@@ -290,6 +296,16 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 	fmt.Fprintf(a.stdout, "wrote %s and %s\n", secretsFile, publicPath)
 	if f.plaintext {
 		fmt.Fprintf(a.stderr, "warning: %s holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry\n", secretsFile)
+	}
+	return nil
+}
+
+// publicDirExists refuses a --public-out whose directory does not exist before any secret is
+// generated, so the secrets never go out without their public half.
+func publicDirExists(path string) error {
+	dir := filepath.Dir(path)
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return fmt.Errorf("the directory %s of %s does not exist", dir, path)
 	}
 	return nil
 }

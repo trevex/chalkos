@@ -141,15 +141,23 @@ func TestReadLabFileRefuses(t *testing.T) {
 	}
 }
 
-// TestTheE2ELabFile reads the lab file of the e2e tests' main cluster, with a kvm image where
-// each of its nodes' Image points, and checks that each node's MAC address is the one its
-// Network documents match, so the lab file cannot drift from the inventory unnoticed.
-func TestTheE2ELabFile(t *testing.T) {
+// TestTheLabFiles reads the lab file of the e2e tests' main cluster and that of the lab template,
+// so neither can drift from its inventory unnoticed.
+func TestTheLabFiles(t *testing.T) {
+	t.Run("e2e", func(t *testing.T) { checkLabFile(t, "../../test/fixtures/clusters", "chalklab/lab.yaml") })
+	t.Run("template", func(t *testing.T) { checkLabFile(t, "../../templates/lab", "chalklab.yaml") })
+}
+
+// checkLabFile reads the lab file at labFile below a copy of src, with a kvm image where each of
+// its nodes' Image points, and checks that each node's MAC address is the one its Network
+// documents match.
+func checkLabFile(t *testing.T, src, labFile string) {
+	t.Helper()
 	dir := t.TempDir()
-	if err := os.CopyFS(dir, os.DirFS("../../test/fixtures/clusters")); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	lf, err := readLabFile(filepath.Join(dir, "chalklab", "lab.yaml"))
+	lf, err := readLabFile(filepath.Join(dir, labFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +202,7 @@ func TestTheE2ELabFile(t *testing.T) {
 			}
 		}
 		if !slices.Contains(matched, n.MAC) {
-			t.Errorf("lab.yaml gives %s the MAC address %s, but its Network documents match %q", n.Name, n.MAC, matched)
+			t.Errorf("%s gives %s the MAC address %s, but its Network documents match %q", labFile, n.Name, n.MAC, matched)
 		}
 	}
 }
@@ -640,7 +648,7 @@ func TestCommandsDescribed(t *testing.T) {
 // commands after it name no client file, and the kubeconfig only once a control plane runs.
 func TestPrintNext(t *testing.T) {
 	a, out := testApp()
-	l := &lab.Lab{Cluster: "lab", Nodes: []lab.LabNode{{Name: "cp1"}, {Name: "w1"}}}
+	l := &lab.Lab{Cluster: "lab", Nodes: []lab.LabNode{{Name: "cp1", Kind: "controlplane"}, {Name: "w1", Kind: "worker"}}}
 	a.printNext("/state/lab", l, true)
 	want := `
 the lab of lab runs cp1, w1; next:
@@ -652,7 +660,7 @@ the lab of lab runs cp1, w1; next:
   chalklab destroy
 The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with
 the lab's db key, or with --image of an image chalklab sign signed:
-  chalkctl upgrade --inventory /state/lab/chalkos.yaml \
+  chalkctl upgrade --inventory /state/lab/chalkos.yaml --allow-downtime \
     --sign-key /state/lab/keys/db.key --sign-cert /state/lab/keys/db.crt
 `
 	if out.String() != want {
@@ -662,5 +670,25 @@ the lab's db key, or with --image of an image chalklab sign signed:
 	a.printNext("/state/lab", l, false)
 	if s := out.String(); strings.Contains(s, "KUBECONFIG") || strings.Contains(s, "kubectl") || !strings.Contains(s, "export CHALKOSCONFIG=/state/lab/chalkctl.json\n") {
 		t.Errorf("output without Kubernetes:\n%s", s)
+	}
+}
+
+// TestPrintNextAllowsDowntimeBelowThreeControlPlanes names --allow-downtime in the upgrade it
+// prints only for a lab of one or two control planes, whose etcd loses its quorum while one
+// reboots.
+func TestPrintNextAllowsDowntimeBelowThreeControlPlanes(t *testing.T) {
+	for _, tc := range []struct {
+		kinds []string
+		want  bool
+	}{{[]string{"controlplane", "worker"}, true}, {[]string{"controlplane", "controlplane"}, true}, {[]string{"controlplane", "controlplane", "controlplane"}, false}, {[]string{""}, false}} {
+		a, out := testApp()
+		l := &lab.Lab{Cluster: "lab"}
+		for i, k := range tc.kinds {
+			l.Nodes = append(l.Nodes, lab.LabNode{Name: "n" + strconv.Itoa(i), Kind: k})
+		}
+		a.printNext("/state/lab", l, false)
+		if got := strings.Contains(out.String(), "--allow-downtime"); got != tc.want {
+			t.Errorf("%v: --allow-downtime %v, want %v:\n%s", tc.kinds, got, tc.want, out)
+		}
 	}
 }

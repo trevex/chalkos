@@ -13,6 +13,8 @@ let
     ../pkg
     ../test/e2e
     ../test/fixtures
+    # The lab template's YAML, which a chalklab test reads.
+    (lib.fileset.fileFilter (f: f.hasExt "yaml") ../templates/lab)
   ];
 in
 {

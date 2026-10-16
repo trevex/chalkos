@@ -54,7 +54,7 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
 const configLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
 a client file needs the secrets file.`
 
-const configExample = `  chalkctl config new --name alice --role operator`
+const configExample = `  chalkctl config new --name alice --role operator --secrets secrets.age`
 
 const configNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
 the OS CA that nodes' certificates chain to. A client file works for status, logs, disks,

@@ -202,7 +202,7 @@ the lab of lab runs cp1, w1; next:
   chalklab destroy
 The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with
 the lab's db key, or with --image of an image chalklab sign signed:
-  chalkctl upgrade --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml \
+  chalkctl upgrade --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml --allow-downtime \
     --sign-key /home/alice/.local/state/chalklab/lab/keys/db.key --sign-cert /home/alice/.local/state/chalklab/lab/keys/db.crt
 ```
 
@@ -371,6 +371,38 @@ $ chalklab console cp1
 [   33.495178] chalkd[544]: chalkd: kubernetes: applied 19 objects
 ```
 
+## Change the nodes' config
+
+A node's config is the YAML of its files, which changes without a new image.
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers it to a running
+node, which applies it in place. Add a file to `cluster/` that gives every node another time
+server:
+
+```yaml title="cluster/time.yaml"
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec:
+  servers:
+    - host: time.cloudflare.com
+```
+
+Check the nodes' config against the image, and deliver it to each node. Delivering config needs
+the secrets file, which `--secrets` names; a client file does not suffice:
+
+```console
+$ chalkctl validate
+cp1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config fdf98e0f1ca7c61fb4eecd3e6bb260c5e8c343adee34d499a2b5407e7eedbc9c
+w1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e
+$ chalkctl apply-config cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+cp1 runs config fdf98e0f1ca7c61fb4eecd3e6bb260c5e8c343adee34d499a2b5407e7eedbc9c
+$ chalkctl apply-config w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+w1 runs config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e
+```
+
+The lab's inventory takes the files of `cluster/` and `nodes/` from this directory, so it sees
+the new file. `chalkctl status` now shows each node's new config version as the inventory's.
+
 ## Upgrade the cluster
 
 A node changes its software only by booting a new image. An
@@ -453,7 +485,7 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 
 ```console
 $ chalkctl status w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
-config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850 (the inventory's)
+config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e (the inventory's)
 platform kvm (the inventory's)
 image 0.2.0, booted from chalkos_0.2.0.efi
 VOLUME  DISK    MOUNT POINT  STATE
@@ -468,7 +500,7 @@ certificates:
 trust:
   OS CA          6c801dfa460f3c12
   Kubernetes CA  03169729fc14b177
-time: synchronised to 192.53.103.104, offset -0.000000 s
+time: synchronised to 162.159.200.1, offset -0.000031 s
 ```
 
 Both nodes are `Ready` in Kubernetes again:
