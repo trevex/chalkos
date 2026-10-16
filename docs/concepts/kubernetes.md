@@ -11,7 +11,9 @@ scheduler run as static pods from the upstream images, which
 [chalkd](../reference/glossary.md#chalkd) renders on every
 [control plane](../reference/glossary.md#control-plane). Certificates come from the cluster's
 [secrets file](../reference/glossary.md#secrets-file) instead of `kubeadm init`, control planes
-join etcd on their own, and chalkd applies the cluster's add-ons at every boot.
+join etcd on their own, and chalkd applies the cluster's add-ons at every boot. The image fixes
+the Kubernetes release; every setting of the cluster and of each node is a
+[config document](../reference/glossary.md#config-document).
 
 ## Which Kubernetes does a node run?
 
@@ -24,43 +26,66 @@ the same version. etcd, the pause image and CoreDNS have their own images under
 A Kubernetes upgrade is therefore an image [upgrade](../reference/glossary.md#upgrade), rolled
 through the cluster like any other, as [Upgrades](upgrades.md) describes.
 
-A node's `kubernetes.kind` in the cluster
-definition decides what it is in Kubernetes. The kind reaches the node in its config as
-`Node.spec.type`, so control planes and workers of a [role](../reference/glossary.md#role) boot
-the same image. A node keeps its type once it holds its
-[Kubernetes share](../reference/glossary.md#kubernetes-share): chalkd refuses config that changes
-it, because the share holds certificates for that kind. A role with
-[`kubernetes.enable`](../reference/options.md#chalkoskubernetesenable) false runs no
-Kubernetes:
+`spec.type` of the node's [`Node`](../reference/kinds.md#node) document decides what the node is
+in Kubernetes, so control planes and workers boot the same image. A node keeps its type once it
+holds its [Kubernetes share](../reference/glossary.md#kubernetes-share): chalkd refuses config that
+changes it, because the share holds certificates for that type. The images of a
+[variant](../reference/glossary.md#variant) built with
+[`kubernetes = false`](../reference/options.md#variantskubernetes) run no Kubernetes, and their
+nodes leave `spec.type` unset:
 
-| Kind | Runs |
+| Type | Runs |
 | --- | --- |
 | `controlplane` | containerd, the kubelet, and etcd and the control plane as static pods |
-| `worker` (default) | containerd and the kubelet |
-| A role without Kubernetes | No Kubernetes at all; the image leaves it out |
+| `worker` | containerd and the kubelet |
+| none, on an image without Kubernetes | No Kubernetes at all; the image leaves it out |
 
 ## Where do a node's Kubernetes settings come from?
 
 The image fixes what it ships: the Kubernetes release, the images of its components and the pod
-network, recorded in `/etc/chalkos/kubernetes/image.json`. The rest of the cluster's settings reach
-the node as its [config](../reference/glossary.md#config): chalkctl generates the node's
-`Kubernetes`, `Flannel` and `RegistryMirror` documents, and a control plane's `Addon` documents,
-from the [cluster definition](../reference/glossary.md#cluster-definition), and
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers them. chalkd builds
-the node's cluster from its `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and
-`image.json` into `/run/chalkos/kubernetes/cluster.json`, at boot and on every apply. On an image
-with Kubernetes, the node's config must hold a `Kubernetes` document, or chalkd fails at boot.
+network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
+[config](../reference/glossary.md#config), in documents of the kinds of the group
+`kubernetes.chalkos.dev`:
+
+| Kind | Count | Holds |
+| --- | --- | --- |
+| [`Kubernetes`](../reference/kinds.md#kubernetes) | one, required | The cluster's address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), VXLAN source ranges, scheduling on control planes and extra flags of every component |
+| [`Kubelet`](../reference/kinds.md#kubelet) | at most one | The node's own labels, taints and addresses |
+| [`RegistryMirror`](../reference/kinds.md#registrymirror) | one per registry | The mirrors containerd tries before a registry |
+| [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes |
+| [`Addon`](../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |
+
+The cluster's documents go into the files the [inventory](../reference/glossary.md#inventory)
+gives every node, so all nodes hold the same ones, and a node's `Kubelet` goes into its own file,
+as [Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes.
+The node's config must hold one `Kubernetes` document on an image with Kubernetes, and its
+`Cluster` an endpoint: [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd
+refuse a set without one, with `no Kubernetes: the config of a node whose image runs Kubernetes
+holds one Kubernetes document`. Every field has a default, so a cluster on IPv4 with the default
+ranges needs no more than the lab template's document:
+
+```yaml
+# Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
+# 10.96.0.0/12.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec: {}
+```
+
+chalkctl delivers the documents at install and with
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). chalkd builds the node's
+cluster from its `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and `image.json` into
+`/run/chalkos/kubernetes/cluster.json`, at boot and on every apply.
 
 A changed cluster restarts `chalkos-kubernetes.service` and `kubelet.service`, and chalkd on a
 control plane starts its Kubernetes work again, so the static pods and add-ons follow the new
-settings. Some settings are fixed once the cluster exists: the address families of
-`ipFamilies`, the pod ranges of
-`podCIDRs`, the service ranges of
-`serviceCIDRs` and the
-addresses of `dnsIPs`, because the
+settings. Some settings are fixed once the cluster exists: `ipFamilies`, the pod ranges of
+`podCIDRs`, the service ranges of `serviceCIDRs` and the addresses of `dnsIPs`, because the
 certificates, etcd and the ranges the control plane allocated were made for them. On a node that
-holds a [Kubernetes share](../reference/glossary.md#kubernetes-share), `chalkctl apply-config`
-refuses config that changes them; changing them takes reinstalling the nodes into a new cluster.
+holds a Kubernetes share, `chalkctl apply-config` is refused when it changes them, with a message
+such as `the config changes the cluster's podCIDRs from ... to ...; it is fixed once the cluster
+exists, so keep it, or reinstall the node into a new cluster`.
 
 ## What runs on every node?
 
@@ -68,27 +93,47 @@ containerd and the kubelet run as systemd units from the image. Before the kubel
 `chalkos-kubernetes.service` prepares the node: it picks the node's addresses, as
 [Networking](networking.md) describes, issues a control plane's certificates, and writes the
 kubelet's kubeconfig and per-node flags below `/run/chalkos/kubernetes`. A node without a
-[Kubernetes share](../reference/glossary.md#kubernetes-share), which is not installed yet, runs no
-kubelet.
+Kubernetes share, which is not installed yet, runs no kubelet.
 
 chalkd renders the kubelet's configuration from the node's cluster into
 `/run/chalkos/kubernetes/kubelet/config.json`, the same on every node of the cluster: webhook
 authentication and authorisation, no anonymous access and no read-only port, the systemd cgroup
 driver, the cluster's DNS address and domain, and `rotateCertificates` with `serverTLSBootstrap`.
-What differs per node comes from the node's [config](../reference/glossary.md#config) as flags,
-which the kubelet gets in `$KUBELET_ARGS`: the node name, its addresses, its labels and its taints.
-A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule`
-unless `chalkos.cluster.kubernetes.allowSchedulingOnControlPlanes`
-is set. `chalkos.cluster.kubernetes.extraArgs.kubelet`
-adds flags.
+What differs per node comes from its `Kubelet` document as flags, which the kubelet gets in
+`$KUBELET_ARGS`: the node name, its addresses, its labels and its taints. The homelab example's
+worker carries fast storage and keeps other workloads off:
 
-containerd pulls through the mirrors of
-`chalkos.cluster.registries.mirrors`,
-tried in order before the registry itself. chalkctl delivers them as one `RegistryMirror`
-document per registry, and `chalkos-registry-mirrors.service` writes containerd's
+```yaml
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubelet
+metadata: {name: kubelet}
+spec:
+  labels: {node.kubernetes.io/storage: ssd}
+  taints: [{key: dedicated, value: storage, effect: NoSchedule}]
+```
+
+A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule` unless the
+`Kubernetes` document sets `allowSchedulingOnControlPlanes: true`. `extraArgs.kubelet` of the
+`Kubernetes` document adds flags to every kubelet.
+
+containerd pulls through the mirrors of the `RegistryMirror` documents, tried in order before the
+registry itself. Each document names one registry as image references name it, in
+`spec.registry`:
+
+```yaml
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: RegistryMirror
+metadata: {name: docker.io}
+spec:
+  registry: docker.io
+  mirrors: [https://mirror.example.com]
+```
+
+`chalkos-registry-mirrors.service` writes containerd's
 `/run/containerd/certs.d/<registry>/hosts.toml` from them before containerd starts and whenever
-they change; containerd reads those files on every pull. Mirrors must be `https://` URLs, because nothing
-authenticates what a plain HTTP mirror serves; `allowPlainHTTP` exists for test registries.
+they change; containerd reads those files on every pull. Every mirror must be an `https://` URL,
+because nothing authenticates what a plain HTTP mirror serves; `allowPlainHTTP: true`, meant for
+test registries, also accepts `http://` URLs and bare hosts.
 
 ## How does the control plane run?
 
@@ -108,18 +153,30 @@ The flags are close to kubeadm's, with a few chalkos choices: the API server tal
 requests only to `/livez`, `/readyz` and `/healthz`, has bootstrap-token authentication off, and
 encrypts Secrets in etcd with the cluster's encryption key. The controller-manager runs without the
 bootstrap-signer and token-cleaner controllers, since nothing uses bootstrap tokens.
-`chalkos.cluster.kubernetes.extraArgs`
-adds or overrides flags per component, named without their leading dashes with letters, digits,
-`_`, `.` and `-`, except the API server's `anonymous-auth`, `authentication-config`,
-`authorization-mode` and `enable-bootstrap-token-auth`, which decide who may do what, and the
-kubelet's `anonymous-auth`, `authentication-token-webhook`, `authorization-mode`,
-`bootstrap-kubeconfig`, `cert-dir`, `client-ca-file`, `config`, `config-dir`, `hostname-override`,
-`kubeconfig`, `node-ip`, `node-labels`, `pod-manifest-path`, `read-only-port`,
-`register-with-taints`, `rotate-certificates`, `tls-cert-file` and `tls-private-key-file`, which set
-where it finds its configuration, credentials and static pods, the node's name, addresses, labels
-and taints, and who may use its API. These flags are refused, also spelt with `_` for `-`, which the
-components accept. A node's labels and taints come from
-`chalkos.nodes.<name>.labels` and `taints`.
+
+`extraArgs` of the `Kubernetes` document adds or overrides flags per component, `etcd`,
+`kube-apiserver`, `kube-controller-manager`, `kube-scheduler` and `kubelet`, each a map of flags
+named without their leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter
+or digit. A kubelet flag's name and value may hold no whitespace or backslash:
+
+```yaml
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
+spec:
+  extraArgs:
+    kube-apiserver: {audit-log-maxage: "30"}
+```
+
+Some flags are refused, also spelt with `_` for `-`, which the components accept: the API
+server's `anonymous-auth`, `authentication-config`, `authorization-mode` and
+`enable-bootstrap-token-auth`, which decide who may do what, and the kubelet's `anonymous-auth`,
+`authentication-token-webhook`, `authorization-mode`, `bootstrap-kubeconfig`, `cert-dir`,
+`client-ca-file`, `config`, `config-dir`, `hostname-override`, `kubeconfig`, `node-ip`,
+`node-labels`, `pod-manifest-path`, `read-only-port`, `register-with-taints`,
+`rotate-certificates`, `tls-cert-file` and `tls-private-key-file`, which set where it finds its
+configuration, credentials and static pods, the node's name, addresses, labels and taints, and
+who may use its API. A node's labels and taints come from its `Kubelet` document instead.
 
 ## How does a cluster start?
 
@@ -133,8 +190,9 @@ chalkctl bootstrap <node>
 chalkd records the [bootstrap](../reference/glossary.md#bootstrap) on
 [STATE](../reference/glossary.md#state) before it starts anything, so a failure after that point
 is retried by the next boot and never initialises a second cluster. It then renders the static
-pods with an etcd of one member, waits for the API server, and applies the cluster's manifests;
-chalkctl waits until they are applied, up to `--timeout` (20 minutes by default). The node refuses
+pods with an etcd of one member, waits for the API server, and applies chalkos's add-ons and the
+objects of the node's `Addon` documents; chalkctl waits until they are applied, up to `--timeout`
+(20 minutes by default). The node refuses
 to bootstrap when it is bootstrapped already, has joined or is joining a cluster, holds etcd data,
 has left etcd, or finds the cluster's API server answering at the endpoint, because then a cluster
 exists and the node joins it instead.
@@ -205,30 +263,38 @@ chalkd renders the first four from the node's cluster, and the last are the obje
 2. kube-proxy, as a DaemonSet in nftables mode.
 3. The pod network, flannel unless [`chalkos.cni.provider`](../reference/options.md#chalkoscniprovider)
    is `none`.
-4. CoreDNS, at the primary family's address of
-   `dnsIPs`.
-5. The objects of `chalkos.cluster.manifests`,
-   in their order, which chalkctl turns into an `Addon` document of each control plane.
+4. CoreDNS, at the primary family's address of `dnsIPs`.
+5. The objects of the `Addon` documents, each document's `spec.objects` in their order and the
+   documents in the order of their names.
+
+An `Addon` document holds any Kubernetes objects, for example a namespace for the cluster's
+applications:
+
+```yaml
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Addon
+metadata: {name: apps}
+spec:
+  objects:
+    - apiVersion: v1
+      kind: Namespace
+      metadata: {name: apps}
+```
 
 chalkd applies the list at bootstrap and again on every bootstrapped control plane each time it
 starts its Kubernetes work: at boot, after the node's cluster changed, and when
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers changed `Addon`
 documents, which restarts no unit. An image upgrade or a changed config therefore rolls out changed
-add-ons without a separate step. An object an `Addon` document no longer holds is not deleted. Then
-chalkd runs the approver of kubelet serving certificates.
+add-ons without a separate step. An object an `Addon` document no longer holds is not deleted.
+Beside the apply, from the moment the API server is ready, chalkd runs the approver of kubelet
+serving certificates, so an object that fails to apply does not leave kubelets without them.
 
-Only control planes apply the `Addon` objects to the cluster's API, so chalkctl delivers `Addon`
-documents to control planes alone and workers never hold them; a worker given one anyway applies
-nothing and restarts nothing. The objects may include Secrets, so a control plane keeps its
-`Addon` documents in its stored config on [STATE](../reference/glossary.md#state), readable by
-root alone: chalkd never writes them below `/run/chalkos/config` for the node's services, and
-`chalkcfg` does not print them.
-
-```nix
-chalkos.cluster.manifests = [
-  { apiVersion = "v1"; kind = "Namespace"; metadata.name = "apps"; }
-];
-```
+Only control planes apply the `Addon` objects to the cluster's API. An `Addon` may sit in the files
+every node gets, but chalkctl delivers `Addon` documents to control planes alone, and workers never
+hold them; a worker given one anyway applies nothing and restarts nothing. The objects may include
+Secrets, so a control plane keeps its `Addon` documents in its stored config on
+[STATE](../reference/glossary.md#state), readable by root alone: chalkd never writes them below
+`/run/chalkos/config` for the node's services, and `chalkcfg` does not print them.
 
 ## How is the cluster reached?
 
@@ -271,8 +337,8 @@ Other states name what the node waits for or why it stopped:
 
 ## Limits
 
-- An object removed from `chalkos.cluster.manifests` is not deleted from the cluster; delete it
-  with kubectl.
+- An object removed from an `Addon` document is not deleted from the cluster; delete it with
+  kubectl.
 - chalkos has no etcd backup or restore command. etcd's data lives only on the control planes'
   VAR partitions.
 - The API server on a control plane uses only its own etcd member. When that member is unhealthy,
@@ -284,13 +350,15 @@ Other states name what the node waits for or why it stopped:
 
 ## Related pages
 
+- [Config and the inventory](config.md): how the Kubernetes documents reach the nodes.
 - [Networking](networking.md): node addresses, the VIP and the pod network.
 - [Certificates](certificates.md): the CAs and certificates the cluster runs on.
 - [Upgrades](upgrades.md): how a new Kubernetes version reaches the nodes.
 - [Install on bare metal](../guides/install-bare-metal.md#bootstrap-the-first-control-plane) for
   the bootstrap, and [Run a highly available control plane](../guides/ha-control-plane.md) for
   joins and membership changes.
+- [Config kinds](../reference/kinds.md#kubernetes) for every field of `Kubernetes`, `Kubelet`,
+  `RegistryMirror`, `Flannel` and `Addon`.
 - [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md),
-  [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md),
-  [`chalkctl etcd`](../reference/cli/chalkctl_etcd.md) and
-  `chalkos.cluster.manifests`.
+  [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) and
+  [`chalkctl etcd`](../reference/cli/chalkctl_etcd.md).
