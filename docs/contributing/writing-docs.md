@@ -82,7 +82,7 @@ Two flake checks guard the documentation:
 
 | Check | Fails when |
 | --- | --- |
-| `docs` | The navigation names a page that does not exist; the strict build finds a broken link or anchor; `docgen check` finds a command that does not exist; `docgen yaml` finds a config document the schemas refuse; or a Nix file a page shows does not parse. |
+| `docs` | The navigation names a page that does not exist; the strict build finds a broken link or anchor; `docgen check` finds a command that does not exist; `docgen yaml` finds a config document the schemas refuse; or a Nix block a page shows does not parse. |
 | `docs-generated` | The generated pages in the repository differ from what the code generates. It names `nix run .#docgen` as the fix. |
 
 Run both before handing in a change:
@@ -116,11 +116,15 @@ nix develop -c go run ./cmd/docgen check docs
 subdomain of it, or `rack.example.org`, the homelab's extension, as `chalkctl validate` checks a
 node's files: against the schemas of an image of the default variant with the homelab's `Rack`
 kind, and of the inventory and the lab file. A kind the image does not declare, a misspelled field
-or a value of the wrong type fails. Documents of other groups, such as Kubernetes objects, and
-fragments without an `apiVersion` are not checked. A `nix` block whose `title` names a `.nix` file
-is a whole file, and the check runs nixfmt's parser over it; a fragment of a module has no title
-and is not parsed. Both run only in the `docs` check, which builds the image's schemas and
-provides nixfmt.
+or a value of the wrong type fails, and the error names the page's line the document starts on.
+Documents of other groups, such as Kubernetes objects, fragments without an `apiVersion` and
+documents that are not objects are not checked.
+
+The `docs` check also runs nixfmt's parser over every `nix` block. A block whose `title` names a
+`.nix` file is a whole file and must parse as one. A block without such a title is a fragment and
+must parse as an expression, or within braces as the attributes of a module, such as
+`chalkos.kernel.moduleGroups = [ "gpu" ];`. Both checks run only in the `docs` check, which
+builds the image's schemas and provides nixfmt.
 
 ## Add a page
 

@@ -188,13 +188,16 @@ file's, as `chalkctl validate` checks a node's files. Show whole documents, with
 `kind`, `metadata.name` and `spec`, so the check reads them: a fragment without an `apiVersion` is
 not checked. A block that is a file names it in its `title`, such as `title="nodes/w1.yaml"`. A
 `nix` block titled with a `.nix` file is a whole file, which the check parses; a fragment of a
-module has no title.
+module has no title and must parse as an expression or as the attributes of a module.
 
 ### Placeholders
 
 A value the reader replaces is a placeholder: lower-case words joined by dashes in angle
 brackets, such as `<node>`, `<client-file>` or `<db-key>`. Explain each placeholder in the
 sentence before or after the block. Tutorials use the lab's real names (`cp1`, `w1`) instead.
+
+A whole config document uses concrete names and values, such as `metadata: {name: w1}`, because
+`docgen yaml` checks it: a placeholder such as `<node>` is not a valid name and fails the check.
 
 A placeholder that is a flag's value is written with `=`, as in `--fingerprint=<fingerprint>`,
 because the shell reads a word starting with `<` as a redirection, and so does `docgen check`:

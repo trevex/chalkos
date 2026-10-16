@@ -35,14 +35,16 @@ func TestWriteKinds(t *testing.T) {
 		"| `spec.imageRef` | string | required | Name of the Image document of the image the node runs. |\n",
 		"| `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes. |\n",
 		"`apiVersion: storage.chalkos.dev/v1alpha1`\n\nA node's config may hold several, each with a name of its own.\n\n",
-		"| `spec.disk` | object | none | The disk the volume is on. |\n| `spec.disk.path` | string | none | Path below /dev. |\n",
+		"| `spec.disk` | object |  | The disk the volume is on. |\n| `spec.disk.path` | string | none | Path below /dev. |\n",
 		"| `spec.labels` | map of string | `{}` | Labels \\| with a pipe. |\n",
 		"| `spec.password` | secret reference or null | `null` |  |\n",
+		"| `spec.extra` | object, any fields | none | Any fields. |\n| `spec.labels` |",
+		"| `spec.mode` | `l2` | `\"l2\"` |  |\n| `spec.objects` | list of Kubernetes object | none |  |\n| `spec.password` |",
 		"| `spec.size` | integer from 1 to 100 | none |  |\n",
-		"| `spec.taints` | list of object | none |  |\n| `spec.taints[].effect` | one of `NoSchedule`, `NoExecute` | none |  |\n| `spec.taints[].key` | string | required |  |\n",
+		"| `spec.taints` | list of object |  |  |\n| `spec.taints[].effect` | one of `NoSchedule`, `NoExecute` | none |  |\n| `spec.taints[].key` | string | required |  |\n",
 		"| Field | networkd section | Keys |\n| --- | --- | --- |\n| `spec.match` | Match | `macAddress` (MACAddress), `name` (Name) |\n| `spec.sriov` | SR-IOV | `vlanId` (VLANId) |\n",
 		"## Inventory { #inventory }\n\n`apiVersion: chalkctl.chalkos.dev/v1alpha1`\n\nThe nodes of a cluster.\n\n| Field |",
-		"| `spec.files` | list of string | none | Config files every node gets. |\n| `spec.nodes` | map of object | none |  |\n| `spec.nodes.<name>.address` | string | none | Where chalkctl reaches the node. |\n",
+		"| `spec.files` | list of string | none | Config files every node gets. |\n| `spec.nodes` | map of object |  |  |\n| `spec.nodes.<name>.address` | string | none | Where chalkctl reaches the node. |\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the page lacks:\n%s", want)
@@ -61,5 +63,19 @@ func TestWriteKindsRefusesASchemaWithoutItsKind(t *testing.T) {
 	err := writeKinds(filepath.Join(t.TempDir(), "kinds.md"), dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "x.json: has no x-chalkos-kind") {
 		t.Errorf("error %v, want one naming x.json", err)
+	}
+}
+
+func TestWriteKindsRefusesASharedAnchor(t *testing.T) {
+	dir := t.TempDir()
+	for _, group := range []string{"a.example.org", "b.example.org"} {
+		schema := `{"x-chalkos-kind": {"group": "` + group + `", "version": "v1", "kind": "Rack"}}`
+		if err := os.WriteFile(filepath.Join(dir, group+"_v1_Rack.json"), []byte(schema), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := writeKinds(filepath.Join(t.TempDir(), "kinds.md"), dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "#rack") {
+		t.Errorf("error %v, want one naming the anchor #rack", err)
 	}
 }

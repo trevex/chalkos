@@ -27,11 +27,22 @@
           ],
           "default": null
         },
+        "extra": { "type": "object", "description": "Any fields." },
+        "mode": { "enum": ["l2"], "default": "l2" },
+        "objects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "kind": { "type": "string" } },
+            "x-chalkos-kubernetes-object": true
+          }
+        },
         "size": { "type": "integer", "minimum": 1, "maximum": 100 },
         "taints": {
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["key"],
             "properties": {
               "effect": { "enum": ["NoSchedule", "NoExecute"] },

@@ -235,12 +235,18 @@ rec {
         docgen yaml docs ${snippetSchemas}
         docgen nix docs $TMPDIR/nix
         status=0
+        # A fragment parses as an expression, or within braces as the attributes of a module.
         for f in $TMPDIR/nix/*.nix; do
           [ -e "$f" ] || continue
-          if ! nixfmt - < "$f" > /dev/null; then
+          case "$f" in
+            *.fragment.nix)
+              nixfmt - < "$f" > /dev/null 2>&1 || { echo '{'; cat "$f"; echo '}'; } | nixfmt - > /dev/null
+              ;;
+            *) nixfmt - < "$f" > /dev/null ;;
+          esac || {
             echo "error: $(basename "$f"), a Nix block of the documentation named by its page and first line, does not parse" >&2
             status=1
-          fi
+          }
         done
         [ "$status" = 0 ]
         test -d ${site}

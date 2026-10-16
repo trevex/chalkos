@@ -67,3 +67,29 @@ A whole file and a fragment of one:
 ```nix
 chalkos.kernel.moduleGroups = [ "gpu" ];
 ```
+
+A list, which is not a config document:
+
+```yaml
+- one
+- two
+```
+
+Two documents, the second with a misspelled field, and a syntax error on a block's second line:
+
+```yaml
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w4}
+spec: {imageRef: node-metal}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w5}
+spec: {imageRf: node-metal}
+```
+
+```yaml
+key: value
+other: a: b
+```

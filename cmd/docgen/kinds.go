@@ -26,7 +26,8 @@ const kindsIntro = "# Config kinds\n\n" +
 	"holds their schemas.\n\n" +
 	"Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,\n" +
 	"`-` and `.`, and a `spec`, whose fields the tables list. A field whose default reads \"required\"\n" +
-	"must be set, and a field the schema does not declare is refused at every level.\n"
+	"must be set. A field the tables do not list is refused, except within a Kubernetes object or an\n" +
+	"object whose type reads \"any fields\".\n"
 
 // kindSchema is the JSON Schema of a kind, as its file holds it, and the kind it declares.
 type kindSchema struct {
@@ -78,6 +79,14 @@ func writeKinds(page, dir string, files []string) error {
 		}
 		k.file = true
 		kinds = append(kinds, k)
+	}
+	anchors := map[string]bool{}
+	for _, k := range kinds {
+		anchor := strings.ToLower(k.kind)
+		if anchors[anchor] {
+			return fmt.Errorf("two kinds named %s would share the anchor #%s", k.kind, anchor)
+		}
+		anchors[anchor] = true
 	}
 	var b strings.Builder
 	b.WriteString(frontMatter("Config kinds", kindsDescription))
@@ -158,13 +167,19 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 	for _, name := range slices.Sorted(maps.Keys(p)) {
 		child := resolve(root, asMap(p[name]))
 		fieldPath := path + "." + name
+		inner := nested(root, fieldPath, child)
+		def := defaultOf(child, required[name])
+		// An object whose fields follow has no default of its own: its fields' defaults apply.
+		if def == "none" && len(inner) > 0 {
+			def = ""
+		}
 		rows = append(rows, row{
 			path: fieldPath,
 			typ:  cell(typeOf(root, child)),
-			def:  cell(defaultOf(child, required[name])),
+			def:  cell(def),
 			desc: text(child["description"]),
 		})
-		rows = append(rows, nested(root, fieldPath, child)...)
+		rows = append(rows, inner...)
 	}
 	return rows
 }
@@ -173,7 +188,7 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 // values at <name> and those of a list's items at [].
 func nested(root map[string]any, path string, s map[string]any) []row {
 	s = resolve(root, s)
-	if s["x-chalkos-secret-ref"] == true {
+	if s["x-chalkos-secret-ref"] == true || s["x-chalkos-kubernetes-object"] == true {
 		return nil
 	}
 	if _, ok := s["properties"]; ok {
@@ -199,8 +214,12 @@ func typeOf(root, s map[string]any) string {
 	switch {
 	case s["x-chalkos-secret-ref"] == true:
 		return "secret reference"
+	case s["x-chalkos-kubernetes-object"] == true:
+		return "Kubernetes object"
 	case s["const"] != nil:
 		return "`" + display(s["const"]) + "`"
+	case len(asSlice(s["enum"])) == 1:
+		return "`" + display(asSlice(s["enum"])[0]) + "`"
 	case s["enum"] != nil:
 		var values []string
 		for _, v := range asSlice(s["enum"]) {
@@ -239,6 +258,9 @@ func typeOf(root, s map[string]any) string {
 	case "object":
 		if v, ok := s["additionalProperties"].(map[string]any); ok {
 			return "map of " + typeOf(root, v)
+		}
+		if s["additionalProperties"] != false {
+			return "object, any fields"
 		}
 		return "object"
 	case "string", "boolean", "number", "null":

@@ -7,8 +7,9 @@ import (
 	"testing"
 )
 
-// Each refused document is reported at the first line of its block, and the documents the check
-// passes over (a valid one, a Kubernetes object, a fragment, the plan's) are not.
+// Each refused document is reported at its first line, and a syntax error at its line; the
+// documents the check passes over (a valid one, a Kubernetes object, a fragment, a list, the
+// plan's) are not.
 func TestCheckYAML(t *testing.T) {
 	err := checkYAML("testdata/snippets/docs", "testdata/snippets/schemas")
 	if err == nil {
@@ -26,6 +27,8 @@ func TestCheckYAML(t *testing.T) {
 		{"testdata/snippets/docs/page.md:26: ", `does not accept kind "Manifest" of apiVersion "kubernetes.chalkos.dev/v1alpha1"`},
 		{"testdata/snippets/docs/page.md:47: ", `Rack "rack"`},
 		{"testdata/snippets/docs/page.md:56: ", "document 1"},
+		{"testdata/snippets/docs/page.md:86: ", `Node "w5"`},
+		{"testdata/snippets/docs/page.md:94: ", "document 1"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("problems:\n%s\nwant %d", strings.Join(got, "\n"), len(want))
@@ -37,7 +40,8 @@ func TestCheckYAML(t *testing.T) {
 	}
 }
 
-// Only the block titled with a .nix file is written, under the page's path and its first line.
+// A block titled with a .nix file is written as a whole file and the other as a fragment, under
+// the page's path and its first line; the plan's are not written.
 func TestWriteNix(t *testing.T) {
 	out := t.TempDir()
 	if err := writeNix("testdata/snippets/docs", out); err != nil {
@@ -52,8 +56,8 @@ func TestWriteNix(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	want := "testdata_snippets_docs_page.md_62.nix"
-	if strings.Join(names, " ") != want {
-		t.Fatalf("written: %v, want %s", names, want)
+	if got := strings.Join(names, " "); got != want+" testdata_snippets_docs_page.md_68.fragment.nix" {
+		t.Fatalf("written: %s", got)
 	}
 	data, err := os.ReadFile(filepath.Join(out, want))
 	if err != nil {
@@ -70,8 +74,8 @@ func TestCodeBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(blocks) != 6 {
-		t.Fatalf("%d yaml blocks, want 6", len(blocks))
+	if len(blocks) != 9 {
+		t.Fatalf("%d yaml blocks, want 9", len(blocks))
 	}
 	if blocks[0].title != "nodes/w1.yaml" || blocks[0].first != 6 {
 		t.Errorf("first block: title %q, first line %d", blocks[0].title, blocks[0].first)
