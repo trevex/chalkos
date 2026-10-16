@@ -37,7 +37,7 @@ nav = [
     "guides/kvm-proxmox-libvirt.md",
     "guides/production-cluster.md",
     "guides/ha-control-plane.md",
-    "guides/customise-role.md",
+    "guides/customise-image.md",
     "guides/customise-installer.md",
     "guides/additional-hardware.md",
     "guides/storage-volumes.md",

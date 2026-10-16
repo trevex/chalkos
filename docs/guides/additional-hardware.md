@@ -258,6 +258,6 @@ node does not find its disk and stops in the initrd, which the console shows.
 ## What next
 
 - [The image](../concepts/image.md) explains the module tree, the store and the slots.
-- [Customise a role](customise-role.md) covers the rest of what a role's modules may change.
+- [Customise an image](customise-image.md) covers the rest of what an image's modules may change.
 - [Customise the installer](customise-installer.md) adds the same drivers to the installer.
 - [Upgrade a cluster](upgrade-cluster.md) rolls the new image out.

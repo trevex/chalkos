@@ -312,6 +312,6 @@ KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it o
 - [Security model](security.md) for what Secure Boot and dm-verity protect against.
 - [Image and partition layout](../reference/image-layout.md) and
   [os-release fields](../reference/os-release.md) for the details.
-- [Customise an image](../guides/customise-role.md),
+- [Customise an image](../guides/customise-image.md),
   [Support additional hardware](../guides/additional-hardware.md) and
   [Sign images for Secure Boot](../guides/secure-boot-signing.md) for the tasks.

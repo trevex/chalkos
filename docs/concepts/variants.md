@@ -116,7 +116,7 @@ a dash, such as `a-b` on `metal` and `a` on `b-metal`; `mkImages` refuses that p
 No check compares variants. A node may move to another variant's image with an
 [upgrade](../reference/glossary.md#upgrade); the node checks its stored config against the new
 image's schemas before the image becomes its next boot, so an image that does not accept the
-node's config never boots. [Customise an image](../guides/customise-role.md) adds modules to a
+node's config never boots. [Customise an image](../guides/customise-image.md) adds modules to a
 variant.
 
 ## What is a platform?
@@ -292,6 +292,6 @@ copies a flake's tracked files.
 
 - [Config and the inventory](config.md) for the YAML documents nodes receive.
 - [The image](image.md) for what an image directory and a disk image hold.
-- [Customise an image](../guides/customise-role.md) and
+- [Customise an image](../guides/customise-image.md) and
   [Support additional hardware](../guides/additional-hardware.md) for the tasks.
 - [mkImages and image options](../reference/options.md) for every argument and option.

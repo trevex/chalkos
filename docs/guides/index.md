@@ -24,8 +24,8 @@ cluster's [secrets file](../reference/glossary.md#secrets-file); the
 
 ## Customise the images
 
-- [Customise a role](customise-role.md): add packages, services, kernel modules and Kubernetes
-  objects to a role's image, and pass per-node values to its units.
+- [Customise an image](customise-image.md): add packages, services, kernel modules, variants
+  and config kinds of your own to the cluster's images.
 - [Customise the installer](customise-installer.md): give the installer static addresses,
   VLANs, bonds, drivers or another console.
 - [Support additional hardware](additional-hardware.md): add drivers, firmware and platforms the
