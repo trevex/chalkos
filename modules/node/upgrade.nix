@@ -88,8 +88,8 @@ in
     system.nixos.extraOSReleaseArgs = {
       CHALKOS_BOOT_TRIES = toString cfg.bootTries;
     }
-    // lib.optionalAttrs (config.chalkos.role.name != null) {
-      CHALKOS_ROLE = config.chalkos.role.name;
+    // lib.optionalAttrs (config.chalkos.variant.name != null) {
+      CHALKOS_VARIANT = config.chalkos.variant.name;
     }
     // lib.optionalAttrs (config.chalkos.platform.name != null) {
       CHALKOS_PLATFORM = config.chalkos.platform.name;

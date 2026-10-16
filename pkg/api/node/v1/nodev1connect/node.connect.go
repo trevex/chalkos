@@ -83,7 +83,7 @@ type NodeServiceClient interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
-	// Contract returns the config contract of the image the node runs: the role and platform it
+	// Contract returns the config contract of the image the node runs: the variant and platform it
 	// was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
 	// checks config against before it delivers it. The installer refuses it: config is for the
 	// image it installs, whose contract comes with that image. Available in both modes to readers.
@@ -130,7 +130,7 @@ type NodeServiceClient interface {
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as
-	// chunks. Available to operators. The node checks that the image is of its role and platform,
+	// chunks. Available to operators. The node checks that the image is of its platform,
 	// and, once the store is written and before the image becomes the next boot, that the schemas
 	// in the image accept its stored config. It does not check that the image is one to trust:
 	// without Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as
@@ -394,7 +394,7 @@ type NodeServiceHandler interface {
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in both modes to readers.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
-	// Contract returns the config contract of the image the node runs: the role and platform it
+	// Contract returns the config contract of the image the node runs: the variant and platform it
 	// was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
 	// checks config against before it delivers it. The installer refuses it: config is for the
 	// image it installs, whose contract comes with that image. Available in both modes to readers.
@@ -441,7 +441,7 @@ type NodeServiceHandler interface {
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as
-	// chunks. Available to operators. The node checks that the image is of its role and platform,
+	// chunks. Available to operators. The node checks that the image is of its platform,
 	// and, once the store is written and before the image becomes the next boot, that the schemas
 	// in the image accept its stored config. It does not check that the image is one to trust:
 	// without Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as

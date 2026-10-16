@@ -89,8 +89,8 @@ in
       path = [ chalkcfg ];
     }) checkedConsumers;
 
-    # The installer belongs to no role and never has config to query.
-    environment.systemPackages = lib.mkIf (config.chalkos.role.name != null) [ chalkcfg ];
+    # The installer is no variant and never has config to query.
+    environment.systemPackages = lib.mkIf (config.chalkos.variant.name != null) [ chalkcfg ];
 
     environment.etc."chalkos/consumers.json".text = builtins.toJSON (
       lib.mapAttrs (_: c: { inherit (c) kinds restartOnChange; }) checkedConsumers

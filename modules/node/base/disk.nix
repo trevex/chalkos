@@ -66,7 +66,7 @@ let
   # upgrade's temporary file, and one otherwise.
   fits =
     let
-      name = lib.defaultTo config.image.repart.name config.chalkos.role.name;
+      name = lib.defaultTo config.image.repart.name config.chalkos.variant.name;
       image = config.system.build.image;
     in
     pkgs.runCommand "${name}-fits"

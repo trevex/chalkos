@@ -17,13 +17,14 @@
         defaultText = lib.literalMD "unavailable in role images";
         description = "Node definitions; available only in the cluster definition.";
       };
-      options.role.name = lib.mkOption {
+      options.variant.name = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
         description = ''
-          The role's name in the cluster definition, set by the role builder; null on the
-          installer, which belongs to no role. A node refuses to upgrade to an image of another
-          role.
+          The image's variant, which its os-release names as `CHALKOS_VARIANT` and its image
+          directory's `metadata.json` as `variant`. The role builder sets it to the role's name.
+          null on the installer, which is no variant. No check compares it: a node may change its
+          variant through an upgrade, and the image's schemas decide which config it takes.
         '';
       };
       options.platform.name = lib.mkOption {
@@ -50,9 +51,9 @@
       `chalkos.cni`, `chalkos.time` and feature namespaces) are set read-only from the cluster
       definition; image options (`chalkos.consumers`, `chalkos.debug`, `chalkos.disk`,
       `chalkos.kernel`, `chalkos.kinds`, `chalkos.maintenance`, `chalkos.platform`, `chalkos.role`,
-      `chalkos.upgrade`) are declared by the node modules. `consumers`, `debug`, `disk`, `kernel`,
-      `kinds`, `maintenance`, `nodes`, `platform`, `role` and `upgrade` are therefore reserved and
-      cannot be used as feature namespaces.
+      `chalkos.upgrade`, `chalkos.variant`) are declared by the node modules. `consumers`, `debug`,
+      `disk`, `kernel`, `kinds`, `maintenance`, `nodes`, `platform`, `role`, `upgrade` and
+      `variant` are therefore reserved and cannot be used as feature namespaces.
     '';
   };
 }

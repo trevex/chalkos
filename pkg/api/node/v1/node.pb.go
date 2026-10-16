@@ -250,8 +250,9 @@ type InfoResponse struct {
 	// SHA-256 of the certificate chalkd serves, in lower-case hex.
 	Fingerprint string `protobuf:"bytes,8,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
 	Hostname    string `protobuf:"bytes,9,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	// The role the running image was built for; empty on the installer.
-	Role string `protobuf:"bytes,11,opt,name=role,proto3" json:"role,omitempty"`
+	// The variant the running image was built as, which a cluster definition names after the
+	// image's role; empty on the installer.
+	Variant string `protobuf:"bytes,11,opt,name=variant,proto3" json:"variant,omitempty"`
 	// The platform the running image was built for, such as metal or kvm; empty on the installer,
 	// which installs images of every platform.
 	Platform      string `protobuf:"bytes,12,opt,name=platform,proto3" json:"platform,omitempty"`
@@ -352,9 +353,9 @@ func (x *InfoResponse) GetHostname() string {
 	return ""
 }
 
-func (x *InfoResponse) GetRole() string {
+func (x *InfoResponse) GetVariant() string {
 	if x != nil {
-		return x.Role
+		return x.Variant
 	}
 	return ""
 }
@@ -701,8 +702,8 @@ type ContractResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The image's schemas by file name, as /etc/chalkos/schemas holds them.
 	Schemas map[string][]byte `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// The role and platform the image was built for, as its os-release names them.
-	Role     string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	// The variant and platform the image was built for, as its os-release names them.
+	Variant  string `protobuf:"bytes,4,opt,name=variant,proto3" json:"variant,omitempty"`
 	Platform string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
 	// The image's image.json: the Kubernetes release, the images of its components and the pod
 	// network it ships. Empty on an image without Kubernetes.
@@ -748,9 +749,9 @@ func (x *ContractResponse) GetSchemas() map[string][]byte {
 	return nil
 }
 
-func (x *ContractResponse) GetRole() string {
+func (x *ContractResponse) GetVariant() string {
 	if x != nil {
-		return x.Role
+		return x.Variant
 	}
 	return ""
 }
@@ -1170,10 +1171,9 @@ func (x *DiskReference) GetType() string {
 // the store data, the hash tree, the UKI and, when the header names one, the boot loader.
 type ImageHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The image's version, ID and role, as its os-release names them.
+	// The image's version and ID, as its os-release names them.
 	Version string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
 	ImageId string `protobuf:"bytes,2,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
-	Role    string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
 	// The verity root hash of the image's store.
 	RootHash []byte `protobuf:"bytes,5,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
 	// The store data the root hash covers, its hash tree and the signed UKI.
@@ -1233,13 +1233,6 @@ func (x *ImageHeader) GetVersion() string {
 func (x *ImageHeader) GetImageId() string {
 	if x != nil {
 		return x.ImageId
-	}
-	return ""
-}
-
-func (x *ImageHeader) GetRole() string {
-	if x != nil {
-		return x.Role
 	}
 	return ""
 }
@@ -3417,7 +3410,7 @@ func (*UpgradeRequest_Chunk) isUpgradeRequest_Message() {}
 
 type UpgradeHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The image to install. The node refuses another ID or role than its own, and an image that
+	// The image to install. The node refuses another ID or platform than its own, and an image that
 	// names a boot loader: an upgrade leaves the boot loader as it is.
 	Image *ImageHeader `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
 	// Reboot the node into the image once it is installed.
@@ -3764,7 +3757,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\r\n" +
-	"\vInfoRequest\"\xf6\x02\n" +
+	"\vInfoRequest\"\xfc\x02\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x19\n" +
@@ -3775,8 +3768,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\vsecure_boot\x18\a \x01(\x0e2\x1b.chalkos.node.v1.SecureBootR\n" +
 	"secureBoot\x12 \n" +
 	"\vfingerprint\x18\b \x01(\tR\vfingerprint\x12\x1a\n" +
-	"\bhostname\x18\t \x01(\tR\bhostname\x12\x12\n" +
-	"\x04role\x18\v \x01(\tR\x04role\x12\x1a\n" +
+	"\bhostname\x18\t \x01(\tR\bhostname\x12\x18\n" +
+	"\avariant\x18\v \x01(\tR\avariant\x12\x1a\n" +
 	"\bplatform\x18\f \x01(\tR\bplatformJ\x04\b\n" +
 	"\x10\vR\acluster\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
@@ -3804,10 +3797,10 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x12\n" +
 	"\x04uuid\x18\x06 \x01(\tR\x04uuid\x12\x18\n" +
 	"\acontent\x18\a \x01(\tR\acontent\"\x11\n" +
-	"\x0fContractRequest\"\x9c\x02\n" +
+	"\x0fContractRequest\"\xa2\x02\n" +
 	"\x10ContractResponse\x12H\n" +
-	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x12\n" +
-	"\x04role\x18\x04 \x01(\tR\x04role\x12\x1a\n" +
+	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x18\n" +
+	"\avariant\x18\x04 \x01(\tR\avariant\x12\x1a\n" +
 	"\bplatform\x18\x05 \x01(\tR\bplatform\x12)\n" +
 	"\x10kubernetes_image\x18\x06 \x01(\fR\x0fkubernetesImage\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
@@ -3846,11 +3839,10 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06serial\x18\x03 \x01(\tR\x06serial\x12\x10\n" +
 	"\x03wwn\x18\x04 \x01(\tR\x03wwn\x12\x12\n" +
 	"\x04size\x18\x05 \x01(\tR\x04size\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\"\x98\x03\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\"\x90\x03\n" +
 	"\vImageHeader\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x19\n" +
-	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x12\n" +
-	"\x04role\x18\x04 \x01(\tR\x04role\x12\x1b\n" +
+	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1b\n" +
 	"\troot_hash\x18\x05 \x01(\fR\brootHash\x120\n" +
 	"\x05store\x18\x06 \x01(\v2\x1a.chalkos.node.v1.ImagePartR\x05store\x127\n" +
 	"\thash_tree\x18\a \x01(\v2\x1a.chalkos.node.v1.ImagePartR\bhashTree\x12,\n" +
@@ -3859,7 +3851,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"bootLoader\x12\"\n" +
 	"\farchitecture\x18\n" +
 	" \x01(\tR\farchitecture\x12\x1a\n" +
-	"\bplatform\x18\v \x01(\tR\bplatformJ\x04\b\x03\x10\x04R\acluster\"7\n" +
+	"\bplatform\x18\v \x01(\tR\bplatformJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\aclusterR\x04role\"7\n" +
 	"\tImagePart\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\fR\x06sha256\" \n" +

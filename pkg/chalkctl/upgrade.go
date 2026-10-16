@@ -260,7 +260,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	candidates := named
 	if len(candidates) == 0 {
 		for _, name := range slices.Sorted(maps.Keys(m.Nodes)) {
-			if r.cluster.partial || img == nil || m.Nodes[name].Role == img.info.Role() {
+			if r.cluster.partial || img == nil || m.Nodes[name].Role == img.info.Variant() {
 				candidates = append(candidates, name)
 			}
 		}
@@ -294,8 +294,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
 		probedCPs[name] = n.kind == manifest.KindControlPlane
-		// A client file names no roles: its image is for the nodes that run its role.
-		if r.cluster.partial && img != nil && len(named) == 0 && info.Role != img.info.Role() {
+		// A client file names no roles: its image is for the nodes that run its variant.
+		if r.cluster.partial && img != nil && len(named) == 0 && info.Variant != img.info.Variant() {
 			continue
 		}
 		if img != nil && info.Platform != img.info.Platform() {
@@ -308,9 +308,9 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		role := node.Role
 		switch {
 		case img != nil:
-			role = img.info.Role()
+			role = img.info.Variant()
 		case r.cluster.partial:
-			role = info.Role
+			role = info.Variant
 		}
 		key := [2]string{role, info.Platform}
 		if groups[key] == nil {
@@ -323,7 +323,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	}
 	if len(r.nodes) == 0 {
 		if img != nil {
-			return fmt.Errorf("the cluster has no node of the role %s on %s to upgrade", img.info.Role(), img.info.Platform())
+			return fmt.Errorf("the cluster has no node of the role %s on %s to upgrade", img.info.Variant(), img.info.Platform())
 		}
 		return errors.New("the cluster has no node to upgrade")
 	}

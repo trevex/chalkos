@@ -30,7 +30,7 @@ func TestRead(t *testing.T) {
 	img := ukitest.UKI(map[string]string{
 		"IMAGE_ID":           "chalkos",
 		"IMAGE_VERSION":      "0.2.0",
-		"CHALKOS_ROLE":       "worker",
+		"CHALKOS_VARIANT":    "worker",
 		"CHALKOS_PLATFORM":   "metal",
 		"CHALKOS_BOOT_TRIES": "3",
 		"PRETTY_NAME":        `NixOS "26.05"`,
@@ -39,7 +39,7 @@ func TestRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID() != "chalkos" || got.Version() != "0.2.0" || got.Role() != "worker" || got.BootTries() != "3" {
+	if got.ID() != "chalkos" || got.Version() != "0.2.0" || got.Variant() != "worker" || got.BootTries() != "3" {
 		t.Errorf("os-release %v", got.OSRelease)
 	}
 	if got.OSRelease["PRETTY_NAME"] != `NixOS "26.05"` {

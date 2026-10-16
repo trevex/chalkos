@@ -93,17 +93,17 @@ func upgradeManifestOf(controlPlanes int, workers []string, cpRole, wRole string
 	  "nodes": {` + strings.Join(nodes, ",\n") + `}}`
 }
 
-// testUpgradeImage builds a metal disk image of the role and version as chalkos images are laid
-// out: an ESP holding systemd-boot and the UKI, the store's hash tree and the store, described by
-// repart-output.json.
-func testUpgradeImage(t *testing.T, role, version string) string {
+// testUpgradeImage builds a metal disk image of the variant and version as chalkos images are
+// laid out: an ESP holding systemd-boot and the UKI, the store's hash tree and the store,
+// described by repart-output.json.
+func testUpgradeImage(t *testing.T, variant, version string) string {
 	t.Helper()
-	return testUpgradeImageOfBlocks(t, role, "metal", version, 512)
+	return testUpgradeImageOfBlocks(t, variant, "metal", version, 512)
 }
 
 // testUpgradeImageOfBlocks builds a test image of the platform whose store has dm-verity blocks of
 // the size.
-func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, blockSize int) string {
+func testUpgradeImageOfBlocks(t *testing.T, variant, platform, version string, blockSize int) string {
 	t.Helper()
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -111,7 +111,7 @@ func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, bloc
 		}
 	}
 	dir := t.TempDir()
-	store := bytes.Repeat([]byte(version+role+platform), 300*blockSize)[:300*blockSize]
+	store := bytes.Repeat([]byte(version+variant+platform), 300*blockSize)[:300*blockSize]
 	tree, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: uint32(blockSize), HashBlockSize: uint32(blockSize), DataBlocks: 300, Salt: []byte(version)})
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, bloc
 	loader := filepath.Join(dir, "systemd-boot.efi")
 	writeFile(t, loader, string(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")})))
 	writeFile(t, uki, string(ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_ROLE": role, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_VARIANT": variant, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/x usrhash=%x", root))))
 	for _, args := range [][]string{
 		{"mkfs.vfat", "-C", esp, "4096"},
@@ -155,7 +155,7 @@ func testUpgradeImageOfBlocks(t *testing.T, role, platform, version string, bloc
 	// The contract chalkctl checks the cluster definition's config against: the upgrade lab's
 	// roles cp, w and k8s run Kubernetes.
 	copySchemas(t, filepath.Join(imgDir, "schemas"))
-	if role == "cp" || role == "w" || role == "k8s" {
+	if variant == "cp" || variant == "w" || variant == "k8s" {
 		writeFile(t, filepath.Join(imgDir, "image.json"), testImageJSON)
 	}
 	return imgDir
@@ -236,7 +236,7 @@ func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return connect.NewResponse(&nodev1.InfoResponse{Version: n.version, ImageId: "chalkos", Role: n.role, Platform: n.platform}), nil
+	return connect.NewResponse(&nodev1.InfoResponse{Version: n.version, ImageId: "chalkos", Variant: n.role, Platform: n.platform}), nil
 }
 
 func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {

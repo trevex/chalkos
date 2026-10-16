@@ -26,7 +26,7 @@ func TestUpgrade(t *testing.T) {
 	c := newCreds(t)
 	image := bytes.Repeat([]byte("store hash uki "), 200000)
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{
-		Version: "0.2.0", ImageId: "chalkos", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1, 2},
+		Version: "0.2.0", ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1, 2},
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 2, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 3, Sha256: []byte{6}},
 	}}
 	for _, tc := range []struct {
@@ -40,7 +40,7 @@ func TestUpgrade(t *testing.T) {
 		{"installed", false, upgrade.Result{Entry: "chalkos_0.2.0+3.efi"}, nil, false, 0},
 		{"installed and rebooting", true, upgrade.Result{Entry: "chalkos_0.2.0+3.efi"}, nil, true, 0},
 		{"already installed", true, upgrade.Result{AlreadyInstalled: true}, nil, false, 0},
-		{"refused", true, upgrade.Result{}, errors.New("the image's role is controlplane, the node's worker"), false, connect.CodeFailedPrecondition},
+		{"refused", true, upgrade.Result{}, errors.New("the image's platform is kvm, the node's metal"), false, connect.CodeFailedPrecondition},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestServer(t, normal, vda)
@@ -48,9 +48,9 @@ func TestUpgrade(t *testing.T) {
 			s.RebootNode = func() { close(rebooted) }
 			var got []byte
 			s.InstallImage = func(_ context.Context, h upgrade.Header, r io.Reader) (upgrade.Result, error) {
-				want := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", Role: "worker", RootHash: []byte{1, 2},
+				want := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", RootHash: []byte{1, 2},
 					StoreSize: 1, VeritySize: 2, UKISize: 3, StoreSHA256: []byte{4}, VeritySHA256: []byte{5}, UKISHA256: []byte{6}}
-				if h.Version != want.Version || h.ImageID != want.ImageID || h.Role != want.Role || h.Platform != "metal" || h.Architecture != "x86-64" ||
+				if h.Version != want.Version || h.ImageID != want.ImageID || h.Platform != "metal" || h.Architecture != "x86-64" ||
 					!bytes.Equal(h.RootHash, want.RootHash) || h.StoreSize != 1 || h.VeritySize != 2 || h.UKISize != 3 ||
 					!bytes.Equal(h.StoreSHA256, want.StoreSHA256) || !bytes.Equal(h.VeritySHA256, want.VeritySHA256) || !bytes.Equal(h.UKISHA256, want.UKISHA256) {
 					t.Errorf("header %+v", h)
@@ -82,7 +82,7 @@ func TestUpgrade(t *testing.T) {
 				t.Fatalf("upgrade = %v, want code %v", err, tc.wantCode)
 			}
 			if err != nil {
-				if !strings.Contains(err.Error(), "the image's role is controlplane") {
+				if !strings.Contains(err.Error(), "the image's platform is kvm") {
 					t.Errorf("error %v does not say why", err)
 				}
 			} else if resp.Msg.Entry != tc.result.Entry || resp.Msg.AlreadyInstalled != tc.result.AlreadyInstalled || resp.Msg.Rebooting != tc.wantReboot {
@@ -245,7 +245,7 @@ func (w lockWatcher) Run(ctx context.Context, name string, args ...string) ([]by
 // lock ApplyConfig and ResetVolume change the node's storage under.
 func TestUpgradeSharesTheStorageLock(t *testing.T) {
 	s, r := newTestServer(t, normal, vda)
-	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_ROLE=worker\nCHALKOS_PLATFORM=metal\n")
+	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
 	write(t, s.Paths.Cmdline, "usrhash="+strings.Repeat("ab", 32)+"\n")
 	calls := 0
 	s.Run = lockWatcher{r, func(args []string) {
@@ -256,7 +256,7 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 		}
 	}}
 	sum := bytes.Repeat([]byte{1}, 32)
-	h := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", Role: "worker", Platform: "metal", Architecture: "x86-64", RootHash: bytes.Repeat([]byte{2}, 32),
+	h := upgrade.Header{ImageID: "chalkos", Version: "0.2.0", Platform: "metal", Architecture: "x86-64", RootHash: bytes.Repeat([]byte{2}, 32),
 		StoreSize: 1, VeritySize: 1, UKISize: 1, StoreSHA256: sum, VeritySHA256: sum, UKISHA256: sum}
 	// The fake sfdisk prints no table, which ends the upgrade.
 	if _, err := s.installImage(context.Background(), h, bytes.NewReader(nil)); err == nil {

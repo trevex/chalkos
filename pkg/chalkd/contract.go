@@ -28,7 +28,7 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 	release := readOSRelease(s.Paths.OSRelease)
 	resp := &nodev1.ContractResponse{
 		Schemas:  map[string][]byte{},
-		Role:     release["CHALKOS_ROLE"],
+		Variant:  release["CHALKOS_VARIANT"],
 		Platform: release["CHALKOS_PLATFORM"],
 	}
 	for _, e := range entries {

@@ -11,7 +11,7 @@
 //  2. Write the store and its hash tree into the slot, unless it holds them already, and check
 //     them against the root hash.
 //  3. Write the UKI under a name systemd-boot ignores and check it: it must boot this store, name
-//     the node's image and role, and carry a signature of the firmware's db when Secure
+//     the node's image and platform, and carry a signature of the firmware's db when Secure
 //     Boot is on. Then the caller checks the image itself, reading the store through dm-verity,
 //     as chalkd checks the node's config against the image's schemas.
 //  4. Activate: give the slot the partition UUIDs systemd derives from the root hash and the
@@ -109,7 +109,6 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	for _, field := range []struct{ name, image, node string }{
 		{"image ID", h.ImageID, n.OSRelease["IMAGE_ID"]},
-		{"role", h.Role, n.OSRelease["CHALKOS_ROLE"]},
 		{"platform", h.Platform, n.OSRelease["CHALKOS_PLATFORM"]},
 	} {
 		if field.node == "" {

@@ -49,7 +49,7 @@ Disks lists the node's disks and their partitions. Available in both modes to re
 
 ### Contract { #method-contract }
 
-Contract returns the config contract of the image the node runs: the role and platform it
+Contract returns the config contract of the image the node runs: the variant and platform it
 was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
 checks config against before it delivers it. The installer refuses it: config is for the
 image it installs, whose contract comes with that image. Available in both modes to readers.
@@ -122,7 +122,7 @@ out; chalkctl rotate calls it. Available to admins.
 Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 The first message carries the header; the store, its hash tree and the UKI follow as
-chunks. Available to operators. The node checks that the image is of its role and platform,
+chunks. Available to operators. The node checks that the image is of its platform,
 and, once the store is written and before the image becomes the next boot, that the schemas
 in the image accept its stored config. It does not check that the image is one to trust:
 without Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as
@@ -226,7 +226,7 @@ No fields.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `schemas` | repeated [`ContractResponse.SchemasEntry`](#message-contractresponseschemasentry) | The image's schemas by file name, as /etc/chalkos/schemas holds them. |
-| `role` | `string` | The role and platform the image was built for, as its os-release names them. |
+| `variant` | `string` | The variant and platform the image was built for, as its os-release names them. |
 | `platform` | `string` |  |
 | `kubernetes_image` | `bytes` | The image's image.json: the Kubernetes release, the images of its components and the pod network it ships. Empty on an image without Kubernetes. |
 
@@ -396,9 +396,8 @@ the store data, the hash tree, the UKI and, when the header names one, the boot 
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `version` | `string` | The image's version, ID and role, as its os-release names them. |
+| `version` | `string` | The image's version and ID, as its os-release names them. |
 | `image_id` | `string` |  |
-| `role` | `string` |  |
 | `root_hash` | `bytes` | The verity root hash of the image's store. |
 | `store` | [`ImagePart`](#message-imagepart) | The store data the root hash covers, its hash tree and the signed UKI. |
 | `hash_tree` | [`ImagePart`](#message-imagepart) |  |
@@ -443,7 +442,7 @@ No fields.
 | `secure_boot` | [`SecureBoot`](#enum-secureboot) |  |
 | `fingerprint` | `string` | SHA-256 of the certificate chalkd serves, in lower-case hex. |
 | `hostname` | `string` |  |
-| `role` | `string` | The role the running image was built for; empty on the installer. |
+| `variant` | `string` | The variant the running image was built as, which a cluster definition names after the image's role; empty on the installer. |
 | `platform` | `string` | The platform the running image was built for, such as metal or kvm; empty on the installer, which installs images of every platform. |
 
 ### InstallHeader { #message-installheader }
@@ -682,7 +681,7 @@ No fields.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `image` | [`ImageHeader`](#message-imageheader) | The image to install. The node refuses another ID or role than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
+| `image` | [`ImageHeader`](#message-imageheader) | The image to install. The node refuses another ID or platform than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
 
 ### UpgradeRequest { #message-upgraderequest }

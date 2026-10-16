@@ -407,6 +407,13 @@ The partition mounted at `/var` that holds what a node writes: etcd, containerd,
 logs. It is declared in the node's storage, fills the rest of the system disk by default and is
 encrypted like [STATE](#state). See [Storage and encryption](../concepts/storage.md).
 
+## Variant { #variant }
+
+The name an [image](#image) is built as, which its os-release names as `CHALKOS_VARIANT` and its
+image directory's `metadata.json` as `variant`. A [role](#role)'s images have the role's name as
+their variant. No check compares it: a node may change its variant through an
+[upgrade](#upgrade), and the image's schemas decide which [config](#config) it takes.
+
 ## VIP { #vip }
 
 A virtual IP address of the API server, one per IP family, that one healthy control plane

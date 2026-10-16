@@ -3193,32 +3193,6 @@ false
 
 
 
-### chalkos\.role\.name
-
-
-
-The role’s name in the cluster definition, set by the role builder; null on the
-installer, which belongs to no role\. A node refuses to upgrade to an image of another
-role\.
-
-
-
-*Type:*
-null or string
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-*Declared by:*
- - [modules/node/settings\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/settings.nix)
-
-
-
 ### chalkos\.upgrade\.bootTries
 
 
@@ -3302,5 +3276,32 @@ positive integer, meaning >0
 
 *Declared by:*
  - [modules/node/upgrade\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/upgrade.nix)
+
+
+
+### chalkos\.variant\.name
+
+
+
+The image’s variant, which its os-release names as ` CHALKOS_VARIANT ` and its image
+directory’s ` metadata.json ` as ` variant `\. The role builder sets it to the role’s name\.
+null on the installer, which is no variant\. No check compares it: a node may change its
+variant through an upgrade, and the image’s schemas decide which config it takes\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+*Declared by:*
+ - [modules/node/settings\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/settings.nix)
 
 

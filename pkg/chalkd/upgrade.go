@@ -138,7 +138,7 @@ func (s *Server) checkStoredConfig(st imageStore, system, platform string) error
 // imageHeader is the image an install or upgrade header describes.
 func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	return upgrade.Header{
-		ImageID: h.GetImageId(), Version: h.GetVersion(), Role: h.GetRole(), Platform: h.GetPlatform(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
+		ImageID: h.GetImageId(), Version: h.GetVersion(), Platform: h.GetPlatform(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
 		StoreSize: int64(h.GetStore().GetSize()), VeritySize: int64(h.GetHashTree().GetSize()), UKISize: int64(h.GetUki().GetSize()),
 		StoreSHA256: h.GetStore().GetSha256(), VeritySHA256: h.GetHashTree().GetSha256(), UKISHA256: h.GetUki().GetSha256(),
 		BootLoaderSize: int64(h.GetBootLoader().GetSize()), BootLoaderSHA256: h.GetBootLoader().GetSha256(),

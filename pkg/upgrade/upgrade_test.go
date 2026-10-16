@@ -302,7 +302,6 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		want   string
 	}{
 		{"another image ID", func(h *Header) { h.ImageID = "other" }, nil, "image ID is other"},
-		{"another role", func(h *Header) { h.Role = "controlplane" }, nil, "role is controlplane"},
 		{"another platform", func(h *Header) { h.Platform = "kvm" }, nil, "platform is kvm, the node's metal"},
 		{"no platform", func(h *Header) { h.Platform = "" }, nil, "platform are required"},
 		{"another architecture", func(h *Header) { h.Architecture = "arm64" }, nil, "the image is built for arm64, this machine for x86-64"},
@@ -390,13 +389,9 @@ func TestRefusesBeforeActivating(t *testing.T) {
 	otherVersion.uki = newImage(t, "0.3.0", 3).uki
 	otherStore := img
 	otherStore.uki = newUKI(img.osRelease(3), old.root)
-	otherRole := img
-	osRelease := img.osRelease(3)
-	osRelease["CHALKOS_ROLE"] = "controlplane"
-	otherRole.uki = newUKI(osRelease, img.root)
 	noTries := img
 	otherPlatform := img
-	osRelease = img.osRelease(3)
+	osRelease := img.osRelease(3)
 	osRelease["CHALKOS_PLATFORM"] = "kvm"
 	otherPlatform.uki = newUKI(osRelease, img.root)
 	noTries.uki = newUKI(img.osRelease(0), img.root)
@@ -415,7 +410,6 @@ func TestRefusesBeforeActivating(t *testing.T) {
 		{"a store that does not match the root hash", withHeader(wrongRoot), "root hash"},
 		{"a corrupted UKI", func() image { c := img; c.uki = flip(img.uki, 700); return c }(), "UKI's SHA-256"},
 		{"a UKI of another version", withHeader(otherVersion), "version is \"0.3.0\""},
-		{"a UKI of another role", withHeader(otherRole), "role is \"controlplane\""},
 		{"a UKI of another platform", withHeader(otherPlatform), "platform is \"kvm\""},
 		{"a UKI booting another store", withHeader(otherStore), "boots another store"},
 		{"a UKI without boot tries", withHeader(noTries), "boot tries"},
@@ -774,13 +768,13 @@ func TestRemovesTheTemporaryUKI(t *testing.T) {
 		})
 	}
 	// A UKI refused once written.
-	otherRole := img
+	otherPlatform := img
 	osRelease := img.osRelease(3)
-	osRelease["CHALKOS_ROLE"] = "controlplane"
-	otherRole.uki = newUKI(osRelease, img.root)
+	osRelease["CHALKOS_PLATFORM"] = "kvm"
+	otherPlatform.uki = newUKI(osRelease, img.root)
 	l = newLab(t, old)
-	if _, err := l.install(withHeader(otherRole)); err == nil {
-		t.Fatal("installed a UKI of another role")
+	if _, err := l.install(withHeader(otherPlatform)); err == nil {
+		t.Fatal("installed a UKI of another platform")
 	}
 	if temp := l.tempUKIs(); len(temp) != 0 {
 		t.Errorf("the ESP keeps %q", temp)
@@ -887,5 +881,20 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 		if len(l.writes) != 0 {
 			t.Errorf("wrote partitions %v", l.writes)
 		}
+	}
+}
+
+// TestInstallsAnotherVariant installs an image of another variant than the running one: a node
+// may change its variant through an upgrade, and the check of its config against the image's
+// schemas is what guards that.
+func TestInstallsAnotherVariant(t *testing.T) {
+	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	osRelease := img.osRelease(3)
+	osRelease["CHALKOS_VARIANT"] = "gpu"
+	img.uki = newUKI(osRelease, img.root)
+	l := newLab(t, old)
+	res, err := l.install(withHeader(img))
+	if err != nil || res.AlreadyInstalled || res.Entry == "" {
+		t.Fatalf("install = %+v, %v", res, err)
 	}
 }

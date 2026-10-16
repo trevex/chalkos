@@ -16,7 +16,7 @@ import (
 // Header describes an image as install and upgrade receive it: its store, the store's hash tree,
 // its UKI and, in an install, its boot loader follow it in this order.
 type Header struct {
-	ImageID, Version, Role string
+	ImageID, Version string
 	// Platform is the platform the image is built for, such as metal or kvm.
 	Platform string
 	// Architecture is what the image runs on, as systemd names it: x86-64 or arm64.
@@ -46,8 +46,8 @@ func (h Header) Validate() error {
 	switch {
 	case !VersionPattern.MatchString(h.Version):
 		return fmt.Errorf("the version %q is not 1 to 23 characters of a-z, 0-9, '.', '~', '^' and '-'", h.Version)
-	case h.ImageID == "" || h.Role == "" || h.Platform == "":
-		return errors.New("the image's ID, role and platform are required")
+	case h.ImageID == "" || h.Platform == "":
+		return errors.New("the image's ID and platform are required")
 	case uki.BootLoaderName(h.Architecture) == "":
 		return fmt.Errorf("the image's architecture %q is none chalkos builds images for", h.Architecture)
 	case len(h.RootHash) != sha256.Size:
@@ -89,9 +89,9 @@ func ReceiveUKI(path string, h Header, stream io.Reader, efivars string) (int, e
 	return tries, f.Close()
 }
 
-// CheckUKI checks the image's UKI against its header: it must name the image's ID, version,
-// role and platform, boot the image's store and ask for a positive number of boot
-// tries, and with Secure Boot enforced, firmware must accept its signature. It returns the tries.
+// CheckUKI checks the image's UKI against its header: it must name the image's ID, version and
+// platform, boot the image's store and ask for a positive number of boot tries, and with Secure
+// Boot enforced, firmware must accept its signature. It returns the tries.
 func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 	img, err := uki.Read(r)
 	if err != nil {
@@ -100,7 +100,6 @@ func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 	for _, field := range []struct{ name, uki, header string }{
 		{"image ID", img.ID(), h.ImageID},
 		{"version", img.Version(), h.Version},
-		{"role", img.Role(), h.Role},
 		{"platform", img.Platform(), h.Platform},
 	} {
 		if field.uki != field.header {

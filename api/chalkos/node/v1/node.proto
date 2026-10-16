@@ -17,7 +17,7 @@ service NodeService {
   rpc Info(InfoRequest) returns (InfoResponse);
   // Disks lists the node's disks and their partitions. Available in both modes to readers.
   rpc Disks(DisksRequest) returns (DisksResponse);
-  // Contract returns the config contract of the image the node runs: the role and platform it
+  // Contract returns the config contract of the image the node runs: the variant and platform it
   // was built for, the schemas of the config kinds it accepts and its image.json, which chalkctl
   // checks config against before it delivers it. The installer refuses it: config is for the
   // image it installs, whose contract comes with that image. Available in both modes to readers.
@@ -64,7 +64,7 @@ service NodeService {
   // Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
   // the image's boot tries until a boot is found healthy, and reboots the node when asked to.
   // The first message carries the header; the store, its hash tree and the UKI follow as
-  // chunks. Available to operators. The node checks that the image is of its role and platform,
+  // chunks. Available to operators. The node checks that the image is of its platform,
   // and, once the store is written and before the image becomes the next boot, that the schemas
   // in the image accept its stored config. It does not check that the image is one to trust:
   // without Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as
@@ -123,8 +123,9 @@ message InfoResponse {
   // SHA-256 of the certificate chalkd serves, in lower-case hex.
   string fingerprint = 8;
   string hostname = 9;
-  // The role the running image was built for; empty on the installer.
-  string role = 11;
+  // The variant the running image was built as, which a cluster definition names after the
+  // image's role; empty on the installer.
+  string variant = 11;
   // The platform the running image was built for, such as metal or kvm; empty on the installer,
   // which installs images of every platform.
   string platform = 12;
@@ -173,8 +174,8 @@ message ContractResponse {
   reserved "kubernetes_cluster", "cluster";
   // The image's schemas by file name, as /etc/chalkos/schemas holds them.
   map<string, bytes> schemas = 1;
-  // The role and platform the image was built for, as its os-release names them.
-  string role = 4;
+  // The variant and platform the image was built for, as its os-release names them.
+  string variant = 4;
   string platform = 5;
   // The image's image.json: the Kubernetes release, the images of its components and the pod
   // network it ships. Empty on an image without Kubernetes.
@@ -247,12 +248,11 @@ message DiskReference {
 // An image as install and upgrade send it. Its parts follow the header as chunks, in this order:
 // the store data, the hash tree, the UKI and, when the header names one, the boot loader.
 message ImageHeader {
-  reserved 3;
-  reserved "cluster";
-  // The image's version, ID and role, as its os-release names them.
+  reserved 3, 4;
+  reserved "cluster", "role";
+  // The image's version and ID, as its os-release names them.
   string version = 1;
   string image_id = 2;
-  string role = 4;
   // The verity root hash of the image's store.
   bytes root_hash = 5;
   // The store data the root hash covers, its hash tree and the signed UKI.
@@ -588,7 +588,7 @@ message UpgradeRequest {
 message UpgradeHeader {
   reserved 3, 4;
   reserved "schemas", "kubernetes_image";
-  // The image to install. The node refuses another ID or role than its own, and an image that
+  // The image to install. The node refuses another ID or platform than its own, and an image that
   // names a boot loader: an upgrade leaves the boot loader as it is.
   ImageHeader image = 1;
   // Reboot the node into the image once it is installed.

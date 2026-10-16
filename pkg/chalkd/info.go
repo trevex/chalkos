@@ -24,7 +24,7 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Installer:   s.Installer,
 		SecureBoot:  s.secureBoot(),
 		Fingerprint: s.CurrentFingerprint(),
-		Role:        release["CHALKOS_ROLE"],
+		Variant:     release["CHALKOS_VARIANT"],
 		Platform:    release["CHALKOS_PLATFORM"],
 	}
 	if boot, err := s.Host.ResolvePath(s.Paths.BootDisk); err == nil {
