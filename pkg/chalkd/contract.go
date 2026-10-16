@@ -21,7 +21,7 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 	if s.Installer {
 		return nil, failed(connect.CodeFailedPrecondition, "an installer has no image to configure; take the schemas from the image you install")
 	}
-	entries, err := os.ReadDir(s.Identity.Schemas)
+	entries, err := os.ReadDir(s.Loader.Schemas)
 	if err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
 	}
@@ -35,13 +35,13 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(s.Identity.Schemas, e.Name()))
+		data, err := os.ReadFile(filepath.Join(s.Loader.Schemas, e.Name()))
 		if err != nil {
 			return nil, failed(connect.CodeInternal, "%v", err)
 		}
 		resp.Schemas[e.Name()] = data
 	}
-	data, err := os.ReadFile(s.Identity.KubernetesImage)
+	data, err := os.ReadFile(s.Loader.KubernetesImage)
 	switch {
 	case err == nil:
 		resp.KubernetesImage = data

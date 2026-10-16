@@ -1,8 +1,10 @@
-// Package identity applies a node's identity on the node: it writes /run/chalkos/node.json, which
-// the node's Kubernetes side reads, the networkd units and chrony's time servers, and sets the
-// hostname. It writes the node's stored config for the units that read config kinds, and the
-// Kubernetes cluster it describes for chalkd, and tells which of them read kinds that changed.
-package identity
+// Package nodeconfig applies a node's stored config on the node, at boot in chalkos-config.service
+// and after every ApplyConfig: it writes the identity the config translates to, as
+// /run/chalkos/node.json, which the node's Kubernetes side reads, the networkd units and chrony's
+// time servers, and sets the hostname. It writes the config's documents for the units that read
+// config kinds, and the Kubernetes cluster it describes for chalkd, and tells which units read
+// kinds that changed.
+package nodeconfig
 
 import (
 	"bytes"

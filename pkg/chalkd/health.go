@@ -153,12 +153,12 @@ func (h *Health) chalkdServes(ctx context.Context) error {
 	return conn.Close()
 }
 
-// applied checks that the node's identity was applied and that no unit of the boot failed: none
+// applied checks that the node's config was applied and that no unit of the boot failed: none
 // that multi-user.target or sysinit.target pull in, or what those need. Jobs a timer or a socket
 // started, which may fail at any time, do not count, nor the units the image ignores.
 func (h *Health) applied(ctx context.Context) error {
-	if _, err := h.Run.Run(ctx, "systemctl", "is-active", "--quiet", "chalkos-identity.service"); err != nil {
-		return errors.New("the identity was not applied")
+	if _, err := h.Run.Run(ctx, "systemctl", "is-active", "--quiet", "chalkos-config.service"); err != nil {
+		return errors.New("the config was not applied")
 	}
 	out, err := h.Run.Run(ctx, "systemctl", "list-units", "--state=failed", "--plain", "--no-legend", "--no-pager")
 	if err != nil {

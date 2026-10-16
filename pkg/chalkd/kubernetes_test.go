@@ -1082,7 +1082,7 @@ func clusterServer(t *testing.T, kind string) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := configServer(t)
 	addKubernetes(t, s, kind, true)
-	s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
+	s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
 	kubernetesImage(t, s)
 	return s, r
 }
@@ -1203,7 +1203,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
 			addKubernetes(t, s, k8s.KindWorker, tc.share)
-			s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
+			s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
 			kubernetesImage(t, s)
 			if tc.stored {
 				if _, err := sendConfig(s, workerConfig); err != nil {
@@ -1323,7 +1323,7 @@ func TestApplyConfigAppliesChangedManifests(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, p.Bootstrapped(), "")
-	k.Config = s.Identity.Config
+	k.Config = s.Loader.Config
 	k.Objects = k.objects
 	applied := make(chan string, 10)
 	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {

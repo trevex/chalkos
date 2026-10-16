@@ -194,7 +194,7 @@ lib.runTests {
       in
       {
         chalkd = services.chalkd.wantedBy;
-        identity = services.chalkos-identity.before;
+        config = services.chalkos-config.before;
         # The VIP holder announces its addresses with gratuitous ARP and neighbour advertisements,
         # which need raw sockets, and no capability is taken away.
         packets = lib.elem "AF_PACKET" services.chalkd.serviceConfig.RestrictAddressFamilies;
@@ -205,7 +205,7 @@ lib.runTests {
       packets = true;
       capabilities = false;
       chalkd = [ "multi-user.target" ];
-      identity = [
+      config = [
         "sysinit.target"
         "network-pre.target"
         "systemd-networkd.service"
@@ -3136,7 +3136,7 @@ lib.runTests {
         consumer = consumers.chalkos-registry-mirrors.kinds;
         beforeContainerd =
           lib.elem "containerd.service" unit.before && lib.elem "containerd.service" unit.wantedBy;
-        afterConfig = lib.elem "chalkos-identity.service" unit.after;
+        afterConfig = lib.elem "chalkos-config.service" unit.after;
       };
       expected = {
         baked = false;

@@ -84,7 +84,7 @@ func TestHealthWithoutKubernetes(t *testing.T) {
 		{"healthy", addr, []rule{units}, nil, ""},
 		{"chalkd not serving", "127.0.0.1:1", []rule{units}, nil, "chalkd does not serve"},
 		{"another server than chalkd", other, []rule{units}, nil, "does not present the node's certificate"},
-		{"identity not applied", addr, []rule{{prefix: "systemctl is-active --quiet chalkos-identity.service", err: errors.New("inactive")}, units}, nil, "identity was not applied"},
+		{"config not applied", addr, []rule{{prefix: "systemctl is-active --quiet chalkos-config.service", err: errors.New("inactive")}, units}, nil, "the config was not applied"},
 		{"a failed unit of the boot", addr, []rule{units, failed("broken.service", "cleanup.service")}, nil, "units failed: broken.service"},
 		// A job a timer or a socket started is not part of the boot.
 		{"a failed timer job", addr, []rule{units, failed("cleanup.service")}, nil, ""},

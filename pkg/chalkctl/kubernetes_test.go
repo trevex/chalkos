@@ -98,7 +98,7 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	t.Cleanup(s.Kubernetes.Stop)
 	kubernetesImage(t, s)
 	// The cluster file chalkd writes from the node's config.
-	s.Identity.ClusterFile = s.Kubernetes.Paths.Cluster
+	s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
 	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))
 	return s, r
 }

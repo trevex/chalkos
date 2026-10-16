@@ -196,7 +196,7 @@ in
         description = "Write containerd's registry mirrors from the config";
         wantedBy = [ "containerd.service" ];
         before = [ "containerd.service" ];
-        after = [ "chalkos-identity.service" ];
+        after = [ "chalkos-config.service" ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
@@ -223,7 +223,7 @@ in
         wantedBy = [ "multi-user.target" ];
         wants = [ "chalkos-node-addresses.target" ];
         after = [
-          "chalkos-identity.service"
+          "chalkos-config.service"
           "local-fs.target"
           "chalkos-node-addresses.target"
         ]
@@ -288,7 +288,7 @@ in
         description = "Open the control plane's ports and make etcd's directory by the node's type";
         wantedBy = [ "multi-user.target" ];
         after = [
-          "chalkos-identity.service"
+          "chalkos-config.service"
           "local-fs.target"
         ]
         ++ lib.optional config.networking.firewall.enable "nftables.service";

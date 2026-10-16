@@ -26,9 +26,9 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -38,7 +38,7 @@ const usage = `usage: chalkd <command>
 
 commands:
   serve                            serve the node API
-  load-identity                    apply the identity and the config recorded on STATE
+  load-config                      apply the config recorded on STATE: its identity and documents
   health [--wait SECONDS] [--ignore-unit UNIT]...
                                    check whether this boot is healthy; with --wait, check until
                                    it is, and reboot after an unhealthy boot of an image the
@@ -60,8 +60,8 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		err = serve()
-	case "load-identity":
-		err = identity.Default().Load()
+	case "load-config":
+		err = nodeconfig.Default().Load()
 	case "health":
 		err = health(os.Args[2:])
 	case "prepare-kubernetes":
@@ -304,7 +304,7 @@ func serve() error {
 		Paths:       paths,
 		Run:         node.ExecRunner{},
 		Host:        storage.DefaultHost(),
-		Identity:    identity.Default(),
+		Loader:      nodeconfig.Default(),
 		InPlace:     install.Default(true).InPlace,
 		FromParts:   install.Default(false).FromParts,
 		Journal:     chalkd.Journal,

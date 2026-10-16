@@ -91,7 +91,7 @@ in
   boot.initrd.systemd.repart.enable = lib.mkForce false;
   boot.initrd.systemd.services.chalkos-state.enable = false;
   boot.initrd.systemd.services.chalkos-storage.enable = false;
-  systemd.services.chalkos-identity.enable = false;
+  systemd.services.chalkos-config.enable = false;
 
   systemd.services.chalkd.environment.CHALKD_INSTALLER = "1";
 

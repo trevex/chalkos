@@ -201,7 +201,7 @@ const testImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", 
 // kubernetesImage gives s's running image Kubernetes: its image.json.
 func kubernetesImage(t *testing.T, s *Server) {
 	t.Helper()
-	write(t, s.Identity.KubernetesImage, testImage)
+	write(t, s.Loader.KubernetesImage, testImage)
 }
 
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.
@@ -220,7 +220,7 @@ spec: {}
 
 func TestInstallInPlaceWithConfig(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
-	writeSchemas(t, s.Identity.Schemas)
+	writeSchemas(t, s.Loader.Schemas)
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
 	h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
@@ -308,7 +308,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
 			s.Installer = c.installer
-			writeSchemas(t, s.Identity.Schemas)
+			writeSchemas(t, s.Loader.Schemas)
 			s.InPlace = func(context.Context, install.Request) error { t.Error("installed in place"); return nil }
 			s.FromParts = func(context.Context, install.PartsRequest) error { t.Error("installed onto the disk"); return nil }
 			h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})

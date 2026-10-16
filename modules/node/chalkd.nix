@@ -30,8 +30,8 @@ in
   };
 
   config = {
-    systemd.services.chalkos-identity = {
-      description = "Apply the node identity and config";
+    systemd.services.chalkos-config = {
+      description = "Apply the node's config";
       wantedBy = [ "sysinit.target" ];
       # STATE is mounted by the initrd; networkd and every service that reads a credential come
       # later.
@@ -46,7 +46,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${lib.getExe chalkd} load-identity";
+        ExecStart = "${lib.getExe chalkd} load-config";
       };
     };
 
@@ -55,7 +55,7 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [
         "network.target"
-        "chalkos-identity.service"
+        "chalkos-config.service"
         # Install enrolls TPM2 keyslots. Pulling tpm2.target in would wait for a TPM on nodes
         # that have none.
         "tpm2.target"

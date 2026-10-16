@@ -21,8 +21,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -102,7 +102,8 @@ type Server struct {
 	Paths       Paths
 	Run         node.Runner
 	Host        storage.Host
-	Identity    identity.Loader
+	// Loader applies the node's stored config, as chalkos-config.service does at boot.
+	Loader nodeconfig.Loader
 	// InPlace and FromParts install the node; tests replace them.
 	InPlace   func(context.Context, install.Request) error
 	FromParts func(context.Context, install.PartsRequest) error

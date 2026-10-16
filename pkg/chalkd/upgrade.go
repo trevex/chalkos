@@ -86,7 +86,7 @@ type imageStore interface {
 }
 
 // checkStoredConfig refuses an upgrade to an image that would not accept the node's stored
-// config: the node boots the image with that config, which chalkos-identity would refuse, and
+// config: the node boots the image with that config, which chalkos-config would refuse, and
 // boot counting would fall back once the image's tries are used up. It runs once the image's
 // store is written to the inactive slot and before the image becomes the next boot, and reads
 // the schemas and image.json from that store, whose content the image's root hash covers, so
@@ -96,7 +96,7 @@ type imageStore interface {
 func (s *Server) checkStoredConfig(st imageStore, system, platform string) error {
 	// ApplyConfig replaces the stored set under the same lock.
 	s.mu.Lock()
-	stored, found, err := store.Read(s.Identity.Config)
+	stored, found, err := store.Read(s.Loader.Config)
 	s.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("read the stored config: %w", err)

@@ -52,7 +52,7 @@ in
   chalkos.consumers.chalkos-chrony-dhcp.kinds = [ "TimeSync" ];
   systemd.paths.chalkos-chrony-dhcp = {
     wantedBy = [ "multi-user.target" ];
-    after = [ "chalkos-identity.service" ];
+    after = [ "chalkos-config.service" ];
     pathConfig = {
       PathChanged = "/run/systemd/netif/links";
       Unit = "chalkos-chrony-dhcp-links.service";
@@ -69,7 +69,7 @@ in
     description = "Pass the time servers DHCP announced to chrony";
     wantedBy = [ "multi-user.target" ];
     after = [
-      "chalkos-identity.service"
+      "chalkos-config.service"
       "chronyd.service"
       "systemd-networkd.service"
     ];

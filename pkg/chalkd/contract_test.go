@@ -24,11 +24,11 @@ func TestContract(t *testing.T) {
 	if m := resp.Msg; m.Variant != "worker" || m.Platform != "metal" {
 		t.Errorf("contract of the image of %q and %q, want the os-release's worker and metal", m.Variant, m.Platform)
 	}
-	write(t, s.Identity.KubernetesImage, testImage)
+	write(t, s.Loader.KubernetesImage, testImage)
 	if resp, err = s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); err != nil || string(resp.Msg.KubernetesImage) != testImage {
 		t.Errorf("image.json = %q, %v", resp.Msg.GetKubernetesImage(), err)
 	}
-	s.Identity.Schemas = filepath.Join(t.TempDir(), "missing")
+	s.Loader.Schemas = filepath.Join(t.TempDir(), "missing")
 	if _, err := s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("an image without schemas: %v, want failed_precondition", err)
 	}

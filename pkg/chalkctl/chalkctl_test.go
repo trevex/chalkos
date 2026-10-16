@@ -165,9 +165,9 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
 	}
-	if s.Identity.Schemas == "" {
-		s.Identity.Schemas = filepath.Join(t.TempDir(), "schemas")
-		copySchemas(t, s.Identity.Schemas)
+	if s.Loader.Schemas == "" {
+		s.Loader.Schemas = filepath.Join(t.TempDir(), "schemas")
+		copySchemas(t, s.Loader.Schemas)
 	}
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
@@ -553,11 +553,11 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 		Host:       storage.Host{SysRoot: filepath.Join(root, "sys"), UdevRoot: filepath.Join(root, "udev"), DevRoot: filepath.Join(root, "dev")},
 		RebootNode: func() {},
 	}
-	s.Identity.RunDir = filepath.Join(root, "run")
-	s.Identity.NetworkDir = filepath.Join(root, "network")
-	s.Identity.Consumers = filepath.Join(root, "consumers.json")
-	s.Identity.SetHostname = func(string) error { return nil }
-	s.Identity.Config = filepath.Join(root, "state", "config")
+	s.Loader.RunDir = filepath.Join(root, "run")
+	s.Loader.NetworkDir = filepath.Join(root, "network")
+	s.Loader.Consumers = filepath.Join(root, "consumers.json")
+	s.Loader.SetHostname = func(string) error { return nil }
+	s.Loader.Config = filepath.Join(root, "state", "config")
 	writeFile(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(recorded))
 	section, _ := json.Marshal(ta.manifest.Nodes["n1"].Identity.Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
@@ -604,7 +604,7 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, err := store.Version(s.Identity.Config); err != nil || v != want.Version {
+	if v, err := store.Version(s.Loader.Config); err != nil || v != want.Version {
 		t.Errorf("config version on the node = %q, %v; want %s", v, err, want.Version)
 	}
 	if !strings.Contains(ta.stdout.String(), "n1 runs config "+want.Version) {
@@ -1232,7 +1232,7 @@ func TestApplyConfigToAnImageOfAnotherRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, err := store.Version(s.Identity.Config); err != nil || v != want.Version {
+	if v, err := store.Version(s.Loader.Config); err != nil || v != want.Version {
 		t.Errorf("config version on the node = %q, %v; want %s", v, err, want.Version)
 	}
 }
@@ -1261,14 +1261,14 @@ func TestInstallInPlaceOnAnImageOfAnotherRole(t *testing.T) {
 func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{"hostname": "old"}`))
-	s.Identity.Schemas = filepath.Join(t.TempDir(), "schemas")
+	s.Loader.Schemas = filepath.Join(t.TempDir(), "schemas")
 	entries, err := os.ReadDir(fixtureSchemas[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
 		data, _ := os.ReadFile(filepath.Join(fixtureSchemas[0], e.Name()))
-		writeFile(t, filepath.Join(s.Identity.Schemas, e.Name()), string(data))
+		writeFile(t, filepath.Join(s.Loader.Schemas, e.Name()), string(data))
 	}
 	addr := ta.startNode(t, s)
 	err = ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
@@ -1281,7 +1281,7 @@ func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(got) != `{"hostname": "old"}` {
 		t.Errorf("identity on the node = %s", got)
 	}
-	if v, err := store.Version(s.Identity.Config); err != nil || v != "" {
+	if v, err := store.Version(s.Loader.Config); err != nil || v != "" {
 		t.Errorf("config version on the node = %q, %v; want none", v, err)
 	}
 }
@@ -1305,7 +1305,7 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	s := maintenanceNode()
 	s.Installer = true
 	// The installer's own image has no schemas: the config checks against those sent alone.
-	s.Identity.Schemas = filepath.Join(t.TempDir(), "none")
+	s.Loader.Schemas = filepath.Join(t.TempDir(), "none")
 	var got install.PartsRequest
 	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
 		got = req
@@ -1370,6 +1370,6 @@ func TestAddressesWithoutTheDefinitionsConfig(t *testing.T) {
 // kubernetesImage gives the node s a running image with Kubernetes: its image.json.
 func kubernetesImage(t *testing.T, s *chalkd.Server) {
 	t.Helper()
-	s.Identity.KubernetesImage = filepath.Join(t.TempDir(), "image.json")
-	writeFile(t, s.Identity.KubernetesImage, testImageJSON)
+	s.Loader.KubernetesImage = filepath.Join(t.TempDir(), "image.json")
+	writeFile(t, s.Loader.KubernetesImage, testImageJSON)
 }

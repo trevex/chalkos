@@ -27,8 +27,8 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -160,7 +160,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 		},
 		Run:  r,
 		Host: h,
-		Identity: identity.Loader{
+		Loader: nodeconfig.Loader{
 			Identity:        filepath.Join(root, "state", "identity.json"),
 			RunDir:          filepath.Join(root, "run", "chalkos"),
 			NetworkDir:      filepath.Join(root, "run", "network"),
@@ -184,7 +184,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
-	writeSchemas(t, s.Identity.Schemas)
+	writeSchemas(t, s.Loader.Schemas)
 	return s, r
 }
 

@@ -14,9 +14,9 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
-	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -76,7 +76,7 @@ func translate(docs []config.Document, schemas *schema.Schemas, t config.Target)
 
 // runningTarget is the running image, as config for it is translated, and its schemas.
 func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
-	schemas, err := schema.LoadSchemas(s.Identity.Schemas)
+	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
 		return config.Target{}, nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
 	}
@@ -84,7 +84,7 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	t := config.Target{Platform: release["CHALKOS_PLATFORM"]}
 	// The facts the node builds its cluster from at boot, so the config is checked against
 	// exactly those; an image without them runs no Kubernetes.
-	img, err := k8s.ReadImage(s.Identity.KubernetesImage)
+	img, err := k8s.ReadImage(s.Loader.KubernetesImage)
 	switch {
 	case err == nil:
 		t.Image = &img
@@ -99,7 +99,7 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 // them references. schemas are the running image's, which next was checked against. It returns
 // the restarted units.
 func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *schema.Schemas) ([]string, error) {
-	dir := s.Identity.Config
+	dir := s.Loader.Config
 	prev, _, err := store.Read(dir)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "read the stored config: %v", err)
@@ -112,18 +112,18 @@ func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *sc
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "hash the config: %v", err)
 	}
-	consumers, err := identity.ReadConsumers(s.Identity.Consumers)
+	consumers, err := nodeconfig.ReadConsumers(s.Loader.Consumers)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	units := identity.KindRestarts(consumers, before, after)
+	units := nodeconfig.KindRestarts(consumers, before, after)
 	if err := store.Write(dir, next); err != nil {
 		return nil, failed(connect.CodeInternal, "store the config: %v", err)
 	}
 	// From here on STATE holds the new set, so a retry compares it with itself and restarts
 	// nothing. A failure therefore names the units that still need a restart, rather than
 	// leaving a node whose units read the old config without saying so.
-	if err := s.Identity.LoadConfig(); err != nil {
+	if err := s.Loader.LoadConfig(); err != nil {
 		return nil, failed(connect.CodeInternal, "write the config for its consumers: %v%s", err, restartByHand(units))
 	}
 	var pending []string

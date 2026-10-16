@@ -129,12 +129,12 @@ func hashOf(t *testing.T, text string) string {
 func configServer(t *testing.T) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := newTestServer(t, normal, vda, vdb)
-	writeSchemas(t, s.Identity.Schemas)
-	write(t, s.Identity.Consumers, `{
+	writeSchemas(t, s.Loader.Schemas)
+	write(t, s.Loader.Consumers, `{
 	  "demo": {"kinds": ["Demo"], "restartOnChange": true},
 	  "timesync": {"kinds": ["TimeSync"], "restartOnChange": true}
 	}`)
-	schemas, err := schema.LoadSchemas(s.Identity.Schemas)
+	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	write(t, filepath.Join(dir, "storage.json"), string(section))
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}}}}`)
 	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(c.identity))
-	if err := store.Write(s.Identity.Config, c.stored); err != nil {
+	if err := store.Write(s.Loader.Config, c.stored); err != nil {
 		t.Fatal(err)
 	}
 	return s, r
@@ -182,14 +182,14 @@ func TestApplyConfig(t *testing.T) {
 	if !slices.Equal(resp.RestartedUnits, []string{"demo"}) || len(resp.Changes) != 0 {
 		t.Errorf("response = %+v", resp)
 	}
-	if v, err := store.Version(s.Identity.Config); err != nil || v != hashOf(t, next) {
+	if v, err := store.Version(s.Loader.Config); err != nil || v != hashOf(t, next) {
 		t.Errorf("stored version = %q, %v; want the hash of the delivered documents", v, err)
 	}
-	stored := readFile(t, filepath.Join(s.Identity.Config, "demo.example.org", "Demo", "one.json"))
+	stored := readFile(t, filepath.Join(s.Loader.Config, "demo.example.org", "Demo", "one.json"))
 	if !strings.Contains(stored, `"name":"second"`) || !strings.Contains(stored, `"replicas":1`) {
 		t.Errorf("stored Demo = %s, want the new name and the schema's default replicas", stored)
 	}
-	if info, err := os.Stat(filepath.Join(s.Identity.Config, "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(filepath.Join(s.Loader.Config, "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("stored Secret: %v, %v", info, err)
 	}
 	var id manifest.Identity
@@ -197,10 +197,10 @@ func TestApplyConfig(t *testing.T) {
 		id.Hostname != "n1" || id.Cluster != "lab" || id.Platform != "metal" {
 		t.Errorf("identity on STATE = %+v, %v", id, err)
 	}
-	if got := readFile(t, filepath.Join(s.Identity.RunDir, "credentials", "demo", "demo.token")); got != "n3w" {
+	if got := readFile(t, filepath.Join(s.Loader.RunDir, "credentials", "demo", "demo.token")); got != "n3w" {
 		t.Errorf("demo's credential = %q", got)
 	}
-	runConfig, err := filepath.EvalSymlinks(filepath.Join(s.Identity.RunDir, "config"))
+	runConfig, err := filepath.EvalSymlinks(filepath.Join(s.Loader.RunDir, "config"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v for a refused config", r.calls)
 	}
-	if v, _ := store.Version(s.Identity.Config); v != hashOf(t, baseConfig) {
+	if v, _ := store.Version(s.Loader.Config); v != hashOf(t, baseConfig) {
 		t.Error("stored a refused config")
 	}
 }
@@ -280,7 +280,7 @@ func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 
 func TestApplyConfigRefusesMalformedImageFacts(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Identity.KubernetesImage, `{"version": "1.37.1"`)
+	write(t, s.Loader.KubernetesImage, `{"version": "1.37.1"`)
 	_, err := sendConfig(s, workerConfig)
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image's Kubernetes facts") {
 		t.Fatalf("err = %v, want a failure naming the image's Kubernetes facts", err)
@@ -338,7 +338,7 @@ func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 func TestApplyConfigFailureKeepsKubernetesRestarts(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	// STATE holds a file where the config link belongs, which the store refuses to read.
-	write(t, s.Identity.Config, "not a config set")
+	write(t, s.Loader.Config, "not a config set")
 	if _, err := apply(s, kubernetesIdentity("n1"), ""); err == nil || !strings.Contains(err.Error(), "stored config") {
 		t.Fatalf("err = %v, want the config's failure", err)
 	}
@@ -383,7 +383,7 @@ spec: {disk: {serial: chalk-extra}, format: ` + format + `, mountPoint: /srv/ext
 // defines it.
 func TestResetVolumeThroughConfig(t *testing.T) {
 	s, r := configServer(t)
-	schemas, err := schema.LoadSchemas(s.Identity.Schemas)
+	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
 		t.Fatal(err)
 	}

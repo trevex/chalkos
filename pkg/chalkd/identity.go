@@ -23,13 +23,13 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/manifest"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -192,7 +192,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	clusterChanged, manifestsChanged := false, false
 	if !keep {
 		if s.Kubernetes != nil {
-			if cluster, err = s.Identity.Cluster(r.next.Documents); err != nil {
+			if cluster, err = s.Loader.Cluster(r.next.Documents); err != nil {
 				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
 			}
 			if cluster != nil {
@@ -261,7 +261,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		if cluster != nil {
 			// A cluster file that differs from the stored config's, as one a failed boot left
 			// missing, counts as changed too.
-			written, err := s.Identity.WriteCluster(cluster)
+			written, err := s.Loader.WriteCluster(cluster)
 			if err != nil {
 				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
 			}
@@ -575,13 +575,13 @@ func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]byte, error)
 	if err := install.WriteFile(path, data, 0o600); err != nil {
 		return nil, failed(connect.CodeInternal, "record the identity: %v", err)
 	}
-	if err := s.Identity.Apply(data); err != nil {
+	if err := s.Loader.Apply(data); err != nil {
 		return nil, failed(connect.CodeInternal, "apply the identity: %v", err)
 	}
 	if _, err := s.Run.Run(ctx, "networkctl", "reload"); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	if identity.TimeChanged(old, data) {
+	if nodeconfig.TimeChanged(old, data) {
 		// chrony reads the sources file again when it starts, so a chrony that is down misses
 		// nothing.
 		if _, err := s.Run.Run(ctx, "chronyc", "reload", "sources"); err != nil {
@@ -660,7 +660,7 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, c
 // before the image had Kubernetes settings, and whether the objects of next's Manifest
 // documents differ from the stored set's.
 func (s *Server) storedKubernetes(next []config.Document) (*k8s.Cluster, bool, error) {
-	stored, found, err := store.Read(s.Identity.Config)
+	stored, found, err := store.Read(s.Loader.Config)
 	if err != nil {
 		return nil, false, failed(connect.CodeInternal, "read the stored config: %v", err)
 	}
@@ -670,7 +670,7 @@ func (s *Server) storedKubernetes(next []config.Document) (*k8s.Cluster, bool, e
 	if !found {
 		return nil, manifestsChanged, nil
 	}
-	c, err := s.Identity.Cluster(stored.Documents)
+	c, err := s.Loader.Cluster(stored.Documents)
 	if err != nil {
 		log.Printf("the stored config gives no Kubernetes cluster: %v", err)
 		return nil, manifestsChanged, nil

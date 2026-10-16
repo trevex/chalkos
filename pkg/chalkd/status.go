@@ -22,7 +22,7 @@ import (
 func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
 	var err error
-	if resp.ConfigVersion, err = store.Version(s.Identity.Config); err != nil {
+	if resp.ConfigVersion, err = store.Version(s.Loader.Config); err != nil {
 		return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
 	}
 

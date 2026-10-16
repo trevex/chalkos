@@ -93,7 +93,7 @@ func apply(s *Server, identity, fallback string) (*nodev1.ApplyConfigResponse, e
 func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	r := applyRequest{identity: identity, msg: req}
 	if identity != "" {
-		schemas, err := schema.LoadSchemas(s.Identity.Schemas)
+		schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 		if err != nil {
 			return nil, err
 		}
