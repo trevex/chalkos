@@ -5,8 +5,10 @@ let
   testEnv = import ./testing/env.nix { inherit pkgs self; };
   docs = import ./docs.nix { inherit pkgs self; };
 
-  # The test cluster's Kubernetes image, whose units the checks below run.
-  worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s.nixos.kvm.config;
+  # The images the e2e tests boot.
+  testing = import ./testing/images.nix { inherit self pkgs; };
+  # The Kubernetes test image, whose units the checks below run.
+  worker = testing.nixos.k8s-kvm.config;
   # The script NixOS runs to load and reload the worker's firewall.
   firewall =
     lib.findFirst (lib.hasSuffix "-nftables-rules")
@@ -717,7 +719,7 @@ in
   # the build. Out-of-tree modules bring the in-tree modules they depend on.
   kernel-modules =
     let
-      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s.nixos.kvm;
+      worker = testing.nixos.k8s-kvm;
       treeOf = nixos: nixos.config.system.build.chalkosKernelModules;
       tree = treeOf worker;
       gpu = treeOf (worker.extendModules { modules = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ]; });
@@ -798,13 +800,12 @@ in
       touch $out
     '';
 
-  # The test cluster's role images on each platform and its installer within their ceilings
+  # The test images on each platform and the installer within their ceilings
   # (testing/image-sizes.nix). An image over one fails the check with the largest paths of its
   # system's closure, read from closureInfo, as the build has no Nix daemon to ask. The images' own
   # fit check is tried on the test image too.
   image-size =
     let
-      testing = import ./testing/cluster.nix { inherit self pkgs; };
       ceilings = import ./testing/image-sizes.nix;
       measure =
         name: config: ceiling:
@@ -821,15 +822,15 @@ in
           ceiling.hashTree
           ceiling.uki
         ];
-      roles = lib.concatLists (
+      images = lib.concatLists (
         lib.mapAttrsToList (
-          role: platforms:
+          variant: platforms:
           lib.mapAttrsToList (
-            platform: measure "${role} on ${platform}" testing.cluster.roles.${role}.nixos.${platform}.config
+            platform: measure "${variant} on ${platform}" testing.nixos."${variant}-${platform}".config
           ) platforms
-        ) ceilings.roles
+        ) ceilings.variants
       );
-      test = testing.cluster.roles.test.nixos.metal.config;
+      test = testing.nixos.test-metal.config;
       testImage = "${test.system.build.image}/${test.image.fileName}";
       testPartitions = "${test.system.build.image}/repart-output.json";
       testUKI = "${test.system.build.uki}/${test.system.boot.loader.ukiFile}";
@@ -869,8 +870,8 @@ in
             failed=1
           fi
         }
-        ${lib.concatMapStrings (args: "check ${args}\n") roles}
-        check ${measure "installer" testing.cluster.installer.nixos.config ceilings.installer}
+        ${lib.concatMapStrings (args: "check ${args}\n") images}
+        check ${measure "installer" testing.nixos.installer.config ceilings.installer}
 
         # An image over a ceiling fails the check and lists the largest paths of its closure.
         if (
@@ -919,7 +920,7 @@ in
   # its kernel, the UKI on the ESP: the store holds neither the kernel nor the initrd.
   bootspec =
     let
-      worker = (import ./testing/cluster.nix { inherit self pkgs; }).cluster.roles.k8s.nixos.kvm;
+      worker = testing.nixos.k8s-kvm;
       bootJSON = "${worker.config.system.build.toplevel}/boot.json";
     in
     pkgs.runCommand "chalkos-bootspec" { nativeBuildInputs = [ pkgs.jq ]; } ''
