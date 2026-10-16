@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/trevex/chalkos/pkg/kubernetes"
 )
 
 func parseDocs(t *testing.T, yaml string) []Document {
@@ -78,12 +76,9 @@ func TestParseRejectsNonFiniteFloats(t *testing.T) {
 }
 
 func TestAHexPortTranslates(t *testing.T) {
-	s, err := NewSet(mustParse(t, minimal+"---\napiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: t}\n"+
-		"spec: {servers: [{host: ntp.example.org, port: 0x7b}]}\n"), allSchemas(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}})
+	s := kubernetesSet(t, "{}", "---\napiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: t}\n"+
+		"spec: {servers: [{host: ntp.example.org, port: 0x7b}]}\n")
+	id, err := s.Identity(Target{Image: &testImage})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -108,7 +108,7 @@ func (s *Server) kubernetesShare(d delivered, data []byte, osCA string, cluster 
 	}
 	c := cluster
 	if share.Kind != c.Kind {
-		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's image is for %s nodes", share.Kind, c.Kind)
+		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's config gives it the type %s", share.Kind, c.Kind)
 	}
 	var nodeName string
 	if d.kubernetes != nil {
@@ -707,8 +707,8 @@ func sameCluster(a, b *k8s.Cluster) bool {
 	return sameJSON(a, b)
 }
 
-// checkFixed refuses config that changes, on a node holding a Kubernetes share, a setting fixed
-// once the cluster exists: its address families and its pod, service and DNS addresses, for
+// checkFixed refuses config that changes, on a node holding a Kubernetes share, the node's type,
+// or a setting fixed once the cluster exists: its address families and its pod, service and DNS addresses, for
 // which its certificates, etcd and the ranges the control plane allocated were made. prev is
 // the stored config's cluster. Without one, as on a node whose stored config predates its
 // image's Kubernetes settings, there is nothing to compare with: the image's own cluster file
@@ -721,6 +721,11 @@ func (s *Server) checkFixed(prev, next *k8s.Cluster) error {
 		return nil
 	} else if err != nil {
 		return failed(connect.CodeInternal, "%v", err)
+	}
+	// The node's type comes from its config, not its image, and a node's share, certificates and
+	// etcd data are of its type.
+	if prev.Kind != next.Kind {
+		return failed(connect.CodeFailedPrecondition, "the config changes the node's type from %q to %q; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a %s", prev.Kind, next.Kind, next.Kind)
 	}
 	pf, _ := prev.Families()
 	nf, _ := next.Families()

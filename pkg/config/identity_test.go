@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -71,11 +70,10 @@ func golden(t *testing.T, node string) manifest.Identity {
 }
 
 func TestIdentityMatchesTheClusterDefinition(t *testing.T) {
-	for node, kind := range map[string]string{"cp1": kubernetes.KindControlPlane, "w1": kubernetes.KindWorker} {
+	for _, node := range []string{"cp1", "w1"} {
 		t.Run(node, func(t *testing.T) {
 			want := golden(t, node)
-			got, err := homelabSet(t, node).Identity(Target{Role: want.Role, Platform: want.Platform,
-				Kubernetes: &kubernetes.Cluster{Kind: kind}})
+			got, err := homelabSet(t, node).Identity(Target{Role: want.Role, Platform: want.Platform, Image: &testImage})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -107,18 +105,15 @@ func macsOf(id manifest.Identity) map[string]any {
 }
 
 func TestIdentityCarriesTheMatchedMAC(t *testing.T) {
-	s, err := NewSet(mustParse(t, minimal+`---
+	s := kubernetesSet(t, "{}", `---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 10-lab}
 spec:
   match: {macAddress: "52:54:00:7b:00:11"}
   network: {address: [10.0.0.11/24]}
-`), allSchemas(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}})
+`)
+	id, err := s.Identity(Target{Image: &testImage})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,17 +127,24 @@ spec:
 }
 
 func TestIdentityRejects(t *testing.T) {
-	cp1 := func() *Set { return homelabSet(t, "cp1") }
+	noKubernetes := strings.Replace(minimal, "spec: {}", `spec: {endpoint: "https://10.0.0.10:6443"}`, 1)
+	noType := strings.Replace(minimal, "spec: {type: worker, imageRef: metal}", "spec: {imageRef: metal}", 1) +
+		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}\n"
 	for name, tc := range map[string]struct {
-		set    *Set
+		yaml   string
 		target Target
 		want   string
 	}{
-		"type of another image":   {cp1(), Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}}, "controlplane"},
-		"type without Kubernetes": {cp1(), Target{}, "Kubernetes"},
+		"type without Kubernetes": {minimal, Target{}, `Node "n1" has type worker, but its image runs no Kubernetes`},
+		"no Kubernetes document":  {noKubernetes, Target{Image: &testImage}, "no Kubernetes"},
+		"no type":                 {noType, Target{Image: &testImage}, `Node "n1" has no type`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := tc.set.Identity(tc.target); err == nil || !strings.Contains(err.Error(), tc.want) {
+			s, err := NewSet(mustParse(t, tc.yaml), allSchemas(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Identity(tc.target); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
@@ -162,12 +164,12 @@ func TestKubeletChecks(t *testing.T) {
 		"family without address":   {`{nodeIPs: [], validSubnets: ["10.0.0.0/24"]}`, "cannot pick its ipv6", []string{"ipv4", "ipv6"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			yaml := minimal + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\nspec: " + tc.spec + "\n"
-			s, err := NewSet(mustParse(t, yaml), allSchemas(t))
-			if err != nil {
-				t.Fatal(err)
+			spec := "{}"
+			if tc.families != nil {
+				spec = "{ipFamilies: [" + strings.Join(tc.families, ", ") + "]}"
 			}
-			_, err = s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker, IPFamilies: tc.families}})
+			s := kubernetesSet(t, spec, "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\nspec: "+tc.spec+"\n")
+			_, err := s.Identity(Target{Image: &testImage})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
@@ -176,13 +178,9 @@ func TestKubeletChecks(t *testing.T) {
 }
 
 func TestKubeletErrorsReadLikeNix(t *testing.T) {
-	yaml := minimal + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\n" +
-		"spec: {nodeIPs: [10.0.0.1, 10.0.0.2, 10.0.0.3, nope]}\n"
-	s, err := NewSet(mustParse(t, yaml), allSchemas(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker, IPFamilies: []string{"ipv6"}}})
+	s := kubernetesSet(t, "{ipFamilies: [ipv6]}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\n"+
+		"spec: {nodeIPs: [10.0.0.1, 10.0.0.2, 10.0.0.3, nope]}\n")
+	_, err := s.Identity(Target{Image: &testImage})
 	want := "invalid Kubernetes settings:\n" +
 		"- Kubelet: nodeIPs: \"nope\" is not an address\n" +
 		"- Kubelet: nodeIPs: more than one ipv4 address; give at most one per family\n" +
@@ -193,7 +191,7 @@ func TestKubeletErrorsReadLikeNix(t *testing.T) {
 }
 
 func TestDefaultNodeIPsTakeTheFirstStaticAddressOfEachFamily(t *testing.T) {
-	yaml := minimal + `---
+	networks := `---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 10-a}
@@ -206,11 +204,8 @@ metadata: {name: 20-b}
 spec:
   network: {address: [fd00::2/64]}
 `
-	s, err := NewSet(mustParse(t, yaml), allSchemas(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker, IPFamilies: []string{"ipv6", "ipv4"}}})
+	s := kubernetesSet(t, "{ipFamilies: [ipv6, ipv4]}", networks)
+	id, err := s.Identity(Target{Image: &testImage})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,8 +213,8 @@ spec:
 		t.Errorf("nodeIPs = %v, want %v", id.Kubernetes.NodeIPs, want)
 	}
 	// Subnets that apply leave every family to be picked at boot.
-	c := kubernetes.Cluster{Kind: kubernetes.KindWorker, NodeIP: kubernetes.NodeIP{ValidSubnets: []string{"10.0.0.0/8"}}}
-	if id, err = s.Identity(Target{Kubernetes: &c}); err != nil {
+	s = kubernetesSet(t, `{nodeIP: {validSubnets: ["10.0.0.0/8"]}}`, networks)
+	if id, err = s.Identity(Target{Image: &testImage}); err != nil {
 		t.Fatal(err)
 	}
 	if id.Kubernetes.NodeIPs == nil || len(id.Kubernetes.NodeIPs) != 0 {
@@ -228,22 +223,15 @@ spec:
 }
 
 func TestSwapVolumeOnKubernetesNodeFails(t *testing.T) {
-	yaml := minimal + "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: swap}\nspec: {size: 4G, format: swap}\n"
-	s, err := NewSet(mustParse(t, yaml), allSchemas(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}}); err == nil || !strings.Contains(err.Error(), "swap") {
+	s := kubernetesSet(t, "{}", "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: swap}\nspec: {size: 4G, format: swap}\n")
+	if _, err := s.Identity(Target{Image: &testImage}); err == nil || !strings.Contains(err.Error(), "swap") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestIdentityWithoutKubeletUsesDefaults(t *testing.T) {
-	s, err := NewSet(mustParse(t, minimal), allSchemas(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.Identity(Target{Role: "worker", Platform: "kvm", Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker}})
+	s := kubernetesSet(t, "{}", "")
+	id, err := s.Identity(Target{Role: "worker", Platform: "kvm", Image: &testImage})
 	if err != nil {
 		t.Fatal(err)
 	}

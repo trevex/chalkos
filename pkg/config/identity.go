@@ -17,11 +17,8 @@ type Target struct {
 	// Role and Platform are the image's, as its os-release names them.
 	Role     string
 	Platform string
-	// Kubernetes is the image's /etc/chalkos/kubernetes/cluster.json, which names the kind of
-	// node the image is built for and its facts; nil on an image without Kubernetes.
-	Kubernetes *kubernetes.Cluster
-	// Image is the image's Kubernetes facts, which its Kubernetes documents are checked against;
-	// nil on an image without Kubernetes.
+	// Image is the image's Kubernetes facts, its image.json, which the cluster its documents give
+	// is built with; nil on an image without Kubernetes.
 	Image *kubernetes.Image
 }
 
@@ -42,8 +39,8 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 	if err := nodeDoc.decodeSpec(&node); err != nil {
 		return manifest.Identity{}, err
 	}
-	if err := checkType(nodeDoc, node, t); err != nil {
-		return manifest.Identity{}, err
+	if node.Type != nil && t.Image == nil {
+		return manifest.Identity{}, fmt.Errorf("%s has type %s, but its image runs no Kubernetes", nodeDoc, *node.Type)
 	}
 	sec, err := s.storage()
 	if err != nil {
@@ -86,35 +83,18 @@ func (s *Set) Identity(t Target) (manifest.Identity, error) {
 			id.Time.Servers = append(id.Time.Servers, server)
 		}
 	}
-	if t.Kubernetes != nil {
-		// The node's addresses follow the families and nodeIP.validSubnets of the Kubernetes
-		// document. A set without one is translated with the image's, and refused where its
-		// cluster is built.
-		c := *t.Kubernetes
-		if _, ok := s.One("Kubernetes"); ok {
-			if c, err = s.Cluster(t.Kubernetes.Image()); err != nil {
-				return manifest.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
-			}
+	if t.Image != nil {
+		// The node's addresses follow the families and nodeIP.validSubnets of the cluster the
+		// documents give, which needs the Node's type and a Kubernetes document.
+		c, err := s.Cluster(*t.Image)
+		if err != nil {
+			return manifest.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
 		}
 		if err := s.kubelet(&id, nodeDoc.Name, c); err != nil {
 			return manifest.Identity{}, err
 		}
 	}
 	return id, nil
-}
-
-// checkType requires the Node's type to be the kind of node its image is built for, and none on
-// an image without Kubernetes.
-func checkType(d Document, node nodeSpec, t Target) error {
-	switch {
-	case t.Kubernetes == nil && node.Type != nil:
-		return fmt.Errorf("%s has type %s, but its image runs no Kubernetes", d, *node.Type)
-	case t.Kubernetes != nil && node.Type == nil:
-		return fmt.Errorf("%s has no type, but its image is built for %s nodes; set type %s", d, t.Kubernetes.Kind, t.Kubernetes.Kind)
-	case t.Kubernetes != nil && *node.Type != t.Kubernetes.Kind:
-		return fmt.Errorf("%s has type %s, but its image is built for %s nodes", d, *node.Type, t.Kubernetes.Kind)
-	}
-	return nil
 }
 
 // The labels a kubelet may set on its own Node (k8s.io/kubelet's IsKubeletLabel in Kubernetes

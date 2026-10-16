@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/manifest"
 	"github.com/trevex/chalkos/pkg/networkdschema"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -523,8 +522,9 @@ func StaticAddresses(docs []Document) []string {
 // Check translates the documents for the image t describes, with its schemas, and requires the
 // identity the cluster definition rendered for the node, so chalkctl never delivers config that
 // means something else on the node than the definition says. It returns the translated identity.
-// On an image with Kubernetes it also requires the image's Kubernetes settings and the manifest's
-// registries, manifests and DHCP flag.
+// On an image with Kubernetes it also requires the manifest's registries, manifests and DHCP
+// flag; the Kubernetes settings reach the documents as the manifest gives them, and the cluster
+// they give is checked where the identity is translated.
 func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (manifest.Identity, error) {
 	set, err := NewSet(b.Documents, s)
 	if err != nil {
@@ -548,14 +548,13 @@ func (b Bridged) Check(want manifest.Identity, s *schema.Schemas, t Target) (man
 	}
 	diffs = append(diffs, more...)
 	if len(diffs) > 0 {
-		return manifest.Identity{}, fmt.Errorf("the config generated from the cluster definition does not give back the definition's identity, Kubernetes settings, registries, manifests and time settings for the node: %s", strings.Join(diffs, "; "))
+		return manifest.Identity{}, fmt.Errorf("the config generated from the cluster definition does not give back the definition's identity, registries, manifests and time settings for the node: %s", strings.Join(diffs, "; "))
 	}
 	return got, nil
 }
 
-// clusterSettingsDiffs names how the documents' Kubernetes settings differ from the image's
-// cluster.json, and their registries, manifests and DHCP flag from the manifest's; a worker's
-// documents hold no manifests.
+// clusterSettingsDiffs names how the documents' registries, manifests and DHCP flag differ from
+// the manifest's; a worker's documents hold no manifests.
 func (b Bridged) clusterSettingsDiffs(set *Set, t Target) ([]string, error) {
 	var diffs []string
 	dhcp, err := set.TimeDHCP()
@@ -565,14 +564,9 @@ func (b Bridged) clusterSettingsDiffs(set *Set, t Target) ([]string, error) {
 	if dhcp != b.dhcp {
 		diffs = append(diffs, fmt.Sprintf("time dhcp %t instead of %t", dhcp, b.dhcp))
 	}
-	if t.Kubernetes == nil || !b.kubernetes {
+	if t.Image == nil || !b.kubernetes {
 		return diffs, nil
 	}
-	c, err := set.Cluster(t.Kubernetes.Image())
-	if err != nil {
-		return nil, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
-	}
-	diffs = append(diffs, clusterDiffs(*t.Kubernetes, c)...)
 	got, err := set.RegistryMirrors()
 	if err != nil {
 		return nil, fmt.Errorf("the registry mirrors the documents give: %w", err)
@@ -637,53 +631,6 @@ func objectName(v any) string {
 	o, _ := v.(map[string]any)
 	meta, _ := o["metadata"].(map[string]any)
 	return fmt.Sprintf("%v %v", o["kind"], meta["name"])
-}
-
-// clusterDiffs names the settings in which got, the cluster the documents give, differs from
-// want, the image's: those of the cluster's families alone, with empty lists and maps the same
-// as none. The release and images are the image's in both.
-func clusterDiffs(want, got kubernetes.Cluster) []string {
-	var diffs []string
-	differ := func(what string, same bool, w, g any) {
-		if !same {
-			diffs = append(diffs, fmt.Sprintf("kubernetes %s %v instead of %v", what, g, w))
-		}
-	}
-	differ("kind", want.Kind == got.Kind, want.Kind, got.Kind)
-	differ("endpoint", want.Endpoint == got.Endpoint, want.Endpoint, got.Endpoint)
-	differ("domain", want.Domain == got.Domain, want.Domain, got.Domain)
-	differ("allowSchedulingOnControlPlanes", want.AllowSchedulingOnControlPlanes == got.AllowSchedulingOnControlPlanes,
-		want.AllowSchedulingOnControlPlanes, got.AllowSchedulingOnControlPlanes)
-	wf, _ := want.Families()
-	gf, _ := got.Families()
-	differ("ipFamilies", slices.Equal(wf, gf), wf, gf)
-	for _, f := range wf {
-		differ("podCIDRs."+string(f), want.PodCIDRs.Of(f) == got.PodCIDRs.Of(f), want.PodCIDRs.Of(f), got.PodCIDRs.Of(f))
-		differ("serviceCIDRs."+string(f), want.ServiceCIDRs.Of(f) == got.ServiceCIDRs.Of(f), want.ServiceCIDRs.Of(f), got.ServiceCIDRs.Of(f))
-		differ("dnsIPs."+string(f), want.DNSIPs.Of(f) == got.DNSIPs.Of(f), want.DNSIPs.Of(f), got.DNSIPs.Of(f))
-		differ("nodeCIDRMaskSizes."+string(f), want.NodeCIDRMaskSizes.Of(f) == got.NodeCIDRMaskSizes.Of(f),
-			want.NodeCIDRMaskSizes.Of(f), got.NodeCIDRMaskSizes.Of(f))
-	}
-	differ("nodeIP.validSubnets", slices.Equal(want.NodeIP.ValidSubnets, got.NodeIP.ValidSubnets), want.NodeIP.ValidSubnets, got.NodeIP.ValidSubnets)
-	differ("nodeIP.timeout", want.NodeIP.Timeout == got.NodeIP.Timeout, want.NodeIP.Timeout, got.NodeIP.Timeout)
-	differ("vxlanSourceSubnets", slices.Equal(want.VXLANSourceSubnets, got.VXLANSourceSubnets), want.VXLANSourceSubnets, got.VXLANSourceSubnets)
-	differ("vip.addresses", slices.Equal(want.VIP.Addresses, got.VIP.Addresses), want.VIP.Addresses, got.VIP.Addresses)
-	if len(want.VIP.Addresses) > 0 {
-		differ("vip.mode", want.VIP.Mode == got.VIP.Mode, want.VIP.Mode, got.VIP.Mode)
-		differ("vip.interface", want.VIP.Interface == got.VIP.Interface, want.VIP.Interface, got.VIP.Interface)
-	}
-	for _, component := range sortedUnion(want.ExtraArgs, got.ExtraArgs) {
-		differ("extraArgs."+component, maps.Equal(want.ExtraArgs[component], got.ExtraArgs[component]), want.ExtraArgs[component], got.ExtraArgs[component])
-	}
-	differ("flannel", reflect.DeepEqual(want.Flannel, got.Flannel), flannelText(want.Flannel), flannelText(got.Flannel))
-	return diffs
-}
-
-func flannelText(f *kubernetes.Flannel) string {
-	if f == nil {
-		return "none"
-	}
-	return fmt.Sprintf("mtu %d", f.MTU)
 }
 
 // identityDiff names what of got differs from want, compared by meaning: unit files and repart

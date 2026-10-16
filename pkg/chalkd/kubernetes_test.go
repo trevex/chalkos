@@ -233,7 +233,7 @@ func TestBootstrapRefusals(t *testing.T) {
 		"etcd with data":        {etcdData, "holds etcd data"},
 		"no address":            {noAddress, "no node address matches validSubnets 192.168.100.0/24"},
 		"preparing":             {preparing, "the node's Kubernetes files are not prepared yet; see chalkctl logs n1 --unit chalkos-kubernetes"},
-		"share of another kind": {otherKind, "preparation failed: the node's share is for a worker node, but its image is for controlplane nodes"},
+		"share of another kind": {otherKind, "preparation failed: the node's share is for a worker node, but its config gives it the type controlplane"},
 		"firewall":              {noFirewall, "preparation failed: accept VXLAN to the node's address: exit status 1"},
 	} {
 		var before map[string]string
@@ -425,7 +425,7 @@ func TestStatusKubernetes(t *testing.T) {
 		"bootstrapped":          {bootstrapped, &nodev1.KubernetesStatus{Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
 		"no share":              {noShare, &nodev1.KubernetesStatus{Kind: "worker", State: "no share"}},
 		"no address":            {noAddress, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},
-		"share of another kind": {otherKind, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: the node's share is for a controlplane node, but its image is for worker nodes"}},
+		"share of another kind": {otherKind, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: the node's share is for a controlplane node, but its config gives it the type worker"}},
 		"firewall":              {noFirewall, &nodev1.KubernetesStatus{Kind: "worker", State: "preparation failed: accept VXLAN to the node's address: exit status 1"}},
 		"preparing":             {preparing, &nodev1.KubernetesStatus{Kind: "controlplane", State: "preparing"}},
 		"writing":               {writing, &nodev1.KubernetesStatus{Kind: "worker", State: "preparing"}},
@@ -802,7 +802,7 @@ func TestApplyConfigReportsFailedRestart(t *testing.T) {
 	r.rules = append([]rule{{prefix: "systemctl restart chalkos-kubernetes.service", err: errors.New("exit status 1")}}, r.rules...)
 	otherKindsShare(t, s)
 	_, err := apply(s, kubernetesIdentity("n1"), "")
-	want := "the node runs no kubelet: preparation failed: the node's share is for a controlplane node, but its image is for worker nodes"
+	want := "the node runs no kubelet: preparation failed: the node's share is for a controlplane node, but its config gives it the type worker"
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("share of another kind: err = %v, want %s", err, want)
 	}
@@ -1179,6 +1179,24 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 				t.Error("wrote the refused cluster")
 			}
 		})
+	}
+}
+
+// A node holding a share keeps its type: its certificates are those of its kind, and a control
+// plane's etcd data stays its own.
+func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	r.calls = nil
+	controlPlane := strings.Replace(workerConfig, "spec: {type: worker, imageRef: metal}", "spec: {type: controlplane, imageRef: metal}", 1)
+	_, err := sendConfig(s, controlPlane)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), `the node's type from "worker" to "controlplane"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
 	}
 }
 

@@ -976,7 +976,7 @@ func TestPreparationError(t *testing.T) {
 	if err := Prepare(p, now, picked, nil); err == nil {
 		t.Fatal("prepared a worker's share on a control-plane image")
 	}
-	if got := reason(); got != "the node's share is for a worker node, but its image is for controlplane nodes" {
+	if got := reason(); got != "the node's share is for a worker node, but its config gives it the type controlplane" {
 		t.Errorf("share of another kind: %q", got)
 	}
 	if exists(p.Prepared()) {

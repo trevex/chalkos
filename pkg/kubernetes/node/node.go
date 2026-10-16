@@ -282,7 +282,7 @@ func Load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
 		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, err
 	}
 	if share.Kind != c.Kind {
-		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, fmt.Errorf("the node's share is for a %s node, but its image is for %s nodes", share.Kind, c.Kind)
+		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, fmt.Errorf("the node's share is for a %s node, but its config gives it the type %s", share.Kind, c.Kind)
 	}
 	if share.Kind == kubernetes.KindWorker && share.Node() != n.Name {
 		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, fmt.Errorf("the node's kubelet certificate is for node %s, not %s", share.Node(), n.Name)

@@ -25,7 +25,8 @@ type contract struct {
 	files                        map[string][]byte
 	kubernetes                   []byte
 	schemas                      *schema.Schemas
-	cluster                      *k8s.Cluster
+	// image is the image's Kubernetes facts; nil on an image without Kubernetes.
+	image *k8s.Image
 }
 
 func newContract(files map[string][]byte, kubernetesJSON []byte) (contract, error) {
@@ -39,7 +40,8 @@ func newContract(files map[string][]byte, kubernetesJSON []byte) (contract, erro
 		if err != nil {
 			return contract{}, fmt.Errorf("kubernetes.json: %w", err)
 		}
-		c.cluster = &k
+		img := k.Image()
+		c.image = &img
 	}
 	return c, nil
 }
@@ -105,7 +107,7 @@ func configFor(t *target, c contract) (delivery, error) {
 	if err != nil {
 		return delivery{}, err
 	}
-	id, err := b.Check(t.node.Identity, c.schemas, config.Target{Role: c.role, Platform: c.platform, Kubernetes: c.cluster})
+	id, err := b.Check(t.node.Identity, c.schemas, config.Target{Role: c.role, Platform: c.platform, Image: c.image})
 	if err != nil {
 		return delivery{}, fmt.Errorf("the config of %s: %w", t.name, err)
 	}

@@ -40,16 +40,16 @@ func homelabManifest(t *testing.T) *manifest.Manifest {
 	return m
 }
 
-// homelabTarget is the image of a homelab node: the fixture schemas and the homelab's
-// cluster.json for the node's kind.
+// homelabTarget is the image of a homelab node: the fixture schemas, and on a node with
+// Kubernetes the facts of a flannel image.
 func homelabTarget(t *testing.T, m *manifest.Manifest, n manifest.Node) Target {
 	t.Helper()
-	c, err := kubernetes.ReadCluster("../../test/fixtures/config/homelab/kubernetes.json")
-	if err != nil {
-		t.Fatal(err)
+	target := Target{Role: n.Role, Platform: n.Platform}
+	if m.Roles[n.Role].Kind != "" {
+		img := testImage
+		target.Image = &img
 	}
-	c.Kind = m.Roles[n.Role].Kind
-	return Target{Role: n.Role, Platform: n.Platform, Kubernetes: &c}
+	return target
 }
 
 func TestFromManifestGivesBackTheHomelab(t *testing.T) {
@@ -407,7 +407,8 @@ func TestBridgeGivesBackEveryManifest(t *testing.T) {
 				c, err := kubernetes.ReadCluster(filepath.Join(contract, "kubernetes.json"))
 				switch {
 				case err == nil:
-					target.Kubernetes = &c
+					img := c.Image()
+					target.Image = &img
 				case !errors.Is(err, fs.ErrNotExist):
 					t.Fatal(err)
 				}
@@ -720,17 +721,18 @@ func TestFromManifestDropsUnusedFamilies(t *testing.T) {
 	}
 }
 
-// TestCheckComparesTheClusterWithTheImage: a manifest whose Kubernetes settings differ from the
-// image's is refused, naming the setting.
-func TestCheckComparesTheClusterWithTheImage(t *testing.T) {
+// TestCheckRefusesKubernetesSettingsTheNodeRefuses: the manifest's Kubernetes settings reach the
+// Kubernetes document as they are, so settings chalkd refuses fail the check, naming the
+// document.
+func TestCheckRefusesKubernetesSettingsTheNodeRefuses(t *testing.T) {
 	m := homelabManifest(t)
-	m.Kubernetes = json.RawMessage(`{"domain": "lab.local"}`)
+	m.Kubernetes = json.RawMessage(`{"podCIDRs": {"ipv4": "10.244.0.1/16"}}`)
 	b, err := FromManifest(m, "w1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = b.Check(m.Nodes["w1"].Identity, allSchemas(t), homelabTarget(t, m, m.Nodes["w1"]))
-	if err == nil || !strings.Contains(err.Error(), "kubernetes domain lab.local instead of cluster.local") {
+	if err == nil || !strings.Contains(err.Error(), `Kubernetes "kubernetes"`) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -767,9 +769,9 @@ func TestCheckNamesTheDifferingManifestObject(t *testing.T) {
 	}
 }
 
-// TestCheckComparesExtraArgs: the components' extra flags, the kubelet's among them, reach the
-// documents and must equal the image's.
-func TestCheckComparesExtraArgs(t *testing.T) {
+// TestFromManifestCarriesExtraArgs: the components' extra flags, the kubelet's among them, reach
+// the Kubernetes document as the manifest gives them.
+func TestFromManifestCarriesExtraArgs(t *testing.T) {
 	m := homelabManifest(t)
 	m.Kubernetes = json.RawMessage(`{"extraArgs": {"kubelet": {"v": "2"}, "kube-apiserver": {"audit-log-maxage": "7"}}}`)
 	for _, node := range []string{"w1", "cp1"} {
@@ -778,14 +780,19 @@ func TestCheckComparesExtraArgs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		target := homelabTarget(t, m, n)
-		target.Kubernetes.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2"}, "kube-apiserver": {"audit-log-maxage": "7"}}
-		if _, err := b.Check(n.Identity, allSchemas(t), target); err != nil {
+		if _, err := b.Check(n.Identity, allSchemas(t), homelabTarget(t, m, n)); err != nil {
 			t.Fatalf("%s: %v", node, err)
 		}
-		target.Kubernetes.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"audit-log-maxage": "7"}}
-		if _, err := b.Check(n.Identity, allSchemas(t), target); err == nil || !strings.Contains(err.Error(), "kubernetes extraArgs.kubelet map[v:2] instead of map[]") {
-			t.Fatalf("%s: err = %v", node, err)
+		set, err := NewSet(b.Documents, allSchemas(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := set.Cluster(testImage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ExtraArgs["kubelet"]["v"] != "2" || c.ExtraArgs["kube-apiserver"]["audit-log-maxage"] != "7" {
+			t.Errorf("%s: extraArgs = %v", node, c.ExtraArgs)
 		}
 	}
 }

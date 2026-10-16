@@ -163,7 +163,7 @@ func TestTimeDHCP(t *testing.T) {
 // The identity's address families come from the Kubernetes document.
 func TestIdentityTakesTheDocumentsFamilies(t *testing.T) {
 	s := kubernetesSet(t, "{ipFamilies: [ipv6]}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\nspec: {nodeIPs: [10.0.0.1]}\n")
-	_, err := s.Identity(Target{Kubernetes: &kubernetes.Cluster{Kind: kubernetes.KindWorker, Version: "1.37.1"}})
+	_, err := s.Identity(Target{Image: &testImage})
 	if err == nil || !strings.Contains(err.Error(), "an ipv4 address, but the cluster's ipFamilies are [ ipv6 ]") {
 		t.Fatalf("err = %v", err)
 	}

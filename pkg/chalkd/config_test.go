@@ -262,7 +262,7 @@ func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	}
 }
 
-// TestApplyConfigOnAKubernetesImage translates config with the running image's kubernetes.json.
+// TestApplyConfigOnAKubernetesImage translates config with the running image's image.json.
 func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 	s, _ := configServer(t)
 	kubernetesImage(t, s, "")
@@ -278,12 +278,12 @@ func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 	}
 }
 
-func TestApplyConfigRefusesAMalformedClusterFile(t *testing.T) {
+func TestApplyConfigRefusesMalformedImageFacts(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Paths.KubernetesCluster, `{"kind": "worker"`)
+	write(t, s.Identity.KubernetesImage, `{"version": "1.37.1"`)
 	_, err := sendConfig(s, workerConfig)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), s.Paths.KubernetesCluster) {
-		t.Fatalf("err = %v, want a failure naming the cluster file", err)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image's Kubernetes facts") {
+		t.Fatalf("err = %v, want a failure naming the image's Kubernetes facts", err)
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v", r.calls)
