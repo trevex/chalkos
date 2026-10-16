@@ -1,7 +1,7 @@
 # The node's clock, kept by chrony. Certificates are checked against it, so chrony steps a clock
 # that is off at boot instead of slewing it for hours; until then chalkd and the control plane
 # may refuse certificates that are valid. The servers come with the node's config, which chalkd's
-# identity loader writes to a sources file, and so does whether the servers DHCP announces count:
+# config loader writes to a sources file, and so does whether the servers DHCP announces count:
 # one image serves nodes with different servers.
 {
   config,
@@ -10,7 +10,7 @@
   ...
 }:
 let
-  # The identity loader writes identity.sources here; chalkd reloads it when it changes.
+  # The config loader writes identity.sources here; chalkd reloads it when it changes.
   sources = "/run/chalkos/chrony";
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;

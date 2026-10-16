@@ -1,5 +1,5 @@
 // Command chalkd is the chalkos node agent. It serves the node API on port 50000 and applies the
-// node's identity at boot.
+// node's config at boot.
 package main
 
 import (

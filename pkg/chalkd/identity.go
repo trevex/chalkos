@@ -57,7 +57,7 @@ func parseIdentity(data string) (delivered, error) {
 	if err := id.Storage.Validate(); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
 	}
-	// The identity loader would refuse it at every boot.
+	// The config loader would refuse it at every boot.
 	if err := id.Time.Check(); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "the identity's %v", err)
 	}
