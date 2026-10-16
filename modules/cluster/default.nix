@@ -12,8 +12,6 @@
     ./options/installer.nix
     ./options/time.nix
     ./options/manifest.nix
-    ./kubernetes
     ./features/cni
-    ./features/dns
   ];
 }

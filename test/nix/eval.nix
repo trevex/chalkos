@@ -21,6 +21,9 @@ let
       ++ modules;
     };
   role = c: c.roles.worker.nixos.metal.config;
+  # The cluster's Kubernetes settings as the manifest carries them into every Kubernetes node's
+  # Kubernetes document; evaluating them runs the options' checks.
+  kubernetesSettings = modules: (cluster modules).manifest.kubernetes;
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
   defaultTimeServers = [
     "ptbtime1.ptb.de"
@@ -1604,18 +1607,14 @@ lib.runTests {
           clusterSubnets
           { chalkos.nodes.n1.kubernetes.nodeIP = "10.0.0.5"; }
         ];
-        clusterFile =
-          (builtins.fromJSON
-            (role (cluster [ clusterSubnets ])).environment.etc."chalkos/kubernetes/cluster.json".text
-          ).nodeIP;
+        clusterFile = (kubernetesSettings [ clusterSubnets ]).nodeIP;
         notASubnet = fails (node [
           static
           { chalkos.nodes.n1.kubernetes.validSubnets = [ "192.168.100.0" ]; }
         ]);
-        notAClusterSubnet =
-          fails
-            (role (cluster [ { chalkos.cluster.kubernetes.nodeIP.validSubnets = [ "eth0" ]; } ]))
-            .environment.etc."chalkos/kubernetes/cluster.json".text;
+        notAClusterSubnet = fails (kubernetesSettings [
+          { chalkos.cluster.kubernetes.nodeIP.validSubnets = [ "eth0" ]; }
+        ]);
       };
     expected = {
       nodeSubnets = {
@@ -1677,10 +1676,7 @@ lib.runTests {
           "ipv6"
         ];
         set = k: { chalkos.nodes.n1.kubernetes = k; };
-        clusterFile =
-          modules:
-          (builtins.fromJSON (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text)
-          .ipFamilies;
+        clusterFile = modules: (kubernetesSettings modules).ipFamilies;
       in
       {
         ipv4 = node [ ];
@@ -1758,35 +1754,22 @@ lib.runTests {
       unknownFamily = true;
     };
   };
-  # The ranges of the families in use reach the nodes in their order; values that exist once
-  # follow the primary family.
+  # The ranges of the families in use, and the DNS address by default the 10th of the service range.
   testAddressRanges = {
     expr =
       let
         setup =
           families:
           let
-            c = cluster [ { chalkos.cluster.kubernetes.ipFamilies = families; } ];
-            config = role c;
-            named =
-              kind: name:
-              lib.findFirst (m: m.kind == kind && m.metadata.name == name) null c.cluster.kubernetes.addons;
-            clusterFile = builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text;
-            kubeProxy = builtins.fromJSON (named "ConfigMap" "kube-proxy").data."config.conf";
+            k = kubernetesSettings [ { chalkos.cluster.kubernetes.ipFamilies = families; } ];
+            ofFamilies = byFamily: lib.genAttrs k.ipFamilies (family: byFamily.${family});
           in
           {
-            inherit (clusterFile)
-              ipFamilies
-              podCIDRs
-              serviceCIDRs
-              dnsIPs
-              nodeCIDRMaskSizes
-              ;
-            clusterDNS = config.system.build.chalkosKubeletConfig.clusterDNS;
-            dnsService = {
-              inherit ((named "Service" "kube-dns").spec) clusterIP ipFamilyPolicy ipFamilies;
-            };
-            kubeProxyClusterCIDR = kubeProxy.clusterCIDR;
+            inherit (k) ipFamilies;
+            podCIDRs = ofFamilies k.podCIDRs;
+            serviceCIDRs = ofFamilies k.serviceCIDRs;
+            dnsIPs = ofFamilies k.dnsIPs;
+            nodeCIDRMaskSizes = ofFamilies k.nodeCIDRMaskSizes;
           };
         # The DNS address defaults to the 10th address of the service range, written as Go writes
         # addresses.
@@ -1830,13 +1813,6 @@ lib.runTests {
         serviceCIDRs.ipv4 = "10.96.0.0/12";
         dnsIPs.ipv4 = "10.96.0.10";
         nodeCIDRMaskSizes.ipv4 = 24;
-        clusterDNS = [ "10.96.0.10" ];
-        dnsService = {
-          clusterIP = "10.96.0.10";
-          ipFamilyPolicy = "SingleStack";
-          ipFamilies = [ "IPv4" ];
-        };
-        kubeProxyClusterCIDR = "10.244.0.0/16";
       };
       dual = {
         ipFamilies = [
@@ -1859,13 +1835,6 @@ lib.runTests {
           ipv4 = 24;
           ipv6 = 64;
         };
-        clusterDNS = [ "10.96.0.10" ];
-        dnsService = {
-          clusterIP = "10.96.0.10";
-          ipFamilyPolicy = "SingleStack";
-          ipFamilies = [ "IPv4" ];
-        };
-        kubeProxyClusterCIDR = "10.244.0.0/16,fd00:10:244::/56";
       };
       ipv6Primary = {
         ipFamilies = [
@@ -1888,13 +1857,6 @@ lib.runTests {
           ipv4 = 24;
           ipv6 = 64;
         };
-        clusterDNS = [ "fd00:10:96::a" ];
-        dnsService = {
-          clusterIP = "fd00:10:96::a";
-          ipFamilyPolicy = "SingleStack";
-          ipFamilies = [ "IPv6" ];
-        };
-        kubeProxyClusterCIDR = "fd00:10:244::/56,10.244.0.0/16";
       };
       ipv6 = {
         ipFamilies = [ "ipv6" ];
@@ -1902,13 +1864,6 @@ lib.runTests {
         serviceCIDRs.ipv6 = "fd00:10:96::/112";
         dnsIPs.ipv6 = "fd00:10:96::a";
         nodeCIDRMaskSizes.ipv6 = 64;
-        clusterDNS = [ "fd00:10:96::a" ];
-        dnsService = {
-          clusterIP = "fd00:10:96::a";
-          ipFamilyPolicy = "SingleStack";
-          ipFamilies = [ "IPv6" ];
-        };
-        kubeProxyClusterCIDR = "fd00:10:244::/56";
       };
       defaultDNSIPs = {
         ipv4 = "10.100.0.10";
@@ -1937,8 +1892,7 @@ lib.runTests {
           let
             c = cluster [ (dual kubernetes) ];
           in
-          fails (removeAttrs c.cluster.kubernetes [ "package" ])
-          && fails (role c).environment.etc."chalkos/kubernetes/cluster.json".text;
+          fails (removeAttrs c.cluster.kubernetes [ "package" ]) && fails c.manifest.kubernetes;
       in
       {
         valid =
@@ -1958,16 +1912,15 @@ lib.runTests {
           };
         # Entries of a family not in use are ignored.
         otherFamily =
-          !fails
-            (role (cluster [
-              {
-                chalkos.cluster.kubernetes = {
-                  podCIDRs.ipv6 = "10.244.0.0";
-                  dnsIPs.ipv6 = "dns";
-                  nodeCIDRMaskSizes.ipv6 = 0;
-                };
-              }
-            ])).environment.etc."chalkos/kubernetes/cluster.json".text;
+          !fails (kubernetesSettings [
+            {
+              chalkos.cluster.kubernetes = {
+                podCIDRs.ipv6 = "10.244.0.0";
+                dnsIPs.ipv6 = "dns";
+                nodeCIDRMaskSizes.ipv6 = 0;
+              };
+            }
+          ]);
         notARange = refused { podCIDRs.ipv4 = "10.244.0.0"; };
         exclusion = refused { podCIDRs.ipv4 = "!10.244.0.0/16"; };
         wrongFamily = refused { podCIDRs.ipv6 = "10.244.0.0/16"; };
@@ -2025,156 +1978,69 @@ lib.runTests {
       dnsIP = true;
     };
   };
-  # flannel runs VXLAN in every family of the cluster on nftables, on the node's addresses the
-  # kubelet registered, one per family.
-  testFlannelFamilies = {
-    expr =
-      let
-        flannel =
-          families:
-          let
-            addons =
-              (cluster [ { chalkos.cluster.kubernetes.ipFamilies = families; } ]).cluster.kubernetes.addons;
-            named = kind: name: lib.findFirst (m: m.kind == kind && m.metadata.name == name) null addons;
-          in
-          builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."net-conf.json";
-        addons = (cluster [ ]).cluster.kubernetes.addons;
-        named = kind: name: lib.findFirst (m: m.kind == kind && m.metadata.name == name) null addons;
-        container = builtins.head (named "DaemonSet" "kube-flannel-ds").spec.template.spec.containers;
-        cniConf = builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."cni-conf.json";
-      in
-      {
-        ipv4 = flannel [ "ipv4" ];
-        dual = flannel [
-          "ipv4"
-          "ipv6"
-        ];
-        ipv6Primary = flannel [
-          "ipv6"
-          "ipv4"
-        ];
-        ipv6 = flannel [ "ipv6" ];
-        addresses = lib.findFirst (e: e.name == "POD_IPS") null container.env;
-        publicAddresses =
-          lib.hasInfix "--public-ip=$ip" (lib.last container.command)
-          && lib.hasInfix "--public-ipv6=$ip" (lib.last container.command);
-        # The addresses are split on commas alone, never expanded as file names.
-        noGlob = lib.hasInfix "set -f\nIFS=,\nfor ip in $POD_IPS" (lib.last container.command);
-        noInterface = !lib.any (lib.hasInfix "--iface") container.command;
-        portmap = (lib.findFirst (p: p.type == "portmap") null cniConf.plugins).backend;
-        # The MTU option reaches flannel and the nodes, which check their interfaces against it.
-        mtu =
-          let
-            c = cluster [ { chalkos.cni.flannel.mtu = 1430; } ];
-            named =
-              kind: name:
-              lib.findFirst (m: m.kind == kind && m.metadata.name == name) null c.cluster.kubernetes.addons;
-          in
-          (builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."net-conf.json").Backend;
-        clusterFile =
-          map
-            (
-              modules:
-              (builtins.fromJSON (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text)
-              .flannel
-            )
-            [
-              [ ]
-              [ { chalkos.cni.flannel.mtu = 1430; } ]
-              [ { chalkos.cni.provider = "none"; } ]
-            ];
-        notAnMTU = fails (cluster [ { chalkos.cni.flannel.mtu = 0; } ]).cni.flannel.mtu;
-        # Pods get the MTU minus 50, which must leave IPv6 its 1280 and IPv4 its 576.
-        tooSmall =
-          map
-            (
-              { families, mtu }:
-              fails
-                (cluster [
-                  {
-                    chalkos.cluster.kubernetes.ipFamilies = families;
-                    chalkos.cni.flannel.mtu = mtu;
-                  }
-                ]).cni.flannel.mtu
-            )
-            [
-              {
-                families = [ "ipv4" ];
-                mtu = 625;
-              }
-              {
-                families = [ "ipv4" ];
-                mtu = 626;
-              }
-              {
-                families = [
-                  "ipv4"
-                  "ipv6"
-                ];
-                mtu = 1329;
-              }
-              {
-                families = [
-                  "ipv4"
-                  "ipv6"
-                ];
-                mtu = 1330;
-              }
-              {
-                families = [ "ipv6" ];
-                mtu = 1329;
-              }
-              {
-                families = [ "ipv6" ];
-                mtu = 1330;
-              }
-            ];
-        # containerd runs portmap, which needs nft.
-        portmapFindsNft =
-          lib.any (p: (p.pname or "") == "nftables")
-            (role (cluster [ ])).systemd.services.containerd.path;
-      };
+  # flannel's MTU reaches the nodes in their Flannel document and must leave pods their family's
+  # minimum; containerd runs portmap, which needs nft.
+  testFlannelSettings = {
+    expr = {
+      flannel = map (modules: (cluster modules).manifest.flannel) [
+        [ ]
+        [ { chalkos.cni.flannel.mtu = 1430; } ]
+        [ { chalkos.cni.provider = "none"; } ]
+      ];
+      notAnMTU = fails (cluster [ { chalkos.cni.flannel.mtu = 0; } ]).cni.flannel.mtu;
+      # Pods get the MTU minus 50, which must leave IPv6 its 1280 and IPv4 its 576.
+      tooSmall =
+        map
+          (
+            { families, mtu }:
+            fails
+              (cluster [
+                {
+                  chalkos.cluster.kubernetes.ipFamilies = families;
+                  chalkos.cni.flannel.mtu = mtu;
+                }
+              ]).cni.flannel.mtu
+          )
+          [
+            {
+              families = [ "ipv4" ];
+              mtu = 625;
+            }
+            {
+              families = [ "ipv4" ];
+              mtu = 626;
+            }
+            {
+              families = [
+                "ipv4"
+                "ipv6"
+              ];
+              mtu = 1329;
+            }
+            {
+              families = [
+                "ipv4"
+                "ipv6"
+              ];
+              mtu = 1330;
+            }
+            {
+              families = [ "ipv6" ];
+              mtu = 1329;
+            }
+            {
+              families = [ "ipv6" ];
+              mtu = 1330;
+            }
+          ];
+      # containerd runs portmap, which needs nft.
+      portmapFindsNft =
+        lib.any (p: (p.pname or "") == "nftables")
+          (role (cluster [ ])).systemd.services.containerd.path;
+    };
     expected = {
-      ipv4 = {
-        Network = "10.244.0.0/16";
-        EnableNFTables = true;
-        Backend.Type = "vxlan";
-      };
-      dual = {
-        Network = "10.244.0.0/16";
-        EnableIPv6 = true;
-        IPv6Network = "fd00:10:244::/56";
-        EnableNFTables = true;
-        Backend.Type = "vxlan";
-      };
-      ipv6Primary = {
-        Network = "10.244.0.0/16";
-        EnableIPv6 = true;
-        IPv6Network = "fd00:10:244::/56";
-        EnableNFTables = true;
-        Backend.Type = "vxlan";
-      };
-      ipv6 = {
-        EnableIPv4 = false;
-        EnableIPv6 = true;
-        IPv6Network = "fd00:10:244::/56";
-        EnableNFTables = true;
-        Backend.Type = "vxlan";
-      };
-      addresses = {
-        name = "POD_IPS";
-        valueFrom.fieldRef.fieldPath = "status.podIPs";
-      };
-      publicAddresses = true;
-      noGlob = true;
-      noInterface = true;
-      portmap = "nftables";
-      mtu = {
-        Type = "vxlan";
-        MTU = 1430;
-      };
-      clusterFile = [
-        { mtu = 0; }
+      flannel = [
+        { mtu = null; }
         { mtu = 1430; }
         null
       ];
@@ -2190,67 +2056,8 @@ lib.runTests {
       portmapFindsNft = true;
     };
   };
-  # kube-proxy runs on nftables in every family, binding by the primary one.
-  testKubeProxyFamilies = {
-    expr =
-      let
-        kubeProxy =
-          families:
-          let
-            addons =
-              (cluster [ { chalkos.cluster.kubernetes.ipFamilies = families; } ]).cluster.kubernetes.addons;
-            configMap = lib.findFirst (m: m.kind == "ConfigMap" && m.metadata.name == "kube-proxy") null addons;
-          in
-          {
-            inherit (builtins.fromJSON configMap.data."config.conf")
-              mode
-              clusterCIDR
-              bindAddress
-              nodePortAddresses
-              ;
-          };
-      in
-      {
-        ipv4 = kubeProxy [ "ipv4" ];
-        dual = kubeProxy [
-          "ipv4"
-          "ipv6"
-        ];
-        ipv6Primary = kubeProxy [
-          "ipv6"
-          "ipv4"
-        ];
-        ipv6 = kubeProxy [ "ipv6" ];
-      };
-    expected = {
-      ipv4 = {
-        mode = "nftables";
-        clusterCIDR = "10.244.0.0/16";
-        bindAddress = "0.0.0.0";
-        nodePortAddresses = [ "primary" ];
-      };
-      dual = {
-        mode = "nftables";
-        clusterCIDR = "10.244.0.0/16,fd00:10:244::/56";
-        bindAddress = "0.0.0.0";
-        nodePortAddresses = [ "primary" ];
-      };
-      ipv6Primary = {
-        mode = "nftables";
-        clusterCIDR = "fd00:10:244::/56,10.244.0.0/16";
-        bindAddress = "::";
-        nodePortAddresses = [ "primary" ];
-      };
-      ipv6 = {
-        mode = "nftables";
-        clusterCIDR = "fd00:10:244::/56";
-        bindAddress = "::";
-        nodePortAddresses = [ "primary" ];
-      };
-    };
-  };
   # VXLAN source ranges are networks of the cluster's families, one at least of each, and hold
-  # every address a node may have; they reach the nodes in the cluster file.
+  # every address a node may have; they reach the nodes in their Kubernetes document.
   testVXLANSourceSubnets = {
     expr =
       let
@@ -2268,10 +2075,7 @@ lib.runTests {
           "192.168.0.0/16"
           "fd00:100::/64"
         ];
-        clusterFile =
-          modules:
-          (builtins.fromJSON (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text)
-          .vxlanSourceSubnets;
+        clusterFile = modules: (kubernetesSettings modules).vxlanSourceSubnets;
         # Node n1 with a static address of each family, and the settings of its kubernetes.
         node =
           modules: kubernetes:
@@ -2446,22 +2250,18 @@ lib.runTests {
           }
         ];
         image = modules: (cluster modules).roles.worker.images.metal.drvPath;
-        clusterFile =
-          modules: (role (cluster modules)).environment.etc."chalkos/kubernetes/cluster.json".text;
         identity = modules: (cluster modules).manifest.nodes.n1;
       in
       {
-        clusterFile = clusterFile base == clusterFile joined;
         image = image base == image joined;
         identity = identity base == identity joined;
       };
     expected = {
-      clusterFile = true;
       image = true;
       identity = true;
     };
   };
-  # The VIPs reach the nodes in the cluster file; the endpoint is one of them.
+  # The VIPs reach the nodes in their Kubernetes document; the endpoint is one of them.
   testVIP = {
     expr =
       let
@@ -2479,8 +2279,7 @@ lib.runTests {
               };
             }
           ];
-        clusterFile =
-          c: (builtins.fromJSON (role c).environment.etc."chalkos/kubernetes/cluster.json".text).vip;
+        clusterFile = c: c.manifest.kubernetes.vip;
         warns = c: lib.any (lib.hasInfix "must reach a control-plane node") c.warnings;
       in
       {
@@ -2600,7 +2399,7 @@ lib.runTests {
           ];
         in
         {
-          cluster = !fails (role c).environment.etc."chalkos/kubernetes/cluster.json".text;
+          cluster = !fails c.manifest.kubernetes;
           node = !fails c.manifest.nodes.n1.identity.kubernetes;
         };
       all = value: _: {
@@ -2918,82 +2717,6 @@ lib.runTests {
     expr = fails (cluster [ { chalkos.cluster.kubernetes.extraArgs.kube-dns.v = "2"; } ]).cluster;
     expected = true;
   };
-  testBuiltinManifests = {
-    expr =
-      let
-        k =
-          (cluster [
-            {
-              chalkos.cluster.kubernetes = {
-                podCIDRs.ipv4 = "10.250.0.0/16";
-                dnsIPs.ipv4 = "10.100.0.10";
-                domain = "lab.local";
-              };
-            }
-          ]).cluster.kubernetes;
-        named = kind: name: lib.findFirst (m: m.kind == kind && m.metadata.name == name) null k.addons;
-      in
-      {
-        # RBAC first, then kube-proxy, flannel and CoreDNS.
-        order = map (m: "${m.kind}/${m.metadata.name}") k.addons;
-        kubeProxyImage =
-          (builtins.head (named "DaemonSet" "kube-proxy").spec.template.spec.containers).image;
-        flannelNetwork =
-          (builtins.fromJSON (named "ConfigMap" "kube-flannel-cfg").data."net-conf.json").Network;
-        dnsIP = (named "Service" "kube-dns").spec.clusterIP;
-        corefileDomain = lib.hasInfix "kubernetes lab.local in-addr.arpa" (named "ConfigMap" "coredns")
-        .data.Corefile;
-      };
-    expected = {
-      order = [
-        "ClusterRoleBinding/chalkos:cluster-admins"
-        "ClusterRoleBinding/chalkos:selfnodeclient"
-        "ClusterRoleBinding/chalkos:apiserver-kubelet"
-        "ServiceAccount/kube-proxy"
-        "ClusterRoleBinding/chalkos:node-proxier"
-        "ConfigMap/kube-proxy"
-        "DaemonSet/kube-proxy"
-        "Namespace/kube-flannel"
-        "ClusterRole/flannel"
-        "ClusterRoleBinding/flannel"
-        "ServiceAccount/flannel"
-        "ConfigMap/kube-flannel-cfg"
-        "DaemonSet/kube-flannel-ds"
-        "ServiceAccount/coredns"
-        "ClusterRole/system:coredns"
-        "ClusterRoleBinding/system:coredns"
-        "ConfigMap/coredns"
-        "Deployment/coredns"
-        "Service/kube-dns"
-      ];
-      kubeProxyImage = "registry.k8s.io/kube-proxy:v1.37.1";
-      flannelNetwork = "10.250.0.0/16";
-      dnsIP = "10.100.0.10";
-      corefileDomain = true;
-    };
-  };
-  testCNIProviderNone = {
-    expr =
-      lib.any (m: m.metadata.namespace or "" == "kube-flannel")
-        (cluster [
-          { chalkos.cni.provider = "none"; }
-        ]).cluster.kubernetes.addons;
-    expected = false;
-  };
-  testRBACBindsChalkosIdentities = {
-    expr = lib.listToAttrs (
-      map (m: lib.nameValuePair m.metadata.name (builtins.head m.subjects).name) (
-        lib.filter (m: lib.hasPrefix "chalkos:" m.metadata.name && m.kind == "ClusterRoleBinding")
-          (cluster [ ]).cluster.kubernetes.addons
-      )
-    );
-    expected = {
-      "chalkos:cluster-admins" = "chalkos:cluster-admins";
-      "chalkos:selfnodeclient" = "system:nodes";
-      "chalkos:apiserver-kubelet" = "chalkos:kube-apiserver-kubelet-client";
-      "chalkos:node-proxier" = "kube-proxy";
-    };
-  };
   testKubernetesOnlyInKubernetesRoles = {
     expr =
       let
@@ -3040,19 +2763,9 @@ lib.runTests {
           }
         ];
         config = role c;
-        clusterFile = builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text;
       in
       {
-        inherit (clusterFile)
-          kind
-          version
-          endpoint
-          podCIDRs
-          serviceCIDRs
-          dnsIPs
-          nodeCIDRMaskSizes
-          ;
-        apiServer = clusterFile.images.kubeAPIServer;
+        clusterFile = config.environment.etc ? "chalkos/kubernetes/cluster.json";
         # The image opens neither the API server's nor etcd's ports, which etcd authenticates by its
         # CA, nor makes etcd's directory: chalkos-controlplane does both by Node.spec.type.
         firewall = lib.any (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
@@ -3087,15 +2800,7 @@ lib.runTests {
           lib.elem "nftables.service" unit.after;
       };
     expected = {
-      kind = "controlplane";
-      version = "1.37.1";
-      endpoint = "https://10.0.0.1:6443";
-      # The ranges by family.
-      podCIDRs.ipv4 = "10.244.0.0/16";
-      serviceCIDRs.ipv4 = "10.96.0.0/12";
-      dnsIPs.ipv4 = "10.96.0.10";
-      nodeCIDRMaskSizes.ipv4 = 24;
-      apiServer = "registry.k8s.io/kube-apiserver:v1.37.1";
+      clusterFile = false;
       firewall = false;
       markedPorts = true;
       manifests = false;
@@ -3334,13 +3039,10 @@ lib.runTests {
       https = false;
     };
   };
-  # The image's build-time facts, which chalkd reads with the node's config; cluster.json names
-  # the same ones until the role images go.
+  # The image's build-time facts, which chalkd reads with the node's config.
   testImageFacts =
     let
-      config = role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet.v = "2"; } ]);
-      image = builtins.fromJSON config.environment.etc."chalkos/kubernetes/image.json".text;
-      clusterFile = builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text;
+      image = builtins.fromJSON (role (cluster [ ])).environment.etc."chalkos/kubernetes/image.json".text;
       noFlannel =
         builtins.fromJSON
           (role (cluster [ { chalkos.cni.provider = "none"; } ]))
@@ -3349,9 +3051,12 @@ lib.runTests {
     {
       expr = {
         inherit (image) version cni;
-        inherit (image.images) kubeProxy coredns flannel;
-        same = image.images == clusterFile.images && image.version == clusterFile.version;
-        kubeletFlags = clusterFile.extraArgs.kubelet;
+        inherit (image.images)
+          kubeAPIServer
+          kubeProxy
+          coredns
+          flannel
+          ;
         noFlannel = {
           inherit (noFlannel) cni;
           inherit (noFlannel.images) flannel;
@@ -3360,45 +3065,25 @@ lib.runTests {
       expected = {
         version = "1.37.1";
         cni = "flannel";
+        kubeAPIServer = "registry.k8s.io/kube-apiserver:v1.37.1";
         kubeProxy = "registry.k8s.io/kube-proxy:v1.37.1";
         coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
         flannel = "ghcr.io/flannel-io/flannel:v0.28.9";
-        same = true;
-        kubeletFlags.v = "2";
         noFlannel = {
           cni = "none";
           flannel = "";
         };
       };
     };
-  testKubeletConfiguration = {
+  # The kubelet reads its configuration from /run and its flags from KUBELET_ARGS, which chalkd
+  # writes; protectKernelDefaults makes it fail unless the kernel has these values.
+  testKubeletUnit = {
     expr =
       let
-        config = role (cluster [
-          {
-            chalkos.cluster.kubernetes = {
-              dnsIPs.ipv4 = "10.100.0.10";
-              domain = "lab.local";
-              extraArgs.kubelet.v = "2";
-            };
-          }
-        ]);
-        kubelet = config.system.build.chalkosKubeletConfig;
+        config = role (cluster [ ]);
+        inherit (config.systemd.services.kubelet.serviceConfig) ExecStart;
       in
       {
-        inherit (kubelet)
-          clusterDNS
-          clusterDomain
-          cgroupDriver
-          rotateCertificates
-          serverTLSBootstrap
-          staticPodPath
-          resolvConf
-          ;
-        anonymous = kubelet.authentication.anonymous.enabled;
-        authorization = kubelet.authorization.mode;
-        inherit (kubelet) readOnlyPort tlsMinVersion protectKernelDefaults;
-        # protectKernelDefaults makes the kubelet fail unless the kernel has these values.
         sysctl = lib.getAttrs [
           "vm.overcommit_memory"
           "vm.panic_on_oom"
@@ -3407,31 +3092,13 @@ lib.runTests {
           "kernel.keys.root_maxkeys"
           "kernel.keys.root_maxbytes"
         ] config.boot.kernel.sysctl;
-        # chalkd adds the kubelet's flags to KUBELET_ARGS, and its configuration lives in /run.
-        extraArg =
-          (builtins.fromJSON config.environment.etc."chalkos/kubernetes/cluster.json".text).extraArgs.kubelet
-          == {
-            v = "2";
-          }
-          && lib.hasSuffix "$KUBELET_ARGS" config.systemd.services.kubelet.serviceConfig.ExecStart
-          && lib.hasInfix "--config=/run/chalkos/kubernetes/kubelet/config.json" config.systemd.services.kubelet.serviceConfig.ExecStart
+        flags =
+          lib.hasSuffix "$KUBELET_ARGS" ExecStart
+          && lib.hasInfix "--config=/run/chalkos/kubernetes/kubelet/config.json" ExecStart
           && !(config.environment.etc ? "chalkos/kubernetes/kubelet.json");
-        noFullPackage =
-          !lib.hasInfix "-kubernetes-1.37.1/" config.systemd.services.kubelet.serviceConfig.ExecStart;
+        noFullPackage = !lib.hasInfix "-kubernetes-1.37.1/" ExecStart;
       };
     expected = {
-      clusterDNS = [ "10.100.0.10" ];
-      clusterDomain = "lab.local";
-      cgroupDriver = "systemd";
-      rotateCertificates = true;
-      serverTLSBootstrap = true;
-      staticPodPath = "/run/chalkos/kubernetes/manifests";
-      resolvConf = "/run/systemd/resolve/resolv.conf";
-      anonymous = false;
-      authorization = "Webhook";
-      readOnlyPort = 0;
-      tlsMinVersion = "VersionTLS12";
-      protectKernelDefaults = true;
       sysctl = {
         "vm.overcommit_memory" = 1;
         "vm.panic_on_oom" = 0;
@@ -3440,7 +3107,7 @@ lib.runTests {
         "kernel.keys.root_maxkeys" = 1000000;
         "kernel.keys.root_maxbytes" = 25000000;
       };
-      extraArg = true;
+      flags = true;
       noFullPackage = true;
     };
   };
@@ -3451,9 +3118,7 @@ lib.runTests {
     expr =
       let
         clusterFile =
-          flags:
-          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ]))
-          .environment.etc."chalkos/kubernetes/cluster.json".text;
+          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ];
         protected = [
           "anonymous-auth"
           "authentication-token-webhook"
@@ -3488,9 +3153,7 @@ lib.runTests {
     expr =
       let
         clusterFile =
-          flags:
-          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ]))
-          .environment.etc."chalkos/kubernetes/cluster.json".text;
+          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ];
       in
       {
         other = fails (clusterFile {
@@ -3514,8 +3177,7 @@ lib.runTests {
       let
         clusterFile =
           component: flags:
-          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.${component} = flags; } ]))
-          .environment.etc."chalkos/kubernetes/cluster.json".text;
+          kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.${component} = flags; } ];
         components = [
           "etcd"
           "kube-apiserver"
@@ -3546,12 +3208,12 @@ lib.runTests {
       let
         clusterFile =
           flags:
-          (role (cluster [
+          kubernetesSettings [
             {
               chalkos.roles.worker.kubernetes.kind = "controlplane";
               chalkos.cluster.kubernetes.extraArgs.kube-apiserver = flags;
             }
-          ])).environment.etc."chalkos/kubernetes/cluster.json".text;
+          ];
       in
       {
         authorization = fails (clusterFile {
@@ -3588,9 +3250,7 @@ lib.runTests {
     expr =
       let
         clusterFile =
-          flags:
-          (role (cluster [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ]))
-          .environment.etc."chalkos/kubernetes/cluster.json".text;
+          flags: kubernetesSettings [ { chalkos.cluster.kubernetes.extraArgs.kubelet = flags; } ];
       in
       {
         space = fails (clusterFile {

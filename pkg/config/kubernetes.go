@@ -34,9 +34,8 @@ func single(docs []Document, apiVersion, kind string) (Document, bool) {
 // ClusterOf builds the Kubernetes cluster a node's documents give on an image with the facts img:
 // its kind from the Node's type, its endpoint from the Cluster, its settings from the Kubernetes
 // document and, on a flannel image, flannel's from the Flannel document, and checks it. It holds
-// the per-family values of the cluster's families alone, as the image's cluster.json does, and
-// each error names the document whose setting fails. docs carry their schema defaults, as a Set
-// and the stored config do.
+// the per-family values of the cluster's families alone, and each error names the document whose
+// setting fails. docs carry their schema defaults, as a Set and the stored config do.
 func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error) {
 	nodeDoc, ok := single(docs, CoreAPI, "Node")
 	if !ok {
@@ -115,8 +114,8 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 	return c, nil
 }
 
-// keepFamilies clears the per-family values of the families the cluster does not use, as the
-// image's cluster.json leaves them out, so a cluster built from documents equals the image's.
+// keepFamilies clears the per-family values of the families the cluster does not use, so a cluster
+// file holds the settings that apply alone.
 func keepFamilies(c *kubernetes.Cluster) {
 	families, err := c.Families()
 	if err != nil {

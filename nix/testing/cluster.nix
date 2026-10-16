@@ -244,26 +244,16 @@ let
   # VAR with a fixed size where it filled its disk: a destructive change.
   destructive = [ { chalkos.nodes.chalklab.storage.var.size = "1G"; } ];
   # What an image accepts as config, as its image directory holds it: its schemas and its
-  # image.json, without building the image; and for the parity tests its cluster file, the addons
-  # and the kubelet configuration as Nix renders them.
+  # image.json, without building the image.
   contractOf =
     nixos:
     let
-      inherit (nixos.config.system) build;
-      inherit (nixos.config.environment) etc;
-      image = etc."chalkos/kubernetes/image.json".source or null;
-      kubernetes = etc."chalkos/kubernetes/cluster.json".source or null;
-      json = name: value: pkgs.writeText name (builtins.toJSON value);
+      image = nixos.config.environment.etc."chalkos/kubernetes/image.json".source or null;
     in
     pkgs.runCommand "chalkos-contract" { } ''
       mkdir $out
-      ln -s ${build.chalkosSchemas} $out/schemas
+      ln -s ${nixos.config.system.build.chalkosSchemas} $out/schemas
       ${lib.optionalString (image != null) "ln -s ${image} $out/image.json"}
-      ${lib.optionalString (kubernetes != null) ''
-        ln -s ${kubernetes} $out/kubernetes.json
-        ln -s ${json "addons.json" build.chalkosAddons} $out/addons.json
-        ln -s ${json "kubelet.json" build.chalkosKubeletConfig} $out/kubelet.json
-      ''}
     '';
   # A cluster's manifest, with the contract of each image its nodes run by role and platform.
   bridgeOf =
@@ -359,8 +349,8 @@ in
     added = bridgeOf (clusterOf added);
     destructive = bridgeOf (clusterOf destructive);
     ha = bridgeOf haCluster;
-    # The testing cluster with what the others leave at their defaults, for the parity tests: IPv6
-    # primary in dual stack, another cluster domain and no pod network of chalkos's.
+    # The testing cluster with what the others leave at their defaults: IPv6 primary in dual stack,
+    # another cluster domain and no pod network of chalkos's.
     variant = bridgeOf (clusterOf [
       {
         chalkos.cluster.kubernetes = {

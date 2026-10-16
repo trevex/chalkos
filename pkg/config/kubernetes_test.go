@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -169,7 +168,7 @@ func TestIdentityTakesTheDocumentsFamilies(t *testing.T) {
 	}
 }
 
-// The cluster holds the values of its families alone, as the image's cluster.json does.
+// The cluster holds the values of its families alone.
 func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 	c, err := kubernetesSet(t, `{podCIDRs: {ipv6: "fd00:1::/56"}, serviceCIDRs: {ipv6: "fd00:2::/112"},
   dnsIPs: {ipv6: "fd00:2::b"}, nodeCIDRMaskSizes: {ipv6: 60}}`, "").Cluster(testImage)
@@ -180,21 +179,6 @@ func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 	if c.PodCIDRs != want || c.ServiceCIDRs.IPv6 != "" || c.DNSIPs != (kubernetes.ByFamily[string]{IPv4: "10.96.0.10"}) ||
 		c.NodeCIDRMaskSizes != (kubernetes.ByFamily[int]{IPv4: 24}) {
 		t.Errorf("cluster = %+v", c)
-	}
-}
-
-// The homelab worker's documents give exactly its image's cluster.json.
-func TestClusterIsTheImagesClusterFile(t *testing.T) {
-	want, err := kubernetes.ReadCluster("../../test/fixtures/config/homelab/kubernetes.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := homelabSet(t, "w1").Cluster(want.Image())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("cluster =\n%+v\nwant\n%+v", got, want)
 	}
 }
 

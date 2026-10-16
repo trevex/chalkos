@@ -78,13 +78,3 @@ func (img Image) Validate() error {
 	}
 	return nil
 }
-
-// Image returns the image facts a cluster file carries: its release and images, and flannel as
-// its pod network when it has flannel's settings.
-func (c Cluster) Image() Image {
-	cni := CNINone
-	if c.Flannel != nil {
-		cni = CNIFlannel
-	}
-	return Image{Version: c.Version, CNI: cni, Images: c.Images}
-}

@@ -1000,12 +1000,9 @@ in
     let
       homelab = self.lib.mkCluster { modules = [ ../examples/homelab/cluster.nix ]; };
       generated = pkgs.writeText "homelab-manifest.json" (builtins.toJSON homelab.manifest);
-      clusterFile =
-        homelab.roles.worker.nixos.metal.config.environment.etc."chalkos/kubernetes/cluster.json".source;
     in
     pkgs.runCommand "chalkos-manifest-golden" { nativeBuildInputs = [ pkgs.jq ]; } ''
       diff -u <(jq -S . ${../test/fixtures/homelab-manifest.json}) <(jq -S . ${generated})
-      diff -u <(jq -S . ${../test/fixtures/config/homelab/kubernetes.json}) <(jq -S . ${clusterFile})
       touch $out
     '';
 

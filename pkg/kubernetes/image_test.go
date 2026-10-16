@@ -46,17 +46,3 @@ func TestParseImageRejects(t *testing.T) {
 		})
 	}
 }
-
-func TestClusterImage(t *testing.T) {
-	c, err := ReadCluster(writeFile(t, clusterJSON))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if img := c.Image(); img.CNI != CNINone || img.Version != "1.37.1" || img.Images != c.Images {
-		t.Errorf("image = %+v", img)
-	}
-	c.Flannel = &Flannel{}
-	if img := c.Image(); img.CNI != CNIFlannel {
-		t.Errorf("image with flannel = %+v", img)
-	}
-}

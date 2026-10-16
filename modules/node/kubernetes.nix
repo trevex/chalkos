@@ -1,6 +1,7 @@
-# Kubernetes on nodes of a role with a kind: containerd and the kubelet from the image, and on
-# control-plane nodes the static pods chalkd renders. chalkd writes everything node-specific
-# below /run/chalkos/kubernetes before the kubelet starts.
+# Kubernetes on nodes of a role with Kubernetes: containerd and the kubelet from the image, and the
+# image's Kubernetes facts in /etc/chalkos/kubernetes/image.json. chalkd builds the node's cluster
+# from them and the node's config, and writes everything node-specific below
+# /run/chalkos/kubernetes before the kubelet starts.
 {
   config,
   lib,
@@ -17,9 +18,6 @@ let
     install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet
   '';
   run = "/run/chalkos/kubernetes";
-  primary = builtins.head k.ipFamilies;
-  # The entries of the families in use.
-  ofFamilies = byFamily: lib.genAttrs k.ipFamilies (family: byFamily.${family});
   flannel = config.chalkos.cni.provider == "flannel";
 
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
@@ -60,54 +58,6 @@ let
           cp $plugin $out/bin/
         done
       '';
-
-  # The kubelet's configuration as chalkd writes it, for the test that compares the two.
-  kubeletConfig = {
-    apiVersion = "kubelet.config.k8s.io/v1beta1";
-    kind = "KubeletConfiguration";
-    authentication = {
-      anonymous.enabled = false;
-      webhook.enabled = true;
-      x509.clientCAFile = "${run}/kubelet/ca.crt";
-    };
-    authorization.mode = "Webhook";
-    readOnlyPort = 0;
-    tlsMinVersion = "VersionTLS12";
-    # The kubelet refuses to start unless the kernel tunables below hold its values, rather than
-    # changing them itself.
-    protectKernelDefaults = true;
-    cgroupDriver = "systemd";
-    clusterDNS = [ k.dnsIPs.${primary} ];
-    clusterDomain = k.domain;
-    containerRuntimeEndpoint = "unix:///run/containerd/containerd.sock";
-    # The client certificate from chalkos is renewed by the kubelet; the serving certificate is
-    # requested from the cluster and approved by chalkd on the control plane.
-    rotateCertificates = true;
-    serverTLSBootstrap = true;
-    staticPodPath = "${run}/manifests";
-    # The stub resolver at 127.0.0.53 is unreachable from pods.
-    resolvConf = "/run/systemd/resolve/resolv.conf";
-  };
-
-  # Read by chalkd: what the static pods and certificates of this cluster need.
-  clusterFile = {
-    inherit kind;
-    inherit (cluster) endpoint;
-    inherit (k) domain allowSchedulingOnControlPlanes;
-    podCIDRs = ofFamilies k.podCIDRs;
-    serviceCIDRs = ofFamilies k.serviceCIDRs;
-    dnsIPs = ofFamilies k.dnsIPs;
-    nodeCIDRMaskSizes = ofFamilies k.nodeCIDRMaskSizes;
-    version = k.package.version;
-    inherit (k) ipFamilies;
-    nodeIP = { inherit (k.nodeIP) validSubnets timeout; };
-    inherit (k) vxlanSourceSubnets;
-    # The nodes check that their addresses suit flannel.
-    flannel = if flannel then { mtu = lib.defaultTo 0 config.chalkos.cni.flannel.mtu; } else null;
-    vip = { inherit (k.vip) addresses mode interface; };
-    extraArgs = k.extraArgs;
-    inherit (imageFile) images;
-  };
 
   # Read by chalkd with the node's config: what the image fixes about Kubernetes.
   imageFile = {
@@ -209,10 +159,6 @@ in
       system.build.chalkosCNIPlugins = cniPlugins;
       # What the image fixes about Kubernetes, which its image directory's metadata.json names.
       system.build.chalkosKubernetesImage = imageFile;
-      # The objects and the kubelet configuration as the cluster definition renders them, which
-      # chalkd renders from the node's config; tests compare the two.
-      system.build.chalkosAddons = k.addons;
-      system.build.chalkosKubeletConfig = kubeletConfig;
       # The scripts of the units that read the config, which checks run with documents of their
       # own.
       system.build.chalkosVxlanRule = vxlanRule;
@@ -243,7 +189,6 @@ in
       };
 
       environment.etc = {
-        "chalkos/kubernetes/cluster.json".text = builtins.toJSON clusterFile;
         "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
       };
 
