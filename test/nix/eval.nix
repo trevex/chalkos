@@ -246,7 +246,7 @@ lib.runTests {
         withCA = (role c).environment.etc ? "chalkos/os-ca.crt";
         installer = c.installer.nixos.config.environment.etc ? "chalkos/os-ca.crt";
         withoutCA = (role (cluster [ ])).environment.etc ? "chalkos/os-ca.crt";
-        setting = (role c).chalkos.cluster ? osCA;
+        setting = (role c).chalkos ? osCA;
       };
     expected = {
       withCA = true;
@@ -255,26 +255,70 @@ lib.runTests {
       setting = false;
     };
   };
-  # A cluster's runtime settings reach its nodes as config, so two clusters that differ in every
-  # one of them build the same role images and installer.
+  # A cluster's runtime settings and its nodes reach the nodes as config, so two clusters that
+  # differ in every one of them build the same role images and installer. The OS CA is the same
+  # in both: it is an input of the images.
   testImagesAreClusterAgnostic = {
     expr =
       let
+        osCA = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
+        base = cluster [
+          {
+            chalkos.osCA = osCA;
+            chalkos.nodes.n1 = {
+              role = "worker";
+              kubernetes.kind = "controlplane";
+              storage.system.disk = "/dev/vda";
+              kubernetes.nodeIP = "10.0.0.1";
+            };
+          }
+        ];
         other = mkCluster {
           modules = [
             {
+              chalkos.osCA = osCA;
               chalkos.cluster = {
                 name = "u";
                 endpoint = "https://[fd00::10]:6443";
                 kubernetes = {
-                  ipFamilies = [ "ipv6" ];
+                  ipFamilies = [
+                    "ipv6"
+                    "ipv4"
+                  ];
+                  podCIDRs = {
+                    ipv4 = "10.32.0.0/16";
+                    ipv6 = "fd00:32::/56";
+                  };
+                  serviceCIDRs = {
+                    ipv4 = "10.16.0.0/16";
+                    ipv6 = "fd00:16::/112";
+                  };
                   domain = "u.example";
                   allowSchedulingOnControlPlanes = true;
                   vip.addresses = [ "fd00::10" ];
-                  vxlanSourceSubnets = [ "fd00:100::/64" ];
-                  extraArgs.kubelet.v = "2";
+                  vxlanSourceSubnets = [
+                    "fd00:100::/64"
+                    "192.168.100.0/24"
+                  ];
+                  nodeIP = {
+                    validSubnets = [
+                      "fd00:100::/64"
+                      "192.168.100.0/24"
+                    ];
+                    timeout = 30;
+                  };
+                  extraArgs = {
+                    kubelet.v = "2";
+                    etcd.log-level = "debug";
+                    kube-apiserver.audit-log-maxage = "30";
+                    kube-controller-manager.v = "2";
+                    kube-scheduler.v = "2";
+                  };
                 };
-                registries.mirrors."docker.io" = [ "https://mirror.example" ];
+                registries = {
+                  mirrors."docker.io" = [ "http://mirror.example" ];
+                  allowPlainHTTP = true;
+                };
                 manifests = [
                   {
                     apiVersion = "v1";
@@ -289,18 +333,43 @@ lib.runTests {
               };
               chalkos.cni.flannel.mtu = 1430;
               chalkos.roles.worker = { };
+              chalkos.nodes = {
+                x1 = {
+                  role = "worker";
+                  storage.system.disk = "/dev/sda";
+                  network.networks."10-uplink" = {
+                    matchConfig.Name = "eth0";
+                    address = [
+                      "fd00:100::21/64"
+                      "192.168.100.21/24"
+                    ];
+                  };
+                  labels.team = "a";
+                };
+                x2 = {
+                  role = "worker";
+                  kubernetes.kind = "controlplane";
+                  storage.system.disk = "/dev/nvme0n1";
+                  kubernetes.nodeIPs = [
+                    "fd00:100::22"
+                    "192.168.100.22"
+                  ];
+                };
+              };
             }
           ];
         };
-        base = cluster [ ];
         same = f: f base == f other;
       in
       {
+        # Both evaluate, so the comparison is of two real clusters.
+        manifests = (builtins.deepSeq base.manifest true) && (builtins.deepSeq other.manifest true);
         metal = same (c: c.roles.worker.images.metal.drvPath);
         kvm = same (c: c.roles.worker.images.kvm.drvPath);
         installer = same (c: c.installer.image.drvPath);
       };
     expected = {
+      manifests = true;
       metal = true;
       kvm = true;
       installer = true;
