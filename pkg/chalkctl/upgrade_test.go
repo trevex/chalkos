@@ -289,8 +289,8 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	if h.BootLoader != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("an upgrade leaves the boot loader as it is"))
 	}
-	if want := h.Store.Size + h.HashTree.Size + h.Uki.Size; received != want || h.Role != n.role || h.Platform != n.platform {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("received %d bytes of %d for the role %s on %s", received, want, h.Role, h.Platform))
+	if want := h.Store.Size + h.HashTree.Size + h.Uki.Size; received != want || h.Platform != n.platform {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("received %d bytes of %d for %s", received, want, h.Platform))
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -798,7 +798,6 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"a node of another role", img, []string{"--nodes", "cp1", "--sign-key", dbKey, "--sign-cert", dbCert}, "cp1 is a node of the role cp; the image is of w"},
 		{"an unsigned UKI", img, nil, "Secure Boot would refuse the image's UKI: the image is not signed"},
 		{"a UKI signed by another key", img, []string{"--sign-key", otherKey, "--sign-cert", otherCert}, "not in db"},
 		{"a version with upper-case letters", testUpgradeImage(t, "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one chalkos installs"},
@@ -1048,9 +1047,9 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 }
 
 // TestUpgradeWithAnImageChecksEveryNodeOfItsRole asks every node of the image's role what it runs
-// before any is sent anything, and stops at one that runs another platform or role than the
-// cluster definition declares, as without --image, also when it is declared on another platform
-// than the image's.
+// before any is sent anything, and stops at one that runs another platform than the cluster
+// definition declares, as without --image, also when it is declared on another platform than the
+// image's.
 func TestUpgradeWithAnImageChecksEveryNodeOfItsRole(t *testing.T) {
 	img := testUpgradeImage(t, "w", "0.2.0")
 	for _, tc := range []struct {
@@ -1062,13 +1061,6 @@ func TestUpgradeWithAnImageChecksEveryNodeOfItsRole(t *testing.T) {
 			l.onPlatform(t, "w3", "kvm")
 			l.nodes["w3"].platform = "metal"
 		}, "w3 runs an image built for metal, but the cluster definition declares it on kvm"},
-		{"a node declared on kvm that runs another role", func(l *upgradeLab) {
-			l.onPlatform(t, "w3", "kvm")
-			l.nodes["w3"].role = "plain"
-		}, `w3 runs an image of the role "plain", but the cluster definition declares w`},
-		{"a node on metal that runs another role", func(l *upgradeLab) {
-			l.nodes["w2"].role = "plain"
-		}, `w2 runs an image of the role "plain", but the cluster definition declares w`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newUpgradeLab(t, 3)
@@ -1123,5 +1115,30 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	}
 	if events := l.takeEvents(); slices.Contains(events, "w1 upgrade") || slices.Contains(events, "w2 upgrade") || !slices.Contains(events, "w3 upgrade") {
 		t.Errorf("events %q, want w3 alone sent its image", events)
+	}
+}
+
+// TestUpgradeNamedNodeOfAnotherRole gives a named node the image of another role: an upgrade may
+// change a node's variant, and the node checks its stored config against the image.
+func TestUpgradeNamedNodeOfAnotherRole(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "cp1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if v := l.versions(); v["cp1"] != "0.2.0" || v["cp2"] != "0.1.0" || v["w1"] != "0.1.0" {
+		t.Errorf("the nodes run %v", v)
+	}
+}
+
+// TestUpgradeWithAnImageGivesItToANodeThatRunsAnotherRole installs the image on every node the
+// cluster definition gives its role, also one that runs an image of another role.
+func TestUpgradeWithAnImageGivesItToANodeThatRunsAnotherRole(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	l.nodes["w2"].role = "plain"
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if v := l.versions(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
+		t.Errorf("the nodes run %v", v)
 	}
 }

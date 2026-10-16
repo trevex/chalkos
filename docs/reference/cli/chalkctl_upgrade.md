@@ -12,10 +12,13 @@ Install new images on the cluster's nodes, one control plane at a time
 Installs on each node the image of its role and platform: control planes one at a time, each
 only while etcd keeps its quorum without it, then workers and nodes without Kubernetes in batches
 of --max-unavailable. Without --image the nodes (every node of the cluster, or those --nodes
-names) are grouped by the role and platform they run, and each group's image is built from the
-cluster definition; with --image the nodes of the image's role and platform get it, and those of
-its role on another platform are skipped and named. A node that runs on another platform than
-the cluster definition declares stops the run before any node is sent anything.
+names) are grouped by the role the cluster definition gives them and the platform they run, and
+each group's image is built from the cluster definition; with --image the nodes of the image's
+role get it, or those --nodes names whatever their role, and nodes on another platform are
+skipped and named. A node that runs on another platform than the cluster definition declares
+stops the run before any node is sent anything. A node may get an image of another role than the
+one it runs; it checks its stored config against the image before the image becomes its next
+boot.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy

@@ -341,7 +341,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if c, err = imageContract(filepath.Dir(img.definitions)); err != nil {
 			return err
 		}
-		c.role, c.platform = img.info.Role(), img.info.Platform()
+		c.platform = img.info.Platform()
 		header.Image, header.Schemas, header.KubernetesImage = img.header, c.files, c.kubernetesImage
 	}
 	d, err := configFor(t, c)

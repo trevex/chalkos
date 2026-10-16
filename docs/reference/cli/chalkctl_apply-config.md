@@ -13,9 +13,9 @@ Delivers a node's config to the installed node: the documents chalkctl generates
 cluster definition, which set its hostname, networks, storage, time servers, Kubernetes settings
 (its kind, labels, taints, addresses and subnets, and the cluster's Kubernetes settings) and the
 documents of its extensions' kinds. chalkctl first asks the node for the contract of the image it
-runs: its role, platform, schemas and image.json. It refuses an image of another role or platform
-than the cluster definition gives the node, and checks that the documents give back what the
-cluster definition declares for the node. The node replaces its config as a whole, and applies
+runs: its platform, schemas and image.json. It refuses an image of another platform than the
+cluster definition gives the node, and checks that the documents give back what the cluster
+definition declares for the node. The node replaces its config as a whole, and applies
 additive storage changes (a new volume, for example) while it runs. When the config changes a
 volume destructively, the node refuses the whole config and applies none of it; chalkctl storage
 reset recreates such a volume. Otherwise the node restarts the units that read what changed, and

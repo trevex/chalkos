@@ -151,8 +151,8 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 			if err := checkImage(c, g.image, f.signCert); err != nil {
 				return err
 			}
-			if got := g.image.info; got.Role() != g.role || got.Platform() != g.platform {
-				return fmt.Errorf("the image built for the role %s on %s is of the role %s on %s", g.role, g.platform, got.Role(), got.Platform())
+			if got := g.image.info.Platform(); got != g.platform {
+				return fmt.Errorf("the image built for the role %s on %s is built for %s", g.role, g.platform, got)
 			}
 		}
 		for _, name := range g.nodes {
@@ -246,13 +246,15 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 	return info, st, err
 }
 
-// find picks the nodes to upgrade, those named or else every node of the cluster, with an image
-// every node of its role, and groups them by the role and platform they run. Every node is asked
-// what it runs before any is sent anything: one that runs another role or platform than the
-// cluster definition declares stops the run, with an image too. With an image, a node of its role
-// that runs another platform is skipped and named with the platform it runs; a named one stops the
-// run. A client file without a cluster definition
-// knows no roles or platforms, so its nodes are asked alone.
+// find picks the nodes to upgrade and groups them by the image they get. The nodes are those
+// named, or else every node of the cluster; with an image, every node the cluster definition
+// gives the image's role, or with a client file alone every node that runs an image of that role.
+// Without an image, a group is the nodes of a role on a platform, the role the cluster definition
+// gives them, whose image chalkctl builds. Every node is asked what it runs before any is sent
+// anything: one that runs another platform than the cluster definition declares stops the run,
+// with an image too. With an image, a node on another platform is skipped and named; a named one
+// stops the run. A node's role is not checked: an upgrade may give a node an image of another
+// role, and the node checks its stored config against that image before it becomes the next boot.
 func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
 	m := r.cluster.manifest
 	candidates := named
@@ -280,27 +282,20 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if err != nil {
 			return err
 		}
-		if !r.cluster.partial && img != nil && node.Role != img.info.Role() {
-			return fmt.Errorf("%s is a node of the role %s; the image is of %s", name, node.Role, img.info.Role())
-		}
 		info, st, err := r.probe(ctx, name)
 		if err != nil {
 			return err
 		}
-		switch {
-		case !r.cluster.partial && info.Platform != node.Platform:
+		if !r.cluster.partial && info.Platform != node.Platform {
 			return fmt.Errorf("%s runs an image built for %s, but the cluster definition declares it on %s; changing a node's platform is a reinstall", name, info.Platform, node.Platform)
-		case !r.cluster.partial && info.Role != node.Role:
-			return fmt.Errorf("%s runs an image of the role %q, but the cluster definition declares %s", name, info.Role, node.Role)
-		case img != nil && info.Role != img.info.Role() && len(named) > 0:
-			return fmt.Errorf("%s runs an image of the role %q; the image is of %s", name, info.Role, img.info.Role())
 		}
 		n := &upgradeNode{name: name}
 		if k := st.Kubernetes; k != nil {
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
 		probedCPs[name] = n.kind == manifest.KindControlPlane
-		if img != nil && info.Role != img.info.Role() {
+		// A client file names no roles: its image is for the nodes that run its role.
+		if r.cluster.partial && img != nil && len(named) == 0 && info.Role != img.info.Role() {
 			continue
 		}
 		if img != nil && info.Platform != img.info.Platform() {
@@ -310,9 +305,16 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			continue
 		}
 		r.nodes[name] = n
-		key := [2]string{info.Role, info.Platform}
+		role := node.Role
+		switch {
+		case img != nil:
+			role = img.info.Role()
+		case r.cluster.partial:
+			role = info.Role
+		}
+		key := [2]string{role, info.Platform}
 		if groups[key] == nil {
-			groups[key] = &upgradeGroup{role: info.Role, platform: info.Platform, image: img}
+			groups[key] = &upgradeGroup{role: role, platform: info.Platform, image: img}
 		}
 		groups[key].nodes = append(groups[key].nodes, name)
 	}
