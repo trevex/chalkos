@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "const": "storage.chalkos.dev/v1alpha1" },
+    "kind": { "const": "Volume" },
+    "metadata": { "type": "object" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disk": { "$ref": "#/$defs/diskRef", "description": "The disk the volume is on." },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "description": "Labels | with a pipe."
+        },
+        "password": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": { "secretRef": { "type": "object" } },
+              "x-chalkos-secret-ref": true
+            },
+            { "type": "null" }
+          ],
+          "default": null
+        },
+        "size": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "taints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key"],
+            "properties": {
+              "effect": { "enum": ["NoSchedule", "NoExecute"] },
+              "key": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "diskRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "path": { "type": "string", "description": "Path below /dev." } }
+    }
+  },
+  "x-chalkos-kind": { "group": "storage.chalkos.dev", "version": "v1alpha1", "kind": "Volume", "multiple": true }
+}

@@ -79,6 +79,8 @@ let
     ln -s ${inventorySchema} $out/chalkctl.chalkos.dev_v1alpha1_Inventory.json
     ln -s ${labSchema} $out/chalklab.chalkos.dev_v1alpha1_Lab.json
   '';
+  # The schemas of the default variant's kinds, which the page of config kinds lists.
+  kindSchemas = imageSystem.config.system.build.chalkosSchemas;
   imageOptions =
     (pkgs.nixosOptionsDoc {
       options = { inherit (imageSystem.options) chalkos; };
@@ -177,8 +179,8 @@ rec {
       '';
 
   # The generated pages of docs/reference and zensical.toml with their navigation, laid out as
-  # in the repository: a page per command of chalkctl and chalklab, the arguments of mkImages and
-  # the image options, and the node API.
+  # in the repository: a page per command of chalkctl and chalklab, the config kinds, the
+  # arguments of mkImages and the image options, and the node API.
   reference =
     pkgs.runCommand "chalkos-docs-reference"
       {
@@ -203,6 +205,7 @@ rec {
         mkdir -p $out/docs/reference
         install -m 644 ${../zensical.toml} $out/zensical.toml
         docgen cli $out/docs/reference/cli $out/zensical.toml
+        docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${inventorySchema} ${labSchema}
         {
           cat ${optionsHead}
           sed 's/^## /### /' ${argumentOptions}
@@ -247,7 +250,7 @@ rec {
   # Fails when the generated pages in the repository differ from what the code generates.
   generated = pkgs.runCommand "chalkos-docs-generated" { } ''
     status=0
-    for path in docs/reference/cli docs/reference/options.md docs/reference/api.md zensical.toml; do
+    for path in docs/reference/cli docs/reference/kinds.md docs/reference/options.md docs/reference/api.md zensical.toml; do
       diff -ru ${src}/$path ${reference}/$path || status=1
     done
     if [ $status != 0 ]; then
@@ -268,7 +271,7 @@ rec {
       rm -rf docs/reference/cli
       mkdir -p docs/reference
       cp -r --no-preserve=mode ${reference}/docs/reference/cli docs/reference/cli
-      cp --no-preserve=mode ${reference}/docs/reference/options.md ${reference}/docs/reference/api.md docs/reference/
+      cp --no-preserve=mode ${reference}/docs/reference/kinds.md ${reference}/docs/reference/options.md ${reference}/docs/reference/api.md docs/reference/
       cp --no-preserve=mode ${reference}/zensical.toml zensical.toml
     '';
   };

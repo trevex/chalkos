@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "const": "networkd.chalkos.dev/v1alpha1" },
+    "kind": { "const": "Link" },
+    "metadata": { "type": "object" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "anyOf": [{ "$ref": "#/$defs/Match" }, { "type": "array", "items": { "$ref": "#/$defs/Match" } }],
+          "x-chalkos-networkd-section": "Match"
+        },
+        "sriov": {
+          "anyOf": [{ "$ref": "#/$defs/SRIOV" }, { "type": "array", "items": { "$ref": "#/$defs/SRIOV" } }],
+          "x-chalkos-networkd-section": "SR-IOV"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Match": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "macAddress": { "type": ["string", "integer", "boolean"], "x-chalkos-networkd-key": "MACAddress" },
+        "name": { "type": ["string", "integer", "boolean"], "x-chalkos-networkd-key": "Name" }
+      }
+    },
+    "SRIOV": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vlanId": { "type": ["string", "integer", "boolean"], "x-chalkos-networkd-key": "VLANId" }
+      }
+    }
+  },
+  "x-chalkos-kind": { "group": "networkd.chalkos.dev", "version": "v1alpha1", "kind": "Link", "multiple": true }
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "const": "chalkos.dev/v1alpha1" },
+    "kind": { "const": "Node" },
+    "metadata": { "type": "object" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageRef"],
+      "properties": {
+        "imageRef": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the Image document of the image the node runs."
+        },
+        "type": {
+          "anyOf": [{ "enum": ["controlplane", "worker"] }, { "type": "null" }],
+          "default": null,
+          "description": "What the node is in Kubernetes."
+        }
+      }
+    }
+  },
+  "x-chalkos-kind": { "group": "chalkos.dev", "version": "v1alpha1", "kind": "Node", "multiple": false }
+}

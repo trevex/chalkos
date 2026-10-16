@@ -123,6 +123,7 @@ nav = [
       ] },
     ] },
     # END docgen cli
+    { "Config kinds" = "reference/kinds.md" },
     { "mkImages and image options" = "reference/options.md" },
     { "Node API" = "reference/api.md" },
     "reference/image-layout.md",

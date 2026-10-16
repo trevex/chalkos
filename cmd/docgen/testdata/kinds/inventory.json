@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The nodes of a cluster.",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "const": "chalkctl.chalkos.dev/v1alpha1" },
+    "kind": { "const": "Inventory" },
+    "metadata": { "type": "object" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "files": { "type": "array", "items": { "type": "string" }, "description": "Config files every node gets." },
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "address": { "type": "string", "description": "Where chalkctl reaches the node." } }
+          }
+        }
+      }
+    }
+  },
+  "x-chalkos-kind": { "group": "chalkctl.chalkos.dev", "version": "v1alpha1", "kind": "Inventory", "multiple": false }
+}

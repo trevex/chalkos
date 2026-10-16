@@ -8,8 +8,9 @@ description: "How chalkos documentation is written: voice, words, headings, code
 This guide holds the rules every hand-written page of the chalkos documentation follows. Each
 rule has a reason, so a case the guide does not cover can be decided the same way. The
 generated reference pages are written in their sources (command help in `pkg/chalkctl/help.go`,
-`pkg/chalklab/help.go` and `pkg/chalkcfg/help.go`, option descriptions in `modules/`, comments
-in `api/chalkos/node/v1/node.proto`), and the voice and word rules apply there too.
+`pkg/chalklab/help.go` and `pkg/chalkcfg/help.go`, option and kind descriptions in `modules/`,
+the inventory's and lab file's schemas in `pkg/inventory` and `pkg/chalklab`, comments in
+`api/chalkos/node/v1/node.proto`), and the voice and word rules apply there too.
 
 ## Who reads these pages?
 
@@ -304,17 +305,20 @@ Commands, options and API methods link to their generated page on first use per 
   methods (`api.md#method-upgrade`), `message-` for messages
   (`api.md#message-installheader`, `api.md#message-installheadersystemdefinitionsentry`) and
   `enum-` for enums (`api.md#enum-mode`).
+- A kind's anchor is its name in lower case: `kinds.md#systemdisk`, `kinds.md#registrymirror`,
+  `kinds.md#inventory`. Link the kind's section on its first use per page.
 
 From a page outside `reference/`, prefix the paths with `../reference/`.
 
 ### Generated pages are never edited
 
-`docs/reference/cli/`, `docs/reference/options.md`, `docs/reference/api.md` and the navigation
-between `# BEGIN docgen cli` and `# END docgen cli` in `zensical.toml` are generated. Change
-their sources instead (command help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go` and
-`pkg/chalkcfg/help.go`, option descriptions in `modules/`, comments in
-`api/chalkos/node/v1/node.proto`), then run `nix run .#docgen` and commit both. The
-`docs-generated` check fails when they differ.
+`docs/reference/cli/`, `docs/reference/kinds.md`, `docs/reference/options.md`,
+`docs/reference/api.md` and the navigation between `# BEGIN docgen cli` and `# END docgen cli`
+in `zensical.toml` are generated. Change their sources instead (command help in
+`pkg/chalkctl/help.go`, `pkg/chalklab/help.go` and `pkg/chalkcfg/help.go`, option and kind
+descriptions in `modules/`, the inventory's and lab file's schemas in `pkg/inventory` and
+`pkg/chalklab`, comments in `api/chalkos/node/v1/node.proto`), then run `nix run .#docgen` and
+commit both. The `docs-generated` check fails when they differ.
 
 ### Outside the site
 

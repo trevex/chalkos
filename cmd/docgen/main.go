@@ -1,10 +1,16 @@
 // Command docgen writes the pages of chalkos's documentation that are generated from its command
-// line tools, and checks the commands, config documents and Nix files its pages show.
+// line tools and config schemas, and checks the commands, config documents and Nix files its pages
+// show.
 //
 //	docgen cli DIR ZENSICAL_TOML
 //
 // writes a page per command of chalkctl, chalklab and chalkcfg to DIR and their navigation to the
 // region of ZENSICAL_TOML between the lines "# BEGIN docgen cli" and "# END docgen cli".
+//
+//	docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...]
+//
+// writes the page of config kinds to PAGE from the JSON Schemas in SCHEMAS_DIR, an image's schemas
+// directory, and the schema files given, those of chalkctl's and chalklab's own files.
 //
 //	docgen check DOCS_DIR
 //
@@ -46,6 +52,8 @@ func run(args []string) error {
 	switch {
 	case len(args) == 3 && args[0] == "cli":
 		return writeCLI(programs(), args[1], args[2])
+	case len(args) >= 3 && args[0] == "kinds":
+		return writeKinds(args[1], args[2], args[3:])
 	case len(args) == 2 && args[0] == "check":
 		return check(programs, args[1])
 	case len(args) == 3 && args[0] == "yaml":
@@ -53,7 +61,7 @@ func run(args []string) error {
 	case len(args) == 3 && args[0] == "nix":
 		return writeNix(args[1], args[2])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR")
 }
 
 // programs are the command trees of chalkctl, chalklab and chalkcfg, with the help and completion
