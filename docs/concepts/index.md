@@ -14,6 +14,8 @@ this order:
 
 - [Architecture](architecture.md): the parts of chalkos, chalkd, chalkctl and chalklab, and how a
   cluster definition becomes installed, running nodes.
+- [Variants and platforms](variants.md): how mkImages builds a cluster's images from variants,
+  platforms and NixOS modules, and how an extension adds a config kind.
 - [The cluster definition](cluster-definition.md): flakes, roles, nodes and platforms, and how
   chalkos evaluates them into images and config documents.
 - [The image](image.md): the erofs store on dm-verity, the signed UKI and the A/B slots.

@@ -20,6 +20,7 @@ nav = [
   { "Concepts" = [
     "concepts/index.md",
     "concepts/architecture.md",
+    "concepts/variants.md",
     "concepts/cluster-definition.md",
     "concepts/image.md",
     "concepts/boot-and-rollback.md",
