@@ -975,8 +975,10 @@ in
       system = pkgs.stdenv.hostPlatform.system;
       chalkos = self // {
         lib = self.lib // {
+          # The template must name its secrets.pub.json, which the check replaces.
           mkImages =
             arguments:
+            assert lib.assertMsg (arguments ? osCA) "the lab template's flake passes mkImages no osCA";
             self.lib.mkImages (arguments // { osCA = "${chalkPkgs.test-secrets}/secrets.pub.json"; });
         };
       };
