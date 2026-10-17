@@ -345,7 +345,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 				return err
 			}
 		}
-		if img, err = openImage(ctx, path, f.signKey, f.signCert, true); err != nil {
+		if img, err = openImage(ctx, path, f.signKey, f.signCert, true, a.stderr); err != nil {
 			return err
 		}
 		defer img.Close()

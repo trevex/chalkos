@@ -46,8 +46,9 @@ type diskImage struct {
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
 // repart-output.json next to it, or the directory nix build makes. The UKI and the boot loader
 // of the UKI's architecture are copied off its ESP into a temporary directory and signed there
-// with key and cert when a key is given; a certificate alone checks an image signed before.
-func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ *diskImage, err error) {
+// with key and cert when a key is given; a certificate alone checks an image signed
+// before. Warnings go to stderr.
+func openImage(ctx context.Context, path, key, cert string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
 	if key != "" && cert == "" {
 		return nil, errors.New("signing with --sign-key needs --sign-cert")
 	}
@@ -133,7 +134,7 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 		RootHash:     img.store.RootHash,
 		Architecture: arch,
 	}
-	h.Revision, h.Tag = provenance(filepath.Dir(raw), img.store.RootHash)
+	h.Revision, h.Tag = provenance(filepath.Dir(raw), img.store.RootHash, stderr)
 	if h.Store, err = sum(img.store.Data); err != nil {
 		return nil, err
 	}
@@ -169,8 +170,8 @@ func sum(r io.Reader) (*nodev1.ImagePart, error) {
 // openUpgradeImage opens an upgrade's image with the contract its directory holds, which chalkctl
 // checks the inventory's config against before any node is drained. The node checks its
 // stored config against the schemas in the image itself.
-func openUpgradeImage(ctx context.Context, path, key, cert string) (*diskImage, error) {
-	img, err := openImage(ctx, path, key, cert, false)
+func openUpgradeImage(ctx context.Context, path, key, cert string, stderr io.Writer) (*diskImage, error) {
+	img, err := openImage(ctx, path, key, cert, false, stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -299,15 +300,24 @@ func fileArchitecture(path string) (string, error) {
 // provenance is the revision and tag the metadata.json in dir names, when the image directory
 // describes the image of the root hash. A raw image may lie next to the metadata of another,
 // such as one copied into an older build's directory; the node would record that provenance as
-// its own, so metadata of another root hash, or one chalkctl cannot read, names none.
-func provenance(dir string, rootHash []byte) (revision, tag string) {
-	data, err := os.ReadFile(filepath.Join(dir, "metadata.json"))
-	if err != nil {
+// its own, so metadata of another root hash, or one chalkctl cannot read, names none. Ignoring
+// metadata that is there draws a warning on stderr, as the operator likely meant it to count; an
+// image without metadata, as one built by hand, draws none.
+func provenance(dir string, rootHash []byte, stderr io.Writer) (revision, tag string) {
+	path := filepath.Join(dir, "metadata.json")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return "", ""
 	}
-	var md schema.Metadata
-	if err := json.Unmarshal(data, &md); err != nil || !strings.EqualFold(md.RootHash, hex.EncodeToString(rootHash)) {
-		return "", ""
+	if err == nil {
+		var md schema.Metadata
+		if err = json.Unmarshal(data, &md); err == nil {
+			if strings.EqualFold(md.RootHash, hex.EncodeToString(rootHash)) {
+				return md.Revision, md.Tag
+			}
+			err = fmt.Errorf("it names the root hash %q, not the image's", md.RootHash)
+		}
 	}
-	return md.Revision, md.Tag
+	fmt.Fprintf(stderr, "chalkctl: warning: ignoring %s, so the image is sent without a revision and tag: %v\n", path, err)
+	return "", ""
 }

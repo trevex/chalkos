@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +28,7 @@ func TestOpenImageForInstall(t *testing.T) {
 	otherPEM, _ := os.ReadFile(otherCert)
 	path := testUpgradeImage(t, "w", "0.2.0")
 
-	img, err := openImage(context.Background(), path, key, cert, true)
+	img, err := openImage(context.Background(), path, key, cert, true, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +64,7 @@ func TestOpenImageForInstall(t *testing.T) {
 	}
 
 	// A boot loader that is not signed is refused like an unsigned UKI.
-	unsigned, err := openImage(context.Background(), path, "", "", true)
+	unsigned, err := openImage(context.Background(), path, "", "", true, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestOpenImageForInstall(t *testing.T) {
 		t.Errorf("an unsigned boot loader: %v", err)
 	}
 
-	upgrade, err := openImage(context.Background(), path, key, cert, false)
+	upgrade, err := openImage(context.Background(), path, key, cert, false, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,10 +100,10 @@ func TestOpenImageRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("mcopy: %v: %s", err, out)
 	}
-	if _, err := openImage(context.Background(), path, "", "", true); err == nil || !strings.Contains(err.Error(), "the image's boot loader is built for arm64, its UKI for x86-64") {
+	if _, err := openImage(context.Background(), path, "", "", true, io.Discard); err == nil || !strings.Contains(err.Error(), "the image's boot loader is built for arm64, its UKI for x86-64") {
 		t.Fatalf("openImage = %v, want the boot loader refused", err)
 	}
-	img, err := openImage(context.Background(), path, "", "", false)
+	img, err := openImage(context.Background(), path, "", "", false, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,8 @@ func TestOpenImageRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
 
 // TestOpenImageTrustsOnlyItsOwnMetadata names the revision and tag of the metadata.json next to
 // the raw image only when it names the image's root hash: a raw image copied next to another
-// image's metadata, of whatever schema version, is opened without provenance.
+// image's metadata, of whatever schema version, is opened without provenance and with a warning
+// naming the file. Without metadata.json it is opened silently.
 func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
 	path := testUpgradeImage(t, "w", "0.2.0")
 	root := hex.EncodeToString(rootOf(t, path))
@@ -128,7 +130,8 @@ func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			writeFile(t, filepath.Join(path, "metadata.json"), tc.metadata)
-			img, err := openImage(context.Background(), path, "", "", false)
+			var stderr bytes.Buffer
+			img, err := openImage(context.Background(), path, "", "", false, &stderr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -136,17 +139,24 @@ func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
 			if got := img.header.Revision == "a1b2c3" && img.header.Tag == "v1.5.0"; got != tc.want || !tc.want && (img.header.Revision != "" || img.header.Tag != "") {
 				t.Errorf("revision %q and tag %q; want them named: %v", img.header.Revision, img.header.Tag, tc.want)
 			}
+			if warned := strings.Contains(stderr.String(), "warning: ignoring "+filepath.Join(path, "metadata.json")) && strings.Count(stderr.String(), "\n") == 1; warned == tc.want || tc.want && stderr.Len() != 0 {
+				t.Errorf("stderr = %q; want one warning line: %v", stderr.String(), !tc.want)
+			}
 		})
 	}
 	if err := os.Remove(filepath.Join(path, "metadata.json")); err != nil {
 		t.Fatal(err)
 	}
-	img, err := openImage(context.Background(), path, "", "", false)
+	var stderr bytes.Buffer
+	img, err := openImage(context.Background(), path, "", "", false, &stderr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer img.Close()
 	if img.header.Revision != "" || img.header.Tag != "" {
 		t.Errorf("without metadata.json: revision %q and tag %q", img.header.Revision, img.header.Tag)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("without metadata.json: stderr = %q", stderr.String())
 	}
 }
