@@ -12,13 +12,15 @@ Deliver a node's config from the inventory
 Delivers a node's config to the installed node: the documents of the files the inventory gives
 it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
 image.json. It refuses an image of another platform than the node's Image, and checks the
-documents as the node does. The node replaces its config as a whole, and applies
-additive storage changes (a new volume, for example) while it runs. When the config changes a
-volume destructively, the node refuses the whole config and applies none of it and names what
-carries the change out: chalkctl storage reset recreates a volume in place, and a change to VAR,
-a removed volume or one that moves to another disk takes a reinstall. Otherwise the node restarts the units that read what changed, and
-chalkctl prints the changes and the units. --kubernetes-share also delivers a new Kubernetes
-share: for example a worker's new kubelet certificate. The command needs the secrets file.
+documents as the node does. The node replaces its config as a whole, and applies additive
+storage changes (a new volume, for example) while it runs. When the config changes a volume
+destructively, the node refuses the whole config, applies none of it, and names the remedy:
+chalkctl storage reset recreates a volume in place, once the disk it lives on is plugged in; a
+change to VAR, a removed volume or a move to another disk takes a reinstall; a disk reference
+that finds no disk, or more than one, needs fixing. Otherwise the node restarts the units that
+read what changed, and chalkctl prints the changes and the units. --kubernetes-share also
+delivers a new Kubernetes share: for example a worker's new kubelet certificate. The command
+needs the secrets file.
 
 ```
 chalkctl apply-config <node> [flags]
