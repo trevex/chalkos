@@ -1593,6 +1593,41 @@ func TestApplyConfigStaged(t *testing.T) {
 	}
 }
 
+// apply-config --staged checks the rules that compare the config with the node's against the
+// running image's config, as the node does, while its diff compares with the staged image's.
+func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	path := filepath.Join(img, "schemas", "chalkos.dev_v1alpha1_Node.json")
+	var sch map[string]any
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &sch); err != nil {
+		t.Fatal(err)
+	}
+	imageRef := sch["properties"].(map[string]any)["spec"].(map[string]any)["properties"].(map[string]any)["imageRef"].(map[string]any)
+	imageRef["x-chalkos-rules"] = []any{map[string]any{"rule": "self == oldSelf", "message": "the imageRef is fixed"}}
+	data, err := json.Marshal(sch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, string(data))
+	l.useInventory(t, map[string]string{"w": img})
+	n := l.nodes["w1"]
+	want := l.inventoryConfig("w1")
+	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), want
+	n.config = strings.Replace(want, `"imageRef":"`, `"imageRef":"old-`, 1)
+	err = l.applyConfig("w1", "--staged")
+	if err == nil || !strings.Contains(err.Error(), `Node "w1" spec.imageRef: the imageRef is fixed`) {
+		t.Fatalf("err = %v", err)
+	}
+	if l.ta.stdout.String() != "w1: config unchanged\n" {
+		t.Errorf("stdout = %q, want the staged config's diff", l.ta.stdout)
+	}
+}
+
 // GetConfig returns the config the node runs, or with staged the staged image's, redacted as
 // chalkd redacts it.
 func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {

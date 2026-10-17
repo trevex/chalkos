@@ -653,8 +653,15 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return nil
 	}
 	// The rules that compare the config with the node's are checked against the config the node
-	// serves before anything is sent, as the node checks them on delivery.
-	if err := checkRules(c, d.documents, nodeDocs, t.name); err != nil {
+	// serves before anything is sent, as the node checks them on delivery: against the running
+	// slot's, also for the staged image, whose slot the diff compares with.
+	baseline := nodeDocs
+	if f.staged {
+		if baseline, err = slotConfig(ctx, conn, false); err != nil {
+			return fmt.Errorf("%s: %w", t.name, err)
+		}
+	}
+	if err := checkRules(c, d.documents, baseline, t.name); err != nil {
 		return fmt.Errorf("%s: %w", t.name, err)
 	}
 	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, "")
