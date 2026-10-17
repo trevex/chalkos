@@ -165,9 +165,9 @@ let
   systemDiskSpec = ''config["${storageAPI}"].SystemDisk.map(k, config["${storageAPI}"].SystemDisk[k].spec)[0]'';
   orEmpty = x: ''(${x} == null ? "" : ${x})'';
   shown = x: ''(${x} == "" ? "null" : ${x})'';
-  # Binds v to volume n's spec, sd to the SystemDisk's, r to the volume's recorded definition when
-  # it has one, and fd to what the node finds of the volume's own disk, around expr. fd is read only
-  # where it is used, so a node whose volumes all live on the system disk runs no command.
+  # Binds v to volume n's spec, sd to the SystemDisk's and r to the volume's recorded definition,
+  # null without one, around expr. The rules read facts.disks only for a volume with a disk of its
+  # own, so a node whose volumes all live on the system disk runs no command for it.
   bindVolume =
     expr:
     "cel.bind(v, documents[n].spec, cel.bind(sd, ${systemDiskSpec}, cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, ${expr})))";
