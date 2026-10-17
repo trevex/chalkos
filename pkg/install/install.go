@@ -76,6 +76,9 @@ type Request struct {
 	// Config is the node's config set as STATE keeps it, when it was delivered config; nil for
 	// an identity.
 	Config *store.Stored
+	// Images is the provenance record STATE starts with, as chalkd keeps it in
+	// chalkd/images.json; nil writes none.
+	Images []byte
 }
 
 func (r Request) validate() error {
@@ -359,6 +362,11 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 	}
 	for _, f := range files {
 		if err := WriteFile(filepath.Join(i.StateDir, f.path), f.data, f.perm); err != nil {
+			return err
+		}
+	}
+	if len(req.Images) > 0 {
+		if err := WriteFile(filepath.Join(i.StateDir, upgrade.ImagesRecord), req.Images, 0o644); err != nil {
 			return err
 		}
 	}

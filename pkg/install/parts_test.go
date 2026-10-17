@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -38,7 +39,6 @@ import (
 
 // partsImage is a test image as an install streams it.
 type partsImage struct {
-	version                  string
 	store, hash, uki, loader []byte
 	root                     []byte
 	header                   upgrade.Header
@@ -46,13 +46,13 @@ type partsImage struct {
 
 // newPartsImage makes an image whose store is random data of the seed, with a UKI that boots it
 // and systemd-boot standing in as a small PE binary.
-func newPartsImage(t *testing.T, version, seed string) partsImage {
+func newPartsImage(t *testing.T, seed string) partsImage {
 	t.Helper()
-	return newPartsImageOfBlocks(t, version, seed, 300)
+	return newPartsImageOfBlocks(t, seed, 300)
 }
 
 // newPartsImageOfBlocks makes an image whose store has the number of 4 KiB blocks.
-func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) partsImage {
+func newPartsImageOfBlocks(t *testing.T, seed string, blocks uint64) partsImage {
 	t.Helper()
 	s := sha256.Sum256([]byte(seed))
 	r := mrand.New(mrand.NewPCG(binary.LittleEndian.Uint64(s[:]), binary.LittleEndian.Uint64(s[8:])))
@@ -65,7 +65,7 @@ func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) pa
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := partsImage{version: version, store: store, hash: hash, root: root}
+	img := partsImage{store: store, hash: hash, root: root}
 	img.uki = ukitest.UKI(map[string]string{
 		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
@@ -77,7 +77,7 @@ func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) pa
 // headerFor describes the image as it is.
 func (img partsImage) headerFor() upgrade.Header {
 	return upgrade.Header{
-		ImageID: "chalkos", Version: img.version, Platform: "metal", Architecture: "x86-64", RootHash: img.root,
+		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: img.root,
 		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(img.uki)), BootLoaderSize: int64(len(img.loader)),
 		StoreSHA256: sha(img.store), VeritySHA256: sha(img.hash), UKISHA256: sha(img.uki), BootLoaderSHA256: sha(img.loader),
 	}
@@ -478,7 +478,7 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	if !w.Holds(upgrade.Slot{Verity: parts[2], Data: parts[3]}, img.header) {
 		l.t.Error("slot A does not hold the image's store")
 	}
-	if !bytes.Equal(l.file("EFI/Linux/chalkos_"+img.version+".efi"), img.uki) {
+	if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
 		l.t.Error("the ESP does not hold the image's UKI")
 	}
 	if !bytes.Equal(l.file("EFI/BOOT/BOOTX64.EFI"), img.loader) {
@@ -509,7 +509,7 @@ func (l *partsLab) checkInstalled(img partsImage) {
 
 func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 	l := newPartsLab(t)
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 // in: a store larger than an eighth of the 2 MiB slot fits, and one larger than the slot is
 // refused before anything changes, on an empty disk as on one an earlier attempt laid out.
 func TestFromPartsOnFourKnDisk(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	l := newPartsLabOf(t, 4096, labTarget.size)
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
@@ -542,7 +542,7 @@ func TestFromPartsOnFourKnDisk(t *testing.T) {
 	}
 	l.checkInstalled(img)
 
-	large := newPartsImageOfBlocks(t, "0.1.0", "a", 600)
+	large := newPartsImageOfBlocks(t, "a", 600)
 	for _, laidOut := range []bool{false, true} {
 		l := newPartsLabOf(t, 4096, labTarget.size)
 		if laidOut {
@@ -568,7 +568,7 @@ var errStop = errors.New("stop")
 // until the boot loader is on it and is never installed half, and the install run again
 // completes, without writing slot A again once it held the image.
 func TestFromPartsInterrupted(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	var changes []string
 	l := newPartsLab(t)
 	l.i.Change = func(what string) error {
@@ -629,7 +629,7 @@ func TestFromPartsInterrupted(t *testing.T) {
 
 // TestFromPartsInterruptedTransfer cuts the stream within each part of the image.
 func TestFromPartsInterruptedTransfer(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	store, hash, uki, loader := int64(len(img.store)), int64(len(img.hash)), int64(len(img.uki)), int64(len(img.loader))
 	for _, cut := range []int64{0, store / 2, store + hash/2, store + hash + uki/2, store + hash + uki + loader/2} {
 		l := newPartsLab(t)
@@ -721,7 +721,7 @@ func TestFromPartsRefuses(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
 		t.Skip("sbsign not in PATH")
 	}
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	keys := t.TempDir()
 	key, cert, der := testSigner(t, keys, "db")
 	signed := img
@@ -776,7 +776,7 @@ func TestFromPartsRefuses(t *testing.T) {
 			l.luksState()
 			l.tpmFails = true
 		}, img, nil, "does not open on this machine"},
-		{"slot A holding another store", func(l *partsLab) { l.stopAt(img, "write the UKI") }, newPartsImage(t, "0.2.0", "b"), nil, "slot A of the target disk"},
+		{"slot A holding another store", func(l *partsLab) { l.stopAt(img, "write the UKI") }, newPartsImage(t, "b"), nil, "slot A of the target disk"},
 		{"another platform", nil, img, func(r *PartsRequest) { r.Image.Platform = "kvm" }, "the UKI's platform is \"metal\""},
 		{"a corrupt store", nil, img, func(r *PartsRequest) {
 			corrupt := bytes.Clone(img.store)
@@ -897,11 +897,11 @@ func (l *partsLab) luksState() {
 
 // TestFromPartsWipesAForeignDisk lays out a disk of another system with --wipe-disk.
 func TestFromPartsWipesAForeignDisk(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	for _, setup := range []func(l *partsLab){
 		func(l *partsLab) { l.foreignTable() },
 		func(l *partsLab) {
-			if err := l.install(newPartsImage(t, "0.2.0", "b")); err != nil {
+			if err := l.install(newPartsImage(t, "b")); err != nil {
 				t.Fatal(err)
 			}
 		},
@@ -927,7 +927,7 @@ func TestFromPartsUnderSecureBoot(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
 		t.Skip("sbsign not in PATH")
 	}
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	key, cert, der := testSigner(t, t.TempDir(), "db")
 	img.uki, img.loader = sbsign(t, img.uki, key, cert), sbsign(t, img.loader, key, cert)
 	img.header = img.headerFor()
@@ -986,7 +986,7 @@ func TestFromPartsBootsTheNewEntry(t *testing.T) {
 		entries: []efiEntry{{"0001", "UEFI Misc Device", ""}, {"0003", "chalkos", staleUUID}, {"0005", "chalkos", otherUUID}},
 		next:    6,
 	}
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
@@ -1003,7 +1003,7 @@ func TestFromPartsBootsTheNewEntry(t *testing.T) {
 // TestFromPartsRefusesBeforeTouchingTheDisk refuses requests that cannot install before any tool
 // runs.
 func TestFromPartsRefusesBeforeTouchingTheDisk(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	for _, tc := range []struct {
 		name  string
 		setup func(l *partsLab, r *PartsRequest)
@@ -1062,7 +1062,7 @@ func TestFromPartsWithoutABootDiskLink(t *testing.T) {
 	if err := os.Remove(filepath.Join(l.i.Host.DevRoot, "disk", "chalk-boot-disk")); err != nil {
 		t.Fatal(err)
 	}
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
@@ -1074,7 +1074,7 @@ func TestFromPartsRefusesDiskInUse(t *testing.T) {
 	l.i.OpenDisk = func(context.Context, string) (Disk, error) {
 		return nil, &os.PathError{Op: "open", Path: labDev, Err: syscall.EBUSY}
 	}
-	if err := l.install(newPartsImage(t, "0.1.0", "a")); err == nil || !strings.Contains(err.Error(), "is in use") {
+	if err := l.install(newPartsImage(t, "a")); err == nil || !strings.Contains(err.Error(), "is in use") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -1082,7 +1082,7 @@ func TestFromPartsRefusesDiskInUse(t *testing.T) {
 // TestFromPartsReleasesTheTarget frees a target whose STATE a crashed chalkd left open before it
 // installs, and frees it again when the install fails.
 func TestFromPartsReleasesTheTarget(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
 	l.stopAt(img, "write the identity")
 	if l.r.holds(labDev) {
@@ -1192,7 +1192,7 @@ func TestOpenExclusiveWaitsBounded(t *testing.T) {
 
 // TestFromPartsUnmountsALeftoverESP wipes a target whose ESP a crashed chalkd left mounted.
 func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
 	l.stopAt(img, "write the identity")
 	esp := filepath.Join(l.i.WorkDir, "esp")
@@ -1231,7 +1231,7 @@ func TestFromPartsWithTheImageDefinitions(t *testing.T) {
 			defs[name] = text + "AddValidateFS=no\n"
 		}
 	}
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	l := newPartsLabOf(t, 512, 5<<30)
 	l.defs = defs
 	laidOut := false
@@ -1256,7 +1256,7 @@ func TestFromPartsWithTheImageDefinitions(t *testing.T) {
 // target boots next, then refuses the run that resumes it on a signature: the run removed the boot
 // loader and BootNext first, so the unfinished target does not boot.
 func TestFromPartsUnbootsAResumedTarget(t *testing.T) {
-	img := newPartsImage(t, "0.1.0", "a")
+	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
 	l.stopAt(img, "mark the node installed")
 	if !l.bootable() || l.r.efi.bootNext == "" {
@@ -1281,4 +1281,58 @@ func TestFromPartsUnbootsAResumedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
+}
+
+// TestFromPartsLeavesOneUKI continues an install over an ESP that holds UKIs of the image an
+// earlier attempt or node left, of higher generations or under names that give none, and a UKI
+// left half written: only the install's own, chalkos_1.efi, stays of the image, so systemd-boot
+// boots it. UKIs of other images stay.
+func TestFromPartsLeavesOneUKI(t *testing.T) {
+	img := newPartsImage(t, "a")
+	l := newPartsLab(t)
+	l.stopAt(img, "name the UKI chalkos_1.efi")
+	other := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_BOOT_TRIES": "3"}, fmt.Sprintf("usrhash=%x", sha([]byte("another store"))))
+	rescue := ukitest.UKI(map[string]string{"IMAGE_ID": "rescue"}, fmt.Sprintf("usrhash=%x", sha([]byte("rescue"))))
+	for name, data := range map[string][]byte{
+		"chalkos_5+0-3.efi": other,
+		"chalkos.efi":       other,
+		"rescue_1.efi":      rescue,
+		ukiTempPrefix + hex.EncodeToString(sha(nil)) + ".efi": other[:100],
+	} {
+		if err := os.WriteFile(filepath.Join(l.esp(), "EFI/Linux", name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := os.ReadDir(filepath.Join(l.esp(), "EFI/Linux"))
+	var names []string
+	for _, f := range files {
+		names = append(names, f.Name())
+	}
+	if !slices.Equal(names, []string{"chalkos_1.efi", "rescue_1.efi"}) || !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
+		t.Errorf("the ESP holds %q, want the image's UKI as chalkos_1.efi and the rescue system's", names)
+	}
+}
+
+// TestFromPartsRecordsTheImage writes the provenance record the request carries to STATE, where
+// chalkd reads it.
+func TestFromPartsRecordsTheImage(t *testing.T) {
+	img := newPartsImage(t, "a")
+	l := newPartsLab(t)
+	req := l.request(img)
+	record := []byte(`{"` + hex.EncodeToString(img.root) + `": {"revision": "a1b2c3d4e5f6", "tag": "v1.5.0"}}` + "\n")
+	req.Images = record
+	if err := l.i.FromParts(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range l.table() {
+		if p.Name != stateLabel {
+			continue
+		}
+		if got, err := os.ReadFile(filepath.Join(l.fs, p.UUID, upgrade.ImagesRecord)); err != nil || !bytes.Equal(got, record) {
+			t.Errorf("STATE's %s = %q, %v; want %q", upgrade.ImagesRecord, got, err, record)
+		}
+	}
 }

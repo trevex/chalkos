@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -356,8 +357,8 @@ func writeSlot(ctx context.Context, w *upgrade.SlotWriter, slot upgrade.Slot, h 
 const ukiTempPrefix = ".install-"
 
 // writeUKI writes the image's UKI to the ESP, checked as an upgrade checks it, and then receives
-// the boot loader, which it checks and returns. The UKI has no tries counter: the first boot has
-// nothing to fall back to.
+// the boot loader, which it checks and returns. The UKI is the image's first generation, with no
+// tries counter: the first boot has nothing to fall back to.
 func (i *Installer) writeUKI(ctx context.Context, esp partition, h upgrade.Header, parts io.Reader) (_ []byte, err error) {
 	dir, unmount, err := i.mountESP(ctx, esp)
 	if err != nil {
@@ -375,7 +376,7 @@ func (i *Installer) writeUKI(ctx context.Context, esp partition, h upgrade.Heade
 	if err := i.change("write the UKI"); err != nil {
 		return nil, err
 	}
-	tmp := filepath.Join(linux, ukiTempPrefix+h.Version+".efi")
+	tmp := filepath.Join(linux, ukiTempPrefix+hex.EncodeToString(h.RootHash)+".efi")
 	loader, err := i.receiveUKI(tmp, h, parts)
 	if err != nil {
 		if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
@@ -383,7 +384,10 @@ func (i *Installer) writeUKI(ctx context.Context, esp partition, h upgrade.Heade
 		}
 		return nil, err
 	}
-	name := h.ImageID + "_" + h.Version + ".efi"
+	name := upgrade.EntryName(h.ImageID, 1)
+	if err := i.removeOtherUKIs(dir, h.ImageID, name, tmp); err != nil {
+		return nil, err
+	}
 	if err := i.change("name the UKI " + name); err != nil {
 		return nil, err
 	}
@@ -391,6 +395,42 @@ func (i *Installer) writeUKI(ctx context.Context, esp partition, h upgrade.Heade
 		return nil, fmt.Errorf("name the UKI %s: %w", name, err)
 	}
 	return loader, nil
+}
+
+// removeOtherUKIs removes from the ESP mounted at dir every UKI of the image but the one named
+// keep, and UKIs an earlier install left half written but tmp. An install continued over an
+// earlier attempt finds that attempt's files there, and systemd-boot would boot a UKI of the
+// image of a higher generation before the one the install writes.
+func (i *Installer) removeOtherUKIs(dir, imageID, keep, tmp string) error {
+	linux := filepath.Join(dir, "EFI", "Linux")
+	files, err := os.ReadDir(linux)
+	if err != nil {
+		return fmt.Errorf("list the UKIs on the ESP: %w", err)
+	}
+	var remove []string
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), ukiTempPrefix) && f.Name() != filepath.Base(tmp) {
+			remove = append(remove, f.Name())
+		}
+	}
+	entries, err := upgrade.Entries(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.ImageID == imageID && e.File != keep {
+			remove = append(remove, e.File)
+		}
+	}
+	for _, name := range remove {
+		if err := i.change("remove " + name); err != nil {
+			return err
+		}
+		if err := os.Remove(filepath.Join(linux, name)); err != nil {
+			return fmt.Errorf("remove %s from the ESP: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (i *Installer) receiveUKI(tmp string, h upgrade.Header, parts io.Reader) ([]byte, error) {
