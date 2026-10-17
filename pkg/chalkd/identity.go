@@ -138,7 +138,7 @@ func (s *Server) classify(recorded, section storage.Section, pins storage.Pins) 
 }
 
 // classifyDisks resolves the changed disk references of the section and sorts the volumes whose
-// reference finds another disk than the pinned one, or none.
+// reference finds another disk than the pinned one, or cannot be resolved.
 func (s *Server) classifyDisks(section storage.Section, pins storage.Pins) diskChanges {
 	failed := map[storage.Ref]error{}
 	d := diskChanges{moved: map[string]bool{}, unresolved: map[string]error{}}
@@ -174,12 +174,16 @@ func (s *Server) pinnedDisk(v storage.Volume, pins storage.Pins) (bool, error) {
 // recreates a volume in place, once the disk it is pinned to is plugged in; changing VAR,
 // removing a volume or moving it to another disk, also by a disk reference that finds another
 // disk, takes a reinstall, as resetVolume refuses those. A disk reference that cannot be resolved
-// is a mistake in the config, or a missing disk when it finds none, which neither carries out.
+// is a mistake in the config, or a missing disk when it finds none, which neither carries out,
+// unless the node cannot list its disks at all.
 func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d diskChanges, c storage.Change) string {
 	v, kept := section.Volumes[c.Volume]
 	if err, ok := d.unresolved[c.Volume]; ok {
-		if errors.Is(err, storage.ErrNoDisk) {
+		switch {
+		case errors.Is(err, storage.ErrNoDisk):
 			return "fix the disk reference or plug in the disk it names"
+		case errors.Is(err, storage.ErrListDisks):
+			return "apply the config again once the node can list its disks"
 		}
 		return "fix the disk reference"
 	}
@@ -189,10 +193,10 @@ func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d 
 	reset := fmt.Sprintf("chalkctl storage reset %s %s", s.nodeName(), c.Volume)
 	found, err := s.pinnedDisk(v, pins)
 	if err != nil {
-		return fmt.Sprintf("%v; reset it with %s once one disk has it", err, reset)
+		return fmt.Sprintf("%v; reset it with %s once its disk can be found", err, reset)
 	}
 	if !found {
-		return fmt.Sprintf("its disk %s, %s, is not plugged in; plug it in, then reset it with %s", v.Disk, pins.Disks[v.Disk].Identity, reset)
+		return fmt.Sprintf("its disk %s (%s) is not plugged in; plug it in, then reset it with %s", v.Disk, pins.Disks[v.Disk].Identity, reset)
 	}
 	return "reset it with " + reset
 }
@@ -882,8 +886,11 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 	classified, disks := s.classify(recorded, d.section, pins)
 	if err, ok := disks.unresolved[name]; ok {
 		fix := "fix the reference"
-		if errors.Is(err, storage.ErrNoDisk) {
+		switch {
+		case errors.Is(err, storage.ErrNoDisk):
 			fix = "fix the reference or plug in the disk it names"
+		case errors.Is(err, storage.ErrListDisks):
+			fix = "reset the volume again once the node can list its disks"
 		}
 		return failed(connect.CodeFailedPrecondition, "the disk reference of volume %s cannot be resolved: %v; %s", name, err, fix)
 	}
@@ -895,7 +902,7 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 		return failed(connect.CodeFailedPrecondition, "find the disk of volume %s: %v", name, err)
 	}
 	if !found {
-		return failed(connect.CodeFailedPrecondition, "disk %s of volume %s, %s, is not plugged in; plug it in and reset the volume again", nv.Disk, name, pins.Disks[nv.Disk].Identity)
+		return failed(connect.CodeFailedPrecondition, "disk %s of volume %s (%s) is not plugged in; plug it in and reset the volume again", nv.Disk, name, pins.Disks[nv.Disk].Identity)
 	}
 	var others []string
 	for _, c := range classified {

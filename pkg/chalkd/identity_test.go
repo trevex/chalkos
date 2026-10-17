@@ -203,6 +203,20 @@ func asSSDs(t *testing.T, s *Server, names ...string) {
 	}
 }
 
+// twin gives vdc the serial of vdb, so that two disks have the extra disk's pinned identity.
+func twin(t *testing.T, s *Server) {
+	t.Helper()
+	write(t, filepath.Join(s.Host.UdevRoot, "b"+vdc.devnum), "E:ID_PATH="+vdc.props["ID_PATH"]+"\nE:ID_SERIAL="+vdb.props["ID_SERIAL"]+"\n")
+}
+
+// unlistable breaks a test disk's sysfs entry, so that the node cannot list its disks.
+func unlistable(t *testing.T, s *Server) {
+	t.Helper()
+	if err := os.Remove(filepath.Join(s.Host.SysRoot, "block", "vdc", "size")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // unplug removes a test disk, as if it was not plugged in.
 func unplug(t *testing.T, s *Server, name string) {
 	t.Helper()
@@ -238,7 +252,14 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 			name:    "reformatted on a disk that is not plugged in",
 			next:    section("", "xfs"),
 			prepare: func(t *testing.T, s *Server) { unplug(t, s, "vdb") },
-			want:    []string{"its disk extra", "is not plugged in; plug it in, then reset it with chalkctl storage reset n1 extra"},
+			want:    []string{`its disk extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in, then reset it with chalkctl storage reset n1 extra`},
+		},
+		{
+			name:    "reformatted on a disk whose identity two disks have",
+			next:    section("", "xfs"),
+			prepare: twin,
+			want:    []string{"2 disks have the pinned identity", "refusing to choose", "; reset it with chalkctl storage reset n1 extra once its disk can be found"},
+			notWant: []string{"plug in"},
 		},
 		{
 			name: "removed",
@@ -262,6 +283,13 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 			prepare: func(t *testing.T, s *Server) { asSSDs(t, s, "vdb", "vdc") },
 			want:    []string{"cannot be resolved", "2 disks match", "fix the disk reference"},
 			notWant: []string{"plug in", "reinstall"},
+		},
+		{
+			name:    "its reference unresolved as the disks cannot be listed",
+			next:    withExtraRef(t, section("", "ext4"), "chalk-other"),
+			prepare: unlistable,
+			want:    []string{"cannot be resolved: list the disks", "apply the config again once the node can list its disks"},
+			notWant: []string{"fix the disk reference", "reinstall"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -396,7 +424,9 @@ func TestResetVolumeRefusals(t *testing.T) {
 		{"reference finding another disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", nil, []string{"finds another disk"}, nil},
 		{"reference finding no disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-missing")), "vdb", nil, []string{"cannot be resolved: no disk matches", "; fix the reference or plug in the disk it names"}, nil},
 		{"reference finding two disks", "extra", identityWith(withExtraSelector(t, section("", "xfs"), storage.Selector{Type: "ssd"})), "vdb", ssds, []string{"cannot be resolved: 2 disks match", "; fix the reference"}, []string{"plug in"}},
-		{"disk not plugged in", "extra", identityWith(section("", "xfs")), "vdb", unplugged, []string{"disk extra of volume extra", "is not plugged in; plug it in"}, nil},
+		{"reference unresolved as the disks cannot be listed", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", unlistable, []string{"cannot be resolved: list the disks", "; reset the volume again once the node can list its disks"}, []string{"fix the reference"}},
+		{"two disks with the pinned identity", "extra", identityWith(section("", "xfs")), "vdb", twin, []string{"find the disk of volume extra: 2 disks have the pinned identity", "refusing to choose"}, []string{"plug in"}},
+		{"disk not plugged in", "extra", identityWith(section("", "xfs")), "vdb", unplugged, []string{`disk extra of volume extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in`}, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true, vdc)
