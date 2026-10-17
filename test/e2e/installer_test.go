@@ -30,10 +30,12 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 // TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
 // next to a blank disk, installs a node onto that disk from its image's parts, which chalkctl
 // signs and sends from the host, cancels that install while slot A is written and runs it again
-// without --wipe-disk, and checks the node boots from the disk installed: slot A holding the image,
-// slot B empty, VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.
+// without --wipe-disk, and checks the node boots from the disk installed: slot A holding the image
+// under labels of its root hash, its UKI as chalkos_1.efi, slot B empty, VAR mounted, STATE and
+// VAR with two keyslots, chalkd over mTLS.
 func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
+	root := rootHash(t, "CHALKLAB_IMAGE_DIR")
 	dir := vmDir(t)
 	installer := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_INSTALLER_DIR", sign: true})
 	targetPath := filepath.Join(dir, "target.qcow2")
@@ -80,7 +82,7 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	// The boot entry the installer added makes the VM boot the target.
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{
 		"secureboot":      "1",
-		"store_label":     "store_0.1.0",
+		"store_label":     "store_" + root[:16],
 		"store_partition": "3",
 		"slot_b_empty":    "2",
 		"state_fstype":    "ext4",
@@ -94,7 +96,8 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 		"var_boots":       "1",
 	})
 	waitForNode(t, n, "chalklab-target")
-	if out, err := chalkctl(t, n, "base", "status", "chalklab-target"); err != nil || !strings.Contains(out, "(the inventory's)") {
+	if out, err := chalkctl(t, n, "base", "status", "chalklab-target"); err != nil || !strings.Contains(out, "(the inventory's)") ||
+		!strings.Contains(out, "image "+root[:12]+", booted from chalkos_1.efi\n") {
 		t.Errorf("status: %v", err)
 	}
 }

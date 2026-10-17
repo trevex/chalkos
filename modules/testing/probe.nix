@@ -55,7 +55,7 @@ let
       # A whole-item match, so options such as errors=remount-ro do not count as read-only.
       fact etc_ro "$(findmnt -n -o OPTIONS /etc | tr ',' '\n' | grep -cx ro || true)"
       fact usr_verity "$(veritysetup status usr 2>/dev/null | awk '$1 == "status:" {print $2}' || true)"
-      # The label of the store's partition names the version of the slot the node booted.
+      # The label of the store's partition names the store the node booted by its root hash.
       store=$(veritysetup status usr 2>/dev/null | awk '$1 == "data" && $2 == "device:" {print $3}' || true)
       fact store_label "$(if [[ -n $store ]]; then lsblk -no PARTLABEL "$store"; fi)"
       # Its partition number tells the slot: 3 is slot A's store, 5 slot B's.

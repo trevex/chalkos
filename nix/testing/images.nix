@@ -19,9 +19,10 @@ let
     };
   };
   images = self.lib.mkImages arguments;
-  # A variant's metal image again, at another version and with the module given.
-  variantAt =
-    variant: version: extra:
+  # A variant's metal image again, with the module given and a file in /etc that names the image,
+  # so its store, and with it its root hash, differs from the variant's image and from the others.
+  variantAs =
+    variant: name: extra:
     let
       v = arguments.variants.${variant};
     in
@@ -30,7 +31,10 @@ let
       // {
         platforms = [ "metal" ];
         variants.${variant} = v // {
-          modules = v.modules or [ ] ++ [ ({ system.image.version = version; } // extra) ];
+          modules = v.modules or [ ] ++ [
+            { environment.etc."chalktest-image".text = name; }
+            extra
+          ];
         };
       }
     )).images."${variant}-metal";
@@ -38,11 +42,11 @@ in
 images
 // {
   inherit secrets;
-  # The test image at the versions e2e-upgrade installs: 0.2.0, and 0.3.0, which never becomes
+  # The images e2e-upgrade installs after the test image: the upgrade, and one that never becomes
   # healthy, as a unit fails at every boot the way a broken service would, and falls back after
   # one try of 30 seconds.
-  upgradeImage = variantAt "test" "0.2.0" { };
-  unhealthyImage = variantAt "test" "0.3.0" {
+  upgradeImage = variantAs "test" "upgrade" { };
+  unhealthyImage = variantAs "test" "unhealthy" {
     chalkos.upgrade = {
       bootTries = 1;
       healthTimeout = 30;
@@ -56,8 +60,8 @@ images
       };
     };
   };
-  # The Kubernetes image at the version the HA test's rolling upgrade installs.
-  haUpgradeImage = variantAt "k8s" "0.2.0" { };
+  # The Kubernetes image the HA test's rolling upgrade installs.
+  haUpgradeImage = variantAs "k8s" "upgrade" { };
   kubernetesImages = import ./kubernetes-images.nix {
     inherit pkgs;
     kubernetesVersion = images.nixos.k8s-metal.config.chalkos.kubernetes.package.version;

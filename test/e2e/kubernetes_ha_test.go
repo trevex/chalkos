@@ -454,13 +454,15 @@ func logHAMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	}
 }
 
-// rollingUpgrade upgrades two control planes to the image's 0.2.0 with an operator's client file:
-// the VIP's holder, so the VIP moves, and one other, one at a time. Meanwhile an API server
+// rollingUpgrade upgrades two control planes to the HA upgrade image with an operator's client
+// file: the VIP's holder, so the VIP moves, and one other, one at a time. Meanwhile an API server
 // answers every five seconds, and no Node is other than Ready but the one chalkctl reboots, from
-// "rebooting into" until it found it healthy again.
+// "rebooting into" until it found it healthy again. The upgraded ones boot the image as
+// chalkos_2.efi; the third keeps chalkos_1.efi.
 func (c *haCluster) rollingUpgrade(ctx context.Context) {
 	t := c.t
 	t.Helper()
+	base, next := rootHash(t, "CHALKLAB_K8S_HA_IMAGE_DIR")[:12], rootHash(t, "CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR")[:12]
 	all := []string{"cp1", "cp2", "cp3"}
 	holders := c.holders(all...)
 	if len(holders) != 1 {
@@ -581,11 +583,11 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 			out.WriteString(line + "\n")
 			now := time.Now()
 			mu.Lock()
-			if name, ok := strings.CutSuffix(line, ": rebooting into 0.2.0"); ok {
+			if name, ok := strings.CutSuffix(line, ": rebooting into "+next); ok {
 				reboots[name] = &window{from: now}
 				order = append(order, name)
 			}
-			if name, ok := strings.CutSuffix(line, ": runs 0.2.0, found healthy"); ok && reboots[name] != nil {
+			if name, ok := strings.CutSuffix(line, ": runs "+next+", found healthy"); ok && reboots[name] != nil {
 				reboots[name].to = now
 			}
 			mu.Unlock()
@@ -614,11 +616,11 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 		t.Error(err)
 	}
 	for _, name := range upgraded {
-		if out, err := c.chalkctl(name, "status", name); err != nil || !strings.Contains(out, "image 0.2.0, booted from chalkos_0.2.0.efi\n") {
+		if out, err := c.chalkctl(name, "status", name); err != nil || !strings.Contains(out, "image "+next+", booted from chalkos_2.efi\n") {
 			t.Errorf("status of %s after the upgrade: %v", name, err)
 		}
 	}
-	if out, err := c.chalkctl(kept, "status", kept); err != nil || !strings.Contains(out, "image 0.1.0, booted from chalkos_0.1.0.efi\n") {
+	if out, err := c.chalkctl(kept, "status", kept); err != nil || !strings.Contains(out, "image "+base+", booted from chalkos_1.efi\n") {
 		t.Errorf("status of %s, which the upgrade left out: %v", kept, err)
 	}
 	if holders := c.holders(all...); len(holders) != 1 {

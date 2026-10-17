@@ -27,6 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/lab"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // TestMain denies io_uring to the QEMU the tests start, as chalklab does, and copies the fixtures.
@@ -155,6 +156,18 @@ var inventories = map[string]string{
 // inventoryPath is the copied inventory of the name.
 func inventoryPath(name string) string {
 	return filepath.Join(fixtures, inventories[name])
+}
+
+// rootHash is the root hash of the store of the image directory the variable names, in hex, as
+// its metadata.json gives it: an image is its root hash. chalkctl names an image by its first 12
+// hex digits, and a slot's labels by its first 16.
+func rootHash(t *testing.T, env string) string {
+	t.Helper()
+	md, err := schema.ReadMetadata(os.Getenv(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return md.RootHash
 }
 
 func requireEnv(t *testing.T, names ...string) {
