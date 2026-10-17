@@ -31,6 +31,9 @@ service NodeService {
   // node certificate or OS CAs. Destructive storage changes are refused; additive ones are
   // applied live.
   rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
+  // The config a slot keeps, the running image's or the staged image's, as it was delivered,
+  // with secret values replaced by their hashes. Allowed for the role ApplyConfig needs.
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
   // ResetVolume wipes one volume and creates it again as the delivered config defines it.
   rpc ResetVolume(ResetVolumeRequest) returns (ResetVolumeResponse);
   // Status reports the config version, the storage, and failed units of an installed node.
@@ -316,6 +319,21 @@ message ApplyConfigRequest {
   // is classified against it as for the running image, and additive changes are made at once,
   // with fallback_secret. It takes the config and the fallback secret alone, and an image staged.
   bool staged = 8;
+}
+
+message GetConfigRequest {
+  // The staged image's config instead of the running one's.
+  bool staged = 1;
+}
+
+message GetConfigResponse {
+  // The slot's documents as delivered, one JSON document each separated by ---, as
+  // ApplyConfigRequest.config holds them. The values of Secrets and of the Kubernetes Secrets an
+  // Addon applies are replaced by the lower-case hex SHA-256 of the value, as config_version
+  // hashes a Secret's.
+  string documents = 1;
+  // The slot's version, as StatusResponse.config_version gives it.
+  string version = 2;
 }
 
 message ApplyConfigResponse {

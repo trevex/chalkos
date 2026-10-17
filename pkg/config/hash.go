@@ -50,20 +50,26 @@ func hideSecretData(obj map[string]any) map[string]any {
 	}
 	spec = maps.Clone(spec)
 	if data, ok := spec["data"].(map[string]any); ok {
-		hidden := make(map[string]any, len(data))
-		for k, v := range data {
-			s, isString := v.(string)
-			if !isString {
-				b, _ := json.Marshal(v)
-				s = string(b)
-			}
-			sum := sha256.Sum256([]byte(s))
-			hidden[k] = hex.EncodeToString(sum[:])
-		}
-		spec["data"] = hidden
+		spec["data"] = hideValues(data)
 	}
 	out["spec"] = spec
 	return out
+}
+
+// hideValues returns data with each value replaced by the hex SHA-256 of the value, a string as it
+// is and any other value as its JSON.
+func hideValues(data map[string]any) map[string]any {
+	hidden := make(map[string]any, len(data))
+	for k, v := range data {
+		s, isString := v.(string)
+		if !isString {
+			b, _ := json.Marshal(v)
+			s = string(b)
+		}
+		sum := sha256.Sum256([]byte(s))
+		hidden[k] = hex.EncodeToString(sum[:])
+	}
+	return hidden
 }
 
 // KindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets

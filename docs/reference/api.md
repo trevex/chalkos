@@ -25,6 +25,7 @@ nodes call RenewNodeCertificate, with the node role.
 | [Contract](#method-contract) | [ContractRequest](#message-contractrequest) | [ContractResponse](#message-contractresponse) |
 | [Install](#method-install) | [stream InstallRequest](#message-installrequest) | [InstallResponse](#message-installresponse) |
 | [ApplyConfig](#method-applyconfig) | [ApplyConfigRequest](#message-applyconfigrequest) | [ApplyConfigResponse](#message-applyconfigresponse) |
+| [GetConfig](#method-getconfig) | [GetConfigRequest](#message-getconfigrequest) | [GetConfigResponse](#message-getconfigresponse) |
 | [ResetVolume](#method-resetvolume) | [ResetVolumeRequest](#message-resetvolumerequest) | [ResetVolumeResponse](#message-resetvolumeresponse) |
 | [Status](#method-status) | [StatusRequest](#message-statusrequest) | [StatusResponse](#message-statusresponse) |
 | [Logs](#method-logs) | [LogsRequest](#message-logsrequest) | [stream LogsResponse](#message-logsresponse) |
@@ -66,6 +67,11 @@ continues when run again.
 ApplyConfig replaces the config of an installed node, or delivers it a Kubernetes share, a
 node certificate or OS CAs. Destructive storage changes are refused; additive ones are
 applied live.
+
+### GetConfig { #method-getconfig }
+
+The config a slot keeps, the running image's or the staged image's, as it was delivered,
+with secret values replaced by their hashes. Allowed for the role ApplyConfig needs.
 
 ### ResetVolume { #method-resetvolume }
 
@@ -391,6 +397,23 @@ No fields.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `removed` | [`EtcdMember`](#message-etcdmember) |  |
+
+### GetConfigRequest { #message-getconfigrequest }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `staged` | `bool` | The staged image's config instead of the running one's. |
+
+### GetConfigResponse { #message-getconfigresponse }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `documents` | `string` | The slot's documents as delivered, one JSON document each separated by ---, as ApplyConfigRequest.config holds them. The values of Secrets and of the Kubernetes Secrets an Addon applies are replaced by the lower-case hex SHA-256 of the value, as config_version hashes a Secret's. |
+| `version` | `string` | The slot's version, as StatusResponse.config_version gives it. |
 
 ### ImageChunk { #message-imagechunk }
 

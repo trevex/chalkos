@@ -247,3 +247,38 @@ func (s *Server) runningHash() ([]byte, error) {
 	}
 	return uki.UsrHash(string(cmdline))
 }
+
+// GetConfig returns the documents a config slot keeps as they were delivered, the running
+// image's or the staged image's, with every secret value replaced by its hash, so chalkctl can
+// show what a delivery changes. It needs the role ApplyConfig needs: names, addresses and the
+// shape of the config tell an attacker as much as the values would.
+func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dir, err := s.Loader.Slot()
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+	}
+	if req.Msg.Staged {
+		staged, err := s.stagedImage()
+		if err != nil {
+			return nil, failed(connect.CodeInternal, "find the staged image: %v", err)
+		}
+		if staged == nil {
+			return nil, failed(connect.CodeNotFound, "no image is staged to boot next")
+		}
+		dir = store.Slot(s.Loader.Slots, staged)
+	}
+	stored, found, err := store.Read(dir)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "read the config slot: %v", err)
+	}
+	if !found {
+		return nil, failed(connect.CodeNotFound, "STATE holds no config for the image")
+	}
+	e, err := config.Encode(config.Redact(stored.Delivered))
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "encode the config: %v", err)
+	}
+	return connect.NewResponse(&nodev1.GetConfigResponse{Documents: e.Text, Version: stored.Version}), nil
+}

@@ -149,6 +149,7 @@ var permissions = map[string]permission{
 	nodev1connect.NodeServiceContractProcedure:             {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},
 	nodev1connect.NodeServiceInstallProcedure:              {[]nodev1.Mode{maintenance}, pki.RoleAdmin},
 	nodev1connect.NodeServiceApplyConfigProcedure:          {[]nodev1.Mode{normal}, pki.RoleAdmin},
+	nodev1connect.NodeServiceGetConfigProcedure:            {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceResetVolumeProcedure:          {[]nodev1.Mode{normal}, pki.RoleAdmin},
 	nodev1connect.NodeServiceStatusProcedure:               {[]nodev1.Mode{normal}, pki.RoleReader},
 	nodev1connect.NodeServiceLogsProcedure:                 {[]nodev1.Mode{maintenance, normal}, pki.RoleReader},

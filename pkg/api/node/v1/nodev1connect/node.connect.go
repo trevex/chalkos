@@ -45,6 +45,8 @@ const (
 	NodeServiceInstallProcedure = "/chalkos.node.v1.NodeService/Install"
 	// NodeServiceApplyConfigProcedure is the fully-qualified name of the NodeService's ApplyConfig RPC.
 	NodeServiceApplyConfigProcedure = "/chalkos.node.v1.NodeService/ApplyConfig"
+	// NodeServiceGetConfigProcedure is the fully-qualified name of the NodeService's GetConfig RPC.
+	NodeServiceGetConfigProcedure = "/chalkos.node.v1.NodeService/GetConfig"
 	// NodeServiceResetVolumeProcedure is the fully-qualified name of the NodeService's ResetVolume RPC.
 	NodeServiceResetVolumeProcedure = "/chalkos.node.v1.NodeService/ResetVolume"
 	// NodeServiceStatusProcedure is the fully-qualified name of the NodeService's Status RPC.
@@ -97,6 +99,9 @@ type NodeServiceClient interface {
 	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
 	// applied live.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
+	// The config a slot keeps, the running image's or the staged image's, as it was delivered,
+	// with secret values replaced by their hashes. Allowed for the role ApplyConfig needs.
+	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
 	// ResetVolume wipes one volume and creates it again as the delivered config defines it.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
 	// Status reports the config version, the storage, and failed units of an installed node.
@@ -195,6 +200,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("ApplyConfig")),
 			connect.WithClientOptions(opts...),
 		),
+		getConfig: connect.NewClient[v1.GetConfigRequest, v1.GetConfigResponse](
+			httpClient,
+			baseURL+NodeServiceGetConfigProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("GetConfig")),
+			connect.WithClientOptions(opts...),
+		),
 		resetVolume: connect.NewClient[v1.ResetVolumeRequest, v1.ResetVolumeResponse](
 			httpClient,
 			baseURL+NodeServiceResetVolumeProcedure,
@@ -283,6 +294,7 @@ type nodeServiceClient struct {
 	contract             *connect.Client[v1.ContractRequest, v1.ContractResponse]
 	install              *connect.Client[v1.InstallRequest, v1.InstallResponse]
 	applyConfig          *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
+	getConfig            *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
 	resetVolume          *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
 	status               *connect.Client[v1.StatusRequest, v1.StatusResponse]
 	logs                 *connect.Client[v1.LogsRequest, v1.LogsResponse]
@@ -321,6 +333,11 @@ func (c *nodeServiceClient) Install(ctx context.Context) *connect.ClientStreamFo
 // ApplyConfig calls chalkos.node.v1.NodeService.ApplyConfig.
 func (c *nodeServiceClient) ApplyConfig(ctx context.Context, req *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error) {
 	return c.applyConfig.CallUnary(ctx, req)
+}
+
+// GetConfig calls chalkos.node.v1.NodeService.GetConfig.
+func (c *nodeServiceClient) GetConfig(ctx context.Context, req *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error) {
+	return c.getConfig.CallUnary(ctx, req)
 }
 
 // ResetVolume calls chalkos.node.v1.NodeService.ResetVolume.
@@ -408,6 +425,9 @@ type NodeServiceHandler interface {
 	// node certificate or OS CAs. Destructive storage changes are refused; additive ones are
 	// applied live.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
+	// The config a slot keeps, the running image's or the staged image's, as it was delivered,
+	// with secret values replaced by their hashes. Allowed for the role ApplyConfig needs.
+	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
 	// ResetVolume wipes one volume and creates it again as the delivered config defines it.
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
 	// Status reports the config version, the storage, and failed units of an installed node.
@@ -502,6 +522,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("ApplyConfig")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceGetConfigHandler := connect.NewUnaryHandler(
+		NodeServiceGetConfigProcedure,
+		svc.GetConfig,
+		connect.WithSchema(nodeServiceMethods.ByName("GetConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
 	nodeServiceResetVolumeHandler := connect.NewUnaryHandler(
 		NodeServiceResetVolumeProcedure,
 		svc.ResetVolume,
@@ -592,6 +618,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceInstallHandler.ServeHTTP(w, r)
 		case NodeServiceApplyConfigProcedure:
 			nodeServiceApplyConfigHandler.ServeHTTP(w, r)
+		case NodeServiceGetConfigProcedure:
+			nodeServiceGetConfigHandler.ServeHTTP(w, r)
 		case NodeServiceResetVolumeProcedure:
 			nodeServiceResetVolumeHandler.ServeHTTP(w, r)
 		case NodeServiceStatusProcedure:
@@ -645,6 +673,10 @@ func (UnimplementedNodeServiceHandler) Install(context.Context, *connect.ClientS
 
 func (UnimplementedNodeServiceHandler) ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ApplyConfig is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.GetConfig is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error) {

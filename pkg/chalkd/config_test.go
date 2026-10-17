@@ -440,3 +440,33 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 		t.Errorf("recorded volume extra = %+v, %v; want it in the config's xfs", recorded.Volumes["extra"], err)
 	}
 }
+
+// TestGetConfig returns the running slot's documents as delivered, with the Secrets' values
+// replaced by their hashes, and its version; staged, the staged slot's, which a node without a
+// staged image does not have.
+func TestGetConfig(t *testing.T) {
+	s, _ := configServer(t)
+	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := config.Parse(strings.NewReader(resp.Msg.Documents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := config.Parse(strings.NewReader(baseConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := config.Hash(docs)
+	redacted, _ := config.Hash(config.Redact(want))
+	if resp.Msg.Version != hashOf(t, baseConfig) || got != redacted {
+		t.Errorf("config %q of version %s, want baseConfig as delivered", resp.Msg.Documents, resp.Msg.Version)
+	}
+	if strings.Contains(resp.Msg.Documents, "s3cret") || strings.Contains(resp.Msg.Documents, `"replicas"`) {
+		t.Errorf("config = %s, want the secret hidden and no defaults", resp.Msg.Documents)
+	}
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("staged: %v, want not found", err)
+	}
+}

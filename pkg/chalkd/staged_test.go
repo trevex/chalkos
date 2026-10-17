@@ -185,3 +185,16 @@ func TestApplyConfigWaitsForAnUpgrade(t *testing.T) {
 		t.Errorf("err = %v, want aborted", err)
 	}
 }
+
+// TestGetConfigStaged returns the staged slot's documents.
+func TestGetConfigStaged(t *testing.T) {
+	s, _ := stagedServer(t, fixtureSchemas(t))
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	if err := sendStaged(s, next); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true}))
+	if err != nil || resp.Msg.Version != hashOf(t, next) || !strings.Contains(resp.Msg.Documents, `"name":"second"`) {
+		t.Errorf("staged config = %+v, %v", resp, err)
+	}
+}
