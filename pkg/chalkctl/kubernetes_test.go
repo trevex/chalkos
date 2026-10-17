@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -299,22 +300,48 @@ func TestKubeconfigTrustsBothCAs(t *testing.T) {
 	}
 }
 
+// TestBootLines names each image by its root hash, with the tag and revision the node knows.
 func TestBootLines(t *testing.T) {
+	running := &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x81, 0xbd}, 16), Generation: 7, Revision: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", Tag: "v1.4.0"}
+	next := &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x3f, 0xa9}, 16), Generation: 8, Tag: "v1.5.0"}
 	for _, tc := range []struct {
 		boot *nodev1.BootStatus
 		want []string
 	}{
-		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0.efi", Blessed: true}, []string{"image 0.2.0, booted from chalkos_0.2.0.efi"}},
-		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0+2-1.efi"}, []string{"image 0.2.0, booted from chalkos_0.2.0+2-1.efi, not found healthy yet"}},
-		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0.efi", Blessed: true, Staged: "0.3.0"},
-			[]string{"image 0.2.0, booted from chalkos_0.2.0.efi", "upgrade to 0.3.0 installed; it boots next"}},
-		{&nodev1.BootStatus{Version: "0.2.0", Entry: "chalkos_0.2.0.efi", Blessed: true, Failed: "0.3.0", Journal: []string{"a", "b"}},
-			[]string{"image 0.2.0, booted from chalkos_0.2.0.efi", "upgrade to 0.3.0 failed: rolled back to 0.2.0", "  a", "  b"}},
-		{&nodev1.BootStatus{Version: "0.2.0", Error: "no UKI on the ESP boots the running store"}, []string{"image 0.2.0; its boot is unknown: no UKI on the ESP boots the running store"}},
+		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7.efi", Blessed: true}, []string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7.efi"}},
+		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7+2-1.efi"}, []string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7+2-1.efi, not found healthy yet"}},
+		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7.efi", Blessed: true, Staged: next},
+			[]string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7.efi", "upgrade to 3fa93fa93fa9 (v1.5.0) installed; it boots next"}},
+		{&nodev1.BootStatus{Running: running, Entry: "chalkos_7.efi", Blessed: true, Failed: next, Journal: []string{"a", "b"}},
+			[]string{"image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7.efi", "upgrade to 3fa93fa93fa9 (v1.5.0) failed: rolled back to 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6)", "  a", "  b"}},
+		{&nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: next.RootHash}, Error: "no UKI on the ESP boots the running store"}, []string{"image 3fa93fa93fa9; its boot is unknown: no UKI on the ESP boots the running store"}},
 		{nil, nil},
 	} {
 		if got := bootLines(tc.boot); !slices.Equal(got, tc.want) {
 			t.Errorf("bootLines(%v) = %q, want %q", tc.boot, got, tc.want)
 		}
+	}
+}
+
+// TestImageName names an image by its root hash's first 12 hex digits, then the tag and revision
+// it was built from as far as they are known; a dirty revision says so.
+func TestImageName(t *testing.T) {
+	root := bytes.Repeat([]byte{0x3f, 0xa9}, 16)
+	for _, tc := range []struct {
+		revision, tag, want string
+	}{
+		{"", "", "3fa93fa93fa9"},
+		{"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "v1.5.0", "3fa93fa93fa9 (v1.5.0, a1b2c3d4e5f6)"},
+		{"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "", "3fa93fa93fa9 (a1b2c3d4e5f6)"},
+		{"", "v1.5.0", "3fa93fa93fa9 (v1.5.0)"},
+		{"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678-dirty", "", "3fa93fa93fa9 (a1b2c3d4e5f6-dirty)"},
+		{"abc", "", "3fa93fa93fa9 (abc)"},
+	} {
+		if got := imageName(root, tc.revision, tc.tag); got != tc.want {
+			t.Errorf("imageName(%q, %q) = %q, want %q", tc.revision, tc.tag, got, tc.want)
+		}
+	}
+	if got := imageName(nil, "", ""); got != "unknown" {
+		t.Errorf("the name of an image of no root hash = %q", got)
 	}
 }

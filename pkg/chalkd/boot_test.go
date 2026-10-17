@@ -3,6 +3,7 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,19 +12,24 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // TestStatusReportsTheBoot reads the boot from the ESP: the entry booted and whether it was
 // blessed, an upgrade staged to boot next, and one the node fell back from, with what chalkd and
 // the health check logged during its last boot, as the check recorded it; a record of another
-// version or build is not shown, nor UKIs of other images. It names the running store's root hash.
+// store or generation is not shown, nor UKIs of other images. It names each image by its root
+// hash and generation, with the provenance the record of installed images knows.
 func TestStatusReportsTheBoot(t *testing.T) {
 	journal := "2026-10-09T12:00:00+0000 node chalkd[401]: not healthy yet: units failed: broken.service\n" +
 		"2026-10-09T12:00:30+0000 node chalkd[401]: rebooting\n"
-	header := "version 0.3.0 usrhash=" + strings.Repeat("33", 32) + "\n"
-	// The root hash of the store of 0.2.0, which the node runs.
-	running := bytes.Repeat([]byte{0x32}, 32)
+	header := "usrhash=" + strings.Repeat("33", 32) + " generation=3\n"
+	// The root hashes of the stores of generations 2, which the node runs, and 3, as writeESP
+	// writes them.
+	running, next := bytes.Repeat([]byte{0x32}, 32), bytes.Repeat([]byte{0x33}, 32)
+	runs := &nodev1.BootImage{RootHash: running, Generation: 2, Revision: "a1b2c3d4e5f6", Tag: "v1.4.0"}
 	for _, tc := range []struct {
 		name   string
 		files  []string
@@ -31,33 +37,33 @@ func TestStatusReportsTheBoot(t *testing.T) {
 		record string
 		want   *nodev1.BootStatus
 	}{
-		{"blessed", []string{"chalkos_0.1.0.efi", "chalkos_0.2.0.efi"}, nil, "",
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true}},
-		{"counted", []string{"chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"}, nil, "",
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0+2-1.efi"}},
-		{"staged", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+3.efi"}, nil, "",
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Staged: "0.3.0", StagedRootHash: bytes.Repeat([]byte{0x33}, 32)}},
-		{"rolled back", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi"}, nil, header + journal,
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Failed: "0.3.0", Journal: strings.Split(strings.TrimSpace(journal), "\n")}},
-		{"rolled back, recorded another time", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi"}, nil, "version 0.2.1 usrhash=" + strings.Repeat("31", 32) + "\n" + journal,
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Failed: "0.3.0"}},
-		{"rolled back, recorded for another build", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi"}, nil, "version 0.3.0 usrhash=" + strings.Repeat("34", 32) + "\n" + journal,
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Failed: "0.3.0"}},
-		{"rolled back, recorded without a root hash", []string{"chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi"}, nil, "version 0.3.0\n" + journal,
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true, Failed: "0.3.0"}},
+		{"blessed", []string{"chalkos_1.efi", "chalkos_2.efi"}, nil, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true}},
+		{"counted", []string{"chalkos_1.efi", "chalkos_2+2-1.efi"}, nil, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi"}},
+		{"staged", []string{"chalkos_2.efi", "chalkos_3+3.efi"}, nil, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Staged: &nodev1.BootImage{RootHash: next, Generation: 3}}},
+		{"rolled back", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, header + journal,
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Failed: &nodev1.BootImage{RootHash: next, Generation: 3}, Journal: strings.Split(strings.TrimSpace(journal), "\n")}},
+		{"rolled back, recorded for another generation", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, "usrhash=" + strings.Repeat("33", 32) + " generation=1\n" + journal,
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Failed: &nodev1.BootImage{RootHash: next, Generation: 3}}},
+		{"rolled back, recorded for another store", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, "usrhash=" + strings.Repeat("34", 32) + " generation=3\n" + journal,
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Failed: &nodev1.BootImage{RootHash: next, Generation: 3}}},
+		{"rolled back, recorded without a root hash", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, "generation=3\n" + journal,
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Failed: &nodev1.BootImage{RootHash: next, Generation: 3}}},
 		// UKIs of other images on the ESP are not the node's upgrades.
-		{"another image's UKIs", []string{"chalkos_0.2.0.efi"}, map[string]string{"rescue_0.9.0+0-3.efi": "0.9.0", "rescue_1.0.0+3.efi": "1.0.0"}, "",
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Entry: "chalkos_0.2.0.efi", Blessed: true}},
-		{"booted from elsewhere", []string{"chalkos_0.1.0.efi"}, nil, "",
-			&nodev1.BootStatus{Version: "0.2.0", RootHash: running, Error: "the boot loader entry chalkos_0.2.0.efi the node booted is not on the ESP"}},
+		{"another image's UKIs", []string{"chalkos_2.efi"}, map[string]string{"rescue_8+0-3.efi": "0.9.0", "rescue_9+3.efi": "1.0.0"}, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true}},
+		{"booted from elsewhere", []string{"chalkos_1.efi"}, nil, "",
+			&nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: running, Revision: "a1b2c3d4e5f6", Tag: "v1.4.0"}, Error: "the boot loader entry chalkos_2.efi the node booted is not on the ESP"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := installedServer(t, section("", ""), false)
 			if tc.record != "" {
 				write(t, s.Paths.FailedBoot, tc.record)
 			}
-			write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.2.0\n")
-			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_0.2.0.efi", tc.files...)
+			write(t, filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), `{"`+hex.EncodeToString(running)+`": {"revision": "a1b2c3d4e5f6", "tag": "v1.4.0"}}`)
+			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", tc.files...)
 			for name, version := range tc.others {
 				write(t, filepath.Join(s.Paths.ESP, "EFI", "Linux", name), string(ukitest.UKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": version}, "usrhash="+strings.Repeat("99", 32))))
 			}
@@ -67,6 +73,31 @@ func TestStatusReportsTheBoot(t *testing.T) {
 			}
 			if !proto.Equal(resp.Msg.Boot, tc.want) {
 				t.Errorf("boot = %v, want %v", resp.Msg.Boot, tc.want)
+			}
+		})
+	}
+}
+
+// TestStatusWithoutTheRecordOfImages names images by their root hashes alone when the record of
+// installed images is missing or cannot be read: it is shown, never relied on.
+func TestStatusWithoutTheRecordOfImages(t *testing.T) {
+	for name, record := range map[string]string{"missing": "", "unreadable": "{"} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := installedServer(t, section("", ""), false)
+			if record != "" {
+				if err := install.WriteFile(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), []byte(record), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi", "chalkos_3+3.efi")
+			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x32}, 32), Generation: 2}, Entry: "chalkos_2.efi", Blessed: true,
+				Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x33}, 32), Generation: 3}}
+			if !proto.Equal(resp.Msg.Boot, want) {
+				t.Errorf("boot = %v, want %v", resp.Msg.Boot, want)
 			}
 		})
 	}

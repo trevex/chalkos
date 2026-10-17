@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -301,7 +302,8 @@ func (c *cluster) configState(name, running string) string {
 // config's Image names, or whose Image's directory cannot be read; empty when it has that image,
 // or when the node or its config is unknown, which the config line reports.
 func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
-	if c.inv == nil || len(boot.GetRootHash()) == 0 {
+	running := boot.GetRunning().GetRootHash()
+	if c.inv == nil || len(running) == 0 {
 		return ""
 	}
 	nc, err := c.config(name)
@@ -312,13 +314,13 @@ func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 	switch {
 	case err != nil:
 		return fmt.Sprintf("its store is not compared with the image of its config: %v", err)
-	case hex.EncodeToString(boot.GetRootHash()) == md.RootHash:
+	case hex.EncodeToString(running) == md.RootHash:
 		return ""
 	}
-	line := fmt.Sprintf("its store's root hash is %x, not that of the Image %s its config names, %s", boot.GetRootHash(), nc.ImageName, md.RootHash)
+	line := fmt.Sprintf("its store's root hash is %x, not that of the Image %s its config names, %s", running, nc.ImageName, md.RootHash)
 	// After an upgrade with --no-reboot the image waits for the node's next boot.
-	if want, err := hex.DecodeString(md.RootHash); err == nil && hasStaged(boot, md.Version, want) {
-		return fmt.Sprintf("%s; it has %s staged, which it boots with its next reboot: chalkctl reboot %s", line, md.Version, name)
+	if want, err := hex.DecodeString(md.RootHash); err == nil && bytes.Equal(boot.GetStaged().GetRootHash(), want) {
+		return fmt.Sprintf("%s; it has %s staged, which it boots with its next reboot: chalkctl reboot %s", line, bootImageName(boot.GetStaged()), name)
 	}
 	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, name)
 }

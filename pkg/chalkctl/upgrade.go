@@ -392,10 +392,10 @@ func (r *upgradeRun) run(ctx context.Context) error {
 			others = append(others, name)
 		}
 	}
-	versions := map[string]bool{}
+	images := map[string]bool{}
 	for _, g := range r.groups {
-		r.say("upgrading %s on %s to %s %s: %s", g.variant, g.platform, g.image.info.ID(), g.image.info.Version(), strings.Join(g.nodes, ", "))
-		versions[g.image.info.Version()] = true
+		r.say("upgrading %s on %s to %s: %s", g.variant, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
+		images[g.image.name()] = true
 	}
 	for _, name := range controlPlanes {
 		if err := r.node(ctx, r.nodes[name]); err != nil {
@@ -417,45 +417,45 @@ func (r *upgradeRun) run(ctx context.Context) error {
 			return err
 		}
 	}
-	version := strings.Join(slices.Sorted(maps.Keys(versions)), ", ")
+	names := strings.Join(slices.Sorted(maps.Keys(images)), ", ")
 	if r.noReboot {
-		r.say("installed %s on %s; it boots with their next reboot", version, count(len(r.nodes), "node"))
+		r.say("installed %s on %s; it boots with their next reboot", names, count(len(r.nodes), "node"))
 	} else {
-		r.say("upgraded %s to %s", count(len(r.nodes), "node"), version)
+		r.say("upgraded %s to %s", count(len(r.nodes), "node"), names)
 	}
 	return nil
 }
 
 // node upgrades one node, continuing where an earlier run stopped: a node that runs the image
 // and was found healthy is uncordoned once its Node is Ready, one that booted it is waited for,
-// and the image installed already is not sent again.
+// and the image installed already is not sent again. An image is its store's root hash: a node
+// runs, stages or fell back from the image when it names that root hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
-	version := n.image.info.Version()
-	info, st, err := r.probe(ctx, n.name)
+	image, target := n.image.name(), n.image.header.RootHash
+	_, st, err := r.probe(ctx, n.name)
 	if err != nil {
 		return err
 	}
 	boot := st.GetBoot()
-	runs := info.Version == version
+	runs := bytes.Equal(boot.GetRunning().GetRootHash(), target)
+	failed := bytes.Equal(boot.GetFailed().GetRootHash(), target)
 	switch {
 	case boot.GetError() != "":
 		return fmt.Errorf("%s: its boot is unknown: %s", n.name, boot.GetError())
-	case boot.GetFailed() == version && !r.retryFailed:
+	case failed && !r.retryFailed:
 		return r.rolledBack(n, boot)
-	case runs && !bytes.Equal(boot.GetRootHash(), n.image.header.RootHash):
-		return r.otherBuild(n, boot)
 	case runs && boot.GetBlessed():
 		if r.noReboot {
-			r.say("%s: runs %s", n.name, version)
+			r.say("%s: runs %s", n.name, image)
 			return nil
 		}
 		// An earlier run may have stopped while the node was not Ready; it is released only once
 		// it is.
 	case runs:
-		r.say("%s: booted %s; waiting for it to be found healthy", n.name, version)
+		r.say("%s: booted %s; waiting for it to be found healthy", n.name, image)
 	default:
-		if boot.GetFailed() == version {
-			r.say("%s: fell back from %s before; trying it again", n.name, version)
+		if failed {
+			r.say("%s: fell back from %s before; trying it again", n.name, image)
 		}
 		if n.kind == identity.KindControlPlane && !r.noReboot {
 			if err := r.quorum(ctx, n.name); err != nil {
@@ -467,8 +467,8 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 				return err
 			}
 		}
-		if hasStaged(boot, version, n.image.header.RootHash) {
-			r.say("%s: %s is installed already", n.name, version)
+		if bytes.Equal(boot.GetStaged().GetRootHash(), target) {
+			r.say("%s: %s is installed already", n.name, image)
 		} else if err := r.install(ctx, n); err != nil {
 			return err
 		}
@@ -486,7 +486,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		}); err != nil {
 			return err
 		}
-		r.say("%s: rebooting into %s", n.name, version)
+		r.say("%s: rebooting into %s", n.name, image)
 	}
 	if err := r.waitHealthy(ctx, n); err != nil {
 		return err
@@ -494,20 +494,10 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	return r.uncordon(ctx, n)
 }
 
-// hasStaged reports whether the node has the build of the version and root hash staged to boot
-// next. Builds of one version differ in their root hash alone, so a node that names the staged
-// store's root hash is judged by it; one that names the staged version alone, by that.
-func hasStaged(boot *nodev1.BootStatus, version string, rootHash []byte) bool {
-	if len(boot.GetStagedRootHash()) > 0 {
-		return bytes.Equal(boot.GetStagedRootHash(), rootHash)
-	}
-	return boot.GetStaged() != "" && boot.GetStaged() == version
-}
-
 // install sends the node its image.
 func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	name, img := n.name, n.image
-	r.say("%s: installing %s", name, img.info.Version())
+	r.say("%s: installing %s", name, img.name())
 	parts, done, err := img.parts()
 	if err != nil {
 		return err
@@ -534,10 +524,13 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	if err != nil {
 		return err
 	}
-	if resp.AlreadyInstalled {
-		r.say("%s: runs %s already", name, img.info.Version())
-	} else {
-		r.say("%s: installed %s, which boots next as %s", name, img.info.Version(), resp.Entry)
+	switch {
+	case resp.AlreadyInstalled:
+		r.say("%s: runs %s already", name, img.name())
+	case resp.AlreadyStaged:
+		r.say("%s: %s is staged already, as %s", name, img.name(), resp.Entry)
+	default:
+		r.say("%s: installed %s, which boots next as %s", name, img.name(), resp.Entry)
 	}
 	return nil
 }
@@ -688,47 +681,35 @@ func (r *upgradeRun) uncordon(ctx context.Context, n *upgradeNode) error {
 // waitHealthy waits until the node runs the image, its boot was found healthy, and a node in
 // the cluster is Ready, or until it fell back.
 func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
-	version := n.image.info.Version()
+	image, target := n.image.name(), n.image.header.RootHash
 	deadline := time.Now().Add(r.timeout)
 	var last error
 	for {
-		info, st, err := r.probe(ctx, n.name)
+		_, st, err := r.probe(ctx, n.name)
 		switch {
 		case err != nil:
 			last = err
-		case st.GetBoot().GetFailed() == version:
+		case bytes.Equal(st.GetBoot().GetFailed().GetRootHash(), target):
 			return r.rolledBack(n, st.GetBoot())
-		case info.Version != version:
-			last = fmt.Errorf("it runs %s", info.Version)
-		case !bytes.Equal(st.GetBoot().GetRootHash(), n.image.header.RootHash):
-			// Waiting does not change the build it booted.
-			return r.otherBuild(n, st.GetBoot())
+		case !bytes.Equal(st.GetBoot().GetRunning().GetRootHash(), target):
+			last = fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
 		case !st.GetBoot().GetBlessed():
 			last = errors.New("its boot was not found healthy yet")
 		case inCluster(st.Kubernetes) && st.Kubernetes.NodeReady != "True":
 			last = fmt.Errorf("its Node is not Ready: %s", st.Kubernetes.NodeReady)
 		default:
-			r.say("%s: runs %s, found healthy", n.name, version)
+			r.say("%s: runs %s, found healthy", n.name, image)
 			return nil
 		}
 		if !time.Now().Before(deadline) {
-			return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, version, last)
+			return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, image, last)
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, version, context.Cause(ctx))
+			return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, image, context.Cause(ctx))
 		case <-time.After(r.poll):
 		}
 	}
-}
-
-// otherBuild is the error of a node that runs the image's version, but not the image's store.
-func (r *upgradeRun) otherBuild(n *upgradeNode, boot *nodev1.BootStatus) error {
-	version := n.image.info.Version()
-	if len(boot.GetRootHash()) == 0 {
-		return fmt.Errorf("%s runs %s, but does not report the root hash of its store, so whether it runs this build of it is unknown", n.name, version)
-	}
-	return fmt.Errorf("%s runs another build of %s, whose store has the root hash %x, not %x; build the image with a new version", n.name, version, boot.GetRootHash(), n.image.header.RootHash)
 }
 
 // inCluster reports whether a node is part of a cluster, so its Node exists.
@@ -739,7 +720,7 @@ func inCluster(k *nodev1.KubernetesStatus) bool {
 // rolledBack is the error of a node that fell back from the image, with what its boots logged. A
 // node of the cluster stays cordoned, for an operator to look at.
 func (r *upgradeRun) rolledBack(n *upgradeNode, boot *nodev1.BootStatus) error {
-	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, boot.Failed, boot.Version)
+	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
 	if n.inCluster && !r.noReboot {
 		msg += "; it stays cordoned"
 	}

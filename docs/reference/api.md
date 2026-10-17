@@ -172,21 +172,30 @@ a node cordoned otherwise as it is.
 | `changes` | repeated [`StorageChange`](#message-storagechange) | Storage changes that were applied. |
 | `restarted_units` | repeated `string` | Units restarted because config kinds they read, or the Kubernetes settings, changed. |
 
+### BootImage { #message-bootimage }
+
+An image a UKI on the ESP boots.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `root_hash` | `bytes` | The verity root hash of the image's store, from the usrhash= of the UKI or, for the running image, of the kernel command line; it identifies the image. |
+| `generation` | `uint32` | The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi; systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown. |
+| `revision` | `string` | The git revision and tag the image was built from, as the node's record of the images it installed names them; empty when it does not know them. |
+| `tag` | `string` |  |
+
 ### BootStatus { #message-bootstatus }
 
 
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `version` | `string` | The version of the image the node runs, and the file of the UKI it booted. |
+| `running` | [`BootImage`](#message-bootimage) | The image the node runs, and the file of the UKI it booted. |
 | `entry` | `string` |  |
 | `blessed` | `bool` | Whether the boot was found healthy and marked good, or not counted by the boot loader at all; false while the boot loader counts the boot's tries. |
-| `staged` | `string` | The version an upgrade installed to boot next; empty without one. |
-| `failed` | `string` | The version whose boots used up their tries without being found healthy, from which the node fell back; empty without one. The failed UKI stays until the next upgrade. |
-| `journal` | repeated `string` | The last lines chalkd and the health check logged during the failed version's last boot, as the check recorded them on VAR; empty without that record. |
-| `error` | `string` | Why the boot could not be read; empty when it was. |
-| `root_hash` | `bytes` | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which tells builds of one version apart; empty when it could not be read. |
-| `staged_root_hash` | `bytes` | The verity root hash of the store of the staged UKI, which tells builds of the staged version apart; empty without a staged UKI or when its store could not be read. |
+| `staged` | [`BootImage`](#message-bootimage) | The image an upgrade installed to boot next; unset without one. |
+| `failed` | [`BootImage`](#message-bootimage) | The image whose boots used up their tries without being found healthy, from which the node fell back; unset without one. The failed UKI stays until the next upgrade. |
+| `journal` | repeated `string` | The last lines chalkd and the health check logged during the failed image's last boot, as the check recorded them on VAR; empty without that record. |
+| `error` | `string` | Why the boot could not be read; empty when it was. The running image's root hash is set when the kernel command line could be read. |
 
 ### BootstrapRequest { #message-bootstraprequest }
 
@@ -397,8 +406,7 @@ the store data, the hash tree, the UKI and, when the header names one, the boot 
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `version` | `string` | The image's version and ID, as its os-release names them. |
-| `image_id` | `string` |  |
+| `image_id` | `string` | The image's ID, as its os-release names it. |
 | `root_hash` | `bytes` | The verity root hash of the image's store. |
 | `store` | [`ImagePart`](#message-imagepart) | The store data the root hash covers, its hash tree and the signed UKI. |
 | `hash_tree` | [`ImagePart`](#message-imagepart) |  |
@@ -406,6 +414,8 @@ the store data, the hash tree, the UKI and, when the header names one, the boot 
 | `boot_loader` | [`ImagePart`](#message-imagepart) | The signed systemd-boot, which firmware starts from the ESP's removable-media path. |
 | `architecture` | `string` | The architecture the image runs on, as systemd and os-release name it: x86-64 or arm64. A node refuses an image of another architecture than its own. |
 | `platform` | `string` | The platform the image is built for, as its os-release names it, such as metal or kvm. A node refuses an upgrade to an image of another platform than its own, and the installer translates the config for the platform the image names. |
+| `revision` | `string` | The git revision and tag the image was built from, as its directory's metadata.json names them; empty when the build named none. The node records them to show beside the image's root hash; nothing compares them. |
+| `tag` | `string` |  |
 
 ### ImagePart { #message-imagepart }
 
@@ -435,7 +445,6 @@ No fields.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `mode` | [`Mode`](#enum-mode) |  |
-| `version` | `string` | chalkos version of the running image. |
 | `image_id` | `string` | Image ID of the running image, such as "chalkos". |
 | `installer` | `bool` | Whether the node runs the installer, which writes a node's image to another disk. |
 | `boot_disk` | `string` | Device of the disk the node booted from; empty on the installer booted from a CD. |
@@ -445,6 +454,9 @@ No fields.
 | `hostname` | `string` |  |
 | `variant` | `string` | The mkImages variant the running image was built as; empty on the installer. |
 | `platform` | `string` | The platform the running image was built for, such as metal or kvm; empty on the installer, which installs images of every platform. |
+| `root_hash` | `bytes` | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which identifies the running image; empty when it could not be read. |
+| `revision` | `string` | The git revision and tag the running image was built from, as the node's record of the images it installed names them; empty when it does not know them. |
+| `tag` | `string` |  |
 
 ### InstallHeader { #message-installheader }
 
@@ -703,6 +715,7 @@ No fields.
 | `already_installed` | `bool` | The node runs the image already; nothing changed. |
 | `entry` | `string` | The file name of the UKI that boots the image next, with its tries. |
 | `rebooting` | `bool` | The node reboots into the image. |
+| `already_staged` | `bool` | The image boots next already, from entry, as an earlier upgrade without a reboot left it; nothing changed. |
 
 ### VolumeStatus { #message-volumestatus }
 

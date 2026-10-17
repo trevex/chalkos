@@ -16,7 +16,7 @@ import (
 // Header describes an image as install and upgrade receive it: its store, the store's hash tree,
 // its UKI and, in an install, its boot loader follow it in this order.
 type Header struct {
-	ImageID, Version string
+	ImageID string
 	// Platform is the platform the image is built for, such as metal or kvm.
 	Platform string
 	// Architecture is what the image runs on, as systemd names it: x86-64 or arm64.

@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -48,7 +50,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	}
 	header := imageHeader(img)
-	log.Printf("upgrading to %q %q with the root hash %x", img.GetImageId(), img.GetVersion(), img.GetRootHash())
+	log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
 	res, err := s.installImage(ctx, header, &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
 		if !stream.Receive() {
 			return nil, false
@@ -56,16 +58,20 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return stream.Msg().GetChunk(), true
 	}, err: stream.Err})
 	if err != nil {
-		log.Printf("upgrade to %q failed: %v", img.GetVersion(), err)
+		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
 	}
-	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, Entry: res.Entry}
+	s.recordImage(header)
+	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry}
 	if res.AlreadyInstalled {
-		log.Printf("%s runs already", img.GetVersion())
+		log.Printf("%x runs already", img.GetRootHash())
 		return connect.NewResponse(resp), nil
 	}
+	if res.AlreadyStaged {
+		log.Printf("%x boots next already, as %s", img.GetRootHash(), res.Entry)
+	}
 	if h.Reboot {
-		log.Printf("rebooting into %s", img.GetVersion())
+		log.Printf("rebooting into %x", img.GetRootHash())
 		resp.Rebooting = true
 		s.rebootSoon()
 	}
@@ -138,10 +144,36 @@ func (s *Server) checkStoredConfig(st imageStore, system, platform string) error
 // imageHeader is the image an install or upgrade header describes.
 func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	return upgrade.Header{
-		ImageID: h.GetImageId(), Version: h.GetVersion(), Platform: h.GetPlatform(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
+		ImageID: h.GetImageId(), Platform: h.GetPlatform(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
 		StoreSize: int64(h.GetStore().GetSize()), VeritySize: int64(h.GetHashTree().GetSize()), UKISize: int64(h.GetUki().GetSize()),
 		StoreSHA256: h.GetStore().GetSha256(), VeritySHA256: h.GetHashTree().GetSha256(), UKISHA256: h.GetUki().GetSha256(),
 		BootLoaderSize: int64(h.GetBootLoader().GetSize()), BootLoaderSHA256: h.GetBootLoader().GetSha256(),
+		Provenance: upgrade.Provenance{Revision: h.GetRevision(), Tag: h.GetTag()},
+	}
+}
+
+// recordImage keeps the provenance of the image an upgrade installed or found installed in the
+// record of installed images, which forgets every image no UKI on the ESP boots any more. The
+// record is shown, never relied on, so failing to keep it fails no upgrade.
+func (s *Server) recordImage(h upgrade.Header) {
+	entries, err := upgrade.Entries(s.Paths.ESP)
+	if err != nil {
+		log.Printf("record the image's provenance: %v", err)
+		return
+	}
+	var keep [][]byte
+	for _, e := range entries {
+		if e.RootHash != nil {
+			keep = append(keep, e.RootHash)
+		}
+	}
+	path := filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)
+	data, err := upgrade.ReadImages(path).Record(h.RootHash, h.Provenance, keep).Encode()
+	if err == nil {
+		err = install.WriteFile(path, data, 0o644)
+	}
+	if err != nil {
+		log.Printf("record the image's provenance: %v", err)
 	}
 }
 

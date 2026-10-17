@@ -167,7 +167,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	// The node runs the image the test node's Image names.
 	if s.Paths.OSRelease == "" {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
+		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
 	}
 	if s.Loader.Schemas == "" {
 		s.Loader.Schemas = filepath.Join(t.TempDir(), "schemas")
@@ -412,7 +412,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := got.Image
-	if h.ImageID != "chalkos" || h.Version != "0.1.0" || h.Platform != "metal" || h.BootLoaderSize == 0 {
+	if h.ImageID != "chalkos" || len(h.RootHash) != 32 || h.Platform != "metal" || h.BootLoaderSize == 0 {
 		t.Errorf("image = %+v", h)
 	}
 	size := h.StoreSize + h.VeritySize + h.UKISize + h.BootLoaderSize
@@ -462,7 +462,7 @@ func TestInstallChecksTheImage(t *testing.T) {
 	addr := ta.startNode(t, s)
 	img := image("test")
 	signedByOther := image("test")
-	signTestImage(t, signedByOther, "0.1.0", otherKey, otherCert)
+	signTestImage(t, signedByOther, otherKey, otherCert)
 	for _, tc := range []struct {
 		name string
 		img  string
@@ -1082,7 +1082,7 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=kvm\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=kvm\n")
 	addr := ta.startNode(t, s)
 	want := "n1 runs an image built for kvm, but its Image test-metal is built for metal; changing a node's platform is a reinstall"
 	for _, cmd := range [][]string{{"apply-config", "n1"}, {"storage", "reset", "n1", "var"}} {
@@ -1102,7 +1102,7 @@ func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{"hostname": "old"}`))
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
@@ -1121,7 +1121,7 @@ func TestInstallInPlaceOnAnImageOfAnotherVariant(t *testing.T) {
 	called := false
 	s.InPlace = func(context.Context, install.Request) error { called = true; return nil }
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr)); err != nil {
 		t.Fatal(err)

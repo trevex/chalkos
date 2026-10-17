@@ -110,8 +110,6 @@ message InfoResponse {
   reserved 10;
   reserved "cluster";
   Mode mode = 1;
-  // chalkos version of the running image.
-  string version = 2;
   // Image ID of the running image, such as "chalkos".
   string image_id = 3;
   // Whether the node runs the installer, which writes a node's image to another disk.
@@ -128,6 +126,13 @@ message InfoResponse {
   // The platform the running image was built for, such as metal or kvm; empty on the installer,
   // which installs images of every platform.
   string platform = 12;
+  // The verity root hash of the store the node runs, as its kernel command line's usrhash= names
+  // it, which identifies the running image; empty when it could not be read.
+  bytes root_hash = 13;
+  // The git revision and tag the running image was built from, as the node's record of the
+  // images it installed names them; empty when it does not know them.
+  string revision = 14;
+  string tag = 15;
 }
 
 message DisksRequest {}
@@ -249,8 +254,7 @@ message DiskReference {
 message ImageHeader {
   reserved 3, 4;
   reserved "cluster", "role";
-  // The image's version and ID, as its os-release names them.
-  string version = 1;
+  // The image's ID, as its os-release names it.
   string image_id = 2;
   // The verity root hash of the image's store.
   bytes root_hash = 5;
@@ -267,6 +271,11 @@ message ImageHeader {
   // refuses an upgrade to an image of another platform than its own, and the installer
   // translates the config for the platform the image names.
   string platform = 11;
+  // The git revision and tag the image was built from, as its directory's metadata.json names
+  // them; empty when the build named none. The node records them to show beside the image's root
+  // hash; nothing compares them.
+  string revision = 12;
+  string tag = 13;
 }
 
 // The size and SHA-256 of a part of an image.
@@ -356,28 +365,37 @@ message StatusResponse {
 }
 
 message BootStatus {
-  // The version of the image the node runs, and the file of the UKI it booted.
-  string version = 1;
+  // The image the node runs, and the file of the UKI it booted.
+  BootImage running = 1;
   string entry = 2;
   // Whether the boot was found healthy and marked good, or not counted by the boot loader at
   // all; false while the boot loader counts the boot's tries.
   bool blessed = 3;
-  // The version an upgrade installed to boot next; empty without one.
-  string staged = 4;
-  // The version whose boots used up their tries without being found healthy, from which the node
-  // fell back; empty without one. The failed UKI stays until the next upgrade.
-  string failed = 5;
-  // The last lines chalkd and the health check logged during the failed version's last boot, as
+  // The image an upgrade installed to boot next; unset without one.
+  BootImage staged = 4;
+  // The image whose boots used up their tries without being found healthy, from which the node
+  // fell back; unset without one. The failed UKI stays until the next upgrade.
+  BootImage failed = 5;
+  // The last lines chalkd and the health check logged during the failed image's last boot, as
   // the check recorded them on VAR; empty without that record.
   repeated string journal = 6;
-  // Why the boot could not be read; empty when it was.
+  // Why the boot could not be read; empty when it was. The running image's root hash is set when
+  // the kernel command line could be read.
   string error = 7;
-  // The verity root hash of the store the node runs, as its kernel command line's usrhash= names
-  // it, which tells builds of one version apart; empty when it could not be read.
-  bytes root_hash = 8;
-  // The verity root hash of the store of the staged UKI, which tells builds of the staged
-  // version apart; empty without a staged UKI or when its store could not be read.
-  bytes staged_root_hash = 9;
+}
+
+// An image a UKI on the ESP boots.
+message BootImage {
+  // The verity root hash of the image's store, from the usrhash= of the UKI or, for the running
+  // image, of the kernel command line; it identifies the image.
+  bytes root_hash = 1;
+  // The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi;
+  // systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown.
+  uint32 generation = 2;
+  // The git revision and tag the image was built from, as the node's record of the images it
+  // installed names them; empty when it does not know them.
+  string revision = 3;
+  string tag = 4;
 }
 
 message TrustStatus {
@@ -604,6 +622,9 @@ message UpgradeResponse {
   string entry = 2;
   // The node reboots into the image.
   bool rebooting = 3;
+  // The image boots next already, from entry, as an earlier upgrade without a reboot left it;
+  // nothing changed.
+  bool already_staged = 4;
 }
 
 message DrainNodeRequest {

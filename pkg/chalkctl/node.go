@@ -397,7 +397,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
 			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
 		}}
-		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, path, img.info.ID(), img.info.Version(), img.size())
+		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, path, img.info.ID(), img.name(), img.size())
 	}
 
 	stream := conn.Install(ctx)
@@ -779,24 +779,25 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 }
 
 // bootLines are the status lines of the node's boot: the image it runs, an upgrade it boots next,
-// and one it fell back from, with the lines that version logged last.
+// and one it fell back from, with the lines that image logged last.
 func bootLines(b *nodev1.BootStatus) []string {
 	if b == nil {
 		return nil
 	}
+	running := bootImageName(b.Running)
 	if b.Error != "" {
-		return []string{fmt.Sprintf("image %s; its boot is unknown: %s", b.Version, b.Error)}
+		return []string{fmt.Sprintf("image %s; its boot is unknown: %s", running, b.Error)}
 	}
-	line := fmt.Sprintf("image %s, booted from %s", b.Version, b.Entry)
+	line := fmt.Sprintf("image %s, booted from %s", running, b.Entry)
 	if !b.Blessed {
 		line += ", not found healthy yet"
 	}
 	lines := []string{line}
-	if b.Staged != "" {
-		lines = append(lines, fmt.Sprintf("upgrade to %s installed; it boots next", b.Staged))
+	if b.Staged != nil {
+		lines = append(lines, fmt.Sprintf("upgrade to %s installed; it boots next", bootImageName(b.Staged)))
 	}
-	if b.Failed != "" {
-		lines = append(lines, fmt.Sprintf("upgrade to %s failed: rolled back to %s", b.Failed, b.Version))
+	if b.Failed != nil {
+		lines = append(lines, fmt.Sprintf("upgrade to %s failed: rolled back to %s", bootImageName(b.Failed), running))
 		for _, l := range b.Journal {
 			lines = append(lines, "  "+l)
 		}

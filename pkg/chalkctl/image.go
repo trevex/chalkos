@@ -123,7 +123,6 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 		return nil, errors.New("the image names no variant or platform in its os-release; it is no node image")
 	}
 	h := &nodev1.ImageHeader{
-		Version:      img.info.Version(),
 		ImageId:      img.info.ID(),
 		Platform:     img.info.Platform(),
 		RootHash:     img.store.RootHash,

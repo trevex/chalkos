@@ -101,7 +101,7 @@ func TestInstallFromParts(t *testing.T) {
 	}
 	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{
-		Version: "0.1.0", ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
+		ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1}, Revision: "a1b2c3d4e5f6", Tag: "v1.5.0",
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
 		Uki: &nodev1.ImagePart{Size: 5, Sha256: []byte{6}}, BootLoader: &nodev1.ImagePart{Size: 7, Sha256: []byte{8}},
 	}
@@ -116,13 +116,18 @@ func TestInstallFromParts(t *testing.T) {
 		t.Errorf("streamed %d bytes, want the %d of the image's parts", len(streamed), len(parts))
 	}
 	want := upgrade.Header{
-		ImageID: "chalkos", Version: "0.1.0", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
+		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
 		StoreSize: 1, StoreSHA256: []byte{2}, VeritySize: 3, VeritySHA256: []byte{4},
 		UKISize: 5, UKISHA256: []byte{6}, BootLoaderSize: 7, BootLoaderSHA256: []byte{8},
+		Provenance: upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"},
 	}
 	if got.Target != (storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}) || !reflect.DeepEqual(got.Image, want) ||
 		!got.WipeDisk || got.SystemDefinitions["50-state.conf"] == "" {
 		t.Errorf("parts request = %+v", got)
+	}
+	// The node starts its record of installed images with the image.
+	if want := "{\n  \"01\": {\n    \"revision\": \"a1b2c3d4e5f6\",\n    \"tag\": \"v1.5.0\"\n  }\n}\n"; string(got.Images) != want {
+		t.Errorf("the record of installed images:\n%s\nwant\n%s", got.Images, want)
 	}
 }
 
@@ -135,7 +140,7 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 		return nil
 	}
 	in := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
-	in.Image = &nodev1.ImageHeader{Version: "0.1.0"}
+	in.Image = &nodev1.ImageHeader{ImageId: "chalkos"}
 	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("in place with an image: %v", err)
 	}
@@ -254,7 +259,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	h.Config = workerConfig
 	h.Schemas = fixtureSchemas(t)
 	h.KubernetesImage = []byte(testImage)
-	h.Image = &nodev1.ImageHeader{Version: "0.1.0", ImageId: "chalkos", Platform: "metal", Architecture: "x86-64"}
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64"}
 
 	if err := sendInstall(t, s, h, nil); err != nil {
 		t.Fatal(err)
@@ -276,7 +281,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 	fromInstaller := func(h *nodev1.InstallHeader) {
 		h.Config, h.Schemas = workerConfig, schemas
 		h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
-		h.Image = &nodev1.ImageHeader{Version: "0.1.0", Platform: "metal"}
+		h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal"}
 	}
 	for name, c := range map[string]struct {
 		installer bool
@@ -292,7 +297,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 		"from the installer without schemas": {true, func(h *nodev1.InstallHeader) {
 			h.Config = baseConfig
 			h.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}
-			h.Image = &nodev1.ImageHeader{Version: "0.1.0", Platform: "metal"}
+			h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal"}
 		}, "schemas"},
 		"without config": {false, func(h *nodev1.InstallHeader) { h.Config = "" }, "the header delivers no config"},
 		"from the installer with an invalid image.json": {true, func(h *nodev1.InstallHeader) {

@@ -13,6 +13,7 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev1.InstallRequest]) (*connect.Response[nodev1.InstallResponse], error) {
@@ -79,7 +80,11 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		d := target.Disk
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}
 		img := imageHeader(h.Image)
-		log.Printf("installing %q %q with the root hash %x onto %s", img.ImageID, img.Version, img.RootHash, ref)
+		log.Printf("installing %q with the root hash %x onto %s", img.ImageID, img.RootHash, ref)
+		// The node starts its record of installed images with this one.
+		if req.Images, err = (upgrade.Images{}).Record(img.RootHash, img.Provenance, nil).Encode(); err != nil {
+			return nil, failed(connect.CodeInternal, "the record of the image's provenance: %v", err)
+		}
 		err = s.FromParts(ctx, install.PartsRequest{
 			Request: req,
 			Target:  ref,

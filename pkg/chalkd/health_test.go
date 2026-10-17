@@ -168,33 +168,36 @@ func espWith(t *testing.T, booted string, files ...string) *Health {
 	t.Helper()
 	root := t.TempDir()
 	h := &Health{ESP: filepath.Join(root, "esp"), EFIVars: filepath.Join(root, "efivars"), Cmdline: filepath.Join(root, "cmdline"),
-		Version: "0.2.0", Record: filepath.Join(root, "var", "failed-boot")}
+		Record: filepath.Join(root, "var", "failed-boot")}
 	writeESP(t, h.ESP, h.EFIVars, h.Cmdline, booted, files...)
 	return h
 }
 
-// writeESP writes UKIs to an ESP, each booting the store whose root hash is its version's, and
-// marks the named one as the entry the node booted from that store.
+// writeESP writes UKIs to an ESP, chalkos_<generation>.efi with or without a tries counter, each
+// booting the store whose root hash repeats the generation's digit in ASCII, 0x32 for generation
+// 2, and marks the named one as the entry the node booted from that store.
 func writeESP(t *testing.T, esp, efivars, cmdline, booted string, files ...string) {
 	t.Helper()
-	hash := func(version string) string { return strings.Repeat(fmt.Sprintf("%02x", version[2]), 32) }
+	hash := func(file string) string {
+		return strings.Repeat(fmt.Sprintf("%02x", strings.TrimPrefix(file, "chalkos_")[0]), 32)
+	}
 	for _, f := range files {
-		version := strings.TrimPrefix(f, "chalkos_")[:5]
-		write(t, filepath.Join(esp, "EFI", "Linux", f), string(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": version}, "usrhash="+hash(version))))
+		write(t, filepath.Join(esp, "EFI", "Linux", f), string(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": ""}, "usrhash="+hash(f))))
 	}
 	value := []byte{7, 0, 0, 0}
 	for _, u := range utf16.Encode([]rune(booted + "\x00")) {
 		value = binary.LittleEndian.AppendUint16(value, u)
 	}
 	write(t, filepath.Join(efivars, "LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"), string(value))
-	write(t, cmdline, "init=/x usrhash="+hash(strings.TrimPrefix(booted, "chalkos_")[:5])+"\n")
+	write(t, cmdline, "init=/x usrhash="+hash(booted)+"\n")
 }
 
 // journalRule is the journal of a boot that never became healthy.
 var journalRule = rule{prefix: "journalctl --boot --no-pager --output=short-iso --lines=30 --unit=chalkd.service --unit=chalkos-health.service", out: "chalkd[1]: not healthy yet: chalkd does not serve\n"}
 
-// failedHeader is the first line of a record of a failed boot of 0.2.0, as writeESP builds it.
-var failedHeader = "version 0.2.0 usrhash=" + strings.Repeat("32", 32)
+// failedHeader is the first line of a record of a failed boot of generation 2, as writeESP builds
+// it.
+var failedHeader = "usrhash=" + strings.Repeat("32", 32) + " generation=2"
 
 // TestHealthWaitReboots waits for a boot that never becomes healthy, records its journal on VAR, and
 // reboots only while the boot loader counts it and has somewhere to go.
@@ -205,10 +208,10 @@ func TestHealthWaitReboots(t *testing.T) {
 		h      *Health
 		reboot bool
 	}{
-		{"a try with tries left", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), true},
-		{"the last try", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+0-3.efi"), true},
-		{"a blessed boot", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0+0-3.efi", "chalkos_0.2.0.efi"), false},
-		{"nothing to fall back to", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.2.0+0-4.efi"), false},
+		{"a try with tries left", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi"), true},
+		{"the last try", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+0-3.efi"), true},
+		{"a blessed boot", espWith(t, "chalkos_2.efi", "chalkos_1+0-3.efi", "chalkos_2.efi"), false},
+		{"nothing to fall back to", espWith(t, "chalkos_2.efi", "chalkos_2+0-4.efi"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &fakeRunner{rules: []rule{journalRule}}
@@ -238,13 +241,13 @@ func TestHealthWaitHealthy(t *testing.T) {
 		h      *Health
 		forget bool
 	}{
-		{"a counted boot", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), true},
-		{"a blessed boot", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.3.0+0-3.efi", "chalkos_0.2.0.efi"), false},
+		{"a counted boot", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi"), true},
+		{"a blessed boot", espWith(t, "chalkos_2.efi", "chalkos_3+0-3.efi", "chalkos_2.efi"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &fakeRunner{}
 			tc.h.Run, tc.h.Chalkd, tc.h.NodeCertificate = r, addr, cert
-			write(t, tc.h.Record, "version 0.3.0 usrhash="+strings.Repeat("33", 32)+"\nchalkd[1]: not healthy yet\n")
+			write(t, tc.h.Record, "usrhash="+strings.Repeat("33", 32)+" generation=3\nchalkd[1]: not healthy yet\n")
 			if err := tc.h.Wait(context.Background(), time.Minute); err != nil || len(r.calls) == 0 || strings.Contains(strings.Join(r.calls, "\n"), "reboot") {
 				t.Errorf("a healthy boot: %v, %q", err, r.calls)
 			}
@@ -273,7 +276,7 @@ func TestHealthWaitEndsAtTheDeadline(t *testing.T) {
 			t.Cleanup(func() { conn.Close() })
 		}
 	}()
-	h := espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi")
+	h := espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi")
 	r := &fakeRunner{rules: []rule{journalRule}}
 	_, cert := chalkdServing(t)
 	h.Run, h.Chalkd, h.NodeCertificate = r, ln.Addr().String(), cert
@@ -305,12 +308,12 @@ func TestHealthStopped(t *testing.T) {
 		result, status string
 		reboot         bool
 	}{
-		{"a check that decided", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "exit-code", "1", false},
-		{"a healthy boot", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "success", "0", false},
-		{"a check timed out", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "timeout", "1", true},
-		{"a check killed", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+0-3.efi"), "signal", "KILL", true},
-		{"a check that crashed", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.1.0.efi", "chalkos_0.2.0+2-1.efi"), "exit-code", "2", true},
-		{"a check timed out with nothing to fall back to", espWith(t, "chalkos_0.2.0.efi", "chalkos_0.2.0+0-4.efi"), "timeout", "1", false},
+		{"a check that decided", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi"), "exit-code", "1", false},
+		{"a healthy boot", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi"), "success", "0", false},
+		{"a check timed out", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi"), "timeout", "1", true},
+		{"a check killed", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+0-3.efi"), "signal", "KILL", true},
+		{"a check that crashed", espWith(t, "chalkos_2.efi", "chalkos_1.efi", "chalkos_2+2-1.efi"), "exit-code", "2", true},
+		{"a check timed out with nothing to fall back to", espWith(t, "chalkos_2.efi", "chalkos_2+0-4.efi"), "timeout", "1", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &fakeRunner{rules: []rule{journalRule}}

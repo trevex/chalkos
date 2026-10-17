@@ -45,9 +45,8 @@ type Health struct {
 	NodeCertificate string
 	// ESP, EFIVars and Cmdline are what the reboot after an unhealthy boot reads.
 	ESP, EFIVars, Cmdline string
-	// Version is the running image's, and Record the file the journal of a boot that was not found
-	// healthy is kept in.
-	Version, Record string
+	// Record is the file the journal of a boot that was not found healthy is kept in.
+	Record string
 	// IgnoreUnits are units whose failure leaves a node without Kubernetes healthy.
 	IgnoreUnits []string
 	// Interval is the time between two checks while waiting; zero is five seconds.
@@ -66,7 +65,6 @@ func DefaultHealth(k *Kubernetes) *Health {
 		ESP:             paths.ESP,
 		EFIVars:         paths.EFIVars,
 		Cmdline:         paths.Cmdline,
-		Version:         readOSRelease(paths.OSRelease)["IMAGE_VERSION"],
 		Record:          paths.FailedBoot,
 	}
 }
@@ -313,7 +311,7 @@ func (h *Health) booted() (upgrade.Entry, []byte, error) {
 	}
 	entries, err := upgrade.Entries(h.ESP)
 	if err != nil {
-		return upgrade.Entry{}, nil, err
+		return upgrade.Entry{}, running, err
 	}
 	booted, err := upgrade.Booted(entries, h.EFIVars, running)
 	return booted, running, err
@@ -351,14 +349,12 @@ const recordLines = 30
 // record keeps the journal lines chalkd and the health check wrote during this boot, with the
 // failure, in a file on VAR, where the image the node falls back to finds them. The journal does
 // not serve: the read-only image makes a new machine ID at every boot, under which the journal of
-// a boot is kept apart from the others. The record names the version and the store of the boot.
+// a boot is kept apart from the others. The record names the store of the boot and the generation
+// of its entry, which stays the same while the boot loader counts it.
 func (h *Health) record(ctx context.Context, failure error) {
-	var running []byte
-	if cmdline, err := os.ReadFile(h.Cmdline); err == nil {
-		running, _ = uki.UsrHash(string(cmdline))
-	}
+	booted, running, _ := h.booted()
 	out, err := h.Run.Run(ctx, "journalctl", "--boot", "--no-pager", "--output=short-iso", "--lines="+strconv.Itoa(recordLines), "--unit=chalkd.service", "--unit=chalkos-health.service")
-	text := recordHeader(h.Version, running) + "\n" + string(out)
+	text := recordHeader(running, booted.Generation) + "\n" + string(out)
 	if err != nil {
 		text += fmt.Sprintf("the journal could not be read: %v\n", err)
 	}

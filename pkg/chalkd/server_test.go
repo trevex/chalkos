@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -183,7 +184,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	}
 	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
-	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
+	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
 	writeSchemas(t, s.Loader.Schemas)
 	return s, r
 }
@@ -479,19 +480,26 @@ func TestInfo(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
 	s.Fingerprint = "ab01"
-	write(t, s.Paths.OSRelease, "ID=nixos\nIMAGE_ID=\"chalkos-installer\"\nIMAGE_VERSION=\"0.1.0\"\nCHALKOS_VARIANT=\"worker\"\n")
+	write(t, s.Paths.OSRelease, "ID=nixos\nIMAGE_ID=\"chalkos-installer\"\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=\"worker\"\n")
 	write(t, filepath.Join(s.Paths.EFIVars, "SecureBoot-"+globalVariable), "\x06\x00\x00\x00\x01")
 	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+globalVariable), "\x06\x00\x00\x00\x00")
 	write(t, filepath.Join(s.Paths.TPM, "tpm0", "dev"), "10:224\n")
+	write(t, s.Paths.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
 
 	resp, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := resp.Msg
-	if got.Mode != maintenance || got.ImageId != "chalkos-installer" || got.Version != "0.1.0" || !got.Installer ||
+	if got.Mode != maintenance || got.ImageId != "chalkos-installer" || !got.Installer || !bytes.Equal(got.RootHash, bytes.Repeat([]byte{0xab}, 32)) || got.Revision != "" || got.Tag != "" ||
 		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Variant != "worker" || got.Platform != "" {
 		t.Errorf("info = %+v", got)
+	}
+
+	// The record of installed images names the running image's provenance.
+	write(t, filepath.Join(s.Paths.StateDir, "chalkd", "images.json"), `{"`+strings.Repeat("ab", 32)+`": {"revision": "a1b2c3d4e5f6", "tag": "v1.5.0"}}`)
+	if resp, err = s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); err != nil || resp.Msg.Revision != "a1b2c3d4e5f6" || resp.Msg.Tag != "v1.5.0" {
+		t.Errorf("info with the record = %+v, %v", resp.Msg, err)
 	}
 }
 

@@ -32,10 +32,10 @@ type Entry struct {
 	// TriesLeft and TriesDone are the counter in the name; -1 without one, which marks an entry
 	// whose boot was found good, or which was never counted.
 	TriesLeft, TriesDone int
-	// ImageID and Version are the image ID and version its os-release names, and RootHash the root
-	// hash of the store it boots; all are empty when the UKI cannot be read.
-	ImageID, Version string
-	RootHash         []byte
+	// ImageID is the image ID its os-release names, and RootHash the root hash of the store it
+	// boots; both are empty when the UKI cannot be read.
+	ImageID  string
+	RootHash []byte
 	// Generation numbers the image's entries, as the name <image ID>_<generation>.efi gives it; 0
 	// for a name that gives none or a UKI that cannot be read.
 	Generation int
@@ -169,7 +169,7 @@ func listEntries(esp string, open func(string) (*os.File, error)) ([]Entry, erro
 		case errors.Is(err, fs.ErrNotExist):
 			return nil, fmt.Errorf("read %s on the ESP: %w", name, err)
 		case err == nil:
-			e.ImageID, e.Version = img.ID(), img.Version()
+			e.ImageID = img.ID()
 			e.RootHash, _ = img.UsrHash()
 			e.Generation = entryGeneration(e.ID, e.ImageID)
 		}
