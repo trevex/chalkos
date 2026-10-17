@@ -3,6 +3,7 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,9 @@ import (
 // chalkos_1.efi, upgrades it to the upgrade image, which boots from slot B as chalkos_2.efi with
 // STATE and VAR unlocked by the TPM and is found healthy, and then to the unhealthy image,
 // installed as chalkos_3, which never becomes healthy: after its one try the node falls back to
-// chalkos_2.efi and says so. Each image is named by its root hash.
+// chalkos_2.efi and says so. Each image is named by its root hash. The upgrade carries config only
+// the upgrade image accepts, a Farewell, and the upgrade to the unhealthy image the test image's
+// config again: the fallback boots the upgrade image with its own config, Farewell included.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, next, bad := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -38,12 +41,13 @@ func TestUpgrade(t *testing.T) {
 	t.Logf("installed after %v", time.Since(start).Round(time.Second))
 
 	keys := os.Getenv("CHALKLAB_SB_KEYS")
-	upgrade := func(env string) (string, error) {
-		return chalkctl(t, nil, "base", "upgrade", "--image", os.Getenv(env), "--nodes", "chalklab", "--address", "chalklab="+n.addr,
+	upgrade := func(inventory, env string) (string, error) {
+		return chalkctl(t, nil, inventory, "upgrade", "--image", os.Getenv(env), "--nodes", "chalklab", "--address", "chalklab="+n.addr,
 			"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt"), "--timeout", "10m")
 	}
 	upgraded := time.Now()
-	if out, err := upgrade("CHALKLAB_UPGRADE_IMAGE_DIR"); err != nil || !strings.Contains(out, "chalklab: installed "+next[:12]+", which boots next as chalkos_2+3.efi") ||
+	if out, err := upgrade("upgrade", "CHALKLAB_UPGRADE_IMAGE_DIR"); err != nil || !strings.Contains(out, `chalklab: config 2 added, 1 removed (Image "test-metal"), 1 changed`+"\n") ||
+		!strings.Contains(out, "chalklab: installed "+next[:12]+", which boots next as chalkos_2+3.efi") ||
 		!strings.Contains(out, "upgraded 1 node to "+next[:12]) {
 		t.Fatalf("upgrade to %s: %v", next[:12], err)
 	}
@@ -60,13 +64,14 @@ func TestUpgrade(t *testing.T) {
 		"state_boots":     "3",
 		"var_boots":       "2",
 	})
-	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || !strings.Contains(out, "image "+next[:12]+", booted from chalkos_2.efi\n") {
+	if out, err := chalkctl(t, n, "upgrade", "status", "chalklab"); err != nil || !strings.Contains(out, "image "+next[:12]+", booted from chalkos_2.efi\n") || !inventoryConfig.MatchString(out) {
 		t.Errorf("status after the upgrade: %v", err)
 	}
 
 	failed := time.Now()
-	out, err := upgrade("CHALKLAB_UNHEALTHY_IMAGE_DIR")
-	if err == nil || !strings.Contains(out, "chalklab: installed "+bad[:12]+", which boots next as chalkos_3+1.efi") ||
+	out, err := upgrade("base", "CHALKLAB_UNHEALTHY_IMAGE_DIR")
+	if err == nil || !strings.Contains(out, `chalklab: config 1 added, 2 removed (Image "test-upgrade-metal", Farewell "bye"), 1 changed`+"\n") ||
+		!strings.Contains(out, "chalklab: installed "+bad[:12]+", which boots next as chalkos_3+1.efi") ||
 		!strings.Contains(out, "chalklab: upgrade to "+bad[:12]+" failed: rolled back to "+next[:12]) || !strings.Contains(out, "units failed: chalktest-broken.service") {
 		t.Fatalf("upgrade to %s: %v", bad[:12], err)
 	}
@@ -74,10 +79,14 @@ func TestUpgrade(t *testing.T) {
 	// One boot of the unhealthy image from slot A, then the upgrade image again.
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + bad[:16], "store_partition": "3", "state_boots": "4"})
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + next[:16], "store_partition": "5", "state_boots": "5", "var_boots": "4"})
-	out, err = chalkctl(t, n, "base", "status", "chalklab")
+	// The upgrade image runs the config the upgrade gave it, not the one sent with the unhealthy image.
+	out, err = chalkctl(t, n, "upgrade", "status", "chalklab")
 	if err != nil || !strings.Contains(out, "image "+next[:12]+", booted from chalkos_2.efi\n") || !strings.Contains(out, "upgrade to "+bad[:12]+" failed: rolled back to "+next[:12]) ||
-		!strings.Contains(out, "units failed: chalktest-broken.service") {
+		!strings.Contains(out, "units failed: chalktest-broken.service") || !inventoryConfig.MatchString(out) {
 		t.Errorf("status after the rollback: %v", err)
 	}
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
 }
+
+// inventoryConfig is status's line of a node that runs the config of the inventory it was given.
+var inventoryConfig = regexp.MustCompile(`(?m)^config [0-9a-f]{64} \(the inventory's\)$`)

@@ -42,10 +42,23 @@ in
 images
 // {
   inherit secrets;
-  # The images e2e-upgrade installs after the test image: the upgrade, and one that never becomes
-  # healthy, as a unit fails at every boot the way a broken service would, and falls back after
-  # one try of 30 seconds.
-  upgradeImage = variantAs "test" "upgrade" { };
+  # The images e2e-upgrade installs after the test image: the upgrade, which declares a Farewell
+  # kind the test image does not, so its config is config the test image refuses, and one that
+  # never becomes healthy, as a unit fails at every boot the way a broken service would, and falls
+  # back after one try of 30 seconds.
+  upgradeImage = variantAs "test" "upgrade" (
+    { lib, ... }:
+    {
+      chalkos.kinds.Farewell = {
+        group = "greeting.example.org";
+        version = "v1alpha1";
+        spec.message = lib.mkOption {
+          type = lib.types.nonEmptyStr;
+          description = "What the node says on leaving.";
+        };
+      };
+    }
+  );
   unhealthyImage = variantAs "test" "unhealthy" {
     chalkos.upgrade = {
       bootTries = 1;

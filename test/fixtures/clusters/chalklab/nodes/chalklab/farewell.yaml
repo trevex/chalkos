@@ -1,0 +1,6 @@
+# A document of the kind only the upgrade image declares.
+apiVersion: greeting.example.org/v1alpha1
+kind: Farewell
+metadata: {name: bye}
+spec:
+  message: goodbye

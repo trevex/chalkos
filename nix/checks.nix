@@ -72,6 +72,7 @@ let
     let
       images = {
         CHALKLAB_IMAGE_DIR = chalkPkgs.test-image;
+        CHALKLAB_UPGRADE_IMAGE_DIR = chalkPkgs.test-upgrade-image;
         CHALKLAB_STORAGE_IMAGE_DIR = chalkPkgs.test-storage-image;
         CHALKLAB_K8S_IMAGE_DIR = chalkPkgs.test-kubernetes-image;
         CHALKLAB_K8S_HA_IMAGE_DIR = chalkPkgs.test-kubernetes-ha-image;

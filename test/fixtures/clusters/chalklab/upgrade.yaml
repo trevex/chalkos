@@ -1,0 +1,13 @@
+# The main cluster with chalklab on the upgrade image of the e2e upgrade test, whose Farewell kind
+# the test image does not have: config only the upgrade image accepts.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  files: [cluster/*.yaml]
+  groups:
+    test-upgrade: {files: [groups/test-upgrade.yaml]}
+  nodes:
+    chalklab:
+      groups: [test-upgrade]
+      files: [nodes/chalklab/node-upgrade.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting.yaml, nodes/chalklab/farewell.yaml]
