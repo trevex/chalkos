@@ -136,8 +136,10 @@ func TestStorageRules(t *testing.T) {
 		recorded   map[string]any
 		fallback   map[string]any
 		unplugged  bool
-		want       []string
-		takes      Takes
+		// presentError is why the node cannot tell whether the disk is plugged in.
+		presentError string
+		want         []string
+		takes        Takes
 	}{
 		{name: "unchanged", volumes: map[string]string{"data": dataVolume}},
 		{name: "a new volume", volumes: map[string]string{"data": dataVolume, "extra": `{"disk": null, "size": "1G", "format": "ext4", "mountPoint": null, "encryption": {"mode": null}}`}},
@@ -148,6 +150,8 @@ func TestStorageRules(t *testing.T) {
 		{name: "the same size written differently on an unplugged disk", volumes: map[string]string{"data": edit(dataVolume, "size", `"1024M"`)}, unplugged: true},
 		{name: "a larger size on an unplugged disk", volumes: map[string]string{"data": edit(dataVolume, "size", `"2G"`)}, unplugged: true, takes: Refuse,
 			want: []string{`Volume data: its disk data (serial "d") is not plugged in; plug it in`}},
+		{name: "a larger size on a disk the node cannot tell is plugged in", volumes: map[string]string{"data": edit(dataVolume, "size", `"2G"`)}, unplugged: true, presentError: "two disks have its identity", takes: Refuse,
+			want: []string{"Volume data: the node cannot find its disk data: two disks have its identity; try again once it can"}},
 		// A recorded size bytes() cannot read, as an older image could write one, is recreated.
 		{name: "a recorded size past the limit", volumes: map[string]string{"data": dataVolume}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"size": "99999999P"})}), takes: Reset,
 			want: []string{"Volume data: size 1G instead of 99999999P; reset it with chalkctl storage reset n1 data"}},
@@ -203,7 +207,7 @@ func TestStorageRules(t *testing.T) {
 			}
 			facts := storageFacts{
 				"recorded": recorded,
-				"disks":    map[string]any{"data": map[string]any{"ref": `serial "d"`, "pinned": true, "identity": `serial "d"`, "changed": false, "found": "", "same": false, "error": "", "errorKind": "", "present": !tc.unplugged, "presentError": ""}},
+				"disks":    map[string]any{"data": map[string]any{"ref": `serial "d"`, "pinned": true, "identity": `serial "d"`, "changed": false, "found": "", "same": false, "error": "", "errorKind": "", "present": !tc.unplugged, "presentError": tc.presentError}},
 				"fallback": fallback,
 			}
 			old := storageConfig(t, systemDisk, map[string]string{"data": dataVolume})

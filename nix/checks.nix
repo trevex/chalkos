@@ -1061,12 +1061,20 @@ in
       }
       ''
         chalkos-rules check ${homelab.chalkosSchemas} ${homelab.chalkosFacts} | grep -q rackSurvey
-        for image in "${broken.chalkosSchemas} ${broken.chalkosFacts}" "${undeclared.chalkosSchemas} ${undeclared.chalkosFacts}"; do
-          if chalkos-rules check $image; then
-            echo "error: chalkos-rules accepted a rule that does not compile or reads an undeclared fact" >&2
+        # refused <schemas> <facts> <message>: the check fails, and says why.
+        refused() {
+          if chalkos-rules check "$1" "$2" 2>err; then
+            echo "error: chalkos-rules accepted $1" >&2
             exit 1
           fi
-        done
+          if ! grep -qF "$3" err; then
+            echo "error: chalkos-rules refused $1 without $3:" >&2
+            cat err >&2
+            exit 1
+          fi
+        }
+        refused ${broken.chalkosSchemas} ${broken.chalkosFacts} 'Demo: rule "documents ==": ERROR: <input>:1:13: Syntax error'
+        refused ${undeclared.chalkosSchemas} ${undeclared.chalkosFacts} 'Demo: rule "facts.missing == null" reads facts.missing, which the image does not declare'
         touch $out
       '';
 
