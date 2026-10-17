@@ -10,10 +10,14 @@ import (
 )
 
 // Sandbox runs command facts as transient units of systemd, so a fact reads the node without
-// changing it: the whole file system, STATE among it, is read-only, the unit has no network and
-// cannot gain privileges. Devices stay accessible, since resolving disks and testing a
-// passphrase read them; cryptsetup's lock directory stays writable, where it exists, for the
-// passphrase test. RuntimeMaxSec stops the unit itself when chalkd stops waiting.
+// changing it: the whole file system, STATE among it where the node has one, is read-only, home
+// directories are hidden and /tmp is the unit's own; the kernel's tunables, modules and control
+// groups cannot be changed; the unit has no network, opens no socket but Unix and kernel crypto
+// ones, and cannot gain privileges. Devices stay accessible and the unit keeps root's
+// capabilities, since resolving disks and testing a passphrase read block devices and cryptsetup
+// may set up a temporary device-mapper mapping for a cipher the kernel crypto API lacks;
+// cryptsetup's lock directory stays writable, where it exists, for the passphrase test.
+// RuntimeMaxSec stops the unit itself when chalkd stops waiting.
 type Sandbox struct{}
 
 func (Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
@@ -24,9 +28,15 @@ func sandboxed(argv []string) []string {
 	return append([]string{
 		"systemd-run", "--pipe", "--wait", "--quiet", "--collect",
 		"--property=ProtectSystem=strict",
-		"--property=ReadOnlyPaths=/state",
+		"--property=ReadOnlyPaths=-/state",
 		"--property=ReadWritePaths=-/run/cryptsetup",
+		"--property=ProtectHome=yes",
+		"--property=PrivateTmp=yes",
+		"--property=ProtectKernelTunables=yes",
+		"--property=ProtectKernelModules=yes",
+		"--property=ProtectControlGroups=yes",
 		"--property=PrivateNetwork=yes",
+		"--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
 		"--property=NoNewPrivileges=yes",
 		fmt.Sprintf("--property=RuntimeMaxSec=%d", int(Timeout.Seconds())),
 		"--",

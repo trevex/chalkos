@@ -102,10 +102,20 @@ It is one of:
 chalkd loads a fact when a rule first reads it and keeps it for the rest of the delivery, which it
 handles under the config lock. A rule that does not reach a fact, as one whose first operand of
 `||` holds, loads none. chalkd runs a command through `systemd-run --pipe --wait` as a transient
-unit with `ProtectSystem=strict`, so the whole file system, STATE among it, is read-only, with
-`PrivateNetwork=yes` and `NoNewPrivileges=yes`. Devices stay accessible, since resolving disks and
-testing a passphrase read them. A command that exits with an error, takes longer than 30 seconds
-or prints more than 1 MiB, or whose output is no JSON, refuses the delivery:
+unit with these properties:
+
+| Property | Effect |
+| --- | --- |
+| `ProtectSystem=strict`, `ReadOnlyPaths=-/state` | The whole file system, STATE among it, is read-only. Only `/run/cryptsetup`, cryptsetup's lock directory, stays writable, for the passphrase test. |
+| `ProtectHome=yes`, `PrivateTmp=yes` | Home directories are hidden, and `/tmp` is the unit's own. |
+| `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectControlGroups=yes` | Kernel tunables and control groups are read-only, and the unit loads no kernel module. |
+| `PrivateNetwork=yes`, `RestrictAddressFamilies=AF_UNIX AF_ALG` | No network, and no socket but Unix sockets and the kernel crypto API's. |
+| `NoNewPrivileges=yes` | No program gains privileges it does not have. |
+
+The unit runs as root with root's capabilities, and devices stay accessible: resolving disks and
+testing a passphrase read block devices, and cryptsetup may set up a temporary device-mapper
+mapping for a cipher the kernel crypto API lacks. A command that exits with an error, takes longer
+than 30 seconds or prints more than 1 MiB, or whose output is no JSON, refuses the delivery:
 
 ```text
 cannot check: fact disks: /nix/store/...-chalkos-storage-facts did not finish within 30s

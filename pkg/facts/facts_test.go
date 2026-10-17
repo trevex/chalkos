@@ -185,8 +185,11 @@ func TestCommandFailures(t *testing.T) {
 // The sandbox runs the command as a transient unit that cannot change the node.
 func TestSandboxed(t *testing.T) {
 	want := []string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect",
-		"--property=ProtectSystem=strict", "--property=ReadOnlyPaths=/state",
-		"--property=ReadWritePaths=-/run/cryptsetup", "--property=PrivateNetwork=yes",
+		"--property=ProtectSystem=strict", "--property=ReadOnlyPaths=-/state",
+		"--property=ReadWritePaths=-/run/cryptsetup", "--property=ProtectHome=yes",
+		"--property=PrivateTmp=yes", "--property=ProtectKernelTunables=yes",
+		"--property=ProtectKernelModules=yes", "--property=ProtectControlGroups=yes",
+		"--property=PrivateNetwork=yes", "--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
 		"--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=30", "--",
 		"/nix/store/x/bin/chalkos-storage", "facts", "disks"}
 	if got := sandboxed([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); !slices.Equal(got, want) {
