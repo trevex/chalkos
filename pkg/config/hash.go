@@ -41,15 +41,6 @@ func canonical(docs []Document) ([]byte, error) {
 	return json.Marshal(objects)
 }
 
-// Hashed is the document's object with a Secret's values replaced by their hashes, as Hash
-// hashes them: what rules see of a Secret.
-func (d Document) Hashed() map[string]any {
-	if d.IsSecret() {
-		return hideSecretData(d.Object)
-	}
-	return d.Object
-}
-
 // hideSecretData returns a Secret's object with each value of spec.data replaced by its SHA-256.
 func hideSecretData(obj map[string]any) map[string]any {
 	out := maps.Clone(obj)

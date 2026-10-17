@@ -77,3 +77,46 @@ func TestCheckRules(t *testing.T) {
 		})
 	}
 }
+
+// addonSchema is an Addon whose objects are fixed by a rule that compares them with the node's.
+const addonSchema = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "apiVersion": {"const": "kubernetes.chalkos.dev/v1alpha1"},
+    "kind": {"const": "Addon"},
+    "metadata": {"type": "object", "properties": {"name": {"type": "string"}}},
+    "spec": {"type": "object", "properties": {
+      "objects": {"type": "array", "items": {"type": "object"}, "x-chalkos-rules": [
+        {"rule": "self == oldSelf", "message": "the objects are fixed", "takes": "refuse"}
+      ]}
+    }}
+  },
+  "x-chalkos-kind": {"group": "kubernetes.chalkos.dev", "version": "v1alpha1", "kind": "Addon", "multiple": true}
+}`
+
+func addon(token string) string {
+	return "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: a}\nspec:\n  objects:\n" +
+		"  - {apiVersion: v1, kind: Secret, metadata: {name: k}, stringData: {token: " + token + "}}\n"
+}
+
+// A rule comparing an Addon with the node's, whose Kubernetes Secrets the node serves hashed,
+// sees both alike, as the node does.
+func TestCheckRulesHashesAddonSecrets(t *testing.T) {
+	c, err := newContract(map[string][]byte{"kubernetes.chalkos.dev_v1alpha1_Addon.json": []byte(addonSchema)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		node, want string
+	}{
+		{"test", ""},
+		{"other", `the config is refused: Addon "a" spec.objects: the objects are fixed`},
+	} {
+		served := config.Redact(greetings(t, addon(tc.node)))
+		err := checkRules(c, greetings(t, addon("test")), served, "n1")
+		if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
+			t.Errorf("node token %s: err = %v, want %q", tc.node, err, tc.want)
+		}
+	}
+}

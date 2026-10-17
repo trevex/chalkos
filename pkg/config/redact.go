@@ -15,15 +15,22 @@ import (
 func Redact(docs []Document) []Document {
 	out := make([]Document, len(docs))
 	for i, d := range docs {
-		switch {
-		case d.IsSecret():
-			d.Object = hideSecretData(d.Object)
-		case d.StaysStored():
-			d.Object = hideAddonSecrets(d.Object)
-		}
+		d.Object = d.Hashed()
 		out[i] = d
 	}
 	return out
+}
+
+// Hashed is the document's object with its secret values replaced by their hashes, as Redact
+// replaces them: what rules and command facts see of a document. The document is left as it is.
+func (d Document) Hashed() map[string]any {
+	switch {
+	case d.IsSecret():
+		return hideSecretData(d.Object)
+	case d.StaysStored():
+		return hideAddonSecrets(d.Object)
+	}
+	return d.Object
 }
 
 // hideAddonSecrets returns an Addon's object with the values of its Kubernetes Secrets hidden.

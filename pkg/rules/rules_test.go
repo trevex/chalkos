@@ -3,6 +3,7 @@ package rules
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -329,5 +330,70 @@ func TestOldHashed(t *testing.T) {
 		if err != nil || len(failures) != tc.want {
 			t.Errorf("%s: failures = %v, %v; want %d", name, messages(failures), err, tc.want)
 		}
+	}
+}
+
+// addonSchema is the built-in Addon kind, its objects fixed by a rule, and a rule that sees the
+// value of the Kubernetes Secrets it applies.
+func addonSchema() map[string]any {
+	objects := withRules(map[string]any{"type": "array"}, rule("self == oldSelf", "the objects are fixed"))
+	sch := kindSchema("Addon", true, object(map[string]any{"objects": objects}), []any{
+		rule(`documents.all(n, documents[n].spec.objects[0].data.token != "plain")`, "documents show the token"),
+		rule(`config["kubernetes.chalkos.dev/v1alpha1"].Addon.a.spec.objects[0].data.token != "plain"`, "config shows the token"),
+	})
+	sch["properties"].(map[string]any)["apiVersion"] = map[string]any{"const": config.KubernetesAPI}
+	xk := sch["x-chalkos-kind"].(map[string]any)
+	xk["group"], xk["version"] = "kubernetes.chalkos.dev", "v1alpha1"
+	return sch
+}
+
+func addon(token string) config.Document {
+	return config.FromObject(map[string]any{"apiVersion": config.KubernetesAPI, "kind": "Addon",
+		"metadata": map[string]any{"name": "a"}, "spec": map[string]any{"objects": []any{
+			map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]any{"name": "k"},
+				"data": map[string]any{"token": token}},
+		}}})
+}
+
+// Rules see the Kubernetes Secrets an Addon applies with their values hashed, as a node serves
+// them, so a rule comparing an Addon with the running one agrees whether the running config is
+// the node's own or the one it serves.
+func TestAddonSecretsHashed(t *testing.T) {
+	data, err := json.Marshal(addonSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := schema.LoadFiles(map[string][]byte{"kubernetes.chalkos.dev_v1alpha1_Addon.json": data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := Compile(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := []config.Document{addon("plain")}
+	if failures, err := set.Evaluate(Input{Documents: next}); err != nil || len(failures) != 0 {
+		t.Errorf("without a running config: failures = %v, %v", messages(failures), err)
+	}
+	for _, token := range []string{"plain", "other"} {
+		stored := []config.Document{addon(token)}
+		own, err := set.Evaluate(Input{Documents: next, Old: stored})
+		if err != nil {
+			t.Fatal(err)
+		}
+		served, err := set.Evaluate(Input{Documents: next, Old: config.Redact(stored), OldHashed: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 0
+		if token != "plain" {
+			want = 1
+		}
+		if len(own) != want || !slices.Equal(messages(own), messages(served)) {
+			t.Errorf("running token %s: the node's own config fails %v, the served one %v; want %d", token, messages(own), messages(served), want)
+		}
+	}
+	if got := ConfigOf(next)[config.KubernetesAPI].(map[string]any)["Addon"].(map[string]any)["a"]; strings.Contains(fmt.Sprint(got), "plain") {
+		t.Errorf("ConfigOf shows the token: %v", got)
 	}
 }

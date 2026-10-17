@@ -25,7 +25,7 @@ type Input struct {
 	Documents []config.Document
 	// Old is the running image's config; nil without one, as at an install, where field rules
 	// that read oldSelf do not run and the rules of kinds see no oldDocuments. OldHashed tells
-	// that its Secret values are hashed already, as a node serves its config.
+	// that its secret values are hashed already, as a node serves its config.
 	Old       []config.Document
 	OldHashed bool
 	// Facts is nil where no facts can be read, as in chalkctl: rules that read facts do not run.
@@ -177,7 +177,7 @@ type docView struct {
 	object map[string]any
 }
 
-// objectsOf is docs as rules see them, with Secret values replaced by their hashes unless
+// objectsOf is docs as rules see them, with secret values replaced by their hashes unless
 // hashed is false, as for documents whose values are hashed already.
 func objectsOf(docs []config.Document, hash bool) []docView {
 	out := make([]docView, len(docs))
@@ -191,7 +191,7 @@ func objectsOf(docs []config.Document, hash bool) []docView {
 }
 
 // ConfigOf is a config set as rules see it and command facts read it: objects by apiVersion, kind
-// and name, Secret values replaced by their hashes.
+// and name, secret values replaced by their hashes as config.Redact replaces them.
 func ConfigOf(docs []config.Document) map[string]any {
 	return configMap(objectsOf(docs, true))
 }

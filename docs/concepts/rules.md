@@ -78,10 +78,10 @@ baseline also when the config is for another image, as with an upgrade.
 | `facts.<name>` | every | The fact of that name. |
 
 A field's rule that reads `oldSelf` runs only where the running config holds the field; one that
-does not runs wherever the delivered config holds it. In `config` and `oldConfig`, each value of a
-`Secret` is its SHA-256, the hash the config's version and
-[GetConfig](../reference/api.md#method-getconfig) use, so a rule can tell whether a secret changed
-without reading it. Maps iterate in the order of their keys, so a list built from the names of
+does not runs wherever the delivered config holds it. In every variable, and in what a command
+fact reads, each value of a `Secret` and each `data` and `stringData` value of a Kubernetes Secret
+an `Addon` applies is its SHA-256, as [GetConfig](../reference/api.md#method-getconfig) shows them,
+so a rule can tell whether a secret changed without reading it. Maps iterate in the order of their keys, so a list built from the names of
 `documents` is sorted.
 
 ## What is a fact?

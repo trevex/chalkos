@@ -158,7 +158,7 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 
 // checkRules refuses next, a node's config with its defaults, when the change rules of the image
 // the contract describes refuse it, as the node would: those that read no facts, which the node
-// alone has. old is the node's config as it serves it, its Secret values hashed, or nil where
+// alone has. old is the node's config as it serves it, its secret values hashed, or nil where
 // chalkctl does not have it, as for validate; without it, the rules of fields that read oldSelf
 // do not run and the rules of kinds see no oldDocuments. Documents of old that the image does not
 // accept compare with nothing.
