@@ -149,12 +149,13 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	// The new entry boots before the image's entries an upgrade keeps, the booted one and those
 	// booting the running store, only while their names order them by the generation they give, as
 	// chalkd names them: from 1 on, without leading zeros. Other names are placed by hand or
-	// corrupted.
+	// corrupted, and systemd-boot may sort one above the new entry, such as chalkos_5a.efi or
+	// chalkos_7+2147483648.efi, whose ID is the whole name.
 	for _, e := range all {
 		if retired(e, h.ImageID, booted, running) || !ofImage(e, h.ImageID) && e.ID != booted.ID {
 			continue
 		}
-		if _, named, _ := nameGeneration(e.ID, h.ImageID); (named || e.ID == booted.ID) && entryGeneration(e.ID, h.ImageID) == 0 {
+		if entryGeneration(e.ID, h.ImageID) == 0 {
 			return Result{}, fmt.Errorf("%s on the ESP is not named %s_<generation>.efi with a generation from 1 on and no leading zeros, so the next generation might not boot before it; reinstall the node, or rename the entry", e.File, h.ImageID)
 		}
 	}

@@ -153,9 +153,10 @@ upgrade reads the highest any name `chalkos_<n>.efi` on the ESP gives and writes
 name alone counts, as systemd-boot orders the entry by it: a file that is no UKI, or a UKI whose
 os-release names another image or none, counts too. A name that gives no generation, such as
 `chalkos.efi`, counts for none. An upgrade refuses to run while the entry the node booted, or
-another it keeps, has a generation of 0 or with leading zeros, such as `chalkos_01.efi`, or while
-a name gives a generation too large for one to follow it in 64 bits. chalkd never writes such
-names.
+another it keeps, gives no generation, a generation of 0 or one with leading zeros, such as
+`chalkos.efi`, `chalkos_5a.efi`, `chalkos_7+2147483648.efi`, whose counter systemd-boot ignores,
+or `chalkos_01.efi`, or while a name gives a generation too large for one to follow it in 64
+bits. chalkd never writes such names.
 
 An upgrade first removes every UKI of the image's ID, and every file that is no UKI whose name
 gives a generation, except the one the node booted and those booting the running store, then

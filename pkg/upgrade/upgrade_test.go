@@ -461,6 +461,17 @@ func TestRefusesBeforeChanging(t *testing.T) {
 			os.Rename(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), filepath.Join(l.esp, linuxDir, "chalkos_01.efi"))
 			l.setVariable("LoaderEntrySelected", "chalkos_01.efi")
 		}, "chalkos_01.efi on the ESP is not named chalkos_<generation>.efi"},
+		// A copy of the running UKI the upgrade keeps, which systemd-boot may sort above the new
+		// entry.
+		{"a kept copy with a leading zero", nil, func(l *lab) {
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_01.efi"), old.uki, 0o644)
+		}, "chalkos_01.efi on the ESP is not named chalkos_<generation>.efi"},
+		{"a kept copy with a counter past an int32", nil, func(l *lab) {
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_7+2147483648.efi"), old.uki, 0o644)
+		}, "chalkos_7+2147483648.efi on the ESP is not named chalkos_<generation>.efi"},
+		{"a kept copy named by no generation", nil, func(l *lab) {
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_5.1.efi"), old.uki, 0o644)
+		}, "chalkos_5.1.efi on the ESP is not named chalkos_<generation>.efi"},
 		{"a generation past a uint64's range", nil, func(l *lab) {
 			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_18446744073709551616.efi"), []byte("not a UKI"), 0o644)
 		}, "too large"},
