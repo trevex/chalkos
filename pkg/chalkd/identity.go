@@ -214,7 +214,8 @@ func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d 
 // name. It returns "" when the running image's config names the volume, which the config then
 // removes. The slot of the image writing, the one being written, is not named as another: its
 // config is the one being replaced, which may be what added the volume, as with an earlier
-// apply-config --staged. The caller holds s.mu.
+// apply-config --staged, so the remedy names an earlier config of the image too. The caller holds
+// s.mu.
 func (s *Server) addedElsewhere(name string, writing []byte) string {
 	_, running, found, err := s.runningSlot()
 	if err != nil || !found {
@@ -223,7 +224,11 @@ func (s *Server) addedElsewhere(name string, writing []byte) string {
 	if d, err := parseIdentity(string(running.Identity)); err != nil || hasVolume(d.section, name) {
 		return ""
 	}
-	msg := "the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too"
+	added := "the config of another image added it"
+	if writing != nil {
+		added = "an earlier config of this image or another added it"
+	}
+	msg := added + ", with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too"
 	reinstall := fmt.Sprintf("; only a reinstall of %s removes it", s.nodeName())
 	runningHash, err := s.runningHash()
 	if err != nil {

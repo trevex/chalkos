@@ -576,7 +576,8 @@ func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := stage(baseConfig, "")
-	if err == nil || !strings.Contains(err.Error(), "name it in this config too; only a reinstall of "+s.nodeName()+" removes it") || strings.Contains(err.Error(), "cdcdcdcdcdcd") {
+	want := "an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of " + s.nodeName() + " removes it"
+	if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "cdcdcdcdcdcd") {
 		t.Errorf("err = %v, want the volume named without the staged image as another", err)
 	}
 	if got, _ := staged(t, s); got.Version != hashOf(t, extraConfig("ext4")) {
