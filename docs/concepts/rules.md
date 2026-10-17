@@ -128,16 +128,17 @@ whose first operand of `||` holds, loads none. chalkd runs a command through
 
 | Property | Effect |
 | --- | --- |
-| `ProtectSystem=strict`, `ReadOnlyPaths=-/state` | The whole file system, STATE among it, is read-only. Only `/run/cryptsetup`, cryptsetup's lock directory, stays writable, for the passphrase test. |
-| `ProtectHome=yes`, `PrivateTmp=yes` | Home directories are hidden, and `/tmp` is the unit's own. |
-| `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectControlGroups=yes` | Kernel tunables and control groups are read-only, and the unit loads no kernel module. |
+| `ProtectSystem=strict`, `ReadOnlyPaths=-/state` | The file system, STATE among it, is read-only except `/dev`, the unit's own `/tmp` and `/var/tmp`, and `/run/cryptsetup`, cryptsetup's lock directory, which stays writable for the passphrase test. |
+| `ProtectHome=yes`, `PrivateTmp=yes` | Home directories are hidden, and `/tmp` and `/var/tmp` are the unit's own, empty and writable. |
+| `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectControlGroups=yes` | Kernel tunables and control groups are read-only. The unit cannot load a kernel module itself, since `ProtectKernelModules` drops `CAP_SYS_MODULE`, but the kernel still loads one on request, as for a socket family or a cipher the unit uses. |
 | `PrivateNetwork=yes`, `RestrictAddressFamilies=AF_UNIX AF_ALG` | No network, and no socket but Unix sockets and the kernel crypto API's. |
 | `NoNewPrivileges=yes` | No program gains privileges it does not have. |
 
-The unit runs as root with root's capabilities, and devices stay accessible: resolving disks and
-testing a passphrase read block devices, and cryptsetup may set up a temporary device-mapper
-mapping for a cipher the kernel crypto API lacks. A command that exits with an error, takes longer
-than 30 seconds or prints more than 1 MiB, or whose output is no JSON, refuses the delivery:
+The unit runs as root with root's capabilities but `CAP_SYS_MODULE`, and devices stay accessible:
+resolving disks and testing a passphrase read block devices, and cryptsetup may set up a temporary
+device-mapper mapping for a cipher the kernel crypto API lacks. A command that exits with an error,
+takes longer than 30 seconds or prints more than 1 MiB, or whose output is no JSON, refuses the
+delivery:
 
 ```text
 cannot check: fact disks: /nix/store/...-chalkos-storage-facts did not finish within 30s
