@@ -167,6 +167,8 @@ type upgradeFake struct {
 	// config and stagedConfig are the config the node runs and the one kept for the staged image, as
 	// delivered.
 	config, stagedConfig string
+	// secret is the fallback secret the last upgrade sent.
+	secret string
 	// stagedStoreSize and stagedVeritySize are the bytes of store and hash tree staged.
 	stagedStoreSize, stagedVeritySize uint64
 	// rebooting makes the node unreachable, as while it reboots.
@@ -202,6 +204,8 @@ type upgradeLab struct {
 	notReady map[string]bool
 	// stopping holds the nodes whose drains time out while their pods stop.
 	stopping map[string]bool
+	// configDenied makes the nodes refuse GetConfig, as for a role below admin.
+	configDenied bool
 }
 
 func (l *upgradeLab) record(format string, args ...any) {
@@ -282,6 +286,11 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no header"))
 	}
 	header := stream.Msg().GetHeader()
+	if header.GetConfig() != "" || header.GetFallbackSecret() != "" {
+		if err := needsAdmin(ctx, "Upgrade with config or a fallback secret"); err != nil {
+			return nil, err
+		}
+	}
 	h := header.GetImage()
 	var received uint64
 	for stream.Receive() {
@@ -310,7 +319,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	name, _ := testImageNames.Load(string(h.RootHash))
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
-	n.stagedConfig = header.GetConfig()
+	n.stagedConfig, n.secret = header.GetConfig(), header.GetFallbackSecret()
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	if n.alreadyStaged {
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyStaged: true, Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)}), nil
@@ -407,6 +416,29 @@ func (n *upgradeFake) UncordonNode(_ context.Context, req *connect.Request[nodev
 	return connect.NewResponse(&nodev1.UncordonNodeResponse{Uncordoned: true}), nil
 }
 
+
+// fakeRoleKey holds the role a fake node's client certificate grants.
+type fakeRoleKey struct{}
+
+// withRoles serves h with the role of each request's client certificate in its context, as chalkd
+// derives it from the certificate's Organization.
+func withRoles(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		role := ""
+		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+			role, _ = pki.Role(r.TLS.PeerCertificates[0])
+		}
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), fakeRoleKey{}, role)))
+	})
+}
+
+// needsAdmin refuses what only an admin may do, as chalkd does.
+func needsAdmin(ctx context.Context, what string) error {
+	if role, _ := ctx.Value(fakeRoleKey{}).(string); !pki.Allows(role, pki.RoleAdmin) {
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the admin role", what))
+	}
+	return nil
+}
 func newUpgradeLab(t *testing.T, controlPlanes int) *upgradeLab {
 	t.Helper()
 	return newUpgradeLabOf(t, controlPlanes, []string{"w1", "w2", "w3"}, "cp", "w")
@@ -443,7 +475,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 			t.Fatal(err)
 		}
 		_, h := nodev1connect.NewNodeServiceHandler(n)
-		l.addrs[name] = serveTLS(t, http.Handler(h), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
+		l.addrs[name] = serveTLS(t, withRoles(h), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
 		l.nodes[name] = n
 	}
 	l.useInventory(t, nil)
@@ -800,16 +832,92 @@ func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithAnOperatorClientFile runs an upgrade without the secrets file.
+// TestUpgradeWithAnOperatorClientFile runs an upgrade without the secrets file. The operator role
+// cannot deliver config, so chalkctl sends none, says so once, and each node carries its own over;
+// --diff, which compares the config an upgrade delivers, needs the admin role.
 func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
 	l.ta.withoutSecrets(t)
-	if err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--config", config); err != nil {
+	l.nodes["n1"].config = "{}"
+	if err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--config", config, "--no-reboot"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if v := l.images()["n1"]; v != "0.2.0" {
-		t.Errorf("n1 runs %s", v)
+	if n := l.nodes["n1"]; n.staged != "0.2.0" || n.stagedConfig != "" {
+		t.Errorf("n1 stages %q with the config %q, want 0.2.0 without config", n.staged, n.stagedConfig)
+	}
+	out := l.ta.stdout.String()
+	if line := "config not delivered: the operator role cannot deliver config; each node carries its own over\n"; strings.Count(out, line) != 1 || strings.Contains(out, "n1: config") {
+		t.Errorf("output:\n%s\nwant %q once and no node's config line", out, line)
+	}
+	err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--config", config, "--diff")
+	if err == nil || !strings.Contains(err.Error(), "upgrade --diff compares the config an upgrade delivers, which needs the admin role") {
+		t.Errorf("upgrade --diff as an operator = %v", err)
+	}
+}
+
+// TestUpgradeWithholdsConfigANodeDoesNotShow sends no config to nodes that refuse to show theirs
+// to the credentials, as they would refuse config with the upgrade, and says so once; --diff stops
+// there instead.
+func TestUpgradeWithholdsConfigANodeDoesNotShow(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.configDenied = true
+	img := testUpgradeImage(t, "w", "0.2.0")
+	err := l.upgrade(img, "--diff")
+	if err == nil || !strings.Contains(err.Error(), "needs the admin role") {
+		t.Errorf("upgrade --diff = %v, want the admin role named", err)
+	}
+	if err := l.upgrade(img, "--nodes", "w1,w2", "--no-reboot", "--max-unavailable", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	for _, name := range []string{"w1", "w2"} {
+		if n := l.nodes[name]; n.staged != "0.2.0" || n.stagedConfig != "" {
+			t.Errorf("%s stages %q with the config %q, want 0.2.0 without config", name, n.staged, n.stagedConfig)
+		}
+	}
+	if out := l.ta.stdout.String(); strings.Count(out, "config not delivered: the admin role cannot deliver config") != 1 {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+// TestUpgradeAsksForPasswordsBeforeDraining asks for the fallback password of each node whose
+// config adds an encrypted volume one node after the other, before any node is drained, also
+// when a batch upgrades nodes at once, and sends each node its own.
+func TestUpgradeAsksForPasswordsBeforeDraining(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	volume := "apiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\nspec: {size: 1G, format: ext4, mountPoint: /srv/data, encryption: {mode: tpm2}}\n"
+	for _, name := range []string{"w1", "w2"} {
+		path := filepath.Join(l.ta.dir, "nodes", name+".yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, path, strings.Replace(string(data), n1SystemDisk, passwordSystemDisk, 1)+"---\n"+volume)
+	}
+	l.ta.answers = []string{"one", "one", "two", "two"}
+	read := l.ta.readSecret
+	l.ta.readSecret = func(ctx context.Context, prompt string) ([]byte, error) {
+		l.record("prompt %s", prompt)
+		return read(ctx, prompt)
+	}
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2", "--max-unavailable", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	events := l.takeEvents()
+	want := []string{
+		"prompt Password that unlocks w1 when its TPM fails: ", "prompt Repeat the password: ",
+		"prompt Password that unlocks w2 when its TPM fails: ", "prompt Repeat the password: ",
+	}
+	if len(events) < len(want) || !slices.Equal(events[:len(want)], want) {
+		t.Errorf("events %q, want the prompts first, w1's then w2's", events)
+	}
+	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" {
+		t.Errorf("the nodes run %v", v)
+	}
+	for name, password := range map[string]string{"w1": "one", "w2": "two"} {
+		if got := l.nodes[name].secret; got != password {
+			t.Errorf("%s was sent the fallback secret %q, want %q", name, got, password)
+		}
 	}
 }
 
@@ -1235,7 +1343,10 @@ func TestUpgradeSendsAStagedImageAgainForItsConfig(t *testing.T) {
 
 // ApplyConfig keeps the config for the running image, or with staged for the staged one, which
 // a node without one refuses.
-func (n *upgradeFake) ApplyConfig(_ context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	if err := needsAdmin(ctx, "ApplyConfig"); err != nil {
+		return nil, err
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	switch {
@@ -1320,7 +1431,16 @@ func TestApplyConfigStaged(t *testing.T) {
 
 // GetConfig returns the config the node runs, or with staged the staged image's, redacted as
 // chalkd redacts it.
-func (n *upgradeFake) GetConfig(_ context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
+func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
+	n.lab.mu.Lock()
+	denied := n.lab.configDenied
+	n.lab.mu.Unlock()
+	if denied {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("GetConfig needs the admin role"))
+	}
+	if err := needsAdmin(ctx, "GetConfig"); err != nil {
+		return nil, err
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	text := n.config

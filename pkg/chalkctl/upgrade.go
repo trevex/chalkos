@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -19,6 +20,8 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // upgradeRun upgrades nodes to the image given, or to the images their Image documents name.
@@ -44,6 +47,14 @@ type upgradeRun struct {
 	maxUnavailable                          int
 	timeout, drainTimeout, poll, quorumWait time.Duration
 	out                                     sync.Mutex
+	// role is the role of the credentials. Below admin, a node accepts no config with an upgrade,
+	// so withheld is set and the run sends none: each node carries its own over. A node that
+	// refuses to show its config sets it too, should the role chalkctl read be wrong.
+	role         string
+	withheld     atomic.Bool
+	withholdOnce sync.Once
+	// diffing is set for upgrade --diff, which changes nothing.
+	diffing bool
 }
 
 // upgradeNode is a node to upgrade, by its part in Kubernetes: its kind, and whether it is part
@@ -55,6 +66,9 @@ type upgradeNode struct {
 	inCluster  bool
 	image      *diskImage
 	delivery   *delivery
+	// secret is the fallback secret the delivery's new encrypted volumes are enrolled with, asked
+	// for before any node is drained; empty when it adds none.
+	secret string
 }
 
 // upgradeGroup is the nodes that get one image: the image given, or the one an Image directory
@@ -104,14 +118,14 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs.BoolVar(&f.deleteEmptyDir, "delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
 	registerPasswordFile(fs, &f.passwordFile)
-	fs.BoolVar(&f.diff, "diff", false, "print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing")
+	fs.BoolVar(&f.diff, "diff", false, "print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing; needs the admin role")
 	return cmd
 }
 
 func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	cf, sf, addresses := f.cluster, f.secrets, f.addresses
 	if len(pos) != 0 || f.maxUnavailable < 1 {
-		return errors.New("usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data]")
+		return errors.New("usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data] [--password-file FILE] [--diff]")
 	}
 	c, err := loadCluster(cf)
 	if err != nil {
@@ -171,21 +185,68 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 			r.nodes[name].image = g.image
 		}
 	}
-	if err := r.checkConfig(); err != nil {
-		return err
+	r.role = creds.role()
+	switch {
+	case !pki.Allows(r.role, pki.RoleAdmin) && f.diff:
+		return r.diffNeedsAdmin()
+	case !pki.Allows(r.role, pki.RoleAdmin):
+		r.withhold()
+	default:
+		if err := r.checkConfig(); err != nil {
+			return err
+		}
 	}
 	if f.diff {
 		return r.diff(ctx)
 	}
+	if err := r.fallbacks(ctx); err != nil {
+		return err
+	}
 	return r.run(ctx)
+}
+
+// withhold keeps the run's config and fallback secrets from the nodes, which accept them with an
+// upgrade only from an admin, and says so once.
+func (r *upgradeRun) withhold() {
+	r.withholdOnce.Do(func() {
+		r.withheld.Store(true)
+		r.say("config not delivered: the %s role cannot deliver config; each node carries its own over", r.roleName())
+	})
+}
+
+// roleName names the credentials' role in messages.
+func (r *upgradeRun) roleName() string {
+	if r.role == "" {
+		return "client file's"
+	}
+	return r.role
+}
+
+// diffNeedsAdmin is the error of upgrade --diff with credentials below admin, which may neither
+// read a node's config nor deliver one.
+func (r *upgradeRun) diffNeedsAdmin() error {
+	return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node carries its own over", r.roleName())
+}
+
+// deliveryOf is the config the node gets with its image; nil when the run withholds config or has
+// no inventory.
+func (r *upgradeRun) deliveryOf(n *upgradeNode) *delivery {
+	if r.withheld.Load() {
+		return nil
+	}
+	return n.delivery
 }
 
 // diff prints, for every node to upgrade, what its config changes against the running image's,
 // which the new image's slot replaces.
 func (r *upgradeRun) diff(ctx context.Context) error {
+	r.diffing = true
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
 		if err := r.call(name, func(conn *client.Conn) error {
 			changes, err := r.configChanges(ctx, conn, r.nodes[name])
+			if connect.CodeOf(err) == connect.CodePermissionDenied {
+				return r.diffNeedsAdmin()
+			}
 			if err != nil || changes == nil {
 				return err
 			}
@@ -201,13 +262,22 @@ func (r *upgradeRun) diff(ctx context.Context) error {
 }
 
 // configChanges prints the line of what the node's config changes against the running image's and
-// returns the changes; none on a partial cluster, which has no inventory to compare with.
+// returns the changes; none on a partial cluster, which has no inventory to compare with, or when
+// the run withholds config. A node that refuses to show its config to the credentials' role would
+// refuse config with the upgrade too, so the run withholds it from then on; --diff stops instead.
 func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *upgradeNode) (configDiff, error) {
+	if r.withheld.Load() {
+		return nil, nil
+	}
 	if n.delivery == nil {
 		r.say("%s: no inventory to compare the config with; the node carries its own over", n.name)
 		return nil, nil
 	}
 	nodeDocs, err := slotConfig(ctx, conn, false)
+	if connect.CodeOf(err) == connect.CodePermissionDenied && !r.diffing {
+		r.withhold()
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -522,7 +592,7 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		}
 		// A staged image is sent again only for its config: the node finds the image staged and
 		// replaces the config it keeps for it.
-		if bytes.Equal(boot.GetStaged().GetRootHash(), target) && (n.delivery == nil || st.GetStagedConfigVersion() == n.delivery.Version) {
+		if r.stagedAlready(n, st) {
 			r.say("%s: %s is installed already", n.name, image)
 		} else if err := r.install(ctx, n); err != nil {
 			return err
@@ -549,6 +619,57 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	return r.uncordon(ctx, n)
 }
 
+// stagedAlready reports whether the node has the image staged with the config the run gives it,
+// so the image is not sent again: a staged image is sent again only for its config.
+func (r *upgradeRun) stagedAlready(n *upgradeNode, st *nodev1.StatusResponse) bool {
+	d := r.deliveryOf(n)
+	return bytes.Equal(st.GetBoot().GetStaged().GetRootHash(), n.image.header.RootHash) && (d == nil || st.GetStagedConfigVersion() == d.Version)
+}
+
+// installs reports whether the run sends the node its image, as node decides from its status.
+func (r *upgradeRun) installs(n *upgradeNode, st *nodev1.StatusResponse) bool {
+	boot, target := st.GetBoot(), n.image.header.RootHash
+	switch {
+	case boot.GetError() != "", bytes.Equal(boot.GetRunning().GetRootHash(), target):
+		return false
+	case bytes.Equal(boot.GetFailed().GetRootHash(), target) && !r.retryFailed:
+		return false
+	}
+	return !r.stagedAlready(n, st)
+}
+
+// fallbacks asks for the fallback secret of each node whose config adds an encrypted volume and
+// that gets its image, one node after the other and before any node is drained: passwords typed on
+// the terminal are asked for in turn, not by the nodes of a batch at once, and no drained node
+// waits for them.
+func (r *upgradeRun) fallbacks(ctx context.Context) error {
+	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
+		n := r.nodes[name]
+		d := r.deliveryOf(n)
+		if d == nil || d.identity.Storage.Fallback == storage.FallbackNone {
+			continue
+		}
+		if err := r.call(name, func(conn *client.Conn) error {
+			st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				return err
+			}
+			if !r.installs(n, st.Msg) {
+				return nil
+			}
+			t, err := targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, r.creds)
+			if err != nil {
+				return err
+			}
+			n.secret, err = r.a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, r.passwordFile, "")
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // install sends the node its image with its config, and the fallback secret when the config adds
 // an encrypted volume, which the node creates before the image boots.
 func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
@@ -565,16 +686,8 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 			return err
 		}
 		header := &nodev1.UpgradeHeader{Image: img.header}
-		if d := n.delivery; d != nil {
-			t, err := targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, r.creds)
-			if err != nil {
-				return err
-			}
-			secret, err := r.a.fallbackFor(ctx, conn, t, d.identity.Storage, r.passwordFile, "")
-			if err != nil {
-				return err
-			}
-			header.Config, header.FallbackSecret = d.Text, secret
+		if d := r.deliveryOf(n); d != nil {
+			header.Config, header.FallbackSecret = d.Text, n.secret
 		}
 		stream := conn.Upgrade(ctx)
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {

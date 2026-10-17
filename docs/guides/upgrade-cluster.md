@@ -22,7 +22,8 @@ PodDisruptionBudgets.
 
 - A running cluster, its inventory and the flake that builds its images, with the
   [secrets file](../reference/glossary.md#secrets-file)
-  or an operator [client file](../reference/glossary.md#client-file).
+  or an admin [client file](../reference/glossary.md#client-file). An operator client file upgrades
+  too, but delivers no config: each node carries its own over.
 - The [Secure Boot](../reference/glossary.md#secure-boot) [db](../reference/glossary.md#db-and-dbx)
   key and certificate, when your nodes enforce Secure Boot and you sign the images during the
   upgrade. [Sign images for Secure Boot](secure-boot-signing.md) explains the keys.
@@ -121,6 +122,7 @@ authenticates with the secrets file `--secrets` names, or with a client file:
 ```console
 $ chalkctl upgrade --secrets=secrets.age --sign-key=<db-key> --sign-cert=<db-cert>
 upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3, w1, w2, w3
+cp1: config unchanged
 cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
 cp1: cordoned, evicted 2 pods, kept 6
@@ -129,6 +131,7 @@ cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
 cp1: uncordoned
 ...
 w1: cordoned, evicted 14 pods, kept 3
+w1: config unchanged
 w1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 w1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
 w1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
@@ -210,8 +213,15 @@ the upgrade.
 The config counts against the node's storage and Kubernetes settings as `apply-config` does. A
 destructive storage change stops the node's upgrade, and a new volume is created before the image
 boots. A new encrypted volume needs the fallback secret: the recovery key, which chalkctl derives
-from the secrets file, or with a password fallback the password in the file `--password-file`
-names.
+from the secrets file and no client file gives, or with a password fallback the password in the
+file `--password-file` names. Without `--password-file`, chalkctl asks for each node's password on
+the terminal, one node after the other, before it drains the first node.
+
+Delivering config with the upgrade needs the admin role: the secrets file, or an admin client
+file. With an operator client file the upgrade still runs, but chalkctl sends no config, prints
+`config not delivered: the operator role cannot deliver config; each node carries its own over`,
+and each node checks the config of the image it runs against the new image and keeps it for that
+image. `--diff` needs the admin role too.
 
 ### Change the config of a staged image
 

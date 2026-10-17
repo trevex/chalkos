@@ -31,6 +31,23 @@ type credentials struct {
 	osCA string
 }
 
+// role is the role the credentials grant: admin for the secrets file, else the role the client
+// file's certificate names, empty for one that names none.
+func (c *credentials) role() string {
+	if c.secrets != nil {
+		return pki.RoleAdmin
+	}
+	if c.config == nil {
+		return ""
+	}
+	leaf, err := c.config.Leaf()
+	if err != nil {
+		return ""
+	}
+	role, _ := pki.Role(leaf)
+	return role
+}
+
 // roots holds the OS CAs.
 func (c *credentials) roots() (*x509.CertPool, error) {
 	pool, err := pki.BundlePool(c.osCA)

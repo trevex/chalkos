@@ -95,7 +95,14 @@ image it runs. The new image boots with its own config, and a
 [fallback](boot-and-rollback.md) boots the image before with the config it ran, so config only the
 new image accepts, such as a document of a kind its extension declares, goes with the upgrade.
 Without an inventory, chalkctl sends no config, and the node carries the documents of the running
-image's slot over, checked against the new image the same way.
+image's slot over, checked against the new image the same way. Delivering config with an upgrade
+needs the [admin](../reference/glossary.md#admin) role, as `apply-config` does. With an operator
+client file chalkctl sends no config either, and prints one line for the run instead of a line per
+node:
+
+```text
+config not delivered: the operator role cannot deliver config; each node carries its own over
+```
 
 The config counts against the node's machine state as `apply-config` does: a destructive storage
 change or a change of a fixed Kubernetes setting is refused, and a new volume is created before
@@ -115,9 +122,9 @@ config without writing the image again.
 ## What does the node check?
 
 The [Upgrade](../reference/api.md#method-upgrade) method needs the
-[operator](../reference/glossary.md#operator) role and
-[normal mode](../reference/glossary.md#normal-mode). Before it changes anything,
-chalkd checks the image's header against the running image's os-release and the disk:
+[operator](../reference/glossary.md#operator) role, the admin role when it carries config or a
+fallback secret, and [normal mode](../reference/glossary.md#normal-mode). Before it changes
+anything, chalkd checks the image's header against the running image's os-release and the disk:
 
 - the image ID and platform equal the running image's, and the architecture the machine's;
 - the root hash is not the running one; if it is, the node answers that it runs the image already
@@ -328,8 +335,9 @@ is installed like any other image.
 | `--timeout` | How long a drain and a node's return may take, 30 minutes by default |
 
 The command needs an operator [client file](../reference/glossary.md#client-file) or the
-[secrets file](../reference/glossary.md#secrets-file). Without an inventory, `--address NODE=ADDR`
-names the nodes, and `--image` is needed. A [lab](../reference/glossary.md#lab), for example, is
+[secrets file](../reference/glossary.md#secrets-file), and to deliver config an admin client file
+or the secrets file. Without an inventory, `--address NODE=ADDR` names the nodes, and `--image` is
+needed. A [lab](../reference/glossary.md#lab), for example, is
 upgraded with the lab's inventory, its client file and its Secure Boot keys, which
 [`chalklab status`](../reference/cli/chalklab_status.md) names:
 

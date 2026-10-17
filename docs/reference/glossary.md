@@ -304,7 +304,8 @@ clients with a certificate from the [OS CA](#os-ca). See
 ## Operator { #operator }
 
 The [client role](#client-role) that may do what a [reader](#reader) may, and also reboot,
-upgrade, drain and uncordon nodes. See [Security model](../concepts/security.md).
+upgrade, drain and uncordon nodes; an upgrade that delivers config needs an [admin](#admin). See
+[Security model](../concepts/security.md).
 
 ## OS CA { #os-ca }
 

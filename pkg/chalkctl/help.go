@@ -305,13 +305,17 @@ Each node gets its config with the image: the documents of the files the invento
 checked against the image before any node is drained. The node checks them against the image
 again and keeps them for it, so a fallback boots the image before with its own config. Storage
 changes count against the node's storage as with apply-config: a destructive one is refused, a new
-volume is created before the image boots, enrolled with the recovery key from the secrets file or
-the password --password-file holds. Without an inventory a node carries the config of the image it
-runs over, checked against the new image. A node that has the image staged already gets it again
-only when the config kept for it is not the inventory's.
-Before it sends a node the image, chalkctl prints a line of what the node's config changes
-against the config of the image it runs, as apply-config does; --diff prints the whole diff for
-every node and changes nothing.
+volume is created before the image boots, enrolled with the recovery key, which only the secrets
+file gives, or the password --password-file holds. chalkctl asks for each node's password before
+it drains the first node, one node after the other. Without an inventory a node carries the config
+of the image it runs over, checked against the new image. A node that has the image staged already
+gets it again only when the config kept for it is not the inventory's. Before it sends a node the
+image, chalkctl prints a line of what the node's config changes against the config of the image
+it runs, as apply-config does; --diff prints the whole diff for every node and changes nothing.
+
+Delivering config with the upgrade needs the admin role, which the secrets file and an admin
+client file grant. With an operator client file chalkctl sends no config, says so once, and each
+node carries its own over; --diff needs the admin role.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy

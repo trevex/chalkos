@@ -23,13 +23,17 @@ Each node gets its config with the image: the documents of the files the invento
 checked against the image before any node is drained. The node checks them against the image
 again and keeps them for it, so a fallback boots the image before with its own config. Storage
 changes count against the node's storage as with apply-config: a destructive one is refused, a new
-volume is created before the image boots, enrolled with the recovery key from the secrets file or
-the password --password-file holds. Without an inventory a node carries the config of the image it
-runs over, checked against the new image. A node that has the image staged already gets it again
-only when the config kept for it is not the inventory's.
-Before it sends a node the image, chalkctl prints a line of what the node's config changes
-against the config of the image it runs, as apply-config does; --diff prints the whole diff for
-every node and changes nothing.
+volume is created before the image boots, enrolled with the recovery key, which only the secrets
+file gives, or the password --password-file holds. chalkctl asks for each node's password before
+it drains the first node, one node after the other. Without an inventory a node carries the config
+of the image it runs over, checked against the new image. A node that has the image staged already
+gets it again only when the config kept for it is not the inventory's. Before it sends a node the
+image, chalkctl prints a line of what the node's config changes against the config of the image
+it runs, as apply-config does; --diff prints the whole diff for every node and changes nothing.
+
+Delivering config with the upgrade needs the admin role, which the secrets file and an admin
+client file grant. With an operator client file chalkctl sends no config, says so once, and each
+node carries its own over; --diff needs the admin role.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
@@ -66,7 +70,7 @@ chalkctl upgrade [flags]
       --allow-downtime         upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots
       --config string          client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)
       --delete-emptydir-data   evict pods with emptyDir volumes too, deleting their data
-      --diff                   print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing
+      --diff                   print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing; needs the admin role
   -h, --help                   help for upgrade
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --image string           image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default each node's Image's directory)

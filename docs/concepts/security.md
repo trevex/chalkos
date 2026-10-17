@@ -85,6 +85,11 @@ always uses those the image will translate the config with. A refusal gives the 
 reply and in the node's journal, as ApplyConfig's refusals do, and the reason can quote values of
 the config.
 
+An upgrade that carries config or a fallback secret needs the admin role, as ApplyConfig does, so
+an operator cannot change a node's networks, volumes or `Addon` documents through an upgrade.
+An operator's upgrade carries no config, and the node checks the running image's config against
+the new image instead; a refusal of that config can still quote its values to the operator.
+
 ## Why are the disk keys sealed to PCR 7?
 
 [STATE](../reference/glossary.md#state), [VAR](../reference/glossary.md#var) and encrypted
@@ -140,13 +145,23 @@ node CA, from issuing itself an admin certificate.
 | Role | May call |
 | --- | --- |
 | [reader](../reference/glossary.md#reader) | Info, Disks, Contract, Status, Logs, EtcdMembers |
-| [operator](../reference/glossary.md#operator) | What a reader may, and Reboot, Upgrade, DrainNode, UncordonNode |
-| [admin](../reference/glossary.md#admin) | Every method except RenewNodeCertificate: also Install, ApplyConfig, ResetVolume, Bootstrap, EtcdRemoveMember, EtcdLeave, RotationStep |
+| [operator](../reference/glossary.md#operator) | What a reader may, and Reboot, Upgrade without config, DrainNode, UncordonNode |
+| [admin](../reference/glossary.md#admin) | Every method except RenewNodeCertificate: also Install, ApplyConfig, GetConfig, Upgrade with config, ResetVolume, Bootstrap, EtcdRemoveMember, EtcdLeave, RotationStep |
 | `node` | RenewNodeCertificate alone, on control planes |
 
 Each role allows what the roles above it in the table allow; `node` is apart and allows only its
 one method. A call the role does not allow fails with a message naming the role it needs, such as
 `/chalkos.node.v1.NodeService/Reboot needs the operator role`.
+
+An operator may upgrade a node, but an upgrade that carries config or a fallback secret needs the
+admin role, as ApplyConfig does. Config names a node's networks, volumes and `Addon` documents,
+and a control plane applies the objects of `Addon` documents to the cluster, so config an operator
+may not deliver to the running image it may not deliver with the next one either. Without config
+the node carries the running image's over to the new image. `chalkctl upgrade` with an operator
+client file therefore sends no config and prints
+`config not delivered: the operator role cannot deliver config; each node carries its own over`.
+GetConfig, which returns a node's config with its secret values hashed, needs the admin role too:
+names, addresses and the shape of the config tell an attacker as much as the values would.
 
 ## Where do clients get their certificates?
 
@@ -180,8 +195,9 @@ chalkctl config new --name=grafana --role=reader --ttl=720h --out=grafana.json
 Commands that accept both take the client file `--config` names, else the secrets file `--secrets`
 names, else the client file `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`. chalkctl
 refuses a client file whose certificate expired and warns during its last 30 days. Installing nodes,
-delivering [config](../reference/glossary.md#config), issuing kubeconfigs and rotations need the
-secrets file, because they issue certificates or deliver keys.
+`apply-config`, issuing kubeconfigs and rotations need the secrets file, because they issue
+certificates or deliver keys. `chalkctl upgrade` delivers [config](../reference/glossary.md#config)
+with the secrets file or an admin client file, and none with an operator client file.
 
 ## How is a node in maintenance mode trusted?
 
