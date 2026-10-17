@@ -48,7 +48,7 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (configure
 	if err != nil {
 		return configured{}, failed(connect.CodeInternal, "encode the identity: %v", err)
 	}
-	return configured{stored: store.Stored{Documents: set.Documents(), Version: version}, identity: data}, nil
+	return configured{stored: store.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, identity: data}, nil
 }
 
 // translate checks docs as a set against schemas and translates them into the identity of a node

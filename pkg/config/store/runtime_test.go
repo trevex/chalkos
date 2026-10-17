@@ -157,17 +157,19 @@ spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: d
 	}
 
 	stored := filepath.Join(t.TempDir(), "config")
-	if err := Write(stored, Stored{Documents: parse(t, withAddon), Version: "v1"}); err != nil {
+	if err := Write(stored, Stored{Delivered: parse(t, withAddon), Documents: parse(t, withAddon), Version: "v1"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _, err := Read(stored)
 	if err != nil || !slices.ContainsFunc(got.Documents, func(d config.Document) bool { return d.Kind == "Addon" }) {
 		t.Errorf("the stored set lost its Addon: %v", err)
 	}
-	if m := mode(t, filepath.Join(stored, "kubernetes.chalkos.dev", "Addon")); m != 0o700 {
-		t.Errorf("stored Addon directory mode = %v", m)
-	}
-	if m := mode(t, filepath.Join(stored, "kubernetes.chalkos.dev", "Addon", "manifests.json")); m != 0o600 {
-		t.Errorf("stored Addon mode = %v", m)
+	for _, tree := range []string{"documents", "delivered"} {
+		if m := mode(t, filepath.Join(stored, tree, "kubernetes.chalkos.dev", "Addon")); m != 0o700 {
+			t.Errorf("stored Addon directory mode in %s/ = %v", tree, m)
+		}
+		if m := mode(t, filepath.Join(stored, tree, "kubernetes.chalkos.dev", "Addon", "manifests.json")); m != 0o600 {
+			t.Errorf("stored Addon mode in %s/ = %v", tree, m)
+		}
 	}
 }

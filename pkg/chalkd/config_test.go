@@ -185,11 +185,11 @@ func TestApplyConfig(t *testing.T) {
 	if v, err := store.Version(s.Loader.Config); err != nil || v != hashOf(t, next) {
 		t.Errorf("stored version = %q, %v; want the hash of the delivered documents", v, err)
 	}
-	stored := readFile(t, filepath.Join(s.Loader.Config, "demo.example.org", "Demo", "one.json"))
+	stored := readFile(t, filepath.Join(s.Loader.Config, "documents", "demo.example.org", "Demo", "one.json"))
 	if !strings.Contains(stored, `"name":"second"`) || !strings.Contains(stored, `"replicas":1`) {
 		t.Errorf("stored Demo = %s, want the new name and the schema's default replicas", stored)
 	}
-	if info, err := os.Stat(filepath.Join(s.Loader.Config, "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(filepath.Join(s.Loader.Config, "documents", "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("stored Secret: %v, %v", info, err)
 	}
 	var id identity.Identity
