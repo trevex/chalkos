@@ -876,6 +876,21 @@ func TestUpgradeWithAnOperatorClientFileAlone(t *testing.T) {
 	}
 }
 
+// TestUpgradeWithAReaderClientFile refuses an upgrade below the operator role before any node is
+// asked anything, as the nodes would refuse it only once a worker is drained.
+func TestUpgradeWithAReaderClientFile(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	config := l.ta.writeConfig(t, "viewer", pki.RoleReader, time.Hour, time.Now())
+	l.ta.withoutSecrets(t)
+	err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--nodes", "w1")
+	if err == nil || !strings.Contains(err.Error(), "upgrade needs the operator role; the reader role may not upgrade nodes") {
+		t.Fatalf("upgrade as a reader = %v", err)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("events %q, want none", got)
+	}
+}
+
 // TestUpgradeWithholdsConfigANodeDoesNotShow sends no config to nodes that refuse to show theirs
 // to the credentials, as they would refuse config with the upgrade, and says so once; --diff stops
 // there instead. The credentials read as admin, so the line names the node, not the role.

@@ -468,8 +468,8 @@ func TestCommandsThatNeedAnInventory(t *testing.T) {
 			t.Errorf("%s = %v, want a refusal naming the inventory", strings.Join(args, " "), err)
 		}
 	}
-	reader := ta.writeConfig(t, "alice", pki.RoleReader, 24*time.Hour, time.Now())
-	if err := ta.run(context.Background(), []string{"upgrade", "--config", reader}); err == nil || !strings.Contains(err.Error(), "which only an inventory gives") {
+	operator := ta.writeConfig(t, "alice", pki.RoleOperator, 24*time.Hour, time.Now())
+	if err := ta.run(context.Background(), []string{"upgrade", "--config", operator}); err == nil || !strings.Contains(err.Error(), "which only an inventory gives") {
 		t.Errorf("upgrade without --image or an inventory = %v", err)
 	}
 }
