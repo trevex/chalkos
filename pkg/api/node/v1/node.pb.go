@@ -3639,9 +3639,10 @@ type UpgradeHeader struct {
 	// destructive storage changes and changes of the fixed Kubernetes settings, makes additive
 	// storage changes, such as a new volume, at once, and keeps the config in the image's config
 	// slot. Empty carries the running image's config over, checked against the image the same way.
+	// Only the admin role may set it.
 	Config string `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
 	// Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is;
-	// required when it adds one and the node's fallback is not none.
+	// required when it adds one and the node's fallback is not none. Only the admin role may set it.
 	FallbackSecret string `protobuf:"bytes,6,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -3713,8 +3714,9 @@ type UpgradeResponse struct {
 	Entry string `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
 	// The node reboots into the image.
 	Rebooting bool `protobuf:"varint,3,opt,name=rebooting,proto3" json:"rebooting,omitempty"`
-	// The image boots next already, from entry, as an earlier upgrade without a reboot left it, and
-	// the node's stored config still suits it; nothing changed.
+	// The image boots next already, from entry, as an earlier upgrade without a reboot left it; the
+	// image was not written again, and the config the upgrade carries, or the running image's,
+	// replaced the config kept for it.
 	AlreadyStaged bool `protobuf:"varint,4,opt,name=already_staged,json=alreadyStaged,proto3" json:"already_staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

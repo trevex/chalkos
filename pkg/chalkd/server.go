@@ -107,8 +107,9 @@ type Server struct {
 	// InPlace and FromParts install the node; tests replace them.
 	InPlace   func(context.Context, install.Request) error
 	FromParts func(context.Context, install.PartsRequest) error
-	// InstallImage installs an upgrade's image; nil installs it on the boot disk. Tests replace it.
-	InstallImage func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error)
+	// InstallImage installs an upgrade's image with the config and the fallback secret the upgrade
+	// delivers; nil installs it on the boot disk. Tests replace it.
+	InstallImage func(ctx context.Context, h upgrade.Header, config, secret string, image io.Reader) (upgrade.Result, error)
 	// ReadImage reads the store of an image in the inactive slot, as apply-config --staged checks
 	// config against it; nil mounts it from the boot disk. Tests replace it.
 	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error

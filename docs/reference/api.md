@@ -128,12 +128,13 @@ out; chalkctl rotate calls it. Available to admins.
 Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 The first message carries the header; the store, its hash tree and the UKI follow as
-chunks. Available to operators. The node checks that the image is of its platform,
-and, once the store is written and before the image becomes the next boot, that the schemas
-in the image accept its stored config. It does not check that the image is one to trust:
-without Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as
-their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed
-for db.
+chunks. Available to operators, but delivering config or a fallback secret with the upgrade
+needs the admin role, as ApplyConfig does; without them the node carries the running image's
+config over. The node checks that the image is of its platform, and, once the store is
+written and before the image becomes the next boot, that the schemas in the image accept the
+config it keeps for the image. It does not check that the image is one to trust: without
+Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as their
+keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 
 ### DrainNode { #method-drainnode }
 
@@ -721,8 +722,8 @@ No fields.
 | ----- | ---- | ----------- |
 | `image` | [`ImageHeader`](#message-imageheader) | The image to install. The node refuses another ID or platform than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
-| `config` | `string` | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and against the machine as ApplyConfig does: it refuses destructive storage changes and changes of the fixed Kubernetes settings, makes additive storage changes, such as a new volume, at once, and keeps the config in the image's config slot. Empty carries the running image's config over, checked against the image the same way. |
-| `fallback_secret` | `string` | Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is not none. |
+| `config` | `string` | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and against the machine as ApplyConfig does: it refuses destructive storage changes and changes of the fixed Kubernetes settings, makes additive storage changes, such as a new volume, at once, and keeps the config in the image's config slot. Empty carries the running image's config over, checked against the image the same way. Only the admin role may set it. |
+| `fallback_secret` | `string` | Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is not none. Only the admin role may set it. |
 
 ### UpgradeRequest { #message-upgraderequest }
 
@@ -742,7 +743,7 @@ No fields.
 | `already_installed` | `bool` | The node runs the image already; nothing changed. |
 | `entry` | `string` | The file name of the UKI that boots the image next, with its tries. |
 | `rebooting` | `bool` | The node reboots into the image. |
-| `already_staged` | `bool` | The image boots next already, from entry, as an earlier upgrade without a reboot left it, and the node's stored config still suits it; nothing changed. |
+| `already_staged` | `bool` | The image boots next already, from entry, as an earlier upgrade without a reboot left it; the image was not written again, and the config the upgrade carries, or the running image's, replaced the config kept for it. |
 
 ### VolumeStatus { #message-volumestatus }
 

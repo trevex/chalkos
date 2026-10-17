@@ -135,12 +135,13 @@ type NodeServiceClient interface {
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as
-	// chunks. Available to operators. The node checks that the image is of its platform,
-	// and, once the store is written and before the image becomes the next boot, that the schemas
-	// in the image accept its stored config. It does not check that the image is one to trust:
-	// without Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as
-	// their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed
-	// for db.
+	// chunks. Available to operators, but delivering config or a fallback secret with the upgrade
+	// needs the admin role, as ApplyConfig does; without them the node carries the running image's
+	// config over. The node checks that the image is of its platform, and, once the store is
+	// written and before the image becomes the next boot, that the schemas in the image accept the
+	// config it keeps for the image. It does not check that the image is one to trust: without
+	// Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as their
+	// keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
 	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
 	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods
@@ -461,12 +462,13 @@ type NodeServiceHandler interface {
 	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
 	// The first message carries the header; the store, its hash tree and the UKI follow as
-	// chunks. Available to operators. The node checks that the image is of its platform,
-	// and, once the store is written and before the image becomes the next boot, that the schemas
-	// in the image accept its stored config. It does not check that the image is one to trust:
-	// without Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as
-	// their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed
-	// for db.
+	// chunks. Available to operators, but delivering config or a fallback secret with the upgrade
+	// needs the admin role, as ApplyConfig does; without them the node carries the running image's
+	// config over. The node checks that the image is of its platform, and, once the store is
+	// written and before the image becomes the next boot, that the schemas in the image accept the
+	// config it keeps for the image. It does not check that the image is one to trust: without
+	// Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as their
+	// keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
 	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
 	// DrainNode cordons a node of the cluster for an upgrade and evicts its pods through the
 	// eviction API, which keeps them within their PodDisruptionBudgets. DaemonSet pods, static pods

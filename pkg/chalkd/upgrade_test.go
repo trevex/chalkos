@@ -56,7 +56,7 @@ func TestUpgrade(t *testing.T) {
 			rebooted := make(chan struct{})
 			s.RebootNode = func() { close(rebooted) }
 			var got []byte
-			s.InstallImage = func(_ context.Context, h upgrade.Header, r io.Reader) (upgrade.Result, error) {
+			s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
 				want := upgrade.Header{ImageID: "chalkos", RootHash: []byte{1, 2},
 					StoreSize: 1, VeritySize: 2, UKISize: 3, StoreSHA256: []byte{4}, VeritySHA256: []byte{5}, UKISHA256: []byte{6}}
 				if h.ImageID != want.ImageID || h.Platform != "metal" || h.Architecture != "x86-64" || h.Provenance != (upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}) ||
@@ -122,7 +122,7 @@ func TestUpgrade(t *testing.T) {
 func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
 		t.Error("installed the image")
 		return upgrade.Result{}, nil
 	}
@@ -141,6 +141,60 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %v, want %q", tc.header, err, tc.want)
 		}
+	}
+}
+
+// TestUpgradeDeliversConfigOnlyForAdmins refuses an operator's upgrade that carries config or a
+// fallback secret before anything is installed, naming the admin role, also for an image staged
+// already, which the same call sends again. An operator's upgrade without them carries the running
+// config over to the image, and an admin's keeps the config it carries.
+func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
+	c := newCreds(t)
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	for _, tc := range []struct {
+		name, role, config, secret string
+		// want is the config the image's slot keeps; empty for a refused upgrade.
+		want string
+	}{
+		{"an operator with config", pki.RoleOperator, next, "", ""},
+		{"an operator with a fallback secret", pki.RoleOperator, "", secret, ""},
+		{"an operator without config", pki.RoleOperator, "", "", baseConfig},
+		{"an admin with config", pki.RoleAdmin, next, "", next},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := configServer(t)
+			installed, version := false, ""
+			s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, r io.Reader) (upgrade.Result, error) {
+				installed = true
+				io.Copy(io.Discard, r)
+				err := s.stageConfig(ctx, imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+				got, _ := staged(t, s)
+				version = got.Version
+				return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_2+3.efi"}, err
+			}
+			conn := dial(t, serve(t, s, c, c.pool), c.clients[tc.role])
+			stream := conn.Upgrade(context.Background())
+			header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}, Config: tc.config, FallbackSecret: tc.secret}
+			if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
+				t.Fatal(err)
+			}
+			_, err := stream.CloseAndReceive()
+			if tc.want == "" {
+				if connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "needs the admin role") {
+					t.Errorf("upgrade = %v, want it refused for the admin role", err)
+				}
+				if installed {
+					t.Error("installed the image")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if version != hashOf(t, tc.want) {
+				t.Errorf("the image's slot keeps the version %q, want %q", version, hashOf(t, tc.want))
+			}
+		})
 	}
 }
 
@@ -343,7 +397,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), string(data))
-	s.InstallImage = func(_ context.Context, h upgrade.Header, r io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
 		io.Copy(io.Discard, r)
 		// The refusal retires the image chalkos_3 boots.
 		if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_3+3.efi")); err != nil {
@@ -374,7 +428,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
 	started, release := make(chan struct{}), make(chan struct{})
-	s.InstallImage = func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error) {
+	s.InstallImage = func(context.Context, upgrade.Header, string, string, io.Reader) (upgrade.Result, error) {
 		close(started)
 		<-release
 		return upgrade.Result{}, nil

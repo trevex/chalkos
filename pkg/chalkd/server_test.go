@@ -316,7 +316,7 @@ var deniedEverything = map[string]connect.Code{
 var nodeRole = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
 	"ApplyConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodePermissionDenied, "RenewNodeCertificate": connect.CodeFailedPrecondition,
-	"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
+	"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
 	"UncordonNode": connect.CodePermissionDenied, "GetConfig": connect.CodePermissionDenied,
 }
 
@@ -438,6 +438,11 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.UncordonNode(ctx, connect.NewRequest(&nodev1.UncordonNodeRequest{Node: "w1"}))
 	case "GetConfig":
 		_, err = c.GetConfig(ctx, connect.NewRequest(&nodev1.GetConfigRequest{}))
+	case "UpgradeWithConfig":
+		// A header with config and no image: refused for its role before it is read further.
+		stream := c.Upgrade(ctx)
+		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Config: "kind: Node"}}})
+		_, err = stream.CloseAndReceive()
 	case "Upgrade":
 		stream := c.Upgrade(ctx)
 		stream.Send(&nodev1.UpgradeRequest{})
@@ -462,18 +467,19 @@ func TestAuthorisation(t *testing.T) {
 			// The node has no Kubernetes: refusing EtcdMembers means the call got through.
 			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeFailedPrecondition, "EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied,
-				"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
+				"RotationStep": connect.CodePermissionDenied, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodePermissionDenied,
 				"UncordonNode": connect.CodePermissionDenied, "GetConfig": connect.CodePermissionDenied},
-			// A request without a header is refused after authorisation.
+			// A request without a header is refused after authorisation, an upgrade with config for
+			// the role.
 			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "Bootstrap": connect.CodePermissionDenied,
 				"EtcdRemoveMember": connect.CodePermissionDenied, "EtcdLeave": connect.CodePermissionDenied, "RotationStep": connect.CodePermissionDenied,
-				"Upgrade": connect.CodeInvalidArgument, "DrainNode": connect.CodeFailedPrecondition, "UncordonNode": connect.CodeFailedPrecondition,
+				"Upgrade": connect.CodeInvalidArgument, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeFailedPrecondition, "UncordonNode": connect.CodeFailedPrecondition,
 				"GetConfig": connect.CodePermissionDenied},
 			// An empty request and a reset without config are refused after authorisation, and the
 			// node has no Kubernetes; refusing them means the call got through.
 			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeFailedPrecondition,
 				"EtcdRemoveMember": connect.CodeFailedPrecondition, "EtcdLeave": connect.CodeFailedPrecondition, "RenewNodeCertificate": connect.CodePermissionDenied,
-				"RotationStep": connect.CodeFailedPrecondition, "GetConfig": 0},
+				"RotationStep": connect.CodeFailedPrecondition, "GetConfig": 0, "UpgradeWithConfig": connect.CodeInvalidArgument},
 			// A certificate of the OS CA without a role's Organization grants nothing.
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,

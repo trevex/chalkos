@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -29,9 +30,14 @@ import (
 // cannot tell an image to trust from another: without Secure Boot, an operator can run any image
 // as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is
 // what limits upgrades to images signed for db.
+//
+// An operator may upgrade, but only an admin may deliver config with the upgrade, as ApplyConfig
+// needs: config names the node's Addons, networks and volumes, and what an operator may not
+// deliver to the running image it must not deliver to the next one either. Without config the
+// node carries the running image's over.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	if !s.upgrading.TryLock() {
-		return nil, failed(connect.CodeAborted, "another upgrade is running")
+		return nil, failed(connect.CodeAborted, "an upgrade or a config delivery is running")
 	}
 	defer s.upgrading.Unlock()
 	if !stream.Receive() {
@@ -43,6 +49,9 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	h := stream.Msg().GetHeader()
 	if h == nil {
 		return nil, failed(connect.CodeInvalidArgument, "the first upgrade message must be the header")
+	}
+	if role, _ := ctx.Value(roleKey{}).(string); (h.GetConfig() != "" || h.GetFallbackSecret() != "") && !pki.Allows(role, pki.RoleAdmin) {
+		return nil, failed(connect.CodePermissionDenied, "%s with config or a fallback secret needs the %s role; without them the node carries its own config over", stream.Spec().Procedure, pki.RoleAdmin)
 	}
 	img := h.GetImage()
 	switch {
@@ -274,7 +283,7 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 // for it and the fallback secret new encrypted volumes are enrolled with.
 func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secret string, image io.Reader) (upgrade.Result, error) {
 	if s.InstallImage != nil {
-		return s.InstallImage(ctx, h, image)
+		return s.InstallImage(ctx, h, text, secret, image)
 	}
 	n, err := s.upgradeNode(&s.mu)
 	if err != nil {
