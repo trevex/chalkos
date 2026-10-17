@@ -223,13 +223,25 @@ reference that finds no disk needs fixing or its disk plugged in, and one that c
 be resolved, as it finds more than one disk or names something other than a whole disk, needs
 fixing. Otherwise the node restarts the units that read what changed, and chalkctl prints the
 changes and the units. --kubernetes-share also delivers a new Kubernetes share: for example a
-worker's new kubelet certificate. The command needs the secrets file.`
+worker's new kubelet certificate.
+
+Each image on a node keeps its own config. --staged delivers the config for the image staged to
+boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
+it against the image the node's Image names, and the node checks it against the staged image and
+keeps it for that image. Its storage changes count against the node's storage as the running
+image's do, so a new volume is created at once; nothing restarts. Without --staged, chalkctl warns
+of a staged image, whose config stays as it is. A config for the running image that adds storage
+the staged image's config lacks is refused, since booting that image would remove it; deliver the
+config with --staged first. The command needs the secrets file.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl apply-config w1 --secrets secrets.age
 
   # Give w1 a new kubelet certificate.
-  chalkctl apply-config w1 --secrets secrets.age --kubernetes-share`
+  chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
+
+  # Deliver w1's config for the image an upgrade with --no-reboot staged.
+  chalkctl apply-config w1 --secrets secrets.age --staged`
 
 const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's config defines it.
 Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
@@ -284,8 +296,16 @@ names, as status compares nodes with it: rebuild the image or link its directory
 otherwise. A node that runs on another platform than its image stops the run before any node is
 sent anything. With --image the nodes that run the image's variant get it, or those --nodes
 names whatever they run, and nodes on another platform are skipped and named. A node may get an
-image of another variant than the one it runs, which chalkctl prints; the node checks its stored
-config against the image before the image becomes its next boot.
+image of another variant than the one it runs, which chalkctl prints.
+
+Each node gets its config with the image: the documents of the files the inventory gives it,
+checked against the image before any node is drained. The node checks them against the image
+again and keeps them for it, so a fallback boots the image before with its own config. Storage
+changes count against the node's storage as with apply-config: a destructive one is refused, a new
+volume is created before the image boots, enrolled with the recovery key from the secrets file or
+the password --password-file holds. Without an inventory a node carries the config of the image it
+runs over, checked against the new image. A node that has the image staged already gets it again
+only when the config kept for it is not the inventory's.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy

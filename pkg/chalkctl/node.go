@@ -232,8 +232,16 @@ func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, sec
 	if err != nil {
 		return "", fmt.Errorf("ask %s for its volumes: %w", t.name, err)
 	}
+	return a.fallbackOf(ctx, resp.Msg, t, section, passwordFile, reset)
+}
+
+// fallbackOf is fallbackFor with the node's status at hand.
+func (a *app) fallbackOf(ctx context.Context, st *nodev1.StatusResponse, t *target, section storage.Section, passwordFile, reset string) (string, error) {
+	if section.Fallback == storage.FallbackNone {
+		return "", nil
+	}
 	var existing []string
-	for _, v := range resp.Msg.Volumes {
+	for _, v := range st.Volumes {
 		existing = append(existing, v.Name)
 	}
 	if !fallbackNeeded(section, existing, reset) {
@@ -561,9 +569,9 @@ func size(bytes uint64) string {
 }
 
 type applyConfigFlags struct {
-	node            nodeCommand
-	passwordFile    string
-	kubernetesShare bool
+	node                    nodeCommand
+	passwordFile            string
+	kubernetesShare, staged bool
 }
 
 func (a *app) applyConfigCommand() *cobra.Command {
@@ -578,6 +586,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	f.node.register(fs)
 	registerPasswordFile(fs, &f.passwordFile)
 	fs.BoolVar(&f.kubernetesShare, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
+	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the image its Image names")
 	return cmd
 }
 
@@ -589,7 +598,10 @@ func registerPasswordFile(fs *pflag.FlagSet, p *string) {
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
 	n := f.node
 	if len(pos) != 1 {
-		return errors.New("usage: chalkctl apply-config <node> [--kubernetes-share]")
+		return errors.New("usage: chalkctl apply-config <node> [--kubernetes-share | --staged]")
+	}
+	if f.staged && f.kubernetesShare {
+		return errors.New("--staged delivers config alone; deliver the Kubernetes share to the running image")
 	}
 	n.needs = "apply-config"
 	t, err := a.target(ctx, n, pos[0])
@@ -600,7 +612,14 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	c, err := nodeContract(ctx, conn, t.name)
+	// The staged image is the one the node's Image names, as after an upgrade without a reboot; the
+	// node checks the config against the staged image itself again, and refuses it without one.
+	var c contract
+	if f.staged {
+		c, err = t.cluster.imageContractOf(t.name)
+	} else {
+		c, err = nodeContract(ctx, conn, t.name)
+	}
 	if err != nil {
 		return err
 	}
@@ -608,7 +627,18 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackFor(ctx, conn, t, d.identity.Storage, f.passwordFile, "")
+	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		return err
+	}
+	if !f.staged && st.Msg.Boot.GetStaged() != nil {
+		version := st.Msg.StagedConfigVersion
+		if version == "" {
+			version = "none"
+		}
+		fmt.Fprintf(a.stderr, "%s has a staged image with its own config (version %s); apply-config --staged updates it\n", t.name, version)
+	}
+	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, "")
 	if err != nil {
 		return err
 	}
@@ -621,7 +651,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			return fmt.Errorf("%s is no Kubernetes node: its Node names no type", t.name)
 		}
 	}
-	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, KubernetesShare: share}))
+	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, KubernetesShare: share, Staged: f.staged}))
 	if err != nil {
 		return nodeError(err, t.name)
 	}
@@ -630,6 +660,10 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	}
 	for _, u := range resp.Msg.RestartedUnits {
 		fmt.Fprintf(a.stdout, "restarted %s\n", u)
+	}
+	if f.staged {
+		fmt.Fprintf(a.stdout, "%s boots config %s with its staged image\n", t.name, d.Version)
+		return nil
 	}
 	fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
 	return nil
@@ -710,13 +744,20 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 		return err
 	}
 	s := resp.Msg
-	state := t.cluster.configState(t.name, s.ConfigVersion)
+	state := t.cluster.configState(t.name, s.ConfigVersion, false)
 	version := s.ConfigVersion
 	if version == "" {
 		// A node installed before config documents runs an identity alone.
 		version = "none"
 	}
 	fmt.Fprintf(a.stdout, "config %s (%s)\n", version, state)
+	if s.Boot.GetStaged() != nil {
+		staged := s.StagedConfigVersion
+		if staged == "" {
+			staged = "none"
+		}
+		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", staged, t.cluster.configState(t.name, s.StagedConfigVersion, true))
+	}
 	fmt.Fprintln(a.stdout, t.cluster.platformLine(t.name, s.Platform))
 	for _, line := range bootLines(s.Boot) {
 		fmt.Fprintln(a.stdout, line)

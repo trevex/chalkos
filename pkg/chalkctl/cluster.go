@@ -283,8 +283,9 @@ func (c *cluster) version(name string) (string, error) {
 	return e.Version, nil
 }
 
-// configState says whether a node runs the config chalkctl delivers to it.
-func (c *cluster) configState(name, running string) string {
+// configState says whether a slot of a node holds the config chalkctl delivers to it: the running
+// image's, or with staged the staged image's.
+func (c *cluster) configState(name, version string, staged bool) string {
 	if c.partial {
 		return "no inventory to compare it with"
 	}
@@ -292,7 +293,9 @@ func (c *cluster) configState(name, running string) string {
 	switch {
 	case err != nil:
 		return "cannot read the config the inventory gives it: " + err.Error()
-	case want != running:
+	case want != version && staged:
+		return "not the inventory's; chalkctl apply-config --staged " + name + " delivers it"
+	case want != version:
 		return "not the inventory's; chalkctl apply-config " + name + " delivers it"
 	}
 	return "the inventory's"

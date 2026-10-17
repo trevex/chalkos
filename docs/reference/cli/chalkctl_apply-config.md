@@ -21,7 +21,16 @@ reference that finds no disk needs fixing or its disk plugged in, and one that c
 be resolved, as it finds more than one disk or names something other than a whole disk, needs
 fixing. Otherwise the node restarts the units that read what changed, and chalkctl prints the
 changes and the units. --kubernetes-share also delivers a new Kubernetes share: for example a
-worker's new kubelet certificate. The command needs the secrets file.
+worker's new kubelet certificate.
+
+Each image on a node keeps its own config. --staged delivers the config for the image staged to
+boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
+it against the image the node's Image names, and the node checks it against the staged image and
+keeps it for that image. Its storage changes count against the node's storage as the running
+image's do, so a new volume is created at once; nothing restarts. Without --staged, chalkctl warns
+of a staged image, whose config stays as it is. A config for the running image that adds storage
+the staged image's config lacks is refused, since booting that image would remove it; deliver the
+config with --staged first. The command needs the secrets file.
 
 ```
 chalkctl apply-config <node> [flags]
@@ -35,6 +44,9 @@ chalkctl apply-config <node> [flags]
 
   # Give w1 a new kubelet certificate.
   chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
+
+  # Deliver w1's config for the image an upgrade with --no-reboot staged.
+  chalkctl apply-config w1 --secrets secrets.age --staged
 ```
 
 ## Options
@@ -47,6 +59,7 @@ chalkctl apply-config <node> [flags]
       --kubernetes-share       also deliver a new Kubernetes share, such as a new kubelet certificate for a worker
       --password-file string   file holding the password of a node whose fallback is a password
       --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
+      --staged                 deliver the config for the image staged to boot next instead, checked against the image its Image names
 ```
 
 ## SEE ALSO

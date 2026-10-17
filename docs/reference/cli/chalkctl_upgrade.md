@@ -17,8 +17,16 @@ names, as status compares nodes with it: rebuild the image or link its directory
 otherwise. A node that runs on another platform than its image stops the run before any node is
 sent anything. With --image the nodes that run the image's variant get it, or those --nodes
 names whatever they run, and nodes on another platform are skipped and named. A node may get an
-image of another variant than the one it runs, which chalkctl prints; the node checks its stored
-config against the image before the image becomes its next boot.
+image of another variant than the one it runs, which chalkctl prints.
+
+Each node gets its config with the image: the documents of the files the inventory gives it,
+checked against the image before any node is drained. The node checks them against the image
+again and keeps them for it, so a fallback boots the image before with its own config. Storage
+changes count against the node's storage as with apply-config: a destructive one is refused, a new
+volume is created before the image boots, enrolled with the recovery key from the secrets file or
+the password --password-file holds. Without an inventory a node carries the config of the image it
+runs over, checked against the new image. A node that has the image staged already gets it again
+only when the config kept for it is not the inventory's.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
@@ -62,6 +70,7 @@ chalkctl upgrade [flags]
       --max-unavailable int    how many workers and nodes without Kubernetes upgrade at once (default 1)
       --no-reboot              install the images on the nodes without draining or rebooting them; they boot with their next reboot
       --nodes string           comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)
+      --password-file string   file holding the password of a node whose fallback is a password
       --retry-failed           install an image again, once, on nodes that fell back from it
       --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
       --sign-cert string       PEM certificate of the Secure Boot db signer, to check the images' signatures against before they are sent

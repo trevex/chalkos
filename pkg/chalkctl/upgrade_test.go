@@ -30,6 +30,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -163,6 +164,9 @@ type upgradeFake struct {
 	// failed, and generation the generation of the entry the node booted image from.
 	root, stagedRoot, failedRoot []byte
 	generation                   uint64
+	// config and stagedConfig are the config the node runs and the one kept for the staged image, as
+	// delivered.
+	config, stagedConfig string
 	// stagedStoreSize and stagedVeritySize are the bytes of store and hash tree staged.
 	stagedStoreSize, stagedVeritySize uint64
 	// rebooting makes the node unreachable, as while it reboots.
@@ -242,12 +246,16 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 		Running: &nodev1.BootImage{RootHash: n.root, Generation: n.generation},
 		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
 	}}
+	// VAR, which every node has.
+	st.Volumes = []*nodev1.VolumeStatus{{Name: "var"}}
 	if n.staged != "" {
 		st.Boot.Staged = &nodev1.BootImage{RootHash: n.stagedRoot, Generation: n.generation + 1}
+		st.StagedConfigVersion = versionOf(n.stagedConfig)
 	}
 	if n.failed != "" {
 		st.Boot.Failed = &nodev1.BootImage{RootHash: n.failedRoot, Generation: n.generation + 1}
 	}
+	st.ConfigVersion = versionOf(n.config)
 	n.lab.mu.Lock()
 	ready := "True"
 	if n.lab.notReady[n.name] {
@@ -273,7 +281,8 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	if !stream.Receive() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no header"))
 	}
-	h := stream.Msg().GetHeader().GetImage()
+	header := stream.Msg().GetHeader()
+	h := header.GetImage()
 	var received uint64
 	for stream.Receive() {
 		received += uint64(len(stream.Msg().GetChunk().GetData()))
@@ -301,6 +310,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	name, _ := testImageNames.Load(string(h.RootHash))
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
+	n.stagedConfig = header.GetConfig()
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	if n.alreadyStaged {
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyStaged: true, Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)}), nil
@@ -332,6 +342,7 @@ func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequ
 			n.failed, n.failedRoot, n.staged, n.stagedRoot = n.staged, n.stagedRoot, "", nil
 		default:
 			n.image, n.root, n.staged, n.stagedRoot = n.staged, n.stagedRoot, "", nil
+			n.config, n.stagedConfig = n.stagedConfig, ""
 			n.generation++
 		}
 	}()
@@ -708,6 +719,7 @@ func TestUpgradeContinues(t *testing.T) {
 	}
 	l.takeEvents()
 	l.nodes["w3"].staged, l.nodes["w3"].stagedRoot = "0.2.0", l.nodes["w1"].root
+	l.nodes["w3"].stagedConfig = l.inventoryConfig("w3")
 	l.cordoned["w3"] = false
 	if err := l.upgrade(img); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
@@ -1149,5 +1161,156 @@ func TestUpgradeWithAnImageGivesItToTheNodesOfItsVariant(t *testing.T) {
 	}
 	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.1.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
 		t.Errorf("the nodes run %v", v)
+	}
+}
+
+// versionOf is the version of config as delivered; empty for none.
+func versionOf(text string) string {
+	if text == "" {
+		return ""
+	}
+	docs, err := config.Parse(strings.NewReader(text))
+	if err != nil {
+		return "unparsable"
+	}
+	v, _ := config.Hash(docs)
+	return v
+}
+
+// inventoryConfig is the config the inventory gives the node, as chalkctl delivers it.
+func (l *upgradeLab) inventoryConfig(name string) string {
+	l.t.Helper()
+	c, err := loadInventory(l.inventory)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	nc, err := c.config(name)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	e, err := config.Encode(nc.Documents)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	return e.Text
+}
+
+// TestUpgradeSendsTheConfig sends each node the inventory's config with the image, which the node
+// keeps for the image.
+func TestUpgradeSendsTheConfig(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1", "--no-reboot"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.nodes["w1"].stagedConfig; got == "" || got != l.inventoryConfig("w1") {
+		t.Errorf("w1 was sent the config %q, want the inventory's", got)
+	}
+}
+
+// TestUpgradeSendsAStagedImageAgainForItsConfig sends a staged image again when the config kept
+// for it is not the inventory's, so the node replaces it, and leaves it when it is.
+func TestUpgradeSendsAStagedImageAgainForItsConfig(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.nodes["w1"].staged, l.nodes["w1"].stagedRoot, l.nodes["w1"].stagedConfig = "0.2.0", rootOf(t, img), "{}"
+	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade"}) {
+		t.Errorf("events %q, want the image sent again", got)
+	}
+	if got := l.nodes["w1"].stagedConfig; got != l.inventoryConfig("w1") {
+		t.Errorf("w1 keeps the config %q, want the inventory's", got)
+	}
+	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("events %q, want the staged image left alone", got)
+	}
+}
+
+// ApplyConfig keeps the config for the running image, or with staged for the staged one, which
+// a node without one refuses.
+func (n *upgradeFake) ApplyConfig(_ context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	switch {
+	case !req.Msg.Staged:
+		n.config = req.Msg.Config
+	case n.staged == "":
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no image is staged to boot next"))
+	default:
+		n.stagedConfig = req.Msg.Config
+	}
+	n.lab.record("%s apply-config staged=%v", n.name, req.Msg.Staged)
+	return connect.NewResponse(&nodev1.ApplyConfigResponse{}), nil
+}
+
+// Contract is the contract of the image the node runs: the fixture schemas and, on the lab's
+// Kubernetes variants, image.json.
+func (n *upgradeFake) Contract(context.Context, *connect.Request[nodev1.ContractRequest]) (*connect.Response[nodev1.ContractResponse], error) {
+	resp := &nodev1.ContractResponse{Platform: n.platform, Schemas: map[string][]byte{}}
+	for _, dir := range fixtureSchemas {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			if resp.Schemas[e.Name()], err = os.ReadFile(filepath.Join(dir, e.Name())); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if n.variant == "cp" || n.variant == "w" || n.variant == "k8s" {
+		resp.KubernetesImage = []byte(testImageJSON)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// applyConfig runs chalkctl apply-config on the lab's node with the args given.
+func (l *upgradeLab) applyConfig(name string, args ...string) error {
+	l.ta.stdout.Reset()
+	l.ta.stderr.Reset()
+	return l.ta.run(context.Background(), append([]string{"apply-config", name, "--inventory", l.inventory, "--address", l.addrs[name]}, args...))
+}
+
+// TestApplyConfigStaged delivers the inventory's config for the staged image, checked against the
+// image the node's Image names, and the running image's config warns of the staged one; status
+// compares both with the inventory.
+func TestApplyConfigStaged(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.useInventory(t, map[string]string{"w": img})
+	n := l.nodes["w1"]
+	if err := l.applyConfig("w1", "--staged"); err == nil || !strings.Contains(err.Error(), "no image is staged") {
+		t.Fatalf("apply-config --staged without a staged image = %v", err)
+	}
+	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), "{}"
+	if err := l.applyConfig("w1", "--staged"); err != nil {
+		t.Fatal(err)
+	}
+	want := versionOf(l.inventoryConfig("w1"))
+	if n.stagedConfig != l.inventoryConfig("w1") || n.config != "" {
+		t.Errorf("w1 keeps %q for the staged image and %q for the running one", n.stagedConfig, n.config)
+	}
+	if !strings.Contains(l.ta.stdout.String(), "w1 boots config "+want+" with its staged image") {
+		t.Errorf("stdout = %q", l.ta.stdout)
+	}
+	if err := l.applyConfig("w1"); err != nil {
+		t.Fatal(err)
+	}
+	if warning := "w1 has a staged image with its own config (version " + want + "); apply-config --staged updates it"; !strings.Contains(l.ta.stderr.String(), warning) {
+		t.Errorf("stderr = %q, want %q", l.ta.stderr, warning)
+	}
+	n.stagedConfig = "{}"
+	l.ta.stdout.Reset()
+	if err := l.ta.run(context.Background(), []string{"status", "w1", "--inventory", l.inventory, "--address", l.addrs["w1"]}); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"config " + want + " (the inventory's)", "staged config " + versionOf("{}") + " (not the inventory's; chalkctl apply-config --staged w1 delivers it)"} {
+		if !strings.Contains(l.ta.stdout.String(), line) {
+			t.Errorf("status lacks %q:\n%s", line, l.ta.stdout)
+		}
 	}
 }

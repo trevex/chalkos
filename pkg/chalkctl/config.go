@@ -149,3 +149,22 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	}
 	return delivery{Encoded: e, identity: id}, nil
 }
+
+// imageContractOf is the contract of the image a node's Image names, as built for the platform its
+// directory's metadata.json gives.
+func (c *cluster) imageContractOf(name string) (contract, error) {
+	nc, err := c.config(name)
+	if err != nil {
+		return contract{}, err
+	}
+	md, err := nc.Resolve()
+	if err != nil {
+		return contract{}, err
+	}
+	ct, err := imageContract(nc.ImageDir)
+	if err != nil {
+		return contract{}, err
+	}
+	ct.platform = md.Platform
+	return ct, nil
+}

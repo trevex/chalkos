@@ -35,6 +35,9 @@ type upgradeRun struct {
 	// controlPlanes are the cluster's control-plane nodes, which drain and uncordon nodes.
 	controlPlanes           []string
 	allowDowntime, noReboot bool
+	// passwordFile holds the password of nodes whose fallback is a password, which the config's new
+	// encrypted volumes are enrolled with.
+	passwordFile string
 	// retryFailed installs the image again on nodes that fell back from it; each node is upgraded
 	// once per run, so a second fall back stops the run.
 	retryFailed, deleteEmptyDir             bool
@@ -44,11 +47,14 @@ type upgradeRun struct {
 }
 
 // upgradeNode is a node to upgrade, by its part in Kubernetes: its kind, and whether it is part
-// of a cluster, so its Node exists; and the image it gets.
+// of a cluster, so its Node exists; the image it gets; and the config it gets for the image, the
+// inventory's, checked against the image; nil on a partial cluster, where the node carries its own
+// over.
 type upgradeNode struct {
 	name, kind string
 	inCluster  bool
 	image      *diskImage
+	delivery   *delivery
 }
 
 // upgradeGroup is the nodes that get one image: the image given, or the one an Image directory
@@ -65,6 +71,7 @@ type upgradeFlags struct {
 	cluster                                 clusterFlags
 	secrets                                 secretFlags
 	config, image, signKey, signCert, nodes string
+	passwordFile                            string
 	addresses                               addressList
 	maxUnavailable                          int
 	allowDowntime, noReboot, retryFailed    bool
@@ -95,6 +102,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
 	fs.BoolVar(&f.deleteEmptyDir, "delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
+	registerPasswordFile(fs, &f.passwordFile)
 	return cmd
 }
 
@@ -134,7 +142,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	r := &upgradeRun{
 		a: a, cluster: c, creds: creds, addresses: addresses,
 		allowDowntime: f.allowDowntime, noReboot: f.noReboot, maxUnavailable: f.maxUnavailable,
-		retryFailed: f.retryFailed, deleteEmptyDir: f.deleteEmptyDir,
+		retryFailed: f.retryFailed, deleteEmptyDir: f.deleteEmptyDir, passwordFile: f.passwordFile,
 		timeout: f.timeout, drainTimeout: f.timeout, poll: a.poll(), quorumWait: min(f.timeout, time.Minute),
 	}
 	var named []string
@@ -168,9 +176,11 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 }
 
 // checkConfig checks, before any node is drained or sent its image, that each node's config suits
-// the image it gets, as an install checks the config it delivers. Nodes that run the image already
-// are checked too, as one the run would only wait for or uncordon. Each node checks its stored
-// config against the image again before it installs it, which is all a partial cluster leaves.
+// the image it gets, as an install checks the config it delivers, and keeps it for the node, which
+// gets it with the image. Nodes that run the image already are checked too, as one the run would
+// only wait for or uncordon. Each node checks the config against the image again before it keeps
+// it; on a partial cluster, which has no inventory, that check of the config the node carries over
+// is all there is.
 func (r *upgradeRun) checkConfig() error {
 	if r.cluster.partial {
 		return nil
@@ -181,9 +191,11 @@ func (r *upgradeRun) checkConfig() error {
 		if err != nil {
 			return err
 		}
-		if _, err := checkNodeConfig(nc, ct); err != nil {
+		d, err := checkNodeConfig(nc, ct)
+		if err != nil {
 			return fmt.Errorf("the config of %s: %w", name, err)
 		}
+		r.nodes[name].delivery = &d
 	}
 	return nil
 }
@@ -467,7 +479,9 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 				return err
 			}
 		}
-		if bytes.Equal(boot.GetStaged().GetRootHash(), target) {
+		// A staged image is sent again only for its config: the node finds the image staged and
+		// replaces the config it keeps for it.
+		if bytes.Equal(boot.GetStaged().GetRootHash(), target) && (n.delivery == nil || st.GetStagedConfigVersion() == n.delivery.Version) {
 			r.say("%s: %s is installed already", n.name, image)
 		} else if err := r.install(ctx, n); err != nil {
 			return err
@@ -494,7 +508,8 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	return r.uncordon(ctx, n)
 }
 
-// install sends the node its image.
+// install sends the node its image with its config, and the fallback secret when the config adds
+// an encrypted volume, which the node creates before the image boots.
 func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	name, img := n.name, n.image
 	r.say("%s: installing %s", name, img.name())
@@ -505,8 +520,19 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	defer done()
 	var resp *nodev1.UpgradeResponse
 	err = r.call(name, func(conn *client.Conn) error {
-		stream := conn.Upgrade(ctx)
 		header := &nodev1.UpgradeHeader{Image: img.header}
+		if d := n.delivery; d != nil {
+			t, err := targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, r.creds)
+			if err != nil {
+				return err
+			}
+			secret, err := r.a.fallbackFor(ctx, conn, t, d.identity.Storage, r.passwordFile, "")
+			if err != nil {
+				return err
+			}
+			header.Config, header.FallbackSecret = d.Text, secret
+		}
+		stream := conn.Upgrade(ctx)
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
