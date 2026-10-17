@@ -81,8 +81,8 @@ A field's rule that reads `oldSelf` runs only where the running config holds the
 does not runs wherever the delivered config holds it. In every variable, and in what a command
 fact reads, each value of a `Secret` and each `data` and `stringData` value of a Kubernetes Secret
 an `Addon` applies is its SHA-256, as [GetConfig](../reference/api.md#method-getconfig) shows them,
-so a rule can tell whether a secret changed without reading it. Maps iterate in the order of their keys, so a list built from the names of
-`documents` is sorted.
+so a rule can tell whether a secret changed without reading it. Maps iterate in the order of their
+keys, so a list built from the names of `documents` is sorted.
 
 ## What is a fact?
 
@@ -194,7 +194,7 @@ stopped at a cost of 1,000,000 on the config it meets.
 | `SystemDisk` | VAR keeps its format, encryption and size; a larger VAR, or one that fills the disk, is accepted. | reinstall |
 | `Volume` | A volume keeps its disk, and a changed disk reference finds the disk it lives on. | reinstall |
 | `Volume` | A volume keeps its format and encryption, also the encryption it inherits from the `SystemDisk`, and does not shrink or take a fixed size where it filled its disk. | reset |
-| `Volume` | A disk reference resolves, and the disk of a volume the config creates or changes is plugged in. | refuse |
+| `Volume` | A disk reference that differs from the one its disk was pinned by resolves, and the pinned disk of a volume the config creates or changes is plugged in. | refuse |
 | `Volume` | No volume the machine records is left out. | reinstall |
 | `Volume` | A new encrypted volume comes with the fallback secret, which opens the node's fallback keyslot. | refuse |
 
@@ -212,14 +212,23 @@ They read these facts:
 - A rule binds `self` to a path through the properties of objects, so it cannot be declared on the
   items of a list or the values of a map; it is declared on the list or the map, which a kind's
   rule or a field's rule compares whole. Lists are not matched item by item by a key.
-- Rules compare the config with the running image's config alone. The config of another image's
-  slot is visible to no rule.
+- Rules compare the config with the running image's config alone. The one check that reads another
+  slot's config is that of a storage change of the running image's config, which evaluates the
+  storage rules against the staged image's slot as it would be written again.
 - A command fact runs on the node that evaluates the rules, with the running image's program, so a
   fact that a newer image adds is null until that image runs.
 - A message can show a fact's content in an error the node returns. A file fact's `fields` keep
   what the rules do not need of the file, such as the share's private keys, out of the fact. An
   error of a rule that cannot be evaluated leaves out what it quotes, and is cut to 512 bytes, but
   can still show a key that a map lacks.
+- The storage kinds' messages show what the `disks` fact found: a volume's disk reference, the
+  identity of its pinned disk and of the disk a changed reference finds, and why a disk cannot be
+  found.
+- A reset recreates its volume like a new one, so a node with a fallback needs the fallback
+  secret, which `chalkos-storage facts fallback` checks against the password keyslots STATE and
+  the volumes have before the reset. Where the volume being reset holds the node's only password
+  keyslot, a secret that does not open it, or a keyslot cryptsetup cannot read, as when its header
+  is damaged, refuses the reset, although the reset would wipe that keyslot.
 
 ## Related pages
 

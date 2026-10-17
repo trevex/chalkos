@@ -197,7 +197,7 @@ readable by root alone.
 | `kubernetes/etcd-initialised` | chalkd | etcd answered ready after the bootstrap, so its data exists. |
 | `kubernetes/etcd-initial-cluster` | chalkd | etcd's initial cluster when the node joined an existing one. |
 | `kubernetes/left` | EtcdLeave | The node left etcd; it joins again only once reinstalled. |
-| `storage/storage.json` | install, Upgrade, ApplyConfig | The storage as applied, which every image's boot sets up: machine state, which the config of every slot write is classified against. Every boot sets up each volume the file records, also one the booted image's config lacks, and nothing at boot removes a volume. |
+| `storage/storage.json` | install, Upgrade, ApplyConfig | The storage as applied, which every image's boot sets up: machine state, which the storage kinds' change rules compare the config of every slot write with. Every boot sets up each volume the file records, also one the booted image's config lacks, and nothing at boot removes a volume. |
 | `storage/disks.json` | chalkos-storage, chalkd | The disks the section's names were pinned to, and the PARTUUID of each volume. |
 | `storage/disks/<disk>/*.conf` | chalkos-storage, chalkd | The repart definitions of each disk, from the storage section. |
 | `installed` | install | The marker that the node is installed, written last. |

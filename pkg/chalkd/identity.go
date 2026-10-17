@@ -200,7 +200,7 @@ type applyRequest struct {
 func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// An upgrade writes its image's slot, classified against the machine, before the image is
+	// An upgrade writes its image's slot, checked against the machine, before the image is
 	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
 	// upgrade holds upgrading while it takes s.mu.
 	if req.Msg.Config != "" {

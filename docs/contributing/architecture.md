@@ -64,7 +64,8 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
 | `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
-| `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, and runs as a systemd generator for the other volumes. |
+| `cmd/chalkos-rules` | Checks an image's rules and facts when the image is built: every rule compiles within the cost limit and reads facts the image declares. |
+| `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, runs as a systemd generator for the other volumes, and prints the storage facts the storage kinds' rules read. |
 | `cmd/docgen` | Writes the command reference and checks the commands the documentation shows. |
 
 ## Packages in pkg
@@ -79,6 +80,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `client` | Connections to chalkd: by fingerprint in [maintenance mode](../reference/glossary.md#maintenance-mode), by the OS CA otherwise. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
 | `config/store` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets their consumers load as credentials. |
+| `facts` | Loads the [facts](../reference/glossary.md#fact) change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads, and the kinds of Kubernetes nodes. |
 | `image` | Reads the partitions of a raw image from `repart-output.json`. |
 | `imagesign` | Signs an image's boot loader and UKIs, and copies them off the image. |
@@ -95,8 +97,9 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the units that read them, and tells which units to restart. |
 | `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
+| `rules` | Compiles the [change rules](../reference/glossary.md#change-rule) of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
-| `storage` | Storage sections, disk references and pins, repart definitions, change classification. |
+| `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
 | `storage/node` | Storage on the node: STATE, [volumes](../reference/glossary.md#volume), [VAR](../reference/glossary.md#var) and the generator's units. |
 | `uki` | Reads a [UKI](../reference/glossary.md#uki)'s os-release and command line, and checks its signature as firmware does. |
 | `upgrade` | Writes an image into the inactive [slot](../reference/glossary.md#slot) and makes it the next boot; the slot writer install shares. |

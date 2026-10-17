@@ -179,15 +179,15 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 // writeSlot writes docs, config as delivered, to the config slot of an image that does not run,
 // whose store has the root hash and is st: checked and translated against the schemas and
 // image.json in st, so the config is checked against exactly what the image will translate it with
-// at boot, and classified against the machine state as every slot write is. The node boots the
+// at boot, and checked against the machine state as every slot write is. The node boots the
 // image with that slot, and a config chalkos-config could not apply would leave boot counting to
 // fall back. It refuses config that the image's rules refuse, such as one that changes what a
-// node holding a share was set up for, and storage changes that are destructive; additive ones,
-// such as a new volume, are made now, while the running image runs, and storage.json records
-// them. Every boot sets up the volumes storage.json records, so the running image mounts such a
-// volume too, although its config does not name it; its slot counts as removing the volume only
-// once it is written again. system is the image's NixOS system in st, platform its platform and
-// secret the fallback secret. The caller holds s.mu.
+// node holding a share was set up for, and storage changes that take a reset or a reinstall; the
+// others, such as a new volume, are made now, while the running image runs, and storage.json
+// records them. Every boot sets up the volumes storage.json records, so the running image mounts
+// such a volume too, although its config does not name it; its slot counts as removing the volume
+// only once it is written again. system is the image's NixOS system in st, platform its platform
+// and secret the fallback secret. The caller holds s.mu.
 func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
 	_, running, _, err := s.runningSlot()
 	if err != nil {

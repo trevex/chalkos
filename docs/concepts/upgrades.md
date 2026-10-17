@@ -104,12 +104,14 @@ instead of a line per node:
 config not delivered: the operator role cannot deliver config; each node carries its own over
 ```
 
-The config counts against the node's machine state as `apply-config` does: a destructive storage
-change or a change of a fixed Kubernetes setting is refused, and a new volume is created before
-the image boots, while the running image runs. chalkctl sends the fallback secret such a volume
-is enrolled with, the recovery key from the secrets file or a password from `--password-file`.
-[Config and the inventory](config.md#which-changes-does-a-node-accept) lists the classes of
-change.
+The config meets the new image's [change rules](rules.md) as `apply-config`'s config meets the
+running image's: compared with the running slot's config and the storage STATE records, a storage
+change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, is refused,
+and a new volume is created before the image boots, while the running image runs. chalkctl sends
+the fallback secret such a volume is enrolled with, the recovery key from the secrets file or a
+password from `--password-file`.
+[Config and the inventory](config.md#which-changes-does-a-node-accept) lists what each change
+takes.
 
 Before it sends a node the image, chalkctl prints a line of what the config changes against the
 running image's, the slot the new one replaces, such as
@@ -174,12 +176,13 @@ the new one with all its tries.
    image's root hash, reads the schemas and `image.json` of the system the UKI boots, and checks
    the config the upgrade carries against them, or without one the running slot's documents, as
    an install checks the config it delivers: the set rules, each document's schema and, on an
-   image with Kubernetes, the cluster it gives. It classifies the config against the machine
-   state, refuses a destructive or fixed-field change, makes the live ones, such as a new volume,
-   and writes the image's config slot `/state/config/<root-hash>`. An image that would not accept
-   the config would fail its boot in `chalkos-config`, and boot counting would fall back. When the
-   check refuses, chalkd answers with the reason, removes the UKI and leaves the slot retired, so
-   the running image stays the next boot and the next upgrade reuses or overwrites the slot.
+   image with Kubernetes, the cluster it gives. It evaluates the image's change rules against the
+   running slot's config, the storage STATE records and the node's facts, refuses a change they
+   refuse, makes the storage changes they accept, such as a new volume, and writes the image's
+   config slot `/state/config/<root-hash>`. An image that would not accept the config would fail
+   its boot in `chalkos-config`, and boot counting would fall back. When the check refuses, chalkd
+   answers with the reason, removes the UKI and leaves the slot retired, so the running image
+   stays the next boot and the next upgrade reuses or overwrites the slot.
    A node whose running slot holds no documents and that gets none refuses the upgrade.
 5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
    `store_<hash16>` and `store-verity_<hash16>`, from the root hash's first 16 hex characters, and

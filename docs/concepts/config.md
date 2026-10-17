@@ -360,13 +360,12 @@ config and read the machine state from facts. The built-in kinds' rules take:
 
 A node refuses the whole set when one of its rules fails, applies none of it, and names what the
 change needs, as [Change rules and facts](rules.md) shows. The changes that take nothing are made
-whichever image the slot is for: an upgrade or
-`apply-config --staged` that adds a volume creates it while the running image runs, enrolled with
-the fallback secret chalkctl sends, and `storage.json` gains it. Every boot sets up the volumes
-`storage.json` records, so the running image mounts the new volume as well, also after a
-fallback, although its config does not name it. Nothing at boot removes a volume. A slot whose
-config lacks the volume counts as removing it only when that slot is written again, so the next
-config for that image must name the volume too.
+whichever image the slot is for: an upgrade or `apply-config --staged` that adds a volume creates
+it while the running image runs, enrolled with the fallback secret chalkctl sends, and
+`storage.json` gains it. Every boot sets up the volumes `storage.json` records, so the running
+image mounts the new volume as well, also after a fallback, although its config does not name it.
+Nothing at boot removes a volume. A slot whose config lacks the volume counts as removing it only
+when that slot is written again, so the next config for that image must name the volume too.
 
 That makes the order of two deliveries matter while an image is staged. A config for the running
 image that adds a volume the staged image's config lacks would leave the staged image a slot that

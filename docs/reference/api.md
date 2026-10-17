@@ -169,7 +169,7 @@ a node cordoned otherwise as it is.
 | `node_key` | `bytes` |  |
 | `trust` | `bytes` | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
 | `config` | `string` | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only a share, a node certificate or OS CAs. |
-| `staged` | `bool` | Check the config against the image staged to boot next and keep it in that image's config slot instead, changing nothing the running image runs but the machine's storage: the config is classified against it as for the running image, and additive changes are made at once, with fallback_secret. It takes the config and the fallback secret alone, and an image staged. |
+| `staged` | `bool` | Check the config against the image staged to boot next and keep it in that image's config slot instead, changing nothing the running image runs but the machine's storage: the config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone, and an image staged. |
 
 ### ApplyConfigResponse { #message-applyconfigresponse }
 
@@ -722,7 +722,7 @@ No fields.
 | ----- | ---- | ----------- |
 | `image` | [`ImageHeader`](#message-imageheader) | The image to install. The node refuses another ID or platform than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
-| `config` | `string` | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and against the machine as ApplyConfig does: it refuses destructive storage changes and changes of the fixed Kubernetes settings, makes additive storage changes, such as a new volume, at once, and keeps the config in the image's config slot. Empty carries the running image's config over, checked against the image the same way. Only the admin role may set it. |
+| `config` | `string` | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and change rules as ApplyConfig does: it refuses what the rules refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and keeps the config in the image's config slot. Empty carries the running image's config over, checked against the image the same way. Only the admin role may set it. |
 | `fallback_secret` | `string` | Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is not none. Only the admin role may set it. |
 
 ### UpgradeRequest { #message-upgraderequest }

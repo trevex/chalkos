@@ -1470,8 +1470,9 @@ type ApplyConfigRequest struct {
 	Config string `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
 	// Check the config against the image staged to boot next and keep it in that image's config
 	// slot instead, changing nothing the running image runs but the machine's storage: the config
-	// is classified against it as for the running image, and additive changes are made at once,
-	// with fallback_secret. It takes the config and the fallback secret alone, and an image staged.
+	// meets that image's change rules, compared with the running slot's config and the machine as
+	// for the running image, and the storage changes they accept are made at once, with
+	// fallback_secret. It takes the config and the fallback secret alone, and an image staged.
 	Staged        bool `protobuf:"varint,8,opt,name=staged,proto3" json:"staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3635,11 +3636,11 @@ type UpgradeHeader struct {
 	// Reboot the node into the image once it is installed.
 	Reboot bool `protobuf:"varint,2,opt,name=reboot,proto3" json:"reboot,omitempty"`
 	// The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it
-	// against the image's schemas and against the machine as ApplyConfig does: it refuses
-	// destructive storage changes and changes of the fixed Kubernetes settings, makes additive
-	// storage changes, such as a new volume, at once, and keeps the config in the image's config
-	// slot. Empty carries the running image's config over, checked against the image the same way.
-	// Only the admin role may set it.
+	// against the image's schemas and change rules as ApplyConfig does: it refuses what the rules
+	// refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed
+	// Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and
+	// keeps the config in the image's config slot. Empty carries the running image's config over,
+	// checked against the image the same way. Only the admin role may set it.
 	Config string `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
 	// Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is;
 	// required when it adds one and the node's fallback is not none. Only the admin role may set it.

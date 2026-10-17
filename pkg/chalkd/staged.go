@@ -64,9 +64,10 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 }
 
 // applyStaged checks the config of a request against the image staged to boot next and keeps it in
-// that image's slot, as an upgrade that finds the image staged already does: classified against
-// the machine, whose additive changes it makes with the request's fallback secret. Nothing the
-// running image runs changes. The caller holds s.mu.
+// that image's slot, as an upgrade that finds the image staged already does: checked by that
+// image's rules against the running slot's config and the machine, whose storage changes the rules
+// accept it makes with the request's fallback secret. Nothing the running image runs changes.
+// The caller holds s.mu.
 func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.Config == "" || len(m.KubernetesShare) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
 		return nil, failed(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
