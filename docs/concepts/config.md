@@ -12,7 +12,8 @@ nodes; the config is what differs. An [inventory](../reference/glossary.md#inven
 cluster's nodes, the address [chalkctl](../reference/glossary.md#chalkctl) reaches each at and the
 files whose documents form each node's config. chalkctl checks the config against the node's image
 and delivers it; [chalkd](../reference/glossary.md#chalkd) checks it again, keeps it on
-[STATE](../reference/glossary.md#state) and applies it at every boot.
+[STATE](../reference/glossary.md#state) for the image it is for and applies it at every boot of
+that image.
 
 ## What is a config document?
 
@@ -99,6 +100,10 @@ schemas.
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | `kubernetes.chalkos.dev` | any | The mirrors of one container registry |
 | [`Flannel`](../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU |
 | [`Addon`](../reference/kinds.md#addon) | `kubernetes.chalkos.dev` | any | Kubernetes objects the control planes apply |
+
+The Per node column follows from each kind's `multiple`. A kind declared with `multiple = true`
+lets a node hold several documents of it, each with a name of its own, such as one `Volume` per
+volume; without it, a node holds at most one, and chalkctl and chalkd refuse a second.
 
 Some kinds depend on the image or the node:
 
@@ -261,43 +266,102 @@ that deliver config run the same check first, each against the image the config 
 - [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) against the image the node
   runs, whose schemas and [contract](../reference/glossary.md#contract) the node returns through the
   [Contract](../reference/api.md#method-contract) method, refusing an image of another
-  [platform](../reference/glossary.md#platform) than the node's `Image`.
+  [platform](../reference/glossary.md#platform) than the node's `Image`. With `--staged`, against
+  the image the node's `Image` names, which the staged image is;
+- [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) against the image each node gets,
+  before it drains any node.
 
 chalkd checks again when the config arrives, against the schemas of the image the set is for, and
-refuses an invalid set as a whole. chalkd, not chalkctl, fills in the schemas' defaults, so the set
-on STATE is complete while the files stay as short as their authors wrote them.
+refuses an invalid set as a whole. chalkd, not chalkctl, fills in the schemas' defaults, so the slot
+on STATE holds the complete set while the files stay as short as their authors wrote them.
 
 ## How does config reach a node?
 
-chalkctl delivers a node's config at install and with
+chalkctl delivers a node's config at install, with each [upgrade](upgrades.md) and with
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md):
 
 ```sh
 chalkctl apply-config w1 --secrets secrets.age
 ```
 
-Both need the secrets file, because the node's certificates and secrets travel in the same
-request. A set replaces the node's previous set as a whole: a document left out of the files is
-gone from the node after the next `apply-config`. chalkd writes the new set on STATE to a new
-directory and renames a symbolic link to it over the old one, so a power cut leaves either the old
-set or the new one, never a mix.
+Install and `apply-config` need the secrets file, because the node's certificates and secrets
+travel in the same request. A set replaces the set the node keeps for the image as a whole: a
+document left out of the files is gone from the node after the next `apply-config`.
 
-An upgrade carries no config. [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) sends the
-image alone, and the node checks the config it holds against the schemas of the new image before
-that image becomes its next boot, refusing an image that would not accept its config. Config that
-needs a kind the new image brings is applied after the upgrade.
+Before it delivers a set, chalkctl asks the node for the set it keeps, through the
+[GetConfig](../reference/api.md#method-getconfig) method, and prints one line of what the delivery
+changes:
 
-A running node refuses a change it cannot carry out live, and the error says what the change
-needs instead:
+```text
+w1: config 1 added, 1 removed (Volume "scratch"), 2 changed
+```
 
-- A `Node.spec.type` other than the one it was installed with, once the node holds its
-  Kubernetes share: the node is reinstalled as the new type.
-- A `Kubernetes` document that changes the cluster's IP families, pod or service ranges or DNS
-  addresses once the cluster exists: they stay for the cluster's life.
-- A storage change that would destroy data, such as a volume removed, moved to another disk,
-  formatted or encrypted otherwise, or shrunk: the node refuses the whole set, and
-  [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) recreates such a volume.
-  A new volume, a larger one or another mount point applies while the node runs.
+The line names every removed document, so a document dropped from the files shows before the node
+loses it. `chalkctl apply-config --diff` and `chalkctl upgrade --diff` print the whole comparison
+and deliver nothing: each document added (`+`), removed (`-`) or changed (`~`), and for a changed
+one each field by its path, with the old and the new value. A secret field shows only as
+`changed`. The node returns each value of a `Secret`, and each value of a Kubernetes `Secret` in
+an `Addon`, as its SHA-256, and chalkctl compares the inventory's values by the same hashes.
+
+## Where does a node keep its config?
+
+A node keeps a config slot on STATE for each image it holds, `/state/config/<root-hash>`, named by
+the [root hash](../reference/glossary.md#root-hash) of the image's store. A slot holds the
+documents as they were delivered, the same documents with the schemas' defaults filled in, the
+config's version and the node's [identity](../reference/glossary.md#identity), translated with
+that image's schemas. chalkd writes a slot to a new directory and renames a symbolic link to it
+over the old one, so a power cut leaves either the old slot or the new one, documents and identity
+together, never a mix.
+
+At every boot, `chalkos-config.service` loads the slot of the image the kernel command line's
+`usrhash=` names. The slots follow the images:
+
+- An install writes the slot of the image it installs.
+- An upgrade writes the slot of the new image. The image before keeps its own, so a
+  [fallback](boot-and-rollback.md) boots it with the config it ran.
+- `apply-config` writes the slot of the running image, and `apply-config --staged` the slot of the
+  image an upgrade with `--no-reboot` staged to boot next. Nothing restarts for the staged slot.
+- An upgrade removes the slot of every image no UKI on the ESP boots any more, so a node holds at
+  most two slots, one for each of its images.
+
+An image whose slot is missing boots without config: `chalkos-config` fails, the
+[health check](../reference/glossary.md#health-check) fails with it, and a counted boot falls back.
+`chalkctl apply-config` on the running image warns when an image is staged, whose slot keeps its
+own config:
+
+```text
+w1 has a staged image with its own config (version 6f0e…); apply-config --staged updates it
+```
+
+## Which changes does a node accept?
+
+The config is the image's; the machine state is the node's. The machine state is what a node keeps
+outside the slots, once for all its images: `storage.json`, the storage as applied, with the disks
+and partitions it is pinned to; the Kubernetes share; the node certificate and the OS CAs it
+trusts; and the Kubernetes cluster file. Every write of a slot (install, upgrade, `apply-config`
+and `apply-config --staged`) classifies its config against the machine state, whichever image
+the slot is for:
+
+| Change | Class | What carries it out |
+| --- | --- | --- |
+| A new volume, a larger one or another mount point | live | The write of the slot: the node makes the change at once. |
+| A volume formatted or encrypted otherwise, or shrunk | reset | [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md), which recreates the volume and loses its data. |
+| A volume removed or moved to another disk, or any change to VAR | reinstall | A reinstall of the node. |
+| A `Node.spec.type` other than the one the node was installed with, once it holds its Kubernetes share | fixed | A reinstall of the node as the new type. |
+| The cluster's IP families, pod or service ranges or DNS addresses, once the cluster exists | fixed | Nothing: they stay for the cluster's life. |
+
+A node refuses the whole set when one of its changes is not live, applies none of it, and names
+what the change needs. The live changes are made whichever image the slot is for: an upgrade or
+`apply-config --staged` that adds a volume creates it while the running image runs, enrolled with
+the fallback secret chalkctl sends, and `storage.json` gains it. The running image's config does
+not name the volume. Its boot sets up the storage `storage.json` records and leaves the volume
+alone, and its slot counts as removing the volume only when that slot is written again.
+
+That makes the order of two deliveries matter while an image is staged. A config for the running
+image that adds a volume the staged image's config lacks would leave the staged image a slot that
+removes the volume, so the node refuses the config and names the first step: deliver the config to
+the staged image with `chalkctl apply-config --staged <node>`, which creates the volume, then to
+the running image.
 
 A control plane's addresses are not refused, but they are pinned once it becomes an
 [etcd member](../reference/glossary.md#etcd-member): every later boot waits for exactly those
@@ -305,8 +369,8 @@ addresses, so a `Network` change that drops one keeps the control plane from sta
 
 ## What does a node do with its config?
 
-`chalkos-config.service` applies the stored set at every boot, before the network starts, and
-chalkd applies a new set the same way after every `apply-config`:
+`chalkos-config.service` applies the running image's slot at every boot, before the network
+starts, and chalkd applies a new set the same way after every `apply-config` to the running image:
 
 - it writes the networkd units to `/run/systemd/network`, where they take precedence over the
   image's own;
@@ -375,6 +439,8 @@ gives it, in two ways:
   which each `Secret` value is replaced by its own hash, and compares the result with the hash
   the node reports. A node that differs shows
   `not the inventory's; chalkctl apply-config <node> delivers it`.
+  With an image staged, status compares the staged slot's config the same way, and one that
+  differs shows `not the inventory's; chalkctl apply-config --staged <node> delivers it`.
 - The image: chalkctl compares the root hash of the store the node booted with the root hash in
   the `metadata.json` of the directory its `Image` names, and names both when they differ, or
   says when the image is installed and waits for the node's next boot.

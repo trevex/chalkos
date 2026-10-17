@@ -114,9 +114,9 @@ It returns `images.node-metal`, `images.node-kvm`, `images.storage-metal` and
 a dash, such as `a-b` on `metal` and `a` on `b-metal`; `mkImages` refuses that pair and names it.
 
 No check compares variants. A node may move to another variant's image with an
-[upgrade](../reference/glossary.md#upgrade); the node checks its stored config against the new
-image's schemas before the image becomes its next boot, so an image that does not accept the
-node's config never boots. [Customise an image](../guides/customise-image.md) adds modules to a
+[upgrade](../reference/glossary.md#upgrade); the node checks the config the upgrade carries against
+the new image's schemas before the image becomes its next boot, so an image that does not accept
+the node's config never boots. [Customise an image](../guides/customise-image.md) adds modules to a
 variant.
 
 ## What is a platform?

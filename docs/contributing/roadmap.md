@@ -90,15 +90,6 @@ These limits hold in the current code, grouped by area.
 - An upgrade sends the whole store, its hash tree and the UKI to each node, about 300 MiB for
   an image with Kubernetes as [The image](../concepts/image.md#how-large-is-an-image) measures it.
 - The boot loader is never updated after install, as above.
-- An upgrade carries no config. chalkd refuses an image whose schemas do not accept the node's
-  stored config before it becomes the next boot, but config that only the new image accepts
-  cannot be delivered before the upgrade, since
-  [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) checks config against the
-  running image. Once `chalkctl upgrade --no-reboot` installed an image, the node does not check
-  config applied after it against that image, since a later run finds the image installed and
-  does not send it again; only chalkctl checks the inventory's config against the image each
-  node's `Image` names, in [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and before
-  an upgrade drains a node.
 
 ### Networking
 

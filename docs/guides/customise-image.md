@@ -296,6 +296,24 @@ Put the module where the nodes that carry the kind's documents get it: in `modul
 variant accepts it, as in the flake above, or in one variant's `modules`. A node whose image lacks
 the kind refuses a config that holds a document of it.
 
+A node's config holds at most one document of a kind like `Rack`. A kind of which a node holds
+several, each with a name of its own, sets `multiple`, here one document per BGP neighbour:
+
+```nix
+chalkos.kinds.Peer = {
+  group = "bgp.example.org";
+  version = "v1alpha1";
+  multiple = true;
+  spec.address = lib.mkOption {
+    type = lib.types.nonEmptyStr;
+    description = "Address of the neighbour.";
+  };
+};
+```
+
+Without `name`, `config.chalkos.kinds.Peer.get { path = "spec.address"; }` builds a command that
+prints the field of every `Peer` document, one line each.
+
 Give each node its document in its own file, here `nodes/cp1.yaml`:
 
 ```yaml
@@ -388,17 +406,11 @@ the image its `Image` document names, `w1` the new `gpu-metal`:
 chalkctl upgrade --sign-key=db.key --sign-cert=db.crt
 ```
 
-Nodes already running their image are skipped. A node may move to an image of another variant;
-it checks its stored config against the new image before the image becomes its next boot.
+Nodes already running their image are skipped. Each node gets its config with the image, the
+changed YAML with the new kind's documents included, and checks it against the new image before
+the image becomes its next boot; the image the node ran keeps its own config, which a fallback
+boots with. A node may move to an image of another variant the same way.
 [Upgrade a cluster](upgrade-cluster.md) covers the run, rollbacks and downtime.
-
-An upgrade carries no config, so deliver the changed YAML to each node once it runs the new
-image, which accepts the new kind's documents:
-
-```sh
-chalkctl apply-config cp1 --secrets=secrets.age
-chalkctl apply-config w1 --secrets=secrets.age
-```
 
 ## Check that it worked
 

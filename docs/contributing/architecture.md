@@ -78,7 +78,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalklab` | The chalklab command tree. |
 | `client` | Connections to chalkd: by fingerprint in [maintenance mode](../reference/glossary.md#maintenance-mode), by the OS CA otherwise. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
-| `config/store` | Keeps a node's config set on STATE and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets their consumers load as credentials. |
+| `config/store` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets their consumers load as credentials. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads, and the kinds of Kubernetes nodes. |
 | `image` | Reads the partitions of a raw image from `repart-output.json`. |
 | `imagesign` | Signs an image's boot loader and UKIs, and copies them off the image. |
@@ -93,7 +93,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/vip` | Adds a VIP to an interface and announces it. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the [lab](../reference/glossary.md#lab)'s supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
-| `nodeconfig` | Applies the node's stored config, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the units that read them, and tells which units to restart. |
+| `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the units that read them, and tells which units to restart. |
 | `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
 | `storage` | Storage sections, disk references and pins, repart definitions, change classification. |

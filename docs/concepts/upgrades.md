@@ -81,12 +81,36 @@ Before it sends anything, chalkctl checks each image against the cluster:
   `--sign-key`. Without `--sign-cert`, chalkctl checks no signature.
 
 chalkctl checks every node's config before it drains the first node. It needs the inventory for
-that, whatever it authenticates with; without one, each node's own check of its stored config,
-before the image becomes its next boot, is all there is.
+that, whatever it authenticates with; without one, the node's own check is all there is.
 
 A node may get an image of another [variant](../reference/glossary.md#variant) than the one it
-runs: the check of its stored config against the image's schemas decides whether the image suits
-it.
+runs: the check of its config against the image's schemas decides whether the image suits it.
+
+## What config does an upgrade carry?
+
+chalkctl sends each node its config with the image: the set the inventory gives the node, the one
+it checked against the image. The node checks the set against the image again and keeps it in
+the new image's [config slot](config.md#where-does-a-node-keep-its-config), beside the slot of the
+image it runs. The new image boots with its own config, and a
+[fallback](boot-and-rollback.md) boots the image before with the config it ran, so config only the
+new image accepts, such as a document of a kind its extension declares, goes with the upgrade.
+Without an inventory, chalkctl sends no config, and the node carries the documents of the running
+image's slot over, checked against the new image the same way.
+
+The config counts against the node's machine state as `apply-config` does: a destructive storage
+change or a change of a fixed Kubernetes setting is refused, and a new volume is created before
+the image boots, while the running image runs. chalkctl sends the fallback secret such a volume
+is enrolled with, the recovery key from the secrets file or a password from `--password-file`.
+[Config and the inventory](config.md#which-changes-does-a-node-accept) lists the classes of
+change.
+
+Before it sends a node the image, chalkctl prints a line of what the config changes against the
+running image's, the slot the new one replaces, such as
+`w1: config 1 added, 0 removed, 1 changed`; without an inventory the line says there is nothing
+to compare with. `chalkctl upgrade --diff` prints the whole comparison for every node and changes
+nothing. A node that has the image staged already, after an upgrade with `--no-reboot`, gets the
+image again only when the config kept for it is not the inventory's; the node then replaces that
+config without writing the image again.
 
 ## What does the node check?
 
@@ -105,9 +129,10 @@ chalkd checks the image's header against the running image's os-release and the 
   reinstalled or the entry renamed;
 - the root hash is not that of the entry that boots next, the highest generation with tries left
   that the node did not boot; if it is and the inactive slot holds its store, chalkd checks the
-  stored config against the image again, as step 4 below does, and answers that the image is
-  staged already without changing anything; when the check refuses, it retires the slot and
-  removes the entry, so the running image boots next;
+  config the upgrade carries against the image, as step 4 below does, keeps it for the image in
+  place of the config it had, and answers that the image is staged already without writing the
+  image again; when the check refuses, it retires the slot, removes the entry and the image's
+  config slot, so the running image boots next;
 - the running boot was found healthy, when the upgrade would remove the image the node falls back
   to;
 - the store and hash tree fit the inactive slot.
@@ -138,20 +163,24 @@ the new one with all its tries.
    holds this store is not written again.
 3. Receive the UKI. chalkd writes it to the ESP as `/EFI/Linux/.upgrade-<root-hash>.efi`, a name
    systemd-boot ignores, and checks it.
-4. Check the stored config. chalkd opens the written store read-only through dm-verity with the
+4. Check and keep the config. chalkd opens the written store read-only through dm-verity with the
    image's root hash, reads the schemas and `image.json` of the system the UKI boots, and checks
-   the node's stored config against them, as an install checks the config it delivers: the set
-   rules, each document's schema and, on an image with Kubernetes, the cluster it gives. An image
-   that would not accept the config would fail its boot in `chalkos-config`, and boot counting
-   would fall back. When the check refuses, chalkd answers with the reason, removes the UKI and
-   leaves the slot retired, so the running image stays the next boot and the next upgrade reuses or
-   overwrites the slot. A node without stored config skips the check.
+   the config the upgrade carries against them, or without one the running slot's documents, as
+   an install checks the config it delivers: the set rules, each document's schema and, on an
+   image with Kubernetes, the cluster it gives. It classifies the config against the machine
+   state, refuses a destructive or fixed-field change, makes the live ones, such as a new volume,
+   and writes the image's config slot `/state/config/<root-hash>`. An image that would not accept
+   the config would fail its boot in `chalkos-config`, and boot counting would fall back. When the
+   check refuses, chalkd answers with the reason, removes the UKI and leaves the slot retired, so
+   the running image stays the next boot and the next upgrade reuses or overwrites the slot.
+   A node whose running slot holds no documents and that gets none refuses the upgrade.
 5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
    `store_<hash16>` and `store-verity_<hash16>`, from the root hash's first 16 hex characters, and
    renames the UKI to `chalkos_<generation>+<tries>.efi`, one generation above the highest any
    name on the ESP gave, whatever its UKI holds. The rename is the last change: before it,
    nothing boots the slot. After it, chalkd records the image's revision and tag in
-   `/state/chalkd/images.json` and forgets the images no UKI on the ESP boots any more.
+   `/state/chalkd/images.json` and forgets the images no UKI on the ESP boots any more, with their
+   config slots. A refused upgrade forgets the images it retired the same way.
 
 The running slot and its UKI are never written. Once the client stops sending, chalkd stops
 between steps, never in the middle of a partition table change.
@@ -347,7 +376,6 @@ later.
 - The health check decides on chalkd, etcd, the API server and the kubelet. An image that breaks
   only workloads is blessed, and the run continues.
 - A cluster with one or two control planes has no API server while a control plane reboots.
-- An upgrade carries no config, so config only the new image accepts cannot be delivered before it.
 
 ## Related pages
 

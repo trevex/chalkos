@@ -114,10 +114,10 @@ through it. See [Architecture](../concepts/architecture.md) and
 
 An upgrade starts with a new build: `nix build` writes a new image directory where the nodes'
 `Image` documents point. `chalkctl upgrade` streams each node the image of the `Image` document
-its `Node` names, and chalkd writes it into the inactive slot. The node checks its stored config
-against the new image's schemas before the image becomes its next boot, then reboots into it with
-[boot counting](../reference/glossary.md#boot-counting): a boot that passes the
-[health check](../reference/glossary.md#health-check) is
+its `Node` names, with the node's config, and chalkd writes it into the inactive slot. The node
+checks the config against the new image's schemas before the image becomes its next boot, then
+reboots into it with [boot counting](../reference/glossary.md#boot-counting): a boot that passes
+the [health check](../reference/glossary.md#health-check) is
 [blessed](../reference/glossary.md#blessed-boot), and an image that uses up its tries, three by
 default, without one gives way to the image before. chalkctl upgrades control planes one at a
 time and workers in batches, and stops at the first

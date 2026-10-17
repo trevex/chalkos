@@ -176,15 +176,18 @@ on x86-64 and `\EFI\BOOT\BOOTAA64.EFI` on arm64.
 
 ## Files on STATE
 
-STATE is mounted at `/state`. It holds what makes the node this node and nothing else. The
-`chalkd`, `kubernetes` and `config/secrets` directories are readable by root alone.
+STATE is mounted at `/state`. It holds what makes the node this node and nothing else: a config
+slot for each image the node holds, below `config/<root-hash>`, and the machine state every image
+shares. The `chalkd` and `kubernetes` directories, and each slot's `secrets` directories, are
+readable by root alone.
 
 | Path | Written by | What it holds |
 | --- | --- | --- |
-| `identity.json` | install, ApplyConfig | The node's [identity](glossary.md#identity), which its config translates to and the boot applies: hostname, network units, storage, Kubernetes and time settings. |
-| `config/<group>/<Kind>/<name>.json` | install, ApplyConfig | The node's config documents with their schemas' defaults filled in. `config` is a symbolic link to a directory beside it, which a new set replaces as a whole. |
-| `config/secrets/<name>.json` | install, ApplyConfig | The config's `Secret` documents. |
-| `config/version` | install, ApplyConfig | The SHA-256 of the config as delivered, which Status reports. |
+| `config/<root-hash>/` | install, Upgrade, ApplyConfig | The config slot of the image whose store has the root hash, which its boot loads: a symbolic link to a directory beside it, which a new set replaces as a whole. An Upgrade forgets the slots of the images no UKI on the ESP boots. |
+| `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's [identity](glossary.md#identity) on that image, which its config translates to and the boot applies: hostname, network units, storage, Kubernetes and time settings. |
+| `config/<root-hash>/delivered/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The slot's config documents as delivered, which GetConfig returns with secrets hashed; `Secret` documents in `delivered/secrets/<name>.json`. |
+| `config/<root-hash>/documents/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The same documents with their schemas' defaults filled in, which the node's services read; `Secret` documents in `documents/secrets/<name>.json`. |
+| `config/<root-hash>/version` | install, Upgrade, ApplyConfig | The SHA-256 of the slot's config as delivered, which Status reports. |
 | `chalkd/node.pem` | install, renewal | The [node certificate](glossary.md#node-certificate)'s chain and its key in one file, so both are replaced together. |
 | `chalkd/ca.crt` | install, [rotation](glossary.md#rotation) | The certificates of the [OS CAs](glossary.md#os-ca) the node trusts, a bundle. |
 | `kubernetes/share.json` | install, rotation | The node's [Kubernetes share](glossary.md#kubernetes-share). |
@@ -194,7 +197,7 @@ STATE is mounted at `/state`. It holds what makes the node this node and nothing
 | `kubernetes/etcd-initialised` | chalkd | etcd answered ready after the bootstrap, so its data exists. |
 | `kubernetes/etcd-initial-cluster` | chalkd | etcd's initial cluster when the node joined an existing one. |
 | `kubernetes/left` | EtcdLeave | The node left etcd; it joins again only once reinstalled. |
-| `storage/storage.json` | install, ApplyConfig | The node's storage section. |
+| `storage/storage.json` | install, Upgrade, ApplyConfig | The storage as applied, which every image's boot sets up: machine state, which the config of every slot write is classified against. The boot of an image whose config lacks a volume the file records leaves the volume alone. |
 | `storage/disks.json` | chalkos-storage, chalkd | The disks the section's names were pinned to, and the PARTUUID of each volume. |
 | `storage/disks/<disk>/*.conf` | chalkos-storage, chalkd | The repart definitions of each disk, from the storage section. |
 | `installed` | install | The marker that the node is installed, written last. |
@@ -216,7 +219,7 @@ image with Kubernetes:
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
 | `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, [variant](glossary.md#variant), platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. [Config kinds](kinds.md) lists the fields of the default image's kinds. |
-| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the [inventory](glossary.md#inventory) against both before it drains a node, and chalkd checks the node's stored config against those of the image it wrote. |
+| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the [inventory](glossary.md#inventory) against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
 
 The definitions of an image with the default sizes read:
 

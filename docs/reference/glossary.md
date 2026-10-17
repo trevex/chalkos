@@ -196,7 +196,8 @@ within [`chalkos.upgrade.healthTimeout`](options.md#chalkosupgradehealthtimeout)
 
 The form chalkd translates a node's [config](#config) into before it applies it: hostname,
 network units, labels, taints, storage, Kubernetes addresses and time servers, without secrets.
-chalkd keeps it on [STATE](#state) as `identity.json`, and the boot applies it.
+chalkd keeps it on [STATE](#state) in each image's config slot, translated with that image's
+schemas, and the image's boot applies it.
 `chalkctl validate` translates a set the same way to check it. See
 [Image and partition layout](image-layout.md#files-on-state).
 

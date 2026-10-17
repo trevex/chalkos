@@ -93,10 +93,10 @@ chalkctl validate
 `validate` checks each node's config against the new image's schemas, offline. `chalkctl upgrade`
 runs the same check before it drains any node and stops the run on a config the new image does
 not accept, so fix it now:
-[Apply config that needs the new image](#apply-config-that-needs-the-new-image) says how. A node
-that runs another platform than its `Image` stops the run before any node is sent anything. chalkctl
-compares no variant: a node whose `Image` names another variant's build gets that image, and
-chalkctl prints the change.
+[Upgrade with config the new image needs](#upgrade-with-config-the-new-image-needs) says how. A
+node that runs another platform than its `Image` stops the run before any node is sent anything.
+chalkctl compares no variant: a node whose `Image` names another variant's build gets that image,
+and chalkctl prints the change.
 
 With `--image`, it installs an image you built before, a raw image with `repart-output.json`
 next to it or an image directory, on the nodes that run that image's variant, or on the nodes
@@ -172,38 +172,65 @@ Control planes go first, one at a time. Workers and nodes without Kubernetes fol
 | `--no-reboot` | Installs the images without draining or rebooting; each node boots its image at its next reboot. |
 | `--delete-emptydir-data` | Also evicts pods with `emptyDir` volumes, whose data is lost. Without it, such a pod stops the drain. |
 | `--timeout=<duration>` | How long to wait for each drain and for each node to come back healthy; 30 minutes by default. |
+| `--diff` | Prints what each node's config changes and changes nothing. |
+| `--password-file=<file>` | Holds the password of nodes whose fallback is a password, for a new encrypted volume the config adds. |
 
 Raise `--max-unavailable` when the workloads have spare capacity: each batch takes its nodes'
 capacity away for one reboot.
 
-## Apply config that needs the new image
+## Upgrade with config the new image needs
 
-An upgrade sends images, never config. With an inventory, chalkctl checks each node's files against
-the image the node gets before it drains any node, and stops the run with
+An upgrade carries each node's config with its image. With an inventory, chalkctl checks each
+node's files against the image the node gets before it drains any node, and stops the run with
 `the config of <node>: ...` when the image does not accept them, such as a document of a kind its
-variant no longer declares. The node checks the config it stores against the new image's schemas
-too, read from the slot it has just written, before the image becomes its next boot. A stored config
-the files no longer match, such as one whose removed documents were not delivered yet, stops the
-upgrade of that node with `the node's config does not suit the image: ...; apply config both images
-accept with chalkctl apply-config, then upgrade`. Remove such documents from the node's files and
-deliver the config before the upgrade:
-
-```sh
-chalkctl apply-config <node> --secrets=secrets.age
-```
-
-Config that only the new image accepts, such as a document of a kind an extension of the new
-image declares, waits until the node runs that image: the running image would refuse it. Add it
-to the node's files after the upgrade, check it and deliver it:
+variant no longer declares. The node checks the config against the new image's schemas too, read
+from the slot it has just written, and keeps it for that image. Config that only the new image
+accepts, such as a document of a kind an extension of the new image declares, goes into the
+node's files before the upgrade:
 
 ```sh
 chalkctl validate <node>
-chalkctl apply-config <node> --secrets=secrets.age
+chalkctl upgrade --nodes=<node> --diff
 ```
 
-`<node>` is the node's name in the inventory. Until then
-[`chalkctl status`](../reference/cli/chalkctl_status.md) reports that the node runs another config
-than the inventory gives it.
+`<node>` is the node's name in the inventory. `chalkctl validate` checks the files against the
+image the node's `Image` names, which is the image the upgrade installs without `--image`.
+`--diff` prints, for each node, what its config changes against the config of the image it runs,
+and changes nothing:
+
+```text
+w1: config 1 added, 0 removed, 0 changed
++ Rack "rack"
+```
+
+Without `--diff`, chalkctl prints the first line for each node before it sends the image. The
+image the node runs keeps its own config, so a node that falls back runs the config it ran before
+the upgrade.
+
+The config counts against the node's storage and Kubernetes settings as `apply-config` does. A
+destructive storage change stops the node's upgrade, and a new volume is created before the image
+boots. A new encrypted volume needs the fallback secret: the recovery key, which chalkctl derives
+from the secrets file, or with a password fallback the password in the file `--password-file`
+names.
+
+### Change the config of a staged image
+
+After an upgrade with `--no-reboot`, each node keeps the new image's config until it reboots into
+the image. Deliver a change to that config with `--staged`:
+
+```sh
+chalkctl apply-config <node> --staged --secrets=secrets.age
+```
+
+chalkctl checks the files against the image the node's `Image` names and the node checks them
+against the staged image; nothing restarts. `chalkctl apply-config` without `--staged` changes the
+running image's config alone and warns that the staged image keeps its own. Running
+`chalkctl upgrade` again sends the image once more to a node whose staged config is not the
+inventory's, which replaces that config.
+
+A change to the running image that adds a volume the staged image's config lacks is refused: once
+the volume exists, booting the staged image with that config would remove it. Deliver the change
+with `--staged` first, which creates the volume, then without.
 
 ## Check that it worked
 

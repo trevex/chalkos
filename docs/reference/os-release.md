@@ -97,7 +97,7 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | `CHALKOS_PLATFORM` | chalkd's [Status](api.md#method-status) | Reported, and shown by [`chalkctl status`](cli/chalkctl_status.md) beside the platform of the image the node's `Image` document names. |
 
 No check compares `CHALKOS_VARIANT`: a node may change its variant through an upgrade, and the
-check of its stored config against the new image's schemas decides whether the image suits it.
+check of its config against the new image's schemas decides whether the image suits it.
 
 No check reads the image's version, because it has none: chalkd's Info and Status name the running
 image by the [root hash](glossary.md#root-hash) on the kernel command line, and the record of a

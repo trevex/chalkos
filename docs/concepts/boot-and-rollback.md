@@ -89,8 +89,11 @@ The initrd prepares the root file system in four steps.
 
 Stage 2 starts the node's own services in order:
 
-1. `chalkos-config.service` applies the [config](../reference/glossary.md#config) on STATE
-   before networkd starts: hostname, network units, time servers and the documents services read.
+1. `chalkos-config.service` applies the [config](../reference/glossary.md#config) that STATE keeps
+   for the booted image, its [config slot](config.md#where-does-a-node-keep-its-config), before
+   networkd starts: hostname, network units, time servers and the documents services read. A
+   fallback boots the image before with its own slot, so it runs the config it ran. An image
+   without a slot fails here, and its boot is not found healthy.
 2. systemd-networkd brings up the network.
 3. chalkd starts. It finds the `installed` marker on STATE and serves in
    [normal mode](../reference/glossary.md#normal-mode), or finds none and serves in
