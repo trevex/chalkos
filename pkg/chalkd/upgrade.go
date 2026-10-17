@@ -216,6 +216,9 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return err
 	}
+	if err := s.verifyMachine(ctx, mc, secret); err != nil {
+		return err
+	}
 	if err := s.applyMachine(ctx, mc, secret); err != nil {
 		return err
 	}

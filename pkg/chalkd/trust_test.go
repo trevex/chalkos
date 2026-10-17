@@ -403,3 +403,44 @@ func TestApplyConfigRefusesBeforeItTrusts(t *testing.T) {
 		t.Error("a refused request changed the OS CAs")
 	}
 }
+
+// TestApplyConfigRefusesTheFallbackSecretBeforeItTrusts checks that a missing or mistyped
+// fallback secret for a new encrypted volume is refused before the node trusts the OS CAs the
+// same request delivers.
+func TestApplyConfigRefusesTheFallbackSecretBeforeItTrusts(t *testing.T) {
+	for _, c := range []struct {
+		name, secret, want string
+		mismatch           bool
+	}{
+		{name: "missing", want: "no fallback secret was sent"},
+		{name: "wrong", secret: "mistyped", want: "does not match the node's existing fallback keyslot", mismatch: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, r := installedServer(t, section("", ""), false)
+			withNodeCertificate(t, s)
+			if c.mismatch {
+				mismatch(r)
+			}
+			osCA, err := testOSCA()
+			if err != nil {
+				t.Fatal(err)
+			}
+			next, err := pki.NewOSCA(time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, admin := adminOf(t, osCA)
+			before := s.Certificate.OSCA()
+			req := &nodev1.ApplyConfigRequest{FallbackSecret: c.secret, Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}
+			if _, err := deliver(asCaller(admin), s, identityWith(section("", "ext4")), req); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+			if s.Certificate.OSCA() != before {
+				t.Error("a refused request changed the OS CAs")
+			}
+			if changed := withoutChecks(r.calls); len(changed) != 0 {
+				t.Errorf("ran %v", changed)
+			}
+		})
+	}
+}

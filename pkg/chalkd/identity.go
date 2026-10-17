@@ -363,6 +363,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 				return nil, err
 			}
 		}
+		// The fallback secret is checked here too, which only reads the devices, so a missing or
+		// mistyped one is refused before the node trusts the delivered OS CAs.
+		if err := s.verifyMachine(ctx, mc, m.FallbackSecret); err != nil {
+			return nil, err
+		}
 	}
 	if len(m.Trust) > 0 {
 		if share == nil {
@@ -507,15 +512,23 @@ func (s *Server) machineChanges(section storage.Section) (machineChange, error) 
 	return machineChange{recorded: recorded, section: section, pins: pins, changes: changes}, nil
 }
 
-// applyMachine makes the additive changes a slot's section makes to the machine's storage, which
-// records them in storage.json; secret is the fallback secret new encrypted volumes are enrolled
-// with. The caller holds s.mu.
-func (s *Server) applyMachine(ctx context.Context, mc machineChange, secret string) error {
+// verifyMachine refuses the fallback secret that the additive changes of mc would enroll new
+// encrypted volumes with, when it is missing or differs from the node's. It only reads the
+// devices, so a caller runs it with its other refusals, before anything changes. The caller holds
+// s.mu.
+func (s *Server) verifyMachine(ctx context.Context, mc machineChange, secret string) error {
 	if len(mc.changes) == 0 {
 		return nil
 	}
-	if err := s.verifyFallback(ctx, mc.recorded, mc.section, mc.pins, secret); err != nil {
-		return err
+	return s.verifyFallback(ctx, mc.recorded, mc.section, mc.pins, secret)
+}
+
+// applyMachine makes the additive changes a slot's section makes to the machine's storage, which
+// records them in storage.json; secret is the fallback secret new encrypted volumes are enrolled
+// with, which verifyMachine checked. The caller holds s.mu.
+func (s *Server) applyMachine(ctx context.Context, mc machineChange, secret string) error {
+	if len(mc.changes) == 0 {
+		return nil
 	}
 	return s.applyStorage(ctx, mc.recorded, mc.section, secret, mc.changes)
 }
