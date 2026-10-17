@@ -6,7 +6,7 @@ description: "How a new image reaches a node, how chalkctl rolls it through a cl
 # Upgrades
 
 An [upgrade](../reference/glossary.md#upgrade) installs a new
-[image](../reference/glossary.md#image) version on a node: the operating system, Kubernetes and
+[image](../reference/glossary.md#image) on a node: the operating system, Kubernetes and
 [chalkd](../reference/glossary.md#chalkd) together. chalkd writes the image into the node's inactive
 [slot](../reference/glossary.md#slot), and the node boots it with a fixed number of tries; an image
 that does not become healthy is replaced by the one before.
@@ -15,9 +15,11 @@ by node, so the cluster keeps its etcd quorum and its workloads keep running.
 
 ## What is an upgrade?
 
-An upgrade replaces the whole image with a new [image
-version](../reference/glossary.md#image-version). There are no packages to update on a node and no
-separate Kubernetes upgrade: a new Kubernetes release is a new image built with a new
+An upgrade replaces the whole image with another, which its store's
+[root hash](../reference/glossary.md#root-hash) identifies. Any change to an image's modules gives
+it a new root hash, so a new build needs nothing raised before it is installed. There are no
+packages to update on a node and no separate Kubernetes upgrade: a new Kubernetes release is a new
+image built with a new
 [`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage), installed like any
 other.
 
@@ -35,8 +37,9 @@ installed. The parts are the ones an install sends, read from the same image, so
 from an image and one upgraded to it run the same bytes.
 
 The node keeps no upgrade state of its own. The slots' partition UUIDs and labels and the UKIs on
-the [ESP](../reference/glossary.md#esp) say what is installed, and the cluster's versions and
-cordons say how far a rolling upgrade got. So any step can stop at any point, and running the
+the [ESP](../reference/glossary.md#esp) say what is installed, and the root hashes the nodes run
+and their cordons say how far a rolling upgrade got. So any step can stop at any point, and running
+the
 same command again continues.
 
 ## Where does chalkctl get the images?
@@ -70,7 +73,8 @@ sign the UKI before it is sent, so the signing key never enters the Nix store.
 Before it sends anything, chalkctl checks each image against the cluster:
 
 - the UKI boots the store the image holds: its `usrhash=` equals the store's root hash;
-- the version is one chalkos installs, and the UKI's os-release names a variant and platform;
+- the UKI's os-release sets `IMAGE_VERSION` empty, so systemd-boot orders the node's entries by
+  generation, and names a variant and platform;
 - the config the inventory gives each node that gets the image suits the `schemas/` and
   `image.json` in the image's directory, as an install checks the config it delivers;
 - the UKI carries a signature of the certificate `--sign-cert` names, with or without
@@ -92,20 +96,23 @@ The [Upgrade](../reference/api.md#method-upgrade) method needs the
 chalkd checks the image's header against the running image's os-release and the disk:
 
 - the image ID and platform equal the running image's, and the architecture the machine's;
-- the version is not the running one, unless the root hash is the same too, in which case the node
-  answers that it runs the image already and changes nothing;
-- the root hash is not the running one under another version, whose partitions would be the
-  running slot's;
-- no UKI on the ESP holds the version with another root hash, and no UKI that stays would collide
-  with the new entry's name;
+- the root hash is not the running one; if it is, the node answers that it runs the image already
+  and changes nothing;
+- the root hash is not that of the entry that boots next, the highest generation with tries left
+  that the node did not boot; if it is and the inactive slot holds its store, the node answers
+  that the image is staged already and changes nothing;
+- no UKI of another image on the ESP has the name the new entry needs;
 - the running boot was found healthy, when the upgrade would remove the image the node falls back
   to;
 - the store and hash tree fit the inactive slot.
 
+Any other root hash is installed as the next generation: a newer image, an older one, or one
+whose earlier entry used up its tries, which the retirement then removes.
+
 The UKI is checked when it arrives, before anything can boot it. Its SHA-256 must match the
-header, its os-release must name the same image ID, version and platform as the
-header, its `usrhash=` must equal the header's root hash, and its boot tries must be a positive
-number. With Secure Boot enforced, chalkd checks its signature against the firmware's
+header, its os-release must name the same image ID and platform as the header and set
+`IMAGE_VERSION` empty, its `usrhash=` must equal the header's root hash, and its boot tries must
+be a positive number. With Secure Boot enforced, chalkd checks its signature against the firmware's
 [db and dbx](../reference/glossary.md#db-and-dbx) as the firmware will, and refuses it when dbx
 lists its digest or any certificate in its signer's chain.
 
@@ -120,7 +127,7 @@ the new one with all its tries.
 2. Write and verify. chalkd writes the store and hash tree into the slot, checks their SHA-256
    sums and verifies the store read back from the disk against the root hash. A slot that already
    holds this store is not written again.
-3. Receive the UKI. chalkd writes it to the ESP as `/EFI/Linux/.upgrade-<version>.efi`, a name
+3. Receive the UKI. chalkd writes it to the ESP as `/EFI/Linux/.upgrade-<root-hash>.efi`, a name
    systemd-boot ignores, and checks it.
 4. Check the stored config. chalkd opens the written store read-only through dm-verity with the
    image's root hash, reads the schemas and `image.json` of the system the UKI boots, and checks
@@ -131,9 +138,11 @@ the new one with all its tries.
    leaves the slot retired, so the running image stays the next boot and the next upgrade reuses or
    overwrites the slot. A node without stored config skips the check.
 5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
-   `store_<version>` and `store-verity_<version>`, sets `LoaderEntryPreferred` to the new entry
-   and renames the UKI to `chalkos_<version>+<tries>.efi`. The rename is the last change: before
-   it, nothing boots the slot.
+   `store_<hash16>` and `store-verity_<hash16>`, from the root hash's first 16 hex characters, and
+   renames the UKI to `chalkos_<generation>+<tries>.efi`, one generation above the highest the
+   ESP held. The rename is the last change: before it, nothing boots the slot. After it, chalkd
+   records the image's revision and tag in `/state/chalkd/images.json` and forgets the images no
+   UKI on the ESP boots any more.
 
 The running slot and its UKI are never written. Once the client stops sending, chalkd stops
 between steps, never in the middle of a partition table change.
@@ -158,7 +167,8 @@ For each node, chalkctl:
 4. streams the image, unless the node has it installed already;
 5. on a control plane, drains the node;
 6. reboots the node;
-7. waits until the node runs the new version, its boot was found healthy and its Node is Ready;
+7. waits until the node runs the new image's root hash, its boot was found healthy and its Node is
+   Ready;
 8. uncordons the node, if the upgrade cordoned it.
 
 The sequence shows a worker's upgrade.
@@ -178,7 +188,7 @@ sequenceDiagram
     node->>disk: retire the inactive slot
     node->>disk: write and verify the store
     node->>disk: write and check the UKI
-    node->>disk: activate: UUIDs, labels, preferred entry, tries
+    node->>disk: activate: UUIDs, labels, next generation with tries
     chalkctl->>node: Reboot
     boot->>boot: counted boot of the new UKI
     health->>health: chalkd, kubelet and Node healthy
@@ -192,17 +202,17 @@ A run over a cluster of three control planes prints this, shortened. On cp1 a po
 controller, `default/debug`, stays where it is:
 
 ```text
-upgrading node on metal to chalkos 1.5.0: cp1, cp2, cp3
-cp1: installing 1.5.0
-cp1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
+upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3
+cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
+cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
 cp1: cordoned, evicted 2 pods, kept 7
 cp1: keeps pods without a controller: default/debug; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow
-cp1: rebooting into 1.5.0
-cp1: runs 1.5.0, found healthy
+cp1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
+cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
 cp1: uncordoned
-cp2: installing 1.5.0
+cp2: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 ...
-upgraded 3 nodes to 1.5.0
+upgraded 3 nodes to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 ```
 
 ### Why must etcd keep its quorum?
@@ -237,11 +247,11 @@ right before it reboots.
 
 A run stops at the first node that fails, and leaves the rest as they are. The most important case
 is a [rollback](../reference/glossary.md#rollback): a node that fell back from the new image. The
-error names the node and the version it runs again, and the journal lines its failed boot
+error names the node and the image it runs again, and the journal lines its failed boot
 recorded follow it:
 
 ```text
-chalkctl: w2: upgrade to 1.5.0 failed: rolled back to 1.4.0; it stays cordoned; its boots logged:
+chalkctl: w2: upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a); it stays cordoned; its boots logged:
 ```
 
 The node stays cordoned for an operator to look at.
@@ -253,17 +263,18 @@ when a node does not come back healthy and Ready within `--timeout`.
 
 Running the same command again continues where the last run stopped:
 
-- a node that runs the new version with a blessed boot is skipped, or only uncordoned once its
+- a node that runs the new image with a blessed boot is skipped, or only uncordoned once its
   Node is Ready;
-- a node that booted the new version and is still being counted is waited for;
+- a node that booted the new image and is still being counted is waited for;
 - a node that has the image installed already is rebooted without sending the image again;
 - a node is uncordoned only if the annotation `chalkos.dev/upgrade-cordon` shows the upgrade
   cordoned it, so a node an operator cordoned stays cordoned.
 
-A node that fell back from the version stops every later run too, so a known-bad image is never
-booted again by itself. `--retry-failed` installs it once more on such nodes, for a failure that
-lay outside the image; each node is upgraded once per run, so a second fallback stops the run
-again. Usually the fix is a new build, which needs a new version.
+A node that fell back from the image stops every later run too, so a known-bad image is never
+booted again by itself. `--retry-failed` installs it once more on such nodes, as the next
+generation, for a failure that lay outside the image; each node is upgraded once per run, so a
+second fallback stops the run again. Usually the fix is a new build, which has a new root hash and
+is installed like any other image.
 
 ## Which flags change a run?
 
@@ -289,13 +300,14 @@ chalkctl upgrade --inventory=<lab-inventory> --config=<client-file> \
   --sign-key=<db-key> --sign-cert=<db-cert> --allow-downtime
 ```
 
-## Can a node go back to an older version?
+## Can a node go back to an older image?
 
-Yes. A downgrade is an upgrade to an image with a lower version, and chalkd accepts it like any
-other. systemd-boot would boot the newest version on the ESP by default, so activation sets
-`LoaderEntryPreferred` to the new entry, which makes the older version boot; when its tries are
-used up, systemd-boot passes over it and the fallback works as for any upgrade. A version whose UKI
-is still on the node's ESP with another root hash is refused, as for any upgrade.
+Yes, at the operator's own risk. chalkd has no notion of older or newer: a downgrade is an upgrade
+to another root hash, installed as the next generation, so systemd-boot boots it first like any
+upgrade, and when its tries are used up it falls back to the image the node ran. When the inactive
+slot still holds the older image, as after one upgrade, its store is not written again. Neither
+chalkctl nor chalkd warns of a downgrade; whether the older image still suits the node's data,
+such as etcd's or a workload's, is for the operator to know.
 
 ## What does an upgrade trust?
 
@@ -332,7 +344,7 @@ later.
 
 - [Boot, health and rollback](boot-and-rollback.md) for [boot
   counting](../reference/glossary.md#boot-counting) and the health check.
-- [The image](image.md) for what an image holds and how versions are named.
+- [The image](image.md) for what an image holds and how its root hash identifies it.
 - [Kubernetes on chalkos](kubernetes.md) for etcd membership and the control plane.
 - [Upgrade a cluster](../guides/upgrade-cluster.md) for the task, step by step.
 - [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) and the

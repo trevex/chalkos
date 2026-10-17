@@ -29,7 +29,7 @@ node's config and image with the inventory. A healthy [worker](../reference/glos
 $ chalkctl status w1
 config b02445f30a5a8197dac34ce49e8af8c62f9974d2c7b8dbf02ffb1d54cd620a65 (the inventory's)
 platform metal (the inventory's)
-image 1.5.0, booted from chalkos_1.5.0.efi
+image 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), booted from chalkos_2.efi
 VOLUME    DISK      MOUNT POINT        STATE
 longhorn  longhorn  /var/lib/longhorn  mounted
 var       system    /var               mounted
@@ -52,7 +52,7 @@ Read it from the top:
 | --- | --- | --- |
 | `config` | The version of the [config](../reference/glossary.md#config) the node runs, the SHA-256 of its documents, and whether it is the inventory's; `none` on a node installed before config documents. | `not the inventory's; chalkctl apply-config w1 delivers it`: the node's files changed since the last delivery. `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's documents from the inventory, for the reason it names. |
 | `platform` | The platform the image was built for. | A mismatch with the platform of the node's `Image`: changing a node's platform is a reinstall. |
-| `image` | The [image version](../reference/glossary.md#image-version) booted, its boot entry, and `not found healthy yet` while the [health check](../reference/glossary.md#health-check) runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
+| `image` | The image booted, by the first 12 hex characters of its [root hash](../reference/glossary.md#root-hash) with the tag and revision it was built from when the node's record knows them, its boot entry, and `not found healthy yet` while the [health check](../reference/glossary.md#health-check) runs. | `upgrade to ... failed: rolled back to ...`, followed by the failed boot's log lines: see [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back). |
 | `its store's root hash is ...` | Shown only when the node runs another build than the image directory of its `Image`, whose `metadata.json` names the root hash. | `chalkctl upgrade --nodes w1 installs that image`: the image was rebuilt since the node's upgrade. `it has ... staged`: the node boots that build with its next reboot. |
 | `VOLUME` table | Each volume, its disk, mount point and state. | `missing` or `not mounted`; a `disk <name>: ...` line after the table names the disk's problem. |
 | `kubernetes` | The node's kind and state, whether its Node is Ready, its part in the [VIP](../reference/glossary.md#vip) and its [control plane](../reference/glossary.md#control-plane)'s state. | Any state other than `bootstrapped` or `joined`, or one of them followed by `: <problem>`; the table of symptoms below lists them. |
@@ -112,7 +112,7 @@ kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- \
   chroot /host /run/current-system/sw/bin/bash
 ```
 
-The option changes the image, so it reaches running nodes with an upgrade and a new version. It
+The option changes the image, so it reaches running nodes with an upgrade to the new image. It
 needs the node's kubelet and the API server to work; a node that is not in Kubernetes has only
 `chalkctl logs` and its console.
 
@@ -255,7 +255,8 @@ issued, so a small offset does no harm, but a clock that is days off rejects val
 
 A report someone can act on holds:
 
-- the chalkos version, from `flake.lock`, and the image version from `chalkctl status`;
+- the chalkos version, from `flake.lock`, and the image line of `chalkctl status`, which names the
+  image's root hash and the revision it was built from;
 - the full output of `chalkctl status <node>` for the nodes involved;
 - the logs of the units involved, from `chalkctl logs <node> --unit=<unit>`;
 - for a boot problem, the console output, from the BMC or `chalklab console <node> -f=false`;

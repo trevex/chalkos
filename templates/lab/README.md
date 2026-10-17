@@ -47,10 +47,11 @@ chalkctl validate
 chalkctl apply-config w1 --inventory <lab inventory> --secrets secrets.json
 ```
 
-To upgrade, give the `node` variant in `flake.nix` a new `system.image.version` in its `modules`,
-build the image again with `nix build .#node-kvm -o images/node-kvm`, and let chalkctl sign it
-with the lab's db key and install it, with the files `chalklab status` names and the client file
-`CHALKOSCONFIG` names:
+To upgrade, change the `node` variant's `modules` in `flake.nix` and commit, build the image again
+with `nix build .#node-kvm -o images/node-kvm`, and let chalkctl sign it with the lab's db key and
+install it, with the files `chalklab status` names and the client file `CHALKOSCONFIG` names. A
+changed image has a new root hash, so there is no version to raise; chalkctl shows the commit the
+flake passes to `mkImages` as `revision` beside it:
 
 ```sh
 chalkctl upgrade --inventory <lab inventory> \

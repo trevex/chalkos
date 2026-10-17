@@ -18,8 +18,8 @@ YAML that Go reads. They meet in these places:
 - The [image](../reference/glossary.md#image) directory. `chalkos.lib.mkImages` builds one per
   [variant](../reference/glossary.md#variant) and [platform](../reference/glossary.md#platform)
   from the node modules (`lib/images.nix`, `modules/node`): the raw image with its partitions,
-  `metadata.json` (variant, platform, version, root hash), `image.json` (what the image fixes
-  about Kubernetes) and `schemas/`, the JSON Schemas of the
+  `metadata.json` (variant, platform, root hash, revision and tag), `image.json` (what the image
+  fixes about Kubernetes) and `schemas/`, the JSON Schemas of the
   [config kinds](../reference/glossary.md#kind) the image accepts. chalkctl and chalklab read
   them from there, or from a running node through the Contract method.
 - Files the image carries in `/etc/chalkos`, written by the node modules: the same

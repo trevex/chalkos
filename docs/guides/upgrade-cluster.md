@@ -30,13 +30,14 @@ PodDisruptionBudgets.
   `--allow-downtime`, described below.
 - [Upgrades](../concepts/upgrades.md) explains the mechanism this guide drives.
 
-## Change the image and its version
+## Change the image
 
-Every image carries a version, `system.image.version`, which names its
-[UKI](../reference/glossary.md#uki) and its slot's partitions, within the rules
-[The image](../concepts/image.md#what-may-an-image-version-be) gives. Set it in the NixOS
-modules of every variant whose image changes, in the call of
-[`chalkos.lib.mkImages`](../reference/options.md) in `flake.nix`. In the homelab example:
+An image is its store's [root hash](../reference/glossary.md#root-hash), so any change to its
+modules or to `flake.lock` makes a new image, and nothing needs raising before it is installed. A
+node numbers the boot entries it installs itself, and boots the one installed last. The call of
+[`chalkos.lib.mkImages`](../reference/options.md) in `flake.nix` passes the commit the images are
+built from as `revision`, which `chalkctl status` and `chalkctl upgrade` show beside the root
+hash. In the homelab example:
 
 ```nix title="flake.nix"
 {
@@ -45,14 +46,12 @@ modules of every variant whose image changes, in the call of
   inputs.chalkos.url = "github:trevex/chalkos";
 
   outputs =
-    { chalkos, ... }:
+    { self, chalkos, ... }:
     let
       images = chalkos.lib.mkImages {
+        revision = self.rev or self.dirtyRev or null;
         platforms = [ "metal" ];
-        variants.node.modules = [
-          ./extensions/rack.nix
-          { system.image.version = "1.5.0"; }
-        ];
+        variants.node.modules = [ ./extensions/rack.nix ];
       };
     in
     {
@@ -61,14 +60,8 @@ modules of every variant whose image changes, in the call of
 }
 ```
 
-A version set in `modules`, beside `variants`, applies to every variant's images.
-
-Raise the version whenever the image changes, even when you only changed a module. A node refuses an
-image of the version it runs with a different store, because the version names its partitions and
-boot entry, and chalkctl stops before sending it: `w1 runs another build of 1.4.0, whose store has
-the root hash ..., not ...; build the image with a new version`.
-
-Then make the change itself:
+Nix cannot read git tags, so a release job that builds from a tag passes it as `tag` as well, such
+as `tag = "v1.5.0";`. Both are for display only. Make the change itself:
 
 - A new chalkos release: update the flake's input and commit the new `flake.lock`.
 
@@ -79,7 +72,7 @@ Then make the change itself:
 - A new Kubernetes release: set
   [`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage) in the
   variant's modules. Every image with Kubernetes carries the kubelet, so every such variant gets
-  a new version. Move one minor release at a time, as the Kubernetes version skew policy
+  a new image. Move one minor release at a time, as the Kubernetes version skew policy
   requires; `chalkctl upgrade` upgrades the control planes before the
   [workers](../reference/glossary.md#worker), which keeps the kubelets no newer than the API
   server.
@@ -127,23 +120,27 @@ authenticates with the secrets file `--secrets` names, or with a client file:
 
 ```console
 $ chalkctl upgrade --secrets=secrets.age --sign-key=<db-key> --sign-cert=<db-cert>
-upgrading node on metal to chalkos 1.5.0: cp1, cp2, cp3, w1, w2, w3
-cp1: installing 1.5.0
-cp1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
+upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3, w1, w2, w3
+cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
+cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
 cp1: cordoned, evicted 2 pods, kept 6
-cp1: rebooting into 1.5.0
-cp1: runs 1.5.0, found healthy
+cp1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
+cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
 cp1: uncordoned
 ...
 w1: cordoned, evicted 14 pods, kept 3
-w1: installing 1.5.0
-w1: installed 1.5.0, which boots next as chalkos_1.5.0+3.efi
-w1: rebooting into 1.5.0
-w1: runs 1.5.0, found healthy
+w1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
+w1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
+w1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
+w1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
 w1: uncordoned
 ...
-upgraded 6 nodes to 1.5.0
+upgraded 6 nodes to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 ```
+
+chalkctl names an image by the first 12 hex characters of its root hash, followed by the tag and
+the revision's first 12 characters when the build named them. `chalkos_2+3.efi` is the node's
+next boot entry: one generation above the entry it booted, with three tries.
 
 `<db-key>` and `<db-cert>` are the PEM files of the Secure Boot db key and its certificate. The
 lines follow each node through its steps:
@@ -210,19 +207,21 @@ than the inventory gives it.
 
 ## Check that it worked
 
-[`chalkctl status`](../reference/cli/chalkctl_status.md) names the version a node booted and
-whether that boot was found healthy:
+[`chalkctl status`](../reference/cli/chalkctl_status.md) names the image a node booted, the
+entry it booted from and whether that boot was found healthy:
 
 ```console
 $ chalkctl status w1
 ...
-image 1.5.0, booted from chalkos_1.5.0.efi
+image 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), booted from chalkos_2.efi
 ...
 ```
 
-A boot that was not found healthy yet says so: `image 1.5.0, booted from chalkos_1.5.0+2-1.efi, not
-found healthy yet`. A node that received its image with `--no-reboot` shows `upgrade to 1.5.0
-installed; it boots next`. Then check the cluster from Kubernetes:
+A boot that was not found healthy yet says so:
+`image 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), booted from chalkos_2+2-1.efi, not found healthy yet`.
+A node that received its image with `--no-reboot` shows
+`upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) installed; it boots next`. Then check the cluster
+from Kubernetes:
 
 ```sh
 kubectl get nodes -o wide
@@ -237,22 +236,23 @@ health check wrote the last 30 lines that chalkd and the check logged during the
 [VAR](../reference/glossary.md#var), and the previous image shows them. The run stops at that node:
 
 ```text
-chalkctl: w2: upgrade to 1.5.0 failed: rolled back to 1.4.0; it stays cordoned; its boots logged:
+chalkctl: w2: upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a); it stays cordoned; its boots logged:
   ...
   2026-10-10T14:09:41+00:00 w2 chalkd[702]: the node did not become healthy within 5m0s: the kubelet is not healthy: ...
 ```
 
 The node runs its previous image, healthy, and stays cordoned so you can look at it.
-`chalkctl status w2` shows the same lines under `upgrade to 1.5.0 failed: rolled back to 1.4.0`
+`chalkctl status w2` shows the same lines under
+`upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a)`
 for as long as the failed image stays on the disk. With them:
 
 1. Find the cause. The journal lines name what the health check found missing: a failed unit on a
    node without Kubernetes, the kubelet, the Node's registration, the API server or the [etcd
    member](../reference/glossary.md#etcd-member). [Troubleshooting](troubleshooting.md) helps from
    there.
-2. Fix the image's modules, raise the version, build the image again and run `chalkctl upgrade`
-   again. chalkctl refuses to
-   install 1.5.0 again on a node that fell back from it, so a known-bad image never boots twice
+2. Fix the image's modules, build the image again and run `chalkctl upgrade` again: the fix
+   changes the store, so the new build has a new root hash. chalkctl refuses to install
+   3fa9c1e2b7d0 again on a node that fell back from it, so a known-bad image never boots twice
    by accident.
 3. When the cause was outside the image, a switch port that was down for example, install the
    same image once more with `--retry-failed`.
@@ -272,13 +272,15 @@ uncordons only nodes it cordoned itself. An image whose transfer was interrupted
 inactive slot empty and the node booting its current image, and the next run writes the slot in
 full.
 
-## Go back to the previous version
+## Go back to the previous image
 
-chalkctl installs older versions as it installs newer ones, and the node prefers the boot entry
-it installed last over the newest version, so going back is an upgrade to the previous image.
-Use the same image the node ran before, built from the same commit: the node keeps that image's
-UKI until its next upgrade, and refuses a different build of the same version while it does.
-Keep the previous commit, or the image directory, until the new version has proven itself.
+Going back is an upgrade to the previous image, at your own risk: chalkctl and chalkd do not
+know older from newer and do not warn. The node installs it as the next generation, so it boots
+first, with its tries, like any upgrade. Use the image the node ran before, built from the same
+commit and `flake.lock`, so it has the same root hash: the node's inactive slot still holds that
+store, which is then not sent to the disk again. Keep the previous commit, or the image directory,
+until the new image has proven itself. Whether the older image suits what the newer one wrote,
+such as etcd's data after a Kubernetes upgrade, is for you to check.
 
 ## If something goes wrong
 
@@ -292,7 +294,7 @@ Keep the previous commit, or the image directory, until the new version has prov
   evict them`: the drain refuses to delete those pods' scratch data unless you allow it.
 - `etcd member cp3 is a learner yet; upgrade once it joined`: a control plane is still joining;
   run again once it finished.
-- `the boot of chalkos_1.5.0+2-1.efi has not been found healthy yet; upgrade once it is`: the node
+- `the boot of chalkos_2+2-1.efi has not been found healthy yet; upgrade once it is`: the node
   runs an image that is still being checked, and installing another would remove the image it
   falls back to. Wait for the check, at most `healthTimeout` per try.
 - `Secure Boot would refuse the UKI`: the image is unsigned or signed with a key the firmware's db

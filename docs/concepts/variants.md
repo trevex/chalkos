@@ -179,7 +179,7 @@ node or its surroundings. The table lists both sides:
 | The [OS CA](../reference/glossary.md#os-ca) for maintenance mode, from `osCA` | Storage: system disk, VAR, volumes and encryption |
 | Partition sizes of the system region ([`chalkos.disk`](../reference/options.md#chalkosdiskstoresize)) | Time servers and whether DHCP may add more |
 | Boot tries and health timeout ([`chalkos.upgrade`](../reference/options.md#chalkosupgradeboottries)) | `Secret` documents and documents of the kinds extensions declare |
-| The image version (`system.image.version`) | |
+| The image's revision and tag, from mkImages's `revision` and `tag`, which only `metadata.json` records | |
 
 A change in the left column is a new image and an [upgrade](upgrades.md). A change in the right
 column is delivered with [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and
@@ -284,9 +284,9 @@ copies a flake's tracked files.
   or driver needs a variant or a platform of its own.
 - `mkImages` builds images for one Nix `system` per call; a cluster of x86-64 and arm64 machines
   calls it once for each.
-- A flake rebuilds an image whenever its modules or `flake.lock` change. Two builds of one
-  [image version](../reference/glossary.md#image-version) collide on a node, so a new build
-  needs a new `system.image.version` before it is installed.
+- A flake rebuilds an image whenever its modules or `flake.lock` change. A build whose store
+  changed has a new [root hash](../reference/glossary.md#root-hash) and is a new image to
+  `chalkctl upgrade`; one whose store did not is the image the nodes run already.
 
 ## Related pages
 

@@ -15,8 +15,9 @@ node sets, and they can declare [config kinds](../reference/glossary.md#kind) wh
 each node its own values. Every node of a variant and platform runs the same image, so a value that
 differs between nodes travels in the node's YAML [config](../reference/glossary.md#config), never in
 the image. A change to the modules reaches running nodes as an
-[upgrade](../reference/glossary.md#upgrade) to a new [image
-version](../reference/glossary.md#image-version). Kubernetes objects for the cluster are `Addon`
+[upgrade](../reference/glossary.md#upgrade) to the new image, which a new
+[root hash](../reference/glossary.md#root-hash) identifies. Kubernetes objects for the cluster are
+`Addon`
 documents in the YAML and need no image change; [Kubernetes on chalkos](../concepts/kubernetes.md)
 describes them.
 
@@ -345,19 +346,22 @@ build fails when the store's data takes more than 80% of its slot (3 GiB by defa
 [Support additional hardware](additional-hardware.md#keep-the-image-within-its-slot) shows the
 message and what to do.
 
-## Give the images a new version
+## Name the build
 
-An installed node takes a new image only with a new version, because a version names the UKI and
-the slot's partitions, and a node refuses an image whose version it has installed with another
-root hash. Set `system.image.version` in a module every variant carries, within the rules
-[The image](../concepts/image.md#what-may-an-image-version-be) gives, and raise it with every
-change:
+A changed module changes the image's store and so its root hash, which is all a node needs to take
+the image as a new one; there is no version to raise, and the build refuses
+`system.image.version`. To see which commit a node runs, pass it to `mkImages` in `flake.nix`,
+with `self` among the outputs' arguments:
 
 ```nix
-{
-  system.image.version = "1.5.0";
+chalkos.lib.mkImages {
+  revision = self.rev or self.dirtyRev or null;
+  # platforms, variants and modules as before
 }
 ```
+
+`chalkctl status` then shows it beside the root hash, as in `3fa9c1e2b7d0 (a1b2c3d4e5f6)`, and
+with a release's `tag` passed too, `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`.
 
 ## Build the images and check the config
 
@@ -398,7 +402,7 @@ chalkctl apply-config w1 --secrets=secrets.age
 
 ## Check that it worked
 
-[`chalkctl status`](../reference/cli/chalkctl_status.md) shows the version each node booted,
+[`chalkctl status`](../reference/cli/chalkctl_status.md) shows the image each node booted,
 whether that boot was found healthy, whether it runs the image its `Image` names and the config
 the inventory gives it, and names failed units. The unit's journal shows what it read:
 

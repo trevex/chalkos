@@ -303,7 +303,7 @@ inventory names. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows 
 $ chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
 config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d (the inventory's)
 platform kvm (the inventory's)
-image 0.1.0, booted from chalkos_0.1.0.efi
+image 81bd02c4a9e1, booted from chalkos_1.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 kubernetes controlplane: bootstrapped, node ready: True, control plane current
@@ -327,8 +327,9 @@ trust:
 time: synchronised to 192.53.103.103, offset +0.000642 s
 ```
 
-The first lines say that the node runs the config the inventory gives it and image
-version 0.1.0. The certificates section lists the node's certificates and CAs with their expiry
+The first lines say that the node runs the config the inventory gives it and the image whose
+store's root hash begins with `81bd02c4a9e1`, from its first boot entry, `chalkos_1.efi`. The
+certificates section lists the node's certificates and CAs with their expiry
 dates; the control plane renews the node's certificates before they expire. The trust section
 lists the CAs and keys the node trusts by the start of their fingerprints; `(issues)` marks the
 one the control plane signs with, which matters during a
@@ -409,26 +410,23 @@ A node changes its software only by booting a new image. An
 [slot](../reference/glossary.md#slot) and reboots into it; if the new image does not become
 healthy, the node falls back to the image it ran before.
 
-A new image needs a new version, set with NixOS's `system.image.version` in the variant's
-`modules`. Edit `flake.nix` so the variant `node` builds version 0.2.0, and turn on
-[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools) in the same module, which adds
-the tools `kubectl debug` uses on a node:
+Any change to an image's modules makes a new image, which its store's root hash tells apart from
+the one before; there is no version to raise. Edit `flake.nix` so the variant `node` turns on
+[`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools), which adds the tools
+`kubectl debug` uses on a node:
 
 ```diff
 -        variants.node = { };
-+        # Version 0.2.0, with the tools for kubectl debug.
-+        variants.node.modules = [
-+          {
-+            system.image.version = "0.2.0";
-+            chalkos.debug.tools = true;
-+          }
-+        ];
++        # The tools for kubectl debug.
++        variants.node.modules = [ { chalkos.debug.tools = true; } ];
 ```
 
-Commit the change and build the image again; `images/node-kvm` then points at the new build:
+Commit the change and build the image again; `images/node-kvm` then points at the new build. The
+flake passes its commit to `mkImages` as `revision`, so chalkctl can say which commit each node
+runs:
 
 ```sh
-git commit -am "Upgrade to 0.2.0"
+git commit -am "Add the debug tools"
 nix build .#node-kvm -o images/node-kvm
 ```
 
@@ -442,21 +440,23 @@ $ chalkctl upgrade --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
   --sign-key ~/.local/state/chalklab/lab/keys/db.key \
   --sign-cert ~/.local/state/chalklab/lab/keys/db.crt \
   --allow-downtime
-upgrading node on kvm to chalkos 0.2.0: cp1, w1
-cp1: installing 0.2.0
-cp1: installed 0.2.0, which boots next as chalkos_0.2.0+3.efi
+upgrading node on kvm to 3fa9c1e2b7d0 (a1b2c3d4e5f6): cp1, w1
+cp1: installing 3fa9c1e2b7d0 (a1b2c3d4e5f6)
+cp1: installed 3fa9c1e2b7d0 (a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
 cp1: cordoned, evicted 0 pods, kept 6
-cp1: rebooting into 0.2.0
-cp1: runs 0.2.0, found healthy
+cp1: rebooting into 3fa9c1e2b7d0 (a1b2c3d4e5f6)
+cp1: runs 3fa9c1e2b7d0 (a1b2c3d4e5f6), found healthy
 cp1: uncordoned
 w1: cordoned, evicted 2 pods, kept 2
-w1: installing 0.2.0
-w1: installed 0.2.0, which boots next as chalkos_0.2.0+3.efi
-w1: rebooting into 0.2.0
-w1: runs 0.2.0, found healthy
+w1: installing 3fa9c1e2b7d0 (a1b2c3d4e5f6)
+w1: installed 3fa9c1e2b7d0 (a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
+w1: rebooting into 3fa9c1e2b7d0 (a1b2c3d4e5f6)
+w1: runs 3fa9c1e2b7d0 (a1b2c3d4e5f6), found healthy
 w1: uncordoned
-upgraded 2 nodes to 0.2.0
+upgraded 2 nodes to 3fa9c1e2b7d0 (a1b2c3d4e5f6)
 ```
+
+`3fa9c1e2b7d0` begins the new image's root hash, and `a1b2c3d4e5f6` the commit it was built from.
 
 `--allow-downtime` is needed because the lab has a single control plane: while cp1 reboots, etcd
 has no quorum and the API server is down, and chalkctl refuses that unless told to accept it. In
@@ -468,7 +468,8 @@ chalkctl reads the image's root hash from the image directory on this machine, a
 `chalkctl status` compares it with the root hash each node runs.
 
 Each node goes through the same steps. chalkctl sends the image to chalkd, which writes it into
-the inactive slot and adds a boot entry with three tries, `chalkos_0.2.0+3.efi`. The node is
+the inactive slot and adds a boot entry with three tries, `chalkos_2+3.efi`, one generation above
+the entry the node booted, so systemd-boot boots it first. The node is
 drained and reboots into the new image with
 [boot counting](../reference/glossary.md#boot-counting). Once its
 [health check](../reference/glossary.md#health-check) passes, the boot is
@@ -478,14 +479,14 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 
 ## Check that it worked
 
-`chalkctl status` shows that w1 booted version 0.2.0 from the blessed entry, which has lost its
+`chalkctl status` shows that w1 booted the new image from the blessed entry, which has lost its
 `+3`:
 
 ```console
 $ chalkctl status w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
 config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e (the inventory's)
 platform kvm (the inventory's)
-image 0.2.0, booted from chalkos_0.2.0.efi
+image 3fa9c1e2b7d0 (a1b2c3d4e5f6), booted from chalkos_2.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 kubernetes worker: joined, node ready: True
@@ -511,8 +512,8 @@ w1     Ready    <none>   6m2s   v1.37.1
 ```
 
 The new image has the debugging tools, so a debugging pod can run the node's own `cat` on its
-files. `kubectl debug` starts one on w1 and prints the node's os-release, whose `IMAGE_VERSION`
-is the version the image was built with:
+files. `kubectl debug` starts one on w1 and prints the node's os-release, which names the image's
+variant and platform:
 
 ```console
 $ kubectl debug node/w1 -i --image=busybox -- chroot /host /run/current-system/sw/bin/cat /etc/os-release
@@ -523,7 +524,7 @@ CHALKOS_PLATFORM=kvm
 CHALKOS_VARIANT=node
 ...
 IMAGE_ID=chalkos
-IMAGE_VERSION="0.2.0"
+IMAGE_VERSION=""
 ...
 ```
 

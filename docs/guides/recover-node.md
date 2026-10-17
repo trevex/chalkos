@@ -72,14 +72,14 @@ while the rest of the node runs, and
 `chalkctl status` shows the node running its previous image, with the failed boot's log:
 
 ```text
-image 1.4.0, booted from chalkos_1.4.0.efi
-upgrade to 1.5.0 failed: rolled back to 1.4.0
+image 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a), booted from chalkos_1.efi
+upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a)
   ...
 ```
 
 The new image did not become healthy within its tries, and systemd-boot booted the previous one.
 The node is healthy on the old image and stays cordoned. Find the cause in the logged lines, fix
-it in a new version and upgrade again, as in
+it in a new build and upgrade again, as in
 [Upgrade a cluster](upgrade-cluster.md#if-a-node-rolls-back).
 [Boot, health and rollback](../concepts/boot-and-rollback.md) explains the mechanism.
 

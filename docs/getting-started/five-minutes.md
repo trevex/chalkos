@@ -33,8 +33,11 @@ the console, agents and drivers of a kind of machine. Each build is an
 [image directory](../reference/glossary.md#image-directory) holding the raw disk image and the JSON
 Schemas of the config the image accepts. One image serves control planes and workers alike, and
 every node of a variant and platform boots the same bytes, so an image holds nothing about a
-particular cluster or node. The flake's `flake.lock` pins the chalkos version. See
-[Variants and platforms](../concepts/variants.md) and [The image](../concepts/image.md).
+particular cluster or node. An image has no version: its store's
+[root hash](../reference/glossary.md#root-hash) identifies it, and the git revision the flake
+passes to `mkImages` says which commit it was built from. The flake's `flake.lock` pins the
+chalkos version. See [Variants and platforms](../concepts/variants.md) and
+[The image](../concepts/image.md).
 
 ## YAML documents configure the nodes
 

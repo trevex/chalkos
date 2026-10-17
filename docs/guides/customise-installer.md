@@ -204,13 +204,13 @@ Build the installer and sign a copy of its ISO, as in
 ```console
 $ nix build .#installer -o installer
 $ ls installer
-chalkos-installer_0.1.0.iso  chalkos-installer_0.1.0.iso.json  chalkos-installer_0.1.0.raw  repart-output.json
+chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metadata.json  repart-output.json
 ```
 
 ```sh
-cp --sparse=always installer/chalkos-installer_0.1.0.iso installer.iso
+cp --sparse=always installer/chalkos-installer.iso installer.iso
 chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer_0.1.0.iso.json \
+chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer.iso.json \
   --key=db.key --cert=db.crt
 ```
 

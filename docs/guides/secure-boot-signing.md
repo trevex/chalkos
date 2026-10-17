@@ -107,9 +107,9 @@ cluster's signature. It needs the image's partition description, `repart-output.
 copy, here of the installer that `nix build .#installer -o installer` links:
 
 ```sh
-cp --sparse=always installer/chalkos-installer_0.1.0.iso installer.iso
+cp --sparse=always installer/chalkos-installer.iso installer.iso
 chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer_0.1.0.iso.json \
+chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer.iso.json \
   --key=db.key --cert=db.crt
 ```
 

@@ -20,9 +20,9 @@ The table names the x86-64 boot loader; an arm64 image has `BOOTAA64.EFI`.
 
 | Partition | Size | Contents |
 | --- | --- | --- |
-| [ESP](../reference/glossary.md#esp) | 1 GiB | systemd-boot as `/EFI/BOOT/BOOTX64.EFI` and the UKI as `/EFI/Linux/chalkos_<version>.efi` |
-| Slot A, hash tree | 128 MiB | The store's [dm-verity](../reference/glossary.md#dm-verity) hash tree, labelled `store-verity_<version>` |
-| Slot A, data | 3 GiB | The store as erofs, labelled `store_<version>` |
+| [ESP](../reference/glossary.md#esp) | 1 GiB | systemd-boot as `/EFI/BOOT/BOOTX64.EFI` and the UKI as `/EFI/Linux/chalkos_1.efi` |
+| Slot A, hash tree | 128 MiB | The store's [dm-verity](../reference/glossary.md#dm-verity) hash tree, labelled `store-verity_<hash16>` |
+| Slot A, data | 3 GiB | The store as erofs, labelled `store_<hash16>` |
 
 On its first boot, systemd-repart in the initrd adds slot B, two partitions of the same sizes
 labelled `_empty`, and [STATE](../reference/glossary.md#state), 128 MiB, encrypted and sealed to the
@@ -104,7 +104,7 @@ whose ID or platform does not match the node:
 | Field | Value |
 | --- | --- |
 | `IMAGE_ID` | `chalkos`, or `chalkos-installer` on the installer |
-| `IMAGE_VERSION` | the [image version](#what-may-an-image-version-be) |
+| `IMAGE_VERSION` | empty, so systemd-boot orders the image's entries by [generation](#how-does-systemd-boot-pick-the-uki) |
 | `CHALKOS_VARIANT` | the name of the image's variant in mkImages; absent on the installer |
 | `CHALKOS_PLATFORM` | the platform's name, absent on the installer |
 | `CHALKOS_BOOT_TRIES` | [`chalkos.upgrade.bootTries`](../reference/options.md#chalkosupgradeboottries) of the image |
@@ -118,11 +118,14 @@ and crypto support. The ESP holds a UKI per slot and, during an upgrade, a third
 ## How does systemd-boot pick the UKI?
 
 systemd-boot is the boot loader the firmware starts from the ESP's default path, so a disk boots
-without a firmware boot entry. It lists the UKIs in `/EFI/Linux`, sorts those of one image ID by
-version, newest first, and boots the first whose tries are not used up, unless the EFI variable
-`LoaderEntryPreferred` names another. An upgrade sets that variable, which is how an older
-version boots after a downgrade. [Boot, health and rollback](boot-and-rollback.md) follows the
-boot from there.
+without a firmware boot entry. It lists the UKIs in `/EFI/Linux` and boots the first whose tries
+are not used up, in its own order: entries with no tries left last, then by image ID, then by
+`IMAGE_VERSION`, then by file name, highest first. Every chalkos image sets `IMAGE_VERSION` empty,
+so the file name decides. A node names its UKIs `chalkos_<generation>.efi`: the image and an
+install write generation 1, and each upgrade writes the generation above the highest on the ESP.
+systemd-boot compares the numbers as numbers, so `chalkos_10.efi` comes before `chalkos_9.efi`,
+and the entry an upgrade installed last boots first, a downgrade's too.
+[Boot, health and rollback](boot-and-rollback.md) follows the boot from there.
 
 An upgrade replaces the UKI and the store, never systemd-boot: the boot loader a node was
 installed with stays.
@@ -139,33 +142,31 @@ image:
 
 | Partition | GPT type | Label | Partition UUID |
 | --- | --- | --- | --- |
-| Hash tree of a slot in use | `usr-x86-64-verity` | `store-verity_<version>` | the root hash's last 128 bits |
-| Data of a slot in use | `usr-x86-64` | `store_<version>` | the root hash's first 128 bits |
+| Hash tree of a slot in use | `usr-x86-64-verity` | `store-verity_<hash16>` | the root hash's last 128 bits |
+| Data of a slot in use | `usr-x86-64` | `store_<hash16>` | the root hash's first 128 bits |
 | Either partition of a slot not in use | as above | `_empty` | random |
 
-The labels name the version for people and tools; the boot never reads them. An upgrade first
-gives the inactive slot random UUIDs and the label `_empty`, writes it, verifies it and only then
-gives it the UUIDs of its root hash and labels of its version. [Upgrades](upgrades.md) describes
-the steps.
+`<hash16>` is the first 16 hex characters of the slot's root hash. The labels name the store for
+people and tools; the boot never reads them. An upgrade first gives the inactive slot random UUIDs
+and the label `_empty`, writes it, verifies it and only then gives it the UUIDs and labels of its
+root hash. [Upgrades](upgrades.md) describes the steps.
 
-## What may an image version be?
+## What identifies an image?
 
-An image version,
-[`system.image.version`](https://search.nixos.org/options?query=system.image.version) in a variant's
-modules and `0.1.0` by default, is 1 to 23 characters of `a-z`, `0-9`, `.`, `~`, `^` and `-`,
-starting with a letter or digit. The build refuses any other, and so do
-[chalkctl](../reference/glossary.md#chalkctl) and chalkd. The limits come from where the version
-appears:
+An image is its store's [root hash](../reference/glossary.md#root-hash). Two builds of the same
+modules from the same chalkos have the same store and so the same root hash, and an image that
+changes in any byte of its store has another. chalkd and
+[chalkctl](../reference/glossary.md#chalkctl) compare images by it alone: an upgrade to the root
+hash a node runs is installed already and changes nothing, and any other is a new image. No
+version needs raising for a new build. The build refuses `system.image.version`, because
+systemd-boot would order the entries by it before their generation.
 
-- in the slot's labels: a GPT label holds 36 characters, and `store-verity_` takes 13;
-- in the UKI's file name, `chalkos_<version>.efi`: systemd-boot keeps an entry ID's case only
-  when it has a tries counter, so upper case is out, and `+` starts the counter;
-- in os-release as `IMAGE_VERSION`.
-
-A version names one build. A node refuses an image whose version it already runs or holds with
-another root hash, with the message to build the image with a new version, because two builds of
-one version would collide on the ESP. The same version with the same root hash is already
-installed and changes nothing.
+chalkctl shows an image as the first 12 hex characters of its root hash, followed by the git tag
+and revision it was built from when they are known, such as `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`.
+mkImages takes them as its `revision` and `tag` arguments and writes them into each image
+directory's `metadata.json`; chalkctl sends them with the image, and a node keeps them in
+`/state/chalkd/images.json` for status. They are provenance for display: they never reach the
+store, and nothing orders or refuses an image by them.
 
 ## What does a platform add?
 
@@ -252,7 +253,7 @@ build is linked to:
 ```console
 $ nix build .#node-kvm -o images/node-kvm
 $ ls images/node-kvm
-chalkos_0.1.0.raw
+chalkos.raw
 image.json
 metadata.json
 repart.d
@@ -260,13 +261,15 @@ repart-output.json
 schemas
 ```
 
-- `chalkos_<version>.raw` is the raw disk image.
+- `chalkos.raw` is the raw disk image. Its slot A carries the labels of its root hash, which the
+  build gives it once systemd-repart computed the hash.
 - `repart-output.json` is systemd-repart's report of its partitions, with their offsets, sizes
   and the root hash. chalkctl reads the store, the hash tree and the UKI at those offsets.
 - `repart.d` holds the image's partition definitions of the system region, which the installer
   lays out a target disk with.
 - `metadata.json`, `schemas` and `image.json` describe what the image is and what config it
-  accepts; `image.json` exists only on an image with Kubernetes. chalkctl reads them when it
+  accepts, and `metadata.json` names the image's root hash and the revision and tag it was built
+  from; `image.json` exists only on an image with Kubernetes. chalkctl reads them when it
   validates, installs or upgrades a node whose `Image` names the directory.
   [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build) lists them.
 
@@ -281,7 +284,7 @@ last moment:
   Nix store is read-only, so it signs a copy:
 
 ```sh
-install -m 644 images/node-kvm/chalkos_0.1.0.raw node.raw
+install -m 644 images/node-kvm/chalkos.raw node.raw
 chalkctl sign --image=node.raw --repart-json=images/node-kvm/repart-output.json \
   --key=<db-key> --cert=<db-cert>
 ```

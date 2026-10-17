@@ -60,13 +60,13 @@ as packages:
   inputs.chalkos.url = "github:trevex/chalkos";
 
   outputs =
-    { chalkos, ... }:
+    { self, chalkos, ... }:
     let
       images = chalkos.lib.mkImages {
         osCA = ./secrets.pub.json;
+        # The commit the images are built from, shown beside their root hashes.
+        revision = self.rev or self.dirtyRev or null;
         platforms = [ "metal" ];
-        # Every variant's images carry this version; raise it for every new build.
-        modules = [ { system.image.version = "1.0.0"; } ];
       };
     in
     {
@@ -459,13 +459,20 @@ spec:
   mirrors: [https://mirror.example.internal]
 ```
 
-## Plan image versions and upgrades
+## Plan provenance and upgrades
 
-Every image carries a version, `system.image.version`, set in the NixOS modules the flake passes
-to `mkImages`, as `flake.nix` above does for every variant. Any change to an image, from a new
-chalkos input to a new Kubernetes release, needs a new version, because chalkd refuses an image
-of the version it runs with another store. Settle on a scheme before the first install, such as
-one version for every variant raised together.
+An image carries no version: its store's [root hash](../reference/glossary.md#root-hash) is what
+it is, so any change to an image, from a new chalkos input to a new Kubernetes release, makes a
+new image that `chalkctl upgrade` installs without anything raised. The `revision` that
+`flake.nix` above passes to `mkImages` records the commit each image was built from; a clean
+checkout gives the commit, a checkout with changes the commit marked `-dirty`. Nix cannot read
+git tags, so when a release is tagged, build it with `tag` as well, such as from a release job
+that passes the tag it builds. `chalkctl status` and `chalkctl upgrade` show both beside the root
+hash, as in `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`; nothing orders or refuses an image by them.
+
+Each node numbers the boot entries it installs and boots the one installed last first. Going back
+to an earlier image is therefore an upgrade like any other, which boots first as the highest
+generation; it is allowed, at your own risk, and nothing warns of it.
 
 A routine that works: change the flake, build the images into `images/` again, run
 `chalkctl validate`, upgrade a lab of the same variants with them, then run `chalkctl upgrade`
@@ -514,7 +521,7 @@ nix build .#node-metal -o images/node-metal
 chalkctl validate
 ```
 
-`nix build` fails on what only the image knows, such as an invalid version. `chalkctl validate`
+`nix build` fails on what only the image knows, such as an unknown option. `chalkctl validate`
 prints a line for each valid node, such as
 `cp1: valid for the Image node-metal (node on metal, root hash 2ece03b0fa09), config <hash>`,
 names each node whose config is not valid with the reason, and warns of a node whose STATE is

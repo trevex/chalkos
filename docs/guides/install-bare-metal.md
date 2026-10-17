@@ -56,7 +56,7 @@ the cluster. Build it from the repository's directory:
 ```console
 $ nix build .#installer -o installer
 $ ls installer/
-chalkos-installer_0.1.0.iso  chalkos-installer_0.1.0.iso.json  chalkos-installer_0.1.0.raw  repart-output.json
+chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metadata.json  repart-output.json
 ```
 
 The `.iso` is a hybrid image: it boots from a CD, from virtual media and written to a USB stick.
@@ -91,9 +91,9 @@ read-only, so sign a copy, with the [`chalkctl sign`](../reference/cli/chalkctl_
 and the `.iso.json` that describes the ISO's partitions:
 
 ```sh
-cp --sparse=always installer/chalkos-installer_0.1.0.iso installer.iso
+cp --sparse=always installer/chalkos-installer.iso installer.iso
 chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer_0.1.0.iso.json \
+chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer.iso.json \
   --key=db.key --cert=db.crt
 ```
 
@@ -197,10 +197,14 @@ hash tree, UKI and boot loader. It does not send the whole raw image, only the c
 and what boots it. chalkctl prints:
 
 ```text
-installing cp1 onto serial "S7KHNJ0W100001" from /home/alice/prod/images/node-metal: chalkos 1.0.0, sending 308281344 bytes of store, hash tree, UKI and boot loader
+installing cp1 onto serial "S7KHNJ0W100001" from /home/alice/prod/images/node-metal: chalkos 81bd02c4a9e1 (0f1e2d3c4b5a), sending 308281344 bytes of store, hash tree, UKI and boot loader
 cp1 is installed and reboots
 chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 ```
+
+`81bd02c4a9e1` begins the image's root hash and `0f1e2d3c4b5a` the commit it was built from, the
+`revision` the flake passes to `mkImages`. The installer writes the image's UKI as
+`chalkos_1.efi`, the node's first boot entry.
 
 On the machine, the installer:
 
@@ -328,8 +332,8 @@ as a password manager.
 ## Check that it worked
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs: its config and
-whether it is the one the inventory gives, the
-[image version](../reference/glossary.md#image-version) and whether the boot was found healthy,
+whether it is the one the inventory gives, the image it booted by its
+[root hash](../reference/glossary.md#root-hash) and whether the boot was found healthy,
 whether its store is the image its `Image` names, its volumes, Kubernetes, its certificates and
 any failed units. With the client file from the step before:
 

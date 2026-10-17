@@ -6,8 +6,9 @@ description: "The fields chalkos adds to /etc/os-release and the UKI's os-releas
 # os-release fields
 
 This page lists the os-release fields chalkos sets, their values and the checks that read them.
-The `CHALKOS_*` fields come from `system.nixos.extraOSReleaseArgs` in `modules/node/upgrade.nix`,
-the image ID from `modules/node/base/appliance.nix` and `modules/installer/default.nix`; they are
+The `CHALKOS_*` fields and the empty `IMAGE_VERSION` come from `system.nixos.extraOSReleaseArgs` in
+`modules/node/upgrade.nix`, the image ID from `modules/node/base/appliance.nix` and
+`modules/installer/default.nix`; they are
 read through `pkg/uki/uki.go` and `pkg/chalkd/info.go`.
 
 ## Where os-release is
@@ -20,8 +21,8 @@ An image carries one os-release file in two places with the same content:
 
 The UKI's Secure Boot signature covers its `.osrel` section, so on a node with
 [Secure Boot](glossary.md#secure-boot) enforced, an image cannot claim another
-[variant](glossary.md#variant), [platform](glossary.md#platform) or version than the one it was
-signed with. chalkctl and [chalkd](glossary.md#chalkd) read the UKI's copy of an image they are
+[variant](glossary.md#variant) or [platform](glossary.md#platform) than the one it was signed
+with. chalkctl and [chalkd](glossary.md#chalkd) read the UKI's copy of an image they are
 about to install, and `/etc/os-release` for the image a node runs.
 
 ## Fields chalkos sets
@@ -29,15 +30,17 @@ about to install, and `/etc/os-release` for the image a node runs.
 | Field | Value | Source | Images |
 | --- | --- | --- | --- |
 | `IMAGE_ID` | `chalkos`; `chalkos-installer` on the [installer](glossary.md#installer) | `system.image.id` | every image |
-| `IMAGE_VERSION` | the [image version](glossary.md#image-version), `0.1.0` unless a variant's modules set it | `system.image.version` | every image |
+| `IMAGE_VERSION` | empty | `modules/node/upgrade.nix`; `system.image.version` must stay unset | every image |
 | `CHALKOS_VARIANT` | the name of the [`mkImages` variant](options.md#variants) the image is built as, such as `node` | [`chalkos.variant.name`](options.md#chalkosvariantname) | node images; not the installer |
 | `CHALKOS_PLATFORM` | the platform's name, such as `metal` or `kvm` | [`chalkos.platform.name`](options.md#chalkosplatformname) | node images; not the installer |
 | `CHALKOS_BOOT_TRIES` | a positive integer, `3` by default | [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) | every image |
 
-`IMAGE_VERSION` is limited to 1 to 23 characters of `a-z`, `0-9`, `.`, `~`, `^` and `-`,
-starting with a letter or a digit, because it becomes part of GPT labels and of systemd-boot's
-entry IDs; evaluation fails on another value. A platform's name matches
-`[a-z0-9][a-z0-9-]*`.
+`IMAGE_VERSION` is empty in every image. systemd-boot orders the UKIs of one image ID by
+`IMAGE_VERSION` before their file names, and without the field by `VERSION`, which NixOS sets to
+its release; an empty one leaves the order to the [generation](glossary.md#generation) in the file
+name. The build fails when `system.image.version` is set, with the message
+`chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance`. A
+platform's name matches `[a-z0-9][a-z0-9-]*`.
 
 The other fields are NixOS's, unchanged: `ID=nixos`, `NAME`, `VERSION`, `VERSION_ID`,
 `BUILD_ID`, `PRETTY_NAME` and the URLs. chalkos does not read them.
@@ -57,7 +60,7 @@ DOCUMENTATION_URL="https://nixos.org/learn.html"
 HOME_URL="https://nixos.org/"
 ID=nixos
 IMAGE_ID=chalkos
-IMAGE_VERSION="0.1.0"
+IMAGE_VERSION=""
 LOGO="nix-snowflake"
 NAME=NixOS
 PRETTY_NAME="NixOS 26.11 (Zokor)"
@@ -77,11 +80,10 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | Field | Read by | Check |
 | --- | --- | --- |
 | `IMAGE_ID` | chalkd's [Upgrade](api.md#method-upgrade) | The new image's ID equals the running image's. |
-| `IMAGE_ID` | chalkd's upgrade and install, on the UKI | The UKI's ID equals the image header's. The UKI's file name on the [ESP](glossary.md#esp) is `<IMAGE_ID>_<IMAGE_VERSION>`. |
-| `IMAGE_ID` | chalkd's upgrade, on the ESP | Only UKIs of the running image's ID are removed or counted; other UKIs on the ESP stay. |
-| `IMAGE_VERSION` | chalkctl, reading an image | The version matches the pattern above. |
-| `IMAGE_VERSION` | chalkd's Upgrade | A new image of the running version and the same root hash is installed already; one of the running version with another root hash is refused. |
-| `IMAGE_VERSION` | chalkd's upgrade and install, on the UKI | The UKI's version equals the image header's. |
+| `IMAGE_ID` | chalkd's upgrade and install, on the UKI | The UKI's ID equals the image header's. The UKI's file name on the [ESP](glossary.md#esp) is `<IMAGE_ID>_<generation>.efi`. |
+| `IMAGE_ID` | chalkd's upgrade, on the ESP | Only UKIs of the running image's ID are removed, counted, or read for the highest generation; other UKIs on the ESP stay. |
+| `IMAGE_VERSION` | chalkctl, reading an image | Set and empty; an image without it or with a value is refused. |
+| `IMAGE_VERSION` | chalkd's upgrade and install, on the UKI | Set and empty, as for chalkctl. |
 | `CHALKOS_PLATFORM` | chalkd's Upgrade | The new image's equals the running image's; a running image without it takes no upgrade. |
 | `CHALKOS_PLATFORM` | chalkd's upgrade and install, on the UKI | The UKI's platform equals the image header's. |
 | `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkctl, reading an image | Both are set; an image without them is no node image and is refused. |
@@ -89,12 +91,15 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | `CHALKOS_PLATFORM` | chalkd's [Install](api.md#method-install) in place and [ApplyConfig](api.md#method-applyconfig) | The config is translated for the running image's platform: changing a node's platform is a reinstall. |
 | `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Contract](api.md#method-contract) | Reported as they are, with the image's schemas and `image.json`. chalkctl's install in place, `apply-config` and `storage reset` refuse a node whose image is built for another platform than the image its `Image` document names. |
 | `CHALKOS_BOOT_TRIES` | chalkd's upgrade, on the UKI | A positive integer, which becomes the boot counter in the UKI's name, `+3` by default. An install writes no counter. |
-| `IMAGE_ID`, `IMAGE_VERSION`, `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Info](api.md#method-info) | Reported as they are; empty on an image that sets none. |
+| `IMAGE_ID`, `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Info](api.md#method-info) | Reported as they are; empty on an image that sets none. |
 | `CHALKOS_PLATFORM` | chalkd's [Status](api.md#method-status) | Reported, and shown by [`chalkctl status`](cli/chalkctl_status.md) beside the platform of the image the node's `Image` document names. |
-| `IMAGE_VERSION` | chalkd's Status and the [health check](glossary.md#health-check) | The running image's version, in the boot status and in the record of a boot that was not found healthy. |
 
 No check compares `CHALKOS_VARIANT`: a node may change its variant through an upgrade, and the
 check of its stored config against the new image's schemas decides whether the image suits it.
+
+No check reads the image's version, because it has none: chalkd's Info and Status name the running
+image by the [root hash](glossary.md#root-hash) on the kernel command line, and the record of a
+boot that was not found healthy by that root hash and the entry's generation.
 
 [The image](../concepts/image.md) explains what an image is and [Upgrades](../concepts/upgrades.md)
 how the checks above keep an upgrade within its platform.

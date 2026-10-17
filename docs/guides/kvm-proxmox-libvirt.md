@@ -96,14 +96,14 @@ firmware boots it:
 ```sh
 nix build .#node-kvm -o images/node-kvm
 chalkctl validate
-cp --sparse=always images/node-kvm/chalkos_1.0.0.raw node.raw
+cp --sparse=always images/node-kvm/chalkos.raw node.raw
 chmod u+w node.raw
 chalkctl sign --image=node.raw --repart-json=images/node-kvm/repart-output.json \
   --key=db.key --cert=db.crt
 ```
 
-`1.0.0` is the image's [image version](../reference/glossary.md#image-version). The image holds
-the [ESP](../reference/glossary.md#esp) and [slot](../reference/glossary.md#slot) A only, and
+The image holds the [ESP](../reference/glossary.md#esp), with its UKI as the first boot entry
+`chalkos_1.efi`, and [slot](../reference/glossary.md#slot) A only, and
 every node whose `Image` is `node-kvm` boots the same signed image; what differs between nodes
 reaches them at install. Sign before the first boot: an in-place install sends no image, so the
 image the VM boots is the one the node keeps until its first

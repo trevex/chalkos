@@ -23,8 +23,8 @@ data of the [store](glossary.md#store).
 flowchart LR
     ESP["ESP<br/>vfat, 1 GiB"]
     subgraph A["slot A"]
-        VA["store-verity_v<br/>128 MiB"]
-        SA["store_v<br/>3 GiB"]
+        VA["store-verity_hash16<br/>128 MiB"]
+        SA["store_hash16<br/>3 GiB"]
     end
     subgraph B["slot B"]
         VB["_empty<br/>128 MiB"]
@@ -44,8 +44,8 @@ the same system region.
 | Definition | Label | Size | File system | Encryption | Created by |
 | --- | --- | --- | --- | --- | --- |
 | `00-esp` | `esp` | [`espSize`](options.md#chalkosdiskespsize), `1G` | vfat | none | image build |
-| `10-store-verity-a` | `store-verity_<version>` | [`storeVeritySize`](options.md#chalkosdiskstoreveritysize), `128M` | dm-verity hash tree | none | image build |
-| `20-store-a` | `store_<version>` | [`storeSize`](options.md#chalkosdiskstoresize), `3G` | erofs, zstd | none | image build |
+| `10-store-verity-a` | `store-verity_<hash16>` | [`storeVeritySize`](options.md#chalkosdiskstoreveritysize), `128M` | dm-verity hash tree | none | image build |
+| `20-store-a` | `store_<hash16>` | [`storeSize`](options.md#chalkosdiskstoresize), `3G` | erofs, zstd | none | image build |
 | `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot, or install from the installer |
 | `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
 | `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the [TPM](glossary.md#tpm) by default | first boot, install |
@@ -111,22 +111,25 @@ therefore lives in these partitions:
 
 | Partition | Label | Partition UUID |
 | --- | --- | --- |
-| Store data | `store_0.1.0` | `2ece03b0-fa09-4b77-5ee5-bf2e1f6f9eb6` |
-| Store hash tree | `store-verity_0.1.0` | `6d6f0dc0-6f30-f49f-2f97-8f00e1173942` |
+| Store data | `store_2ece03b0fa094b77` | `2ece03b0-fa09-4b77-5ee5-bf2e1f6f9eb6` |
+| Store hash tree | `store-verity_2ece03b0fa094b77` | `6d6f0dc0-6f30-f49f-2f97-8f00e1173942` |
 
 The other UUIDs are set as follows:
 
 | Partition | Partition UUID |
 | --- | --- |
 | A slot being written | random, with both labels `_empty`, so nothing boots it |
-| A written slot | derived from the root hash, with the labels naming the version |
+| A written slot | derived from the root hash, with the labels naming its first 16 hex characters |
 | ESP | random, set at install, because systemd-boot reports it as the boot partition and no other disk with the same image may match it |
 | STATE | random, from systemd-repart's `--seed=random`, when an install from the installer lays out the disk or an install recreates STATE for another encryption; otherwise the one systemd-repart gave it at first boot |
 | VAR and volumes | derived by systemd-repart from a seed per cluster, node and disk name |
 
-The labels name a slot's version but nothing boots by label; the boot finds the store by
-partition UUID alone. A version is therefore limited to 23 characters of `a-z`, `0-9`, `.`, `~`,
-`^` and `-`, so `store-verity_<version>` fits a GPT label of 36 characters.
+The labels name a slot's store by the first 16 hex characters of its root hash, `<hash16>`, so
+`store-verity_<hash16>` fits a GPT label of 36 characters, but nothing boots by label; the boot
+finds the store by partition UUID alone. systemd-repart labels slot A `store-verity` and `store`
+when it builds the raw image, before the root hash is known; the image build then relabels the
+copy in the image directory, so `chalkos.raw` and its `repart-output.json` carry the hash's
+labels. The installer's own medium keeps `store-verity` and `store`.
 
 ## Files on the ESP
 
@@ -136,25 +139,28 @@ idle, so a power cut rarely finds its FAT file system in use.
 | Path | What it is |
 | --- | --- |
 | `/EFI/BOOT/BOOTX64.EFI` | systemd-boot, at the removable-media path, so firmware finds it without a boot entry. `BOOTAA64.EFI` on arm64. |
-| `/EFI/Linux/chalkos_<version>.efi` | A UKI without a boot counter: the one the image or an install wrote, or one whose boot was [blessed](glossary.md#blessed-boot). |
-| `/EFI/Linux/chalkos_<version>+<left>.efi` | A UKI an [upgrade](glossary.md#upgrade) installed, with [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) tries left, such as `chalkos_0.2.0+3.efi`. |
-| `/EFI/Linux/chalkos_<version>+<left>-<done>.efi` | The same UKI after systemd-boot counted a boot that was not blessed, such as `chalkos_0.2.0+2-1.efi`. `+0-3` means no tries left: systemd-boot boots another entry. |
-| `/EFI/Linux/.upgrade-<version>.efi` | A UKI an upgrade is receiving. systemd-boot ignores names starting with a dot. |
-| `/EFI/Linux/.install-<version>.efi` | A UKI an install from the installer is receiving. |
+| `/EFI/Linux/chalkos_<generation>.efi` | A UKI without a boot counter: `chalkos_1.efi` as the image holds it and an install from the installer writes it, or one whose boot was [blessed](glossary.md#blessed-boot). |
+| `/EFI/Linux/chalkos_<generation>+<left>.efi` | A UKI an [upgrade](glossary.md#upgrade) installed, one [generation](glossary.md#generation) above the highest on the ESP, with [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) tries left, such as `chalkos_2+3.efi`. |
+| `/EFI/Linux/chalkos_<generation>+<left>-<done>.efi` | The same UKI after systemd-boot counted a boot that was not blessed, such as `chalkos_2+2-1.efi`. `+0-3` means no tries left: systemd-boot boots another entry. |
+| `/EFI/Linux/.upgrade-<root-hash>.efi` | A UKI an upgrade is receiving, named by the image's full root hash. systemd-boot ignores names starting with a dot. |
+| `/EFI/Linux/.install-<root-hash>.efi` | A UKI an install from the installer is receiving. |
 | `/EFI/BOOT/.boot-loader.tmp` | The boot loader an install from the installer is writing. |
 
 `chalkos` is the image ID, `system.image.id`; the installer's UKI is
-`chalkos-installer_<version>.efi`. An upgrade first removes every UKI of the image's ID except
-the one the node booted and those booting the running store, then receives the new one, so the
-ESP holds the UKIs of both slots and, during an upgrade, a third. UKIs of other image IDs, such
-as a rescue system's, stay. An upgrade leaves systemd-boot alone: only an install writes the
-boot loader.
+`chalkos-installer_1.efi`. The generation is the number in the name without its counter; an
+upgrade reads the highest of the UKIs whose os-release names the image's ID and writes the next.
+A UKI of the image whose name gives no generation, such as `chalkos.efi`, counts for none. An
+upgrade first removes every UKI of the image's ID except the one the node booted and those booting
+the running store, then receives the new one, so the ESP holds the UKIs of both slots and, during
+an upgrade, a third. An install from the installer removes every UKI of the image's ID but the
+`chalkos_1.efi` it writes. UKIs of other image IDs, such as a rescue system's, stay. An upgrade
+leaves systemd-boot alone: only an install writes the boot loader.
 
-After an upgrade, chalkd sets the EFI variable `LoaderEntryPreferred` to the new entry's ID,
-`chalkos_<version>.efi` in lower case, because systemd-boot otherwise boots the newest version,
-which after a downgrade is not the new image. An install from the installer adds a UEFI boot
-entry labelled `chalkos` for the target ESP's removable-media path, `\EFI\BOOT\BOOTX64.EFI` on
-x86-64 and `\EFI\BOOT\BOOTAA64.EFI` on arm64.
+systemd-boot boots the highest generation whose tries are not used up, comparing the numbers as
+numbers, because every chalkos image sets `IMAGE_VERSION` empty and the file name decides the
+order. chalkd sets no EFI variable to choose an entry. An install from the installer adds a UEFI
+boot entry labelled `chalkos` for the target ESP's removable-media path, `\EFI\BOOT\BOOTX64.EFI`
+on x86-64 and `\EFI\BOOT\BOOTAA64.EFI` on arm64.
 
 ## Files on STATE
 
@@ -193,10 +199,10 @@ image with Kubernetes:
 
 | Entry | What it is |
 | --- | --- |
-| `chalkos_<version>.raw` | The raw disk image: the ESP and slot A, with no slot B and no STATE. |
-| `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash. `chalkctl sign` and `chalkctl install` find the partitions with it. |
+| `chalkos.raw` | The raw disk image: the ESP, with the UKI as `/EFI/Linux/chalkos_1.efi`, and slot A labelled with its root hash, with no slot B and no STATE. |
+| `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash, with slot A's labels as the raw image carries them. `chalkctl sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, [variant](glossary.md#variant), platform and the store's root hash, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, [variant](glossary.md#variant), platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. [Config kinds](kinds.md) lists the fields of the default image's kinds. |
 | `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the [inventory](glossary.md#inventory) against both before it drains a node, and chalkd checks the node's stored config against those of the image it wrote. |
 
@@ -212,9 +218,10 @@ SizeMinBytes=128M
 Type=480b7842-1236-1abb-0339-e5503b43122a
 ```
 
-The installer's directory holds `chalkos-installer_<version>.raw` and its `repart-output.json`,
-the hybrid ISO `chalkos-installer_<version>.iso`, and `chalkos-installer_<version>.iso.json`,
-which describes the ISO's partitions as `repart-output.json` does.
+The installer's directory holds `chalkos-installer.raw` and its `repart-output.json`, the hybrid
+ISO `chalkos-installer.iso`, `chalkos-installer.iso.json`, which describes the ISO's partitions
+as `repart-output.json` does, and a `metadata.json` of the same fields, with the ID
+`chalkos-installer`, no variant or platform, and the installer's root hash, revision and tag.
 
 ## Device links
 

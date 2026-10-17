@@ -44,11 +44,14 @@ flowchart LR
 
 ## How does systemd-boot choose an entry?
 
-systemd-boot lists the UKIs in `/EFI/Linux` on the ESP. It sorts the entries of one image ID by
-version, newest first, and boots the first whose tries are not used up. When the EFI variable
-`LoaderEntryPreferred` names an entry that is not used up, it boots that one instead. Every
-upgrade sets the variable to its new entry, so a downgrade to an older version boots too, and
-systemd-boot passes over the preferred entry once its tries are used up.
+systemd-boot lists the UKIs in `/EFI/Linux` on the ESP and boots the first whose tries are not
+used up. It puts entries with no tries left last, then sorts by image ID, by `IMAGE_VERSION` and
+by file name, highest first. chalkos images set `IMAGE_VERSION` empty, so among a node's UKIs the
+file name decides: `chalkos_<generation>.efi`, where the image and an install write generation 1
+and every upgrade the generation above the highest on the ESP. Numbers compare as numbers, so the
+entry installed last boots first, whether its image is newer or older than the one before, and
+once its tries are used up systemd-boot passes over it to the previous generation. chalkd sets no
+EFI variable to choose the entry; the order is systemd-boot's own.
 
 An entry with a tries counter in its name is being counted;
 [boot counting](#how-does-boot-counting-work) explains the counter.
@@ -94,14 +97,15 @@ Stage 2 starts the node's own services in order:
 
 ## How does boot counting work?
 
-An upgrade installs the new UKI as `chalkos_<version>+<tries>.efi`, where `<tries>` is the new
+An upgrade installs the new UKI as `chalkos_<generation>+<tries>.efi`, where `<generation>` is one
+above the highest generation on the ESP and `<tries>` is the new
 image's [`chalkos.upgrade.bootTries`](../reference/options.md#chalkosupgradeboottries), 3 by
 default. The number travels in the image's os-release as `CHALKOS_BOOT_TRIES`, so the image being
 installed sets it, not the one running.
 
 Before each boot of the entry, systemd-boot renames the file to count the try: `+3` becomes
 `+2-1`, then `+1-2`, then `+0-3`. Once the system decides the boot is good,
-`systemd-bless-boot.service` renames the file to `chalkos_<version>.efi`, without a counter, and
+`systemd-bless-boot.service` renames the file to `chalkos_<generation>.efi`, without a counter, and
 the entry is a normal, [blessed](../reference/glossary.md#blessed-boot) entry from then on. An
 entry at `+0` is used up, and systemd-boot skips it.
 
@@ -158,7 +162,7 @@ When the check passes, the unit succeeds, `boot-complete.target` is reached and
 When the timeout passes, chalkd does two things.
 
 It records the failure: the last 30 journal lines of chalkd and the health check during this
-boot, headed by the version and root hash of the store that booted, in
+boot, headed by the root hash of the store that booted and the generation of its entry, in
 `/var/lib/chalkd/failed-boot` on VAR. The record lives on VAR because the image the node falls
 back to must read it; the journal cannot serve, as the read-only image gets a new machine ID at
 every boot and keeps each boot's journal apart.
@@ -181,13 +185,16 @@ tries used up that it fell back from. [`chalkctl status`](../reference/cli/chalk
 prints those as its first lines. After a [rollback](../reference/glossary.md#rollback) they read:
 
 ```text
-image <version>, booted from chalkos_<version>.efi
-upgrade to <new-version> failed: rolled back to <version>
+image <image>, booted from chalkos_<generation>.efi
+upgrade to <new-image> failed: rolled back to <image>
   <the failed boot's last journal lines>
 ```
 
-A boot that is still counted adds `, not found healthy yet` to the first line, and an upgrade
-installed with `--no-reboot` shows as `upgrade to <new-version> installed; it boots next`. The
+`<image>` is the first 12 hex characters of the image's root hash, followed by the tag and
+revision it was built from when the node's record knows them, as in
+`3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`. A boot that is still counted adds `, not found healthy yet`
+to the first line, and an upgrade installed with `--no-reboot` shows as
+`upgrade to <new-image> installed; it boots next`. The
 used-up UKI stays on the ESP until the next upgrade removes it, and the record on VAR is removed
 once a counted boot is found healthy. [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md)
 stops at a node that rolled back, as [Upgrades](upgrades.md) describes.

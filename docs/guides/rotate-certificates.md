@@ -176,8 +176,8 @@ Every node serves a certificate of the new node CA and trusts the old and the ne
 At this pause, commit the new `secrets.pub.json` and rebuild the
 [installer](../reference/glossary.md#installer) and any images you keep for installs: images carry
 the OS CA that [maintenance mode](../reference/glossary.md#maintenance-mode) accepts. Running nodes
-need no new image, but the next image you build carries the new OS CA, so it needs a new version
-like any other change. Then finish:
+need no new image, but the next image you build carries the new OS CA, which gives it a new root
+hash like any other change. Then finish:
 
 ```sh
 chalkctl rotate os-ca --finish

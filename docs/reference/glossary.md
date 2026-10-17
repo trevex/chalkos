@@ -31,7 +31,7 @@ back. See [Boot, health and rollback](../concepts/boot-and-rollback.md).
 ## Boot counting { #boot-counting }
 
 systemd-boot's count of the tries a newly installed image has left, kept in its UKI's file name
-(`chalkos_<version>+3.efi`). Each boot that is not [blessed](#blessed-boot) uses a try; with
+(`chalkos_<generation>+3.efi`). Each boot that is not [blessed](#blessed-boot) uses a try; with
 none left, systemd-boot boots the previous image. The number of tries is
 [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries). See
 [Boot, health and rollback](../concepts/boot-and-rollback.md).
@@ -174,6 +174,14 @@ the node's [recovery key](#recovery-key) by default, a password, or none, as
 `spec.encryption.fallback` of the node's [`SystemDisk`](kinds.md#systemdisk) chooses. See
 [Storage and encryption](../concepts/storage.md).
 
+## Generation { #generation }
+
+The number in a [UKI](#uki)'s file name on the [ESP](#esp), `chalkos_<generation>.efi`, which a
+node counts itself. The image and an install write generation 1; each [upgrade](#upgrade) writes
+the one above the highest on the ESP, so systemd-boot, which orders a node's UKIs by file name,
+boots the image installed last first, older or newer. See
+[Boot, health and rollback](../concepts/boot-and-rollback.md#how-does-systemd-boot-choose-an-entry).
+
 ## Health check { #health-check }
 
 The check `chalkos-health.service` runs on a counted boot. chalkd must serve on every node, and on
@@ -204,17 +212,12 @@ See [The image](../concepts/image.md).
 
 The build output of an [image](#image), `images.<variant>-<platform>` of `chalkos.lib.mkImages`:
 the raw image, systemd-repart's report of its partitions, the definitions of the system region,
-`metadata.json`, which names the image's variant, platform, [root hash](#root-hash) and kinds,
+`metadata.json`, which names the image's variant, platform, [root hash](#root-hash),
+[provenance](#provenance) and kinds,
 the kinds' JSON Schemas in `schemas/` and, on an image with Kubernetes, what it fixes about
 Kubernetes in `image.json`. A node's `Image` document names it in
 `spec.source.directory`, and chalkctl reads it to validate config, sign, install and upgrade. See
 [Image and partition layout](image-layout.md#outputs-of-an-image-build).
-
-## Image version { #image-version }
-
-The version an image is built with (`system.image.version`). It names the UKI file and the
-slot's partition labels and appears in os-release; an image whose version is installed with a
-different root hash is refused. See [Upgrades](../concepts/upgrades.md).
 
 ## Installer { #installer }
 
@@ -324,6 +327,14 @@ own. Every [variant](#variant) gets one image per platform, so only that platfor
 its drivers and agents. A node refuses an image of another platform than the one it runs. See
 [Variants and platforms](../concepts/variants.md#what-is-a-platform).
 
+## Provenance { #provenance }
+
+The git revision and tag an [image](#image) was built from, which `chalkos.lib.mkImages` takes
+as `revision` and `tag` and writes into the image's `metadata.json`. chalkctl shows them beside
+the [root hash](#root-hash), as in `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`, and a node keeps them in
+`/state/chalkd/images.json`. They never reach the store, and nothing orders or refuses an image by
+them. See [The image](../concepts/image.md#what-identifies-an-image).
+
 ## Reader { #reader }
 
 The [client role](#client-role) that may read: node information, disks, status, logs and etcd
@@ -347,8 +358,9 @@ lines, and `chalkctl upgrade` stops. See
 ## Root hash { #root-hash }
 
 The top hash of the [store](#store)'s dm-verity hash tree. The UKI carries it on the kernel
-command line (`usrhash=`), so the UKI's signature covers every byte of the store. See
-[The image](../concepts/image.md).
+command line (`usrhash=`), so the UKI's signature covers every byte of the store. It identifies an
+image: chalkd and chalkctl tell images apart by it alone, and chalkctl shows its first 12 hex
+characters. See [The image](../concepts/image.md#what-identifies-an-image).
 
 ## Rotation { #rotation }
 
@@ -373,7 +385,8 @@ chalkos signs systemd-boot and the [UKI](#uki), whose signature covers the store
 ## Slot { #slot }
 
 A pair of partitions that holds one image's [store](#store): the erofs data and its dm-verity
-hash tree, labelled `store_<version>` and `store-verity_<version>`, or `_empty`. A node has two,
+hash tree, labelled `store_<hash16>` and `store-verity_<hash16>` from the first 16 hex characters
+of its [root hash](#root-hash), or `_empty`. A node has two,
 A and B. See [The image](../concepts/image.md).
 
 ## STATE { #state }
@@ -397,11 +410,11 @@ under the same Secure Boot state. See [Security model](../concepts/security.md).
 
 A unified kernel image: the kernel, initrd, kernel command line and os-release in one EFI
 binary, which systemd-boot loads and Secure Boot verifies. chalkos keeps one per slot on the
-ESP as `chalkos_<version>.efi`. See [The image](../concepts/image.md).
+ESP as `chalkos_<generation>.efi`. See [The image](../concepts/image.md).
 
 ## Upgrade { #upgrade }
 
-The installation of a new image version into a node's inactive [slot](#slot), from which it
+The installation of another image into a node's inactive [slot](#slot), from which it
 boots next with [boot counting](#boot-counting). [`chalkctl upgrade`](cli/chalkctl_upgrade.md)
 rolls it through a cluster. A Kubernetes upgrade is an image upgrade. See
 [Upgrades](../concepts/upgrades.md).
