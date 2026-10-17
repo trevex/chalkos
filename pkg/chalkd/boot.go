@@ -42,7 +42,7 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 		st.Error = err.Error()
 		return st
 	}
-	st.Running.Generation = uint32(booted.Generation)
+	st.Running.Generation = booted.Generation
 	st.Entry, st.Blessed = booted.File, booted.TriesLeft < 0
 	var failed upgrade.Entry
 	for _, e := range entries {
@@ -68,9 +68,9 @@ func (s *Server) images() upgrade.Images {
 }
 
 // bootImage is the image of the root hash, with its entry's generation and its provenance.
-func bootImage(images upgrade.Images, rootHash []byte, generation int) *nodev1.BootImage {
+func bootImage(images upgrade.Images, rootHash []byte, generation uint64) *nodev1.BootImage {
 	p := images.Of(rootHash)
-	return &nodev1.BootImage{RootHash: rootHash, Generation: uint32(generation), Revision: p.Revision, Tag: p.Tag}
+	return &nodev1.BootImage{RootHash: rootHash, Generation: generation, Revision: p.Revision, Tag: p.Tag}
 }
 
 // failedBoot returns what chalkd and the health check logged during the last boot of the UKI
@@ -91,6 +91,6 @@ func (s *Server) failedBoot(e upgrade.Entry) []string {
 // recordHeader is the first line of the record of a failed boot: the root hash of the store it
 // booted and the generation of its entry, so a record is never shown for another image, nor for
 // another try of the image under a later generation.
-func recordHeader(rootHash []byte, generation int) string {
-	return "usrhash=" + hex.EncodeToString(rootHash) + " generation=" + strconv.Itoa(generation)
+func recordHeader(rootHash []byte, generation uint64) string {
+	return "usrhash=" + hex.EncodeToString(rootHash) + " generation=" + strconv.FormatUint(generation, 10)
 }

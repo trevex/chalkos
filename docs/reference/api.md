@@ -179,7 +179,7 @@ An image a UKI on the ESP boots.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `root_hash` | `bytes` | The verity root hash of the image's store, from the usrhash= of the UKI or, for the running image, of the kernel command line; it identifies the image. |
-| `generation` | `uint32` | The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi; systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown. |
+| `generation` | `uint64` | The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi; systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown. |
 | `revision` | `string` | The git revision and tag the image was built from, as the node's record of the images it installed names them; empty when it does not know them. |
 | `tag` | `string` |  |
 

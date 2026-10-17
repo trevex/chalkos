@@ -158,7 +158,7 @@ type upgradeFake struct {
 	// root, stagedRoot and failedRoot are the root hashes of the stores of image, staged and
 	// failed, and generation the generation of the entry the node booted image from.
 	root, stagedRoot, failedRoot []byte
-	generation                   uint32
+	generation                   uint64
 	// stagedStoreSize and stagedVeritySize are the bytes of store and hash tree staged.
 	stagedStoreSize, stagedVeritySize uint64
 	// rebooting makes the node unreachable, as while it reboots.

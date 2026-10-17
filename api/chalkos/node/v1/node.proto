@@ -391,7 +391,7 @@ message BootImage {
   bytes root_hash = 1;
   // The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi;
   // systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown.
-  uint32 generation = 2;
+  uint64 generation = 2;
   // The git revision and tag the image was built from, as the node's record of the images it
   // installed names them; empty when it does not know them.
   string revision = 3;

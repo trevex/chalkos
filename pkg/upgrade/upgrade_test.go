@@ -207,6 +207,39 @@ func TestGenerationsPastNine(t *testing.T) {
 	}
 }
 
+// TestGenerationsByName counts the generation a name on the ESP gives the image, whatever its UKI
+// holds, as systemd-boot orders the entry by its name: an upgrade's entry is the next one. A UKI
+// that cannot be read is retired, as the image's other entries; one of another image stays.
+func TestGenerationsByName(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
+	rescue := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root)
+	for _, tc := range []struct {
+		name, file string
+		uki        []byte
+		want       string
+		kept       bool
+	}{
+		{"an unreadable UKI", "chalkos_9.efi", []byte("not a UKI"), "chalkos_10+3.efi", false},
+		{"another image's", "chalkos_2.efi", rescue, "chalkos_3+3.efi", true},
+		{"a huge generation", "chalkos_18446744073709551614.efi", []byte("not a UKI"), "chalkos_18446744073709551615+3.efi", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newLab(t, old)
+			if err := os.WriteFile(filepath.Join(l.esp, linuxDir, tc.file), tc.uki, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			res, err := l.install(img)
+			if err != nil || res.Entry != tc.want {
+				t.Fatalf("install = %+v, %v; want %s", res, err, tc.want)
+			}
+			if kept := l.file(tc.file) != nil; kept != tc.kept {
+				t.Errorf("%s kept: %v, want %v", tc.file, kept, tc.kept)
+			}
+			l.boots(img, 3)
+		})
+	}
+}
+
 // TestUpgradeFromSlotB runs the image of slot B and installs the next into slot A, never
 // writing slot B or its UKI.
 func TestUpgradeFromSlotB(t *testing.T) {
@@ -420,9 +453,17 @@ func TestRefusesBeforeChanging(t *testing.T) {
 			data, _ := PartitionUUIDs(old.root)
 			l.setUUID(5, data)
 		}, "the inactive slot carries"},
-		{"a UKI of another image under the next generation's name", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_2.efi"), newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root), 0o644)
-		}, "chalkos_2.efi"},
+		// Names chalkd never writes, placed by hand or corrupted.
+		{"a booted entry with a leading zero", nil, func(l *lab) {
+			os.Rename(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), filepath.Join(l.esp, linuxDir, "chalkos_01.efi"))
+			l.setVariable("LoaderEntrySelected", "chalkos_01.efi")
+		}, "chalkos_01.efi on the ESP is not named chalkos_<generation>.efi"},
+		{"a generation past a uint64's range", nil, func(l *lab) {
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_18446744073709551616.efi"), []byte("not a UKI"), 0o644)
+		}, "too large"},
+		{"no generation after the highest", nil, func(l *lab) {
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_18446744073709551615.efi"), []byte("not a UKI"), 0o644)
+		}, "too large"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)

@@ -2,6 +2,8 @@ package upgrade
 
 import (
 	"bytes"
+	"math"
+	"strings"
 	"testing"
 )
 
@@ -9,20 +11,22 @@ import (
 // name had, in either case; a name of another image, or one that gives no canonical decimal,
 // gives none.
 func TestGeneration(t *testing.T) {
-	for file, want := range map[string]int{
-		"chalkos_1.efi":           1,
-		"chalkos_12.efi":          12,
-		"chalkos_3+2.efi":         3,
-		"chalkos_3+0-3.efi":       3,
-		"CHALKOS_4.EFI":           4,
-		"chalkos.efi":             0,
-		"chalkos_0.efi":           0,
-		"chalkos_07.efi":          0,
-		"chalkos_+5.efi":          0,
-		"chalkos_0.2.0.efi":       0,
-		"chalkos_2a.efi":          0,
-		"rescue_2.efi":            0,
-		"chalkos-installer_1.efi": 0,
+	for file, want := range map[string]uint64{
+		"chalkos_1.efi":                    1,
+		"chalkos_12.efi":                   12,
+		"chalkos_3+2.efi":                  3,
+		"chalkos_3+0-3.efi":                3,
+		"CHALKOS_4.EFI":                    4,
+		"chalkos_18446744073709551615.efi": math.MaxUint64,
+		"chalkos_18446744073709551616.efi": 0,
+		"chalkos.efi":                      0,
+		"chalkos_0.efi":                    0,
+		"chalkos_07.efi":                   0,
+		"chalkos_+5.efi":                   0,
+		"chalkos_0.2.0.efi":                0,
+		"chalkos_2a.efi":                   0,
+		"rescue_2.efi":                     0,
+		"chalkos-installer_1.efi":          0,
 	} {
 		id, _, _ := parseEntryName(file)
 		if got := entryGeneration(id, "chalkos"); got != want {
@@ -31,23 +35,37 @@ func TestGeneration(t *testing.T) {
 	}
 }
 
-// TestNextGeneration numbers an upgrade's entry one above the image's highest generation, leaving
-// out UKIs of other images and names that give no generation.
+// TestNextGeneration numbers an upgrade's entry one above the highest generation any name gives
+// the image, whatever the UKI holds, and leaves out names that give none.
 func TestNextGeneration(t *testing.T) {
+	entry := func(file, imageID string) Entry {
+		id, _, _ := parseEntryName(file)
+		return Entry{File: file, ID: id, ImageID: imageID}
+	}
 	for _, tc := range []struct {
 		name    string
 		entries []Entry
-		want    int
+		want    uint64
 	}{
 		{"no entry", nil, 1},
-		{"one entry", []Entry{{ImageID: "chalkos", Generation: 1}}, 2},
-		{"in any order", []Entry{{ImageID: "chalkos", Generation: 9}, {ImageID: "chalkos", Generation: 10}, {ImageID: "chalkos", Generation: 2}}, 11},
-		{"a name without one", []Entry{{File: "chalkos.efi", ImageID: "chalkos"}, {ImageID: "chalkos", Generation: 3}}, 4},
-		{"another image's", []Entry{{File: "rescue_7.efi", ImageID: "rescue", Generation: 7}, {ImageID: "chalkos", Generation: 3}}, 4},
-		{"an unreadable UKI", []Entry{{File: "chalkos_8.efi"}, {ImageID: "chalkos", Generation: 3}}, 4},
+		{"one entry", []Entry{entry("chalkos_1.efi", "chalkos")}, 2},
+		{"in any order", []Entry{entry("chalkos_9.efi", "chalkos"), entry("chalkos_10+3.efi", "chalkos"), entry("chalkos_2.efi", "chalkos")}, 11},
+		{"a name without one", []Entry{entry("chalkos.efi", "chalkos"), entry("chalkos_3.efi", "chalkos")}, 4},
+		{"another image's", []Entry{entry("rescue_7.efi", "rescue"), entry("chalkos_3.efi", "chalkos")}, 4},
+		// systemd-boot orders the entry by its name, whatever it boots.
+		{"an unreadable UKI", []Entry{entry("chalkos_8.efi", ""), entry("chalkos_3.efi", "chalkos")}, 9},
+		{"another image's under the image's name", []Entry{entry("chalkos_8.efi", "rescue"), entry("chalkos_3.efi", "chalkos")}, 9},
+		{"leading zeros", []Entry{entry("chalkos_0012.efi", ""), entry("chalkos_3.efi", "chalkos")}, 13},
+		{"a huge generation", []Entry{entry("chalkos_18446744073709551614.efi", "chalkos")}, math.MaxUint64},
 	} {
-		if got := nextGeneration(tc.entries, "chalkos"); got != tc.want {
-			t.Errorf("%s: the next generation = %d, want %d", tc.name, got, tc.want)
+		got, err := nextGeneration(tc.entries, "chalkos")
+		if err != nil || got != tc.want {
+			t.Errorf("%s: the next generation = %d, %v, want %d", tc.name, got, err, tc.want)
+		}
+	}
+	for _, file := range []string{"chalkos_18446744073709551615.efi", "chalkos_18446744073709551616.efi", "chalkos_000099999999999999999999999.efi"} {
+		if got, err := nextGeneration([]Entry{entry(file, "")}, "chalkos"); err == nil || !strings.Contains(err.Error(), "too large") {
+			t.Errorf("past %s: the next generation = %d, %v, want it refused", file, got, err)
 		}
 	}
 }
@@ -55,7 +73,7 @@ func TestNextGeneration(t *testing.T) {
 // TestStagedEntry finds the entry that boots next: the image's highest generation, not the
 // booted entry, with tries left.
 func TestStagedEntry(t *testing.T) {
-	entry := func(file string, generation, left int) Entry {
+	entry := func(file string, generation uint64, left int) Entry {
 		id, _, _ := parseEntryName(file)
 		return Entry{File: file, ID: id, ImageID: "chalkos", Generation: generation, TriesLeft: left}
 	}
@@ -71,6 +89,9 @@ func TestStagedEntry(t *testing.T) {
 		{"the booted entry the highest", []Entry{entry("chalkos_1.efi", 1, -1), booted}, ""},
 		{"a blessed entry above the booted one", []Entry{booted, entry("chalkos_3.efi", 3, -1)}, ""},
 		{"another image's above", []Entry{booted, {File: "rescue_9+3.efi", ID: "rescue_9.efi", ImageID: "rescue", Generation: 9, TriesLeft: 3}}, ""},
+		// systemd-boot boots an entry whose name is higher first, whatever its UKI holds.
+		{"an unreadable UKI above", []Entry{booted, entry("chalkos_3+3.efi", 3, 3), {File: "chalkos_4.efi", ID: "chalkos_4.efi", TriesLeft: -1}}, ""},
+		{"a generation past a uint64 above", []Entry{booted, entry("chalkos_3+3.efi", 3, 3), {File: "chalkos_99999999999999999999.efi", ID: "chalkos_99999999999999999999.efi", TriesLeft: -1}}, ""},
 	} {
 		got, ok := stagedEntry(tc.entries, "chalkos", booted)
 		if got.File != tc.want || ok != (tc.want != "") {

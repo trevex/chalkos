@@ -2027,7 +2027,7 @@ type BootImage struct {
 	RootHash []byte `protobuf:"bytes,1,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
 	// The generation of the UKI's boot entry, from its file name, <image ID>_<generation>.efi;
 	// systemd-boot boots the highest first. Zero when the name gives none or the entry is unknown.
-	Generation uint32 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	Generation uint64 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
 	// The git revision and tag the image was built from, as the node's record of the images it
 	// installed names them; empty when it does not know them.
 	Revision      string `protobuf:"bytes,3,opt,name=revision,proto3" json:"revision,omitempty"`
@@ -2073,7 +2073,7 @@ func (x *BootImage) GetRootHash() []byte {
 	return nil
 }
 
-func (x *BootImage) GetGeneration() uint32 {
+func (x *BootImage) GetGeneration() uint64 {
 	if x != nil {
 		return x.Generation
 	}
@@ -4013,7 +4013,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\tBootImage\x12\x1b\n" +
 	"\troot_hash\x18\x01 \x01(\fR\brootHash\x12\x1e\n" +
 	"\n" +
-	"generation\x18\x02 \x01(\rR\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
 	"generation\x12\x1a\n" +
 	"\brevision\x18\x03 \x01(\tR\brevision\x12\x10\n" +
 	"\x03tag\x18\x04 \x01(\tR\x03tag\"_\n" +

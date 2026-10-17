@@ -146,26 +146,36 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err != nil {
 		return Result{}, err
 	}
+	// The new entry boots before the image's entries an upgrade keeps, the booted one and those
+	// booting the running store, only while their names order them by the generation they give, as
+	// chalkd names them: from 1 on, without leading zeros. Other names are placed by hand or
+	// corrupted.
+	for _, e := range all {
+		if retired(e, h.ImageID, booted, running) || !ofImage(e, h.ImageID) && e.ID != booted.ID {
+			continue
+		}
+		if _, named, _ := nameGeneration(e.ID, h.ImageID); (named || e.ID == booted.ID) && entryGeneration(e.ID, h.ImageID) == 0 {
+			return Result{}, fmt.Errorf("%s on the ESP is not named %s_<generation>.efi with a generation from 1 on and no leading zeros, so the next generation might not boot before it; reinstall the node, or rename the entry", e.File, h.ImageID)
+		}
+	}
+	// The UKI is renamed last, to the image's next generation, above the generation any name on the
+	// ESP gives, so it replaces no UKI and shares no entry's ID.
+	generation, err := nextGeneration(all, h.ImageID)
+	if err != nil {
+		return Result{}, err
+	}
 	// The image boots next already, as after an upgrade without a reboot.
 	if staged, ok := stagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
 		return Result{AlreadyStaged: true, Entry: staged.File}, nil
 	}
 	// UKIs of other images on the ESP, such as a rescue system's, are left alone; a UKI is of the
-	// image its os-release names.
-	entries := slices.DeleteFunc(slices.Clone(all), func(e Entry) bool { return e.ImageID != h.ImageID })
-	// The UKI is renamed last, to the image's next generation, which no UKI of the image has; it
-	// must not replace a UKI of another image either, or share its entry ID.
-	generation := nextGeneration(entries, h.ImageID)
-	id := strings.ToLower(EntryName(h.ImageID, generation))
-	for _, e := range all {
-		if e.ID == id {
-			return Result{}, fmt.Errorf("%s on the ESP has the entry ID %s, which the image's next generation needs; remove it", e.File, id)
-		}
-	}
+	// image its os-release names, or one that cannot be read of the image its name gives.
+	entries := slices.DeleteFunc(slices.Clone(all), func(e Entry) bool { return !ofImage(e, h.ImageID) })
 	// Until the running image's boot is found good, the image it falls back to must stay.
 	if booted.TriesLeft >= 0 {
 		for _, e := range entries {
-			if e.ID != booted.ID && !e.Bad() && !bytes.Equal(e.RootHash, running) {
+			// A UKI that cannot be read boots no image to fall back to.
+			if e.ID != booted.ID && !e.Bad() && e.RootHash != nil && !bytes.Equal(e.RootHash, running) {
 				return Result{}, fmt.Errorf("the boot of %s has not been found healthy yet; upgrade once it is, as the upgrade replaces %s, which the node falls back to", booted.File, e.File)
 			}
 		}
@@ -233,10 +243,20 @@ func (n *Node) slots() *SlotWriter {
 	return &SlotWriter{Run: n.Run, Disk: n.Disk, OpenPartition: n.OpenPartition, TableLock: n.TableLock, LockWait: n.LockWait, Change: n.Change}
 }
 
+// ofImage reports whether the UKI is of the image: its os-release names the image or, when it
+// cannot be read, its name gives a generation of the image.
+func ofImage(e Entry, imageID string) bool {
+	if e.ImageID == "" {
+		_, ok, _ := nameGeneration(e.ID, imageID)
+		return ok
+	}
+	return e.ImageID == imageID
+}
+
 // retired reports whether the retirement removes the UKI: one of the image that neither the node
 // booted nor boots the running store.
 func retired(e Entry, imageID string, booted Entry, running []byte) bool {
-	return e.ImageID == imageID && e.ID != booted.ID && !bytes.Equal(e.RootHash, running)
+	return ofImage(e, imageID) && e.ID != booted.ID && !bytes.Equal(e.RootHash, running)
 }
 
 // retire removes every UKI of the image but those booting the running store, along with UKIs an
@@ -291,7 +311,7 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 
 // activate makes the slot hold the image as systemd finds it and gives the UKI its name, the
 // generation with the tries. Until the rename, nothing boots the slot.
-func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, generation, tries int) (string, error) {
+func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, generation uint64, tries int) (string, error) {
 	if err := n.slots().Activate(ctx, slot, h); err != nil {
 		return "", err
 	}

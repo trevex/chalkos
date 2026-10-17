@@ -381,9 +381,12 @@ func compareIDs(a, b string) int {
 		x, restA := idRun(a)
 		y, restB := idRun(b)
 		if isDigit(x[0]) && isDigit(y[0]) {
-			m, _ := strconv.Atoi(x)
-			n, _ := strconv.Atoi(y)
-			if c := cmp.Compare(m, n); c != 0 {
+			// Leading zeros aside, the longer run is the larger number, of any length.
+			x, y = strings.TrimLeft(x, "0"), strings.TrimLeft(y, "0")
+			if c := cmp.Compare(len(x), len(y)); c != 0 {
+				return c
+			}
+			if c := strings.Compare(x, y); c != 0 {
 				return c
 			}
 		} else if c := strings.Compare(x, y); c != 0 {

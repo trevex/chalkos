@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,53 +39,78 @@ type Entry struct {
 	RootHash []byte
 	// Generation numbers the image's entries, as the name <image ID>_<generation>.efi gives it; 0
 	// for a name that gives none or a UKI that cannot be read.
-	Generation int
+	Generation uint64
 }
 
 // Bad reports whether systemd-boot used up the entry's tries.
 func (e Entry) Bad() bool { return e.TriesLeft == 0 }
 
-// entryGeneration is the generation an entry's ID gives a UKI of the image: the ID is the image
-// ID, an underscore and the generation in lower case. Only the canonical decimal counts, so no two
-// names give one generation; any other name gives 0.
-func entryGeneration(id, imageID string) int {
-	s, ok := strings.CutPrefix(id, strings.ToLower(imageID)+"_")
-	if !ok {
-		return 0
+// nameGeneration reads the generation an entry ID names for the image: the image ID, an
+// underscore and any decimal, in lower case. systemd-boot orders the entry by that name whatever
+// the UKI holds, so the name alone counts. ok is false for an ID of another shape, and err is set
+// when the decimal does not fit a uint64.
+func nameGeneration(id, imageID string) (g uint64, ok bool, err error) {
+	s, found := strings.CutPrefix(id, strings.ToLower(imageID)+"_")
+	if !found {
+		return 0, false, nil
 	}
-	if s, ok = strings.CutSuffix(s, ".efi"); !ok {
-		return 0
+	if s, found = strings.CutSuffix(s, ".efi"); !found || s == "" || strings.Trim(s, "0123456789") != "" {
+		return 0, false, nil
 	}
-	g, err := strconv.Atoi(s)
-	if err != nil || g < 1 || strconv.Itoa(g) != s {
+	g, err = strconv.ParseUint(s, 10, 64)
+	return g, true, err
+}
+
+// entryGeneration is the generation an entry's ID gives a UKI of the image when the ID names it as
+// chalkos does: from 1 on, without leading zeros, so no two names give one generation and the
+// generation orders the entry as systemd-boot's comparison of the name does. Any other name
+// gives 0.
+func entryGeneration(id, imageID string) uint64 {
+	g, ok, err := nameGeneration(id, imageID)
+	if !ok || err != nil || g < 1 || id != strings.ToLower(EntryName(imageID, g)) {
 		return 0
 	}
 	return g
 }
 
 // nextGeneration is the generation an upgrade names the image's new entry: one above the highest
-// of the image's entries. systemd-boot compares chalkos's entries by their IDs alone, the highest
-// first, so the new entry boots next, whatever it holds.
-func nextGeneration(entries []Entry, imageID string) int {
-	highest := 0
+// any name on the ESP gives the image, also of a UKI that cannot be read or names another image.
+// systemd-boot compares chalkos's entries by their IDs alone, the highest first, so the new entry
+// boots next, whatever the others hold. It fails when a name gives a generation past a uint64's
+// range, or the highest leaves no next one.
+func nextGeneration(entries []Entry, imageID string) (uint64, error) {
+	var highest uint64
 	for _, e := range entries {
-		if e.ImageID == imageID {
-			highest = max(highest, e.Generation)
+		g, ok, err := nameGeneration(e.ID, imageID)
+		if !ok {
+			continue
 		}
+		if err != nil || g == math.MaxUint64 {
+			return 0, fmt.Errorf("%s on the ESP names a generation too large for another to follow; remove it, or reinstall the node", e.File)
+		}
+		highest = max(highest, g)
 	}
-	return highest + 1
+	return highest + 1, nil
 }
 
 // stagedEntry is the image's entry that boots next instead of the booted one: the highest
-// generation, while it has tries left. false when that is the booted entry or none has tries.
+// generation any name gives, while its UKI is of the image and has tries left. false when that is
+// the booted entry or none has tries.
 func stagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 	var highest Entry
+	var generation uint64
 	for _, e := range entries {
-		if e.ImageID == imageID && e.Generation > highest.Generation {
-			highest = e
+		g, ok, err := nameGeneration(e.ID, imageID)
+		switch {
+		case !ok:
+		case err != nil:
+			// A name past a uint64's range is higher than any other.
+			return Entry{}, false
+		case g > generation:
+			highest, generation = e, g
 		}
 	}
-	if highest.Generation == 0 || highest.ID == booted.ID || highest.TriesLeft <= 0 {
+	if generation == 0 || highest.ImageID != imageID || highest.ID == booted.ID || highest.TriesLeft <= 0 {
 		return Entry{}, false
 	}
 	return highest, true
@@ -92,13 +118,13 @@ func stagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 
 // EntryName is the file name of the image's UKI of the generation without a tries counter, as an
 // install writes it.
-func EntryName(imageID string, generation int) string {
+func EntryName(imageID string, generation uint64) string {
 	return fmt.Sprintf("%s_%d.efi", imageID, generation)
 }
 
 // countedEntryName is the file name of the image's UKI of the generation with a tries counter, as
 // an upgrade writes it.
-func countedEntryName(imageID string, generation, tries int) string {
+func countedEntryName(imageID string, generation uint64, tries int) string {
 	return fmt.Sprintf("%s_%d+%d.efi", imageID, generation, tries)
 }
 
