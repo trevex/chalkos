@@ -132,3 +132,25 @@ func TestSlotLabels(t *testing.T) {
 		}
 	}
 }
+
+// TestTriesCounter reads the tries counter of a name as systemd-boot does, which takes a count
+// past an int32 for no counter, and the whole name for the entry's ID.
+func TestTriesCounter(t *testing.T) {
+	for _, tc := range []struct {
+		file, id   string
+		left, done int
+	}{
+		{"chalkos_2+3.efi", "chalkos_2.efi", 3, 0},
+		{"chalkos_2+1-2.efi", "chalkos_2.efi", 1, 2},
+		{"chalkos_2+2147483647-2147483647.efi", "chalkos_2.efi", math.MaxInt32, math.MaxInt32},
+		{"chalkos_2+2147483648.efi", "chalkos_2+2147483648.efi", -1, -1},
+		{"chalkos_2+1-2147483648.efi", "chalkos_2+1-2147483648.efi", -1, -1},
+		{"chalkos_2+99999999999999999999.efi", "chalkos_2+99999999999999999999.efi", -1, -1},
+		{"chalkos_2.efi", "chalkos_2.efi", -1, -1},
+	} {
+		id, left, done := parseEntryName(tc.file)
+		if id != tc.id || left != tc.left || done != tc.done {
+			t.Errorf("%s: %s, %d, %d; want %s, %d, %d", tc.file, id, left, done, tc.id, tc.left, tc.done)
+		}
+	}
+}

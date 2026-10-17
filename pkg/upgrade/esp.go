@@ -129,8 +129,8 @@ func countedEntryName(imageID string, generation uint64, tries int) string {
 }
 
 // parseEntryName splits a UKI's file name into the entry's ID and its tries counter as
-// systemd-boot does: the counter follows the last "+" and precedes the suffix; a malformed one
-// counts as none.
+// systemd-boot does: the counter follows the last "+" and precedes the suffix; a malformed one,
+// or one whose counts exceed an int32, as systemd-boot rejects them, counts as none.
 func parseEntryName(file string) (id string, left, done int) {
 	const suffix = ".efi"
 	plus := strings.LastIndexByte(file, '+')
@@ -144,12 +144,12 @@ func parseEntryName(file string) (id string, left, done int) {
 	}
 	l, d, hasDone := strings.Cut(counter[:end], "-")
 	left, err := strconv.Atoi(l)
-	if err != nil || left < 0 || strings.ContainsAny(l, "+-") {
+	if err != nil || left < 0 || left > math.MaxInt32 || strings.ContainsAny(l, "+-") {
 		return strings.ToLower(file), -1, -1
 	}
 	done = 0
 	if hasDone {
-		if done, err = strconv.Atoi(d); err != nil || done < 0 || strings.ContainsAny(d, "+-") {
+		if done, err = strconv.Atoi(d); err != nil || done < 0 || done > math.MaxInt32 || strings.ContainsAny(d, "+-") {
 			return strings.ToLower(file), -1, -1
 		}
 	}
