@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -600,6 +601,9 @@ func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "the node must be reinstalled") {
 		t.Errorf("err = %v, want the reinstall hint, since a reset cannot recreate VAR", err)
 	}
+	if !errors.Is(err, ErrNotUnsealed) {
+		t.Errorf("err = %v, want it to match ErrNotUnsealed", err)
+	}
 }
 
 // writeSection records a section given as JSON.
@@ -858,27 +862,6 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 			}
 			if !reflect.DeepEqual(after.Disks["data"], before.Disks["data"]) {
 				t.Errorf("pin changed from %+v to %+v", before.Disks["data"], after.Disks["data"])
-			}
-		})
-	}
-}
-
-// A reset cannot recreate STATE, so a STATE the TPM does not unseal names a reinstall, and any
-// other volume but VAR names a reset.
-func TestOpenWithoutFallbackNamesTheRemedy(t *testing.T) {
-	for _, tc := range []struct{ name, want string }{
-		{"state", "the node must be reinstalled"},
-		{"data", "chalkctl storage reset <node> data"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := &fakeRunner{rules: []rule{
-				{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
-				{prefix: "systemd-cryptsetup attach " + tc.name, err: &ToolError{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}},
-			}}
-			b := newTestBoot(t, r)
-			err := b.Open(context.Background(), tc.name, "/dev/disk/by-partlabel/"+tc.name, filepath.Join(t.TempDir(), tc.name), false, true)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})
 	}

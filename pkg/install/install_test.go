@@ -947,3 +947,26 @@ func TestInPlaceWithoutConfigStoresNone(t *testing.T) {
 		t.Errorf("stored a config for an identity: %v", err)
 	}
 }
+
+// An install keeps a STATE that matches the policy, so one the TPM does not unseal fails every
+// retry the same way, and the error names the wiped disk that replaces it.
+func TestInPlaceNamesTheRemedyOfAStateTheTPMDoesNotUnseal(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda)
+	r.add(&rule{prefix: "systemd-cryptsetup attach state", err: &node.ToolError{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}})
+	r.add(inPlaceRules(i)...)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+
+	for range 2 {
+		err := i.InPlace(context.Background(), req)
+		if !errors.Is(err, node.ErrNotUnsealed) || !strings.Contains(err.Error(), "install the node from the installer with --wipe-disk") {
+			t.Fatalf("err = %v, want the TPM's failure and the wiped disk", err)
+		}
+		if strings.Contains(err.Error(), "storage reset") {
+			t.Errorf("err = %v names a reset, which cannot recreate STATE", err)
+		}
+	}
+	if hasPrefix(r.calls, "sfdisk --delete") || installed(t, i.StateDir) {
+		t.Errorf("replaced STATE or installed: %v", r.calls)
+	}
+}

@@ -288,6 +288,11 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		return err
 	}
 	if err := st.Open(ctx, stateMapperName, state.Node, i.StateDir, false, policy == storage.EncryptionTPM2); err != nil {
+		// prepareState keeps a STATE that matches the policy, so every retry finds this one
+		// again; only a wiped disk gets a new one.
+		if errors.Is(err, node.ErrNotUnsealed) {
+			return fmt.Errorf("%w; STATE was sealed on another machine or under other Secure Boot settings, so install the node from the installer with --wipe-disk to replace it", err)
+		}
 		return err
 	}
 

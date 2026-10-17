@@ -46,6 +46,16 @@ func Default() *Storage {
 	}
 }
 
+// ErrNotUnsealed is what an Open error matches when the TPM did not unseal the volume and Open was
+// not to prompt for its fallback key.
+var ErrNotUnsealed = errors.New("the TPM did not unseal the volume")
+
+// notUnsealed is an Open error that matches ErrNotUnsealed and keeps its own message.
+type notUnsealed struct{ error }
+
+func (e notUnsealed) Is(target error) bool { return target == ErrNotUnsealed }
+func (e notUnsealed) Unwrap() error        { return e.error }
+
 // StorageDir is where STATE records the storage section, definitions and pins.
 func (s *Storage) StorageDir() string { return filepath.Join(s.StateDir, "storage") }
 
@@ -78,12 +88,12 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, prompt, en
 		}
 		if _, err := s.Run.Run(ctx, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
 			if !prompt && unsealFailed(err) {
-				// A reset recreates any volume but STATE and VAR, which only a reinstall recreates.
-				remedy := "the volume must be reset with chalkctl storage reset <node> " + name
-				if name == "state" || name == storage.VarVolume {
-					remedy = "the node must be reinstalled"
+				// Only a reinstall recreates VAR. The installer, which opens STATE without a
+				// prompt, names its own remedy.
+				if name == storage.VarVolume {
+					return notUnsealed{fmt.Errorf("the TPM did not unseal %s and the node has no fallback key; the node must be reinstalled: %w", name, err)}
 				}
-				return fmt.Errorf("the TPM did not unseal %s and the node has no fallback key; %s: %w", name, remedy, err)
+				return notUnsealed{fmt.Errorf("the TPM did not unseal %s: %w", name, err)}
 			}
 			return fmt.Errorf("unlock %s: %w", name, err)
 		}
