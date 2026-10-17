@@ -48,9 +48,9 @@ func identityWith(storageSection string) string {
 }
 
 // installedServer is a normal-mode server whose STATE records the section and its pins.
-func installedServer(t *testing.T, recorded string, extraPinned bool) (*Server, *fakeRunner) {
+func installedServer(t *testing.T, recorded string, extraPinned bool, more ...testDisk) (*Server, *fakeRunner) {
 	t.Helper()
-	s, r := newTestServer(t, normal, vda, vdb)
+	s, r := newTestServer(t, normal, append([]testDisk{vda, vdb}, more...)...)
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	write(t, filepath.Join(dir, "storage.json"), recorded)
 	pins := `"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "` + varUUID + `"}}`
@@ -177,20 +177,31 @@ func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 	}
 }
 
-// A destructive change names the command that carries it out: a reset for a volume it recreates in
-// place, a reinstall for a volume the config removes.
+// vdc is a disk besides the extra volume's, which a changed disk reference can find.
+var vdc = testDisk{"vdc", "253:32", map[string]string{"ID_PATH": "pci-0000:00:06.0", "ID_SERIAL": "chalk-other"}}
+
+// withExtraRef returns a rendered section whose extra disk is referenced by the serial given.
+func withExtraRef(t *testing.T, rendered, serial string) string {
+	return editSection(t, rendered, func(s *storage.Section) {
+		d := s.Disks["extra"]
+		d.Ref = storage.Ref{Selector: storage.Selector{Serial: serial, Type: "hdd"}}
+		s.Disks["extra"] = d
+	})
+}
+
+// A destructive change names what carries it out: a reset for a volume it recreates in place, a
+// reinstall for a volume the config removes or moves to another disk, and a fixed reference for a
+// disk reference that finds no disk.
 func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 	for _, tc := range []struct{ name, next, want string }{
 		{"reformatted", section("", "xfs"), "reset it with chalkctl storage reset n1 extra"},
+		{"reformatted, its reference changed but finding its disk", withExtraRef(t, section("", "xfs"), "chalk-extra"), "reset it with chalkctl storage reset n1 extra"},
 		{"removed", section("", ""), "only a reinstall of n1 carries it out"},
-		{"moved by its reference", editSection(t, section("", "ext4"), func(s *storage.Section) {
-			d := s.Disks["extra"]
-			d.Ref = storage.Ref{Selector: storage.Selector{Serial: "chalk-other"}}
-			s.Disks["extra"] = d
-		}), "only a reinstall of n1 carries it out"},
+		{"moved by its reference", withExtraRef(t, section("", "ext4"), "chalk-other"), "but the volume lives on"}, {"moved by its reference, naming a reinstall", withExtraRef(t, section("", "ext4"), "chalk-other"), "only a reinstall of n1 carries it out"},
+		{"its reference finding no disk", withExtraRef(t, section("", "ext4"), "chalk-missing"), "cannot be resolved"}, {"its reference finding no disk, naming the fix", withExtraRef(t, section("", "ext4"), "chalk-missing"), "fix the disk reference or plug in the disk it names"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, r := installedServer(t, section("", "ext4"), true)
+			s, r := installedServer(t, section("", "ext4"), true, vdc)
 			withNodeCertificate(t, s)
 			_, err := apply(s, identityWith(tc.next), secret)
 			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
@@ -292,14 +303,11 @@ func TestResetVolumeRefusals(t *testing.T) {
 		{"unknown volume", "nope", identityWith(section("", "ext4")), "vdb", "no volume nope"},
 		{"other volumes change destructively", "extra", identityWith(section("1G", "xfs")), "vdb", "other volumes"},
 		{"partition on another disk", "extra", identityWith(section("", "xfs")), "vda", "refusing to touch it"},
-		{"reference finding another disk", "extra", identityWith(editSection(t, section("", "xfs"), func(s *storage.Section) {
-			d := s.Disks["extra"]
-			d.Ref = storage.Ref{Selector: storage.Selector{Serial: "chalk-other"}}
-			s.Disks["extra"] = d
-		})), "vdb", "finds another disk"},
+		{"reference finding another disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", "finds another disk"},
+		{"reference finding no disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-missing")), "vdb", "finds no disk"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			s, r := installedServer(t, section("", "ext4"), true)
+			s, r := installedServer(t, section("", "ext4"), true, vdc)
 			if c.partitionOn == "vdb" {
 				partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 			} else {

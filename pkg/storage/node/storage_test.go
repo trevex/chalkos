@@ -862,3 +862,24 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// A reset cannot recreate STATE, so a STATE the TPM does not unseal names a reinstall, and any
+// other volume but VAR names a reset.
+func TestOpenWithoutFallbackNamesTheRemedy(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{"state", "the node must be reinstalled"},
+		{"data", "chalkctl storage reset <node> data"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &fakeRunner{rules: []rule{
+				{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
+				{prefix: "systemd-cryptsetup attach " + tc.name, err: &ToolError{Command: "systemd-cryptsetup", Code: 1, Stderr: "No TPM2 metadata matching the current system state found in LUKS2 header, falling back to traditional unlocking.\nPassword querying disabled via 'headless' option.\n"}},
+			}}
+			b := newTestBoot(t, r)
+			err := b.Open(context.Background(), tc.name, "/dev/disk/by-partlabel/"+tc.name, filepath.Join(t.TempDir(), tc.name), false, true)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

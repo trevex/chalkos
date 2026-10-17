@@ -134,21 +134,40 @@ func (s *Server) classifyDisks(section storage.Section, pins storage.Pins) []sto
 	})
 }
 
-// movedVolumes are the volumes whose disk reference finds another disk than the pinned one, which
-// a reset would recreate on the pinned disk.
-func (s *Server) movedVolumes(section storage.Section, pins storage.Pins) map[string]bool {
-	moved := map[string]bool{}
-	for _, c := range s.classifyDisks(section, pins) {
-		moved[c.Volume] = true
+// diskChanges sorts the volumes whose changed disk reference classifyDisks reports: moved are those
+// whose reference finds another disk than the one they live on, which a reset would recreate on
+// the old disk; unresolved are those whose reference finds no disk, such as a mistyped selector or
+// a disk that is not plugged in.
+func (s *Server) diskChanges(section storage.Section, pins storage.Pins) (moved, unresolved map[string]bool) {
+	failed := map[storage.Ref]bool{}
+	changes := storage.ClassifyDisks(section, pins, func(ref storage.Ref) (storage.Identity, error) {
+		disk, err := s.Host.Resolve(ref)
+		if err != nil {
+			failed[ref] = true
+		}
+		return disk.Identity, err
+	})
+	moved, unresolved = map[string]bool{}, map[string]bool{}
+	for _, c := range changes {
+		if failed[section.Disks[section.Volumes[c.Volume].Disk].Ref] {
+			unresolved[c.Volume] = true
+		} else {
+			moved[c.Volume] = true
+		}
 	}
-	return moved
+	return moved, unresolved
 }
 
 // remedy says how a node carries out a destructive change of a volume. chalkctl storage reset
 // recreates a volume in place; changing VAR, removing a volume or moving it to another disk, also
-// by a disk reference that finds another disk, takes a reinstall, as resetVolume refuses those.
-func (s *Server) remedy(recorded, section storage.Section, moved map[string]bool, c storage.Change) string {
+// by a disk reference that finds another disk, takes a reinstall, as resetVolume refuses those. A
+// disk reference that finds no disk is a mistake in the config or a missing disk, which neither
+// carries out.
+func (s *Server) remedy(recorded, section storage.Section, moved, unresolved map[string]bool, c storage.Change) string {
 	v, kept := section.Volumes[c.Volume]
+	if unresolved[c.Volume] {
+		return "fix the disk reference or plug in the disk it names"
+	}
 	if c.Volume == storage.VarVolume || !kept || v.Disk != recorded.Volumes[c.Volume].Disk || moved[c.Volume] {
 		return fmt.Sprintf("only a reinstall of %s carries it out", s.nodeName())
 	}
@@ -264,11 +283,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		changes = s.classify(recorded, d.section, pins)
-		moved := s.movedVolumes(d.section, pins)
+		moved, unresolved := s.diskChanges(d.section, pins)
 		var destructive []string
 		for _, c := range changes {
 			if c.Class == storage.Destructive {
-				destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, d.section, moved, c)))
+				destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, d.section, moved, unresolved, c)))
 			}
 		}
 		if len(destructive) > 0 {
@@ -837,7 +856,11 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 	if nv.Disk != v.Disk {
 		return failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
 	}
-	if s.movedVolumes(d.section, pins)[name] {
+	moved, unresolved := s.diskChanges(d.section, pins)
+	if unresolved[name] {
+		return failed(connect.CodeFailedPrecondition, "the disk reference of volume %s finds no disk; fix the reference or plug in the disk it names", name)
+	}
+	if moved[name] {
 		return failed(connect.CodeFailedPrecondition, "the disk reference of volume %s finds another disk than the one it lives on; a reset recreates a volume on its own disk only", name)
 	}
 	var others []string

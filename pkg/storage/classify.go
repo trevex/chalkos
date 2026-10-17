@@ -12,7 +12,8 @@ type Class int
 const (
 	// Additive changes keep every byte of existing volumes: repart adds or grows partitions.
 	Additive Class = iota
-	// Destructive changes need the volume to be wiped and recreated with chalkctl storage reset.
+	// Destructive changes need the volume to be wiped and recreated: with chalkctl storage reset in
+	// place, or by a reinstall for VAR, a removed volume or one that moves to another disk.
 	Destructive
 )
 

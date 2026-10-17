@@ -215,8 +215,9 @@ it. chalkctl first asks the node for the contract of the image it runs: its plat
 image.json. It refuses an image of another platform than the node's Image, and checks the
 documents as the node does. The node replaces its config as a whole, and applies
 additive storage changes (a new volume, for example) while it runs. When the config changes a
-volume destructively, the node refuses the whole config and applies none of it; chalkctl storage
-reset recreates such a volume. Otherwise the node restarts the units that read what changed, and
+volume destructively, the node refuses the whole config and applies none of it and names what
+carries the change out: chalkctl storage reset recreates a volume in place, and a change to VAR,
+a removed volume or one that moves to another disk takes a reinstall. Otherwise the node restarts the units that read what changed, and
 chalkctl prints the changes and the units. --kubernetes-share also delivers a new Kubernetes
 share: for example a worker's new kubelet certificate. The command needs the secrets file.`
 
