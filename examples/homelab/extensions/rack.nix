@@ -1,6 +1,7 @@
 # The Rack kind, which records a node's rack position, and a unit that reads it on the node. A
 # variant that carries this module accepts Rack documents. A node that was surveyed, whose
-# rack-survey tool wrote where it found the node, takes no other location than that.
+# rack-survey tool wrote where it found the node, takes no other location than that once it runs;
+# an install reads no facts and takes any.
 {
   config,
   lib,
@@ -20,7 +21,7 @@
       // {
         "x-chalkos-rules" = [
           {
-            rule = "self == oldSelf || facts.rackSurvey == null || self == facts.rackSurvey.location";
+            rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
             messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
           }
         ];

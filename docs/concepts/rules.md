@@ -31,7 +31,7 @@ chalkos.kinds.Rack.spec.location =
   // {
     "x-chalkos-rules" = [
       {
-        rule = "self == oldSelf || facts.rackSurvey == null || self == facts.rackSurvey.location";
+        rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
         messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
       }
     ];

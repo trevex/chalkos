@@ -254,7 +254,8 @@ hands it to a unit:
 ```nix title="extensions/rack.nix"
 # The Rack kind, which records a node's rack position, and a unit that reads it on the node. A
 # variant that carries this module accepts Rack documents. A node that was surveyed, whose
-# rack-survey tool wrote where it found the node, takes no other location than that.
+# rack-survey tool wrote where it found the node, takes no other location than that once it runs;
+# an install reads no facts and takes any.
 {
   config,
   lib,
@@ -274,7 +275,7 @@ hands it to a unit:
       // {
         "x-chalkos-rules" = [
           {
-            rule = "self == oldSelf || facts.rackSurvey == null || self == facts.rackSurvey.location";
+            rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
             messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
           }
         ];
@@ -346,12 +347,12 @@ an extension's kind reaches the image and the node.
 
 A rule decides which changes of your kind's documents a node accepts, and a fact gives it what
 the node knows. `rack.nix` above declares both: the `x-chalkos-rules` of `spec.location` refuse a
-new location that differs from the one a rack survey wrote to the node, and
+location that differs from the one a rack survey wrote to the node, and
 [`chalkos.facts`](../reference/options.md#chalkosfacts) declares that file as the fact
-`rackSurvey`. The rule is CEL: `self` is the delivered location, `oldSelf` the one the node runs
-with, and `facts.rackSurvey` the file's JSON, null while the file is missing. Because the rule
-reads `oldSelf`, it runs only once the node has a `Rack` to compare with, so an install takes any
-location.
+`rackSurvey`. The rule is CEL: `self` is the delivered location and `facts.rackSurvey` the file's
+JSON, null while the file is missing. The rule does not read `oldSelf`, the location the node runs
+with, so it checks every `Rack` a node is delivered, its first one too. An install reads every
+fact as null, so it takes any location.
 
 A rule over all of a kind's documents goes into `chalkos.kinds.<name>.rules`, where `documents`
 maps the names of the delivered documents to them, here allowing two `Peer` documents at most:
@@ -367,12 +368,17 @@ chalkos.kinds.Peer.rules = [
 
 A fact can also be a command of the image's store, which reads the config as JSON on standard
 input and prints the fact as JSON. The image build compiles every rule and fails on one that
-does not compile or reads a fact no module declares. With the survey file on a node holding
-`{"location": "rack-b/u3"}`, `chalkctl apply-config` refuses another location:
+does not compile or reads a fact no module declares. Say the survey file on `cp1` holds
+`{"location": "rack-b/u3"}`, because the node was moved to another rack, while `nodes/cp1.yaml`
+above still says `rack-a/u12`. `chalkctl apply-config cp1` then refuses the config:
 
 ```text
 the config is refused: Rack "rack" spec.location: the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again
 ```
+
+The survey and the document disagree, so the node refuses its config until they agree: set
+`location: rack-b/u3` in `nodes/cp1.yaml` where the survey is right, or survey the node again
+where the document is.
 
 `chalkctl validate` runs the rules that read no facts, such as the `Peer` rule; the rack rule
 runs on the node. [Change rules and facts](../concepts/rules.md) explains the variables, the
