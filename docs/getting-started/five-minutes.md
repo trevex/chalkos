@@ -44,10 +44,11 @@ documents](../reference/glossary.md#config-document) in the style of Kubernetes 
 [kind](../reference/glossary.md#kind) such as `Cluster`, `Node`, `Network`, `SystemDisk`,
 `Kubernetes` or an extension's own. The [inventory](../reference/glossary.md#inventory),
 `chalkos.yaml`, names each node, the address chalkctl reaches it at and the files of its documents:
-files every node gets, files of groups and the node's own. A node's `Image` document names the image
-directory it runs. `chalkctl validate` checks every node's documents against its image's schemas
-without reaching a node; chalkctl delivers them at install and with `chalkctl apply-config`, and
-chalkd applies them at every boot. chalkctl reads only these files and the image directories, so a
+files every node gets, files of groups and the node's own. A node's `Node` document names, in
+`imageRef`, the `Image` document whose directory it runs, and makes it a control plane or a
+worker. `chalkctl validate` checks every node's documents against its image's schemas without
+reaching a node; chalkctl delivers them at install and with `chalkctl apply-config`, and chalkd
+applies them at every boot. chalkctl reads only these files and the image directories, so a
 machine without Nix, an airgapped one included, manages the cluster. See [Config and the
 inventory](../concepts/config.md).
 
@@ -66,11 +67,12 @@ the whole file get a [client file](../reference/glossary.md#client-file), a cert
 
 ## A node starts in maintenance mode
 
-A machine booted from the [installer](../reference/glossary.md#installer), or a disk written
+`mkImages` also builds the [installer](../reference/glossary.md#installer): a raw image and an ISO
+that install images of every platform. A machine booted from the installer, or a disk written
 with a node's image, comes up in [maintenance mode](../reference/glossary.md#maintenance-mode):
 chalkd serves a self-signed certificate and prints its fingerprint and the node's addresses on
 the console. `chalkctl install` checks that fingerprint and sends the node its config, its
-certificates and its share of the secrets, plus the image its `Image` document names when the
+certificates and its share of the secrets, plus the image its `Node`'s `Image` names when the
 node runs the installer. chalkd partitions the disk, seals [STATE](../reference/glossary.md#state)
 to the [TPM](../reference/glossary.md#tpm), marks the node installed and reboots it into
 [normal mode](../reference/glossary.md#normal-mode). See
@@ -92,9 +94,9 @@ encryption](../concepts/storage.md).
 [control plane](../reference/glossary.md#control-plane), once in the life of a cluster. Every
 other node joins without a command: further control planes add themselves to etcd, and
 [workers](../reference/glossary.md#worker) register with the kubelet certificate that install
-gave them. A node's `Node` document makes it a control plane or a worker. When the cluster's
-`Kubernetes` document declares a [VIP](../reference/glossary.md#vip) for the API server, chalkd
-holds it on one healthy control plane. See
+gave them. The `type` of a node's `Node` document makes it a control plane or a worker. When the
+cluster's `Kubernetes` document declares a [VIP](../reference/glossary.md#vip) for the API server,
+chalkd holds it on one healthy control plane. See
 [Kubernetes on chalkos](../concepts/kubernetes.md) and [Networking](../concepts/networking.md).
 
 ## chalkd is the only way in
@@ -109,9 +111,9 @@ through it. See [Architecture](../concepts/architecture.md) and
 ## Upgrades replace the whole image
 
 An upgrade starts with a new build: `nix build` writes a new image directory where the nodes'
-`Image` documents point. `chalkctl upgrade` streams each node the image its `Image` names, and
-chalkd writes it into the inactive slot. The node checks its stored config against the new
-image's schemas before the image becomes its next boot, then reboots into it with
+`Image` documents point. `chalkctl upgrade` streams each node the image its `Node`'s `Image`
+names, and chalkd writes it into the inactive slot. The node checks its stored config against the
+new image's schemas before the image becomes its next boot, then reboots into it with
 [boot counting](../reference/glossary.md#boot-counting): a boot that passes the
 [health check](../reference/glossary.md#health-check) is
 [blessed](../reference/glossary.md#blessed-boot), and an image that uses up its tries, three by
