@@ -45,13 +45,18 @@ flowchart LR
 ## How does systemd-boot choose an entry?
 
 systemd-boot lists the UKIs in `/EFI/Linux` on the ESP and boots the first whose tries are not
-used up. It puts entries with no tries left last, then sorts by image ID, by `IMAGE_VERSION` and
-by file name, highest first. chalkos images set `IMAGE_VERSION` empty, so among a node's UKIs the
-file name decides: `chalkos_<generation>.efi`, where the image and an install write generation 1
-and every upgrade the generation above the highest on the ESP. Numbers compare as numbers, so the
-entry installed last boots first, whether its image is newer or older than the one before, and
-once its tries are used up systemd-boot passes over it to the previous generation. chalkd sets no
-EFI variable to choose the entry; the order is systemd-boot's own.
+used up. It puts entries with no tries left last, then sorts by image ID, `IMAGE_ID` or else
+`ID`, lowest first, and then by `IMAGE_VERSION` and by file name, highest first. chalkos images
+set `IMAGE_VERSION` empty, so among a node's UKIs the file name decides:
+`chalkos_<generation>.efi`, where the image and an install write generation 1 and every upgrade
+the generation above the highest on the ESP. Numbers compare as numbers, so the entry installed
+last boots first, whether its image is newer or older than the one before, and once its tries are
+used up systemd-boot passes over it to the previous generation. chalkd sets no EFI variable to
+choose the entry; the order is systemd-boot's own.
+
+The image ID sorts first, so a UKI of another image whose image ID sorts before `chalkos`, such
+as one with `IMAGE_ID=alpine`, boots before every chalkos entry. chalkos never writes UKIs of
+other image IDs to the ESP and leaves those placed there alone.
 
 An entry with a tries counter in its name is being counted;
 [boot counting](#how-does-boot-counting-work) explains the counter.

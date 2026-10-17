@@ -98,10 +98,16 @@ chalkd checks the image's header against the running image's os-release and the 
 - the image ID and platform equal the running image's, and the architecture the machine's;
 - the root hash is not the running one; if it is, the node answers that it runs the image already
   and changes nothing;
+- the entry the node booted, and any other the upgrade keeps, is named
+  `chalkos_<generation>.efi` with a generation from 1 on and no leading zeros, and no name on the
+  ESP gives a generation too large for one to follow it in 64 bits; chalkd never writes other
+  names, and refuses to upgrade past one placed by hand or corrupted until the node is
+  reinstalled or the entry renamed;
 - the root hash is not that of the entry that boots next, the highest generation with tries left
-  that the node did not boot; if it is and the inactive slot holds its store, the node answers
-  that the image is staged already and changes nothing;
-- no UKI of another image on the ESP has the name the new entry needs;
+  that the node did not boot; if it is and the inactive slot holds its store, chalkd checks the
+  stored config against the image again, as step 4 below does, and answers that the image is
+  staged already without changing anything; when the check refuses, it retires the slot and
+  removes the entry, so the running image boots next;
 - the running boot was found healthy, when the upgrade would remove the image the node falls back
   to;
 - the store and hash tree fit the inactive slot.
@@ -122,7 +128,8 @@ chalkd installs in five steps. At every point between them the disk boots the ru
 the new one with all its tries.
 
 1. Retire the inactive slot. chalkd removes every UKI of the image on the ESP except those that
-   boot the running store, including a UKI a stopped upgrade left under its temporary name. Then it
+   boot the running store, including a UKI a stopped upgrade left under its temporary name and one
+   it cannot read whose name gives a generation of the image. Then it
    gives the slot's partitions random UUIDs and the label `_empty`, so nothing can boot them.
 2. Write and verify. chalkd writes the store and hash tree into the slot, checks their SHA-256
    sums and verifies the store read back from the disk against the root hash. A slot that already
@@ -139,10 +146,10 @@ the new one with all its tries.
    overwrites the slot. A node without stored config skips the check.
 5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
    `store_<hash16>` and `store-verity_<hash16>`, from the root hash's first 16 hex characters, and
-   renames the UKI to `chalkos_<generation>+<tries>.efi`, one generation above the highest the
-   ESP held. The rename is the last change: before it, nothing boots the slot. After it, chalkd
-   records the image's revision and tag in `/state/chalkd/images.json` and forgets the images no
-   UKI on the ESP boots any more.
+   renames the UKI to `chalkos_<generation>+<tries>.efi`, one generation above the highest any
+   name on the ESP gave, whatever its UKI holds. The rename is the last change: before it,
+   nothing boots the slot. After it, chalkd records the image's revision and tag in
+   `/state/chalkd/images.json` and forgets the images no UKI on the ESP boots any more.
 
 The running slot and its UKI are never written. Once the client stops sending, chalkd stops
 between steps, never in the middle of a partition table change.

@@ -39,8 +39,10 @@ about to install, and `/etc/os-release` for the image a node runs.
 `IMAGE_VERSION` before their file names, and without the field by `VERSION`, which NixOS sets to
 its release; an empty one leaves the order to the [generation](glossary.md#generation) in the file
 name. The build fails when `system.image.version` is set, with the message
-`chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance`. A
-platform's name matches `[a-z0-9][a-z0-9-]*`.
+`chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance`. The
+image ID matches `[a-z0-9._-]+`: it starts the UKIs' file names, systemd-boot lowercases only
+the IDs of entries without a tries counter, and a `+` starts the counter. A platform's name
+matches `[a-z0-9][a-z0-9-]*`.
 
 The other fields are NixOS's, unchanged: `ID=nixos`, `NAME`, `VERSION`, `VERSION_ID`,
 `BUILD_ID`, `PRETTY_NAME` and the URLs. chalkos does not read them.
@@ -81,7 +83,7 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | --- | --- | --- |
 | `IMAGE_ID` | chalkd's [Upgrade](api.md#method-upgrade) | The new image's ID equals the running image's. |
 | `IMAGE_ID` | chalkd's upgrade and install, on the UKI | The UKI's ID equals the image header's. The UKI's file name on the [ESP](glossary.md#esp) is `<IMAGE_ID>_<generation>.efi`. |
-| `IMAGE_ID` | chalkd's upgrade, on the ESP | Only UKIs of the running image's ID are removed, counted, or read for the highest generation; other UKIs on the ESP stay. |
+| `IMAGE_ID` | chalkd's upgrade, on the ESP | Only UKIs of the running image's ID, and those that cannot be read whose names give a generation of it, are removed; other UKIs on the ESP stay. Every name `<IMAGE_ID>_<n>.efi` counts for the highest generation, whatever its UKI holds. |
 | `IMAGE_VERSION` | chalkctl, reading an image | Set and empty; an image without it or with a value is refused. |
 | `IMAGE_VERSION` | chalkd's upgrade and install, on the UKI | Set and empty, as for chalkctl. |
 | `CHALKOS_PLATFORM` | chalkd's Upgrade | The new image's equals the running image's; a running image without it takes no upgrade. |

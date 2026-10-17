@@ -119,12 +119,14 @@ and crypto support. The ESP holds a UKI per slot and, during an upgrade, a third
 
 systemd-boot is the boot loader the firmware starts from the ESP's default path, so a disk boots
 without a firmware boot entry. It lists the UKIs in `/EFI/Linux` and boots the first whose tries
-are not used up, in its own order: entries with no tries left last, then by image ID, then by
-`IMAGE_VERSION`, then by file name, highest first. Every chalkos image sets `IMAGE_VERSION` empty,
-so the file name decides. A node names its UKIs `chalkos_<generation>.efi`: the image and an
-install write generation 1, and each upgrade writes the generation above the highest on the ESP.
-systemd-boot compares the numbers as numbers, so `chalkos_10.efi` comes before `chalkos_9.efi`,
-and the entry an upgrade installed last boots first, a downgrade's too.
+are not used up, in its own order: entries with no tries left last, then by image ID, lowest
+first, then by `IMAGE_VERSION` and by file name, highest first. A UKI of another image whose image
+ID sorts before `chalkos` therefore boots first; chalkos never puts one on the ESP. Every chalkos
+image sets `IMAGE_VERSION` empty, so among its UKIs the file name decides. A node names its UKIs
+`chalkos_<generation>.efi`: the image and an install write generation 1, and each upgrade writes
+the generation above the highest on the ESP. systemd-boot compares the numbers as numbers, so
+`chalkos_10.efi` comes before `chalkos_9.efi`, and the entry an upgrade installed last boots
+first, a downgrade's too.
 [Boot, health and rollback](boot-and-rollback.md) follows the boot from there.
 
 An upgrade replaces the UKI and the store, never systemd-boot: the boot loader a node was
@@ -154,8 +156,8 @@ root hash. [Upgrades](upgrades.md) describes the steps.
 ## What identifies an image?
 
 An image is its store's [root hash](../reference/glossary.md#root-hash). Two builds of the same
-modules from the same chalkos have the same store and so the same root hash, and an image that
-changes in any byte of its store has another. chalkd and
+modules from the same inputs, the same chalkos, `flake.lock` and OS CA, have the same store and so
+the same root hash, and an image that changes in any byte of its store has another. chalkd and
 [chalkctl](../reference/glossary.md#chalkctl) compare images by it alone: an upgrade to the root
 hash a node runs is installed already and changes nothing, and any other is a new image. No
 version needs raising for a new build. The build refuses `system.image.version`, because
