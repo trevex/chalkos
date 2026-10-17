@@ -46,7 +46,7 @@ type PartsRequest struct {
 //  2. Lay out the system region with one systemd-repart run of the image's definitions: the ESP,
 //     slot A, slot B as _empty, and STATE.
 //  3. Write slot A with the upgrade's slot writer: retired, written, verified from the disk, and
-//     activated with the UUIDs derived from the root hash and the version's labels.
+//     activated with the UUIDs derived from the root hash and labels naming it.
 //  4. Write the UKI to the ESP once it passed the upgrade's checks, then receive and check the
 //     boot loader.
 //  5. Open STATE, apply the storage section, enroll the fallback key and write the identity.
@@ -201,8 +201,8 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 	if err != nil {
 		return false, err
 	}
-	if a := pairs[0]; a.Version() != "" && !a.Holds(req.Image.RootHash) {
-		return false, fmt.Errorf("slot A of the target disk %s holds version %s of another store; pass --wipe-disk to replace it", target, a.Version())
+	if a := pairs[0]; a.Label() != "" && !a.Holds(req.Image.RootHash) {
+		return false, fmt.Errorf("slot A of the target disk %s holds the store %s of another image; pass --wipe-disk to replace it", target, a.Label())
 	}
 	if err := i.checkState(ctx, target, table, req.Section.Encryption); err != nil {
 		return false, err
@@ -335,8 +335,8 @@ func (i *Installer) layOut(ctx context.Context, target storage.BlockDisk, defs m
 // first, so a slot written in part never carries the UUIDs a UKI finds its store by, and
 // activated once the store verifies from the disk.
 func writeSlot(ctx context.Context, w *upgrade.SlotWriter, slot upgrade.Slot, h upgrade.Header, parts io.Reader) error {
-	if slot.Holds(h.RootHash) && slot.Version() == h.Version && w.Holds(slot, h) {
-		log.Printf("slot A holds the store of %s already", h.Version)
+	if slot.Holds(h.RootHash) && slot.Label() == upgrade.LabelID(h.RootHash) && w.Holds(slot, h) {
+		log.Printf("slot A holds the store %x already", h.RootHash)
 		return upgrade.Skip(h, parts)
 	}
 	if err := slot.Fits(h); err != nil {

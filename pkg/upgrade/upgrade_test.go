@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"os"
@@ -27,57 +28,62 @@ import (
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
-// TestUpgradeAndFallBack installs a newer image, boots it until its tries are used up, and
-// finds the disk booting the image before; once blessed, a boot of the new image is final.
+// TestUpgradeAndFallBack installs an image as the next generation, boots it until its tries are
+// used up, and finds the disk booting the image before; installed again, the image gets another
+// generation, and once blessed, a boot of it is final.
 func TestUpgradeAndFallBack(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	oldUKI := l.file("chalkos_0.1.0.efi")
+	oldUKI := l.file("chalkos_1.efi")
 	rescue := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root)
-	os.WriteFile(filepath.Join(l.esp, linuxDir, "rescue_1.efi"), rescue, 0o644)
+	os.WriteFile(filepath.Join(l.esp, linuxDir, "rescue_7.efi"), rescue, 0o644)
 	// A UKI is of the image its os-release names, whatever its file is called.
-	other := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "2"}, newImage(t, "2", 3).root)
+	other := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "2"}, newImage(t, "r", 3).root)
 	os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_rescue.efi"), other, 0o644)
 	res, err := l.install(img)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Entry != "chalkos_0.2.0+2.efi" || !res.Wrote {
+	if res.Entry != "chalkos_2+2.efi" || !res.Wrote {
 		t.Errorf("result %+v", res)
 	}
 	parts := l.table()
-	if parts[4].Name != "store-verity_0.2.0" || parts[5].Name != "store_0.2.0" || parts[2].Name != "store-verity_0.1.0" || parts[3].Name != "store_0.1.0" {
+	if parts[4].Name != "store-verity_"+LabelID(img.root) || parts[5].Name != "store_"+LabelID(img.root) ||
+		parts[2].Name != "store-verity_"+LabelID(old.root) || parts[3].Name != "store_"+LabelID(old.root) {
 		t.Errorf("labels %q %q %q %q", parts[2].Name, parts[3].Name, parts[4].Name, parts[5].Name)
 	}
-	if !bytes.Equal(l.file("chalkos_0.1.0.efi"), oldUKI) {
+	if !bytes.Equal(l.file("chalkos_1.efi"), oldUKI) {
 		t.Error("the running UKI changed")
 	}
 	l.boots(img, 2)
-	if !bytes.Equal(l.file("rescue_1.efi"), rescue) || !bytes.Equal(l.file("chalkos_rescue.efi"), other) {
+	if !bytes.Equal(l.file("rescue_7.efi"), rescue) || !bytes.Equal(l.file("chalkos_rescue.efi"), other) {
 		t.Error("a UKI of another image changed")
 	}
 
 	// Two boots that are never found healthy use the tries up.
 	for range 2 {
-		if e := l.attempt(); e.Version != "0.2.0" {
+		if e := l.attempt(); !bytes.Equal(e.RootHash, img.root) {
 			t.Fatalf("booted %s", e.File)
 		}
 	}
-	if e, version := l.boot(); version != "0.1.0" || e.File != "chalkos_0.1.0.efi" {
-		t.Errorf("after the tries the disk boots %s from %s, want 0.1.0", version, e.File)
+	if e, name := l.boot(); name != "a" || e.File != "chalkos_1.efi" {
+		t.Errorf("after the tries the disk boots %s from %s, want a", name, e.File)
 	}
-	if l.file("chalkos_0.2.0+0-2.efi") == nil {
+	if l.file("chalkos_2+0-2.efi") == nil {
 		t.Error("the failed UKI is gone")
 	}
 
-	// Installed again, the image is booted and blessed.
-	if _, err := l.install(img); err != nil {
+	// Installed again, the image is the next generation, and the entry that failed is retired.
+	if res, err = l.install(img); err != nil {
 		t.Fatal(err)
+	}
+	if res.Entry != "chalkos_3+2.efi" || l.file("chalkos_2+0-2.efi") != nil {
+		t.Errorf("installed again as %s, the failed UKI kept: %v", res.Entry, l.file("chalkos_2+0-2.efi") != nil)
 	}
 	l.boots(img, 2)
 	l.bless(l.attempt())
 	for range 3 {
-		if e := l.attempt(); e.File != "chalkos_0.2.0.efi" {
+		if e := l.attempt(); e.File != "chalkos_3.efi" {
 			t.Errorf("a blessed boot booted %s", e.File)
 		}
 	}
@@ -92,9 +98,9 @@ func TestVerityBlockSizes(t *testing.T) {
 		name         string
 		running, img image
 	}{
-		{"512 to 4096", newImage(t, "0.1.0", 3), newImageOfBlocks(t, "0.2.0", 2, 4096, blocks4K)},
-		{"4096 to 4096", newImageOfBlocks(t, "0.1.0", 3, 4096, blocks4K), newImageOfBlocks(t, "0.2.0", 2, 4096, blocks4K)},
-		{"4096 to 512", newImageOfBlocks(t, "0.1.0", 3, 4096, blocks4K), newImage(t, "0.2.0", 2)},
+		{"512 to 4096", newImage(t, "a", 3), newImageOfBlocks(t, "b", 2, 4096, blocks4K)},
+		{"4096 to 4096", newImageOfBlocks(t, "a", 3, 4096, blocks4K), newImageOfBlocks(t, "b", 2, 4096, blocks4K)},
+		{"4096 to 512", newImageOfBlocks(t, "a", 3, 4096, blocks4K), newImage(t, "b", 2)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, tc.running)
@@ -103,8 +109,8 @@ func TestVerityBlockSizes(t *testing.T) {
 			}
 			l.boots(tc.img, 2)
 			l.bless(l.attempt())
-			if e, version := l.boot(); version != tc.img.version || e.File != "chalkos_0.2.0.efi" {
-				t.Errorf("a blessed boot booted %q from %s", version, e.File)
+			if e, name := l.boot(); name != tc.img.name || e.File != "chalkos_2.efi" {
+				t.Errorf("a blessed boot booted %q from %s", name, e.File)
 			}
 		})
 	}
@@ -114,9 +120,9 @@ func TestVerityBlockSizes(t *testing.T) {
 // store larger than an eighth of the 1 MiB slot fits, and one larger than the slot is refused
 // before anything changes.
 func TestFourKnDisk(t *testing.T) {
-	old := newImageOfBlocks(t, "0.1.0", 3, 4096, 100)
+	old := newImageOfBlocks(t, "a", 3, 4096, 100)
 	l := newLabOf(t, old, 4096)
-	img := newImageOfBlocks(t, "0.2.0", 2, 4096, 200)
+	img := newImageOfBlocks(t, "b", 2, 4096, 200)
 	if _, err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +134,7 @@ func TestFourKnDisk(t *testing.T) {
 		t.Errorf("changed: %s", what)
 		return errCrash
 	}
-	if _, err := l.install(newImageOfBlocks(t, "0.2.0", 2, 4096, 300)); err == nil || !strings.Contains(err.Error(), "do not fit the slot's partitions of 1048576 and 262144 bytes") {
+	if _, err := l.install(newImageOfBlocks(t, "b", 2, 4096, 300)); err == nil || !strings.Contains(err.Error(), "do not fit the slot's partitions of 1048576 and 262144 bytes") {
 		t.Errorf("install = %v, want the store refused as too large", err)
 	}
 	for n, p := range l.table() {
@@ -138,58 +144,143 @@ func TestFourKnDisk(t *testing.T) {
 	}
 }
 
-// TestDowngrade installs an older image: systemd-boot prefers it over the newer one it runs,
-// and falls back to that once the older one's tries are used up.
+// TestDowngrade goes back to the image the node ran before: it becomes the next generation, so it
+// boots first, from the slot that still holds its store, and the disk falls back to the newer
+// image once its tries are used up.
 func TestDowngrade(t *testing.T) {
-	newer, older := newImage(t, "0.3.0", 3), newImage(t, "0.2.0", 1)
-	l := newLab(t, newer)
-	if _, err := l.install(older); err != nil {
+	older, newer := newImage(t, "a", 1), newImage(t, "b", 3)
+	l := newLab(t, older)
+	if _, err := l.install(newer); err != nil {
 		t.Fatal(err)
+	}
+	l.bless(l.attempt())
+	l.runFrom(newer, "chalkos_2.efi", 4, 5)
+	l.writes = map[int]int{}
+	res, err := l.install(older)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Entry != "chalkos_3+1.efi" || res.Wrote || len(l.writes) != 0 {
+		t.Errorf("result %+v, writes %v; want the older image's slot reused as generation 3", res, l.writes)
 	}
 	l.boots(older, 1)
 	l.attempt()
-	if e, version := l.boot(); version != "0.3.0" {
-		t.Errorf("after the tries the disk boots %s from %s, want 0.3.0", version, e.File)
+	if e, name := l.boot(); name != "b" || e.File != "chalkos_2.efi" {
+		t.Errorf("after the tries the disk boots %s from %s, want b", name, e.File)
 	}
 	if _, err := l.install(older); err != nil {
 		t.Fatal(err)
 	}
 	l.bless(l.attempt())
-	if e := l.attempt(); e.File != "chalkos_0.2.0.efi" {
+	if e := l.attempt(); e.File != "chalkos_4.efi" {
 		t.Errorf("after blessing the downgrade the disk boots %s", e.File)
+	}
+}
+
+// TestGenerationsPastNine upgrades a node again and again: each upgrade's entry is the next
+// generation, and chalkos_10.efi boots before chalkos_9.efi, as systemd-boot compares numbers in
+// IDs as numbers.
+func TestGenerationsPastNine(t *testing.T) {
+	images := []image{newImage(t, "a", 3), newImage(t, "b", 3)}
+	l := newLab(t, images[0])
+	for generation := 2; generation <= 11; generation++ {
+		img := images[(generation-1)%2]
+		res, err := l.install(img)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf("chalkos_%d+3.efi", generation); res.Entry != want {
+			t.Fatalf("entry %s, want %s", res.Entry, want)
+		}
+		l.boots(img, 3)
+		e := l.attempt()
+		l.bless(e)
+		// The images take turns in the slots: slot B, partitions 4 and 5, holds the even generations.
+		verity := 2
+		if generation%2 == 0 {
+			verity = 4
+		}
+		l.runFrom(img, e.ID, verity, verity+1)
+	}
+	if e, name := l.boot(); name != "a" || e.File != "chalkos_11.efi" {
+		t.Errorf("the disk boots %s from %s, want a from chalkos_11.efi", name, e.File)
 	}
 }
 
 // TestUpgradeFromSlotB runs the image of slot B and installs the next into slot A, never
 // writing slot B or its UKI.
 func TestUpgradeFromSlotB(t *testing.T) {
-	a, b, c := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3), newImage(t, "0.3.0", 3)
+	a, b, c := newImage(t, "a", 3), newImage(t, "b", 3), newImage(t, "c", 3)
 	l := newLab(t, a)
 	if _, err := l.install(b); err != nil {
 		t.Fatal(err)
 	}
 	e := l.attempt()
 	l.bless(e)
-	l.runFrom(b, 4, 5)
+	l.runFrom(b, "chalkos_2.efi", 4, 5)
 	l.writes = map[int]int{}
-	bUKI := l.file("chalkos_0.2.0.efi")
+	bUKI := l.file("chalkos_2.efi")
 	res, err := l.install(c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Entry != "chalkos_0.3.0+3.efi" {
+	if res.Entry != "chalkos_3+3.efi" {
 		t.Errorf("entry %s", res.Entry)
 	}
 	if l.writes[2] != 1 || l.writes[3] != 1 || l.writes[4]+l.writes[5] != 0 {
 		t.Errorf("writes %v, want partitions 2 and 3 once", l.writes)
 	}
-	if l.file("chalkos_0.1.0.efi") != nil {
+	if l.file("chalkos_1.efi") != nil {
 		t.Error("slot A's old UKI stayed")
 	}
-	if !bytes.Equal(l.file("chalkos_0.2.0.efi"), bUKI) {
+	if !bytes.Equal(l.file("chalkos_2.efi"), bUKI) {
 		t.Error("the running UKI changed")
 	}
 	l.boots(c, 3)
+}
+
+// TestAlreadyStaged installs the image that boots next again: nothing changes while its entry has
+// tries left and the slot holds its store. Once the slot was changed, or the tries were used up,
+// it is installed anew, as the next generation.
+func TestAlreadyStaged(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
+	l := newLab(t, old)
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	unchanged := func(want string) {
+		t.Helper()
+		l.node.Change = func(what string) error {
+			t.Errorf("changed: %s", what)
+			return errCrash
+		}
+		defer func() { l.node.Change = nil }()
+		res, err := l.install(img)
+		if err != nil || !res.AlreadyStaged || res.Entry != want || res.Wrote {
+			t.Errorf("installing the staged image: %+v, %v; want it staged as %s", res, err, want)
+		}
+	}
+	unchanged("chalkos_2+3.efi")
+	// A boot of it that was not found healthy, after which the node runs the old image again.
+	l.attempt()
+	unchanged("chalkos_2+2-1.efi")
+
+	// Another program changed the slot's UUIDs, so the entry would find no store.
+	l.setUUID(5, randomUUID())
+	res, err := l.install(img)
+	if err != nil || res.AlreadyStaged || res.Entry != "chalkos_3+3.efi" {
+		t.Errorf("installing the image into a changed slot: %+v, %v", res, err)
+	}
+	l.boots(img, 3)
+
+	// Its tries used up, the image is installed again.
+	for range 3 {
+		l.attempt()
+	}
+	if res, err = l.install(img); err != nil || res.AlreadyStaged || res.Entry != "chalkos_4+3.efi" {
+		t.Errorf("installing the image whose tries were used up: %+v, %v", res, err)
+	}
+	l.boots(img, 3)
 }
 
 var errCrash = errors.New("crash")
@@ -198,7 +289,7 @@ var errCrash = errors.New("crash")
 // image or the new one with all its tries, and the upgrade run again completes, without writing
 // the slot again once it held the image.
 func TestInterruptedUpgrade(t *testing.T) {
-	a, b, c := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3), newImage(t, "0.3.0", 3)
+	a, b, c := newImage(t, "a", 3), newImage(t, "b", 3), newImage(t, "c", 3)
 	for _, start := range []struct {
 		name string
 		lab  func(t *testing.T) *lab
@@ -212,20 +303,24 @@ func TestInterruptedUpgrade(t *testing.T) {
 				t.Fatal(err)
 			}
 			l.bless(l.attempt())
-			l.runFrom(b, 4, 5)
+			l.runFrom(b, "chalkos_2.efi", 4, 5)
 			return l
 		}, c},
-		// The retirement of a run again removes the image it staged and a UKI left half written.
-		{"again, with the image staged and a temporary file", func(t *testing.T) *lab {
+		// The retirement removes the UKI of an image the node fell back from and a UKI left half
+		// written.
+		{"with a failed image and a temporary file", func(t *testing.T) *lab {
 			l := newLab(t, a)
 			if _, err := l.install(b); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(l.esp, linuxDir, tempPrefix+"0.2.0.efi"), b.uki[:100], 0o644); err != nil {
+			for range 3 {
+				l.attempt()
+			}
+			if err := os.WriteFile(filepath.Join(l.esp, linuxDir, tempPrefix+hex.EncodeToString(b.root)+".efi"), b.uki[:100], 0o644); err != nil {
 				t.Fatal(err)
 			}
 			return l
-		}, b},
+		}, c},
 	} {
 		t.Run(start.name, func(t *testing.T) {
 			var changes []string
@@ -275,7 +370,7 @@ func TestInterruptedUpgrade(t *testing.T) {
 
 // TestInterruptedTransfer cuts the stream at points within the store, the hash tree and the UKI.
 func TestInterruptedTransfer(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	store, hash, uki := int64(len(img.store)), int64(len(img.hash)), int64(len(img.uki))
 	for _, cut := range []int64{0, store / 2, store, store + hash/2, store + hash, store + hash + uki/2, store + hash + uki - 1} {
 		l := newLab(t, old)
@@ -292,9 +387,7 @@ func TestInterruptedTransfer(t *testing.T) {
 
 // TestRefusesBeforeChanging checks what is refused before anything changes.
 func TestRefusesBeforeChanging(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
-	rebuilt := newImage(t, "0.1.1", 3)
-	rebuilt.version, rebuilt.header.Version = "0.1.0", "0.1.0"
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	for _, tc := range []struct {
 		name   string
 		header func(h *Header)
@@ -305,24 +398,19 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		{"another platform", func(h *Header) { h.Platform = "kvm" }, nil, "platform is kvm, the node's metal"},
 		{"no platform", func(h *Header) { h.Platform = "" }, nil, "platform are required"},
 		{"another architecture", func(h *Header) { h.Architecture = "arm64" }, nil, "the image is built for arm64, this machine for x86-64"},
-		{"a version with a counter", func(h *Header) { h.Version = "0.2.0+1" }, nil, "version"},
-		{"an upper-case version", func(h *Header) { h.Version = "0.2.0-RC1" }, nil, "version"},
-		{"the running version, rebuilt", func(h *Header) { *h = rebuilt.header }, nil, "build the image with a new version"},
-		{"a version on the ESP, rebuilt", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_0.2.0+0-3.efi"), newUKI(img.osRelease(3), old.root), 0o644)
-		}, "build the image with a new version"},
 		{"a store larger than the slot", func(h *Header) { h.StoreSize = 2 << 20 }, nil, "do not fit"},
+		// The node booted generation 2, which is counted, and falls back to generation 1.
 		{"a running boot not found healthy", nil, func(l *lab) {
-			os.Rename(filepath.Join(l.esp, linuxDir, "chalkos_0.1.0.efi"), filepath.Join(l.esp, linuxDir, "chalkos_0.1.0+2-1.efi"))
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_0.0.9.efi"), newImage(t, "0.0.9", 3).uki, 0o644)
+			os.Rename(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), filepath.Join(l.esp, linuxDir, "chalkos_2+2-1.efi"))
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), newImage(t, "z", 3).uki, 0o644)
+			l.setVariable("LoaderEntrySelected", "chalkos_2.efi")
 		}, "not been found healthy"},
-		{"an entry that boots another store", nil, func(l *lab) { l.setVariable("LoaderEntrySelected", "chalkos_0.0.9.efi") }, "not on the ESP"},
+		{"an entry that boots another store", nil, func(l *lab) { l.setVariable("LoaderEntrySelected", "chalkos_9.efi") }, "not on the ESP"},
 		{"no second slot", nil, func(l *lab) {
 			if out, err := l.sfdisk("--delete", l.disk, "5").CombinedOutput(); err != nil {
 				t.Fatalf("%v: %s", err, out)
 			}
 		}, "needs two slots"},
-		{"the running store under another version", func(h *Header) { h.RootHash = old.root }, nil, "the node runs this store"},
 		{"both slots carrying the running store's UUIDs", nil, func(l *lab) {
 			data, verity := PartitionUUIDs(old.root)
 			l.setUUID(4, verity)
@@ -332,9 +420,9 @@ func TestRefusesBeforeChanging(t *testing.T) {
 			data, _ := PartitionUUIDs(old.root)
 			l.setUUID(5, data)
 		}, "the inactive slot carries"},
-		{"a UKI of another image under the new entry's name", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_0.2.0.efi"), newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root), 0o644)
-		}, "chalkos_0.2.0.efi"},
+		{"a UKI of another image under the next generation's name", nil, func(l *lab) {
+			os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_2.efi"), newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root), 0o644)
+		}, "chalkos_2.efi"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
@@ -379,27 +467,28 @@ func TestRefusesBeforeChanging(t *testing.T) {
 // TestRefusesBeforeActivating checks what is refused once the image arrived: the slot stays
 // retired and the disk boots the running image.
 func TestRefusesBeforeActivating(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	flip := func(b []byte, i int) []byte {
 		c := bytes.Clone(b)
 		c[i] ^= 1
 		return c
 	}
-	otherVersion := img
-	otherVersion.uki = newImage(t, "0.3.0", 3).uki
+	withOSRelease := func(edit func(map[string]string)) image {
+		c := img
+		osRelease := img.osRelease(3)
+		edit(osRelease)
+		c.uki = newUKI(osRelease, img.root)
+		return withHeader(c)
+	}
 	otherStore := img
 	otherStore.uki = newUKI(img.osRelease(3), old.root)
 	noTries := img
-	otherPlatform := img
-	osRelease := img.osRelease(3)
-	osRelease["CHALKOS_PLATFORM"] = "kvm"
-	otherPlatform.uki = newUKI(osRelease, img.root)
 	noTries.uki = newUKI(img.osRelease(0), img.root)
 	otherArch := img
 	otherArch.uki = ukitest.WithMachine(img.uki, 0xaa64)
 	// Another store than the running one: an upgrade carrying that is refused before it starts.
 	wrongRoot := img
-	wrongRoot.root = newImage(t, "0.3.0", 3).root
+	wrongRoot.root = newImage(t, "c", 3).root
 	for _, tc := range []struct {
 		name string
 		img  image
@@ -409,8 +498,10 @@ func TestRefusesBeforeActivating(t *testing.T) {
 		{"a corrupted hash tree", func() image { c := img; c.hash = flip(img.hash, 600); return c }(), "hash tree's SHA-256"},
 		{"a store that does not match the root hash", withHeader(wrongRoot), "root hash"},
 		{"a corrupted UKI", func() image { c := img; c.uki = flip(img.uki, 700); return c }(), "UKI's SHA-256"},
-		{"a UKI of another version", withHeader(otherVersion), "version is \"0.3.0\""},
-		{"a UKI of another platform", withHeader(otherPlatform), "platform is \"kvm\""},
+		{"a UKI of another platform", withOSRelease(func(o map[string]string) { o["CHALKOS_PLATFORM"] = "kvm" }), "platform is \"kvm\""},
+		// systemd-boot would order the entry by the version before its generation.
+		{"a UKI with an image version", withOSRelease(func(o map[string]string) { o["IMAGE_VERSION"] = "0.3.0" }), "sets IMAGE_VERSION to \"0.3.0\""},
+		{"a UKI without IMAGE_VERSION", withOSRelease(func(o map[string]string) { delete(o, "IMAGE_VERSION") }), "has no IMAGE_VERSION"},
 		{"a UKI booting another store", withHeader(otherStore), "boots another store"},
 		{"a UKI without boot tries", withHeader(noTries), "boot tries"},
 		{"a UKI of another architecture", withHeader(otherArch), "the UKI is built for arm64, but the image names x86-64"},
@@ -421,8 +512,8 @@ func TestRefusesBeforeActivating(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("install = %v, want %q", err, tc.want)
 			}
-			if e, version := l.boot(); version != "0.1.0" {
-				t.Errorf("the disk boots %s from %s", version, e.File)
+			if e, name := l.boot(); name != "a" {
+				t.Errorf("the disk boots %s from %s", name, e.File)
 			}
 			if p := l.table(); p[4].Name != emptyLabel || p[5].Name != emptyLabel {
 				t.Errorf("the slot is labelled %q and %q", p[4].Name, p[5].Name)
@@ -443,7 +534,7 @@ func TestSecureBoot(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
 		t.Skip("sbsign not in PATH")
 	}
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	dir := t.TempDir()
 	key, cert, certDER := testSigner(t, dir, "db")
 	_, _, otherDER := testSigner(t, dir, "other")
@@ -480,8 +571,8 @@ func TestSecureBoot(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("install = %v, want %q", err, tc.want)
 			}
-			if _, version := l.boot(); version != "0.1.0" {
-				t.Errorf("the disk boots %s", version)
+			if _, name := l.boot(); name != "a" {
+				t.Errorf("the disk boots %s", name)
 			}
 		})
 	}
@@ -522,29 +613,28 @@ func sbsign(t *testing.T, dir string, image []byte, key, cert string) []byte {
 
 // TestRebootHelps decides whether a reboot after an unhealthy boot leads the boot loader on.
 func TestRebootHelps(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	for _, tc := range []struct {
 		name   string
 		booted string
 		others map[string]image
 		want   bool
 	}{
-		{"a blessed boot", "chalkos_0.2.0.efi", map[string]image{"chalkos_0.1.0.efi": old}, false},
-		{"a try with tries left", "chalkos_0.2.0+1-1.efi", map[string]image{"chalkos_0.1.0.efi": old}, true},
-		{"the last try", "chalkos_0.2.0+0-2.efi", map[string]image{"chalkos_0.1.0.efi": old}, true},
-		{"the last try of a downgrade", "chalkos_0.2.0+0-2.efi", map[string]image{"chalkos_0.3.0.efi": newImage(t, "0.3.0", 3)}, true},
-		{"the last try with a bad image besides", "chalkos_0.2.0+0-2.efi", map[string]image{"chalkos_0.1.0+0-3.efi": old}, false},
-		{"the last try alone", "chalkos_0.2.0+0-2.efi", nil, false},
-		{"a boot past its tries", "chalkos_0.2.0+0-5.efi", nil, false},
+		{"a blessed boot", "chalkos_2.efi", map[string]image{"chalkos_1.efi": old}, false},
+		{"a try with tries left", "chalkos_2+1-1.efi", map[string]image{"chalkos_1.efi": old}, true},
+		{"the last try", "chalkos_2+0-2.efi", map[string]image{"chalkos_1.efi": old}, true},
+		{"the last try with a bad image besides", "chalkos_2+0-2.efi", map[string]image{"chalkos_1+0-3.efi": old}, false},
+		{"the last try alone", "chalkos_2+0-2.efi", nil, false},
+		{"a boot past its tries", "chalkos_2+0-5.efi", nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
-			os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_0.1.0.efi"))
+			os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"))
 			os.WriteFile(filepath.Join(l.esp, linuxDir, tc.booted), img.uki, 0o644)
 			for name, other := range tc.others {
 				os.WriteFile(filepath.Join(l.esp, linuxDir, name), other.uki, 0o644)
 			}
-			l.setVariable("LoaderEntrySelected", "chalkos_0.2.0.efi")
+			l.setVariable("LoaderEntrySelected", "chalkos_2.efi")
 			entries, err := Entries(l.esp)
 			if err != nil {
 				t.Fatal(err)
@@ -581,7 +671,7 @@ func (r watchedRunner) Run(ctx context.Context, name string, args ...string) ([]
 // the node holds the lock it shares with chalkd's storage changes, and takes the disk's lock
 // against other tools.
 func TestPartitionTableLocks(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	l := newLab(t, old)
 	lock := &tableLock{}
 	l.node.TableLock = lock
@@ -612,7 +702,7 @@ func TestPartitionTableLocks(t *testing.T) {
 // TestChangesOutliveTheCaller cancels the upgrade's context as it changes the partition table: a
 // client that goes away must not kill sfdisk while it writes.
 func TestChangesOutliveTheCaller(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	l := newLab(t, old)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -633,7 +723,7 @@ func TestChangesOutliveTheCaller(t *testing.T) {
 // TestEntriesWhileBlessed lists the UKIs again when one is renamed while they are read, as
 // systemd-bless-boot renames the booted one once the boot was found healthy.
 func TestEntriesWhileBlessed(t *testing.T) {
-	img := newImage(t, "0.2.0", 3)
+	img := newImage(t, "b", 3)
 	esp := t.TempDir()
 	dir := filepath.Join(esp, linuxDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -678,7 +768,7 @@ func (l *lab) holdDisk() func() {
 // and fails the upgrade with why, instead of holding the partition table's lock, which chalkd's
 // other requests wait for, as long as the other program holds the disk's.
 func TestDiskLockedElsewhere(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	l := newLab(t, old)
 	lock := &tableLock{}
 	l.node.TableLock = lock
@@ -700,8 +790,8 @@ func TestDiskLockedElsewhere(t *testing.T) {
 	if lock.held.Load() {
 		t.Error("the upgrade kept the partition table's lock")
 	}
-	if e, version := l.boot(); version != "0.1.0" {
-		t.Errorf("the disk boots %s from %s", version, e.File)
+	if e, name := l.boot(); name != "a" {
+		t.Errorf("the disk boots %s from %s", name, e.File)
 	}
 
 	// A lock released within the wait is taken.
@@ -736,7 +826,7 @@ func (l *lab) tempUKIs() []string {
 // TestRemovesTheTemporaryUKI removes the UKI written under its temporary name when the upgrade
 // fails after it was written, so it does not fill the ESP.
 func TestRemovesTheTemporaryUKI(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	var changes []string
 	l := newLab(t, old)
 	l.node.Change = func(what string) error {
@@ -784,7 +874,7 @@ func TestRemovesTheTemporaryUKI(t *testing.T) {
 // TestRefusesABootLoader refuses an image that brings a boot loader before anything changes: an
 // upgrade leaves the boot loader as it is.
 func TestRefusesABootLoader(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	l := newLab(t, old)
 	l.node.Change = func(what string) error {
 		t.Errorf("changed: %s", what)
@@ -800,7 +890,7 @@ func TestRefusesABootLoader(t *testing.T) {
 // TestHeaderValidate checks the header's boot loader: optional, with its size and SHA-256
 // together, and bounded.
 func TestHeaderValidate(t *testing.T) {
-	img := newImage(t, "0.2.0", 3)
+	img := newImage(t, "b", 3)
 	for _, tc := range []struct {
 		name   string
 		size   int64
@@ -831,7 +921,7 @@ func TestParseTable(t *testing.T) {
 		sector string
 		want   int64
 	}{{"", 2048 * 512}, {`"sectorsize": 512,`, 2048 * 512}, {`"sectorsize": 4096,`, 2048 * 4096}} {
-		out := `{"partitiontable": {"label": "gpt", ` + tc.sector + ` "partitions": [{"node": "/dev/nvme0n1p3", "start": 2048, "size": 2048, "type": "8484680C-9521-48C6-9C11-B0720656F69E", "uuid": "AB", "name": "store_0.1.0"}]}}`
+		out := `{"partitiontable": {"label": "gpt", ` + tc.sector + ` "partitions": [{"node": "/dev/nvme0n1p3", "start": 2048, "size": 2048, "type": "8484680C-9521-48C6-9C11-B0720656F69E", "uuid": "AB", "name": "store_2ece03b0fa094b77"}]}}`
 		parts, err := ParseTable("/dev/nvme0n1", []byte(out))
 		if err != nil {
 			t.Fatal(err)
@@ -847,7 +937,7 @@ func TestParseTable(t *testing.T) {
 
 // TestHeaderArchitecture requires an architecture chalkos builds images for.
 func TestHeaderArchitecture(t *testing.T) {
-	img := newImage(t, "0.2.0", 3)
+	img := newImage(t, "b", 3)
 	for arch, ok := range map[string]bool{"x86-64": true, "arm64": true, "": false, "amd64": false} {
 		h := img.header
 		h.Architecture = arch
@@ -857,10 +947,11 @@ func TestHeaderArchitecture(t *testing.T) {
 	}
 }
 
-// TestSkippedStoreIsChecked installs an image again into the slot that holds it: the store and
-// hash tree are not written again, but their SHA-256 is checked all the same.
+// TestSkippedStoreIsChecked installs an image again into the slot that holds it, though no entry
+// boots it any more: the store and hash tree are not written again, but their SHA-256 is checked
+// all the same.
 func TestSkippedStoreIsChecked(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	for _, tc := range []struct {
 		name string
 		edit func(h *Header)
@@ -872,6 +963,7 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 		if _, err := l.install(img); err != nil {
 			t.Fatal(err)
 		}
+		os.Remove(filepath.Join(l.esp, linuxDir, "chalkos_2+3.efi"))
 		h := img.header
 		tc.edit(&h)
 		clear(l.writes)
@@ -888,7 +980,7 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 // may change its variant through an upgrade, and the check of its config against the image's
 // schemas is what guards that.
 func TestInstallsAnotherVariant(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 3)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	osRelease := img.osRelease(3)
 	osRelease["CHALKOS_VARIANT"] = "gpu"
 	img.uki = newUKI(osRelease, img.root)

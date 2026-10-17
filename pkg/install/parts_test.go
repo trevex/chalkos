@@ -67,7 +67,7 @@ func newPartsImageOfBlocks(t *testing.T, version, seed string, blocks uint64) pa
 	}
 	img := partsImage{version: version, store: store, hash: hash, root: root}
 	img.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": version, "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
 	img.loader = ukitest.Build(map[string][]byte{".text": []byte("systemd-boot " + seed)})
 	img.header = img.headerFor()
@@ -458,8 +458,8 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	data, verityUUID := upgrade.PartitionUUIDs(img.root)
 	want := []struct{ typ, label, uuid string }{
 		{typeESP, "", ""},
-		{typeUsrX86Verity, "store-verity_" + img.version, verityUUID},
-		{typeUsrX86, "store_" + img.version, data},
+		{typeUsrX86Verity, "store-verity_" + upgrade.LabelID(img.root), verityUUID},
+		{typeUsrX86, "store_" + upgrade.LabelID(img.root), data},
 		{typeUsrX86Verity, "_empty", ""},
 		{typeUsrX86, "_empty", ""},
 		{stateType, "state", ""},
@@ -737,12 +737,12 @@ func TestFromPartsRefuses(t *testing.T) {
 	revokedLoader.header = revokedLoader.headerFor()
 	noTries := img
 	noTries.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "0",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "0",
 	}, fmt.Sprintf("usrhash=%x", img.root))
 	noTries.header = noTries.headerFor()
 	otherStore := img
 	otherStore.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "0.1.0", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("usrhash=%x", sha([]byte("another store"))))
 	otherStore.header = otherStore.headerFor()
 	armLoader := img
@@ -1025,7 +1025,6 @@ func TestFromPartsRefusesBeforeTouchingTheDisk(t *testing.T) {
 			r.SystemDefinitions = maps.Clone(labDefinitions)
 			r.SystemDefinitions["00-esp.conf"] = "[Partition]\nType=esp\n"
 		}, "does not format the ESP"},
-		{"an invalid version", func(_ *partsLab, r *PartsRequest) { r.Image.Version = "0.1.0+1" }, "the image: the version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newPartsLab(t)

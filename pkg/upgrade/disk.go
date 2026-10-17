@@ -80,15 +80,6 @@ type Slot struct {
 	Verity, Data Partition
 }
 
-// Version is the version a slot's labels name, or "" when it is retired or empty.
-func (s Slot) Version() string {
-	v, ok := strings.CutPrefix(s.Data.Name, "store_")
-	if !ok || s.Verity.Name != "store-verity_"+v {
-		return ""
-	}
-	return v
-}
-
 // labelHashDigits is how many hex digits of the root hash a slot's labels carry: GPT labels hold
 // 36 characters, of which "store-verity_" takes 13.
 const labelHashDigits = 16

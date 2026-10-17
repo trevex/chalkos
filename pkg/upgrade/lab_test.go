@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -18,33 +19,39 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
-// image is a test image: a small store, its hash tree and a UKI booting it.
+// image is a test image: a small store, its hash tree and a UKI booting it. Its name seeds the
+// store, so images of different names differ in their root hashes.
 type image struct {
-	version     string
+	name        string
 	store, hash []byte
 	root        []byte
 	uki         []byte
 	header      Header
 }
 
+// imageNames names the test images by their root hashes, so the lab says which image an entry
+// boots.
+var imageNames sync.Map
+
 // storeBlocks makes trees of two levels.
 const storeBlocks = 300
 
-func newImage(t *testing.T, version string, tries int) image {
+func newImage(t *testing.T, name string, tries int) image {
 	t.Helper()
-	return newImageOfBlocks(t, version, tries, 512, storeBlocks)
+	return newImageOfBlocks(t, name, tries, 512, storeBlocks)
 }
 
 // newImageOfBlocks makes an image whose store has the number of dm-verity blocks of the size.
-func newImageOfBlocks(t *testing.T, version string, tries int, blockSize uint32, blocks uint64) image {
+func newImageOfBlocks(t *testing.T, name string, tries int, blockSize uint32, blocks uint64) image {
 	t.Helper()
-	seed := sha256.Sum256([]byte(version))
+	seed := sha256.Sum256([]byte(name))
 	r := rand.New(rand.NewPCG(binary.LittleEndian.Uint64(seed[:]), binary.LittleEndian.Uint64(seed[8:])))
 	store := make([]byte, blocks*uint64(blockSize))
 	for i := range store {
@@ -58,9 +65,10 @@ func newImageOfBlocks(t *testing.T, version string, tries int, blockSize uint32,
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := image{version: version, store: store, hash: hash, root: root}
+	img := image{name: name, store: store, hash: hash, root: root}
 	img.uki = newUKI(img.osRelease(tries), root)
 	img.header = img.headerFor(img.uki)
+	imageNames.Store(string(root), name)
 	return img
 }
 
@@ -72,7 +80,7 @@ func newUKI(osRelease map[string]string, root []byte) []byte {
 func (img image) osRelease(tries int) map[string]string {
 	return map[string]string{
 		"IMAGE_ID":           "chalkos",
-		"IMAGE_VERSION":      img.version,
+		"IMAGE_VERSION":      "",
 		"CHALKOS_VARIANT":    "worker",
 		"CHALKOS_PLATFORM":   "metal",
 		"CHALKOS_BOOT_TRIES": strconv.Itoa(tries),
@@ -87,7 +95,7 @@ func sum(b []byte) []byte {
 // headerFor describes the image with the UKI given.
 func (img image) headerFor(uki []byte) Header {
 	return Header{
-		ImageID: "chalkos", Version: img.version, Platform: "metal", Architecture: "x86-64", RootHash: img.root,
+		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: img.root,
 		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(uki)),
 		StoreSHA256: sum(img.store), VeritySHA256: sum(img.hash), UKISHA256: sum(uki),
 	}
@@ -116,6 +124,8 @@ type lab struct {
 	writes                map[int]int
 	running               image
 	runningData, runningV int
+	// runningEntry is the file of the UKI the node booted the running image from.
+	runningEntry string
 	// sector is the disk's sector size.
 	sector int64
 }
@@ -141,6 +151,7 @@ func newLabOf(t *testing.T, running image, sector int64) *lab {
 		t.Fatal(err)
 	}
 	data, verityUUID := PartitionUUIDs(running.root)
+	id := LabelID(running.root)
 	script := fmt.Sprintf(`label: gpt
 size=2MiB, type=%s, name=esp
 size=256KiB, type=%s, name=store-verity_%s, uuid=%s
@@ -148,7 +159,7 @@ size=1MiB, type=%s, name=store_%s, uuid=%s
 size=256KiB, type=%s, name=_empty
 size=1MiB, type=%s, name=_empty
 size=1MiB, type=%s, name=state
-`, typeESP, typeVerity, running.version, verityUUID, typeData, running.version, data, typeVerity, typeData, typeState)
+`, typeESP, typeVerity, id, verityUUID, typeData, id, data, typeVerity, typeData, typeState)
 	sfdisk := l.sfdisk("--quiet", l.disk)
 	sfdisk.Stdin = strings.NewReader(script)
 	if out, err := sfdisk.CombinedOutput(); err != nil {
@@ -171,28 +182,35 @@ size=1MiB, type=%s, name=state
 	parts := l.table()
 	l.writePartition(parts[2], running.hash)
 	l.writePartition(parts[3], running.store)
-	if err := os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_"+running.version+".efi"), running.uki, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(l.esp, linuxDir, "chalkos_1.efi"), running.uki, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l.runFrom(running, 2, 3)
+	l.runFrom(running, "chalkos_1.efi", 2, 3)
 	return l
 }
 
-// runFrom makes the node run the image from the slot of the partitions: the kernel's command
-// line, the running image's os-release and the entry systemd-boot booted.
-func (l *lab) runFrom(img image, verityPart, dataPart int) {
+// runFrom makes the node run the image from the slot of the partitions, booted from the entry's
+// file: the kernel's command line, the running image's os-release and the entry systemd-boot
+// booted.
+func (l *lab) runFrom(img image, entry string, verityPart, dataPart int) {
 	l.t.Helper()
-	l.running, l.runningV, l.runningData = img, verityPart, dataPart
+	l.running, l.runningEntry, l.runningV, l.runningData = img, entry, verityPart, dataPart
 	if err := os.WriteFile(l.cmdline, fmt.Appendf(nil, "init=/x usrhash=%x\n", img.root), 0o644); err != nil {
 		l.t.Fatal(err)
 	}
 	l.node.OSRelease = img.osRelease(3)
-	l.setVariable("LoaderEntrySelected", "chalkos_"+img.version+".efi")
+	id, _, _ := parseEntryName(entry)
+	l.setVariable("LoaderEntrySelected", id)
 }
 
+// setVariable sets a string variable of systemd-boot, as the boot loader does.
 func (l *lab) setVariable(name, value string) {
 	l.t.Helper()
-	if err := setLoaderString(l.efivars, name, value, nil); err != nil {
+	data := binary.LittleEndian.AppendUint32(nil, 0x7)
+	for _, u := range utf16.Encode([]rune(value + "\x00")) {
+		data = binary.LittleEndian.AppendUint16(data, u)
+	}
+	if err := os.WriteFile(filepath.Join(l.efivars, name+"-"+loaderVendor), data, 0o644); err != nil {
 		l.t.Fatal(err)
 	}
 }
@@ -298,9 +316,9 @@ func (l *lab) open(p Partition, write bool) (PartitionFile, error) {
 	return partitionFile{f: f, off: p.Start * l.sector, size: p.Size * l.sector}, nil
 }
 
-// boot is what systemd-boot would boot: the entry it selects, and the version of the image whose
-// store that entry finds by its partition UUIDs and checks against its root hash. An empty
-// version means the boot finds no store.
+// boot is what systemd-boot would boot: the entry it selects, and the name of the image whose
+// store that entry finds by its partition UUIDs and checks against its root hash. An empty name
+// means the boot finds no store.
 func (l *lab) boot() (Entry, string) {
 	l.t.Helper()
 	entries, err := Entries(l.esp)
@@ -310,8 +328,13 @@ func (l *lab) boot() (Entry, string) {
 	if len(entries) == 0 {
 		l.t.Fatal("no UKI on the ESP")
 	}
-	// Bad entries last, then by the image ID their os-release names, then the newest version first,
-	// then by ID.
+	// An upgrade leaves the order to systemd-boot's own.
+	if preferred, err := loaderString(l.efivars, "LoaderEntryPreferred"); err != nil || preferred != "" {
+		l.t.Errorf("LoaderEntryPreferred is %q (%v), want it unset", preferred, err)
+	}
+	// Bad entries last, then by the image ID their os-release names, then the highest ID first: the
+	// UKIs of an image carry the same IMAGE_VERSION, an empty one for chalkos's, so systemd-boot
+	// compares their IDs alone.
 	slices.SortStableFunc(entries, func(a, b Entry) int {
 		if a.Bad() != b.Bad() {
 			if a.Bad() {
@@ -322,22 +345,9 @@ func (l *lab) boot() (Entry, string) {
 		if c := strings.Compare(a.ImageID, b.ImageID); c != 0 {
 			return c
 		}
-		if c := compareVersions(b.Version, a.Version); c != 0 {
-			return c
-		}
-		return strings.Compare(b.ID, a.ID)
+		return compareIDs(b.ID, a.ID)
 	})
 	selected := entries[0]
-	preferred, err := loaderString(l.efivars, "LoaderEntryPreferred")
-	if err != nil {
-		l.t.Fatal(err)
-	}
-	for _, e := range entries {
-		if e.ID == preferred && !e.Bad() {
-			selected = e
-			break
-		}
-	}
 	data, verityUUID := PartitionUUIDs(selected.RootHash)
 	var store, hash *Partition
 	for _, p := range l.table() {
@@ -359,27 +369,47 @@ func (l *lab) boot() (Entry, string) {
 		l.t.Errorf("%s boots a store that does not verify: %v", selected.File, err)
 		return selected, ""
 	}
-	return selected, selected.Version
+	name, _ := imageNames.Load(string(selected.RootHash))
+	s, _ := name.(string)
+	return selected, s
 }
 
-// compareVersions compares versions of dot-separated numbers.
-func compareVersions(a, b string) int {
-	as, bs := strings.Split(a, "."), strings.Split(b, ".")
-	for i := range min(len(as), len(bs)) {
-		x, _ := strconv.Atoi(as[i])
-		y, _ := strconv.Atoi(bs[i])
-		if x != y {
-			return x - y
+// compareIDs compares entry IDs as systemd-boot's strverscmp_improved compares chalkos's: runs of
+// digits as numbers, so chalkos_10.efi is above chalkos_9.efi, and the rest as text.
+func compareIDs(a, b string) int {
+	for a != "" && b != "" {
+		x, restA := idRun(a)
+		y, restB := idRun(b)
+		if isDigit(x[0]) && isDigit(y[0]) {
+			m, _ := strconv.Atoi(x)
+			n, _ := strconv.Atoi(y)
+			if c := cmp.Compare(m, n); c != 0 {
+				return c
+			}
+		} else if c := strings.Compare(x, y); c != 0 {
+			return c
 		}
+		a, b = restA, restB
 	}
-	return len(as) - len(bs)
+	return cmp.Compare(len(a), len(b))
 }
+
+// idRun splits off the run of digits or of other characters an ID starts with.
+func idRun(s string) (run, rest string) {
+	i := 1
+	for i < len(s) && isDigit(s[i]) == isDigit(s[0]) {
+		i++
+	}
+	return s[:i], s[i:]
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // attempt boots as systemd-boot does: it counts a try of the entry it selects, and returns it.
 func (l *lab) attempt() Entry {
 	l.t.Helper()
-	e, version := l.boot()
-	if version == "" {
+	e, name := l.boot()
+	if name == "" {
 		l.t.Fatalf("%s finds no store", e.File)
 	}
 	if e.TriesLeft >= 0 {
@@ -403,21 +433,21 @@ func (l *lab) bless(e Entry) {
 // bootsRunningOr checks that the disk boots the running image, or img with all its tries.
 func (l *lab) bootsRunningOr(img image, tries int) {
 	l.t.Helper()
-	e, version := l.boot()
+	e, name := l.boot()
 	switch {
-	case version == l.running.version && e.ID == "chalkos_"+l.running.version+".efi":
-	case version == img.version && e.TriesLeft == tries && e.TriesDone <= 0:
+	case name == l.running.name && e.File == l.runningEntry:
+	case name == img.name && e.TriesLeft == tries && e.TriesDone <= 0:
 	default:
-		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s or %s with %d tries", version, e.File, e.TriesLeft, l.running.version, img.version, tries)
+		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s from %s or %s with %d tries", name, e.File, e.TriesLeft, l.running.name, l.runningEntry, img.name, tries)
 	}
 }
 
 // boots checks that the disk boots img from the entry with the tries.
 func (l *lab) boots(img image, tries int) {
 	l.t.Helper()
-	e, version := l.boot()
-	if version != img.version || e.TriesLeft != tries {
-		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s with %d tries", version, e.File, e.TriesLeft, img.version, tries)
+	e, name := l.boot()
+	if name != img.name || e.TriesLeft != tries {
+		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s with %d tries", name, e.File, e.TriesLeft, img.name, tries)
 	}
 }
 

@@ -15,8 +15,13 @@
 //     Boot is on. Then the caller checks the image itself, reading the store through dm-verity,
 //     as chalkd checks the node's config against the image's schemas.
 //  4. Activate: give the slot the partition UUIDs systemd derives from the root hash and the
-//     labels naming the version, prefer the new entry in systemd-boot, and rename the UKI to
-//     <id>_<version>+<tries>.efi.
+//     labels naming it, and rename the UKI to <id>_<generation>+<tries>.efi, one generation above
+//     the image's highest on the ESP.
+//
+// An image is its store's root hash; nothing compares versions. systemd-boot orders chalkos's
+// entries by their IDs alone, the highest generation first, as every UKI's os-release names the
+// same image ID and an empty IMAGE_VERSION: the image installed last boots next, an older one's
+// too, and the boot falls back to the entry before once its tries are used up.
 //
 // The running slot and its UKI are never written.
 //
@@ -27,6 +32,7 @@ package upgrade
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -84,6 +90,8 @@ func (n *Node) change(what string) error {
 type Result struct {
 	// AlreadyInstalled is set when the node runs the image already, and nothing changed.
 	AlreadyInstalled bool
+	// AlreadyStaged is set when the image boots next already, from Entry, and nothing changed.
+	AlreadyStaged bool
 	// Entry is the UKI that boots the image from the next boot on.
 	Entry string
 	// Wrote is set when the store was written; it is not when the slot held it already.
@@ -118,16 +126,8 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 			return Result{}, fmt.Errorf("the image's %s is %s, the node's %s", field.name, field.image, field.node)
 		}
 	}
-	version := n.OSRelease["IMAGE_VERSION"]
-	if h.Version == version {
-		if bytes.Equal(h.RootHash, running) {
-			return Result{AlreadyInstalled: true}, nil
-		}
-		return Result{}, fmt.Errorf("the node runs version %s with another root hash; build the image with a new version", version)
-	}
-	// Its partitions would be the running ones, by the UUIDs derived from the root hash.
 	if bytes.Equal(h.RootHash, running) {
-		return Result{}, fmt.Errorf("the node runs this store as version %s, not %s", version, h.Version)
+		return Result{AlreadyInstalled: true}, nil
 	}
 	w := n.slots()
 	parts, err := w.ReadTable(ctx)
@@ -146,19 +146,20 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err != nil {
 		return Result{}, err
 	}
+	// The image boots next already, as after an upgrade without a reboot.
+	if staged, ok := stagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
+		return Result{AlreadyStaged: true, Entry: staged.File}, nil
+	}
 	// UKIs of other images on the ESP, such as a rescue system's, are left alone; a UKI is of the
 	// image its os-release names.
 	entries := slices.DeleteFunc(slices.Clone(all), func(e Entry) bool { return e.ImageID != h.ImageID })
-	// The UKI is renamed last; it must not replace a UKI that stays or share its entry ID.
-	id := entryID(h.ImageID, h.Version)
+	// The UKI is renamed last, to the image's next generation, which no UKI of the image has; it
+	// must not replace a UKI of another image either, or share its entry ID.
+	generation := nextGeneration(entries, h.ImageID)
+	id := strings.ToLower(EntryName(h.ImageID, generation))
 	for _, e := range all {
-		if e.ID == id && !retired(e, h.ImageID, booted, running) {
-			return Result{}, fmt.Errorf("%s on the ESP has the entry ID %s, which the image needs; remove it, or build the image with a new version", e.File, id)
-		}
-	}
-	for _, e := range entries {
-		if e.Version == h.Version && !bytes.Equal(e.RootHash, h.RootHash) {
-			return Result{}, fmt.Errorf("the ESP holds version %s with another root hash in %s; build the image with a new version", h.Version, e.File)
+		if e.ID == id {
+			return Result{}, fmt.Errorf("%s on the ESP has the entry ID %s, which the image's next generation needs; remove it", e.File, id)
 		}
 	}
 	// Until the running image's boot is found good, the image it falls back to must stay.
@@ -205,12 +206,12 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	var entry string
 	if err == nil {
-		entry, err = n.activate(ctx, h, inactive, tmp, tries)
+		entry, err = n.activate(ctx, h, inactive, tmp, generation, tries)
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	log.Printf("installed %s %s into partitions %d and %d; it boots next as %s", h.ImageID, h.Version, inactive.Verity.Number, inactive.Data.Number, entry)
+	log.Printf("installed %s %x into partitions %d and %d; it boots next as %s", h.ImageID, h.RootHash, inactive.Verity.Number, inactive.Data.Number, entry)
 	return Result{Entry: entry, Wrote: wrote}, nil
 }
 
@@ -283,29 +284,18 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", 0, err
 	}
-	tmp := filepath.Join(dir, tempPrefix+h.Version+".efi")
+	tmp := filepath.Join(dir, tempPrefix+hex.EncodeToString(h.RootHash)+".efi")
 	tries, err := ReceiveUKI(tmp, h, stream, n.EFIVars)
 	return tmp, tries, err
 }
 
-// activate makes the slot hold the image as systemd finds it, prefers its entry in systemd-boot,
-// and gives the UKI its name. Until the rename, nothing boots the slot.
-func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, tries int) (string, error) {
+// activate makes the slot hold the image as systemd finds it and gives the UKI its name, the
+// generation with the tries. Until the rename, nothing boots the slot.
+func (n *Node) activate(ctx context.Context, h Header, slot Slot, tmp string, generation, tries int) (string, error) {
 	if err := n.slots().Activate(ctx, slot, h); err != nil {
 		return "", err
 	}
-	// systemd-boot boots the newest version first; preferring the entry boots an older one, and
-	// skips it once its tries are used up.
-	id := entryID(h.ImageID, h.Version)
-	if err := n.change("prefer " + id); err != nil {
-		return "", err
-	}
-	if err := setLoaderString(n.EFIVars, "LoaderEntryPreferred", id, func() error {
-		return n.change("write LoaderEntryPreferred")
-	}); err != nil {
-		return "", err
-	}
-	name := entryName(h.ImageID, h.Version, tries)
+	name := countedEntryName(h.ImageID, generation, tries)
 	if err := n.change("name the UKI " + name); err != nil {
 		return "", err
 	}

@@ -113,7 +113,7 @@ func (w *SlotWriter) Retire(ctx context.Context, slot Slot) error {
 // it is, and the stream's copies are skipped. It reports whether it wrote the slot.
 func (w *SlotWriter) Write(h Header, slot Slot, stream io.Reader) (bool, error) {
 	if w.Holds(slot, h) {
-		log.Printf("the slot of partitions %d and %d holds the store of %s already", slot.Verity.Number, slot.Data.Number, h.Version)
+		log.Printf("the slot of partitions %d and %d holds the store %x already", slot.Verity.Number, slot.Data.Number, h.RootHash)
 		return false, Skip(h, stream)
 	}
 	if err := slot.Fits(h); err != nil {
@@ -211,11 +211,12 @@ func (w *SlotWriter) copyInto(p Partition, stream io.Reader, size int64, sum []b
 	return f.Close()
 }
 
-// Activate gives the slot the partition UUIDs systemd derives from the image's root hash and the
-// labels naming its version, so a UKI booting the image finds its store there.
+// Activate gives the slot the partition UUIDs systemd derives from the image's root hash, so a
+// UKI booting the image finds its store there, and the labels naming the store by its root hash.
 func (w *SlotWriter) Activate(ctx context.Context, slot Slot, h Header) error {
 	dataUUID, verityUUID := PartitionUUIDs(h.RootHash)
-	return w.setSlot(ctx, slot, verityUUID, "store-verity_"+h.Version, dataUUID, "store_"+h.Version)
+	id := LabelID(h.RootHash)
+	return w.setSlot(ctx, slot, verityUUID, "store-verity_"+id, dataUUID, "store_"+id)
 }
 
 // setSlot gives the slot's verity and data partitions UUIDs and labels. It reads the partition

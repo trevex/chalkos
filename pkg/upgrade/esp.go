@@ -130,16 +130,6 @@ func parseEntryName(file string) (id string, left, done int) {
 	return strings.ToLower(file[:plus] + suffix), left, done
 }
 
-// entryID is the boot loader entry ID of an image's UKI of the version.
-func entryID(imageID, version string) string {
-	return strings.ToLower(imageID + "_" + version + ".efi")
-}
-
-// entryName is a UKI's file name with a tries counter, as an upgrade installs it.
-func entryName(id, version string, tries int) string {
-	return fmt.Sprintf("%s_%s+%d.efi", id, version, tries)
-}
-
 // Entries lists the UKIs on the ESP mounted at esp, in name order, leaving out the
 // files systemd-boot ignores.
 func Entries(esp string) ([]Entry, error) {
@@ -259,48 +249,6 @@ func loaderString(efivars, name string) (string, error) {
 		units[i] = binary.LittleEndian.Uint16(data[2*i:])
 	}
 	return strings.TrimRight(string(utf16.Decode(units)), "\x00"), nil
-}
-
-// fsImmutable is FS_IMMUTABLE_FL, the inode flag efivarfs sets on variables.
-const fsImmutable = 0x10
-
-// setLoaderString sets a non-volatile string variable of systemd-boot. efivarfs makes a
-// variable's file immutable and takes a new value in one write, so the old one is cleared and
-// removed first; cleared, when set, runs in between.
-func setLoaderString(efivars, name, value string, cleared func() error) error {
-	path := filepath.Join(efivars, name+"-"+loaderVendor)
-	if f, err := os.Open(path); err == nil {
-		// A file system without the flag, such as a test's, has nothing to clear.
-		if flags, err := unix.IoctlGetUint32(int(f.Fd()), unix.FS_IOC_GETFLAGS); err == nil && flags&fsImmutable != 0 {
-			if err := unix.IoctlSetPointerInt(int(f.Fd()), unix.FS_IOC_SETFLAGS, int(flags&^fsImmutable)); err != nil {
-				f.Close()
-				return fmt.Errorf("make the EFI variable %s writable: %w", name, err)
-			}
-		}
-		f.Close()
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove the EFI variable %s: %w", name, err)
-	}
-	if cleared != nil {
-		if err := cleared(); err != nil {
-			return err
-		}
-	}
-	// Non-volatile, and available to the boot loader and the OS.
-	data := binary.LittleEndian.AppendUint32(nil, 0x7)
-	for _, u := range utf16.Encode([]rune(value + "\x00")) {
-		data = binary.LittleEndian.AppendUint16(data, u)
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		return fmt.Errorf("set the EFI variable %s: %w", name, err)
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return fmt.Errorf("set the EFI variable %s: %w", name, err)
-	}
-	return f.Close()
 }
 
 // syncESP flushes the ESP's file system: the boot loader reads it without the kernel's caches.

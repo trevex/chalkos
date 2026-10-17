@@ -99,7 +99,7 @@ func (r storeRunner) Run(ctx context.Context, name string, args ...string) ([]by
 // the running image the next boot and nothing of the image on the ESP; an accepted image is
 // activated, and the store is closed either way.
 func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
 	mount := filepath.Join(t.TempDir(), "store")
 	var calls []string
@@ -126,8 +126,8 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 		calls[len(calls)-1] != "veritysetup close "+storeMapping {
 		t.Errorf("ran %q", calls)
 	}
-	if e, version := l.boot(); version != old.version {
-		t.Errorf("after a refusal the disk boots %s from %s", version, e.File)
+	if e, name := l.boot(); name != old.name {
+		t.Errorf("after a refusal the disk boots %s from %s", name, e.File)
 	}
 	if temp := l.tempUKIs(); len(temp) != 0 || parts[5].Name != "_empty" {
 		t.Errorf("after a refusal the ESP holds %v and the slot is labelled %q", temp, parts[5].Name)
@@ -146,7 +146,7 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 // TestALeftOpenStoreIsClosedFirst: a store an earlier check left open, as when chalkd was stopped
 // during it, holds the slot's partitions; the next upgrade closes it before it writes the slot.
 func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
 	var calls []string
 	open := true
@@ -172,7 +172,7 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 // TestAStoreThatDoesNotMountIsClosed: when the opened store does not mount, its dm-verity device
 // is closed, and nothing is unmounted.
 func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
-	old, img := newImage(t, "0.1.0", 3), newImage(t, "0.2.0", 2)
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
 	var calls []string
 	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mountErr: errors.New("wrong fs type")}
@@ -185,8 +185,8 @@ func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
 	if i < 0 || !slices.Equal(calls[i+1:], []string{"veritysetup close " + storeMapping}) {
 		t.Errorf("ran %q, want the device closed and nothing unmounted after the mount", calls)
 	}
-	if e, version := l.boot(); version != old.version {
-		t.Errorf("the disk boots %s from %s", version, e.File)
+	if e, name := l.boot(); name != old.name {
+		t.Errorf("the disk boots %s from %s", name, e.File)
 	}
 }
 
