@@ -101,7 +101,7 @@ func TestLayoutCheck(t *testing.T) {
 		{"with another partition", 512, func(p []partition) []partition {
 			return append(p, partition{Number: 7, Type: "0fc63daf-8483-4772-8e79-3d69d8477de4", Name: "data", Size: 1000})
 		}, "partition 7 (type 0fc63daf-8483-4772-8e79-3d69d8477de4, label \"data\") is no volume"},
-		{"without STATE", 512, func(p []partition) []partition { return p[:5] }, "fewer partitions than the role's 6"},
+		{"without STATE", 512, func(p []partition) []partition { return p[:5] }, "fewer partitions than the image's 6"},
 		{"slot B labelled", 512, func(p []partition) []partition { p[3].Name = "store-verity_0.2.0"; return p }, "not labelled \"_empty\""},
 		{"a larger slot", 512, func(p []partition) []partition { p[2].Size *= 2; return p }, "has 4194304 bytes, not the 2097152"},
 		{"the slots swapped", 512, func(p []partition) []partition { p[1], p[2] = p[2], p[1]; return p }, "is not of the type"},

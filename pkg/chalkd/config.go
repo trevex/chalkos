@@ -204,7 +204,7 @@ func (s *Server) installConfig(h *nodev1.InstallHeader) (string, *store.Stored, 
 // and the schemas the header carries for it.
 func headerTarget(h *nodev1.InstallHeader) (config.Target, *schema.Schemas, error) {
 	if h.Image == nil {
-		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the installer needs the role image to write to the target disk")
+		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
 	}
 	if len(h.Schemas) == 0 {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")

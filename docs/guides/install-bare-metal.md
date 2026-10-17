@@ -245,7 +245,7 @@ found, for example:
 
 ```text
 the target disk /dev/nvme0n1 (model "...", size ..., serial "...") carries data (dos); pass --wipe-disk to replace it
-the target disk /dev/nvme0n1 (model "...", size ..., serial "...") is not one an install of this role left: ...; pass --wipe-disk to replace it
+the target disk /dev/nvme0n1 (model "...", size ..., serial "...") is not one an earlier install of this image left: ...; pass --wipe-disk to replace it
 the target disk /dev/nvme0n1 (model "...", size ..., serial "...") holds an installed node; pass --wipe-disk to replace it
 ```
 

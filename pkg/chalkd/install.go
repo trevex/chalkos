@@ -40,14 +40,14 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 			return nil, failed(connect.CodeFailedPrecondition, "the installer installs nodes onto a disk; name the target disk")
 		}
 		if h.Image != nil {
-			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its role image already")
+			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its image already")
 		}
 	case *nodev1.InstallHeader_Disk:
 		if !s.Installer {
-			return nil, failed(connect.CodeFailedPrecondition, "the node runs its role image already; install it in place")
+			return nil, failed(connect.CodeFailedPrecondition, "the node runs its image already; install it in place")
 		}
 		if h.Image == nil {
-			return nil, failed(connect.CodeInvalidArgument, "the installer needs the role image to write to the target disk")
+			return nil, failed(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
 		}
 	default:
 		return nil, failed(connect.CodeInvalidArgument, "the install header names no target")

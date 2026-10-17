@@ -109,7 +109,7 @@ func parseLayout(defs map[string]string) (layout, error) {
 		}
 	}
 	if esp != 1 || verity != 2 || data != 2 || state != 1 {
-		return nil, errors.New("the role's definitions do not lay out an ESP, two store slots and STATE")
+		return nil, errors.New("the image's definitions do not lay out an ESP, two store slots and STATE")
 	}
 	return l, nil
 }
@@ -186,7 +186,7 @@ func parseSize(s string) (int64, error) {
 // installing creates once STATE is open.
 func (l layout) check(t partitionTable, section storage.Section) error {
 	if len(t.Partitions) < len(l) {
-		return fmt.Errorf("it carries %s, fewer partitions than the role's %d", describeAll(t.Partitions), len(l))
+		return fmt.Errorf("it carries %s, fewer partitions than the image's %d", describeAll(t.Partitions), len(l))
 	}
 	for n, d := range l {
 		p := t.Partitions[n]

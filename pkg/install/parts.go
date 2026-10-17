@@ -191,7 +191,7 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 		return true, nil
 	}
 	if err := l.check(table, req.Section); err != nil {
-		return false, fmt.Errorf("the target disk %s is not one an install of this role left: %w; pass --wipe-disk to replace it", target, err)
+		return false, fmt.Errorf("the target disk %s is not one an earlier install of this image left: %w; pass --wipe-disk to replace it", target, err)
 	}
 	parts, err := i.slotWriter(target).ReadTable(ctx)
 	if err != nil {

@@ -758,7 +758,7 @@ func TestFromPartsRefuses(t *testing.T) {
 		edit  func(r *PartsRequest)
 		want  string
 	}{
-		{"a foreign partition table", func(l *partsLab) { l.foreignTable() }, img, nil, "is not one an install of this role left"},
+		{"a foreign partition table", func(l *partsLab) { l.foreignTable() }, img, nil, "is not one an earlier install of this image left"},
 		{"a file system on the disk", func(l *partsLab) {
 			if out, err := exec.Command("mkfs.ext4", "-q", l.disk).CombinedOutput(); err != nil {
 				t.Fatalf("mkfs.ext4: %v: %s", err, out)
