@@ -29,8 +29,8 @@ about to install, and `/etc/os-release` for the image a node runs.
 | Field | Value | Source | Images |
 | --- | --- | --- | --- |
 | `IMAGE_ID` | `chalkos`; `chalkos-installer` on the [installer](glossary.md#installer) | `system.image.id` | every image |
-| `IMAGE_VERSION` | the [image version](glossary.md#image-version), `0.1.0` unless a role sets it | `system.image.version` | every image |
-| `CHALKOS_VARIANT` | the image's variant, the role's name | [`chalkos.variant.name`](options.md#chalkosvariantname) | node images; not the installer |
+| `IMAGE_VERSION` | the [image version](glossary.md#image-version), `0.1.0` unless a variant's modules set it | `system.image.version` | every image |
+| `CHALKOS_VARIANT` | the name of the [`mkImages` variant](options.md#variants) the image is built as, such as `node` | [`chalkos.variant.name`](options.md#chalkosvariantname) | node images; not the installer |
 | `CHALKOS_PLATFORM` | the platform's name, such as `metal` or `kvm` | [`chalkos.platform.name`](options.md#chalkosplatformname) | node images; not the installer |
 | `CHALKOS_BOOT_TRIES` | a positive integer, `3` by default | [`chalkos.upgrade.bootTries`](options.md#chalkosupgradeboottries) | every image |
 
@@ -85,12 +85,12 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | `CHALKOS_PLATFORM` | chalkd's Upgrade | The new image's equals the running image's; a running image without it takes no upgrade. |
 | `CHALKOS_PLATFORM` | chalkd's upgrade and install, on the UKI | The UKI's platform equals the image header's. |
 | `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkctl, reading an image | Both are set; an image without them is no node image and is refused. |
-| `CHALKOS_PLATFORM` | chalkctl install and upgrade | The image is built for the node's platform in the [cluster definition](glossary.md#cluster-definition). |
+| `CHALKOS_PLATFORM` | chalkctl install and upgrade | The image is built for the platform of the image the node runs, or, on the installer, of the image the node's `Image` document names, as its directory's `metadata.json` gives it. |
 | `CHALKOS_PLATFORM` | chalkd's [Install](api.md#method-install) in place and [ApplyConfig](api.md#method-applyconfig) | The config is translated for the running image's platform: changing a node's platform is a reinstall. |
-| `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Contract](api.md#method-contract) | Reported as they are, with the image's schemas and `image.json`. chalkctl's install in place, `apply-config` and `storage reset` refuse a node whose image is built for another platform than the [cluster definition](glossary.md#cluster-definition) gives it. |
+| `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Contract](api.md#method-contract) | Reported as they are, with the image's schemas and `image.json`. chalkctl's install in place, `apply-config` and `storage reset` refuse a node whose image is built for another platform than the image its `Image` document names. |
 | `CHALKOS_BOOT_TRIES` | chalkd's upgrade, on the UKI | A positive integer, which becomes the boot counter in the UKI's name, `+3` by default. An install writes no counter. |
 | `IMAGE_ID`, `IMAGE_VERSION`, `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Info](api.md#method-info) | Reported as they are; empty on an image that sets none. |
-| `CHALKOS_PLATFORM` | chalkd's [Status](api.md#method-status) | Reported, and shown by [`chalkctl status`](cli/chalkctl_status.md) beside the platform the cluster definition declares. |
+| `CHALKOS_PLATFORM` | chalkd's [Status](api.md#method-status) | Reported, and shown by [`chalkctl status`](cli/chalkctl_status.md) beside the platform of the image the node's `Image` document names. |
 | `IMAGE_VERSION` | chalkd's Status and the [health check](glossary.md#health-check) | The running image's version, in the boot status and in the record of a boot that was not found healthy. |
 
 No check compares `CHALKOS_VARIANT`: a node may change its variant through an upgrade, and the

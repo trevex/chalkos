@@ -1,16 +1,16 @@
 ---
 title: "Image and partition layout"
-description: "The partitions of an installed node and the files of a role image"
+description: "The partitions of an installed node and the files of an image"
 ---
 
 # Image and partition layout
 
 This page lists the partitions of a node's disks, the files on the [ESP](glossary.md#esp) and on
 [STATE](glossary.md#state), the outputs of an image build and the paths a running node uses. The
-system region comes from `modules/node/base/disk.nix`, VAR and volumes from
-`modules/cluster/storage.nix`, and the file names from `pkg/upgrade`, `pkg/install`,
-`pkg/storage` and `pkg/chalkd`. [The image](../concepts/image.md) and
-[Storage and encryption](../concepts/storage.md) explain why the layout is what it is.
+system region comes from `modules/node/base/disk.nix`, VAR and volumes from the node's
+`SystemDisk` and `Volume` documents through `pkg/config/storage.go`, and the file names from
+`pkg/upgrade`, `pkg/install`, `pkg/storage` and `pkg/chalkd`. [The image](../concepts/image.md)
+and [Storage and encryption](../concepts/storage.md) explain why the layout is what it is.
 
 ## Partition map
 
@@ -38,8 +38,8 @@ flowchart LR
 
 The table lists the partitions in disk order. The first column is the systemd-repart
 definition file that describes each one. The system region's sizes are the defaults of the
-`chalkos.disk` options of the role image, and fixed, so every node of a role has the same
-system region.
+image's `chalkos.disk` options, and fixed, so every node that runs an image of one variant has
+the same system region.
 
 | Definition | Label | Size | File system | Encryption | Created by |
 | --- | --- | --- | --- | --- | --- |
@@ -49,7 +49,7 @@ system region.
 | `30-store-verity-b` | `_empty` | `storeVeritySize`, `128M` | none until an upgrade | none | first boot, or install from the installer |
 | `40-store-b` | `_empty` | `storeSize`, `3G` | none until an upgrade | none | first boot, or install from the installer |
 | `50-state` | `state` | [`stateSize`](options.md#chalkosdiskstatesize), `128M` | ext4 | node's policy, LUKS2 sealed to the [TPM](glossary.md#tpm) by default | first boot, install |
-| `50-var` | `var` | `var.size`, rest of the disk | ext4 | node's policy | install |
+| `50-var` | `var` | the `SystemDisk`'s `spec.var.size`, rest of the disk | ext4 | node's policy | install |
 | `60-<name>` | `<name>` | the volume's `size` | the volume's `format` | node's policy | install, later config |
 
 A volume with a disk of its own is the only partition on that disk, from the definition
@@ -59,16 +59,16 @@ A volume with a disk of its own is the only partition on that disk, from the def
 
 The "Created by" column names the first writer of each partition:
 
-- Image build: the Nix build of the role image runs systemd-repart and writes the ESP and slot A
-  into the raw image.
+- Image build: the Nix build of the image runs systemd-repart and writes the ESP and slot A into
+  the raw image.
 - First boot: systemd-repart in the initrd runs the system region's definitions against the
   disk systemd-boot was loaded from, so it adds slot B and STATE behind the partitions the image
   shipped with. It runs at every boot and changes nothing once they exist.
-- Install: from the [installer](glossary.md#installer), [chalkd](glossary.md#chalkd) lays out the whole system region
-  on the target disk with one systemd-repart run of the role's definitions and writes slot A
-  itself. In place, chalkd recreates STATE when its contents do not match the node's encryption
-  policy (an unencrypted STATE for `mode = "none"`). In both flows it then creates VAR and the
-  volumes.
+- Install: from the [installer](glossary.md#installer), [chalkd](glossary.md#chalkd) lays out the
+  whole system region on the target disk with one systemd-repart run of the image's definitions and
+  writes slot A itself. In place, chalkd recreates STATE when its contents do not match the node's
+  encryption policy (an unencrypted STATE for a `SystemDisk` with `encryption: {mode: none}`). In
+  both flows it then creates VAR and the volumes.
 - Config: [`chalkctl apply-config`](cli/chalkctl_apply-config.md) creates volumes added
   to a node's storage and grows those whose size grew. At every boot, `chalkos-storage` in the
   initrd applies the storage section recorded on STATE again.
@@ -186,19 +186,21 @@ A node whose STATE has no `installed` marker starts chalkd in
 
 ## Outputs of an image build
 
-`nix build .#chalkos.<cluster>.roles.<role>.images.<platform>` makes a directory of five
-entries, six for a role with Kubernetes:
+An [image directory](glossary.md#image-directory) is what
+[`mkImages`](options.md) builds as `images.<variant>-<platform>`, such as `nix build .#node-kvm`
+in the lab template, whose flake exposes `images.node-kvm`. It holds five entries, six for an
+image with Kubernetes:
 
 | Entry | What it is |
 | --- | --- |
 | `chalkos_<version>.raw` | The raw disk image: the ESP and slot A, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash. `chalkctl sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, [variant](glossary.md#variant), platform and the store's root hash, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). |
-| `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
-| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only for a role with Kubernetes. An install from the installer sends it with `schemas`, so chalkd translates the node's config for the image it writes; an upgrade checks the cluster definition's config against both before it drains a node, and chalkd reads them from the image it wrote. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, version, [variant](glossary.md#variant), platform and the store's root hash, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it. |
+| `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. [Config kinds](kinds.md) lists the fields of the default image's kinds. |
+| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, so chalkd translates the node's config for the image it writes; an upgrade checks each node's config from the [inventory](glossary.md#inventory) against both before it drains a node, and chalkd checks the node's stored config against those of the image it wrote. |
 
-The definitions of a role with the default sizes read:
+The definitions of an image with the default sizes read:
 
 ```ini title="repart.d/50-state.conf"
 [Partition]
@@ -234,7 +236,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/repart.d` | The system region's definitions. |
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with [`osCA`](options.md#osca). |
-| `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images of a role with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
+| `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
 | `/etc/chalkos/consumers.json` | The units that read config kinds, from [`chalkos.consumers`](options.md#chalkosconsumers), and whether they restart when one changes. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and `image.json` at boot and on every apply. |

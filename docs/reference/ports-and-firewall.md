@@ -9,7 +9,8 @@ This page lists the ports a chalkos node accepts connections on, the ports its s
 on locally, the nftables tables on a node and the connections a node makes. The firewall rules
 come from `modules/node/chalkd.nix`, `modules/node/kubernetes.nix`,
 `modules/node/controlplane-ports.nix` and `modules/node/vxlan-rule.nix`; the listeners from
-`cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go` and the cluster's Kubernetes modules.
+`cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
+`modules/node/kubernetes.nix`.
 [Networking](../concepts/networking.md) explains the network design and
 [Security model](../concepts/security.md) what each listener trusts.
 
@@ -37,9 +38,9 @@ The firewall opens the NodePort range for TCP only.
 ## VXLAN rule
 
 flannel's VXLAN carries pod traffic unauthenticated, so a node accepts UDP 8472 only when it is
-sent to one of the addresses the node picked for Kubernetes, and only from
-`chalkos.cluster.kubernetes.vxlanSourceSubnets`
-when that list is set. The rule has three parts:
+sent to one of the addresses the node picked for Kubernetes, and only from the ranges of the
+[`Kubernetes`](kinds.md#kubernetes) document's `spec.vxlanSourceSubnets` when that list is set.
+The rule has three parts:
 
 | Part | What it does |
 | --- | --- |
@@ -129,8 +130,8 @@ between the nodes.
 
 | Destination | Port | Protocol | Purpose |
 | --- | --- | --- | --- |
-| Container registries, or the mirrors in `chalkos.cluster.registries.mirrors` | 443, or the mirror's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. A mirror may use plain HTTP with `chalkos.cluster.registries.allowPlainHTTP`. |
-| Time servers of `chalkos.time.servers` | 4460 | TCP | NTS key exchange, for servers with `nts`, the default. |
+| Container registries, or the mirrors their [`RegistryMirror`](kinds.md#registrymirror) documents name | 443, or the mirror's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. A mirror may use plain HTTP when its `RegistryMirror` sets `spec.allowPlainHTTP`. |
+| Time servers of the [`TimeSync`](kinds.md#timesync) document's `spec.servers` | 4460 | TCP | NTS key exchange, for servers with `nts`, the default. |
 | Time servers | 123, or the server's `port` | UDP | NTP. |
 | DNS resolvers of the node's network | 53 | UDP and TCP | Names of registries and time servers. |
 | DHCP servers, when the node's network units use DHCP | 67 | UDP | Addresses. |
