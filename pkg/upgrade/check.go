@@ -29,6 +29,8 @@ type Header struct {
 	// brings none.
 	BootLoaderSize   int64
 	BootLoaderSHA256 []byte
+	// Provenance is what the build says of where it came from, which the node records and shows.
+	Provenance Provenance
 }
 
 // VersionPattern is what an image version may be: what a GPT label holds after "store-verity_"
