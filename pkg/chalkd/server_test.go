@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -30,6 +31,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -160,6 +162,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 			ESP:            filepath.Join(root, "esp"),
 			Cmdline:        filepath.Join(root, "cmdline"),
 			FailedBoot:     filepath.Join(root, "var", "failed-boot"),
+			Facts:          filepath.Join(root, "facts.json"),
 		},
 		Run:  r,
 		Host: h,
@@ -189,7 +192,21 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	write(t, s.Paths.Cmdline, "init=/x usrhash="+runningRoot+"\n")
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
 	writeSchemas(t, s.Loader.Schemas)
+	writeFacts(t, s)
 	return s, r
+}
+
+// writeFacts declares the facts of the built-in kinds' rules as an image does, at the test
+// server's paths.
+func writeFacts(t *testing.T, s *Server) {
+	t.Helper()
+	defs, err := json.Marshal(map[string]facts.Definition{
+		"share": {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, s.Paths.Facts, string(defs))
 }
 
 // runningRoot is the root hash of the store the test server's node runs, as its kernel command

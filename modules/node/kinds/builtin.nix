@@ -131,8 +131,36 @@ let
     version = "v1alpha1";
     builtin = true;
   };
+
+  # What a cluster was set up with stays once the node holds a Kubernetes share: its
+  # certificates, etcd and the ranges its control plane allocated were made for it. The node
+  # holds one Kubernetes document, compared with the running config's whatever its name, in the
+  # families both configs have; ipFamilies, compared as a whole, refuses a change of the families.
+  fixed = "they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster";
+  # Binds was and gets to the running and the delivered Kubernetes spec around expr.
+  bindSpecs =
+    expr:
+    "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], ${expr}))";
+  # A rule over one per-family setting, whose value in a spec s and family f is value "s" "f",
+  # compared with ==, and shown as show gives it.
+  fixedRule = field: value: show: {
+    rule = "facts.share == null || size(oldDocuments) == 0 || size(documents) == 0 || ${bindSpecs "was.ipFamilies.filter(f, f in gets.ipFamilies).all(f, ${value "was" "f"} == ${value "gets" "f"})"}";
+    messageExpression = bindSpecs ''
+      cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
+        "the config changes the cluster's ${field} from "
+        + families.map(f, f + " " + ${show (value "was" "f")}).join(", ") + " to "
+        + families.map(f, f + " " + ${show (value "gets" "f")}).join(", ") + "; ${fixed}")
+    '';
+  };
+  # The cluster DNS's address: the one given, or the 10th of the family's service range.
+  dnsIP =
+    s: f: "(${s}.dnsIPs[${f}] != null ? ip(${s}.dnsIPs[${f}]) : cidr(${s}.serviceCIDRs[${f}]).ip(10))";
 in
 {
+  # The Kubernetes share the node holds, which rules compare the node's type and its cluster's
+  # fixed settings with: null until the node has one.
+  chalkos.facts = lib.mkIf kubernetes { share.file = "/state/kubernetes/share.json"; };
+
   chalkos.kinds = {
     Cluster = builtin "chalkos.dev" // {
       spec.endpoint = mkOption {
@@ -142,6 +170,20 @@ in
       };
     };
     Node = builtin "chalkos.dev" // {
+      # The share's certificates are those of its kind, and a control plane's etcd data stays its
+      # own, until the node is reinstalled; a share of another type delivered with the config
+      # changes neither.
+      rules = lib.optionals kubernetes [
+        {
+          rule = "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)";
+          messageExpression = ''
+            cel.bind(type, documents.map(n, documents[n].spec.type)[0],
+              "the config changes the node's type from \"" + facts.share.kind + "\" to \""
+              + (type == null ? "null" : type) + "\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a "
+              + (type == null ? "node without Kubernetes" : type))
+          '';
+        }
+      ];
       spec = {
         type = mkOption {
           type = types.nullOr (
@@ -303,6 +345,11 @@ in
       };
     };
     Kubernetes = builtin "kubernetes.chalkos.dev" // {
+      rules = [
+        (fixedRule "podCIDRs" (s: f: "cidr(${s}.podCIDRs[${f}])") (v: "string(${v})"))
+        (fixedRule "serviceCIDRs" (s: f: "cidr(${s}.serviceCIDRs[${f}])") (v: "string(${v})"))
+        (fixedRule "dnsIPs" dnsIP (v: "string(${v})"))
+      ];
       spec = {
         domain = mkOption {
           type = types.nonEmptyStr;
@@ -314,16 +361,25 @@ in
           default = false;
           description = "Let workloads run on control-plane nodes, which are otherwise tainted.";
         };
-        ipFamilies = mkOption {
-          type = types.nonEmptyListOf (
-            types.enum [
-              "ipv4"
-              "ipv6"
-            ]
-          );
-          default = [ "ipv4" ];
-          description = "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.";
-        };
+        ipFamilies =
+          mkOption {
+            type = types.nonEmptyListOf (
+              types.enum [
+                "ipv4"
+                "ipv6"
+              ]
+            );
+            default = [ "ipv4" ];
+            description = "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.";
+          }
+          // {
+            "x-chalkos-rules" = [
+              {
+                rule = "facts.share == null || self == oldSelf";
+                messageExpression = ''"the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; ${fixed}"'';
+              }
+            ];
+          };
         podCIDRs = perFamily {
           type = types.nonEmptyStr;
           description = "Address range of the family's pods; each node gets a part of it.";

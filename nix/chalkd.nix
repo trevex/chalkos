@@ -9,12 +9,14 @@ callPackage ./go-module.nix { } {
     ../pkg/chalkd
     ../pkg/client
     ../pkg/config
+    ../pkg/facts
     ../pkg/identity
     ../pkg/install
     ../pkg/kubernetes
     ../pkg/networkdschema
     ../pkg/nodeconfig
     ../pkg/pki
+    ../pkg/rules
     ../pkg/schema
     ../pkg/storage
     ../pkg/uki

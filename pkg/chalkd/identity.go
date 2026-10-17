@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/netip"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -346,11 +345,17 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			if cluster != nil {
 				var was *k8s.Cluster
 				was, addonsChanged = s.storedKubernetes(prev, found, r.next.Documents)
-				if err := s.checkFixed(was, cluster); err != nil {
-					return nil, err
-				}
 				clusterChanged = !sameCluster(was, cluster)
 			}
+		}
+		// The image's rules compare the config with the running slot's and read the node's facts,
+		// which the delivery loads once, before anything changes.
+		f, err := s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.checkRules(r.schemas, r.next.Documents, prev.Documents, f); err != nil {
+			return nil, err
 		}
 	}
 	share, err := s.kubernetesShare(d, m.KubernetesShare, osCA, cluster)
@@ -889,76 +894,6 @@ func sameCluster(a, b *k8s.Cluster) bool {
 		return a == b
 	}
 	return sameJSON(a, b)
-}
-
-// checkFixed refuses config that changes, on a node holding a Kubernetes share, what the node
-// and its cluster were set up for: the node's type, which the share it holds is of, and the
-// settings fixed once the cluster exists, its address families and its pod, service and DNS
-// addresses, for which its certificates, etcd and the ranges the control plane allocated were
-// made. next is the cluster the config gives, and prev the running slot's. The type is compared
-// with the held share, so a running slot without a Kubernetes document changes nothing; a share
-// of the new type delivered with the config is refused too, since the node's etcd data and its
-// Node stay those of the old type until it is reinstalled. Without a stored cluster the settings
-// have nothing to compare with.
-func (s *Server) checkFixed(prev, next *k8s.Cluster) error {
-	if next == nil {
-		return nil
-	}
-	held, err := knode.ReadShare(s.Kubernetes.Paths)
-	switch {
-	case errors.Is(err, knode.ErrNoShare):
-		return nil
-	case err != nil:
-		return failed(connect.CodeInternal, "read the node's Kubernetes share: %v", err)
-	}
-	if held.Kind != next.Kind {
-		return failed(connect.CodeFailedPrecondition, "the config changes the node's type from %q to %q; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a %s", held.Kind, next.Kind, next.Kind)
-	}
-	if prev == nil {
-		return nil
-	}
-	pf, _ := prev.Families()
-	nf, _ := next.Families()
-	fixed := []struct {
-		field     string
-		was, gets any
-	}{
-		{"ipFamilies", pf, nf},
-		{"podCIDRs", canonical(prev.PodCIDRs, canonicalPrefix), canonical(next.PodCIDRs, canonicalPrefix)},
-		{"serviceCIDRs", canonical(prev.ServiceCIDRs, canonicalPrefix), canonical(next.ServiceCIDRs, canonicalPrefix)},
-		{"dnsIPs", canonical(prev.DNSIPs, canonicalAddress), canonical(next.DNSIPs, canonicalAddress)},
-	}
-	for _, f := range fixed {
-		if !reflect.DeepEqual(f.was, f.gets) {
-			was, _ := json.Marshal(f.was)
-			gets, _ := json.Marshal(f.gets)
-			return failed(connect.CodeFailedPrecondition, "the config changes the cluster's %s from %s to %s; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster", f.field, was, gets)
-		}
-	}
-	return nil
-}
-
-// canonical writes each family's value as form does, so that spellings of one range or address,
-// such as fd00:0::/108 and fd00::/108, compare equal.
-func canonical(v k8s.ByFamily[string], form func(string) string) k8s.ByFamily[string] {
-	return k8s.ByFamily[string]{IPv4: form(v.IPv4), IPv6: form(v.IPv6)}
-}
-
-// canonicalPrefix is a range in its canonical form, its address masked; one that does not parse stays
-// as it is.
-func canonicalPrefix(s string) string {
-	if p, err := netip.ParsePrefix(s); err == nil {
-		return p.Masked().String()
-	}
-	return s
-}
-
-// canonicalAddress is an address in its canonical form; one that does not parse stays as it is.
-func canonicalAddress(s string) string {
-	if a, err := netip.ParseAddr(s); err == nil {
-		return a.String()
-	}
-	return s
 }
 
 func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.ResetVolumeRequest]) (*connect.Response[nodev1.ResetVolumeResponse], error) {

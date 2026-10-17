@@ -181,15 +181,15 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 // image.json in st, so the config is checked against exactly what the image will translate it with
 // at boot, and classified against the machine state as every slot write is. The node boots the
 // image with that slot, and a config chalkos-config could not apply would leave boot counting to
-// fall back. It refuses config that changes the fixed Kubernetes settings of a node holding a
-// share, and storage changes that are destructive; additive ones, such as a new volume, are made
-// now, while the running image runs, and storage.json records them. Every boot sets up the volumes
-// storage.json records, so the running image mounts such a volume too, although its config does
-// not name it; its slot counts as removing the volume only once it is written again. system is the
-// image's NixOS system in st, platform its platform and secret the fallback secret. The caller
-// holds s.mu.
+// fall back. It refuses config that the image's rules refuse, such as one that changes what a
+// node holding a share was set up for, and storage changes that are destructive; additive ones,
+// such as a new volume, are made now, while the running image runs, and storage.json records
+// them. Every boot sets up the volumes storage.json records, so the running image mounts such a
+// volume too, although its config does not name it; its slot counts as removing the volume only
+// once it is written again. system is the image's NixOS system in st, platform its platform and
+// secret the fallback secret. The caller holds s.mu.
 func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
-	_, running, found, err := s.runningSlot()
+	_, running, _, err := s.runningSlot()
 	if err != nil {
 		return err
 	}
@@ -201,15 +201,14 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %v", err)
 	}
-	if s.Kubernetes != nil && t.Image != nil {
-		c, err := config.ClusterOf(next.Documents, *t.Image)
-		if err != nil {
-			return failed(connect.CodeInvalidArgument, "the config: %v", err)
-		}
-		prev, _ := s.storedKubernetes(running, found, nil)
-		if err := s.checkFixed(prev, &c); err != nil {
-			return err
-		}
+	// The rules are the image's, which the config is for; the facts the running image's, which
+	// read this node. The running slot is the baseline, as for ApplyConfig.
+	f, err := s.factsFor(ctx, next.Documents, running.Documents, secret)
+	if err != nil {
+		return err
+	}
+	if err := s.checkRules(schemas, next.Documents, running.Documents, f); err != nil {
+		return err
 	}
 	d, err := parseIdentity(string(next.Identity))
 	if err != nil {

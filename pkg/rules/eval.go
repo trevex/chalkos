@@ -62,7 +62,7 @@ func (e *FactError) Unwrap() error { return e.Err }
 // the set's order. An error is a rule that could not be evaluated, or a fact that could not be
 // loaded, which refuses the delivery as well.
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
-	cfg, oldCfg := configOf(in.Documents), configOf(in.Old)
+	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
 	var failures []Failure
 	for _, p := range s.Programs {
 		if len(p.Facts) > 0 && in.Facts == nil {
@@ -168,9 +168,9 @@ func notString(v ref.Val) error {
 	return fmt.Errorf("it yields %s, not a string", v.Type().TypeName())
 }
 
-// configOf is a config set as rules see it: objects by apiVersion, kind and name, Secret values
-// replaced by their hashes.
-func configOf(docs []config.Document) map[string]any {
+// ConfigOf is a config set as rules see it and command facts read it: objects by apiVersion, kind
+// and name, Secret values replaced by their hashes.
+func ConfigOf(docs []config.Document) map[string]any {
 	out := map[string]any{}
 	for _, d := range docs {
 		kinds, ok := out[d.APIVersion].(map[string]any)

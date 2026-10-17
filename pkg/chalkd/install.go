@@ -53,7 +53,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	default:
 		return nil, failed(connect.CodeInvalidArgument, "the install header names no target")
 	}
-	stored, err := s.installConfig(h)
+	stored, err := s.installConfig(ctx, h)
 	if err != nil {
 		return nil, err
 	}

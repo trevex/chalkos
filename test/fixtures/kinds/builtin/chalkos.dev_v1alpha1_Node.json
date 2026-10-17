@@ -76,6 +76,13 @@
     "group": "chalkos.dev",
     "kind": "Node",
     "multiple": false,
+    "rules": [
+      {
+        "messageExpression": "cel.bind(type, documents.map(n, documents[n].spec.type)[0],\n  \"the config changes the node's type from \\\"\" + facts.share.kind + \"\\\" to \\\"\"\n  + (type == null ? \"null\" : type) + \"\\\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a \"\n  + (type == null ? \"node without Kubernetes\" : type))\n",
+        "rule": "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)",
+        "takes": "refuse"
+      }
+    ],
     "version": "v1alpha1"
   }
 }

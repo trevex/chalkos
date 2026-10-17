@@ -21,6 +21,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -64,6 +65,8 @@ type Paths struct {
 	// FailedBoot, on VAR, keeps what chalkd and the health check logged during the last boot that
 	// was not found healthy.
 	FailedBoot string
+	// Facts is where the image declares the facts its rules read.
+	Facts string
 }
 
 // DefaultPaths are the paths on a node.
@@ -80,6 +83,7 @@ func DefaultPaths() Paths {
 		ESP:            "/efi",
 		Cmdline:        "/proc/cmdline",
 		FailedBoot:     "/var/lib/chalkd/failed-boot",
+		Facts:          facts.DefaultPath,
 	}
 }
 
@@ -117,6 +121,8 @@ type Server struct {
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
 	RebootNode func()
+	// Facts runs the commands of facts; nil runs them with systemd-run. Tests replace it.
+	Facts facts.Runner
 	// Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
 	Kubernetes *Kubernetes
 	// Renewal renews the node certificate; nil on a node that renews none.

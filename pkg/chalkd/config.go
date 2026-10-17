@@ -172,8 +172,10 @@ func restartByHand(units []string) string {
 
 // installConfig translates the config an install header delivers into the identity of the node
 // for the image installed, and returns the config slot of that image, identity included. In place,
-// that image is the running one; from the installer, the header describes it.
-func (s *Server) installConfig(h *nodev1.InstallHeader) (store.Stored, error) {
+// that image is the running one; from the installer, the header describes it. The config meets
+// that image's rules with no running config to compare with: rules of a field that read oldSelf
+// do not run, and the rules of a kind see no oldDocuments.
+func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (store.Stored, error) {
 	if h.Config == "" {
 		return store.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
 	}
@@ -193,7 +195,18 @@ func (s *Server) installConfig(h *nodev1.InstallHeader) (store.Stored, error) {
 	if err != nil {
 		return store.Stored{}, err
 	}
-	return configure(h.Config, schemas, t)
+	stored, err := configure(h.Config, schemas, t)
+	if err != nil {
+		return store.Stored{}, err
+	}
+	f, err := s.factsFor(ctx, stored.Documents, nil, h.FallbackSecret)
+	if err != nil {
+		return store.Stored{}, err
+	}
+	if err := s.checkRules(schemas, stored.Documents, nil, f); err != nil {
+		return store.Stored{}, err
+	}
+	return stored, nil
 }
 
 // headerTarget is the image an install from the installer writes, as its header describes it,
