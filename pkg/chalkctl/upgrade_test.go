@@ -206,6 +206,17 @@ type upgradeLab struct {
 	stopping map[string]bool
 	// configDenied makes the nodes refuse GetConfig, as for a role below admin.
 	configDenied bool
+	// configErrs makes single nodes fail GetConfig with the error.
+	configErrs map[string]error
+	// configAsked counts the GetConfig calls of each node.
+	configAsked map[string]int
+}
+
+// asked returns how often each node was asked for its config.
+func (l *upgradeLab) asked() map[string]int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return maps.Clone(l.configAsked)
 }
 
 func (l *upgradeLab) record(format string, args ...any) {
@@ -945,6 +956,56 @@ func TestUpgradeWithholdsConfigBeforeDraining(t *testing.T) {
 	}
 }
 
+// TestUpgradeAsksTheFirstNodeItInstallsForItsConfig skips a node that runs the image already, as
+// it is not sent the image, and asks the next one for its config. That node refuses to show it, so
+// the run withholds config before it asks for the password the node's new volume needs.
+func TestUpgradeAsksTheFirstNodeItInstallsForItsConfig(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	withPasswordVolume(t, l, "w1", "w2")
+	prompts := recordPrompts(l)
+	l.nodes["w1"].image, l.nodes["w1"].root = "0.2.0", rootOf(t, img)
+	l.configErrs = map[string]error{"w2": connect.NewError(connect.CodePermissionDenied, errors.New("GetConfig needs the admin role"))}
+	if err := l.upgrade(img, "--nodes", "w1,w2", "--no-reboot"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if asked := l.asked(); asked["w2"] == 0 {
+		t.Errorf("asked %v for their config, want w2", asked)
+	}
+	if len(*prompts) != 0 {
+		t.Errorf("asked %q", *prompts)
+	}
+	if line := "w2 refuses to show its config to these credentials; config not delivered, each node carries its own over\n"; strings.Count(l.ta.stdout.String(), line) != 1 {
+		t.Errorf("output:\n%s\nwant %q once", l.ta.stdout, line)
+	}
+	if n := l.nodes["w2"]; n.staged != "0.2.0" || n.stagedConfig != "" {
+		t.Errorf("w2 stages %q with the config %q, want 0.2.0 without config", n.staged, n.stagedConfig)
+	}
+}
+
+// TestUpgradeStopsWhenTheFirstNodeCannotShowItsConfig stops the run when the first node it
+// installs cannot be asked for its config, before any password is asked for or any node drained.
+func TestUpgradeStopsWhenTheFirstNodeCannotShowItsConfig(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	withPasswordVolume(t, l, "w1")
+	prompts := recordPrompts(l)
+	l.configErrs = map[string]error{"w1": connect.NewError(connect.CodeUnavailable, errors.New("the node is busy"))}
+	err := l.upgrade(img, "--nodes", "w1")
+	if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("upgrade = %v, want w1's error", err)
+	}
+	if len(*prompts) != 0 {
+		t.Errorf("asked %q", *prompts)
+	}
+	if events := l.takeEvents(); len(events) != 0 {
+		t.Errorf("events %q, want none", events)
+	}
+	if n := l.nodes["w1"]; n.staged != "" {
+		t.Errorf("w1 stages %q", n.staged)
+	}
+}
+
 // TestUpgradeAsksNoPasswordOfANodeItDoesNotInstall asks no fallback password of a node that runs
 // the image already, nor of one that has it staged with the inventory's config, though their config
 // adds an encrypted volume: neither is sent the image.
@@ -1536,10 +1597,17 @@ func TestApplyConfigStaged(t *testing.T) {
 // chalkd redacts it.
 func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
 	n.lab.mu.Lock()
-	denied := n.lab.configDenied
+	denied, failure := n.lab.configDenied, n.lab.configErrs[n.name]
+	if n.lab.configAsked == nil {
+		n.lab.configAsked = map[string]int{}
+	}
+	n.lab.configAsked[n.name]++
 	n.lab.mu.Unlock()
 	if denied {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("GetConfig needs the admin role"))
+	}
+	if failure != nil {
+		return nil, failure
 	}
 	if err := needsAdmin(ctx, "GetConfig"); err != nil {
 		return nil, err
