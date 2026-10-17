@@ -2,6 +2,9 @@ package chalkd
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -81,5 +84,29 @@ func TestShareFactHoldsNoKeys(t *testing.T) {
 	}
 	if want := map[string]any{"kind": k8s.KindControlPlane}; !reflect.DeepEqual(v, want) {
 		t.Errorf("share = %v, want %v", v, want)
+	}
+}
+
+// Rules of the running image that do not compile are the node's failure, not the request's.
+func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
+	s, _ := configServer(t)
+	path := filepath.Join(s.Loader.Schemas, "chalkos.dev_v1alpha1_Node.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sch map[string]any
+	if err := json.Unmarshal(raw, &sch); err != nil {
+		t.Fatal(err)
+	}
+	sch["x-chalkos-kind"].(map[string]any)["rules"] = []any{map[string]any{"rule": "documents =="}}
+	data, err := json.Marshal(sch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, path, string(data))
+	_, err = sendConfig(s, baseConfig)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the running image's rules: Node: rule ") {
+		t.Errorf("err = %v", err)
 	}
 }

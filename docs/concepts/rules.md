@@ -142,6 +142,11 @@ changes:
 - [`chalkctl install`](../reference/cli/chalkctl_install.md), with the rules of the image it
   installs.
 
+chalkd compiles the rules of every image with its own CEL library, the running chalkd's: an
+upgrade or `apply-config --staged` compiles the new image's rules before that image's chalkd runs,
+so a slot for an image whose rules call a function the running chalkd lacks is refused. Rules of
+the running image that do not compile fail the delivery as an internal error of the node.
+
 [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) evaluates the storage kinds'
 rules against the storage STATE records without the volume it resets, which it recreates like a
 new one: a reset is refused when the config needs more than recreating that volume. A config for

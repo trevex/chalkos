@@ -200,7 +200,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 	if err != nil {
 		return store.Stored{}, err
 	}
-	set, err := compileRules(schemas)
+	set, err := compileRules(schemas, !s.Installer)
 	if err != nil {
 		return store.Stored{}, err
 	}

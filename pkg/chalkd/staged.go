@@ -130,7 +130,7 @@ func (s *Server) checkStaged(schemas *schema.Schemas, next []config.Document, se
 	if !found {
 		return nil
 	}
-	set, err := compileRules(schemas)
+	set, err := compileRules(schemas, true)
 	if err != nil {
 		return err
 	}

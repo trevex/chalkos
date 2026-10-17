@@ -36,10 +36,16 @@ func factInput(next, old []config.Document) map[string]any {
 	return map[string]any{"config": rules.ConfigOf(next), "oldConfig": rules.ConfigOf(old)}
 }
 
-// compileRules compiles the rules of an image's schemas, which its build checked already.
-func compileRules(schemas *schema.Schemas) (*rules.Set, error) {
+// compileRules compiles the rules of an image's schemas, which its build checked already. Rules of
+// the running image that do not compile are the node's own failure, Internal; another image's,
+// which an install or upgrade brings, are the request's, InvalidArgument. Either compiles with
+// the running chalkd's CEL library.
+func compileRules(schemas *schema.Schemas, running bool) (*rules.Set, error) {
 	set, err := rules.Compile(schemas)
-	if err != nil {
+	switch {
+	case err != nil && running:
+		return nil, failed(connect.CodeInternal, "the running image's rules: %v", err)
+	case err != nil:
 		return nil, failed(connect.CodeInvalidArgument, "the image's rules: %v", err)
 	}
 	return set, nil

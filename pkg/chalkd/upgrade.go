@@ -207,7 +207,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	}
 	// The rules are the image's, which the config is for; the facts the running image's, which
 	// read this node. The running slot is the baseline, as for ApplyConfig.
-	set, err := compileRules(schemas)
+	set, err := compileRules(schemas, false)
 	if err != nil {
 		return err
 	}

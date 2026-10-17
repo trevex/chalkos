@@ -280,7 +280,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		// records, and read the node's facts, which the delivery loads once for this check and the
 		// staged slot's, before anything changes: a missing or mistyped fallback secret is refused
 		// before the node trusts the delivered OS CAs.
-		set, err := compileRules(r.schemas)
+		set, err := compileRules(r.schemas, true)
 		if err != nil {
 			return nil, err
 		}
@@ -750,7 +750,7 @@ func (s *Server) resetVolume(ctx context.Context, name string, next store.Stored
 			without.Volumes[n] = vol
 		}
 	}
-	set, err := compileRules(schemas)
+	set, err := compileRules(schemas, true)
 	if err != nil {
 		return err
 	}
