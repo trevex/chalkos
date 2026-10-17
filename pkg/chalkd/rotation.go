@@ -35,7 +35,7 @@ const RestartedAnnotation = "chalkos.dev/restarted-at"
 func (s *Server) RotationStep(ctx context.Context, req *connect.Request[nodev1.RotationStepRequest]) (*connect.Response[nodev1.RotationStepResponse], error) {
 	k := s.Kubernetes
 	if k == nil {
-		return nil, failed(connect.CodeFailedPrecondition, "the node's role has no Kubernetes")
+		return nil, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes")
 	}
 	step := req.Msg.Step
 	// Checked before anything else: an unknown step gets no credential for the API server.

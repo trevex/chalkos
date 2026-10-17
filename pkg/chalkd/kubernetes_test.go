@@ -227,7 +227,7 @@ func TestBootstrapRefusals(t *testing.T) {
 		s    *Server
 		want string
 	}{
-		"no Kubernetes":         {plain, "has no Kubernetes"},
+		"no Kubernetes":         {plain, "the node's image has no Kubernetes"},
 		"worker":                {worker, "is a worker"},
 		"no share":              {noShare, "no Kubernetes share"},
 		"etcd with data":        {etcdData, "holds etcd data"},

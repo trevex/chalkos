@@ -25,7 +25,7 @@ import (
 // controlPlane checks that the node is a control plane and returns its cluster, name and share.
 func (k *Kubernetes) controlPlane() (k8s.Cluster, string, kpki.Share, error) {
 	if k == nil {
-		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node's role has no Kubernetes")
+		return k8s.Cluster{}, "", kpki.Share{}, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes")
 	}
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {

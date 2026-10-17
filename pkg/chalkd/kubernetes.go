@@ -675,7 +675,7 @@ func missingPodRanges(c k8s.Cluster, node *corev1.Node) (string, error) {
 func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.BootstrapRequest]) (*connect.Response[nodev1.BootstrapResponse], error) {
 	k := s.Kubernetes
 	if k == nil {
-		return nil, failed(connect.CodeFailedPrecondition, "the node's role has no Kubernetes")
+		return nil, failed(connect.CodeFailedPrecondition, "the node's image has no Kubernetes")
 	}
 	c, err := k8s.ReadCluster(k.Paths.Cluster)
 	if err != nil {
@@ -693,7 +693,7 @@ func (s *Server) Bootstrap(ctx context.Context, _ *connect.Request[nodev1.Bootst
 	select {
 	case <-done:
 	case <-ctx.Done():
-		return nil, failed(connect.CodeDeadlineExceeded, "etcd is initialised and the control plane starts, but its manifests were not applied yet; chalkctl status shows its progress")
+		return nil, failed(connect.CodeDeadlineExceeded, "etcd is initialised and the control plane starts, but chalkos's add-ons and the objects of the Addon documents were not applied yet; chalkctl status shows its progress")
 	}
 	k.mu.Lock()
 	n := k.count

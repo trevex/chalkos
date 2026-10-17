@@ -82,7 +82,7 @@ func (s *Server) kubernetesShare(d delivered, data []byte, osCA string, cluster 
 		return nil, nil
 	}
 	if s.Kubernetes == nil {
-		return nil, failed(connect.CodeInvalidArgument, "the node's role has no Kubernetes, so it takes no Kubernetes share")
+		return nil, failed(connect.CodeInvalidArgument, "the node's image has no Kubernetes, so it takes no Kubernetes share")
 	}
 	share, err := kpki.ParseShare(data)
 	if err != nil {
