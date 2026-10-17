@@ -159,12 +159,23 @@ func (s *Server) classifyDisks(section storage.Section, pins storage.Pins) diskC
 	return d
 }
 
+// pinnedDisk reports whether the disk a volume is pinned to is plugged in; the system disk always
+// is. An error tells that it cannot be told, as when several disks have the pinned identity.
+func (s *Server) pinnedDisk(v storage.Volume, pins storage.Pins) (bool, error) {
+	pin, ok := pins.Disks[v.Disk]
+	if v.Disk == storage.SystemDisk || !ok {
+		return true, nil
+	}
+	_, found, err := s.Host.Find(pin.Identity)
+	return found, err
+}
+
 // remedy says how a node carries out a destructive change of a volume. chalkctl storage reset
-// recreates a volume in place; changing VAR, removing a volume or moving it to another disk, also
-// by a disk reference that finds another disk, takes a reinstall, as resetVolume refuses those. A
-// disk reference that cannot be resolved is a mistake in the config, or a missing disk when it
-// finds none, which neither carries out.
-func (s *Server) remedy(recorded, section storage.Section, d diskChanges, c storage.Change) string {
+// recreates a volume in place, once the disk it is pinned to is plugged in; changing VAR,
+// removing a volume or moving it to another disk, also by a disk reference that finds another
+// disk, takes a reinstall, as resetVolume refuses those. A disk reference that cannot be resolved
+// is a mistake in the config, or a missing disk when it finds none, which neither carries out.
+func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d diskChanges, c storage.Change) string {
 	v, kept := section.Volumes[c.Volume]
 	if err, ok := d.unresolved[c.Volume]; ok {
 		if errors.Is(err, storage.ErrNoDisk) {
@@ -175,7 +186,15 @@ func (s *Server) remedy(recorded, section storage.Section, d diskChanges, c stor
 	if c.Volume == storage.VarVolume || !kept || v.Disk != recorded.Volumes[c.Volume].Disk || d.moved[c.Volume] {
 		return fmt.Sprintf("only a reinstall of %s carries it out", s.nodeName())
 	}
-	return fmt.Sprintf("reset it with chalkctl storage reset %s %s", s.nodeName(), c.Volume)
+	reset := fmt.Sprintf("chalkctl storage reset %s %s", s.nodeName(), c.Volume)
+	found, err := s.pinnedDisk(v, pins)
+	if err != nil {
+		return fmt.Sprintf("%v; reset it with %s once one disk has it", err, reset)
+	}
+	if !found {
+		return fmt.Sprintf("its disk %s, %s, is not plugged in; plug it in, then reset it with %s", v.Disk, pins.Disks[v.Disk].Identity, reset)
+	}
+	return "reset it with " + reset
 }
 
 // applyRequest is an ApplyConfig request once its config is translated: the identity the node
@@ -291,7 +310,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		var destructive []string
 		for _, c := range changes {
 			if c.Class == storage.Destructive {
-				destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, d.section, disks, c)))
+				destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, d.section, pins, disks, c)))
 			}
 		}
 		if len(destructive) > 0 {
@@ -870,6 +889,13 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 	}
 	if disks.moved[name] {
 		return failed(connect.CodeFailedPrecondition, "the disk reference of volume %s finds another disk than the one it lives on; a reset recreates a volume on its own disk only", name)
+	}
+	found, err := s.pinnedDisk(nv, pins)
+	if err != nil {
+		return failed(connect.CodeFailedPrecondition, "find the disk of volume %s: %v", name, err)
+	}
+	if !found {
+		return failed(connect.CodeFailedPrecondition, "disk %s of volume %s, %s, is not plugged in; plug it in and reset the volume again", nv.Disk, name, pins.Disks[nv.Disk].Identity)
 	}
 	var others []string
 	for _, c := range classified {

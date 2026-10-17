@@ -203,9 +203,18 @@ func asSSDs(t *testing.T, s *Server, names ...string) {
 	}
 }
 
+// unplug removes a test disk, as if it was not plugged in.
+func unplug(t *testing.T, s *Server, name string) {
+	t.Helper()
+	if err := os.RemoveAll(filepath.Join(s.Host.SysRoot, "block", name)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A destructive change names what carries it out: a reset for a volume it recreates in place, a
-// reinstall for a volume the config removes or moves to another disk, and a fixed reference
-// for a disk reference that cannot be resolved.
+// reinstall for a volume the config removes or moves to another disk, a plugged-in disk for a
+// volume whose disk is missing, and a fixed reference for a disk reference that cannot be
+// resolved.
 func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 	for _, tc := range []struct {
 		name, next string
@@ -224,6 +233,12 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 			next:    withExtraRef(t, section("", "xfs"), "chalk-extra"),
 			want:    []string{"reset it with chalkctl storage reset n1 extra"},
 			notWant: []string{"cannot be resolved", "reinstall"},
+		},
+		{
+			name:    "reformatted on a disk that is not plugged in",
+			next:    section("", "xfs"),
+			prepare: func(t *testing.T, s *Server) { unplug(t, s, "vdb") },
+			want:    []string{"its disk extra", "is not plugged in; plug it in, then reset it with chalkctl storage reset n1 extra"},
 		},
 		{
 			name: "removed",
@@ -364,6 +379,7 @@ func TestResetVolume(t *testing.T) {
 
 func TestResetVolumeRefusals(t *testing.T) {
 	ssds := func(t *testing.T, s *Server) { asSSDs(t, s, "vdb", "vdc") }
+	unplugged := func(t *testing.T, s *Server) { unplug(t, s, "vdb") }
 	for _, c := range []struct {
 		name, volume, identity string
 		// partitionOn is the disk the volume's partition link resolves to.
@@ -380,6 +396,7 @@ func TestResetVolumeRefusals(t *testing.T) {
 		{"reference finding another disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", nil, []string{"finds another disk"}, nil},
 		{"reference finding no disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-missing")), "vdb", nil, []string{"cannot be resolved: no disk matches", "; fix the reference or plug in the disk it names"}, nil},
 		{"reference finding two disks", "extra", identityWith(withExtraSelector(t, section("", "xfs"), storage.Selector{Type: "ssd"})), "vdb", ssds, []string{"cannot be resolved: 2 disks match", "; fix the reference"}, []string{"plug in"}},
+		{"disk not plugged in", "extra", identityWith(section("", "xfs")), "vdb", unplugged, []string{"disk extra of volume extra", "is not plugged in; plug it in"}, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true, vdc)
