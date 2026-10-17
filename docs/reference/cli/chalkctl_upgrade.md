@@ -27,6 +27,9 @@ volume is created before the image boots, enrolled with the recovery key from th
 the password --password-file holds. Without an inventory a node carries the config of the image it
 runs over, checked against the new image. A node that has the image staged already gets it again
 only when the config kept for it is not the inventory's.
+Before it sends a node the image, chalkctl prints a line of what the node's config changes
+against the config of the image it runs, as apply-config does; --diff prints the whole diff for
+every node and changes nothing.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
@@ -63,6 +66,7 @@ chalkctl upgrade [flags]
       --allow-downtime         upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots
       --config string          client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)
       --delete-emptydir-data   evict pods with emptyDir volumes too, deleting their data
+      --diff                   print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing
   -h, --help                   help for upgrade
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --image string           image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default each node's Image's directory)

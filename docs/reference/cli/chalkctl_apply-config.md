@@ -45,6 +45,9 @@ chalkctl apply-config <node> [flags]
   # Give w1 a new kubelet certificate.
   chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
 
+  # Show what w1's config in the inventory changes on the node, changing nothing.
+  chalkctl apply-config w1 --secrets secrets.age --diff
+
   # Deliver w1's config for the image an upgrade with --no-reboot staged.
   chalkctl apply-config w1 --secrets secrets.age --staged
 ```
@@ -53,6 +56,7 @@ chalkctl apply-config <node> [flags]
 
 ```
       --address string         address of the node's chalkd, host or host:port (default the node's address in the inventory)
+      --diff                   print what the config changes in the node's config, document by document and field by field, and change nothing
   -h, --help                   help for apply-config
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)

@@ -240,6 +240,9 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
   # Give w1 a new kubelet certificate.
   chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
 
+  # Show what w1's config in the inventory changes on the node, changing nothing.
+  chalkctl apply-config w1 --secrets secrets.age --diff
+
   # Deliver w1's config for the image an upgrade with --no-reboot staged.
   chalkctl apply-config w1 --secrets secrets.age --staged`
 
@@ -306,6 +309,9 @@ volume is created before the image boots, enrolled with the recovery key from th
 the password --password-file holds. Without an inventory a node carries the config of the image it
 runs over, checked against the new image. A node that has the image staged already gets it again
 only when the config kept for it is not the inventory's.
+Before it sends a node the image, chalkctl prints a line of what the node's config changes
+against the config of the image it runs, as apply-config does; --diff prints the whole diff for
+every node and changes nothing.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy

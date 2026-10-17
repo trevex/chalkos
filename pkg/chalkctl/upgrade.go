@@ -75,6 +75,7 @@ type upgradeFlags struct {
 	addresses                               addressList
 	maxUnavailable                          int
 	allowDowntime, noReboot, retryFailed    bool
+	diff                                    bool
 	deleteEmptyDir                          bool
 	timeout                                 time.Duration
 }
@@ -103,6 +104,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs.BoolVar(&f.deleteEmptyDir, "delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
 	registerPasswordFile(fs, &f.passwordFile)
+	fs.BoolVar(&f.diff, "diff", false, "print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing")
 	return cmd
 }
 
@@ -172,7 +174,46 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	if err := r.checkConfig(); err != nil {
 		return err
 	}
+	if f.diff {
+		return r.diff(ctx)
+	}
 	return r.run(ctx)
+}
+
+// diff prints, for every node to upgrade, what its config changes against the running image's,
+// which the new image's slot replaces.
+func (r *upgradeRun) diff(ctx context.Context) error {
+	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
+		if err := r.call(name, func(conn *client.Conn) error {
+			changes, err := r.configChanges(ctx, conn, r.nodes[name])
+			if err != nil || changes == nil {
+				return err
+			}
+			r.out.Lock()
+			defer r.out.Unlock()
+			changes.write(r.a.stdout)
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// configChanges prints the line of what the node's config changes against the running image's and
+// returns the changes; none on a partial cluster, which has no inventory to compare with.
+func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *upgradeNode) (configDiff, error) {
+	if n.delivery == nil {
+		r.say("%s: no inventory to compare the config with; the node carries its own over", n.name)
+		return nil, nil
+	}
+	nodeDocs, err := slotConfig(ctx, conn, false)
+	if err != nil {
+		return nil, err
+	}
+	changes := diffConfig(nodeDocs, n.delivery.Documents)
+	r.say("%s: %s", n.name, changes.summary())
+	return changes, nil
 }
 
 // checkConfig checks, before any node is drained or sent its image, that each node's config suits
@@ -520,6 +561,9 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	defer done()
 	var resp *nodev1.UpgradeResponse
 	err = r.call(name, func(conn *client.Conn) error {
+		if _, err := r.configChanges(ctx, conn, n); err != nil {
+			return err
+		}
 		header := &nodev1.UpgradeHeader{Image: img.header}
 		if d := n.delivery; d != nil {
 			t, err := targetIn(r.cluster, nodeCommand{address: r.addresses[name]}, name, r.creds)

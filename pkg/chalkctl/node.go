@@ -569,9 +569,9 @@ func size(bytes uint64) string {
 }
 
 type applyConfigFlags struct {
-	node                    nodeCommand
-	passwordFile            string
-	kubernetesShare, staged bool
+	node                          nodeCommand
+	passwordFile                  string
+	kubernetesShare, staged, diff bool
 }
 
 func (a *app) applyConfigCommand() *cobra.Command {
@@ -587,6 +587,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	registerPasswordFile(fs, &f.passwordFile)
 	fs.BoolVar(&f.kubernetesShare, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the image its Image names")
+	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
 	return cmd
 }
 
@@ -637,6 +638,19 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 			version = "none"
 		}
 		fmt.Fprintf(a.stderr, "%s has a staged image with its own config (version %s); apply-config --staged updates it\n", t.name, version)
+	}
+	if f.staged && st.Msg.Boot.GetStaged() == nil {
+		return fmt.Errorf("%s: no image is staged to boot next; apply the config to the running image", t.name)
+	}
+	nodeDocs, err := slotConfig(ctx, conn, f.staged)
+	if err != nil {
+		return fmt.Errorf("%s: %w", t.name, err)
+	}
+	changes := diffConfig(nodeDocs, d.Documents)
+	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
+	if f.diff {
+		changes.write(a.stdout)
+		return nil
 	}
 	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, "")
 	if err != nil {

@@ -1131,6 +1131,9 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.1.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
 		t.Errorf("the nodes run %v", v)
 	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: no inventory to compare the config with; the node carries its own over") {
+		t.Errorf("output lacks the line without an inventory:\n%s", out)
+	}
 	if out := l.ta.stdout.String(); !strings.Contains(out, "skipping w3 (kvm): the image is built for metal") {
 		t.Errorf("output:\n%s", out)
 	}
@@ -1312,5 +1315,86 @@ func TestApplyConfigStaged(t *testing.T) {
 		if !strings.Contains(l.ta.stdout.String(), line) {
 			t.Errorf("status lacks %q:\n%s", line, l.ta.stdout)
 		}
+	}
+}
+
+// GetConfig returns the config the node runs, or with staged the staged image's, redacted as
+// chalkd redacts it.
+func (n *upgradeFake) GetConfig(_ context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	text := n.config
+	if req.Msg.Staged {
+		if n.staged == "" {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no image is staged to boot next"))
+		}
+		text = n.stagedConfig
+	}
+	docs, err := config.Parse(strings.NewReader(text))
+	if err != nil {
+		return nil, err
+	}
+	e, err := config.Encode(config.Redact(docs))
+	if err != nil {
+		return nil, err
+	}
+	if len(docs) == 0 {
+		e.Text = ""
+	}
+	return connect.NewResponse(&nodev1.GetConfigResponse{Documents: e.Text, Version: versionOf(text)}), nil
+}
+
+// TestApplyConfigPrintsWhatItChanges prints a line of what the config changes before it is
+// delivered, and with --diff the whole diff, delivering nothing.
+func TestApplyConfigPrintsWhatItChanges(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
+	n := l.nodes["w1"]
+	if err := l.applyConfig("w1"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "w1: config 8 added, 0 removed, 0 changed\n"; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("stdout = %q, want %q", l.ta.stdout, want)
+	}
+	l.takeEvents()
+	n.config = strings.Replace(n.config, "10.0.0.13/24", "10.0.0.99/24", 1) + "---\n" + `{"apiVersion":"storage.chalkos.dev/v1alpha1","kind":"Volume","metadata":{"name":"old"},"spec":{}}` + "\n"
+	if err := l.applyConfig("w1", "--diff"); err != nil {
+		t.Fatal(err)
+	}
+	want := `w1: config 0 added, 1 removed (Volume "old"), 1 changed
+~ Network "10-uplink"
+    spec.network.address[0]: "10.0.0.99/24" → "10.0.0.13/24"
+- Volume "old" (on the node, not in the inventory)
+`
+	if l.ta.stdout.String() != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", l.ta.stdout, want)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("--diff delivered: %q", got)
+	}
+}
+
+// TestUpgradeDiff prints each node's diff against the config it runs and changes nothing; an
+// upgrade prints the line of it before it sends the image.
+func TestUpgradeDiff(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.nodes["w1"].config = l.inventoryConfig("w1")
+	if err := l.upgrade(img, "--diff"); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.takeEvents(); len(got) != 0 {
+		t.Errorf("--diff asked %q", got)
+	}
+	out := l.ta.stdout.String()
+	if !strings.Contains(out, "w1: config unchanged\n") || !strings.Contains(out, "w2: config 8 added, 0 removed, 0 changed\n+ Cluster \"lab\"\n") {
+		t.Errorf("output:\n%s", out)
+	}
+	l.ta.stdout.Reset()
+	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+		t.Fatal(err)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: config unchanged\nw1: installed ") {
+		t.Errorf("output:\n%s", out)
 	}
 }
