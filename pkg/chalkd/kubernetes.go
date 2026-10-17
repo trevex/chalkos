@@ -37,7 +37,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
-// Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
+// Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
 type Kubernetes struct {
 	Paths knode.Paths
 	// Config is the node's config set on STATE, whose Addon documents the control plane

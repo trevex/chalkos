@@ -309,7 +309,7 @@ func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyCo
 	})
 }
 
-// deliverShare sends a node of a role with Kubernetes its share as the secrets file has it now.
+// deliverShare sends a node whose image has Kubernetes its share as the secrets file has it now.
 func (r *rotation) deliverShare(ctx context.Context, name string) error {
 	t, err := r.target(name)
 	if err != nil {

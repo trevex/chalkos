@@ -59,7 +59,7 @@ func TestParseLayoutRounds(t *testing.T) {
 	}
 }
 
-// TestLayoutCheck compares tables against the lab's definitions: the role's partitions in order,
+// TestLayoutCheck compares tables against the lab's definitions: the image's partitions in order,
 // counted in the disk's sectors, then only volumes of the system disk.
 func TestLayoutCheck(t *testing.T) {
 	l, err := parseLayout(labDefinitions)

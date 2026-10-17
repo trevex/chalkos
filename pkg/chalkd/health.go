@@ -36,7 +36,7 @@ import (
 //     no unit failed.
 type Health struct {
 	Run node.Runner
-	// Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
+	// Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
 	Kubernetes *Kubernetes
 	// Chalkd is where chalkd serves, and Kubelet the kubelet's health endpoint.
 	Chalkd, Kubelet string

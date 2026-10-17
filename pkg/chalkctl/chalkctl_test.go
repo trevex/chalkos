@@ -164,7 +164,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	pair, _ := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.Key))
 	leaf, _ := x509.ParseCertificate(pair.Certificate[0])
 	s.Fingerprint = pki.Fingerprint(leaf.Raw)
-	// The node runs the image of the test node's role.
+	// The node runs the image the test node's Image names.
 	if s.Paths.OSRelease == "" {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=0.1.0\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
@@ -388,8 +388,8 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 }
 
 // TestInstallFromPartsStreamsTheImage sends the installer the image's store, hash tree, UKI and
-// boot loader with the header describing them, and the role's definitions. The image may be of
-// another role than the node's: the installer checks the config against the image's schemas.
+// boot loader with the header describing them, and the image's definitions. The image may be
+// another than the node's Image names: the installer checks the config against the image's schemas.
 func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	ta := newTestApp(t)
 	imageDir := testUpgradeImage(t, "gpu", "0.1.0")
@@ -443,8 +443,8 @@ func TestInstallChecksTheImage(t *testing.T) {
 	dbKey, dbCert := testSigner(t, keys, "db")
 	otherKey, otherCert := testSigner(t, keys, "other")
 	certPEM, _ := os.ReadFile(dbCert)
-	image := func(role string) string {
-		dir := testUpgradeImage(t, role, "0.1.0")
+	image := func(variant string) string {
+		dir := testUpgradeImage(t, variant, "0.1.0")
 		writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 		copySchemas(t, filepath.Join(dir, "schemas"))
 		return dir

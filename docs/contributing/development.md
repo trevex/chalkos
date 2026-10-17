@@ -31,7 +31,7 @@ The shell, defined in `nix/shell.nix`, provides:
   `CHALKLAB_OVMF_VARS_ENROLLED` (OVMF firmware, blank and with test
   [Secure Boot](../reference/glossary.md#secure-boot) keys enrolled),
   `CHALKLAB_SB_KEYS` (those keys), `CHALKOS_TEST_EFI`, `CHALKOS_TEST_REPART` and
-  `CHALKOS_TEST_ROLE_DEFINITIONS`.
+  `CHALKOS_TEST_IMAGE_DEFINITIONS`.
 
 Tests that need a tool or variable skip without it, so run them in this shell. The flake checks
 use the same tools and variables from `nix/testing/env.nix`.

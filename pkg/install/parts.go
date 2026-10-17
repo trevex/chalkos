@@ -20,30 +20,30 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// PartsRequest installs from the installer: the role image's parts are streamed and written to
-// a target disk, which is laid out from the role's definitions.
+// PartsRequest installs from the installer: the node's image's parts are streamed and written to
+// a target disk, which is laid out from the image's definitions.
 type PartsRequest struct {
 	Request
 	// Target is the disk the node is installed onto.
 	Target storage.Ref
-	// Image describes the role image, whose store, hash tree, UKI and boot loader follow in
+	// Image describes the node's image, whose store, hash tree, UKI and boot loader follow in
 	// Parts, in this order.
 	Image upgrade.Header
 	Parts io.Reader
-	// SystemDefinitions are the role image's repart definitions of the system region, by file
-	// name. The installer's own may differ: each role chooses its partition sizes.
+	// SystemDefinitions are the node's image's repart definitions of the system region, by
+	// file name. The installer's own may differ: each image chooses its partition sizes.
 	SystemDefinitions map[string]string
 	// WipeDisk allows replacing whatever the target holds, including an installed node.
 	WipeDisk bool
 }
 
-// FromParts installs the node onto the target disk from the role image's parts. Each step finds
+// FromParts installs the node onto the target disk from the node's image's parts. Each step finds
 // what an earlier, interrupted attempt did and continues from there:
 //
 //  1. Classify the target: an empty disk, or any with WipeDisk, is wiped and laid out anew; one
 //     that holds what an earlier attempt left is continued, without the boot loader that attempt
 //     may have written or BootNext; anything else is refused.
-//  2. Lay out the system region with one systemd-repart run of the role's definitions: the ESP,
+//  2. Lay out the system region with one systemd-repart run of the image's definitions: the ESP,
 //     slot A, slot B as _empty, and STATE.
 //  3. Write slot A with the upgrade's slot writer: retired, written, verified from the disk, and
 //     activated with the UUIDs derived from the root hash and the version's labels.
@@ -314,7 +314,7 @@ func (i *Installer) wipe(ctx context.Context, target storage.BlockDisk) (err err
 	return f.RereadPartitions()
 }
 
-// layOut creates the system region on the wiped target with the role's definitions, STATE
+// layOut creates the system region on the wiped target with the image's definitions, STATE
 // encrypted as the node's policy says. Partition UUIDs are random: a disk written from the same
 // image must not share them.
 func (i *Installer) layOut(ctx context.Context, target storage.BlockDisk, defs map[string]string, policy string) error {

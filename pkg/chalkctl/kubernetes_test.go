@@ -42,14 +42,14 @@ func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	return got, err
 }
 
-func TestInstallSendsShareOfTheRole(t *testing.T) {
+func TestInstallSendsShareOfTheNodeKind(t *testing.T) {
 	ta := newTestApp(t)
 	got, err := installShare(t, ta)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.KubernetesShare != nil {
-		t.Error("a node of a role without Kubernetes got a share")
+		t.Error("a node whose image has no Kubernetes got a share")
 	}
 
 	withKind(t, ta, identity.KindWorker)
@@ -73,7 +73,7 @@ func TestInstallSendsShareOfTheRole(t *testing.T) {
 	}
 }
 
-// kubernetesNode is an installed node of a worker role whose Kubernetes side reports the node
+// kubernetesNode is an installed worker node whose Kubernetes side reports the node
 // ready.
 func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	t.Helper()

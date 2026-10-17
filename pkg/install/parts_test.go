@@ -36,7 +36,7 @@ import (
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
-// partsImage is a test role image as an install streams it.
+// partsImage is a test image as an install streams it.
 type partsImage struct {
 	version                  string
 	store, hash, uki, loader []byte
@@ -92,7 +92,7 @@ func (img partsImage) parts() io.Reader {
 	return io.MultiReader(bytes.NewReader(img.store), bytes.NewReader(img.hash), bytes.NewReader(img.uki), bytes.NewReader(img.loader))
 }
 
-// labDefinitions are a role's definitions of the system region, as small as repart formats them:
+// labDefinitions are an image's definitions of the system region, as small as repart formats them:
 // FAT32 takes 260 MiB, ext4 32 MiB. The build sandbox's file systems take no user extended
 // attributes, which repart sets on what it populates an ext4 file system from for
 // systemd-validatefs.
@@ -125,7 +125,7 @@ type partsLab struct {
 	tpmFails bool
 	// sector is the disk's sector size.
 	sector int64
-	// defs are the role's definitions of the system region.
+	// defs are the image's definitions of the system region.
 	defs map[string]string
 }
 
@@ -515,7 +515,7 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 	}
 	l.checkInstalled(img)
 	if !hasPrefix(l.r.calls, "systemd-repart --dry-run=no --empty=require --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 /dev/vdb") {
-		t.Errorf("the target was not laid out with the role's definitions: %q", l.r.calls)
+		t.Errorf("the target was not laid out with the image's definitions: %q", l.r.calls)
 	}
 	if l.writes != 2 {
 		t.Errorf("slot A's partitions were opened for writing %d times, want twice", l.writes)
@@ -1211,13 +1211,13 @@ func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
 	}
 }
 
-// TestFromPartsWithTheRoleDefinitions installs with the definitions the test role's image ships,
+// TestFromPartsWithTheImageDefinitions installs with the definitions the test image ships,
 // on a disk that holds its system region, and continues an install stopped once the disk is laid
 // out: the partitions repart creates are the ones the definitions describe.
-func TestFromPartsWithTheRoleDefinitions(t *testing.T) {
-	dir := os.Getenv("CHALKOS_TEST_ROLE_DEFINITIONS")
+func TestFromPartsWithTheImageDefinitions(t *testing.T) {
+	dir := os.Getenv("CHALKOS_TEST_IMAGE_DEFINITIONS")
 	if dir == "" {
-		t.Skip("CHALKOS_TEST_ROLE_DEFINITIONS not set")
+		t.Skip("CHALKOS_TEST_IMAGE_DEFINITIONS not set")
 	}
 	defs, err := readDefinitions(dir)
 	if err != nil {

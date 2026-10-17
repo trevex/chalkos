@@ -113,7 +113,7 @@ type Server struct {
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
 	RebootNode func()
-	// Kubernetes is the node's Kubernetes side; nil on a node of a role without Kubernetes.
+	// Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
 	Kubernetes *Kubernetes
 	// Renewal renews the node certificate; nil on a node that renews none.
 	Renewal *Renewal

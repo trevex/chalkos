@@ -156,7 +156,7 @@ func TestInstallTargetMustMatchImage(t *testing.T) {
 		target    any
 	}{
 		{"in place on the installer", true, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}},
-		{"onto a disk from a role image", false, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}},
+		{"onto a disk from the node's image", false, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)

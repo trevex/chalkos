@@ -1,6 +1,6 @@
 // Package install turns a node in maintenance mode into an installed node: in place, when the
-// role image already runs from the boot disk, or from the installer, which first lays out a
-// target disk and writes the role image's parts to it. Every step can be repeated, so an
+// node's image already runs from the boot disk, or from the installer, which first lays out a
+// target disk and writes the node's image's parts to it. Every step can be repeated, so an
 // interrupted install can run again; the node counts as installed once STATE holds the installed
 // marker, written last.
 package install
@@ -62,7 +62,7 @@ type Request struct {
 	Identity []byte
 	// Section is the identity's storage section.
 	Section storage.Section
-	// Kubernetes is the identity's Kubernetes section; nil on a node of a role without Kubernetes.
+	// Kubernetes is the identity's Kubernetes section; nil on a node whose image has no Kubernetes.
 	Kubernetes *identity.Kubernetes
 	// NodeCertificate, the node certificate followed by the node CA's, and NodeKey are what chalkd
 	// serves once the node is installed; CA holds the OS CAs, which issue the client certificates
@@ -70,8 +70,8 @@ type Request struct {
 	NodeCertificate, NodeKey, CA []byte
 	// FallbackSecret is enrolled as the second keyslot of every encrypted volume.
 	FallbackSecret string
-	// KubernetesShare is the node's share of the Kubernetes secrets (JSON); empty on a node of a
-	// role without Kubernetes.
+	// KubernetesShare is the node's share of the Kubernetes secrets (JSON); empty on a node whose
+	// image has no Kubernetes.
 	KubernetesShare []byte
 	// Config is the node's config set as STATE keeps it, when it was delivered config; nil for
 	// an identity.
@@ -206,7 +206,7 @@ func (i *Installer) loader() string {
 	return `\EFI\BOOT\` + name
 }
 
-// InPlace installs the node on the disk it booted from, where the role image already runs.
+// InPlace installs the node on the disk it booted from, where the node's image already runs.
 func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	if err := req.validate(); err != nil {
 		return err
@@ -267,8 +267,8 @@ func (i *Installer) closeState(ctx context.Context) error {
 	return nil
 }
 
-// installOn runs the steps both flows share on disk, which holds the role image: STATE, the
-// node's volumes, the fallback key and the identity. defs are the role image's repart definitions
+// installOn runs the steps both flows share on disk, which holds the node's image: STATE, the
+// node's volumes, the fallback key and the identity. defs are the image's repart definitions
 // of the system region.
 func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request) error {
 	policy := req.Section.Encryption

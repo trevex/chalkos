@@ -114,8 +114,8 @@ func testUpgradeImageOfBlocks(t *testing.T, variant, platform, version string, b
 // whether its Node is cordoned.
 type upgradeFake struct {
 	nodev1connect.UnimplementedNodeServiceHandler
-	lab                  *upgradeLab
-	name, role, platform string
+	lab                     *upgradeLab
+	name, variant, platform string
 	// kind is the node's Kubernetes kind, "" without Kubernetes.
 	kind string
 
@@ -186,7 +186,7 @@ func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return connect.NewResponse(&nodev1.InfoResponse{Version: n.version, ImageId: "chalkos", Variant: n.role, Platform: n.platform}), nil
+	return connect.NewResponse(&nodev1.InfoResponse{Version: n.version, ImageId: "chalkos", Variant: n.variant, Platform: n.platform}), nil
 }
 
 func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
@@ -362,7 +362,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
 	for _, node := range nodes {
 		name := node.name
-		n := &upgradeFake{lab: l, name: name, role: node.variant, platform: "metal", kind: node.kind, version: "0.1.0", root: bytes.Repeat([]byte{1}, 32)}
+		n := &upgradeFake{lab: l, name: name, variant: node.variant, platform: "metal", kind: node.kind, version: "0.1.0", root: bytes.Repeat([]byte{1}, 32)}
 		dir := filepath.Join(t.TempDir(), "chalkd")
 		cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
 		if err != nil {
@@ -394,7 +394,7 @@ func (l *upgradeLab) useInventory(t *testing.T, images map[string]string) {
 	var nodes []testNode
 	for _, name := range slices.Sorted(maps.Keys(l.nodes)) {
 		n := l.nodes[name]
-		nodes = append(nodes, testNode{name, n.kind, n.role})
+		nodes = append(nodes, testNode{name, n.kind, n.variant})
 	}
 	l.inventory = writeNodes(t, l.ta.dir, nodes, images)
 }
@@ -681,7 +681,7 @@ func TestUpgradeSendsAnotherBuild(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithoutReboot installs the image on every node of the role and leaves them as they
+// TestUpgradeWithoutReboot installs the image on every node of the variant and leaves them as they
 // run.
 func TestUpgradeWithoutReboot(t *testing.T) {
 	l := newUpgradeLab(t, 3)
@@ -1063,7 +1063,7 @@ func TestUpgradeNamedNodeOfAnotherVariant(t *testing.T) {
 // its variant, and leaves a node of the inventory that runs another one.
 func TestUpgradeWithAnImageGivesItToTheNodesOfItsVariant(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	l.nodes["w2"].role = "plain"
+	l.nodes["w2"].variant = "plain"
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}

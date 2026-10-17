@@ -28,7 +28,7 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 }
 
 // TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
-// next to a blank disk, installs a node onto that disk from the role image's parts, which chalkctl
+// next to a blank disk, installs a node onto that disk from its image's parts, which chalkctl
 // signs and sends from the host, cancels that install while slot A is written and runs it again
 // without --wipe-disk, and checks the node boots from the disk installed: slot A holding the image,
 // slot B empty, VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.

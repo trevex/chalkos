@@ -30,11 +30,11 @@ type definedPartition struct {
 	maxSize int64
 }
 
-// layout is the system region the role's definitions lay out, in their order: the ESP, store
+// layout is the system region the image's definitions lay out, in their order: the ESP, store
 // slots A and B, and STATE.
 type layout []definedPartition
 
-// parseLayout reads the role's definitions of the system region and checks that they lay out
+// parseLayout reads the image's definitions of the system region and checks that they lay out
 // what an install writes: an ESP formatted as vfat, two store slots and STATE.
 func parseLayout(defs map[string]string) (layout, error) {
 	names := make([]string, 0, len(defs))

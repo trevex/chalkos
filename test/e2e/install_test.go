@@ -54,7 +54,7 @@ func TestInstallInPlace(t *testing.T) {
 	})
 	waitForNode(t, n, "chalklab")
 
-	// The test role declares the Greeting kind; chalktest-greeting reads the node's Greeting with
+	// The test image declares the Greeting kind; chalktest-greeting reads the node's Greeting with
 	// chalkcfg and its token from the credential chalkd writes for it. The unit may still be
 	// starting when chalkd answers, so its journal is read until it logged.
 	sum := sha256.Sum256([]byte("s3cret"))

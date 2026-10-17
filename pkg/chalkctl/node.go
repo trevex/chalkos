@@ -457,7 +457,7 @@ func refusesCertificate(addr string, cert *tls.Certificate) bool {
 	return err != nil && strings.Contains(err.Error(), "remote error: tls: unknown certificate authority")
 }
 
-// readDefinitions reads a role image's repart.d files.
+// readDefinitions reads an image's repart.d files.
 func readDefinitions(dir string) (map[string]string, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, "*.conf"))
 	if err != nil {
@@ -950,7 +950,7 @@ func (a *app) dialEither(t *target, p pinning) (*client.Conn, error) {
 	return dialInstalled(t)
 }
 
-// imageFiles finds the raw image in an image directory or takes the given file; the role's
+// imageFiles finds the raw image in an image directory or takes the given file; the image's
 // system-region definitions are in repart.d next to it.
 func imageFiles(path string) (raw, definitions string, err error) {
 	info, err := os.Stat(path)

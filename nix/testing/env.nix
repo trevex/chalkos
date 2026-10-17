@@ -37,6 +37,6 @@ in
     # stays off the PATH.
     CHALKOS_TEST_REPART = "${pkgs.systemd}/bin/systemd-repart";
     # The install tests also lay out a disk as the test image would be installed.
-    CHALKOS_TEST_ROLE_DEFINITIONS = "${chalkPkgs.test-repart-definitions}";
+    CHALKOS_TEST_IMAGE_DEFINITIONS = "${chalkPkgs.test-repart-definitions}";
   };
 }
