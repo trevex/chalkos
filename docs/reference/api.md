@@ -715,7 +715,7 @@ No fields.
 | `already_installed` | `bool` | The node runs the image already; nothing changed. |
 | `entry` | `string` | The file name of the UKI that boots the image next, with its tries. |
 | `rebooting` | `bool` | The node reboots into the image. |
-| `already_staged` | `bool` | The image boots next already, from entry, as an earlier upgrade without a reboot left it; nothing changed. |
+| `already_staged` | `bool` | The image boots next already, from entry, as an earlier upgrade without a reboot left it, and the node's stored config still suits it; nothing changed. |
 
 ### VolumeStatus { #message-volumestatus }
 

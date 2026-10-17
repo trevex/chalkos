@@ -3566,8 +3566,8 @@ type UpgradeResponse struct {
 	Entry string `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
 	// The node reboots into the image.
 	Rebooting bool `protobuf:"varint,3,opt,name=rebooting,proto3" json:"rebooting,omitempty"`
-	// The image boots next already, from entry, as an earlier upgrade without a reboot left it;
-	// nothing changed.
+	// The image boots next already, from entry, as an earlier upgrade without a reboot left it, and
+	// the node's stored config still suits it; nothing changed.
 	AlreadyStaged bool `protobuf:"varint,4,opt,name=already_staged,json=alreadyStaged,proto3" json:"already_staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

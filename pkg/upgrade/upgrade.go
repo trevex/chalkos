@@ -164,8 +164,12 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	// The image boots next already, as after an upgrade without a reboot.
+	// The image boots next already, as after an upgrade without a reboot. The config may have
+	// changed since it was checked, so it is checked again.
 	if staged, ok := stagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
+		if err := n.recheck(ctx, h, inactive, staged, all, booted, running); err != nil {
+			return Result{}, err
+		}
 		return Result{AlreadyStaged: true, Entry: staged.File}, nil
 	}
 	// UKIs of other images on the ESP, such as a rescue system's, are left alone; a UKI is of the
@@ -257,6 +261,25 @@ func ofImage(e Entry, imageID string) bool {
 // booted nor boots the running store.
 func retired(e Entry, imageID string, booted Entry, running []byte) bool {
 	return ofImage(e, imageID) && e.ID != booted.ID && !bytes.Equal(e.RootHash, running)
+}
+
+// recheck checks the image a staged entry boots, as an upgrade checks one it writes. When the
+// check fails, the slot and the entry are retired, as after a failed check of a written image,
+// and the running image stays the next boot.
+func (n *Node) recheck(ctx context.Context, h Header, slot Slot, staged Entry, all []Entry, booted Entry, running []byte) error {
+	if n.CheckStore == nil {
+		return nil
+	}
+	ctx = context.WithoutCancel(ctx)
+	n.closeStore(ctx, n.storeDir(), true, true)
+	err := n.checkStore(ctx, h, slot, filepath.Join(n.ESP, linuxDir, staged.File))
+	if err == nil {
+		return nil
+	}
+	if rerr := n.retire(ctx, all, h.ImageID, booted, running, slot); rerr != nil {
+		log.Printf("retire the staged image %x: %v", h.RootHash, rerr)
+	}
+	return err
 }
 
 // retire removes every UKI of the image but those booting the running store, along with UKIs an

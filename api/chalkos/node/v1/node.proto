@@ -622,8 +622,8 @@ message UpgradeResponse {
   string entry = 2;
   // The node reboots into the image.
   bool rebooting = 3;
-  // The image boots next already, from entry, as an earlier upgrade without a reboot left it;
-  // nothing changed.
+  // The image boots next already, from entry, as an earlier upgrade without a reboot left it, and
+  // the node's stored config still suits it; nothing changed.
   bool already_staged = 4;
 }
 

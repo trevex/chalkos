@@ -206,3 +206,50 @@ func TestToplevel(t *testing.T) {
 		}
 	}
 }
+
+// TestAStagedImageIsCheckedAgain: installing the image that boots next already checks it again,
+// as the config may have changed since. Accepted, nothing changes; refused, the slot and the entry
+// are retired, and the running image boots next.
+func TestAStagedImageIsCheckedAgain(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, old)
+	var calls []string
+	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mounted: func(dir string) {
+		// Each check mounts the store anew.
+		os.RemoveAll(dir)
+		writeStore(t, dir)
+	}}
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	checks := 0
+	var refusal error
+	l.node.CheckStore = func(s Store) error {
+		checks++
+		if s.Toplevel != "/nix/store/x" {
+			t.Errorf("toplevel = %q, want the staged UKI's init= directory", s.Toplevel)
+		}
+		return refusal
+	}
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.writes = map[int]int{}
+	res, err := l.install(img)
+	if err != nil || !res.AlreadyStaged || checks != 2 || len(l.writes) != 0 {
+		t.Fatalf("install again = %+v, %v after %d checks, writes %v; want it staged and checked again", res, err, checks, l.writes)
+	}
+	l.boots(img, 2)
+
+	refusal = errors.New("the config does not suit the image")
+	if _, err := l.install(img); !errors.Is(err, refusal) {
+		t.Fatalf("install = %v, want the check's refusal", err)
+	}
+	if e, name := l.boot(); name != old.name || l.file(res.Entry) != nil {
+		t.Errorf("after a refusal the disk boots %s from %s, and %s stayed: %v", name, e.File, res.Entry, l.file(res.Entry) != nil)
+	}
+	if parts := l.table(); parts[5].Name != "_empty" {
+		t.Errorf("after a refusal the slot is labelled %q", parts[5].Name)
+	}
+	if calls[len(calls)-1] != "veritysetup close "+storeMapping {
+		t.Errorf("ran %q, want the store closed", calls)
+	}
+}
