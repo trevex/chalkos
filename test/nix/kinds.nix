@@ -1094,6 +1094,27 @@ lib.runTests {
       fallback = true;
     };
   };
+  # The test image's Greeting refuses a message too long for one log line, and a new one while
+  # its lock fact holds one; the image declares the fact, and checks the rules when it is built.
+  testGreetingRulesAndFact = {
+    expr =
+      let
+        build = (image [ ../../modules/testing/greeting.nix ]).system.build;
+        greeting = build.chalkosKindSchemas."greeting.example.org_v1alpha1_Greeting.json";
+      in
+      {
+        kind = map (r: r.takes) greeting."x-chalkos-kind".rules;
+        field = map (r: r.rule) greeting.properties.spec.properties.message."x-chalkos-rules";
+        fact = build.chalkosFactDefinitions.greetingLock;
+        checked = lib.hasPrefix "chalkos-rules-check" build.chalkosRulesCheck.name;
+      };
+    expected = {
+      kind = [ "refuse" ];
+      field = [ "facts.greetingLock == null || self == oldSelf" ];
+      fact.file = "/run/chalktest-greeting-lock.json";
+      checked = true;
+    };
+  };
   testFactNameIsAnIdentifier = {
     expr = fails (image [ { chalkos.facts.disk-ids.file = "/x"; } ]).system.build.chalkosFacts.drvPath;
     expected = true;

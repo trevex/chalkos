@@ -15,6 +15,7 @@ let
   schema = import ./schema.nix { inherit lib; };
   getLib = import ./get.nix { inherit lib; };
   chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
+  chalkos-rules = pkgs.callPackage ../../../nix/chalkos-rules.nix { };
   cfg = config.chalkos.kinds;
 
   # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
@@ -155,6 +156,12 @@ let
           { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
       ) factsCfg;
   factsFile = pkgs.writeText "chalkos-facts.json" (builtins.toJSON facts);
+  # The image builds only when every rule of its schemas compiles, within the cost limit, and
+  # reads facts the image declares.
+  rulesCheck = pkgs.runCommand "chalkos-rules-check" { nativeBuildInputs = [ chalkos-rules ]; } ''
+    chalkos-rules check ${schemas} ${factsFile}
+    touch $out
+  '';
 
   kindModule =
     { name, config, ... }:
@@ -338,6 +345,8 @@ in
     system.build.chalkosKindSchemas = kindSchemas;
     system.build.chalkosFacts = factsFile;
     system.build.chalkosFactDefinitions = facts;
+    system.build.chalkosRulesCheck = rulesCheck;
+    system.checks = [ rulesCheck ];
     system.build.chalkosKinds = map (k: {
       apiVersion = "${k.group}/${k.version}";
       inherit (k) kind multiple;

@@ -1026,6 +1026,50 @@ in
       touch $out
     '';
 
+  # An image builds only when its rules compile and read the facts it declares. The test image's
+  # Greeting and the homelab example's Rack bring extension kinds with their own rules and facts;
+  # a rule that does not compile, and one that reads a fact no module declares, fail the check of
+  # their image.
+  rules =
+    let
+      build =
+        modules:
+        (self.lib.mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config.system.build;
+      homelab = build [ ../examples/homelab/extensions/rack.nix ];
+      demo = rule: {
+        chalkos.kinds.Demo = {
+          group = "demo.example.org";
+          version = "v1alpha1";
+          rules = [
+            {
+              inherit rule;
+              message = "a demo";
+            }
+          ];
+        };
+      };
+      broken = build [ (demo "documents ==") ];
+      undeclared = build [ (demo "facts.missing == null") ];
+    in
+    pkgs.runCommand "chalkos-rules"
+      {
+        nativeBuildInputs = [ (pkgs.callPackage ./chalkos-rules.nix { }) ];
+        checked = [
+          testing.nixos.test-metal.config.system.build.chalkosRulesCheck
+          homelab.chalkosRulesCheck
+        ];
+      }
+      ''
+        chalkos-rules check ${homelab.chalkosSchemas} ${homelab.chalkosFacts} | grep -q rackSurvey
+        for image in "${broken.chalkosSchemas} ${broken.chalkosFacts}" "${undeclared.chalkosSchemas} ${undeclared.chalkosFacts}"; do
+          if chalkos-rules check $image; then
+            echo "error: chalkos-rules accepted a rule that does not compile or reads an undeclared fact" >&2
+            exit 1
+          fi
+        done
+        touch $out
+      '';
+
   # The GitHub workflows pass actionlint, with shellcheck for their scripts.
   workflows =
     pkgs.runCommand "chalkos-workflows"
