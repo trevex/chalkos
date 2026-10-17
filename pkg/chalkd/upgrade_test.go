@@ -348,6 +348,36 @@ func TestStageConfigAddsAVolume(t *testing.T) {
 	}
 }
 
+// TestApplyConfigNamesAVolumeAnotherImageAdded refuses config for the running image that leaves out
+// a volume the config of another image added, as after a fallback from that image, and says to name
+// the volume rather than to reinstall: the running image's config never named it. While the other
+// image's slot names it, the refusal says so.
+func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
+	s, r := configServer(t)
+	r.rules = volumeRules(s)
+	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
+		t.Fatal(err)
+	}
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	_, err := sendConfig(s, next)
+	if err == nil || !strings.Contains(err.Error(), "the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too, as the config of the image cdcdcdcdcdcd does") {
+		t.Errorf("err = %v, want the volume named", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "reinstall") {
+		t.Errorf("err = %v, want no reinstall", err)
+	}
+	running, err := s.runningHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Retire(s.Loader.Slots, [][]byte{running}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "name it in this config too") || strings.Contains(err.Error(), "cdcdcdcdcdcd") {
+		t.Errorf("err = %v, want the volume named without another image's slot", err)
+	}
+}
+
 // TestStageConfigKeepsTheFixedFields refuses config that changes what a node holding a share was
 // set up for, as ApplyConfig does: here the node's type.
 func TestStageConfigKeepsTheFixedFields(t *testing.T) {

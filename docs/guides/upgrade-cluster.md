@@ -301,6 +301,17 @@ that, uncordon it yourself:
 kubectl uncordon w2
 ```
 
+### Keep a volume the new image's config added
+
+A volume that the failed image's config added stays on the node. The upgrade created it before
+the image booted, and the previous image mounts it too, since every boot sets up the volumes
+`storage.json` records. The previous image's config does not name the volume, so a later
+`chalkctl apply-config` to that image must name it as well. A config without it is refused, and
+the refusal names the volume and says
+`the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too`,
+followed by the image whose config still names it, while that image has a slot. The same holds
+for a volume that `apply-config --staged` added for an image the node never booted.
+
 ## Re-run an interrupted upgrade
 
 Run the same command again. chalkctl skips nodes that run the image and were found healthy,

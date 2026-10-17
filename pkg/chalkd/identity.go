@@ -171,7 +171,8 @@ func (s *Server) pinnedDisk(v storage.Volume, pins storage.Pins) (bool, error) {
 // remedy says how a node carries out a destructive change of a volume. chalkctl storage reset
 // recreates a volume in place, once the disk it is pinned to is plugged in; changing VAR,
 // removing a volume or moving it to another disk, also by a disk reference that finds another
-// disk, takes a reinstall, as resetVolume refuses those. A disk reference that cannot be resolved
+// disk, takes a reinstall, as resetVolume refuses those, unless the removed volume is one the
+// running image's config never named: see addedElsewhere. A disk reference that cannot be resolved
 // is a mistake in the config, or a missing disk when it finds none, which neither carries out,
 // unless the node cannot list its disks at all.
 func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d diskChanges, c storage.Change) string {
@@ -185,6 +186,11 @@ func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d 
 		}
 		return "fix the disk reference"
 	}
+	if !kept && c.Volume != storage.VarVolume {
+		if elsewhere := s.addedElsewhere(c.Volume); elsewhere != "" {
+			return elsewhere
+		}
+	}
 	if c.Volume == storage.VarVolume || !kept || v.Disk != recorded.Volumes[c.Volume].Disk || d.moved[c.Volume] {
 		return fmt.Sprintf("only a reinstall of %s carries it out", s.nodeName())
 	}
@@ -197,6 +203,53 @@ func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d 
 		return fmt.Sprintf("its disk %s (%s) is not plugged in; plug it in, then reset it with %s", v.Disk, pins.Disks[v.Disk].Identity, reset)
 	}
 	return "reset it with " + reset
+}
+
+// addedElsewhere says how to keep a volume that a config leaves out although the machine records
+// it, when the running image's config never named it either: the config of another image added
+// it, with an upgrade or apply-config --staged, and the node fell back or the image was never
+// activated. A reinstall would be the wrong remedy; the config is to name the volume, as the
+// config of another image still holding a slot may. It returns "" when the running image's config
+// names the volume, which the config then removes. The caller holds s.mu.
+func (s *Server) addedElsewhere(name string) string {
+	_, running, found, err := s.runningSlot()
+	if err != nil || !found {
+		return ""
+	}
+	if d, err := parseIdentity(string(running.Identity)); err != nil || hasVolume(d.section, name) {
+		return ""
+	}
+	msg := "the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too"
+	runningHash, err := s.runningHash()
+	if err != nil {
+		return msg
+	}
+	hashes, err := store.Slots(s.Loader.Slots)
+	if err != nil {
+		return msg
+	}
+	var others []string
+	for _, h := range hashes {
+		if bytes.Equal(h, runningHash) {
+			continue
+		}
+		held, found, err := store.Read(store.Slot(s.Loader.Slots, h))
+		if err != nil || !found {
+			continue
+		}
+		if d, err := parseIdentity(string(held.Identity)); err == nil && hasVolume(d.section, name) {
+			others = append(others, fmt.Sprintf("%x", h[:6]))
+		}
+	}
+	if len(others) > 0 {
+		msg += fmt.Sprintf(", as the config of the image %s does", strings.Join(others, " and "))
+	}
+	return msg
+}
+
+func hasVolume(section storage.Section, name string) bool {
+	_, ok := section.Volumes[name]
+	return ok
 }
 
 // applyRequest is an ApplyConfig request once its config is translated: the identity the node
