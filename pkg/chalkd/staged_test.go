@@ -205,7 +205,8 @@ func TestGetConfigStaged(t *testing.T) {
 // TestUpgradeOfAStagedImageNamesApplyConfigStaged names apply-config --staged when the config an
 // upgrade sends again for a staged image is refused in the recheck, which retires the image;
 // apply-config --staged would have kept it. Any other failure names it not, also of the staged
-// image: one that came before the recheck, such as of the image's architecture, retired nothing.
+// image: one that came before the recheck, such as of the image's architecture, retired nothing,
+// and a recheck that could not mount the store retired the image but refused no config.
 func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	c := newCreds(t)
 	s, _ := stagedServer(t, fixtureSchemas(t))
@@ -232,8 +233,13 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	if err := send(stagedImage); err == nil || strings.Contains(err.Error(), "--staged") {
 		t.Errorf("upgrade of the staged image that fails before the recheck = %v, want no --staged named", err)
 	}
-	installErr = &upgrade.StagedRetiredError{Err: refusal}
+	installErr = &upgrade.StagedRetiredError{Err: &upgrade.CheckError{Err: refusal}}
 	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the image staged to boot next was retired with it: chalkctl apply-config --staged") {
 		t.Errorf("upgrade of the staged image = %v, want apply-config --staged named", err)
+	}
+	// A recheck that could not mount the store retired the image without refusing its config.
+	installErr = &upgrade.StagedRetiredError{Err: errors.New("mount the written store: wrong fs type")}
+	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the image staged to boot next was retired with it") || strings.Contains(err.Error(), "--staged") {
+		t.Errorf("upgrade of the staged image whose store did not mount = %v, want it retired and no --staged named", err)
 	}
 }

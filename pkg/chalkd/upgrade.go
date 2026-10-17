@@ -74,10 +74,15 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		s.recordImages(nil)
 		// An image staged already is sent again for its config alone, and a refusal of that config
 		// in the recheck retires the image with it; apply-config --staged would have refused it and
-		// kept the image. Other failures, also of a resend, came before the recheck or wrote the
-		// image anew, and name no staged image.
+		// kept the image. A recheck that failed to mount or read the store retired the image too,
+		// but refused no config, so the answer names no apply-config --staged. Other failures, also
+		// of a resend, came before the recheck or wrote the image anew, and name no staged image.
 		var retired *upgrade.StagedRetiredError
 		if errors.As(err, &retired) {
+			var check *upgrade.CheckError
+			if !errors.As(retired.Err, &check) {
+				return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the image staged to boot next was retired with it", err)
+			}
 			return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the image staged to boot next was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
 		}
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)

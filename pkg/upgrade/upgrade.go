@@ -107,6 +107,14 @@ func (e *StagedRetiredError) Error() string { return e.Err.Error() }
 
 func (e *StagedRetiredError) Unwrap() error { return e.Err }
 
+// CheckError is a refusal of the image by CheckStore, as opposed to a failure to mount the store
+// it checks or to read the UKI that names the store's system. Err is the refusal.
+type CheckError struct{ Err error }
+
+func (e *CheckError) Error() string { return e.Err.Error() }
+
+func (e *CheckError) Unwrap() error { return e.Err }
+
 // Install installs the image whose store, hash tree and UKI the stream holds, in that order, into
 // the inactive slot and makes it the next boot. Everything is checked before the slot is
 // retired, except what only the received image tells; the slot stays retired until that passed.
@@ -276,8 +284,8 @@ func retired(e Entry, imageID string, booted Entry, running []byte) bool {
 
 // recheck checks the image a staged entry boots, as an upgrade checks one it writes. When the
 // check fails, the slot and the entry are retired, as after a failed check of a written image,
-// and the running image stays the next boot; the error is then a StagedRetiredError. When the
-// retirement fails too, the image still boots next, and the error says so.
+// and the running image stays the next boot; the error is then a StagedRetiredError, which holds
+// a CheckError when CheckStore refused the image. When the retirement fails too, the image still boots next, and the error says so.
 func (n *Node) recheck(ctx context.Context, h Header, slot Slot, staged Entry, all []Entry, booted Entry, running []byte) error {
 	if n.CheckStore == nil {
 		return nil

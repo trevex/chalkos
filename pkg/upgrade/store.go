@@ -117,9 +117,15 @@ func (n *Node) storeDir() string {
 }
 
 // checkStore mounts the slot's store read-only through dm-verity with the image's root hash and
-// passes it to n.CheckStore with the system the UKI at uki boots, then unmounts it.
+// passes it to n.CheckStore with the system the UKI at uki boots, then unmounts it. A refusal of
+// n.CheckStore is a CheckError.
 func (n *Node) checkStore(ctx context.Context, h Header, slot Slot, ukiPath string) error {
-	return n.mountStore(ctx, h.RootHash, slot, ukiPath, n.CheckStore)
+	return n.mountStore(ctx, h.RootHash, slot, ukiPath, func(st Store) error {
+		if err := n.CheckStore(st); err != nil {
+			return &CheckError{Err: err}
+		}
+		return nil
+	})
 }
 
 // ReadImage reads the store of the image with the root hash, which the inactive slot holds, such

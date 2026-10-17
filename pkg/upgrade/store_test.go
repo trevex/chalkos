@@ -123,6 +123,10 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 	if errors.As(err, &retired) {
 		t.Errorf("install = %v, a StagedRetiredError", err)
 	}
+	var check *CheckError
+	if !errors.As(err, &check) {
+		t.Errorf("install = %v, want a CheckError", err)
+	}
 	if toplevel != "/nix/store/x" {
 		t.Errorf("toplevel = %q, want the UKI's init= directory", toplevel)
 	}
@@ -196,6 +200,36 @@ func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
 	}
 }
 
+// TestAStagedStoreThatDoesNotMountIsNoRefusal: a recheck of the staged image whose store does not
+// mount retires the image as a refusal does, but its error holds no CheckError: the check never
+// ran, so the image's config was not refused.
+func TestAStagedStoreThatDoesNotMountIsNoRefusal(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, old)
+	base := l.node.Run
+	mounted := func(dir string) {
+		os.RemoveAll(dir)
+		writeStore(t, dir)
+	}
+	l.node.Run = storeRunner{Runner: base, calls: &[]string{}, mounted: mounted}
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	checks := 0
+	l.node.CheckStore = func(Store) error { checks++; return nil }
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.node.Run = storeRunner{Runner: base, calls: &[]string{}, mounted: mounted, mountErr: errors.New("wrong fs type")}
+	_, err := l.install(img)
+	var retired *StagedRetiredError
+	var check *CheckError
+	if !errors.As(err, &retired) || errors.As(err, &check) || !strings.Contains(err.Error(), "mount the written store") || checks != 1 {
+		t.Fatalf("install = %v after %d checks, want a StagedRetiredError of the mount without a CheckError", err, checks)
+	}
+	if e, name := l.boot(); name != old.name {
+		t.Errorf("the disk boots %s from %s", name, e.File)
+	}
+}
+
 func TestToplevel(t *testing.T) {
 	for cmdline, want := range map[string]string{
 		"init=/nix/store/x/init usrhash=ab":                   "/nix/store/x",
@@ -260,7 +294,8 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 	l.boots(img, 2)
 	l.node.Change = nil
 
-	if _, err := l.install(img); !errors.Is(err, refusal) || !errors.As(err, &retired) {
+	var check *CheckError
+	if _, err := l.install(img); !errors.Is(err, refusal) || !errors.As(err, &retired) || !errors.As(retired.Err, &check) {
 		t.Fatalf("install = %v, want the check's refusal, which retired the staged image", err)
 	}
 	if e, name := l.boot(); name != old.name || l.file(res.Entry) != nil {
