@@ -84,3 +84,23 @@ func TestLibraryErrors(t *testing.T) {
 		}
 	}
 }
+
+// Maps iterate in key order, so lists built from them, such as of document names, are sorted,
+// also in the maps they hold.
+func TestMapsIterateInKeyOrder(t *testing.T) {
+	inner := map[string]any{}
+	outer := map[string]any{"in": inner}
+	for _, k := range strings.Split("q w e r t y u i o p a s d f", " ") {
+		inner[k] = true
+		outer[k] = true
+	}
+	for expr, want := range map[string]string{
+		`x.map(k, k).join("")`:                   "adefiinopqrstuwy",
+		`x["in"].filter(k, x["in"][k]).join("")`: "adefiopqrstuwy",
+	} {
+		got, err := eval(t, expr, outer)
+		if err != nil || got != want {
+			t.Errorf("%s = %v, %v; want %q", expr, got, err, want)
+		}
+	}
+}

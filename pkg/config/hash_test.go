@@ -167,3 +167,27 @@ spec: {data: {token: unused}}
 		t.Errorf("an unreferenced Secret's change: %v -> %v, want no kind to change", before, after)
 	}
 }
+
+// Hashed hides a Secret's values as Hash does and keeps other documents as they are.
+func TestHashed(t *testing.T) {
+	docs := parseDocs(t, `apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: s}
+spec: {data: {token: test}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: lab}
+spec: {endpoint: "https://10.0.0.1:6443"}
+`)
+	sum := sha256.Sum256([]byte("test"))
+	if got := docs[0].Hashed()["spec"].(map[string]any)["data"].(map[string]any)["token"]; got != hex.EncodeToString(sum[:]) {
+		t.Errorf("the Secret's token = %v", got)
+	}
+	if got := docs[0].Object["spec"].(map[string]any)["data"].(map[string]any)["token"]; got != "test" {
+		t.Errorf("Hashed changed the Secret itself: %v", got)
+	}
+	if !reflect.DeepEqual(docs[1].Hashed(), docs[1].Object) {
+		t.Errorf("the Cluster = %v", docs[1].Hashed())
+	}
+}

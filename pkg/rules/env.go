@@ -23,6 +23,7 @@ func newEnv(variables ...string) (*cel.Env, error) {
 		ext.Strings(),
 		ext.Bindings(),
 		library(),
+		cel.CustomTypeAdapter(adapter{}),
 	}
 	for _, v := range variables {
 		opts = append(opts, cel.Variable(v, cel.DynType))
