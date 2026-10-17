@@ -48,8 +48,9 @@ type upgradeRun struct {
 	timeout, drainTimeout, poll, quorumWait time.Duration
 	out                                     sync.Mutex
 	// role is the role of the credentials. Below admin, a node accepts no config with an upgrade,
-	// so withheld is set and the run sends none: each node carries its own over. A node that
-	// refuses to show its config sets it too, should the role chalkctl read be wrong.
+	// so with an inventory withheld is set and the run sends none: each node carries its own over.
+	// A partial cluster has no config to send, and each node says so. A node that refuses to show
+	// its config sets withheld too, should the role chalkctl read be wrong.
 	role         string
 	withheld     atomic.Bool
 	withholdOnce sync.Once

@@ -158,7 +158,7 @@ admin role, as ApplyConfig does. Config names a node's networks, volumes and `Ad
 and a control plane applies the objects of `Addon` documents to the cluster, so config an operator
 may not deliver to the running image it may not deliver with the next one either. Without config
 the node carries the running image's over to the new image. `chalkctl upgrade` with an operator
-client file therefore sends no config and prints
+client file therefore sends no config and, with an inventory, prints
 `config not delivered: the operator role cannot deliver config; each node carries its own over`.
 GetConfig, which returns a node's config with its secret values hashed, needs the admin role too:
 names, addresses and the shape of the config tell an attacker much about the node.

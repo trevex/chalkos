@@ -97,8 +97,8 @@ new image accepts, such as a document of a kind its extension declares, goes wit
 Without an inventory, chalkctl sends no config, and the node carries the documents of the running
 image's slot over, checked against the new image the same way. Delivering config with an upgrade
 needs the [admin](../reference/glossary.md#admin) role, as `apply-config` does. With an operator
-client file chalkctl sends no config either, and prints one line for the run instead of a line per
-node:
+client file chalkctl sends no config either, and with an inventory prints one line for the run
+instead of a line per node:
 
 ```text
 config not delivered: the operator role cannot deliver config; each node carries its own over

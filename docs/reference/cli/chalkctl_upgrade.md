@@ -32,8 +32,8 @@ image, chalkctl prints a line of what the node's config changes against the conf
 it runs, as apply-config does; --diff prints the whole diff for every node and changes nothing.
 
 Delivering config with the upgrade needs the admin role, which the secrets file and an admin
-client file grant. With an operator client file chalkctl sends no config, says so once, and each
-node carries its own over; --diff needs the admin role.
+client file grant. With an operator client file chalkctl sends no config, says so once when there
+is an inventory, and each node carries its own over; --diff needs the admin role.
 
 A node gets the image in its inactive slot, is cordoned and drained within its pods'
 PodDisruptionBudgets, reboots into the image, and is uncordoned once the boot was found healthy
