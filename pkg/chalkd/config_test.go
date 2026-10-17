@@ -143,7 +143,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 		t.Fatal(err)
 	}
 	var id identity.Identity
-	if err := json.Unmarshal(c.identity, &id); err != nil {
+	if err := json.Unmarshal(c.Identity, &id); err != nil {
 		t.Fatal(err)
 	}
 	section, err := json.Marshal(id.Storage)
@@ -153,8 +153,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	write(t, filepath.Join(dir, "storage.json"), string(section))
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}}}}`)
-	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(c.identity))
-	if err := store.Write(s.Loader.Config, c.stored); err != nil {
+	if err := store.Write(slotOf(t, s), c); err != nil {
 		t.Fatal(err)
 	}
 	return s, r
@@ -182,18 +181,18 @@ func TestApplyConfig(t *testing.T) {
 	if !slices.Equal(resp.RestartedUnits, []string{"demo"}) || len(resp.Changes) != 0 {
 		t.Errorf("response = %+v", resp)
 	}
-	if v, err := store.Version(s.Loader.Config); err != nil || v != hashOf(t, next) {
+	if v, err := store.Version(slotOf(t, s)); err != nil || v != hashOf(t, next) {
 		t.Errorf("stored version = %q, %v; want the hash of the delivered documents", v, err)
 	}
-	stored := readFile(t, filepath.Join(s.Loader.Config, "documents", "demo.example.org", "Demo", "one.json"))
+	stored := readFile(t, filepath.Join(slotOf(t, s), "documents", "demo.example.org", "Demo", "one.json"))
 	if !strings.Contains(stored, `"name":"second"`) || !strings.Contains(stored, `"replicas":1`) {
 		t.Errorf("stored Demo = %s, want the new name and the schema's default replicas", stored)
 	}
-	if info, err := os.Stat(filepath.Join(s.Loader.Config, "documents", "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(filepath.Join(slotOf(t, s), "documents", "secrets", "demo.json")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("stored Secret: %v, %v", info, err)
 	}
 	var id identity.Identity
-	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))), &id); err != nil ||
+	if err := json.Unmarshal([]byte(identityOf(t, s)), &id); err != nil ||
 		id.Hostname != "n1" || id.Cluster != "lab" || id.Platform != "metal" {
 		t.Errorf("identity on STATE = %+v, %v", id, err)
 	}
@@ -257,7 +256,7 @@ func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v for a refused config", r.calls)
 	}
-	if v, _ := store.Version(s.Loader.Config); v != hashOf(t, baseConfig) {
+	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
 		t.Error("stored a refused config")
 	}
 }
@@ -270,7 +269,7 @@ func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	var id identity.Identity
-	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(s.Paths.StateDir, "identity.json"))), &id); err != nil {
+	if err := json.Unmarshal([]byte(identityOf(t, s)), &id); err != nil {
 		t.Fatal(err)
 	}
 	if k := id.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
@@ -333,17 +332,33 @@ func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 	}
 }
 
-// TestApplyConfigFailureKeepsKubernetesRestarts: the identity is on STATE once applyIdentity
-// ran, so a retry would find it unchanged; Kubernetes is restarted even when the config fails.
+// TestApplyConfigFailureKeepsKubernetesRestarts: Kubernetes is restarted even when the slot cannot
+// be written after it, and since the slot still holds the old identity, a retry restarts it again
+// rather than finding nothing changed.
 func TestApplyConfigFailureKeepsKubernetesRestarts(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
-	// STATE holds a file where the config link belongs, which the store refuses to read.
-	write(t, s.Loader.Config, "not a config set")
-	if _, err := apply(s, kubernetesIdentity("n1"), ""); err == nil || !strings.Contains(err.Error(), "stored config") {
-		t.Fatalf("err = %v, want the config's failure", err)
+	slots := filepath.Dir(slotOf(t, s))
+	// The directory of slots takes no new slot directory.
+	if err := os.Chmod(slots, 0o555); err != nil {
+		t.Fatal(err)
 	}
-	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	if _, err := apply(s, kubernetesIdentity("n1"), ""); err == nil || !strings.Contains(err.Error(), "store the config") {
+		t.Fatalf("err = %v, want the slot's failure", err)
+	}
+	restart := "systemctl restart chalkos-kubernetes.service kubelet.service"
+	if !slices.Contains(r.calls, restart) {
 		t.Errorf("commands = %v, want Kubernetes restarted", r.calls)
+	}
+	if err := os.Chmod(slots, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.calls = nil
+	if _, err := apply(s, kubernetesIdentity("n1"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.calls, restart) {
+		t.Errorf("the retry ran %v, want Kubernetes restarted again", r.calls)
 	}
 }
 
@@ -392,7 +407,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	var id identity.Identity
-	if err := json.Unmarshal(c.identity, &id); err != nil {
+	if err := json.Unmarshal(c.Identity, &id); err != nil {
 		t.Fatal(err)
 	}
 	section, err := json.Marshal(id.Storage)
@@ -404,7 +419,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {
 	  "system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "`+varUUID+`"}},
 	  "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "`+extraUUID+`"}}}}`)
-	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(c.identity))
+	writeIdentity(t, s, string(c.Identity))
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 	r.rules = []rule{
 		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},

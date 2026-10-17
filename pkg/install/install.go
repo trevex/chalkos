@@ -58,8 +58,6 @@ func Installed(stateDir string) (bool, error) {
 
 // Request is what both flows install.
 type Request struct {
-	// Identity is the node's identity as delivered (JSON); STATE keeps it as it is.
-	Identity []byte
 	// Section is the identity's storage section.
 	Section storage.Section
 	// Kubernetes is the identity's Kubernetes section; nil on a node whose image has no Kubernetes.
@@ -73,16 +71,19 @@ type Request struct {
 	// KubernetesShare is the node's share of the Kubernetes secrets (JSON); empty on a node whose
 	// image has no Kubernetes.
 	KubernetesShare []byte
-	// Config is the node's config set as STATE keeps it, when it was delivered config; nil for
-	// an identity.
-	Config *store.Stored
+	// Config is the node's config as the config slot of the image installed keeps it, with the
+	// identity it translates to as delivered (JSON), which the slot keeps as it is.
+	Config store.Stored
+	// RootHash is the root hash of the running image's store, whose slot an install in place
+	// writes; an install from parts writes the slot of the image it installs.
+	RootHash []byte
 	// Images is the provenance record STATE starts with, as chalkd keeps it in
 	// chalkd/images.json; nil writes none.
 	Images []byte
 }
 
 func (r Request) validate() error {
-	if len(r.Identity) == 0 {
+	if len(r.Config.Identity) == 0 {
 		return errors.New("no identity")
 	}
 	if _, ok := r.Section.Disks[storage.SystemDisk]; !ok {
@@ -214,6 +215,9 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	if err := req.validate(); err != nil {
 		return err
 	}
+	if len(req.RootHash) == 0 {
+		return errors.New("the request names no root hash of the running image, whose config slot the install writes")
+	}
 	if installed, err := Installed(i.StateDir); err != nil {
 		return err
 	} else if installed {
@@ -238,7 +242,7 @@ func (i *Installer) InPlace(ctx context.Context, req Request) error {
 	if err := i.closeState(ctx); err != nil {
 		return err
 	}
-	if err := i.installOn(ctx, boot, defs, req); err != nil {
+	if err := i.installOn(ctx, boot, defs, req, req.RootHash); err != nil {
 		return err
 	}
 	if err := i.randomizeESP(ctx, boot); err != nil {
@@ -271,9 +275,9 @@ func (i *Installer) closeState(ctx context.Context) error {
 }
 
 // installOn runs the steps both flows share on disk, which holds the node's image: STATE, the
-// node's volumes, the fallback key and the identity. defs are the image's repart definitions
-// of the system region.
-func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request) error {
+// node's volumes, the fallback key and the config slot of the image whose store has the root
+// hash, with the identity. defs are the image's repart definitions of the system region.
+func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request, rootHash []byte) error {
 	policy := req.Section.Encryption
 	if err := i.prepareState(ctx, disk, defs, policy); err != nil {
 		return err
@@ -355,7 +359,6 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 		data []byte
 		perm fs.FileMode
 	}{
-		{"identity.json", req.Identity, 0o600},
 		// One file, so the chain and the key are only ever replaced together.
 		{"chalkd/node.pem", nodeFile, 0o600},
 		{"chalkd/ca.crt", req.CA, 0o644},
@@ -370,10 +373,9 @@ func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs 
 			return err
 		}
 	}
-	if req.Config != nil {
-		if err := store.Write(filepath.Join(i.StateDir, "config"), *req.Config); err != nil {
-			return fmt.Errorf("store the config: %w", err)
-		}
+	// The identity is in the slot, so the boot applies it with the documents it came from.
+	if err := store.Write(store.Slot(filepath.Join(i.StateDir, "config"), rootHash), req.Config); err != nil {
+		return fmt.Errorf("store the config: %w", err)
 	}
 	if len(req.KubernetesShare) > 0 {
 		// validate already parsed and checked the share; encode it again so STATE holds the

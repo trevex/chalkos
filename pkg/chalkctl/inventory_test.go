@@ -255,7 +255,7 @@ func TestInstallFromTheInventory(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"install", "n1", "--insecure", "--inventory", path, "--address", addr}); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config == nil || got.Config.Version != inventoryVersion(t, path) {
+	if got.Config.Version != inventoryVersion(t, path) {
 		t.Fatalf("install request config = %+v, want the inventory's", got.Config)
 	}
 	for _, d := range got.Config.Documents {
@@ -297,7 +297,7 @@ func TestInstallTakesTheImageOfItsImageDocument(t *testing.T) {
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Image.RootHash) == 0 || got.Config == nil {
+	if len(got.Image.RootHash) == 0 || got.Config.Version == "" {
 		t.Errorf("install request = %+v", got)
 	}
 	md, _ := os.ReadFile(filepath.Join(img, "metadata.json"))

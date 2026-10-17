@@ -1,5 +1,6 @@
-// Package nodeconfig applies a node's stored config on the node, at boot in chalkos-config.service
-// and after every ApplyConfig: it writes the identity the config translates to, as
+// Package nodeconfig applies the running image's config slot on the node, at boot in
+// chalkos-config.service and after every ApplyConfig: it writes the identity the config
+// translates to, as
 // /run/chalkos/node.json, which the node's Kubernetes side reads, the networkd units and chrony's
 // time servers, and sets the hostname. It writes the config's documents for the units that read
 // config kinds, and the Kubernetes cluster it describes for chalkd, and tells which units read
@@ -23,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // Header marks the networkd units the loader writes, so it removes only its own.
@@ -37,8 +39,9 @@ type Consumer struct {
 
 // Loader holds the paths the identity is applied to; tests point them at temporary directories.
 type Loader struct {
-	// Identity is the node's identity on STATE.
-	Identity string
+	// Slots is the directory of the node's config slots on STATE, one per image, and Cmdline the
+	// running kernel's command line, whose usrhash= names the running image and so its slot.
+	Slots, Cmdline string
 	// RunDir receives node.json, config/ and credentials/.
 	RunDir string
 	// NetworkDir receives networkd units; units there take precedence over the image's.
@@ -47,9 +50,7 @@ type Loader struct {
 	Consumers string
 	// ChronySources receives the time servers as chrony's sources file; empty writes none.
 	ChronySources string
-	// Config is the node's config set on STATE, and Schemas the image's schemas, which tell the
-	// secretRef fields of its documents.
-	Config  string
+	// Schemas are the image's schemas, which tell the secretRef fields of its documents.
 	Schemas string
 	// KubernetesImage is the image's Kubernetes facts, absent on an image without Kubernetes;
 	// ClusterFile receives the cluster the config gives on it, which chalkd's Kubernetes side
@@ -62,12 +63,12 @@ type Loader struct {
 // Default applies the identity on the running node.
 func Default() Loader {
 	return Loader{
-		Identity:        "/state/identity.json",
 		RunDir:          "/run/chalkos",
 		NetworkDir:      "/run/systemd/network",
 		Consumers:       "/etc/chalkos/consumers.json",
 		ChronySources:   "/run/chalkos/chrony/identity.sources",
-		Config:          "/state/config",
+		Slots:           "/state/config",
+		Cmdline:         "/proc/cmdline",
 		Schemas:         "/etc/chalkos/schemas",
 		KubernetesImage: "/etc/chalkos/kubernetes/image.json",
 		ClusterFile:     "/run/chalkos/kubernetes/cluster.json",
@@ -82,34 +83,76 @@ type identityFields struct {
 	Time         identity.Time     `json:"time"`
 }
 
-// Load applies the identity recorded on STATE, then writes the node's stored config for its
-// consumers. A node without an identity is not installed, and nothing is applied.
-func (l Loader) Load() error {
-	data, err := os.ReadFile(l.Identity)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
+// Slot is the running image's config slot: the one below Slots named by the root hash of the store
+// the kernel command line's usrhash= boots.
+func (l Loader) Slot() (string, error) {
+	cmdline, err := os.ReadFile(l.Cmdline)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("read the kernel command line: %w", err)
 	}
-	if err := l.Apply(data); err != nil {
-		return err
+	hash, err := uki.UsrHash(string(cmdline))
+	if err != nil {
+		return "", fmt.Errorf("the running image: %w", err)
 	}
-	return l.LoadConfig()
+	return store.Slot(l.Slots, hash), nil
 }
 
-// LoadConfig writes the config set stored on STATE for the units that read it: its documents,
-// Secrets excepted, below RunDir/config, and for each consumer of kinds the values their
-// secretRefs name below RunDir/credentials/<unit>. It does not check the set against the image's
-// schemas again: chalkd stored it only once it passed, and a schema that changed since must not
-// keep the node from booting. A node without a set gets empty directories, so its units load
-// their credentials all the same. On an image with Kubernetes it then writes the cluster the set
-// gives, and removes it for a node without a set.
-func (l Loader) LoadConfig() error {
-	stored, found, err := store.Read(l.Config)
+// Load applies the running image's config slot: the identity it holds, then its documents for
+// their consumers. A node without any slot is not installed, as the installer, and nothing is
+// applied. A node whose slots are all another image's, as one booted into an image no install or
+// upgrade wrote config for, fails without applying any: the node runs without config, its health
+// check fails, and a counted boot falls back to an image that has its own.
+func (l Loader) Load() error {
+	slots, err := store.Slots(l.Slots)
 	if err != nil {
-		return fmt.Errorf("read the stored config: %w", err)
+		return fmt.Errorf("list the config slots: %w", err)
 	}
+	if len(slots) == 0 {
+		return nil
+	}
+	stored, err := l.readSlot()
+	if err != nil {
+		return err
+	}
+	if err := l.Apply(stored.Identity); err != nil {
+		return err
+	}
+	return l.writeConfig(stored)
+}
+
+// readSlot reads the running image's slot, which must exist.
+func (l Loader) readSlot() (store.Stored, error) {
+	dir, err := l.Slot()
+	if err != nil {
+		return store.Stored{}, err
+	}
+	stored, found, err := store.Read(dir)
+	if err != nil {
+		return store.Stored{}, fmt.Errorf("read the config slot %s: %w", dir, err)
+	}
+	if !found {
+		return store.Stored{}, fmt.Errorf("STATE holds no config for the running image %s: no install or upgrade wrote config for it", filepath.Base(dir))
+	}
+	return stored, nil
+}
+
+// LoadConfig writes the running image's slot for the units that read it: its documents, Secrets
+// excepted, below RunDir/config, and for each consumer of kinds the values their secretRefs name
+// below RunDir/credentials/<unit>. On an image with Kubernetes it then writes the cluster the
+// documents give.
+func (l Loader) LoadConfig() error {
+	stored, err := l.readSlot()
+	if err != nil {
+		return err
+	}
+	return l.writeConfig(stored)
+}
+
+// writeConfig writes a slot's documents as LoadConfig does. It does not check them against the
+// image's schemas again: the slot is the image's own, written only once they passed. A slot without
+// documents, an identity alone, gets empty directories, so its units load their credentials all
+// the same, and no cluster.
+func (l Loader) writeConfig(stored store.Stored) error {
 	consumers, err := ReadConsumers(l.Consumers)
 	if err != nil {
 		return err
@@ -118,6 +161,7 @@ func (l Loader) LoadConfig() error {
 	for unit, c := range consumers {
 		kinds[unit] = c.Kinds
 	}
+	found := len(stored.Documents) > 0
 	var schemas *schema.Schemas
 	if found {
 		if schemas, err = schema.LoadSchemas(l.Schemas); err != nil {

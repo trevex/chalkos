@@ -58,7 +58,7 @@ func installedServer(t *testing.T, recorded string, extraPinned bool, more ...te
 		pins += `, "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "` + extraUUID + `"}}`
 	}
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {`+pins+`}}`)
-	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), identityWith(recorded))
+	writeIdentity(t, s, identityWith(recorded))
 	r.rules = []rule{
 		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
@@ -146,7 +146,7 @@ func TestApplyConfigAddsVolume(t *testing.T) {
 	if err != nil || recorded.Volumes["extra"].MountPoint != "/srv/extra" {
 		t.Errorf("recorded section = %+v, %v", recorded, err)
 	}
-	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(got) != next {
+	if got, _ := readIdentity(s); string(got) != next {
 		t.Errorf("identity on STATE = %s", got)
 	}
 }
@@ -164,7 +164,7 @@ func TestApplyConfigWithoutStorageChanges(t *testing.T) {
 func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	withNodeCertificate(t, s)
-	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+	before, _ := readIdentity(s)
 	_, err := apply(s, identityWith(section("1G", "")), secret)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") {
 		t.Fatalf("err = %v, want a refusal naming a reinstall, since a reset cannot change VAR", err)
@@ -172,7 +172,7 @@ func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v for a refused identity", r.calls)
 	}
-	if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
+	if after, _ := readIdentity(s); string(after) != string(before) {
 		t.Error("recorded a refused identity")
 	}
 }
@@ -672,7 +672,7 @@ func mismatch(r *fakeRunner) {
 
 func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	before, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+	before, _ := readIdentity(s)
 	mismatch(r)
 	_, err := apply(s, identityWith(section("", "ext4")), "mistyped")
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the fallback secret does not match the node's existing fallback keyslot") {
@@ -684,7 +684,7 @@ func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
 	if r.inputs[testState] != "mistyped" {
 		t.Errorf("inputs = %v", r.inputs)
 	}
-	if after, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(after) != string(before) {
+	if after, _ := readIdentity(s); string(after) != string(before) {
 		t.Error("recorded a refused identity")
 	}
 }
@@ -807,8 +807,7 @@ func withNodeCertificate(t *testing.T, s *Server) pki.CertKey {
 func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	nodeCA := withNodeCertificate(t, s)
-	idPath := filepath.Join(s.Paths.StateDir, "identity.json")
-	recorded, _ := os.ReadFile(idPath)
+	recorded, _ := readIdentity(s)
 	before := s.Certificate.Fingerprint()
 	renewed, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
 	if err != nil {
@@ -844,7 +843,7 @@ func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 	if s.Certificate.Fingerprint() == before {
 		t.Error("the delivered certificate is not served")
 	}
-	if got, _ := os.ReadFile(idPath); string(got) != string(recorded) || len(r.calls) != 0 {
+	if got, _ := readIdentity(s); string(got) != string(recorded) || len(r.calls) != 0 {
 		t.Errorf("delivering a certificate alone changed the identity or ran %v", r.calls)
 	}
 }

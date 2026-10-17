@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -224,7 +222,7 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 		if err != nil {
 			return nil, err
 		}
-		r.identity, r.next, r.schemas = string(c.identity), c.stored, schemas
+		r.identity, r.next, r.schemas = string(c.Identity), c, schemas
 	}
 	return s.apply(ctx, r)
 }
@@ -245,21 +243,24 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
+	slot, prev, found, err := s.runningSlot()
+	if err != nil {
+		return nil, err
+	}
 	identity := r.identity
 	if keep {
-		data, err := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
-		if err != nil {
-			return nil, failed(connect.CodeInternal, "read the identity: %v", err)
+		if !found {
+			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the running image, so the node has no identity to keep; deliver config with chalkctl apply-config")
 		}
-		identity = string(data)
+		identity = string(prev.Identity)
 	}
 	d, err := parseIdentity(identity)
 	if err != nil {
 		return nil, err
 	}
 	// The cluster the config gives, checked before anything changes, and whether it differs from
-	// the stored config's; nil on an image without Kubernetes or without new config. The stored
-	// set is replaced last, so a retry after a failed restart still finds the cluster changed.
+	// the running slot's; nil on an image without Kubernetes or without new config. The slot is
+	// replaced last, so a retry after a failed restart still finds the cluster changed.
 	var cluster *k8s.Cluster
 	clusterChanged, addonsChanged := false, false
 	if !keep {
@@ -268,14 +269,12 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
 			}
 			if cluster != nil {
-				var prev *k8s.Cluster
-				if prev, addonsChanged, err = s.storedKubernetes(r.next.Documents); err != nil {
+				var was *k8s.Cluster
+				was, addonsChanged = s.storedKubernetes(prev, found, r.next.Documents)
+				if err := s.checkFixed(was, cluster); err != nil {
 					return nil, err
 				}
-				if err := s.checkFixed(prev, cluster); err != nil {
-					return nil, err
-				}
-				clusterChanged = !sameCluster(prev, cluster)
+				clusterChanged = !sameCluster(was, cluster)
 			}
 		}
 	}
@@ -303,7 +302,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	}
 	var changes []storage.Change
 	var restarted []string
+	// The identity the node ran, which the Kubernetes side compares with the one it runs next.
 	old := d.data
+	if !keep {
+		old = prev.Identity
+	}
 	if !keep {
 		recorded, pins, err := s.recorded()
 		if err != nil {
@@ -328,7 +331,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 				return nil, err
 			}
 		}
-		if old, err = s.applyIdentity(ctx, d.data); err != nil {
+		if err := s.applyIdentity(ctx, old, d.data); err != nil {
 			return nil, err
 		}
 		if cluster != nil {
@@ -360,11 +363,15 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			act = reloadLoops
 		}
 	}
-	// The config comes last: identity.json is on STATE once applyIdentity ran, so a retry after
-	// a failure here finds the identity unchanged and would not restart Kubernetes again. A
-	// config that failed before it was stored is applied in full by the retry.
+	// The slot comes last, documents and identity in one rename: until it is written, STATE holds
+	// the identity and the set the node ran before, which a boot applies whole, and a retry
+	// compares the delivery with them and applies the identity, Kubernetes and the consumers'
+	// config again. storage.json, written before, is the machine's rather than an image's:
+	// applyStorage records the section once its additive changes are made, so a retry finds
+	// them recorded and makes none twice.
 	if !keep {
-		units, err := s.applyConfig(ctx, r.next, r.schemas)
+		r.next.Identity = d.data
+		units, err := s.applyConfig(ctx, slot, prev, r.next, r.schemas)
 		if err != nil {
 			// The cluster or share the loops read is in place already.
 			s.actOnLoops(act)
@@ -638,22 +645,14 @@ func (s *Server) stopUnits(ctx context.Context, units []string) error {
 	return nil
 }
 
-// applyIdentity records the identity on STATE and applies it. It returns the identity it
-// replaced.
-func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]byte, error) {
-	path := filepath.Join(s.Paths.StateDir, "identity.json")
-	old, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	}
-	if err := install.WriteFile(path, data, 0o600); err != nil {
-		return nil, failed(connect.CodeInternal, "record the identity: %v", err)
-	}
+// applyIdentity applies the identity data in place of old, the one the node ran. The running slot
+// records it, with the config it came from, once the delivery is applied.
+func (s *Server) applyIdentity(ctx context.Context, old, data []byte) error {
 	if err := s.Loader.Apply(data); err != nil {
-		return nil, failed(connect.CodeInternal, "apply the identity: %v", err)
+		return failed(connect.CodeInternal, "apply the identity: %v", err)
 	}
 	if _, err := s.Run.Run(ctx, "networkctl", "reload"); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return failed(connect.CodeInternal, "%v", err)
 	}
 	if nodeconfig.TimeChanged(old, data) {
 		// chrony reads the sources file again when it starts, so a chrony that is down misses
@@ -662,7 +661,7 @@ func (s *Server) applyIdentity(ctx context.Context, data []byte) ([]byte, error)
 			log.Printf("time servers: %v", err)
 		}
 	}
-	return old, nil
+	return nil
 }
 
 // loopAction is what a delivery asks of the Kubernetes loops once it is stored.
@@ -729,27 +728,23 @@ func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, c
 	return units, keepLoops, nil
 }
 
-// storedKubernetes compares the stored config set with next on this image: it returns the
-// cluster the stored set gives, nil without a set or for a set that gives none, as one stored
-// before the image had Kubernetes settings, and whether the objects of next's Addon documents
-// differ from the stored set's.
-func (s *Server) storedKubernetes(next []config.Document) (*k8s.Cluster, bool, error) {
-	stored, found, err := store.Read(s.Loader.Config)
-	if err != nil {
-		return nil, false, failed(connect.CodeInternal, "read the stored config: %v", err)
-	}
+// storedKubernetes compares the running slot, stored, with next on this image: it returns the
+// cluster the slot gives, nil without a slot or for one that gives none, as one written before the
+// image had Kubernetes settings, and whether the objects of next's Addon documents differ from
+// the slot's.
+func (s *Server) storedKubernetes(stored store.Stored, found bool, next []config.Document) (*k8s.Cluster, bool) {
 	was, errWas := config.AddonObjectsOf(stored.Documents)
 	gets, errGets := config.AddonObjectsOf(next)
 	addonsChanged := errWas != nil || errGets != nil || !sameJSON(was, gets)
 	if !found {
-		return nil, addonsChanged, nil
+		return nil, addonsChanged
 	}
 	c, err := s.Loader.Cluster(stored.Documents)
 	if err != nil {
 		log.Printf("the stored config gives no Kubernetes cluster: %v", err)
-		return nil, addonsChanged, nil
+		return nil, addonsChanged
 	}
-	return c, addonsChanged, nil
+	return c, addonsChanged
 }
 
 // sameJSON reports whether a and b encode to the same JSON.
@@ -852,7 +847,7 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	if err != nil {
 		return nil, err
 	}
-	if err := s.resetVolume(ctx, m.Volume, string(c.identity), m.FallbackSecret); err != nil {
+	if err := s.resetVolume(ctx, m.Volume, string(c.Identity), m.FallbackSecret); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil

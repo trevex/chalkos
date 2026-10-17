@@ -27,16 +27,33 @@ func newTestLoader(t *testing.T) (Loader, *string) {
 	root := t.TempDir()
 	hostname := ""
 	l := Loader{
-		Identity:    filepath.Join(root, "state", "identity.json"),
 		RunDir:      filepath.Join(root, "run", "chalkos"),
 		NetworkDir:  filepath.Join(root, "run", "systemd", "network"),
 		Consumers:   filepath.Join(root, "etc", "consumers.json"),
-		Config:      filepath.Join(root, "state", "config"),
+		Slots:       filepath.Join(root, "state", "config"),
+		Cmdline:     filepath.Join(root, "cmdline"),
 		Schemas:     filepath.Join(root, "etc", "schemas"),
 		SetHostname: func(name string) error { hostname = name; return nil },
 	}
 	write(t, l.Consumers, "{}")
+	write(t, l.Cmdline, "init=/x usrhash="+running+"\n")
 	return l, &hostname
+}
+
+// running is the root hash of the image the test loader runs, as its kernel command line names it.
+var running = strings.Repeat("ab", 32)
+
+// writeSlot writes the slot of the image with the root hash, in hex, holding the identity and the
+// documents, as delivered and as their defaults leave them.
+func writeSlot(t *testing.T, l Loader, hash, identity, documents string) {
+	t.Helper()
+	docs, err := config.Parse(strings.NewReader(documents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(filepath.Join(l.Slots, hash), store.Stored{Delivered: docs, Documents: docs, Version: "v1", Identity: []byte(identity)}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func write(t *testing.T, path, content string) {
@@ -60,7 +77,7 @@ func read(t *testing.T, path string) string {
 
 func TestLoad(t *testing.T) {
 	l, hostname := newTestLoader(t)
-	write(t, l.Identity, nodeIdentity)
+	writeSlot(t, l, running, nodeIdentity, "")
 	// A unit from an earlier identity, and one an administrator placed there.
 	write(t, filepath.Join(l.NetworkDir, "05-old.network"), Header+"[Match]\nName=eth9\n")
 	write(t, filepath.Join(l.NetworkDir, "90-manual.network"), "[Match]\nName=eth8\n")
@@ -85,13 +102,49 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-func TestLoadWithoutIdentity(t *testing.T) {
+// TestLoadWithoutSlots applies nothing on a node without config slots, which is not installed, such
+// as the installer, whose STATE is not mounted: it reads no kernel command line either.
+func TestLoadWithoutSlots(t *testing.T) {
 	l, hostname := newTestLoader(t)
+	if err := os.Remove(l.Cmdline); err != nil {
+		t.Fatal(err)
+	}
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(l.RunDir, "node.json")); !os.IsNotExist(err) || *hostname != "" {
 		t.Error("applied an identity of a node that has none")
+	}
+}
+
+// TestLoadSelectsTheRunningImagesSlot applies the slot the kernel command line's usrhash= names,
+// not another image's.
+func TestLoadSelectsTheRunningImagesSlot(t *testing.T) {
+	l, hostname := newTestLoader(t)
+	writeSlot(t, l, strings.Repeat("cd", 32), strings.Replace(nodeIdentity, "w1", "other", 1), "")
+	writeSlot(t, l, running, nodeIdentity, "")
+	if err := l.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if *hostname != "w1" {
+		t.Errorf("hostname = %q, want the running image's w1", *hostname)
+	}
+	if slot, err := l.Slot(); err != nil || slot != filepath.Join(l.Slots, running) {
+		t.Errorf("slot = %s, %v", slot, err)
+	}
+}
+
+// TestLoadWithoutTheRunningImagesSlot fails on a node whose slots hold another image's config
+// alone, and applies none of it: the boot runs without config, so boot counting falls back to an
+// image that has its own.
+func TestLoadWithoutTheRunningImagesSlot(t *testing.T) {
+	l, hostname := newTestLoader(t)
+	writeSlot(t, l, strings.Repeat("cd", 32), nodeIdentity, "")
+	if err := l.Load(); err == nil || !strings.Contains(err.Error(), "no config for the running image "+running) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(l.RunDir, "node.json")); !os.IsNotExist(err) || *hostname != "" {
+		t.Error("applied another image's identity")
 	}
 }
 
@@ -175,18 +228,11 @@ func copySchemas(t *testing.T, dir string) {
 func TestLoadWritesConfig(t *testing.T) {
 	l, _ := newTestLoader(t)
 	copySchemas(t, l.Schemas)
-	write(t, l.Identity, nodeIdentity)
 	write(t, l.Consumers, `{
 	  "demo": {"kinds": ["Demo"], "restartOnChange": true},
 	  "idle": {"kinds": ["Cluster"], "restartOnChange": true}
 	}`)
-	docs, err := config.Parse(strings.NewReader(loaderConfig))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write(l.Config, store.Stored{Documents: docs, Version: "v1"}); err != nil {
-		t.Fatal(err)
-	}
+	writeSlot(t, l, running, nodeIdentity, loaderConfig)
 
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
@@ -210,7 +256,7 @@ func TestLoadWritesConfig(t *testing.T) {
 
 func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	l, _ := newTestLoader(t)
-	write(t, l.Identity, nodeIdentity)
+	writeSlot(t, l, running, nodeIdentity, "")
 	write(t, l.Consumers, `{"demo": {"kinds": ["Demo"], "restartOnChange": true}}`)
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
@@ -296,14 +342,7 @@ func kubernetesLoader(t *testing.T, documents string) Loader {
 	l.KubernetesImage = filepath.Join(root, "etc", "kubernetes", "image.json")
 	l.ClusterFile = filepath.Join(root, "run", "chalkos", "kubernetes", "cluster.json")
 	write(t, l.KubernetesImage, kubernetesImage)
-	write(t, l.Identity, nodeIdentity)
-	docs, err := config.Parse(strings.NewReader(documents))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write(l.Config, store.Stored{Documents: docs, Version: "v1"}); err != nil {
-		t.Fatal(err)
-	}
+	writeSlot(t, l, running, nodeIdentity, documents)
 	return l
 }
 
@@ -341,13 +380,10 @@ func TestLoadWithoutKubernetesDocument(t *testing.T) {
 	}
 }
 
-// A node without a set, as in maintenance mode, has no cluster file; an image without
-// Kubernetes neither.
+// A slot without documents, an identity alone, has no cluster file; an image without Kubernetes
+// neither.
 func TestLoadWithoutSetOrKubernetesRemovesTheCluster(t *testing.T) {
-	l := kubernetesLoader(t, kubernetesConfig)
-	if err := os.RemoveAll(l.Config); err != nil {
-		t.Fatal(err)
-	}
+	l := kubernetesLoader(t, "")
 	write(t, l.ClusterFile, "{}")
 	if err := l.Load(); err != nil {
 		t.Fatal(err)

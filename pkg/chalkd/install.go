@@ -53,16 +53,15 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	default:
 		return nil, failed(connect.CodeInvalidArgument, "the install header names no target")
 	}
-	text, stored, err := s.installConfig(h)
+	stored, err := s.installConfig(h)
 	if err != nil {
 		return nil, err
 	}
 	var id identity.Identity
-	if err := json.Unmarshal([]byte(text), &id); err != nil {
+	if err := json.Unmarshal(stored.Identity, &id); err != nil {
 		return nil, failed(connect.CodeInternal, "parse the identity: %v", err)
 	}
 	req := install.Request{
-		Identity:        []byte(text),
 		Config:          stored,
 		Section:         id.Storage,
 		Kubernetes:      id.Kubernetes,
@@ -74,6 +73,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
+		if req.RootHash, err = s.runningHash(); err != nil {
+			return nil, failed(connect.CodeInternal, "the running image: %v", err)
+		}
 		log.Print("installing in place")
 		err = s.InPlace(ctx, req)
 	case *nodev1.InstallHeader_Disk:

@@ -405,7 +405,8 @@ func testRequest(t *testing.T, section storage.Section) Request {
 		fallback = ""
 	}
 	return Request{
-		Identity:        text,
+		Config:          store.Stored{Identity: text},
+		RootHash:        runningHash,
 		Section:         section,
 		Kubernetes:      &identity.Kubernetes{NodeName: "n1"},
 		NodeCertificate: []byte(n.Certificate),
@@ -496,7 +497,6 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 	}
 
 	for name, want := range map[string]string{
-		"identity.json":   string(req.Identity),
 		"chalkd/node.pem": string(req.NodeCertificate) + string(req.NodeKey),
 		"chalkd/ca.crt":   string(req.CA),
 		"installed":       "2026-10-06T12:00:00Z\n",
@@ -917,6 +917,12 @@ func TestInPlaceWritesALoadableNodeCertificate(t *testing.T) {
 	}
 }
 
+// runningHash is the root hash of the image the test installer's node runs, whose config slot an
+// install in place writes.
+var runningHash = bytes.Repeat([]byte{0xab}, 32)
+
+// TestInPlaceStoresConfig writes the config with its identity to the running image's slot, and
+// no identity beside the slots.
 func TestInPlaceStoresConfig(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda, vdb)
@@ -926,25 +932,31 @@ func TestInPlaceStoresConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Config = &store.Stored{Documents: docs, Version: "abc"}
+	req.Config = store.Stored{Delivered: docs, Documents: docs, Version: "abc", Identity: req.Config.Identity}
 	if err := i.InPlace(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	got, found, err := store.Read(filepath.Join(i.StateDir, "config"))
-	if err != nil || !found || got.Version != "abc" || len(got.Documents) != 1 || got.Documents[0].Name != "n1" {
+	got, found, err := store.Read(store.Slot(filepath.Join(i.StateDir, "config"), runningHash))
+	if err != nil || !found || got.Version != "abc" || len(got.Documents) != 1 || got.Documents[0].Name != "n1" || string(got.Identity) != string(req.Config.Identity) {
 		t.Errorf("stored config = %+v, found %v, %v", got, found, err)
+	}
+	if _, err := os.Stat(filepath.Join(i.StateDir, "identity.json")); !os.IsNotExist(err) {
+		t.Errorf("wrote identity.json beside the slots: %v", err)
 	}
 }
 
-func TestInPlaceWithoutConfigStoresNone(t *testing.T) {
+// TestInPlaceNeedsTheRunningImage refuses an install in place that does not name the root hash
+// of the image the node runs, whose slot the config goes to.
+func TestInPlaceNeedsTheRunningImage(t *testing.T) {
 	r := &fakeRunner{}
 	i := newTestInstaller(t, r, vda, vdb)
-	r.add(inPlaceRules(i)...)
-	if err := i.InPlace(context.Background(), testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))); err != nil {
-		t.Fatal(err)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	req.RootHash = nil
+	if err := i.InPlace(context.Background(), req); err == nil || !strings.Contains(err.Error(), "no root hash") {
+		t.Errorf("err = %v", err)
 	}
-	if _, err := os.Lstat(filepath.Join(i.StateDir, "config")); !os.IsNotExist(err) {
-		t.Errorf("stored a config for an identity: %v", err)
+	if len(r.calls) != 0 {
+		t.Errorf("ran %v", r.calls)
 	}
 }
 

@@ -63,7 +63,7 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool) {
 			KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
 			EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 		},
-		Config:       filepath.Join(root, "state", "config"),
+		Slot:         s.Loader.Slot,
 		Objects:      func(k8s.Cluster) ([]map[string]any, error) { return nil, errors.New("no objects in this test") },
 		ControlPlane: func(_ context.Context, _ kpki.Share, applied func(int)) error { applied(19); return nil },
 		Node:         func(context.Context) (*corev1.Node, error) { return readyNode(), nil },
@@ -508,8 +508,7 @@ func TestStatusEtcdDataMissing(t *testing.T) {
 func TestApplyConfigRefusesShareOfAnotherKind(t *testing.T) {
 	for image, share := range map[string]string{k8s.KindWorker: k8s.KindControlPlane, k8s.KindControlPlane: k8s.KindWorker} {
 		s, r := kubernetesServer(t, image, false)
-		identity := filepath.Join(s.Paths.StateDir, "identity.json")
-		before, _ := os.ReadFile(identity)
+		before, _ := readIdentity(s)
 		_, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{KubernetesShare: testShare(t, share)})
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
 			t.Errorf("%s share on a %s image: %v", share, image, err)
@@ -520,7 +519,7 @@ func TestApplyConfigRefusesShareOfAnotherKind(t *testing.T) {
 		if _, err := os.Stat(s.Kubernetes.Paths.Share()); err == nil {
 			t.Errorf("%s share on a %s image was recorded", share, image)
 		}
-		if after, _ := os.ReadFile(identity); !bytes.Equal(after, before) {
+		if after, _ := readIdentity(s); !bytes.Equal(after, before) {
 			t.Errorf("%s share on a %s image: the identity was recorded", share, image)
 		}
 	}
@@ -1051,7 +1050,7 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 func TestObjectsAreTheAddOnsThenTheAddonDocuments(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
 	k := NewKubernetes()
-	k.Config = s.Kubernetes.Config
+	k.Slot = s.Loader.Slot
 	c, err := k8s.ReadCluster(s.Kubernetes.Paths.Cluster)
 	if err != nil {
 		t.Fatal(err)
@@ -1064,7 +1063,7 @@ spec: {objects: [{apiVersion: v1, kind: Namespace, metadata: {name: apps}}]}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Write(k.Config, store.Stored{Documents: docs, Version: "v1"}); err != nil {
+	if err := store.Write(slotOf(t, s), store.Stored{Delivered: docs, Documents: docs, Version: "v1"}); err != nil {
 		t.Fatal(err)
 	}
 	objects, err := k.Objects(c)
@@ -1323,7 +1322,7 @@ func TestApplyConfigAppliesChangedAddons(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, p.Bootstrapped(), "")
-	k.Config = s.Loader.Config
+	k.Slot = s.Loader.Slot
 	k.Objects = k.objects
 	applied := make(chan string, 10)
 	k.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {

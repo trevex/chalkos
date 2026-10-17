@@ -372,7 +372,7 @@ func TestRenewOnApplyConfig(t *testing.T) {
 			t.Error("delivering OS CAs alone renewed the node certificate")
 		case <-time.After(100 * time.Millisecond):
 		}
-		recorded, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+		recorded, _ := readIdentity(s)
 		if _, err := deliver(context.Background(), s, string(recorded), &nodev1.ApplyConfigRequest{}); err != nil {
 			t.Fatal(err)
 		}
@@ -475,7 +475,7 @@ func TestRenewOnApplyConfigRenewsTheControlPlane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recorded, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json"))
+	recorded, _ := readIdentity(s)
 	if _, err := deliver(context.Background(), s, string(recorded), &nodev1.ApplyConfigRequest{}); err != nil {
 		t.Fatal(err)
 	}

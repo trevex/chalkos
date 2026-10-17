@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"os"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -18,37 +19,31 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// configured is a delivered config set, checked against its image's schemas and translated into
-// the node's identity for that image.
-type configured struct {
-	stored   store.Stored
-	identity []byte
-}
-
 // configure parses text, YAML config documents, checks them as a set against schemas, fills in
-// their defaults and translates them into the identity of a node of the image t describes. The
-// set's version is the hash of the documents as delivered, before the defaults, as a client
-// computes it from the files it sends.
-func configure(text string, schemas *schema.Schemas, t config.Target) (configured, error) {
+// their defaults and translates them into the identity of a node of the image t describes: what
+// that image's config slot keeps. The set's version is the hash of the documents as delivered,
+// before the defaults, as a client computes it from the files it sends.
+func configure(text string, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
-		return configured{}, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
+		return store.Stored{}, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
 	}
 	version, err := config.Hash(docs)
 	if err != nil {
-		return configured{}, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
+		return store.Stored{}, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
 	}
 	set, id, err := translate(docs, schemas, t)
 	if err != nil {
-		return configured{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
+		return store.Stored{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
 	}
 	data, err := json.Marshal(id)
 	if err != nil {
-		return configured{}, failed(connect.CodeInternal, "encode the identity: %v", err)
+		return store.Stored{}, failed(connect.CodeInternal, "encode the identity: %v", err)
 	}
-	return configured{stored: store.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, identity: data}, nil
+	return store.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, nil
 }
 
 // translate checks docs as a set against schemas and translates them into the identity of a node
@@ -94,16 +89,11 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	return t, schemas, nil
 }
 
-// applyConfig keeps next as the node's config set, writes it for its consumers and restarts
-// those whose kinds changed: a kind changes when one of its documents does, or a Secret one of
-// them references. schemas are the running image's, which next was checked against. It returns
-// the restarted units.
-func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *schema.Schemas) ([]string, error) {
-	dir := s.Loader.Config
-	prev, _, err := store.Read(dir)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the stored config: %v", err)
-	}
+// applyConfig writes next to the running image's config slot, dir, which held prev, writes it for
+// its consumers and restarts those whose kinds changed: a kind changes when one of its documents
+// does, or a Secret one of them references. schemas are the running image's, which next was
+// checked against. It returns the restarted units.
+func (s *Server) applyConfig(ctx context.Context, dir string, prev, next store.Stored, schemas *schema.Schemas) ([]string, error) {
 	before, err := config.KindHashes(prev.Documents, schemas)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "hash the stored config: %v", err)
@@ -120,7 +110,7 @@ func (s *Server) applyConfig(ctx context.Context, next store.Stored, schemas *sc
 	if err := store.Write(dir, next); err != nil {
 		return nil, failed(connect.CodeInternal, "store the config: %v", err)
 	}
-	// From here on STATE holds the new set, so a retry compares it with itself and restarts
+	// From here on the slot holds the new set, so a retry compares it with itself and restarts
 	// nothing. A failure therefore names the units that still need a restart, rather than
 	// leaving a node whose units read the old config without saying so.
 	if err := s.Loader.LoadConfig(); err != nil {
@@ -171,11 +161,11 @@ func restartByHand(units []string) string {
 }
 
 // installConfig translates the config an install header delivers into the identity of the node
-// for the image installed, as JSON, and returns it with the config set the node keeps. In place,
+// for the image installed, and returns the config slot of that image, identity included. In place,
 // that image is the running one; from the installer, the header describes it.
-func (s *Server) installConfig(h *nodev1.InstallHeader) (string, *store.Stored, error) {
+func (s *Server) installConfig(h *nodev1.InstallHeader) (store.Stored, error) {
 	if h.Config == "" {
-		return "", nil, failed(connect.CodeInvalidArgument, "the header delivers no config")
+		return store.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
 	}
 	var (
 		t       config.Target
@@ -191,13 +181,9 @@ func (s *Server) installConfig(h *nodev1.InstallHeader) (string, *store.Stored, 
 		t, schemas, err = s.runningTarget()
 	}
 	if err != nil {
-		return "", nil, err
+		return store.Stored{}, err
 	}
-	c, err := configure(h.Config, schemas, t)
-	if err != nil {
-		return "", nil, err
-	}
-	return string(c.identity), &c.stored, nil
+	return configure(h.Config, schemas, t)
 }
 
 // headerTarget is the image an install from the installer writes, as its header describes it,
@@ -229,4 +215,25 @@ func imageTarget(platform string, kubernetesImage []byte) (config.Target, error)
 		t.Image = &facts
 	}
 	return t, nil
+}
+
+// runningSlot is the running image's config slot on STATE and what it holds; found is false while
+// it holds nothing.
+func (s *Server) runningSlot() (dir string, stored store.Stored, found bool, err error) {
+	if dir, err = s.Loader.Slot(); err != nil {
+		return "", store.Stored{}, false, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+	}
+	if stored, found, err = store.Read(dir); err != nil {
+		return "", store.Stored{}, false, failed(connect.CodeInternal, "read the running image's config slot: %v", err)
+	}
+	return dir, stored, found, nil
+}
+
+// runningHash is the root hash of the store the node runs, as the kernel command line names it.
+func (s *Server) runningHash() ([]byte, error) {
+	cmdline, err := os.ReadFile(s.Paths.Cmdline)
+	if err != nil {
+		return nil, fmt.Errorf("read the kernel command line: %w", err)
+	}
+	return uki.UsrHash(string(cmdline))
 }

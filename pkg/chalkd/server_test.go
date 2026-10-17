@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"io"
+	"io/fs"
 	"math/big"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -162,11 +164,11 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 		Run:  r,
 		Host: h,
 		Loader: nodeconfig.Loader{
-			Identity:        filepath.Join(root, "state", "identity.json"),
 			RunDir:          filepath.Join(root, "run", "chalkos"),
 			NetworkDir:      filepath.Join(root, "run", "network"),
 			Consumers:       filepath.Join(root, "consumers.json"),
-			Config:          filepath.Join(root, "state", "config"),
+			Slots:           filepath.Join(root, "state", "config"),
+			Cmdline:         filepath.Join(root, "cmdline"),
 			Schemas:         filepath.Join(root, "schemas"),
 			KubernetesImage: filepath.Join(root, "etc", "chalkos", "kubernetes", "image.json"),
 			SetHostname:     func(string) error { return nil },
@@ -184,9 +186,61 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	}
 	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
+	write(t, s.Paths.Cmdline, "init=/x usrhash="+runningRoot+"\n")
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
 	writeSchemas(t, s.Loader.Schemas)
 	return s, r
+}
+
+// runningRoot is the root hash of the store the test server's node runs, as its kernel command
+// line names it.
+var runningRoot = strings.Repeat("ab", 32)
+
+// slotOf is the running image's config slot.
+func slotOf(t *testing.T, s *Server) string {
+	t.Helper()
+	dir, err := s.Loader.Slot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// writeIdentity records identity in the running image's slot, keeping the documents it holds.
+func writeIdentity(t *testing.T, s *Server, identity string) {
+	t.Helper()
+	dir := slotOf(t, s)
+	stored, _, err := store.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.Identity = []byte(identity)
+	if err := store.Write(dir, stored); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// readIdentity is the identity the running image's slot records.
+func readIdentity(s *Server) ([]byte, error) {
+	dir, err := s.Loader.Slot()
+	if err != nil {
+		return nil, err
+	}
+	stored, found, err := store.Read(dir)
+	if err == nil && !found {
+		err = fs.ErrNotExist
+	}
+	return stored.Identity, err
+}
+
+// identityOf is the identity the running image's slot records, which must be there.
+func identityOf(t *testing.T, s *Server) string {
+	t.Helper()
+	data, err := readIdentity(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 // creds holds the OS CA, the node CA, client certificates of each role and the node certificate.
@@ -437,7 +491,7 @@ func TestAuthorisation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestServer(t, tc.mode, vda)
-			write(t, filepath.Join(s.Paths.StateDir, "identity.json"), "{}")
+			writeIdentity(t, s, "{}")
 			write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), "{}")
 			var pool *x509.CertPool
 			if tc.clientCAs {
@@ -544,7 +598,7 @@ func TestDisks(t *testing.T) {
 func TestStatus(t *testing.T) {
 	s, r := newTestServer(t, normal, vda)
 	identityJSON := `{"hostname": "n1"}`
-	write(t, filepath.Join(s.Paths.StateDir, "identity.json"), identityJSON)
+	writeIdentity(t, s, identityJSON)
 	write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), `{
 	  "disks": {"system": {"ref": "/dev/vda", "seed": "s", "repart": {}}, "extra": {"ref": {"serial": "chalk-extra"}, "seed": "e", "repart": {}}},
 	  "volumes": {

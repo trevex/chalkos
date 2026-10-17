@@ -72,7 +72,7 @@ func TestInstallInPlace(t *testing.T) {
 	if err := sendInstall(t, s, header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config == nil || got.Config.Version != hashOf(t, installConfig) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
+	if got.Config.Version != hashOf(t, installConfig) || !bytes.Equal(got.RootHash, bytes.Repeat([]byte{0xab}, 32)) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
 		got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request = %+v", got)
 	}
@@ -235,13 +235,13 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	var id identity.Identity
-	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Hostname != "n1" || id.Platform != "metal" {
-		t.Errorf("identity = %s, %v", got.Identity, err)
+	if err := json.Unmarshal(got.Config.Identity, &id); err != nil || id.Hostname != "n1" || id.Platform != "metal" {
+		t.Errorf("identity = %s, %v", got.Config.Identity, err)
 	}
 	if got.Section.Disks[storage.SystemDisk].Ref.Path != "/dev/vda" {
 		t.Errorf("section = %+v", got.Section)
 	}
-	if got.Config == nil || got.Config.Version != hashOf(t, baseConfig) || len(got.Config.Documents) != 6 {
+	if got.Config.Version != hashOf(t, baseConfig) || len(got.Config.Documents) != 6 {
 		t.Errorf("config = %+v", got.Config)
 	}
 }
@@ -265,13 +265,13 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	var id identity.Identity
-	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Platform != "metal" {
-		t.Errorf("identity = %s, %v", got.Identity, err)
+	if err := json.Unmarshal(got.Config.Identity, &id); err != nil || id.Platform != "metal" {
+		t.Errorf("identity = %s, %v", got.Config.Identity, err)
 	}
 	if k := got.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
 		t.Errorf("Kubernetes identity = %+v", got.Kubernetes)
 	}
-	if got.Config == nil || got.Config.Version != hashOf(t, workerConfig) {
+	if got.Config.Version != hashOf(t, workerConfig) {
 		t.Errorf("config = %+v", got.Config)
 	}
 }

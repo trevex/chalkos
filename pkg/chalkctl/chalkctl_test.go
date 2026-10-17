@@ -173,6 +173,11 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 		s.Loader.Schemas = filepath.Join(t.TempDir(), "schemas")
 		copySchemas(t, s.Loader.Schemas)
 	}
+	// It boots the store of the root hash abab…, whose config slot an install in place writes.
+	if s.Paths.Cmdline == "" {
+		s.Paths.Cmdline = filepath.Join(t.TempDir(), "cmdline")
+		writeFile(t, s.Paths.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
+	}
 	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
@@ -325,7 +330,7 @@ func TestInstallInPlace(t *testing.T) {
 		t.Errorf("stdout = %q", ta.stdout)
 	}
 	want := ta.configVersion(t)
-	if got.Config == nil || got.Config.Version != want || got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
+	if got.Config.Version != want || got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request config = %+v, section = %+v; want the config of version %s", got.Config, got.Section, want)
 	}
 	key, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "lab", "n1")
@@ -563,12 +568,28 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Loader.NetworkDir = filepath.Join(root, "network")
 	s.Loader.Consumers = filepath.Join(root, "consumers.json")
 	s.Loader.SetHostname = func(string) error { return nil }
-	s.Loader.Config = filepath.Join(root, "state", "config")
-	writeFile(t, filepath.Join(s.Paths.StateDir, "identity.json"), string(recorded))
+	// The node runs the image of the root hash abab…, whose slot holds the identity alone.
+	s.Loader.Slots = filepath.Join(root, "state", "config")
+	s.Loader.Cmdline = filepath.Join(root, "cmdline")
+	s.Paths.Cmdline = s.Loader.Cmdline
+	writeFile(t, s.Loader.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
+	if err := store.Write(slotOf(t, s), store.Stored{Identity: recorded}); err != nil {
+		t.Fatal(err)
+	}
 	section, _ := json.Marshal(ta.identity(t).Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	return s, r
+}
+
+// slotOf is the running image's config slot of a node installedNode made.
+func slotOf(t *testing.T, s *chalkd.Server) string {
+	t.Helper()
+	dir, err := s.Loader.Slot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 type fakeRunner struct{ calls []string }
@@ -607,7 +628,7 @@ func TestApplyConfigAndStatus(t *testing.T) {
 		t.Errorf("node ran %v", r.calls)
 	}
 	want := ta.configVersion(t)
-	if v, err := store.Version(s.Loader.Config); err != nil || v != want {
+	if v, err := store.Version(slotOf(t, s)); err != nil || v != want {
 		t.Errorf("config version on the node = %q, %v; want %s", v, err, want)
 	}
 	if !strings.Contains(ta.stdout.String(), "n1 runs config "+want) {
@@ -1118,7 +1139,7 @@ func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := ta.configVersion(t)
-	if v, err := store.Version(s.Loader.Config); err != nil || v != want {
+	if v, err := store.Version(slotOf(t, s)); err != nil || v != want {
 		t.Errorf("config version on the node = %q, %v; want %s", v, err, want)
 	}
 }
@@ -1163,10 +1184,10 @@ func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	if len(r.calls) != 0 {
 		t.Errorf("node ran %v", r.calls)
 	}
-	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "identity.json")); string(got) != `{"hostname": "old"}` {
+	if got, _, _ := store.Read(slotOf(t, s)); string(got.Identity) != `{"hostname": "old"}` {
 		t.Errorf("identity on the node = %s", got)
 	}
-	if v, err := store.Version(s.Loader.Config); err != nil || v != "" {
+	if v, err := store.Version(slotOf(t, s)); err != nil || v != "" {
 		t.Errorf("config version on the node = %q, %v; want none", v, err)
 	}
 }
@@ -1201,7 +1222,7 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", imageDir}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config == nil || got.Kubernetes == nil || got.Kubernetes.NodeName != "n1" {
+	if got.Config.Version == "" || got.Kubernetes == nil || got.Kubernetes.NodeName != "n1" {
 		t.Errorf("install request config = %+v, kubernetes = %+v; want both translated for the image sent", got.Config, got.Kubernetes)
 	}
 }

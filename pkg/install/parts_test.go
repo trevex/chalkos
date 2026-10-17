@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
@@ -439,14 +440,22 @@ func (l *partsLab) bootable() bool {
 	return l.file("EFI/BOOT/BOOTX64.EFI") != nil
 }
 
-func (l *partsLab) installed() bool {
+// state is the directory standing for the target's STATE; empty while it has none.
+func (l *partsLab) state() string {
 	for _, p := range l.table() {
 		if p.Name == stateLabel {
-			_, err := os.Stat(filepath.Join(l.fs, p.UUID, installedMarker))
-			return err == nil
+			return filepath.Join(l.fs, p.UUID)
 		}
 	}
-	return false
+	return ""
+}
+
+func (l *partsLab) installed() bool {
+	if l.state() == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(l.state(), installedMarker))
+	return err == nil
 }
 
 // checkInstalled checks that the target holds the image as installed: the system region laid
@@ -492,6 +501,9 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	}
 	if !l.installed() {
 		l.t.Error("STATE holds no installed marker")
+	}
+	if s, found, err := store.Read(store.Slot(filepath.Join(l.state(), "config"), img.root)); err != nil || !found || len(s.Identity) == 0 {
+		l.t.Errorf("STATE holds no config slot of the image: %+v, %v", s, err)
 	}
 	var entry string
 	for _, e := range l.r.efi.entries {

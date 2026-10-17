@@ -147,7 +147,7 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 	if err != nil {
 		return err
 	}
-	if err := i.installOn(ctx, target, req.SystemDefinitions, req.Request); err != nil {
+	if err := i.installOn(ctx, target, req.SystemDefinitions, req.Request, h.RootHash); err != nil {
 		return err
 	}
 	if err := i.writeBootLoader(ctx, esp, loader); err != nil {

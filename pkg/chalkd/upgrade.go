@@ -14,7 +14,6 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -100,12 +99,12 @@ type imageStore interface {
 // image's NixOS system in st, and platform is the image's. A node without config
 // translates none at boot, whatever the image.
 func (s *Server) checkStoredConfig(st imageStore, system, platform string) error {
-	// ApplyConfig replaces the stored set under the same lock.
+	// ApplyConfig replaces the running slot under the same lock.
 	s.mu.Lock()
-	stored, found, err := store.Read(s.Loader.Config)
+	_, stored, found, err := s.runningSlot()
 	s.mu.Unlock()
 	if err != nil {
-		return fmt.Errorf("read the stored config: %w", err)
+		return err
 	}
 	if !found {
 		return nil
@@ -135,7 +134,7 @@ func (s *Server) checkStoredConfig(st imageStore, system, platform string) error
 	if err != nil {
 		return err
 	}
-	if _, _, err := translate(stored.Documents, schemas, t); err != nil {
+	if _, _, err := translate(stored.Delivered, schemas, t); err != nil {
 		return fmt.Errorf("the node's config does not suit the image: %w; apply config both images accept with chalkctl apply-config, then upgrade", err)
 	}
 	return nil

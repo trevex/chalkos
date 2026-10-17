@@ -35,14 +35,15 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 )
 
 // Kubernetes is the node's Kubernetes side; nil on a node whose image has no Kubernetes.
 type Kubernetes struct {
 	Paths knode.Paths
-	// Config is the node's config set on STATE, whose Addon documents the control plane
-	// applies after chalkos's add-ons.
-	Config string
+	// Slot returns the running image's config slot on STATE, whose Addon documents the control
+	// plane applies after chalkos's add-ons.
+	Slot func() (string, error)
 	// Objects returns the objects the control plane applies for the cluster: chalkos's add-ons,
 	// then those of the Addon documents. Tests replace it.
 	Objects func(c k8s.Cluster) ([]map[string]any, error)
@@ -151,7 +152,7 @@ func (k *Kubernetes) LeavesProblem() string {
 
 // NewKubernetes returns the Kubernetes side of a node with the default paths.
 func NewKubernetes() *Kubernetes {
-	k := &Kubernetes{Paths: knode.DefaultPaths(), Config: "/state/config"}
+	k := &Kubernetes{Paths: knode.DefaultPaths(), Slot: nodeconfig.Default().Slot}
 	k.Objects = k.objects
 	k.ControlPlane = k.runControlPlane
 	k.Node = k.node
@@ -603,7 +604,11 @@ func (k *Kubernetes) objects(c k8s.Cluster) ([]map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("render chalkos's add-ons: %w", err)
 	}
-	stored, _, err := store.Read(k.Config)
+	slot, err := k.Slot()
+	if err != nil {
+		return nil, fmt.Errorf("find the running image's config slot: %w", err)
+	}
+	stored, _, err := store.Read(slot)
 	if err != nil {
 		return nil, fmt.Errorf("read the stored config: %w", err)
 	}
