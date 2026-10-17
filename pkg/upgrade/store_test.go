@@ -240,6 +240,19 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 	l.boots(img, 2)
 
 	refusal = errors.New("the config does not suit the image")
+	// A refusal whose retirement fails says the image still boots next.
+	l.node.Change = func(what string) error {
+		if strings.HasPrefix(what, "remove ") {
+			return errCrash
+		}
+		return nil
+	}
+	if _, err := l.install(img); !errors.Is(err, refusal) || !errors.Is(err, errCrash) || !strings.Contains(err.Error(), "which still boots next") {
+		t.Fatalf("install = %v, want the refusal and the failed retirement", err)
+	}
+	l.boots(img, 2)
+	l.node.Change = nil
+
 	if _, err := l.install(img); !errors.Is(err, refusal) {
 		t.Fatalf("install = %v, want the check's refusal", err)
 	}

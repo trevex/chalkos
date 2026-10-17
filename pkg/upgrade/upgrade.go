@@ -279,7 +279,7 @@ func (n *Node) recheck(ctx context.Context, h Header, slot Slot, staged Entry, a
 		return nil
 	}
 	if rerr := n.retire(ctx, all, h.ImageID, booted, running, slot); rerr != nil {
-		log.Printf("retire the staged image %x: %v", h.RootHash, rerr)
+		return errors.Join(err, fmt.Errorf("retire the staged image, which still boots next: %w", rerr))
 	}
 	return err
 }
