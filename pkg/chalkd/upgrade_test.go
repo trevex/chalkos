@@ -386,8 +386,8 @@ func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
 
 // TestApplyConfigNamesAVolumeAnotherImageAdded refuses config for the running image that leaves out
 // a volume the config of another image added, as after a fallback from that image, and says to name
-// the volume rather than to reinstall: the running image's config never named it. While the other
-// image's slot names it, the refusal says so.
+// the volume, as the running image's config never named it, and that only a reinstall removes it.
+// While the other image's slot names it, the refusal says so.
 func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	s, r := configServer(t)
 	r.rules = volumeRules(s)
@@ -399,8 +399,9 @@ func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too, as the config of the image cdcdcdcdcdcd does") {
 		t.Errorf("err = %v, want the volume named", err)
 	}
-	if err != nil && strings.Contains(err.Error(), "reinstall") {
-		t.Errorf("err = %v, want no reinstall", err)
+	// A reinstall removes the volume, but does not carry out a config that is to name it.
+	if err != nil && (strings.Contains(err.Error(), "carries it out") || !strings.Contains(err.Error(), "; only a reinstall of "+s.nodeName()+" removes it")) {
+		t.Errorf("err = %v, want the volume named, and a reinstall only as what removes it", err)
 	}
 	running, err := s.runningHash()
 	if err != nil {
@@ -560,4 +561,25 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 		t.Fatal("the upgrade kept the storage lock")
 	}
 	s.mu.Unlock()
+}
+
+// TestStageConfigNamesNoOtherImageForItsOwnVolume refuses config for the staged image that leaves
+// out a volume the staged image's own earlier config added, and names no other image for it: the
+// slot being written is the one whose config added it.
+func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
+	s, r := configServer(t)
+	r.rules = volumeRules(s)
+	stage := func(config, secret string) error {
+		return s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
+	}
+	if err := stage(extraConfig("ext4"), secret); err != nil {
+		t.Fatal(err)
+	}
+	err := stage(baseConfig, "")
+	if err == nil || !strings.Contains(err.Error(), "name it in this config too; only a reinstall of "+s.nodeName()+" removes it") || strings.Contains(err.Error(), "cdcdcdcdcdcd") {
+		t.Errorf("err = %v, want the volume named without the staged image as another", err)
+	}
+	if got, _ := staged(t, s); got.Version != hashOf(t, extraConfig("ext4")) {
+		t.Errorf("staged version = %q, want the earlier config's", got.Version)
+	}
 }

@@ -210,7 +210,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return err
 	}
-	mc, err := s.machineChanges(d.section)
+	mc, err := s.machineChanges(d.section, rootHash)
 	if err != nil {
 		return err
 	}

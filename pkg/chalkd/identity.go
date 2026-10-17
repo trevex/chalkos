@@ -174,8 +174,9 @@ func (s *Server) pinnedDisk(v storage.Volume, pins storage.Pins) (bool, error) {
 // disk, takes a reinstall, as resetVolume refuses those, unless the removed volume is one the
 // running image's config never named: see addedElsewhere. A disk reference that cannot be resolved
 // is a mistake in the config, or a missing disk when it finds none, which neither carries out,
-// unless the node cannot list its disks at all.
-func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d diskChanges, c storage.Change) string {
+// unless the node cannot list its disks at all. writing is the root hash of the image whose slot
+// the config is for, nil for the running image.
+func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d diskChanges, c storage.Change, writing []byte) string {
 	v, kept := section.Volumes[c.Volume]
 	if err, ok := d.unresolved[c.Volume]; ok {
 		switch {
@@ -187,7 +188,7 @@ func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d 
 		return "fix the disk reference"
 	}
 	if !kept && c.Volume != storage.VarVolume {
-		if elsewhere := s.addedElsewhere(c.Volume); elsewhere != "" {
+		if elsewhere := s.addedElsewhere(c.Volume, writing); elsewhere != "" {
 			return elsewhere
 		}
 	}
@@ -208,10 +209,13 @@ func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d 
 // addedElsewhere says how to keep a volume that a config leaves out although the machine records
 // it, when the running image's config never named it either: the config of another image added
 // it, with an upgrade or apply-config --staged, and the node fell back or the image was never
-// activated. A reinstall would be the wrong remedy; the config is to name the volume, as the
-// config of another image still holding a slot may. It returns "" when the running image's config
-// names the volume, which the config then removes. The caller holds s.mu.
-func (s *Server) addedElsewhere(name string) string {
+// activated. To keep the volume, the config is to name it, as the config of another image still
+// holding a slot may; only a reinstall removes it, as it stays on the machine whatever the slots
+// name. It returns "" when the running image's config names the volume, which the config then
+// removes. The slot of the image writing, the one being written, is not named as another: its
+// config is the one being replaced, which may be what added the volume, as with an earlier
+// apply-config --staged. The caller holds s.mu.
+func (s *Server) addedElsewhere(name string, writing []byte) string {
 	_, running, found, err := s.runningSlot()
 	if err != nil || !found {
 		return ""
@@ -220,17 +224,18 @@ func (s *Server) addedElsewhere(name string) string {
 		return ""
 	}
 	msg := "the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too"
+	reinstall := fmt.Sprintf("; only a reinstall of %s removes it", s.nodeName())
 	runningHash, err := s.runningHash()
 	if err != nil {
-		return msg
+		return msg + reinstall
 	}
 	hashes, err := store.Slots(s.Loader.Slots)
 	if err != nil {
-		return msg
+		return msg + reinstall
 	}
 	var others []string
 	for _, h := range hashes {
-		if bytes.Equal(h, runningHash) {
+		if bytes.Equal(h, runningHash) || bytes.Equal(h, writing) {
 			continue
 		}
 		held, found, err := store.Read(store.Slot(s.Loader.Slots, h))
@@ -244,7 +249,7 @@ func (s *Server) addedElsewhere(name string) string {
 	if len(others) > 0 {
 		msg += fmt.Sprintf(", as the config of the image %s does", strings.Join(others, " and "))
 	}
-	return msg
+	return msg + reinstall
 }
 
 func hasVolume(section storage.Section, name string) bool {
@@ -354,7 +359,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	// else, so a refused request changes nothing.
 	var mc machineChange
 	if !keep {
-		if mc, err = s.machineChanges(d.section); err != nil {
+		if mc, err = s.machineChanges(d.section, nil); err != nil {
 			return nil, err
 		}
 		// The storage the changes make is the machine's, which the staged image boots onto too.
@@ -494,7 +499,7 @@ type machineChange struct {
 // or apply-config --staged added it, is classified so only when it is written again. Every boot
 // sets up each volume storage.json records, so that image mounts the volume too, and nothing at
 // boot removes one. The caller holds s.mu.
-func (s *Server) machineChanges(section storage.Section) (machineChange, error) {
+func (s *Server) machineChanges(section storage.Section, writing []byte) (machineChange, error) {
 	recorded, pins, err := s.recorded()
 	if err != nil {
 		return machineChange{}, err
@@ -503,7 +508,7 @@ func (s *Server) machineChanges(section storage.Section) (machineChange, error) 
 	var destructive []string
 	for _, c := range changes {
 		if c.Class == storage.Destructive {
-			destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, section, pins, disks, c)))
+			destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, section, pins, disks, c, writing)))
 		}
 	}
 	if len(destructive) > 0 {
