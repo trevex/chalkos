@@ -1,7 +1,7 @@
 // Package identity holds a node's identity: the form its config translates to, which the node
-// applies at boot (/state/identity.json, /run/chalkos/node.json) and its Kubernetes side reads,
-// and the kinds of Kubernetes nodes. It imports nothing of chalkos but the storage section, so
-// every package on the node may use it.
+// applies at boot (identity.json in each image's config slot below /state/config, then
+// /run/chalkos/node.json) and its Kubernetes side reads, and the kinds of Kubernetes nodes. It
+// imports nothing of chalkos but the storage section, so every package on the node may use it.
 package identity
 
 import (
