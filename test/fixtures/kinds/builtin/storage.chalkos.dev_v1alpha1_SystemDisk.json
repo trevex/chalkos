@@ -194,6 +194,13 @@
     "group": "storage.chalkos.dev",
     "kind": "SystemDisk",
     "multiple": false,
+    "rules": [
+      {
+        "messageExpression": "cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes[\"var\"], \"VAR: \" + [(r.format == null ? \"\" : r.format) != \"ext4\" ? \"format ext4 instead of \" + ((r.format == null ? \"\" : r.format) == \"\" ? \"null\" : (r.format == null ? \"\" : r.format)) : \"\",\n ((sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) != r.encryption ? \"encryption \" + (sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) + \" instead of \" + r.encryption : \"\"),\n ((sd.var.size == null ? \"\" : sd.var.size) == (r.size == null ? \"\" : r.size) || (sd.var.size == null ? \"\" : sd.var.size) == \"\" ? \"\" : (r.size == null ? \"\" : r.size) == \"\" ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of filling its disk\" : bytes((sd.var.size == null ? \"\" : sd.var.size)) < bytes((r.size == null ? \"\" : r.size)) ? \"smaller: \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : \"\")].filter(x, x != \"\").join(\"; \") + \"; only a reinstall of \" + config[\"chalkos.dev/v1alpha1\"].Node.map(k, k)[0] + \" carries it out\"))",
+        "rule": "facts.recorded == null || !(\"var\" in facts.recorded.volumes) || size(documents) != 1 || cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes[\"var\"], size([(r.format == null ? \"\" : r.format) != \"ext4\" ? \"format ext4 instead of \" + ((r.format == null ? \"\" : r.format) == \"\" ? \"null\" : (r.format == null ? \"\" : r.format)) : \"\",\n ((sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) != r.encryption ? \"encryption \" + (sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) + \" instead of \" + r.encryption : \"\"),\n ((sd.var.size == null ? \"\" : sd.var.size) == (r.size == null ? \"\" : r.size) || (sd.var.size == null ? \"\" : sd.var.size) == \"\" ? \"\" : (r.size == null ? \"\" : r.size) == \"\" ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of filling its disk\" : bytes((sd.var.size == null ? \"\" : sd.var.size)) < bytes((r.size == null ? \"\" : r.size)) ? \"smaller: \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : \"\")].filter(x, x != \"\")) == 0))",
+        "takes": "reinstall"
+      }
+    ],
     "version": "v1alpha1"
   }
 }

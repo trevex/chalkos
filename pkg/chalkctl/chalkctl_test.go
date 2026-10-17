@@ -578,6 +578,9 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	}
 	section, _ := json.Marshal(ta.identity(t).Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
+	// The storage rules compare the config with the section STATE records.
+	s.Paths.Facts = filepath.Join(root, "facts.json")
+	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	return s, r
 }

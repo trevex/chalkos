@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"math/big"
@@ -192,8 +193,20 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	write(t, s.Paths.Cmdline, "init=/x usrhash="+runningRoot+"\n")
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
 	writeSchemas(t, s.Loader.Schemas)
+	s.Facts = storageFacts{s}
 	writeFacts(t, s)
 	return s, r
+}
+
+// storageFacts runs the commands of the storage facts in the test, as chalkos-storage facts would,
+// against the test server's disks and with its runner.
+type storageFacts struct{ s *Server }
+
+func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ int) ([]byte, error) {
+	if len(argv) != 3 || argv[0] != "chalkos-storage" || argv[1] != "facts" {
+		return nil, fmt.Errorf("the test runs no command %v", argv)
+	}
+	return f.s.storage().Facts(ctx, argv[2], stdin)
 }
 
 // writeFacts declares the facts of the built-in kinds' rules as an image does, at the test
@@ -201,7 +214,10 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 func writeFacts(t *testing.T, s *Server) {
 	t.Helper()
 	defs, err := json.Marshal(map[string]facts.Definition{
-		"share": {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")},
+		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")},
+		"recorded": {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
+		"disks":    {Command: "chalkos-storage facts disks"},
+		"fallback": {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -396,7 +396,7 @@ func TestApplyConfigRefusesBeforeItTrusts(t *testing.T) {
 	before := s.Certificate.OSCA()
 	destructive := strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1)
 	req := &nodev1.ApplyConfigRequest{Config: destructive, Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}
-	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(req)); err == nil || !strings.Contains(err.Error(), "destructive") {
+	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(req)); err == nil || !strings.Contains(err.Error(), "VAR: size 1G instead of filling its disk; only a reinstall of n1 carries it out") {
 		t.Fatalf("err = %v, want the destructive change refused", err)
 	}
 	if s.Certificate.OSCA() != before {
@@ -432,7 +432,7 @@ func TestApplyConfigRefusesTheFallbackSecretBeforeItTrusts(t *testing.T) {
 			_, admin := adminOf(t, osCA)
 			before := s.Certificate.OSCA()
 			req := &nodev1.ApplyConfigRequest{FallbackSecret: c.secret, Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}
-			if _, err := deliver(asCaller(admin), s, identityWith(section("", "ext4")), req); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), c.want) {
+			if _, err := deliver(asCaller(admin), s, identityWith(section("", "ext4")), req); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
 			if s.Certificate.OSCA() != before {

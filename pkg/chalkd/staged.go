@@ -13,6 +13,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -96,22 +97,24 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		return nil, err
 	}
 	resp := &nodev1.ApplyConfigResponse{}
-	for _, c := range storage.Classify(recorded, after) {
+	for _, c := range storage.Changes(recorded, after) {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}
 	return connect.NewResponse(resp), nil
 }
 
 // checkStaged refuses a change of the machine's storage to section that the config slot of the
-// image staged to boot next could not be written again with: classified against the storage the
-// change makes, as the staged slot would be when it is written again, the slot's config is
-// destructive, such as one that lacks a volume the change adds. That image would still boot and
-// mount the volume, as every boot sets up the volumes storage.json records, but its next config
-// would be refused for removing it. The staged slot is brought along first, with chalkctl
-// apply-config --staged, to which the new volume is then additive. The check runs this way only:
-// a write of the staged slot does not check the running slot against the storage it makes. pins
-// are the machine's. The caller holds s.mu.
-func (s *Server) checkStaged(section storage.Section, pins storage.Pins) error {
+// image staged to boot next could not be written again with: that slot's config fails the
+// storage rules against the storage the change makes, as when it lacks a volume the change adds.
+// That image would still boot and mount the volume, as every boot sets up the volumes
+// storage.json records, but its next config would be refused for removing it. The staged slot is
+// brought along first, with chalkctl apply-config --staged, to which the new volume is then
+// additive. The slot is checked as it would be written again once the change is made: against
+// section as the recorded storage and next, the config this change runs, as the running config,
+// with the running image's storage rules, whose schemas are given, and the delivery's fallback
+// secret. The check runs this way only: a write of the staged slot does not check the running
+// slot against the storage it makes. The caller holds s.mu.
+func (s *Server) checkStaged(ctx context.Context, schemas *schema.Schemas, next []config.Document, section storage.Section, secret string) error {
 	staged, err := s.stagedImage()
 	if err != nil {
 		return failed(connect.CodeInternal, "find the staged image: %v", err)
@@ -126,21 +129,27 @@ func (s *Server) checkStaged(section storage.Section, pins storage.Pins) error {
 	if !found {
 		return nil
 	}
-	d, err := parseIdentity(string(held.Identity))
+	set, err := compileRules(schemas)
 	if err != nil {
-		return failed(connect.CodeInternal, "the staged image's identity: %v", err)
+		return err
 	}
-	changes, _ := s.classify(section, d.section, pins)
-	var destructive []string
-	for _, c := range changes {
-		if c.Class == storage.Destructive {
-			destructive = append(destructive, c.String())
-		}
+	f, err := s.factsFor(ctx, held.Documents, next, secret)
+	if err != nil {
+		return err
 	}
-	if len(destructive) == 0 {
+	f.Override("recorded", jsonValue(section))
+	failures, err := evaluate(set.Of(config.StorageAPI), held.Documents, next, f)
+	if err != nil {
+		return err
+	}
+	if len(failures) == 0 {
 		return nil
 	}
-	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next has config that does not fit the storage this config makes: %s; first run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], strings.Join(destructive, "; "), s.nodeName())
+	msgs := make([]string, len(failures))
+	for i, f := range failures {
+		msgs[i] = f.String()
+	}
+	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next has config that does not fit the storage this config makes: %s; first run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], strings.Join(msgs, "; "), s.nodeName())
 }
 
 // stagedVersion is the version of the config slot of the image the boot status names as staged;

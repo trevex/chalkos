@@ -1,7 +1,9 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -33,26 +35,32 @@ func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secr
 	return l, nil
 }
 
-// checkRules refuses next, config about to be stored for the image whose schemas are given, when
-// it does not meet that image's rules; old is the running slot's config, nil at an install, and f
-// the delivery's facts. Nothing has changed yet when it refuses.
-func (s *Server) checkRules(schemas *schema.Schemas, next, old []config.Document, f rules.Facts) error {
-	failures, err := evaluateRules(schemas, next, old, f)
-	if err != nil {
-		return err
-	}
-	if len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "%s", refusal(failures, s.nodeName()))
-	}
-	return nil
-}
-
-// evaluateRules compiles the rules of schemas and returns those next does not meet.
-func evaluateRules(schemas *schema.Schemas, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
+// compileRules compiles the rules of an image's schemas, which its build checked already.
+func compileRules(schemas *schema.Schemas) (*rules.Set, error) {
 	set, err := rules.Compile(schemas)
 	if err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "the image's rules: %v", err)
 	}
+	return set, nil
+}
+
+// checkRules refuses next, config about to be stored for the image whose rules set holds, when
+// it does not meet them; old is the running slot's config, nil at an install, and f the
+// delivery's facts. Nothing has changed yet when it refuses.
+func (s *Server) checkRules(set *rules.Set, next, old []config.Document, f rules.Facts) error {
+	failures, err := evaluate(set, next, old, f)
+	if err != nil {
+		return err
+	}
+	if len(failures) > 0 {
+		return failed(connect.CodeFailedPrecondition, "%s", refusal(failures, nodeOf(next)))
+	}
+	return nil
+}
+
+// evaluate returns the rules of set next does not meet; an error is a rule that could not be
+// checked, which refuses the delivery too.
+func evaluate(set *rules.Set, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
 	failures, err := set.Evaluate(rules.Input{Documents: next, Old: old, Facts: f})
 	if err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
@@ -79,4 +87,30 @@ func refusal(failures []rules.Failure, node string) string {
 		msgs[i] = f.String()
 	}
 	return head + ": " + strings.Join(msgs, "; ")
+}
+
+// jsonValue is v as a fact read from JSON holds it, for a fact that stands in for a file, such as
+// the storage a change is yet to make.
+func jsonValue(v any) any {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var out any
+	if err := dec.Decode(&out); err != nil {
+		return nil
+	}
+	return out
+}
+
+// nodeOf is the name of the node the config is for, as its Node document names it.
+func nodeOf(docs []config.Document) string {
+	for _, d := range docs {
+		if d.APIVersion == config.CoreAPI && d.Kind == "Node" {
+			return d.Name
+		}
+	}
+	return "<node>"
 }

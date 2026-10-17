@@ -199,11 +199,15 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 	if err != nil {
 		return store.Stored{}, err
 	}
+	set, err := compileRules(schemas)
+	if err != nil {
+		return store.Stored{}, err
+	}
 	f, err := s.factsFor(ctx, stored.Documents, nil, h.FallbackSecret)
 	if err != nil {
 		return store.Stored{}, err
 	}
-	if err := s.checkRules(schemas, stored.Documents, nil, f); err != nil {
+	if err := s.checkRules(set, stored.Documents, nil, f); err != nil {
 		return store.Stored{}, err
 	}
 	return stored, nil

@@ -164,8 +164,8 @@ func TestApplyConfigRefusesAMachineChangeTheStagedImageWouldUndo(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "first run chalkctl apply-config --staged") || !strings.Contains(err.Error(), "extra") {
 		t.Fatalf("err = %v, want a refusal naming apply-config --staged", err)
 	}
-	if len(r.calls) != 0 {
-		t.Fatalf("a refused config ran %v", r.calls)
+	if changed := withoutChecks(r.calls); len(changed) != 0 {
+		t.Fatalf("a refused config ran %v", changed)
 	}
 	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, FallbackSecret: secret})); err != nil {
 		t.Fatal(err)

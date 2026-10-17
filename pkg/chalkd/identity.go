@@ -10,7 +10,6 @@ import (
 	"log"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -117,125 +116,53 @@ func (s *Server) kubernetesShare(d delivered, data []byte, osCA string, cluster 
 	return canonical, nil
 }
 
-// diskChanges is what the changed disk references of a delivered section find, each resolved
-// once: changes are the destructive changes they make; moved are the volumes whose reference finds
-// another disk than the one they live on, which a reset would recreate on the old disk; unresolved
-// are the volumes whose reference cannot be resolved, with the error, such as a mistyped selector,
-// a disk that is not plugged in or a selector several disks match.
-type diskChanges struct {
-	changes    []storage.Change
-	moved      map[string]bool
-	unresolved map[string]error
-}
-
-// classify compares the delivered section with the recorded one and the pinned disks.
-func (s *Server) classify(recorded, section storage.Section, pins storage.Pins) ([]storage.Change, diskChanges) {
-	d := s.classifyDisks(section, pins)
-	return append(storage.Classify(recorded, section), d.changes...), d
-}
-
-// classifyDisks resolves the changed disk references of the section and sorts the volumes whose
-// reference finds another disk than the pinned one, or cannot be resolved.
-func (s *Server) classifyDisks(section storage.Section, pins storage.Pins) diskChanges {
-	failed := map[storage.Ref]error{}
-	d := diskChanges{moved: map[string]bool{}, unresolved: map[string]error{}}
-	d.changes = storage.ClassifyDisks(section, pins, func(ref storage.Ref) (storage.Identity, error) {
-		disk, err := s.Host.Resolve(ref)
-		if err != nil {
-			failed[ref] = err
+// elsewhere adds to err, a refusal of config whose storage section is section, the images whose
+// config slots name a volume the machine records and section leaves out, when the running
+// image's config never named it either: the config of one of them added it, with an upgrade or
+// apply-config --staged, and naming the volume keeps it. The slot of the image writing, the one
+// being written, is not named: its config is the one being replaced. The caller holds s.mu.
+func (s *Server) elsewhere(err error, section storage.Section, writing []byte) error {
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		return err
+	}
+	recorded, _, rerr := s.recorded()
+	if rerr != nil {
+		return err
+	}
+	_, running, found, rerr := s.runningSlot()
+	if rerr != nil || !found {
+		return err
+	}
+	ran, rerr := parseIdentity(string(running.Identity))
+	if rerr != nil {
+		return err
+	}
+	var notes []string
+	for _, name := range sortedNames(recorded.Volumes) {
+		if name == storage.VarVolume || hasVolume(section, name) || hasVolume(ran.section, name) {
+			continue
 		}
-		return disk.Identity, err
-	})
-	for _, c := range d.changes {
-		if err, ok := failed[section.Disks[section.Volumes[c.Volume].Disk].Ref]; ok {
-			d.unresolved[c.Volume] = err
-		} else {
-			d.moved[c.Volume] = true
+		if others := s.slotsNaming(name, writing); len(others) > 0 {
+			notes = append(notes, fmt.Sprintf("the config of the image %s names volume %s", strings.Join(others, " and "), name))
 		}
 	}
-	return d
+	if len(notes) == 0 {
+		return err
+	}
+	return failed(ce.Code(), "%s; %s", ce.Message(), strings.Join(notes, "; "))
 }
 
-// pinnedDisk reports whether the disk a volume is pinned to is plugged in; the system disk always
-// is. An error tells that it cannot be told, as when several disks have the pinned identity.
-func (s *Server) pinnedDisk(v storage.Volume, pins storage.Pins) (bool, error) {
-	pin, ok := pins.Disks[v.Disk]
-	if v.Disk == storage.SystemDisk || !ok {
-		return true, nil
-	}
-	_, found, err := s.Host.Find(pin.Identity)
-	return found, err
-}
-
-// remedy says how a node carries out a destructive change of a volume. chalkctl storage reset
-// recreates a volume in place, once the disk it is pinned to is plugged in; changing VAR,
-// removing a volume or moving it to another disk, also by a disk reference that finds another
-// disk, takes a reinstall, as resetVolume refuses those, unless the removed volume is one the
-// running image's config never named: see addedElsewhere. A disk reference that cannot be resolved
-// is a mistake in the config, or a missing disk when it finds none, which neither carries out,
-// unless the node cannot list its disks at all. writing is the root hash of the image whose slot
-// the config is for, nil for the running image.
-func (s *Server) remedy(recorded, section storage.Section, pins storage.Pins, d diskChanges, c storage.Change, writing []byte) string {
-	v, kept := section.Volumes[c.Volume]
-	if err, ok := d.unresolved[c.Volume]; ok {
-		switch {
-		case errors.Is(err, storage.ErrNoDisk):
-			return "fix the disk reference or plug in the disk it names"
-		case errors.Is(err, storage.ErrListDisks):
-			return "apply the config again once the node can list its disks"
-		}
-		return "fix the disk reference"
-	}
-	if !kept && c.Volume != storage.VarVolume {
-		if elsewhere := s.addedElsewhere(c.Volume, writing); elsewhere != "" {
-			return elsewhere
-		}
-	}
-	if c.Volume == storage.VarVolume || !kept || v.Disk != recorded.Volumes[c.Volume].Disk || d.moved[c.Volume] {
-		return fmt.Sprintf("only a reinstall of %s carries it out", s.nodeName())
-	}
-	reset := fmt.Sprintf("chalkctl storage reset %s %s", s.nodeName(), c.Volume)
-	found, err := s.pinnedDisk(v, pins)
-	if err != nil {
-		return fmt.Sprintf("%v; reset it with %s once its disk can be found", err, reset)
-	}
-	if !found {
-		return fmt.Sprintf("its disk %s (%s) is not plugged in; plug it in, then reset it with %s", v.Disk, pins.Disks[v.Disk].Identity, reset)
-	}
-	return "reset it with " + reset
-}
-
-// addedElsewhere says how to keep a volume that a config leaves out although the machine records
-// it, when the running image's config never named it either: the config of another image added
-// it, with an upgrade or apply-config --staged, and the node fell back or the image was never
-// activated. To keep the volume, the config is to name it, as the config of another image still
-// holding a slot may; only a reinstall removes it, as it stays on the machine whatever the slots
-// name. It returns "" when the running image's config names the volume, which the config then
-// removes. The slot of the image writing, the one being written, is not named as another: its
-// config is the one being replaced, which may be what added the volume, as with an earlier
-// apply-config --staged, so the remedy names an earlier config of the image too. The caller holds
-// s.mu.
-func (s *Server) addedElsewhere(name string, writing []byte) string {
-	_, running, found, err := s.runningSlot()
-	if err != nil || !found {
-		return ""
-	}
-	if d, err := parseIdentity(string(running.Identity)); err != nil || hasVolume(d.section, name) {
-		return ""
-	}
-	added := "the config of another image added it"
-	if writing != nil {
-		added = "an earlier config of this image or another added it"
-	}
-	msg := added + ", with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too"
-	reinstall := fmt.Sprintf("; only a reinstall of %s removes it", s.nodeName())
+// slotsNaming lists, by the start of their root hashes, the images other than the running one and
+// writing whose config slots name the volume.
+func (s *Server) slotsNaming(name string, writing []byte) []string {
 	runningHash, err := s.runningHash()
 	if err != nil {
-		return msg + reinstall
+		return nil
 	}
 	hashes, err := store.Slots(s.Loader.Slots)
 	if err != nil {
-		return msg + reinstall
+		return nil
 	}
 	var others []string
 	for _, h := range hashes {
@@ -250,10 +177,7 @@ func (s *Server) addedElsewhere(name string, writing []byte) string {
 			others = append(others, fmt.Sprintf("%x", h[:6]))
 		}
 	}
-	if len(others) > 0 {
-		msg += fmt.Sprintf(", as the config of the image %s does", strings.Join(others, " and "))
-	}
-	return msg + reinstall
+	return others
 }
 
 func hasVolume(section storage.Section, name string) bool {
@@ -348,14 +272,20 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 				clusterChanged = !sameCluster(was, cluster)
 			}
 		}
-		// The image's rules compare the config with the running slot's and read the node's facts,
-		// which the delivery loads once, before anything changes.
+		// The image's rules compare the config with the running slot's and the storage STATE
+		// records, and read the node's facts, which the delivery loads once, before anything
+		// changes: a missing or mistyped fallback secret is refused before the node trusts the
+		// delivered OS CAs.
+		set, err := compileRules(r.schemas)
+		if err != nil {
+			return nil, err
+		}
 		f, err := s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.checkRules(r.schemas, r.next.Documents, prev.Documents, f); err != nil {
-			return nil, err
+		if err := s.checkRules(set, r.next.Documents, prev.Documents, f); err != nil {
+			return nil, s.elsewhere(err, d.section, nil)
 		}
 	}
 	share, err := s.kubernetesShare(d, m.KubernetesShare, osCA, cluster)
@@ -365,23 +295,18 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
 		return nil, err
 	}
-	// The config's storage is classified before the node trusts new OS CAs or changes anything
-	// else, so a refused request changes nothing.
+	// The changes the config makes to the machine's storage, which the staged image boots onto
+	// too, are checked against that image's config before the node trusts new OS CAs or changes
+	// anything else, so a refused request changes nothing.
 	var mc machineChange
 	if !keep {
-		if mc, err = s.machineChanges(d.section, nil); err != nil {
+		if mc, err = s.machineChanges(d.section); err != nil {
 			return nil, err
 		}
-		// The storage the changes make is the machine's, which the staged image boots onto too.
 		if len(mc.changes) > 0 {
-			if err := s.checkStaged(d.section, mc.pins); err != nil {
+			if err := s.checkStaged(ctx, r.schemas, r.next.Documents, d.section, m.FallbackSecret); err != nil {
 				return nil, err
 			}
-		}
-		// The fallback secret is checked here too, which only reads the devices, so a missing or
-		// mistyped one is refused before the node trusts the delivered OS CAs.
-		if err := s.verifyMachine(ctx, mc, m.FallbackSecret); err != nil {
-			return nil, err
 		}
 	}
 	if len(m.Trust) > 0 {
@@ -494,53 +419,31 @@ func (s *Server) forceRenewals() {
 	}
 }
 
-// machineChange is a config slot's storage section classified against the machine's: storage.json
-// and its pins, the storage as applied, and the changes the section makes to it.
+// machineChange is what a config slot's storage section adds to the machine's: storage.json, the
+// storage as applied, and the changes the section makes to it.
 type machineChange struct {
 	recorded, section storage.Section
-	pins              storage.Pins
 	changes           []storage.Change
 }
 
-// machineChanges classifies a slot's storage section against the machine's, as every write of a
-// slot does, whichever image the slot is for: the machine has one storage, which a slot's config
-// may grow but not undo. It refuses destructive changes, naming how each is carried out. A slot
+// machineChanges compares a slot's storage section with the machine's, as every write of a slot
+// does, whichever image the slot is for: the machine has one storage, which a slot's config may
+// grow but not undo. The image's rules refused the changes a node does not make before. A slot
 // whose section lacks a volume the machine has, as the slot of an image that ran before an upgrade
-// or apply-config --staged added it, is classified so only when it is written again. Every boot
-// sets up each volume storage.json records, so that image mounts the volume too, and nothing at
-// boot removes one. The caller holds s.mu.
-func (s *Server) machineChanges(section storage.Section, writing []byte) (machineChange, error) {
-	recorded, pins, err := s.recorded()
+// or apply-config --staged added it, is compared so only when it is written again. Every boot sets
+// up each volume storage.json records, so that image mounts the volume too, and nothing at boot
+// removes one. The caller holds s.mu.
+func (s *Server) machineChanges(section storage.Section) (machineChange, error) {
+	recorded, _, err := s.recorded()
 	if err != nil {
 		return machineChange{}, err
 	}
-	changes, disks := s.classify(recorded, section, pins)
-	var destructive []string
-	for _, c := range changes {
-		if c.Class == storage.Destructive {
-			destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, section, pins, disks, c, writing)))
-		}
-	}
-	if len(destructive) > 0 {
-		return machineChange{}, failed(connect.CodeFailedPrecondition, "the config changes storage destructively: %s", strings.Join(destructive, "; "))
-	}
-	return machineChange{recorded: recorded, section: section, pins: pins, changes: changes}, nil
-}
-
-// verifyMachine refuses the fallback secret that the additive changes of mc would enroll new
-// encrypted volumes with, when it is missing or differs from the node's. It only reads the
-// devices, so a caller runs it with its other refusals, before anything changes. The caller holds
-// s.mu.
-func (s *Server) verifyMachine(ctx context.Context, mc machineChange, secret string) error {
-	if len(mc.changes) == 0 {
-		return nil
-	}
-	return s.verifyFallback(ctx, mc.recorded, mc.section, mc.pins, secret)
+	return machineChange{recorded: recorded, section: section, changes: storage.Changes(recorded, section)}, nil
 }
 
 // applyMachine makes the additive changes a slot's section makes to the machine's storage, which
 // records them in storage.json; secret is the fallback secret new encrypted volumes are enrolled
-// with, which verifyMachine checked. The caller holds s.mu.
+// with, which the rules checked. The caller holds s.mu.
 func (s *Server) applyMachine(ctx context.Context, mc machineChange, secret string) error {
 	if len(mc.changes) == 0 {
 		return nil
@@ -659,114 +562,6 @@ func enrolled(recorded, section storage.Section) string {
 		}
 	}
 	return ""
-}
-
-// verifyFallback refuses before anything changes when the fallback secret about to be enrolled
-// on the volumes the section adds to kept differs from the node's existing one, so a mistyped
-// password cannot leave a volume whose fallback differs from the others'. The secret is checked
-// against the password keyslot of STATE, else VAR, else another encrypted volume of kept; a
-// node with no such keyslot has nothing to check against.
-func (s *Server) verifyFallback(ctx context.Context, kept, section storage.Section, pins storage.Pins, secret string) error {
-	if err := checkFallback(kept, section, secret); err != nil {
-		return err
-	}
-	if enrolled(kept, section) == "" || kept.Fallback == storage.FallbackNone {
-		return nil
-	}
-	for _, dev := range s.encryptedDevices(kept, pins) {
-		dump, err := s.Run.Run(ctx, "cryptsetup", "luksDump", "--dump-json-metadata", dev)
-		if err != nil {
-			return failed(connect.CodeFailedPrecondition, "read the keyslots of %s to check the fallback secret: %v", dev, err)
-		}
-		slots, err := passwordSlots(dump)
-		if err != nil {
-			return failed(connect.CodeFailedPrecondition, "read the keyslots of %s to check the fallback secret: %v", dev, err)
-		}
-		if len(slots) == 0 {
-			continue
-		}
-		for _, slot := range slots {
-			// The secret goes on standard input: arguments are visible to every process, and
-			// cryptsetup takes a key file from stdin as it is, without trimming a newline.
-			_, err := s.Run.RunWithInput(ctx, []byte(secret), "cryptsetup", "open", "--test-passphrase", "--key-slot="+slot, "--key-file=-", dev)
-			var te *node.ToolError
-			switch {
-			case err == nil:
-				return nil
-			case errors.As(err, &te) && te.Code == 2:
-				// cryptsetup's status for a passphrase no keyslot accepts.
-				continue
-			default:
-				return failed(connect.CodeFailedPrecondition, "check the fallback secret against %s: %v", dev, err)
-			}
-		}
-		return failed(connect.CodeInvalidArgument, "the fallback secret does not match the node's existing fallback keyslot")
-	}
-	return nil
-}
-
-// encryptedDevices lists the LUKS devices of kept that carry the fallback keyslot, in the order
-// the fallback secret is checked against them.
-func (s *Server) encryptedDevices(kept storage.Section, pins storage.Pins) []string {
-	var devices []string
-	if kept.Encryption == storage.EncryptionTPM2 {
-		devices = append(devices, filepath.Join(s.Paths.BootPartitions, "state"))
-	}
-	names := []string{storage.VarVolume}
-	for _, name := range sortedNames(kept.Volumes) {
-		if name != storage.VarVolume {
-			names = append(names, name)
-		}
-	}
-	for _, name := range names {
-		v, ok := kept.Volumes[name]
-		if !ok || v.Encryption != storage.EncryptionTPM2 {
-			continue
-		}
-		if v.Disk == storage.SystemDisk {
-			devices = append(devices, filepath.Join(s.Paths.BootPartitions, v.Label))
-		} else if uuid := pins.Disks[v.Disk].Partitions[name]; uuid != "" {
-			devices = append(devices, storage.PartUUIDPath(uuid))
-		}
-	}
-	return devices
-}
-
-// passwordSlots returns the keyslots of a LUKS2 header that no token refers to, in numeric
-// order. systemd-cryptenroll counts them as password slots: the fallback keyslot is one, the
-// TPM2 keyslot has its token.
-func passwordSlots(dump []byte) ([]string, error) {
-	var header struct {
-		Keyslots map[string]json.RawMessage `json:"keyslots"`
-		Tokens   map[string]struct {
-			Keyslots []string `json:"keyslots"`
-		} `json:"tokens"`
-	}
-	if err := json.Unmarshal(dump, &header); err != nil {
-		return nil, fmt.Errorf("parse the LUKS2 header: %w", err)
-	}
-	tokened := map[string]bool{}
-	for _, t := range header.Tokens {
-		for _, slot := range t.Keyslots {
-			tokened[slot] = true
-		}
-	}
-	var slots []int
-	for slot := range header.Keyslots {
-		n, err := strconv.Atoi(slot)
-		if err != nil || n < 0 {
-			return nil, fmt.Errorf("the LUKS2 header has the keyslot %q", slot)
-		}
-		if !tokened[slot] {
-			slots = append(slots, n)
-		}
-	}
-	sort.Ints(slots)
-	var out []string
-	for _, n := range slots {
-		out = append(out, strconv.Itoa(n))
-	}
-	return out, nil
 }
 
 func (s *Server) stopUnits(ctx context.Context, units []string) error {
@@ -911,16 +706,19 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	if err != nil {
 		return nil, err
 	}
-	if err := s.resetVolume(ctx, m.Volume, string(c.Identity), m.FallbackSecret); err != nil {
+	if err := s.resetVolume(ctx, m.Volume, c, schemas, m.FallbackSecret); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil
 }
 
-// resetVolume wipes the volume name and creates it again as the identity defines it; the caller
-// holds s.mu.
-func (s *Server) resetVolume(ctx context.Context, name, identity, fallback string) error {
-	d, err := parseIdentity(identity)
+// resetVolume wipes the volume name and creates it again as next, the config translated for the
+// running image, whose schemas are given, defines it; the caller holds s.mu. The image's storage
+// rules decide what a reset carries out: once deleted, the volume is created again like a new
+// one, so they are checked against the recorded section without it, which they must then accept
+// whole. They check the disk the volume lives on and the fallback secret it is enrolled with too.
+func (s *Server) resetVolume(ctx context.Context, name string, next store.Stored, schemas *schema.Schemas, fallback string) error {
+	d, err := parseIdentity(string(next.Identity))
 	if err != nil {
 		return err
 	}
@@ -942,37 +740,6 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 	if nv.Disk != v.Disk {
 		return failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
 	}
-	classified, disks := s.classify(recorded, d.section, pins)
-	if err, ok := disks.unresolved[name]; ok {
-		fix := "fix the reference"
-		switch {
-		case errors.Is(err, storage.ErrNoDisk):
-			fix = "fix the reference or plug in the disk it names"
-		case errors.Is(err, storage.ErrListDisks):
-			fix = "reset the volume again once the node can list its disks"
-		}
-		return failed(connect.CodeFailedPrecondition, "the disk reference of volume %s cannot be resolved: %v; %s", name, err, fix)
-	}
-	if disks.moved[name] {
-		return failed(connect.CodeFailedPrecondition, "the disk reference of volume %s finds another disk than the one it lives on; a reset recreates a volume on its own disk only", name)
-	}
-	found, err := s.pinnedDisk(nv, pins)
-	if err != nil {
-		return failed(connect.CodeFailedPrecondition, "find the disk of volume %s: %v", name, err)
-	}
-	if !found {
-		return failed(connect.CodeFailedPrecondition, "disk %s of volume %s (%s) is not plugged in; plug it in and reset the volume again", nv.Disk, name, pins.Disks[nv.Disk].Identity)
-	}
-	var others []string
-	for _, c := range classified {
-		if c.Class == storage.Destructive && c.Volume != name {
-			others = append(others, c.String())
-		}
-	}
-	if len(others) > 0 {
-		return failed(connect.CodeFailedPrecondition, "the config changes other volumes destructively too: %s", strings.Join(others, "; "))
-	}
-	// Once deleted, the volume is created again like a new one.
 	without := recorded
 	without.Volumes = map[string]storage.Volume{}
 	for n, vol := range recorded.Volumes {
@@ -980,16 +747,31 @@ func (s *Server) resetVolume(ctx context.Context, name, identity, fallback strin
 			without.Volumes[n] = vol
 		}
 	}
-	// Every volume created after the deletion needs the secret, so check it before deleting.
-	if err := s.verifyFallback(ctx, without, d.section, pins, fallback); err != nil {
+	set, err := compileRules(schemas)
+	if err != nil {
 		return err
+	}
+	_, running, _, err := s.runningSlot()
+	if err != nil {
+		return err
+	}
+	f, err := s.factsFor(ctx, next.Documents, running.Documents, fallback)
+	if err != nil {
+		return err
+	}
+	f.Override("recorded", jsonValue(without))
+	failures, err := evaluate(set.Of(config.StorageAPI), next.Documents, running.Documents, f)
+	if err != nil {
+		return err
+	}
+	if len(failures) > 0 {
+		return failed(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, refusal(failures, nodeOf(next.Documents)))
 	}
 
 	if err := s.deleteVolume(ctx, name, v, pins); err != nil {
 		return err
 	}
-	changes := storage.Classify(without, d.section)
-	if err := s.applyStorage(ctx, without, d.section, fallback, changes); err != nil {
+	if err := s.applyStorage(ctx, without, d.section, fallback, storage.Changes(without, d.section)); err != nil {
 		return err
 	}
 	log.Printf("volume %s reset", name)

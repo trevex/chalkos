@@ -201,24 +201,25 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %v", err)
 	}
-	// The rules are the image's, which the config is for; the facts the running image's, which
-	// read this node. The running slot is the baseline, as for ApplyConfig.
-	f, err := s.factsFor(ctx, next.Documents, running.Documents, secret)
-	if err != nil {
-		return err
-	}
-	if err := s.checkRules(schemas, next.Documents, running.Documents, f); err != nil {
-		return err
-	}
 	d, err := parseIdentity(string(next.Identity))
 	if err != nil {
 		return err
 	}
-	mc, err := s.machineChanges(d.section, rootHash)
+	// The rules are the image's, which the config is for; the facts the running image's, which
+	// read this node. The running slot is the baseline, as for ApplyConfig.
+	set, err := compileRules(schemas)
 	if err != nil {
 		return err
 	}
-	if err := s.verifyMachine(ctx, mc, secret); err != nil {
+	f, err := s.factsFor(ctx, next.Documents, running.Documents, secret)
+	if err != nil {
+		return err
+	}
+	if err := s.checkRules(set, next.Documents, running.Documents, f); err != nil {
+		return s.elsewhere(err, d.section, rootHash)
+	}
+	mc, err := s.machineChanges(d.section)
+	if err != nil {
 		return err
 	}
 	if err := s.applyMachine(ctx, mc, secret); err != nil {

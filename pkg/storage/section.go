@@ -1,5 +1,5 @@
 // Package storage reads a node's storage section and applies it on the node: it resolves and
-// pins disks, writes repart definitions, and classifies changes to a recorded section.
+// pins disks, writes repart definitions, and lists what a section adds to a recorded one.
 package storage
 
 import (

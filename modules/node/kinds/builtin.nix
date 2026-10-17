@@ -152,6 +152,54 @@ let
         + families.map(f, f + " " + ${show (value "gets" "f")}).join(", ") + "; ${fixed}")
     '';
   };
+  # The storage kinds' rules compare the delivered documents with the section STATE records,
+  # facts.recorded, rather than with the running config: the machine has one storage, which a
+  # slot's config may grow but not undo. Null facts.recorded, as at an install, has nothing to
+  # compare with. A recorded value is "" or null where the documents say null.
+  storageAPI = "storage.chalkos.dev/v1alpha1";
+  nodeName = ''config["chalkos.dev/v1alpha1"].Node.map(k, k)[0]'';
+  systemDiskSpec = ''config["${storageAPI}"].SystemDisk.map(k, config["${storageAPI}"].SystemDisk[k].spec)[0]'';
+  orEmpty = x: ''(${x} == null ? "" : ${x})'';
+  shown = x: ''(${x} == "" ? "null" : ${x})'';
+  # Binds v to volume n's spec, sd to the SystemDisk's, r to the volume's recorded definition when
+  # it has one, and fd to what the node finds of the volume's own disk, around expr. fd is read only
+  # where it is used, so a node whose volumes all live on the system disk runs no command.
+  bindVolume =
+    expr:
+    "cel.bind(v, documents[n].spec, cel.bind(sd, ${systemDiskSpec}, cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, ${expr})))";
+  # The volume's definition as the recorded section writes it.
+  volDisk = ''(v.disk == null ? "system" : n)'';
+  volFormat = orEmpty "v.format";
+  volEncryption = "(v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode)";
+  # What a change of encryption, size or format needs a volume to be recreated for, "" for none.
+  # A larger size, and filling the disk instead of a size, only grow the partition; sizes of the
+  # same bytes are the same.
+  sizeReason =
+    size: recorded:
+    ''(${size} == ${recorded} || ${size} == "" ? "" : ${recorded} == "" ? "size " + ${size} + " instead of filling its disk" : bytes(${size}) < bytes(${recorded}) ? "smaller: " + ${size} + " instead of " + ${recorded} : "")'';
+  encryptionReason =
+    enc: recorded:
+    ''(${enc} != ${recorded} ? "encryption " + ${enc} + " instead of " + ${recorded} : "")'';
+  resetReasons = ''
+    [${volFormat} != ${orEmpty "r.format"} ? "format " + ${shown volFormat} + " instead of " + ${shown (orEmpty "r.format")} : "",
+     ${encryptionReason volEncryption "r.encryption"},
+     ${sizeReason (orEmpty "v.size") (orEmpty "r.size")}].filter(x, x != "")'';
+  ownDisk = "v.disk != null && n in facts.disks";
+  movedByRef = ''${ownDisk} && facts.disks[n].changed && facts.disks[n].error == "" && !facts.disks[n].same'';
+  unresolved = ''${ownDisk} && facts.disks[n].changed && facts.disks[n].error != ""'';
+  needsReset = "r != null && ${volDisk} == r.disk && !(${movedByRef}) && !(${unresolved}) && size(${resetReasons}) > 0";
+  volChanges = "r == null || ${volFormat} != ${orEmpty "r.format"} || ${volEncryption} != r.encryption || ${orEmpty "v.size"} != ${orEmpty "r.size"} || ${orEmpty "v.mountPoint"} != ${orEmpty "r.mountPoint"}";
+  missingDisk = "${ownDisk} && facts.disks[n].pinned && !facts.disks[n].present && (${volChanges})";
+  # A rule over each Volume document n: none may be bad, and message names each that is.
+  volumeRule = takes: bad: message: {
+    inherit takes;
+    rule = "facts.recorded == null || documents.all(n, ${bindVolume "!(${bad})"})";
+    messageExpression = ''documents.filter(n, ${bindVolume bad}).map(n, ${bindVolume message}).join("; ")'';
+  };
+  reinstall = ''"; only a reinstall of " + ${nodeName} + " carries it out"'';
+  # The new volumes that get the fallback keyslot, encrypted with TPM2 on a node with a fallback.
+  enrolled = "documents.filter(n, !(n in facts.recorded.volumes) && ${bindVolume ''${volEncryption} == "tpm2"''})";
+
   # The cluster DNS's address: the one given, or the 10th of the family's service range.
   dnsIP =
     s: f: "(${s}.dnsIPs[${f}] != null ? ip(${s}.dnsIPs[${f}]) : cidr(${s}.serviceCIDRs[${f}]).ip(10))";
@@ -172,15 +220,15 @@ in
     Node = builtin "chalkos.dev" // {
       # The share's certificates are those of its kind, and a control plane's etcd data stays its
       # own, until the node is reinstalled; a share of another type delivered with the config
-      # changes neither.
+      # changes neither. A Node without a type runs no Kubernetes, as on an image without it,
+      # which reads no share.
       rules = lib.optionals kubernetes [
         {
-          rule = "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)";
+          rule = "facts.share == null || documents.all(n, documents[n].spec.type == null || documents[n].spec.type == facts.share.kind)";
           messageExpression = ''
             cel.bind(type, documents.map(n, documents[n].spec.type)[0],
-              "the config changes the node's type from \"" + facts.share.kind + "\" to \""
-              + (type == null ? "null" : type) + "\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a "
-              + (type == null ? "node without Kubernetes" : type))
+              "the config changes the node's type from \"" + facts.share.kind + "\" to \"" + type
+              + "\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a " + type)
           '';
         }
       ];
@@ -223,6 +271,25 @@ in
       };
     };
     SystemDisk = builtin "storage.chalkos.dev" // {
+      # VAR holds the running node's data, so a change it would be recreated for takes a
+      # reinstall; a larger VAR, or one that fills the disk, only grows.
+      rules =
+        let
+          bindVar =
+            expr:
+            ''cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes["var"], ${expr}))'';
+          reasons = ''
+            [${orEmpty "r.format"} != "ext4" ? "format ext4 instead of " + ${shown (orEmpty "r.format")} : "",
+             ${encryptionReason "(sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode)" "r.encryption"},
+             ${sizeReason (orEmpty "sd.var.size") (orEmpty "r.size")}].filter(x, x != "")'';
+        in
+        [
+          {
+            takes = "reinstall";
+            rule = ''facts.recorded == null || !("var" in facts.recorded.volumes) || size(documents) != 1 || ${bindVar "size(${reasons}) == 0"}'';
+            messageExpression = bindVar ''"VAR: " + ${reasons}.join("; ") + ${reinstall}'';
+          }
+        ];
       spec = {
         disk = mkOption {
           type = diskRef;
@@ -260,6 +327,53 @@ in
     };
     Volume = builtin "storage.chalkos.dev" // {
       multiple = true;
+      # chalkctl storage reset recreates a volume in place, on the disk it lives on; moving a volume
+      # to another disk, by its disk or by a reference that finds another disk, and removing it,
+      # take a reinstall. A disk reference that cannot be resolved is a mistake in the config, or a
+      # missing disk when it finds none, which neither carries out.
+      rules = [
+        (volumeRule "reinstall" "r != null && ${volDisk} != r.disk"
+          ''"Volume " + n + ": disk " + ${volDisk} + " instead of " + r.disk + ${reinstall}''
+        )
+        (volumeRule "reinstall" movedByRef
+          ''"Volume " + n + ": disk reference " + facts.disks[n].ref + " resolves to " + facts.disks[n].found + ", but the volume lives on " + facts.disks[n].identity + ${reinstall}''
+        )
+        (volumeRule "refuse" unresolved ''
+          "Volume " + n + ": disk reference " + facts.disks[n].ref + " cannot be resolved: " + facts.disks[n].error + "; "
+          + (facts.disks[n].errorKind == "noDisk" ? "fix the disk reference or plug in the disk it names"
+            : facts.disks[n].errorKind == "listDisks" ? "try again once the node can list its disks"
+            : "fix the disk reference")
+        '')
+        (volumeRule "reset" needsReset
+          ''"Volume " + n + ": " + ${resetReasons}.join("; ") + "; reset it with chalkctl storage reset " + ${nodeName} + " " + n''
+        )
+        (volumeRule "refuse" missingDisk ''
+          facts.disks[n].presentError != ""
+            ? "Volume " + n + ": the node cannot find its disk " + n + ": " + facts.disks[n].presentError + "; try again once it can"
+            : "Volume " + n + ": its disk " + n + " (" + facts.disks[n].identity + ") is not plugged in; plug it in"
+        '')
+        # A volume the running image's config never named was added by another image's config,
+        # or an earlier one of the image a slot is written for, which the running slot is not.
+        {
+          takes = "reinstall";
+          rule = ''facts.recorded == null || facts.recorded.volumes.all(n, n == "var" || n in documents)'';
+          messageExpression = ''
+            facts.recorded.volumes.filter(n, n != "var" && !(n in documents)).map(n, n in oldDocuments
+              ? "Volume " + n + ": the config removes it; only a reinstall of " + ${nodeName} + " removes a volume"
+              : "Volume " + n + ": an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of " + ${nodeName} + " removes it").join("; ")
+          '';
+        }
+        # New encrypted volumes are enrolled with the fallback secret, which must open the node's
+        # existing fallback keyslot, so a mistyped one cannot leave volumes whose fallbacks differ.
+        {
+          rule = ''facts.recorded == null || ${systemDiskSpec}.encryption.fallback == "none" || size(${enrolled}) == 0 || (facts.fallback.sent && facts.fallback.matches != false)'';
+          messageExpression = ''
+            !facts.fallback.sent
+              ? "Volume " + ${enrolled}[0] + " is encrypted and the node's fallback is " + ${systemDiskSpec}.encryption.fallback + ", but no fallback secret was sent"
+              : "the fallback secret does not match the node's existing fallback keyslot"
+          '';
+        }
+      ];
       spec = {
         disk = mkOption {
           type = types.nullOr diskRef;

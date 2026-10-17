@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -47,6 +48,71 @@ func identityWith(storageSection string) string {
 	return `{"hostname": "n1", "cluster": "lab", "platform": "metal", "networkUnits": {}, "storage": ` + storageSection + `}`
 }
 
+// documentsOf is the config of node n1 of the cluster lab whose storage section an identity
+// renders: its Cluster, Node and Image, and the SystemDisk and Volume documents that translate
+// into the section, with their defaults. The storage rules read these documents; the identity is
+// what the tests deliver; one that does not parse, which the node refuses first, has none.
+func documentsOf(identity string) []config.Document {
+	var id struct {
+		Storage storage.Section `json:"storage"`
+	}
+	if err := json.Unmarshal([]byte(identity), &id); err != nil {
+		return nil
+	}
+	sec := id.Storage
+	ref := func(r storage.Ref) map[string]any {
+		m := map[string]any{"path": nil, "model": nil, "serial": nil, "wwn": nil, "size": nil, "type": nil}
+		for key, v := range map[string]string{"path": r.Path, "model": r.Selector.Model, "serial": r.Selector.Serial, "wwn": r.Selector.WWN, "size": r.Selector.Size, "type": r.Selector.Type} {
+			if v != "" {
+				m[key] = v
+			}
+		}
+		return m
+	}
+	orNull := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	// A volume's mode is the node's unless it overrides it.
+	mode := func(m string) any {
+		if m == sec.Encryption {
+			return nil
+		}
+		return m
+	}
+	doc := func(apiVersion, kind, name string, spec map[string]any) config.Document {
+		return config.FromObject(map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": map[string]any{"name": name}, "spec": spec})
+	}
+	v := sec.Volumes[storage.VarVolume]
+	docs := []config.Document{
+		doc(config.CoreAPI, "Cluster", "lab", map[string]any{"endpoint": nil}),
+		doc(config.CoreAPI, "Node", "n1", map[string]any{"type": nil, "imageRef": "metal", "hostname": nil}),
+		doc(config.CoreAPI, "Image", "metal", map[string]any{"source": map[string]any{"directory": "./images/metal"}}),
+		doc(config.StorageAPI, "SystemDisk", "system", map[string]any{
+			"disk":       ref(sec.Disks[storage.SystemDisk].Ref),
+			"encryption": map[string]any{"mode": sec.Encryption, "fallback": sec.Fallback},
+			"var":        map[string]any{"size": orNull(v.Size), "encryption": map[string]any{"mode": mode(v.Encryption)}},
+		}),
+	}
+	for _, name := range sortedNames(sec.Volumes) {
+		vol := sec.Volumes[name]
+		if name == storage.VarVolume {
+			continue
+		}
+		var disk any
+		if vol.Disk != storage.SystemDisk {
+			disk = ref(sec.Disks[vol.Disk].Ref)
+		}
+		docs = append(docs, doc(config.StorageAPI, "Volume", name, map[string]any{
+			"disk": disk, "size": orNull(vol.Size), "format": orNull(vol.Format), "mountPoint": orNull(vol.MountPoint),
+			"encryption": map[string]any{"mode": mode(vol.Encryption)}, "repart": map[string]any{},
+		}))
+	}
+	return docs
+}
+
 // installedServer is a normal-mode server whose STATE records the section and its pins.
 func installedServer(t *testing.T, recorded string, extraPinned bool, more ...testDisk) (*Server, *fakeRunner) {
 	t.Helper()
@@ -58,7 +124,9 @@ func installedServer(t *testing.T, recorded string, extraPinned bool, more ...te
 		pins += `, "extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "path": "pci-0000:00:05.0", "size": 17179869184, "type": "hdd"}, "partitions": {"extra": "` + extraUUID + `"}}`
 	}
 	write(t, filepath.Join(dir, "disks.json"), `{"disks": {`+pins+`}}`)
-	writeIdentity(t, s, identityWith(recorded))
+	if err := store.Write(slotOf(t, s), store.Stored{Documents: documentsOf(identityWith(recorded)), Identity: []byte(identityWith(recorded))}); err != nil {
+		t.Fatal(err)
+	}
 	r.rules = []rule{
 		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
@@ -88,8 +156,8 @@ func apply(s *Server, identity, fallback string) (*nodev1.ApplyConfigResponse, e
 
 // deliver runs what ApplyConfig runs once it has translated its config into identity, with the
 // rest of req; an empty identity keeps the node's. The storage and Kubernetes tests state the
-// identity exactly this way. The config set does not matter to them, so the node keeps an empty
-// one, checked against the image's schemas.
+// identity exactly this way, with the documents of its storage section, which the storage rules
+// read.
 func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	r := applyRequest{identity: identity, msg: req}
 	if identity != "" {
@@ -97,7 +165,7 @@ func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyC
 		if err != nil {
 			return nil, err
 		}
-		r.next, r.schemas = store.Stored{Version: "empty"}, schemas
+		r.next, r.schemas = store.Stored{Version: "empty", Documents: documentsOf(identity)}, schemas
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -228,7 +296,7 @@ func unplug(t *testing.T, s *Server, name string) {
 // A destructive change names what carries it out: a reset for a volume it recreates in place, a
 // reinstall for a volume the config removes or moves to another disk, a plugged-in disk for a
 // volume whose disk is missing, and a fixed reference for a disk reference that cannot be
-// resolved.
+// resolved. The image's storage rules name them.
 func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 	for _, tc := range []struct {
 		name, next string
@@ -252,19 +320,32 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 			name:    "reformatted on a disk that is not plugged in",
 			next:    section("", "xfs"),
 			prepare: func(t *testing.T, s *Server) { unplug(t, s, "vdb") },
-			want:    []string{`its disk extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in, then reset it with chalkctl storage reset n1 extra`},
+			want:    []string{"Volume extra: format xfs instead of ext4; reset it with chalkctl storage reset n1 extra", `Volume extra: its disk extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in`},
 		},
 		{
 			name:    "reformatted on a disk whose identity two disks have",
 			next:    section("", "xfs"),
 			prepare: twin,
-			want:    []string{"2 disks have the pinned identity", "refusing to choose", "; reset it with chalkctl storage reset n1 extra once its disk can be found"},
+			want:    []string{"Volume extra: the node cannot find its disk extra: 2 disks have the pinned identity", "refusing to choose", "reset it with chalkctl storage reset n1 extra"},
 			notWant: []string{"plug in"},
+		},
+		// A change the node would make on the disk, such as another mount point, waits for it,
+		// so the node stops no unit for it.
+		{
+			name: "mounted elsewhere on a disk that is not plugged in",
+			next: editSection(t, section("", "ext4"), func(s *storage.Section) {
+				v := s.Volumes["extra"]
+				v.MountPoint = "/srv/other"
+				s.Volumes["extra"] = v
+			}),
+			prepare: func(t *testing.T, s *Server) { unplug(t, s, "vdb") },
+			want:    []string{`Volume extra: its disk extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in`},
+			notWant: []string{"reset"},
 		},
 		{
 			name: "removed",
 			next: section("", ""),
-			want: []string{"only a reinstall of n1 carries it out"},
+			want: []string{"Volume extra: the config removes it; only a reinstall of n1 removes a volume"},
 		},
 		{
 			name: "moved by its reference",
@@ -288,7 +369,7 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 			name:    "its reference unresolved as the disks cannot be listed",
 			next:    withExtraRef(t, section("", "ext4"), "chalk-other"),
 			prepare: unlistable,
-			want:    []string{"cannot be resolved: list the disks", "apply the config again once the node can list its disks"},
+			want:    []string{"cannot be resolved: list the disks", "try again once the node can list its disks"},
 			notWant: []string{"fix the disk reference", "reinstall"},
 		},
 	} {
@@ -322,7 +403,7 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 func TestApplyConfigNeedsFallbackForEncryptedVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	_, err := apply(s, identityWith(section("", "ext4")), "")
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "no fallback secret") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.calls) != 0 {
@@ -356,9 +437,19 @@ func addPartition(t *testing.T, s *Server, disk, name, devnum, number, uuid, lin
 }
 
 func reset(s *Server, volume, identity string) error {
+	return resetWith(s, volume, identity, secret)
+}
+
+// resetWith resets the volume to what identity defines, with the documents of its storage section
+// checked against the image's schemas, as ResetVolume translates them, and the fallback secret.
+func resetWith(s *Server, volume, identity, fallback string) error {
+	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.resetVolume(context.Background(), volume, identity, secret)
+	return s.resetVolume(context.Background(), volume, store.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, schemas, fallback)
 }
 
 // A reset recreates a volume on its disk, also when the config references the disk anew.
@@ -419,14 +510,14 @@ func TestResetVolumeRefusals(t *testing.T) {
 	}{
 		{"var", "var", identityWith(section("1G", "ext4")), "vdb", nil, []string{"VAR"}, nil},
 		{"unknown volume", "nope", identityWith(section("", "ext4")), "vdb", nil, []string{"no volume nope"}, nil},
-		{"other volumes change destructively", "extra", identityWith(section("1G", "xfs")), "vdb", nil, []string{"other volumes"}, nil},
+		{"other volumes change destructively", "extra", identityWith(section("1G", "xfs")), "vdb", nil, []string{"a reset of volume extra does not carry out the config", "VAR: size 1G instead of filling its disk"}, nil},
 		{"partition on another disk", "extra", identityWith(section("", "xfs")), "vda", nil, []string{"refusing to touch it"}, nil},
-		{"reference finding another disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", nil, []string{"finds another disk"}, nil},
-		{"reference finding no disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-missing")), "vdb", nil, []string{"cannot be resolved: no disk matches", "; fix the reference or plug in the disk it names"}, nil},
-		{"reference finding two disks", "extra", identityWith(withExtraSelector(t, section("", "xfs"), storage.Selector{Type: "ssd"})), "vdb", ssds, []string{"cannot be resolved: 2 disks match", "; fix the reference"}, []string{"plug in"}},
-		{"reference unresolved as the disks cannot be listed", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", unlistable, []string{"cannot be resolved: list the disks", "; reset the volume again once the node can list its disks"}, []string{"fix the reference"}},
-		{"two disks with the pinned identity", "extra", identityWith(section("", "xfs")), "vdb", twin, []string{"find the disk of volume extra: 2 disks have the pinned identity", "refusing to choose"}, []string{"plug in"}},
-		{"disk not plugged in", "extra", identityWith(section("", "xfs")), "vdb", unplugged, []string{`disk extra of volume extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in`}, nil},
+		{"reference finding another disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", nil, []string{"but the volume lives on", "only a reinstall of n1 carries it out"}, nil},
+		{"reference finding no disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-missing")), "vdb", nil, []string{"cannot be resolved: no disk matches", "; fix the disk reference or plug in the disk it names"}, nil},
+		{"reference finding two disks", "extra", identityWith(withExtraSelector(t, section("", "xfs"), storage.Selector{Type: "ssd"})), "vdb", ssds, []string{"cannot be resolved: 2 disks match", "; fix the disk reference"}, []string{"plug in"}},
+		{"reference unresolved as the disks cannot be listed", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", unlistable, []string{"cannot be resolved: list the disks", "; try again once the node can list its disks"}, []string{"fix the disk reference"}},
+		{"two disks with the pinned identity", "extra", identityWith(section("", "xfs")), "vdb", twin, []string{"the node cannot find its disk extra: 2 disks have the pinned identity", "refusing to choose"}, []string{"plug in"}},
+		{"disk not plugged in", "extra", identityWith(section("", "xfs")), "vdb", unplugged, []string{`its disk extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in`}, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true, vdc)
@@ -623,10 +714,8 @@ func TestResetVolumeNeedsFallbackForEveryEncryptedVolume(t *testing.T) {
 		v.Encryption = storage.EncryptionNone
 		s.Volumes["extra"] = v
 	}), storage.EncryptionTPM2)
-	s.mu.Lock()
-	err := s.resetVolume(context.Background(), "extra", identityWith(next), "")
-	s.mu.Unlock()
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "volume data") || !strings.Contains(err.Error(), "no fallback secret") {
+	err := resetWith(s, "extra", identityWith(next), "")
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume data is encrypted") || !strings.Contains(err.Error(), "no fallback secret") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.calls) != 0 {
@@ -675,7 +764,7 @@ func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
 	before, _ := readIdentity(s)
 	mismatch(r)
 	_, err := apply(s, identityWith(section("", "ext4")), "mistyped")
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the fallback secret does not match the node's existing fallback keyslot") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the fallback secret does not match the node's existing fallback keyslot") {
 		t.Fatalf("err = %v", err)
 	}
 	if !reflect.DeepEqual(r.calls, []string{dumpState, testState}) {
@@ -706,7 +795,7 @@ func TestResetVolumeRefusesMismatchingFallbackSecret(t *testing.T) {
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 	mismatch(r)
 	err := reset(s, "extra", identityWith(section("", "xfs")))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "does not match") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("err = %v", err)
 	}
 	if !reflect.DeepEqual(r.calls, []string{dumpState, testState}) {
@@ -715,7 +804,7 @@ func TestResetVolumeRefusesMismatchingFallbackSecret(t *testing.T) {
 }
 
 // TestFallbackCheckDevice checks the secret against STATE, else VAR, else another encrypted
-// volume the node keeps, and skips the check when the node has none.
+// volume the node records, and skips the check when the node has none.
 func TestFallbackCheckDevice(t *testing.T) {
 	addData := func(rendered string) string { return withSystemVolume(t, rendered, storage.EncryptionTPM2) }
 	for _, c := range []struct {
@@ -735,7 +824,8 @@ func TestFallbackCheckDevice(t *testing.T) {
 		{"no fallback recorded", editSection(t, section("", ""), func(s *storage.Section) {
 			s.Fallback = storage.FallbackNone
 		}), section("", "ext4"), false, false, ""},
-		{"only the reset volume encrypted", editSection(t, section("", "ext4"), plainSystem), editSection(t, section("", "xfs"), plainSystem), true, true, ""},
+		// The reset volume still has its keyslot when the secret is checked, before it is wiped.
+		{"only the reset volume encrypted", editSection(t, section("", "ext4"), plainSystem), editSection(t, section("", "xfs"), plainSystem), true, true, "/dev/disk/by-partuuid/" + extraUUID},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, r := installedServer(t, c.recorded, c.extraPinned)
@@ -767,23 +857,6 @@ func TestFallbackCheckDevice(t *testing.T) {
 				t.Errorf("no fallback keyslot was enrolled: %v", r.calls)
 			}
 		})
-	}
-}
-
-func TestPasswordSlots(t *testing.T) {
-	for dump, want := range map[string][]string{
-		luksDump: {"2"},
-		`{"keyslots": {"0": {}, "1": {}, "10": {}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}, "1": {"type": "systemd-recovery", "keyslots": ["10"]}}}`: {"1"},
-		`{"keyslots": {"0": {}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}}}`:                                                                           nil,
-		`{"keyslots": {"3": {}, "1": {}}, "tokens": {}}`:                                                                                                                  {"1", "3"},
-	} {
-		got, err := passwordSlots([]byte(dump))
-		if err != nil || !reflect.DeepEqual(got, want) {
-			t.Errorf("passwordSlots(%s) = %v, %v, want %v", dump, got, err, want)
-		}
-	}
-	if _, err := passwordSlots([]byte(`{"keyslots": {"0; rm": {}}}`)); err == nil {
-		t.Error("accepted a keyslot that is not a number")
 	}
 }
 

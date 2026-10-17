@@ -287,7 +287,7 @@ func TestStageConfigRefuses(t *testing.T) {
 		"Kubernetes without a type": {fixtureSchemas(t), testImage, "", `Node "n1" has no type, but its image runs Kubernetes`},
 		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, "", "image.json"},
 		"no schemas":                {nil, "", "", "the image's schemas"},
-		"a VAR of another size":     {fixtureSchemas(t), "", strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), "var: size 1G instead of filling its disk (destructive); only a reinstall of"},
+		"a VAR of another size":     {fixtureSchemas(t), "", strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), "VAR: size 1G instead of filling its disk; only a reinstall of n1 carries it out"},
 		"unparsable config":         {fixtureSchemas(t), "", "kind: [", "parse the config"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -396,11 +396,12 @@ func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	_, err := sendConfig(s, next)
-	if err == nil || !strings.Contains(err.Error(), "the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too, as the config of the image cdcdcdcdcdcd does") {
+	if err == nil || !strings.Contains(err.Error(), "Volume extra: an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too") ||
+		!strings.Contains(err.Error(), "; the config of the image cdcdcdcdcdcd names volume extra") {
 		t.Errorf("err = %v, want the volume named", err)
 	}
 	// A reinstall removes the volume, but does not carry out a config that is to name it.
-	if err != nil && (strings.Contains(err.Error(), "carries it out") || !strings.Contains(err.Error(), "; only a reinstall of "+s.nodeName()+" removes it")) {
+	if err != nil && (strings.Contains(err.Error(), "carries it out") || !strings.Contains(err.Error(), "; only a reinstall of n1 removes it")) {
 		t.Errorf("err = %v, want the volume named, and a reinstall only as what removes it", err)
 	}
 	running, err := s.runningHash()
@@ -576,7 +577,7 @@ func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := stage(baseConfig, "")
-	want := "an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of " + s.nodeName() + " removes it"
+	want := "Volume extra: an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of n1 removes it"
 	if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "cdcdcdcdcdcd") {
 		t.Errorf("err = %v, want the volume named without the staged image as another", err)
 	}

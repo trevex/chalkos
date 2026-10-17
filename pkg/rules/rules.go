@@ -338,3 +338,14 @@ func reads(a *cel.Ast, name string) bool {
 	}))
 	return found
 }
+
+// Of is the set's rules of the kinds of apiVersion, as for checking a config's storage alone.
+func (s *Set) Of(apiVersion string) *Set {
+	out := &Set{}
+	for _, p := range s.Programs {
+		if p.Kind.APIVersion == apiVersion {
+			out.Programs = append(out.Programs, p)
+		}
+	}
+	return out
+}
