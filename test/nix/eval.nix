@@ -1264,6 +1264,41 @@ lib.runTests {
       installerUKIPath = "/EFI/Linux/chalkos-installer_1.efi";
     };
   };
+  # The image ID names the UKIs' boot entries, so a node image or the installer whose ID holds
+  # other characters than lower-case letters, digits, ".", "_" and "-" fails to build: systemd-boot
+  # lowercases only uncounted entry IDs, and a "+" starts the tries counter.
+  testImageIDShape = {
+    expr =
+      let
+        message = "system.image.id must consist of lower-case letters, digits, \".\", \"_\" and \"-\", as it names the image's boot entries";
+        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
+        installer =
+          modules:
+          (mkImages {
+            variants = { };
+            installer = { inherit modules; };
+          }).nixos.installer.config;
+        id = id: worker [ { system.image.id = lib.mkForce id; } ];
+      in
+      {
+        default = refused (worker [ ]) || refused (installer [ ]);
+        allowed = refused (id "chalkos.lab_2-x");
+        upper = refused (id "Chalkos");
+        plus = refused (id "chalkos+1");
+        space = refused (id "chalk os");
+        empty = refused (id "");
+        installer = refused (installer [ { system.image.id = lib.mkForce "chalkos+installer"; } ]);
+      };
+    expected = {
+      default = false;
+      allowed = false;
+      upper = true;
+      plus = true;
+      space = true;
+      empty = true;
+      installer = true;
+    };
+  };
   # mkImages gives its revision and tag to every image and the installer, which only metadata.json
   # reads: the store, and so the root hash, is the same without them. Both default to null.
   testMkImagesPassesProvenance = {

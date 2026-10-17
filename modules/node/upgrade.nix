@@ -53,6 +53,14 @@ in
         assertion = config.system.image.version == null;
         message = "chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance";
       }
+      # The image ID starts the UKIs' names, <image ID>_<generation>.efi. systemd-boot lowercases
+      # only the IDs of entries without a tries counter, and takes the last "+" of a name to start
+      # the counter, so an ID in other characters would name one image's entries in two ways.
+      {
+        assertion =
+          config.system.image.id != null && builtins.match "[a-z0-9._-]+" config.system.image.id != null;
+        message = "system.image.id must consist of lower-case letters, digits, \".\", \"_\" and \"-\", as it names the image's boot entries";
+      }
     ];
     # boot-complete.target is pulled in on boots the boot loader counts, by
     # systemd-bless-boot.service, which marks the boot good once the target is reached: only once
