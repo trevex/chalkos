@@ -26,9 +26,14 @@ func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secr
 		run = facts.Sandbox{}
 	}
 	l := facts.NewLoader(ctx, defs, run)
-	l.Input = map[string]any{"config": rules.ConfigOf(next), "oldConfig": rules.ConfigOf(old)}
+	l.Input = factInput(next, old)
 	l.Inputs = map[string]any{facts.FallbackSecret: secret}
 	return l, nil
+}
+
+// factInput is what command facts read of a check of next against old: both as rules see them.
+func factInput(next, old []config.Document) map[string]any {
+	return map[string]any{"config": rules.ConfigOf(next), "oldConfig": rules.ConfigOf(old)}
 }
 
 // compileRules compiles the rules of an image's schemas, which its build checked already.

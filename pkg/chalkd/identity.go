@@ -19,6 +19,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -262,6 +263,8 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	// replaced last, so a retry after a failed restart still finds the cluster changed.
 	var cluster *k8s.Cluster
 	clusterChanged, addonsChanged := false, false
+	// The delivery's facts, loaded once for the running slot's check and the staged slot's.
+	var delivered *facts.Loader
 	if !keep {
 		if s.Kubernetes != nil {
 			if cluster, err = s.Loader.Cluster(r.next.Documents); err != nil {
@@ -274,18 +277,17 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			}
 		}
 		// The image's rules compare the config with the running slot's and the storage STATE
-		// records, and read the node's facts, which the delivery loads once, before anything
-		// changes: a missing or mistyped fallback secret is refused before the node trusts the
-		// delivered OS CAs.
+		// records, and read the node's facts, which the delivery loads once for this check and the
+		// staged slot's, before anything changes: a missing or mistyped fallback secret is refused
+		// before the node trusts the delivered OS CAs.
 		set, err := compileRules(r.schemas)
 		if err != nil {
 			return nil, err
 		}
-		f, err := s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret)
-		if err != nil {
+		if delivered, err = s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret); err != nil {
 			return nil, err
 		}
-		if err := s.checkRules(set, r.next.Documents, prev.Documents, f); err != nil {
+		if err := s.checkRules(set, r.next.Documents, prev.Documents, delivered); err != nil {
 			return nil, s.elsewhere(err, d.section, nil)
 		}
 	}
@@ -305,7 +307,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		if len(mc.changes) > 0 {
-			if err := s.checkStaged(ctx, r.schemas, r.next.Documents, d.section, m.FallbackSecret); err != nil {
+			if err := s.checkStaged(r.schemas, r.next.Documents, d.section, delivered); err != nil {
 				return nil, err
 			}
 		}

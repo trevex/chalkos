@@ -115,6 +115,46 @@ func TestFileFactFields(t *testing.T) {
 	}
 }
 
+// A loader For another input shares the delivery's facts: a file is read once, and a command runs
+// once for each input it reads. Overrides stay with the loader that made them.
+func TestLoaderFor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "recorded.json")
+	write(t, path, `{"volumes": {}}`)
+	r := &fakeRunner{out: map[string]string{"/bin/disks": `{}`}}
+	l := NewLoader(context.Background(), map[string]Definition{
+		"recorded": {File: path},
+		"share":    {File: filepath.Join(dir, "share.json")},
+		"disks":    {Command: "/bin/disks"},
+	}, r)
+	l.Input = map[string]any{"config": map[string]any{"a": "b"}}
+	l.Override("share", "overridden")
+	for _, name := range []string{"recorded", "disks"} {
+		if _, err := l.Fact(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	same := l.For(map[string]any{"config": map[string]any{"a": "b"}})
+	other := l.For(map[string]any{"config": map[string]any{"a": "c"}})
+	for _, f := range []*Loader{same, other} {
+		if v, err := f.Fact("recorded"); err != nil || v == nil {
+			t.Errorf("recorded = %v, %v; want the file read once", v, err)
+		}
+		if _, err := f.Fact("disks"); err != nil {
+			t.Fatal(err)
+		}
+		if v, err := f.Fact("share"); err != nil || v != nil {
+			t.Errorf("share = %v, %v; want the override left behind", v, err)
+		}
+	}
+	if len(r.stdins) != 2 || r.stdins[1]["config"].(map[string]any)["a"] != "c" {
+		t.Errorf("the command read %v, want once for each input", r.stdins)
+	}
+}
+
 // A command reads the config and only the inputs it declares, and prints its fact as JSON. A
 // delivery loads each fact once; a fact the image does not declare is null and runs nothing.
 func TestCommandFact(t *testing.T) {

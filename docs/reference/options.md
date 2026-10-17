@@ -719,7 +719,8 @@ null or string
 
 
 Facts about the node that change rules read as ` facts.<name> `, each from a file or a
-command\. chalkd loads a fact once per delivery, when a rule first reads it; chalkctl
+command\. chalkd loads a fact when a rule first reads it and keeps it for the delivery: a
+file is read once, and a command runs once for each config it reads; chalkctl
 runs no rule that reads one\.
 
 

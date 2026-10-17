@@ -100,9 +100,11 @@ It is one of:
   also reads the fallback secret delivered with the config; no other command does.
 
 chalkd loads a fact when a rule first reads it and keeps it for the rest of the delivery, which it
-handles under the config lock. A rule that does not reach a fact, as one whose first operand of
-`||` holds, loads none. chalkd runs a command through `systemd-run --pipe --wait` as a transient
-unit with these properties:
+handles under the config lock: a file is read once, and a command runs once for each config it
+reads. A check of the staged image's slot, which a storage change of the running image's config
+takes, gives a command the staged slot's config to read. A rule that does not reach a fact, as one
+whose first operand of `||` holds, loads none. chalkd runs a command through
+`systemd-run --pipe --wait` as a transient unit with these properties:
 
 | Property | Effect |
 | --- | --- |

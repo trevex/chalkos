@@ -161,7 +161,7 @@ func TestApplyConfigRefusesAMachineChangeTheStagedImageWouldUndo(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
 	r.rules = volumeRules(s)
 	_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "first run chalkctl apply-config --staged") || !strings.Contains(err.Error(), "extra") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "would refuse its own config once this config changes the storage, saying: Volume extra: ") || !strings.Contains(err.Error(), "; bring its config along first: run chalkctl apply-config --staged <node> with the new config, then apply it to the running image") || !strings.Contains(err.Error(), "extra") {
 		t.Fatalf("err = %v, want a refusal naming apply-config --staged", err)
 	}
 	if changed := withoutChecks(r.calls); len(changed) != 0 {

@@ -13,6 +13,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -111,10 +112,10 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 // brought along first, with chalkctl apply-config --staged, to which the new volume is then
 // additive. The slot is checked as it would be written again once the change is made: against
 // section as the recorded storage and next, the config this change runs, as the running config,
-// with the running image's storage rules, whose schemas are given, and the delivery's fallback
-// secret. The check runs this way only: a write of the staged slot does not check the running
-// slot against the storage it makes. The caller holds s.mu.
-func (s *Server) checkStaged(ctx context.Context, schemas *schema.Schemas, next []config.Document, section storage.Section, secret string) error {
+// with the running image's storage rules, whose schemas are given, and the delivery's facts f,
+// which its commands read for the staged slot. The check runs this way only: a write of the staged
+// slot does not check the running slot against the storage it makes. The caller holds s.mu.
+func (s *Server) checkStaged(schemas *schema.Schemas, next []config.Document, section storage.Section, f *facts.Loader) error {
 	staged, err := s.stagedImage()
 	if err != nil {
 		return failed(connect.CodeInternal, "find the staged image: %v", err)
@@ -133,12 +134,9 @@ func (s *Server) checkStaged(ctx context.Context, schemas *schema.Schemas, next 
 	if err != nil {
 		return err
 	}
-	f, err := s.factsFor(ctx, held.Documents, next, secret)
-	if err != nil {
-		return err
-	}
-	f.Override("recorded", jsonValue(section))
-	failures, err := evaluate(set.Of(config.StorageAPI), held.Documents, next, f)
+	sf := f.For(factInput(held.Documents, next))
+	sf.Override("recorded", jsonValue(section))
+	failures, err := evaluate(set.Of(config.StorageAPI), held.Documents, next, sf)
 	if err != nil {
 		return err
 	}
@@ -149,7 +147,7 @@ func (s *Server) checkStaged(ctx context.Context, schemas *schema.Schemas, next 
 	for i, f := range failures {
 		msgs[i] = f.String()
 	}
-	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next has config that does not fit the storage this config makes: %s; first run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], strings.Join(msgs, "; "), s.nodeName())
+	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], strings.Join(msgs, "; "), s.nodeName())
 }
 
 // stagedVersion is the version of the config slot of the image the boot status names as staged;

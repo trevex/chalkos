@@ -59,7 +59,9 @@ type Runner interface {
 	Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error)
 }
 
-// Loader loads the facts of one delivery, each once, when a rule first reads it.
+// Loader loads the facts of one delivery, each once, when a rule first reads it. A loader For
+// another input shares what it loaded: a file is read once a delivery, and a command runs once
+// for each input it reads.
 type Loader struct {
 	Definitions map[string]Definition
 	Run         Runner
@@ -74,8 +76,11 @@ type Loader struct {
 	// Timeout bounds each command; zero is Timeout.
 	Timeout time.Duration
 
-	ctx    context.Context
+	ctx context.Context
+	// loaded holds the facts by name as this loader's rules read them, overrides among them;
+	// shared the files and the commands' results of the delivery, by fact and input.
 	loaded map[string]loaded
+	shared map[string]loaded
 }
 
 type loaded struct {
@@ -85,10 +90,18 @@ type loaded struct {
 
 // NewLoader is a loader for one delivery whose commands run under ctx.
 func NewLoader(ctx context.Context, defs map[string]Definition, run Runner) *Loader {
-	return &Loader{Definitions: defs, Run: run, ctx: ctx, loaded: map[string]loaded{}}
+	return &Loader{Definitions: defs, Run: run, ctx: ctx, loaded: map[string]loaded{}, shared: map[string]loaded{}}
 }
 
-// Override makes name read as v in this delivery, whatever the image declares, as for a check of
+// For is a loader of the same delivery whose commands read input instead, as for a check of
+// another config set than the delivered one. It shares the facts l loaded, but not its overrides.
+func (l *Loader) For(input map[string]any) *Loader {
+	other := *l
+	other.Input, other.loaded = input, map[string]loaded{}
+	return &other
+}
+
+// Override makes name read as v for this loader, whatever the image declares, as for a check of
 // a config against storage that is yet to be made.
 func (l *Loader) Override(name string, v any) {
 	l.loaded[name] = loaded{value: v}
@@ -107,13 +120,30 @@ func (l *Loader) Fact(name string) (any, error) {
 
 func (l *Loader) load(name string) (any, error) {
 	def, ok := l.Definitions[name]
-	switch {
-	case !ok, l.Install:
+	if !ok || l.Install {
 		return nil, nil
-	case def.File != "":
-		return readFile(def.File, def.Fields)
 	}
-	return l.command(def)
+	key := "file " + name
+	var stdin []byte
+	if def.File == "" {
+		var err error
+		if stdin, err = l.stdin(def); err != nil {
+			return nil, err
+		}
+		key = "command " + name + "\x00" + string(stdin)
+	}
+	if f, ok := l.shared[key]; ok {
+		return f.value, f.err
+	}
+	var v any
+	var err error
+	if def.File != "" {
+		v, err = readFile(def.File, def.Fields)
+	} else {
+		v, err = l.command(def, stdin)
+	}
+	l.shared[key] = loaded{value: v, err: err}
+	return v, err
 }
 
 // readFile is a file's JSON, null when it is missing, with only fields kept of its object when
@@ -146,12 +176,8 @@ func readFile(path string, fields []string) (any, error) {
 	return kept, nil
 }
 
-// command runs a command fact with the input it reads: the config, and the inputs it declares.
-func (l *Loader) command(def Definition) (any, error) {
-	argv := strings.Fields(def.Command)
-	if len(argv) == 0 {
-		return nil, errors.New("the fact names no command")
-	}
+// stdin is what a command fact reads: the config, and the inputs it declares.
+func (l *Loader) stdin(def Definition) ([]byte, error) {
 	input := map[string]any{}
 	for k, v := range l.Input {
 		input[k] = v
@@ -161,9 +187,14 @@ func (l *Loader) command(def Definition) (any, error) {
 			input[name] = v
 		}
 	}
-	stdin, err := json.Marshal(input)
-	if err != nil {
-		return nil, err
+	return json.Marshal(input)
+}
+
+// command runs a command fact with stdin.
+func (l *Loader) command(def Definition, stdin []byte) (any, error) {
+	argv := strings.Fields(def.Command)
+	if len(argv) == 0 {
+		return nil, errors.New("the fact names no command")
 	}
 	timeout := l.Timeout
 	if timeout == 0 {
