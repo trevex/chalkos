@@ -2,9 +2,17 @@ package chalkctl
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -246,5 +254,52 @@ func TestUnreachableAddressNamesItsSource(t *testing.T) {
 	err = ta.run(context.Background(), []string{"status", "n1", "--inventory", ta.inventory, "--address", "127.0.0.1:1"})
 	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --address)") {
 		t.Errorf("an unreachable --address: %v, want it named with --address", err)
+	}
+}
+
+// TestCredentialsRole reads the role the credentials grant: admin for the secrets file, else the
+// role a client file's certificate names in its Organization, and none for one that names none.
+func TestCredentialsRole(t *testing.T) {
+	ta := newTestApp(t)
+	clientFile := func(role string) *client.Config {
+		c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", role, time.Hour, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &c
+	}
+	// A certificate of the OS CA without an Organization, as no chalkctl command issues one.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPair, err := tls.X509KeyPair([]byte(ta.secrets.OSCA.Certificate), []byte(ta.secrets.OSCA.Key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(caPair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "alice"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, caPair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unnamed := *clientFile(pki.RoleReader)
+	unnamed.Certificate = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	for _, c := range []struct {
+		name  string
+		creds credentials
+		want  string
+	}{
+		{"secrets file", credentials{secrets: &ta.secrets}, pki.RoleAdmin},
+		{"admin client file", credentials{config: clientFile(pki.RoleAdmin)}, pki.RoleAdmin},
+		{"reader client file", credentials{config: clientFile(pki.RoleReader)}, pki.RoleReader},
+		{"client file without an Organization", credentials{config: &unnamed}, ""},
+	} {
+		if got := c.creds.role(); got != c.want {
+			t.Errorf("%s: role %q, want %q", c.name, got, c.want)
+		}
 	}
 }

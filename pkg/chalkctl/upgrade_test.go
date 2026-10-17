@@ -945,6 +945,27 @@ func TestUpgradeWithholdsConfigBeforeDraining(t *testing.T) {
 	}
 }
 
+// TestUpgradeAsksNoPasswordOfANodeItDoesNotInstall asks no fallback password of a node that runs
+// the image already, nor of one that has it staged with the inventory's config, though their config
+// adds an encrypted volume: neither is sent the image.
+func TestUpgradeAsksNoPasswordOfANodeItDoesNotInstall(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	withPasswordVolume(t, l, "w1", "w2")
+	prompts := recordPrompts(l)
+	l.nodes["w1"].image, l.nodes["w1"].root = "0.2.0", rootOf(t, img)
+	l.nodes["w2"].staged, l.nodes["w2"].stagedRoot, l.nodes["w2"].stagedConfig = "0.2.0", rootOf(t, img), l.inventoryConfig("w2")
+	if err := l.upgrade(img, "--nodes", "w1,w2", "--no-reboot"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if len(*prompts) != 0 {
+		t.Errorf("asked %q", *prompts)
+	}
+	if events := l.takeEvents(); slices.Contains(events, "w1 upgrade") || slices.Contains(events, "w2 upgrade") {
+		t.Errorf("events %q, want no image sent", events)
+	}
+}
+
 // withPasswordVolume gives the nodes' config a fallback password and an encrypted volume the
 // nodes do not have yet.
 func withPasswordVolume(t *testing.T, l *upgradeLab, names ...string) {
