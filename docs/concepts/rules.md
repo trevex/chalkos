@@ -113,7 +113,8 @@ Facts are the running image's, since they read this node, whichever image the co
 fact the running image does not declare reads as null, as a fact that a newer image's rules read
 does during the upgrade to that image, so a rule treats null as unknown. An install has no
 running config: rules of fields that read `oldSelf` do not run, and the rules of kinds see no
-`oldDocuments`. On the installer, every file fact reads as null.
+`oldDocuments`. Every fact reads as null at an install, in place or from the installer, so an
+install tried again does not read what an earlier attempt left on STATE, and runs no command.
 
 ## Where do rules run?
 

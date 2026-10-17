@@ -15,8 +15,7 @@ import (
 
 // factsFor is the loader of one delivery's facts, by the facts the running image declares: they
 // read this node, whichever image the config is for. Commands read next and old as rules see them,
-// and the fallback secret when they declare it. On the installer, which has no STATE, every file
-// fact is null.
+// and the fallback secret when they declare it.
 func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secret string) (*facts.Loader, error) {
 	defs, err := facts.Read(s.Paths.Facts)
 	if err != nil {
@@ -29,7 +28,6 @@ func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secr
 	l := facts.NewLoader(ctx, defs, run)
 	l.Input = map[string]any{"config": rules.ConfigOf(next), "oldConfig": rules.ConfigOf(old)}
 	l.Inputs = map[string]any{facts.FallbackSecret: secret}
-	l.NoFiles = s.Installer
 	return l, nil
 }
 

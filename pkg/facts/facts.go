@@ -63,8 +63,10 @@ type Loader struct {
 	// them; Inputs holds the inputs a command receives besides when it declares them.
 	Input  map[string]any
 	Inputs map[string]any
-	// NoFiles reads every file fact as null, as on the installer, which has no STATE.
-	NoFiles bool
+	// Install reads every fact as null, files and commands alike, as at an install: the node has
+	// no state yet for its facts to read, and what an earlier attempt that failed left behind, such
+	// as a storage.json, is not the node's.
+	Install bool
 	// Timeout bounds each command; zero is Timeout.
 	Timeout time.Duration
 
@@ -102,12 +104,9 @@ func (l *Loader) Fact(name string) (any, error) {
 func (l *Loader) load(name string) (any, error) {
 	def, ok := l.Definitions[name]
 	switch {
-	case !ok:
+	case !ok, l.Install:
 		return nil, nil
 	case def.File != "":
-		if l.NoFiles {
-			return nil, nil
-		}
 		return readFile(def.File)
 	}
 	return l.command(def)

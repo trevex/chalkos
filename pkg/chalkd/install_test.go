@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -243,6 +244,20 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 	}
 	if got.Config.Version != hashOf(t, baseConfig) || len(got.Config.Documents) != 6 {
 		t.Errorf("config = %+v", got.Config)
+	}
+}
+
+// An install in place tried again reads every fact as null: what the attempt before it left on
+// STATE, here a storage.json the rules could not read, is not the node's.
+func TestInstallInPlaceReadsNoFacts(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	installed := false
+	s.InPlace = func(context.Context, install.Request) error { installed = true; return nil }
+	write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), "{")
+	h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	h.Config = baseConfig
+	if err := sendInstall(t, s, h, nil); err != nil || !installed {
+		t.Fatalf("installed %v: %v", installed, err)
 	}
 }
 

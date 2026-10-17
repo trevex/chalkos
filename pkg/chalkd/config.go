@@ -174,7 +174,8 @@ func restartByHand(units []string) string {
 // for the image installed, and returns the config slot of that image, identity included. In place,
 // that image is the running one; from the installer, the header describes it. The config meets
 // that image's rules with no running config to compare with: rules of a field that read oldSelf
-// do not run, and the rules of a kind see no oldDocuments.
+// do not run, the rules of a kind see no oldDocuments, and every fact is null: an install in place
+// that is tried again must not read what the attempt before it left on STATE.
 func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (store.Stored, error) {
 	if h.Config == "" {
 		return store.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
@@ -207,6 +208,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 	if err != nil {
 		return store.Stored{}, err
 	}
+	f.Install = true
 	if err := s.checkRules(set, stored.Documents, nil, f); err != nil {
 		return store.Stored{}, err
 	}

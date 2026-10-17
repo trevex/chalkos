@@ -63,8 +63,8 @@ func TestRead(t *testing.T) {
 	}
 }
 
-// A file fact is the file's JSON, null when the file is missing, and null for every file on the
-// installer.
+// A file fact is the file's JSON and null when the file is missing; at an install every fact,
+// a command's too, is null.
 func TestFileFact(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "share.json"), `{"kind": "worker", "port": 6443}`)
@@ -84,10 +84,17 @@ func TestFileFact(t *testing.T) {
 	if _, err := l.Fact("broken"); err == nil || !strings.Contains(err.Error(), "broken.json is not JSON") {
 		t.Errorf("broken: err = %v", err)
 	}
-	installer := NewLoader(context.Background(), defs, nil)
-	installer.NoFiles = true
-	if v, err := installer.Fact("share"); err != nil || v != nil {
-		t.Errorf("share on the installer = %v, %v; want null", v, err)
+	r := &fakeRunner{out: map[string]string{"/bin/disks": `{"extra": {}}`}}
+	defs["disks"] = Definition{Command: "/bin/disks"}
+	install := NewLoader(context.Background(), defs, r)
+	install.Install = true
+	for _, name := range []string{"share", "broken", "disks"} {
+		if v, err := install.Fact(name); err != nil || v != nil {
+			t.Errorf("%s at an install = %v, %v; want null", name, v, err)
+		}
+	}
+	if len(r.argv) != 0 {
+		t.Errorf("an install ran %v", r.argv)
 	}
 }
 
