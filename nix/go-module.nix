@@ -24,7 +24,7 @@ buildGoModule (
     proxyVendor = true;
     # After changing go.mod or go.sum, set this to lib.fakeHash, run `nix build .#chalkctl`, and
     # copy the hash it reports.
-    vendorHash = "sha256-LR53/mzAAjgecmNgzBEouMWS9BzJCVGYbdVbPXnoGd8=";
+    vendorHash = "sha256-TZhvKWV1XRrE02jTiVJzhx2mzF3e+acQSdrMWpJ8T4g=";
     env.CGO_ENABLED = "0";
   }
   // removeAttrs args [ "paths" ]
