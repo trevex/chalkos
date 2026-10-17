@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,6 +87,26 @@ func (s Slot) Version() string {
 		return ""
 	}
 	return v
+}
+
+// labelHashDigits is how many hex digits of the root hash a slot's labels carry: GPT labels hold
+// 36 characters, of which "store-verity_" takes 13.
+const labelHashDigits = 16
+
+// LabelID is what the labels of a slot holding the store of the root hash name it by: the root
+// hash's first 16 hex digits, as in store_<id> and store-verity_<id>. Nothing finds a store by
+// label; the labels name it for people and tools.
+func LabelID(rootHash []byte) string {
+	return hex.EncodeToString(rootHash)[:labelHashDigits]
+}
+
+// Label is the ID the slot's labels name its store by, or "" when it is retired or empty.
+func (s Slot) Label() string {
+	id, ok := strings.CutPrefix(s.Data.Name, "store_")
+	if !ok || s.Verity.Name != "store-verity_"+id {
+		return ""
+	}
+	return id
 }
 
 // Holds reports whether the slot's partition UUIDs are those systemd derives from the root

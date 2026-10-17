@@ -639,20 +639,20 @@ func TestEntriesWhileBlessed(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "chalkos_0.2.0+2-1.efi"), img.uki, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "chalkos_2+2-1.efi"), img.uki, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	blessed := false
 	list, err := entries(esp, func(path string) (*os.File, error) {
 		if !blessed {
 			blessed = true
-			if err := os.Rename(path, filepath.Join(dir, "chalkos_0.2.0.efi")); err != nil {
+			if err := os.Rename(path, filepath.Join(dir, "chalkos_2.efi")); err != nil {
 				t.Fatal(err)
 			}
 		}
 		return os.Open(path)
 	})
-	if err != nil || len(list) != 1 || list[0].File != "chalkos_0.2.0.efi" || list[0].Version != "0.2.0" || list[0].TriesLeft != -1 {
+	if err != nil || len(list) != 1 || list[0].File != "chalkos_2.efi" || list[0].Generation != 2 || list[0].TriesLeft != -1 {
 		t.Errorf("entries = %+v, %v", list, err)
 	}
 }

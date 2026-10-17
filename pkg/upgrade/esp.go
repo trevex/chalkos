@@ -36,10 +36,71 @@ type Entry struct {
 	// hash of the store it boots; all are empty when the UKI cannot be read.
 	ImageID, Version string
 	RootHash         []byte
+	// Generation numbers the image's entries, as the name <image ID>_<generation>.efi gives it; 0
+	// for a name that gives none or a UKI that cannot be read.
+	Generation int
 }
 
 // Bad reports whether systemd-boot used up the entry's tries.
 func (e Entry) Bad() bool { return e.TriesLeft == 0 }
+
+// entryGeneration is the generation an entry's ID gives a UKI of the image: the ID is the image
+// ID, an underscore and the generation in lower case. Only the canonical decimal counts, so no two
+// names give one generation; any other name gives 0.
+func entryGeneration(id, imageID string) int {
+	s, ok := strings.CutPrefix(id, strings.ToLower(imageID)+"_")
+	if !ok {
+		return 0
+	}
+	if s, ok = strings.CutSuffix(s, ".efi"); !ok {
+		return 0
+	}
+	g, err := strconv.Atoi(s)
+	if err != nil || g < 1 || strconv.Itoa(g) != s {
+		return 0
+	}
+	return g
+}
+
+// nextGeneration is the generation an upgrade names the image's new entry: one above the highest
+// of the image's entries. systemd-boot compares chalkos's entries by their IDs alone, the highest
+// first, so the new entry boots next, whatever it holds.
+func nextGeneration(entries []Entry, imageID string) int {
+	highest := 0
+	for _, e := range entries {
+		if e.ImageID == imageID {
+			highest = max(highest, e.Generation)
+		}
+	}
+	return highest + 1
+}
+
+// stagedEntry is the image's entry that boots next instead of the booted one: the highest
+// generation, while it has tries left. false when that is the booted entry or none has tries.
+func stagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
+	var highest Entry
+	for _, e := range entries {
+		if e.ImageID == imageID && e.Generation > highest.Generation {
+			highest = e
+		}
+	}
+	if highest.Generation == 0 || highest.ID == booted.ID || highest.TriesLeft <= 0 {
+		return Entry{}, false
+	}
+	return highest, true
+}
+
+// EntryName is the file name of the image's UKI of the generation without a tries counter, as an
+// install writes it.
+func EntryName(imageID string, generation int) string {
+	return fmt.Sprintf("%s_%d.efi", imageID, generation)
+}
+
+// countedEntryName is the file name of the image's UKI of the generation with a tries counter, as
+// an upgrade writes it.
+func countedEntryName(imageID string, generation, tries int) string {
+	return fmt.Sprintf("%s_%d+%d.efi", imageID, generation, tries)
+}
 
 // parseEntryName splits a UKI's file name into the entry's ID and its tries counter as
 // systemd-boot does: the counter follows the last "+" and precedes the suffix; a malformed one
@@ -120,6 +181,7 @@ func listEntries(esp string, open func(string) (*os.File, error)) ([]Entry, erro
 		case err == nil:
 			e.ImageID, e.Version = img.ID(), img.Version()
 			e.RootHash, _ = img.UsrHash()
+			e.Generation = entryGeneration(e.ID, e.ImageID)
 		}
 		entries = append(entries, e)
 	}
