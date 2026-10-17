@@ -52,6 +52,7 @@ func TestLibrary(t *testing.T) {
 		{`bytes("1G") == bytes("1024M")`, nil, true},
 		{`bytes(x)`, "512M", int64(512 << 20)},
 		{`bytes("2T") > bytes("1T")`, nil, true},
+		{`isSize("1024M") && !isSize("1X") && !isSize("8192P") && isSize("8191P")`, nil, true},
 		// The extensions are there.
 		{`[3, 1, 2].sort()`, nil, nil},
 		{`sets.contains([1, 2, 3], [2])`, nil, true},
@@ -69,18 +70,22 @@ func TestLibrary(t *testing.T) {
 	}
 }
 
+// A function's error names the function and not its argument, which may be a value of the config
+// or a fact that a message must not show.
 func TestLibraryErrors(t *testing.T) {
-	for expr, want := range map[string]string{
-		`cidr("10.0.0.0")`:           "not an address range",
-		`ip("10.0.0.256")`:           "not an address",
-		`cidr("10.0.0.0/30").ip(4)`:  "past the range",
-		`cidr("10.0.0.0/30").ip(-1)`: "negative",
-		`cidr("fd00::/127").ip(2)`:   "past the range",
-		`bytes("1X")`:                "invalid size",
-		`bytes("99999999P")`:         "too large",
+	for _, tc := range []struct{ expr, input, want string }{
+		{`cidr("10.0.0.7")`, "10.0.0.7", "cidr: the argument is not an address range"},
+		{`ip("10.0.0.256")`, "10.0.0.256", "ip: the argument is not an address"},
+		{`cidr("10.0.0.0/30").ip(4)`, "10.0.0.0", "past the range"},
+		{`cidr("10.0.0.0/30").ip(-1)`, "10.0.0.0", "negative"},
+		{`cidr("fd00::/127").ip(2)`, "fd00", "past the range"},
+		{`bytes("17X")`, "17X", "bytes: the argument is not a size"},
+		{`bytes("99999999P")`, "99999999", "bytes: the argument is not a size below 8 EiB"},
+		{`bytes("18446744073709551615")`, "18446744073709551615", "bytes: the argument is not a size below 8 EiB"},
 	} {
-		if _, err := eval(t, expr, nil); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%s: err = %v, want %q", expr, err, want)
+		_, err := eval(t, tc.expr, nil)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), tc.input) {
+			t.Errorf("%s: err = %v, want %q without %q", tc.expr, err, tc.want, tc.input)
 		}
 	}
 }

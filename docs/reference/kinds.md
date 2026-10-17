@@ -304,7 +304,7 @@ It has a [change rule](../concepts/rules.md).
 | `spec.disk.model` | string or null | `null` | Glob the disk's model matches, such as `Samsung SSD 870*`. |
 | `spec.disk.path` | string or null | `null` | Path of the disk below /dev, such as /dev/disk/by-id/…; excludes the selector keys. |
 | `spec.disk.serial` | string or null | `null` | The disk's serial number. |
-| `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`. |
+| `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`; the size has at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P. |
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
 | `spec.encryption` | object | see below |  |
@@ -313,7 +313,7 @@ It has a [change rule](../concepts/rules.md).
 | `spec.var` | object | see below |  |
 | `spec.var.encryption` | object | see below |  |
 | `spec.var.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for VAR. |
-| `spec.var.size` | string or null | `null` | Size of VAR; null fills the remaining space on the system disk. |
+| `spec.var.size` | string or null | `null` | Size of VAR, such as `20G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on the system disk. |
 
 ## Volume { #volume }
 
@@ -329,7 +329,7 @@ It has 7 [change rules](../concepts/rules.md).
 | `spec.disk.model` | string or null | `null` | Glob the disk's model matches, such as `Samsung SSD 870*`. |
 | `spec.disk.path` | string or null | `null` | Path of the disk below /dev, such as /dev/disk/by-id/…; excludes the selector keys. |
 | `spec.disk.serial` | string or null | `null` | The disk's serial number. |
-| `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`. |
+| `spec.disk.size` | string or null | `null` | Comparison the disk's size meets, such as `>= 1T`; the size has at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P. |
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
 | `spec.encryption` | object | see below |  |
@@ -337,7 +337,7 @@ It has 7 [change rules](../concepts/rules.md).
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap` or null | `"ext4"` | File system of the volume; null leaves a raw block device. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. |
 | `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |
-| `spec.size` | string or null | `null` | Size of the volume; null fills the remaining space on its disk. |
+| `spec.size` | string or null | `null` | Size of the volume, such as `100G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on its disk. |
 
 ## TimeSync { #timesync }
 

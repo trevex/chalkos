@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -247,13 +248,51 @@ func TestMessageExpressionFallsBack(t *testing.T) {
 	}
 }
 
+// A rule that cannot be evaluated refuses the config with an error that names the field or kind
+// that declares the rule, and neither the rule, which can be long, nor the values it read.
 func TestEvaluateErrors(t *testing.T) {
-	set := compiled(t, kindSchema("Demo", true, object(map[string]any{
-		"size": withRules(map[string]any{"type": "string"}, rule("bytes(self) > 0", "")),
-	}), []any{rule(`documents.all(n, documents[n].spec.size != "")`, "")}))
-	_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{"size": "1X"}`)}})
-	if err == nil || !strings.Contains(err.Error(), `cannot check: Demo "a" spec.size: rule "bytes(self) > 0"`) || !strings.Contains(err.Error(), "invalid size") {
+	items := make([]string, 2000)
+	for i := range items {
+		items[i] = `"x"`
+	}
+	for name, tc := range map[string]struct {
+		rule, spec, want string
+	}{
+		"library":     {`bytes(self.size) > 0`, `{"size": "17X"}`, "a rule cannot be evaluated: bytes: the argument is not a size"},
+		"conversion":  {`int(self.size) > 0`, `{"size": "17X"}`, `a rule cannot be evaluated: `},
+		"no such key": {`self.missing == 1`, `{"size": "17X"}`, "a rule cannot be evaluated: no such key: missing"},
+		"not a bool":  {`self.size`, `{"size": "17X"}`, "a rule yields string, not a bool"},
+		"cost":        {`self.list.all(a, self.list.all(b, a == b))`, `{"list": [` + strings.Join(items, ",") + `]}`, "a rule cannot be evaluated: operation cancelled: actual cost limit exceeded"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			set := compiled(t, kindSchema("Demo", true, object(map[string]any{
+				"x": withRules(map[string]any{"type": "object"}, rule(tc.rule, "")),
+			}), nil))
+			_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{"x": `+tc.spec+`}`)}})
+			if err == nil || !strings.HasPrefix(err.Error(), `cannot check: Demo "a" spec.x: `) || !strings.Contains(err.Error(), tc.want) ||
+				strings.Contains(err.Error(), "17X") || strings.Contains(err.Error(), tc.rule) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A kind's rule that cannot be evaluated names the kind.
+func TestEvaluateKindRuleError(t *testing.T) {
+	set := compiled(t, kindSchema("Demo", true, object(nil), []any{rule(`documents.a.spec.missing == 1`, "")}))
+	_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{}`)}})
+	if err == nil || err.Error() != "cannot check: Demo: a rule cannot be evaluated: no such key: missing" {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// What a refusal shows of an error is bounded and leaves out what the error quotes.
+func TestErrorText(t *testing.T) {
+	if got := errorText(errors.New(`strconv.ParseInt: parsing "s3cret": invalid syntax`)); got != `strconv.ParseInt: parsing "…": invalid syntax` {
+		t.Errorf("errorText = %q", got)
+	}
+	if got := bounded(strings.Repeat("é", maxErrorText)); len(got) > maxErrorText+len("…") || !utf8.ValidString(got) {
+		t.Errorf("bounded = %d bytes, valid %v", len(got), utf8.ValidString(got))
 	}
 }
 

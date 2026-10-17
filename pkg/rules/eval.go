@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
@@ -57,7 +59,9 @@ type FactError struct {
 	Err  error
 }
 
-func (e *FactError) Error() string { return fmt.Sprintf("cannot check: fact %s: %v", e.Name, e.Err) }
+func (e *FactError) Error() string {
+	return fmt.Sprintf("cannot check: fact %s: %s", e.Name, bounded(e.Err.Error()))
+}
 func (e *FactError) Unwrap() error { return e.Err }
 
 // Evaluate runs every rule of the set against in and returns those the config does not meet, in
@@ -131,11 +135,11 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg map[string]any, fact
 		return nil, factErr
 	}
 	if err != nil {
-		return nil, fmt.Errorf("cannot check: %s: rule %q: %v", where, p.Rule.Rule, err)
+		return nil, fmt.Errorf("cannot check: %s: a rule cannot be evaluated: %s", where, errorText(err))
 	}
 	ok, isBool := out.(types.Bool)
 	if !isBool {
-		return nil, fmt.Errorf("cannot check: %s: rule %q yields %s, not a bool", where, p.Rule.Rule, out.Type().TypeName())
+		return nil, fmt.Errorf("cannot check: %s: a rule yields %s, not a bool", where, out.Type().TypeName())
 	}
 	if ok {
 		return nil, nil
@@ -152,7 +156,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg map[string]any, fact
 		if s, isString := msg.(types.String); err == nil && isString {
 			f.Message = string(s)
 		} else if f.Message == "" {
-			f.Message = fmt.Sprintf("the config does not meet the rule %s, whose messageExpression fails: %v", p.Rule.Rule, errors.Join(err, notString(msg)))
+			f.Message = fmt.Sprintf("the config does not meet the rule %s, whose messageExpression fails: %s", p.Rule.Rule, errorText(errors.Join(err, notString(msg))))
 		}
 	}
 	if f.Message == "" {
@@ -318,4 +322,28 @@ func Refusal(failures []Failure, node string) string {
 		msgs[i] = f.String()
 	}
 	return head + ": " + strings.Join(msgs, "; ")
+}
+
+// maxErrorText bounds the error a refusal shows of a rule or a fact that cannot be checked.
+const maxErrorText = 512
+
+// quoted is text a CEL error quotes, such as the string that does not convert to an int.
+var quoted = regexp.MustCompile("\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`")
+
+// errorText is the error of a rule that cannot be evaluated as a refusal shows it: with what it
+// quotes left out, since that can be a value the rule read, and bounded.
+func errorText(err error) string {
+	return bounded(quoted.ReplaceAllString(err.Error(), `"…"`))
+}
+
+// bounded is s cut to maxErrorText bytes, at a character's start.
+func bounded(s string) string {
+	if len(s) <= maxErrorText {
+		return s
+	}
+	cut := maxErrorText
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }

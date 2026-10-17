@@ -157,6 +157,7 @@ extensions of cel-go, and chalkos's address and size functions:
 | `<ip>.family()` | `ipv4` or `ipv6`, as `ipFamilies` names them. |
 | `string(<cidr>)`, `string(<ip>)` | The canonical spelling: `fd00::/108`, `fd00::a`. |
 | `bytes(s)` | A size such as `1G` or `512M` in bytes, an int, with the suffixes powers of 1024 as in repart. It takes the place of CEL's conversion of a string to bytes. |
+| `isSize(s)` | Whether `bytes(s)` reads `s`: digits with an optional K, M, G, T or P suffix, below 8 EiB. A recorded section an older image wrote can hold a size that `bytes` does not read. |
 
 ## How is a rule checked when the image is built?
 

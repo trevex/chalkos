@@ -37,7 +37,7 @@ func (chalkosLib) CompileOptions() []cel.EnvOption {
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
 					p, err := netip.ParsePrefix(string(v.(types.String)))
 					if err != nil {
-						return types.NewErr("cidr(%q): not an address range", string(v.(types.String)))
+						return types.NewErr("cidr: the argument is not an address range")
 					}
 					return cidr{p.Masked()}
 				}))),
@@ -46,7 +46,7 @@ func (chalkosLib) CompileOptions() []cel.EnvOption {
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
 					a, err := netip.ParseAddr(string(v.(types.String)))
 					if err != nil {
-						return types.NewErr("ip(%q): not an address", string(v.(types.String)))
+						return types.NewErr("ip: the argument is not an address")
 					}
 					return ip{a}
 				})),
@@ -82,16 +82,28 @@ func (chalkosLib) CompileOptions() []cel.EnvOption {
 		cel.Function("bytes",
 			cel.Overload("chalkos_size_to_bytes", []*cel.Type{cel.StringType}, cel.IntType,
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
-					n, err := storage.ParseSize(string(v.(types.String)))
-					if err != nil {
-						return types.NewErr("bytes: %v", err)
-					}
-					if n > math.MaxInt64 {
-						return types.NewErr("bytes: size %q is too large", string(v.(types.String)))
+					n, ok := size(string(v.(types.String)))
+					if !ok {
+						return types.NewErr("bytes: the argument is not a size below 8 EiB, digits with an optional K, M, G, T or P suffix")
 					}
 					return types.Int(n)
 				}))),
+		cel.Function("isSize",
+			cel.Overload("chalkos_string_is_size", []*cel.Type{cel.StringType}, cel.BoolType,
+				cel.UnaryBinding(func(v ref.Val) ref.Val {
+					_, ok := size(string(v.(types.String)))
+					return types.Bool(ok)
+				}))),
 	}
+}
+
+// size is s in bytes, if it is a size bytes() reads: one of ParseSize below 2^63.
+func size(s string) (int64, bool) {
+	n, err := storage.ParseSize(s)
+	if err != nil || n > math.MaxInt64 {
+		return 0, false
+	}
+	return int64(n), true
 }
 
 func (chalkosLib) ProgramOptions() []cel.ProgramOption { return nil }
@@ -103,16 +115,16 @@ type cidr struct{ netip.Prefix }
 // nth is the address n places after the range's first, which must lie in the range.
 func (c cidr) nth(n int64) ref.Val {
 	if n < 0 {
-		return types.NewErr("%s.ip(%d): the index is negative", c, n)
+		return types.NewErr("<cidr>.ip: the index is negative")
 	}
 	b := new(big.Int).SetBytes(c.Addr().AsSlice())
 	b.Add(b, big.NewInt(n))
 	if b.BitLen() > c.Addr().BitLen() {
-		return types.NewErr("%s.ip(%d): past the range", c, n)
+		return types.NewErr("<cidr>.ip: the index is past the range")
 	}
 	a, _ := netip.AddrFromSlice(b.FillBytes(make([]byte, c.Addr().BitLen()/8)))
 	if !c.Contains(a) {
-		return types.NewErr("%s.ip(%d): past the range", c, n)
+		return types.NewErr("<cidr>.ip: the index is past the range")
 	}
 	return ip{a}
 }

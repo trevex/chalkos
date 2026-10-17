@@ -42,7 +42,11 @@ let
       description = "Extra flags of ${component}, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.";
     };
 
-  size = types.strMatching "[0-9]+[KMGTP]?";
+  # A size as repart reads it, in powers of 1024: at most 18 digits without a suffix and 15, 12, 9,
+  # 6 or 3 with K, M, G, T or P, so it stays below 2^63 bytes, which a rule reads as an int.
+  sizePattern = "[0-9]{1,18}|[0-9]{1,15}K|[0-9]{1,12}M|[0-9]{1,9}G|[0-9]{1,6}T|[0-9]{1,3}P";
+  size = types.strMatching sizePattern;
+  sizeLimit = "at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P";
   mode = types.enum [
     "tpm2"
     "none"
@@ -70,9 +74,9 @@ let
         description = "The disk's World Wide Name.";
       };
       size = mkOption {
-        type = types.nullOr (types.strMatching "(<|<=|=|>=|>)? *[0-9]+[KMGTP]?");
+        type = types.nullOr (types.strMatching "(<|<=|=|>=|>)? *(${sizePattern})");
         default = null;
-        description = "Comparison the disk's size meets, such as `>= 1T`.";
+        description = "Comparison the disk's size meets, such as `>= 1T`; the size has ${sizeLimit}.";
       };
       type = mkOption {
         type = types.nullOr (
@@ -173,10 +177,14 @@ let
   volEncryption = "(v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode)";
   # What a change of encryption, size or format needs a volume to be recreated for, "" for none.
   # A larger size, and filling the disk instead of a size, only grow the partition; sizes of the
-  # same bytes are the same.
+  # same bytes are the same. A size bytes() cannot read, as a recorded section an older image wrote
+  # can hold, is a change the volume is recreated for.
   sizeReason =
     size: recorded:
-    ''(${size} == ${recorded} || ${size} == "" ? "" : ${recorded} == "" ? "size " + ${size} + " instead of filling its disk" : bytes(${size}) < bytes(${recorded}) ? "smaller: " + ${size} + " instead of " + ${recorded} : "")'';
+    ''(${size} == ${recorded} || ${size} == "" ? "" : ${recorded} == "" ? "size " + ${size} + " instead of filling its disk" : !isSize(${size}) || !isSize(${recorded}) ? "size " + ${size} + " instead of " + ${recorded} : bytes(${size}) < bytes(${recorded}) ? "smaller: " + ${size} + " instead of " + ${recorded} : "")'';
+  # Whether two sizes differ, as sizes of the same bytes do not.
+  sizeChanged =
+    a: b: ''(${a} != ${b} && !(isSize(${a}) && isSize(${b}) && bytes(${a}) == bytes(${b})))'';
   encryptionReason =
     enc: recorded:
     ''(${enc} != ${recorded} ? "encryption " + ${enc} + " instead of " + ${recorded} : "")'';
@@ -188,7 +196,7 @@ let
   movedByRef = ''${ownDisk} && facts.disks[n].changed && facts.disks[n].error == "" && !facts.disks[n].same'';
   unresolved = ''${ownDisk} && facts.disks[n].changed && facts.disks[n].error != ""'';
   needsReset = "r != null && ${volDisk} == r.disk && !(${movedByRef}) && !(${unresolved}) && size(${resetReasons}) > 0";
-  volChanges = "r == null || ${volFormat} != ${orEmpty "r.format"} || ${volEncryption} != r.encryption || ${orEmpty "v.size"} != ${orEmpty "r.size"} || ${orEmpty "v.mountPoint"} != ${orEmpty "r.mountPoint"}";
+  volChanges = "r == null || ${volFormat} != ${orEmpty "r.format"} || ${volEncryption} != r.encryption || ${sizeChanged (orEmpty "v.size") (orEmpty "r.size")} || ${orEmpty "v.mountPoint"} != ${orEmpty "r.mountPoint"}";
   missingDisk = "${ownDisk} && facts.disks[n].pinned && !facts.disks[n].present && (${volChanges})";
   # A rule over each Volume document n: none may be bad, and message names each that is.
   volumeRule = takes: bad: message: {
@@ -321,7 +329,7 @@ in
           size = mkOption {
             type = types.nullOr size;
             default = null;
-            description = "Size of VAR; null fills the remaining space on the system disk.";
+            description = "Size of VAR, such as `20G`, with ${sizeLimit}; null fills the remaining space on the system disk.";
           };
           encryption.mode = mkOption {
             type = types.nullOr mode;
@@ -389,7 +397,7 @@ in
         size = mkOption {
           type = types.nullOr size;
           default = null;
-          description = "Size of the volume; null fills the remaining space on its disk.";
+          description = "Size of the volume, such as `100G`, with ${sizeLimit}; null fills the remaining space on its disk.";
         };
         format = mkOption {
           type = types.nullOr (

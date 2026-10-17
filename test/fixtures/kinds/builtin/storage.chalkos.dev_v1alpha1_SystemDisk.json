@@ -70,7 +70,7 @@
             "size": {
               "anyOf": [
                 {
-                  "pattern": "^(?:(<|<=|=|>=|>)? *[0-9]+[KMGTP]?)$",
+                  "pattern": "^(?:(<|<=|=|>=|>)? *([0-9]{1,18}|[0-9]{1,15}K|[0-9]{1,12}M|[0-9]{1,9}G|[0-9]{1,6}T|[0-9]{1,3}P))$",
                   "type": "string"
                 },
                 {
@@ -78,7 +78,7 @@
                 }
               ],
               "default": null,
-              "description": "Comparison the disk's size meets, such as `>= 1T`."
+              "description": "Comparison the disk's size meets, such as `>= 1T`; the size has at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P."
             },
             "type": {
               "anyOf": [
@@ -162,7 +162,7 @@
             "size": {
               "anyOf": [
                 {
-                  "pattern": "^(?:[0-9]+[KMGTP]?)$",
+                  "pattern": "^(?:[0-9]{1,18}|[0-9]{1,15}K|[0-9]{1,12}M|[0-9]{1,9}G|[0-9]{1,6}T|[0-9]{1,3}P)$",
                   "type": "string"
                 },
                 {
@@ -170,7 +170,7 @@
                 }
               ],
               "default": null,
-              "description": "Size of VAR; null fills the remaining space on the system disk."
+              "description": "Size of VAR, such as `20G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on the system disk."
             }
           },
           "type": "object"
@@ -196,8 +196,8 @@
     "multiple": false,
     "rules": [
       {
-        "messageExpression": "cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes[\"var\"], \"VAR: \" + [(r.format == null ? \"\" : r.format) != \"ext4\" ? \"format ext4 instead of \" + ((r.format == null ? \"\" : r.format) == \"\" ? \"null\" : (r.format == null ? \"\" : r.format)) : \"\",\n ((sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) != r.encryption ? \"encryption \" + (sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) + \" instead of \" + r.encryption : \"\"),\n ((sd.var.size == null ? \"\" : sd.var.size) == (r.size == null ? \"\" : r.size) || (sd.var.size == null ? \"\" : sd.var.size) == \"\" ? \"\" : (r.size == null ? \"\" : r.size) == \"\" ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of filling its disk\" : bytes((sd.var.size == null ? \"\" : sd.var.size)) < bytes((r.size == null ? \"\" : r.size)) ? \"smaller: \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : \"\")].filter(x, x != \"\").join(\"; \") + \"; only a reinstall of \" + config[\"chalkos.dev/v1alpha1\"].Node.map(k, k)[0] + \" carries it out\"))",
-        "rule": "facts.recorded == null || !(\"var\" in facts.recorded.volumes) || size(documents) != 1 || cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes[\"var\"], size([(r.format == null ? \"\" : r.format) != \"ext4\" ? \"format ext4 instead of \" + ((r.format == null ? \"\" : r.format) == \"\" ? \"null\" : (r.format == null ? \"\" : r.format)) : \"\",\n ((sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) != r.encryption ? \"encryption \" + (sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) + \" instead of \" + r.encryption : \"\"),\n ((sd.var.size == null ? \"\" : sd.var.size) == (r.size == null ? \"\" : r.size) || (sd.var.size == null ? \"\" : sd.var.size) == \"\" ? \"\" : (r.size == null ? \"\" : r.size) == \"\" ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of filling its disk\" : bytes((sd.var.size == null ? \"\" : sd.var.size)) < bytes((r.size == null ? \"\" : r.size)) ? \"smaller: \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : \"\")].filter(x, x != \"\")) == 0))",
+        "messageExpression": "cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes[\"var\"], \"VAR: \" + [(r.format == null ? \"\" : r.format) != \"ext4\" ? \"format ext4 instead of \" + ((r.format == null ? \"\" : r.format) == \"\" ? \"null\" : (r.format == null ? \"\" : r.format)) : \"\",\n ((sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) != r.encryption ? \"encryption \" + (sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) + \" instead of \" + r.encryption : \"\"),\n ((sd.var.size == null ? \"\" : sd.var.size) == (r.size == null ? \"\" : r.size) || (sd.var.size == null ? \"\" : sd.var.size) == \"\" ? \"\" : (r.size == null ? \"\" : r.size) == \"\" ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of filling its disk\" : !isSize((sd.var.size == null ? \"\" : sd.var.size)) || !isSize((r.size == null ? \"\" : r.size)) ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : bytes((sd.var.size == null ? \"\" : sd.var.size)) < bytes((r.size == null ? \"\" : r.size)) ? \"smaller: \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : \"\")].filter(x, x != \"\").join(\"; \") + \"; only a reinstall of \" + config[\"chalkos.dev/v1alpha1\"].Node.map(k, k)[0] + \" carries it out\"))",
+        "rule": "facts.recorded == null || !(\"var\" in facts.recorded.volumes) || size(documents) != 1 || cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes[\"var\"], size([(r.format == null ? \"\" : r.format) != \"ext4\" ? \"format ext4 instead of \" + ((r.format == null ? \"\" : r.format) == \"\" ? \"null\" : (r.format == null ? \"\" : r.format)) : \"\",\n ((sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) != r.encryption ? \"encryption \" + (sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode) + \" instead of \" + r.encryption : \"\"),\n ((sd.var.size == null ? \"\" : sd.var.size) == (r.size == null ? \"\" : r.size) || (sd.var.size == null ? \"\" : sd.var.size) == \"\" ? \"\" : (r.size == null ? \"\" : r.size) == \"\" ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of filling its disk\" : !isSize((sd.var.size == null ? \"\" : sd.var.size)) || !isSize((r.size == null ? \"\" : r.size)) ? \"size \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : bytes((sd.var.size == null ? \"\" : sd.var.size)) < bytes((r.size == null ? \"\" : r.size)) ? \"smaller: \" + (sd.var.size == null ? \"\" : sd.var.size) + \" instead of \" + (r.size == null ? \"\" : r.size) : \"\")].filter(x, x != \"\")) == 0))",
         "takes": "reinstall"
       }
     ],
