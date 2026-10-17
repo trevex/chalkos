@@ -416,7 +416,6 @@ func (n *upgradeFake) UncordonNode(_ context.Context, req *connect.Request[nodev
 	return connect.NewResponse(&nodev1.UncordonNodeResponse{Uncordoned: true}), nil
 }
 
-
 // fakeRoleKey holds the role a fake node's client certificate grants.
 type fakeRoleKey struct{}
 
