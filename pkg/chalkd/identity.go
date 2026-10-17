@@ -308,28 +308,13 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		old = prev.Identity
 	}
 	if !keep {
-		recorded, pins, err := s.recorded()
+		mc, err := s.machineChanges(d.section)
 		if err != nil {
 			return nil, err
 		}
-		var disks diskChanges
-		changes, disks = s.classify(recorded, d.section, pins)
-		var destructive []string
-		for _, c := range changes {
-			if c.Class == storage.Destructive {
-				destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, d.section, pins, disks, c)))
-			}
-		}
-		if len(destructive) > 0 {
-			return nil, failed(connect.CodeFailedPrecondition, "the config changes storage destructively: %s", strings.Join(destructive, "; "))
-		}
-		if len(changes) > 0 {
-			if err := s.verifyFallback(ctx, recorded, d.section, pins, m.FallbackSecret); err != nil {
-				return nil, err
-			}
-			if err := s.applyStorage(ctx, recorded, d.section, m.FallbackSecret, changes); err != nil {
-				return nil, err
-			}
+		changes = mc.changes
+		if err := s.applyMachine(ctx, mc, m.FallbackSecret); err != nil {
+			return nil, err
 		}
 		if err := s.applyIdentity(ctx, old, d.data); err != nil {
 			return nil, err
@@ -412,6 +397,51 @@ func (s *Server) forceRenewals() {
 			leaves.Force()
 		}
 	}
+}
+
+// machineChange is a config slot's storage section classified against the machine's: storage.json
+// and its pins, the storage as applied, and the changes the section makes to it.
+type machineChange struct {
+	recorded, section storage.Section
+	pins              storage.Pins
+	changes           []storage.Change
+}
+
+// machineChanges classifies a slot's storage section against the machine's, as every write of a
+// slot does, whichever image the slot is for: the machine has one storage, which a slot's config
+// may grow but not undo. It refuses destructive changes, naming how each is carried out. A slot
+// whose section lacks a volume the machine has, as the slot of an image that ran before an upgrade
+// added it, is classified so only when it is written again; the boot sets up storage.json alone
+// and leaves such a volume be. The caller holds s.mu.
+func (s *Server) machineChanges(section storage.Section) (machineChange, error) {
+	recorded, pins, err := s.recorded()
+	if err != nil {
+		return machineChange{}, err
+	}
+	changes, disks := s.classify(recorded, section, pins)
+	var destructive []string
+	for _, c := range changes {
+		if c.Class == storage.Destructive {
+			destructive = append(destructive, fmt.Sprintf("%s; %s", c, s.remedy(recorded, section, pins, disks, c)))
+		}
+	}
+	if len(destructive) > 0 {
+		return machineChange{}, failed(connect.CodeFailedPrecondition, "the config changes storage destructively: %s", strings.Join(destructive, "; "))
+	}
+	return machineChange{recorded: recorded, section: section, pins: pins, changes: changes}, nil
+}
+
+// applyMachine makes the additive changes a slot's section makes to the machine's storage, which
+// records them in storage.json; secret is the fallback secret new encrypted volumes are enrolled
+// with. The caller holds s.mu.
+func (s *Server) applyMachine(ctx context.Context, mc machineChange, secret string) error {
+	if len(mc.changes) == 0 {
+		return nil
+	}
+	if err := s.verifyFallback(ctx, mc.recorded, mc.section, mc.pins, secret); err != nil {
+		return err
+	}
+	return s.applyStorage(ctx, mc.recorded, mc.section, secret, mc.changes)
 }
 
 // applyStorage applies additive changes: repart creates and grows partitions, new encrypted

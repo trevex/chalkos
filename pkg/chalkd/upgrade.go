@@ -14,18 +14,20 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// Upgrade installs the image an operator streams. It checks that the image is of the node's
-// platform, whatever its variant, that it boots the store it carries and, before it becomes the
-// next boot, that the schemas in the image accept the node's stored config, but cannot tell an
-// image to trust from another: without Secure Boot, an operator can run any image as root, with
-// STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits
-// upgrades to images signed for db.
+// Upgrade installs the image an operator streams with the node's config for it. It checks that
+// the image is of the node's platform, whatever its variant, that it boots the store it carries
+// and, before it becomes the next boot, that the schemas in the image accept the config, but
+// cannot tell an image to trust from another: without Secure Boot, an operator can run any image
+// as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is
+// what limits upgrades to images signed for db.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	if !s.upgrading.TryLock() {
 		return nil, failed(connect.CodeAborted, "another upgrade is running")
@@ -50,7 +52,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	}
 	header := imageHeader(img)
 	log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
-	res, err := s.installImage(ctx, header, &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
+	res, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
 		if !stream.Receive() {
 			return nil, false
 		}
@@ -58,16 +60,18 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	}, err: stream.Err})
 	if err != nil {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
+		// A refusal retired the image, so its config slot goes too.
+		s.recordImages(nil)
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
 	}
-	s.recordImage(header)
+	s.recordImages(&header)
 	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry}
 	if res.AlreadyInstalled {
 		log.Printf("%x runs already", img.GetRootHash())
 		return connect.NewResponse(resp), nil
 	}
 	if res.AlreadyStaged {
-		log.Printf("%x boots next already, as %s", img.GetRootHash(), res.Entry)
+		log.Printf("%x boots next already, as %s; its config is replaced", img.GetRootHash(), res.Entry)
 	}
 	if h.Reboot {
 		log.Printf("rebooting into %x", img.GetRootHash())
@@ -90,28 +94,13 @@ type imageStore interface {
 	ReadDir(name string) ([]fs.DirEntry, error)
 }
 
-// checkStoredConfig refuses an upgrade to an image that would not accept the node's stored
-// config: the node boots the image with that config, which chalkos-config would refuse, and
-// boot counting would fall back once the image's tries are used up. It runs once the image's
-// store is written to the inactive slot and before the image becomes the next boot, and reads
-// the schemas and image.json from that store, whose content the image's root hash covers, so
-// the config is checked against exactly what the image will translate it with. system is the
-// image's NixOS system in st, and platform is the image's. A node without config
-// translates none at boot, whatever the image.
-func (s *Server) checkStoredConfig(st imageStore, system, platform string) error {
-	// ApplyConfig replaces the running slot under the same lock.
-	s.mu.Lock()
-	_, stored, found, err := s.runningSlot()
-	s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	if !found {
-		return nil
-	}
+// imageContract reads what an image translates config with from its store: its schemas and
+// image.json, whose content the image's root hash covers. system is the image's NixOS system in
+// st, and platform is the image's.
+func imageContract(st imageStore, system, platform string) (*schema.Schemas, config.Target, error) {
 	entries, err := st.ReadDir(system + imageSchemas)
 	if err != nil {
-		return fmt.Errorf("the image's schemas: %w", err)
+		return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
 	}
 	files := map[string][]byte{}
 	for _, e := range entries {
@@ -119,25 +108,109 @@ func (s *Server) checkStoredConfig(st imageStore, system, platform string) error
 			continue
 		}
 		if files[e.Name()], err = st.ReadFile(system + imageSchemas + "/" + e.Name()); err != nil {
-			return fmt.Errorf("the image's schemas: %w", err)
+			return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
 		}
 	}
 	schemas, err := schema.LoadFiles(files)
 	if err != nil {
-		return fmt.Errorf("the image's schemas: %w", err)
+		return nil, config.Target{}, fmt.Errorf("the image's schemas: %w", err)
 	}
 	facts, err := st.ReadFile(system + imageFacts)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("the image's Kubernetes facts: %w", err)
+		return nil, config.Target{}, fmt.Errorf("the image's Kubernetes facts: %w", err)
 	}
 	t, err := imageTarget(platform, facts)
+	return schemas, t, err
+}
+
+// stageConfig writes the config slot of the image an upgrade installs, whose store has the root
+// hash and is st: the config text delivers, or without one the documents of the running slot as
+// they were delivered, as writeSlot writes them. secret is the fallback secret a new encrypted
+// volume is enrolled with. It runs once the store is written to the inactive slot and before the
+// image becomes the next boot, and again for an image that boots next already.
+func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platform string, rootHash []byte, text, secret string) error {
+	// ApplyConfig writes the slots and changes the machine under the same lock.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, running, found, err := s.runningSlot()
+	if err != nil {
+		return plain(err)
+	}
+	docs := running.Delivered
+	if text != "" {
+		if docs, err = config.Parse(strings.NewReader(text)); err != nil {
+			return fmt.Errorf("parse the config: %w", err)
+		}
+	} else if !found || len(docs) == 0 {
+		return errors.New("the node holds no config to carry over to the image; upgrade with the config from an inventory")
+	}
+	if err := s.writeSlot(ctx, st, system, platform, rootHash, docs, secret); err != nil {
+		if text == "" {
+			return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory", plain(err))
+		}
+		return plain(err)
+	}
+	return nil
+}
+
+// writeSlot writes docs, config as delivered, to the config slot of an image that does not run,
+// whose store has the root hash and is st: checked and translated against the schemas and
+// image.json in st, so the config is checked against exactly what the image will translate it with
+// at boot, and classified against the machine state as every slot write is. The node boots the
+// image with that slot, and a config chalkos-config could not apply would leave boot counting to
+// fall back. It refuses config that changes the fixed Kubernetes settings of a node holding a
+// share, and storage changes that are destructive; additive ones, such as a new volume, are made
+// now, while the running image runs, and storage.json records them. The running image's config
+// does not name such a volume, and its boot leaves it be. system is the image's NixOS system in
+// st, platform its platform and secret the fallback secret. The caller holds s.mu.
+func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
+	_, running, found, err := s.runningSlot()
 	if err != nil {
 		return err
 	}
-	if _, _, err := translate(stored.Delivered, schemas, t); err != nil {
-		return fmt.Errorf("the node's config does not suit the image: %w; apply config both images accept with chalkctl apply-config, then upgrade", err)
+	schemas, t, err := imageContract(st, system, platform)
+	if err != nil {
+		return failed(connect.CodeInvalidArgument, "%v", err)
 	}
+	next, err := translateSlot(docs, schemas, t)
+	if err != nil {
+		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %v", err)
+	}
+	if s.Kubernetes != nil && t.Image != nil {
+		c, err := config.ClusterOf(next.Documents, *t.Image)
+		if err != nil {
+			return failed(connect.CodeInvalidArgument, "the config: %v", err)
+		}
+		prev, _ := s.storedKubernetes(running, found, nil)
+		if err := s.checkFixed(prev, &c); err != nil {
+			return err
+		}
+	}
+	d, err := parseIdentity(string(next.Identity))
+	if err != nil {
+		return err
+	}
+	mc, err := s.machineChanges(d.section)
+	if err != nil {
+		return err
+	}
+	if err := s.applyMachine(ctx, mc, secret); err != nil {
+		return err
+	}
+	if err := store.Write(store.Slot(s.Loader.Slots, rootHash), next); err != nil {
+		return failed(connect.CodeInternal, "store the image's config: %v", err)
+	}
+	log.Printf("the config %s of %x is stored", next.Version, rootHash)
 	return nil
+}
+
+// plain is err without the code a connect error carries, for an upgrade's error, which has its own.
+func plain(err error) error {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return errors.New(ce.Message())
+	}
+	return err
 }
 
 // imageHeader is the image an install or upgrade header describes.
@@ -151,13 +224,16 @@ func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	}
 }
 
-// recordImage keeps the provenance of the image an upgrade installed or found installed in the
-// record of installed images, which forgets every image no UKI on the ESP boots any more. The
-// record is shown, never relied on, so failing to keep it fails no upgrade.
-func (s *Server) recordImage(h upgrade.Header) {
+// recordImages forgets every image no UKI on the ESP boots any more: the record of installed
+// images keeps the others alone, and the config slots of the others and of the running image
+// alone, so a retired image's slot goes in the same step as its provenance. installed, when set,
+// is the image an upgrade installed or found installed, whose provenance the record keeps. Both
+// only shrink and a boot loads its own image's slot alone, so failing to forget fails no upgrade;
+// the next one forgets again.
+func (s *Server) recordImages(installed *upgrade.Header) {
 	entries, err := upgrade.Entries(s.Paths.ESP)
 	if err != nil {
-		log.Printf("record the image's provenance: %v", err)
+		log.Printf("forget the images the ESP no longer boots: %v", err)
 		return
 	}
 	var keep [][]byte
@@ -166,8 +242,25 @@ func (s *Server) recordImage(h upgrade.Header) {
 			keep = append(keep, e.RootHash)
 		}
 	}
+	running, err := s.runningHash()
+	if err != nil {
+		log.Printf("keep the running image's config: %v", err)
+		return
+	}
+	s.mu.Lock()
+	err = store.Retire(s.Loader.Slots, append(keep, running))
+	s.mu.Unlock()
+	if err != nil {
+		log.Printf("retire the config slots of images the ESP no longer boots: %v", err)
+	}
 	path := filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)
-	data, err := upgrade.ReadImages(path).Record(h.RootHash, h.Provenance, keep).Encode()
+	images := upgrade.ReadImages(path)
+	if installed != nil {
+		images = images.Record(installed.RootHash, installed.Provenance, keep)
+	} else {
+		images = images.Keep(keep)
+	}
+	data, err := images.Encode()
 	if err == nil {
 		err = install.WriteFile(path, data, 0o644)
 	}
@@ -176,8 +269,9 @@ func (s *Server) recordImage(h upgrade.Header) {
 	}
 }
 
-// installImage installs an upgrade's image on the node's boot disk.
-func (s *Server) installImage(ctx context.Context, h upgrade.Header, image io.Reader) (upgrade.Result, error) {
+// installImage installs an upgrade's image on the node's boot disk, with the config text delivers
+// for it and the fallback secret new encrypted volumes are enrolled with.
+func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secret string, image io.Reader) (upgrade.Result, error) {
 	if s.InstallImage != nil {
 		return s.InstallImage(ctx, h, image)
 	}
@@ -197,7 +291,7 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, image io.Re
 		// ApplyConfig and ResetVolume change the boot disk's partitions under the same lock.
 		TableLock: &s.mu,
 		CheckStore: func(st upgrade.Store) error {
-			return s.checkStoredConfig(st, st.Toplevel, h.Platform)
+			return s.stageConfig(ctx, st, st.Toplevel, h.Platform, h.RootHash, text, secret)
 		},
 	}
 	return n.Install(ctx, h, image)

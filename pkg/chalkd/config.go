@@ -22,26 +22,36 @@ import (
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// configure parses text, YAML config documents, checks them as a set against schemas, fills in
-// their defaults and translates them into the identity of a node of the image t describes: what
-// that image's config slot keeps. The set's version is the hash of the documents as delivered,
-// before the defaults, as a client computes it from the files it sends.
+// configure parses text, YAML config documents, and makes them the config slot of the image t
+// describes, as translateSlot does.
 func configure(text string, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
 		return store.Stored{}, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
 	}
-	version, err := config.Hash(docs)
-	if err != nil {
-		return store.Stored{}, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
-	}
-	set, id, err := translate(docs, schemas, t)
+	c, err := translateSlot(docs, schemas, t)
 	if err != nil {
 		return store.Stored{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
 	}
+	return c, nil
+}
+
+// translateSlot checks docs, config documents as delivered, as a set against schemas, fills in
+// their defaults and translates them into the identity of a node of the image t describes: what
+// that image's config slot keeps. The set's version is the hash of the documents as delivered,
+// before the defaults, as a client computes it from the files it sends.
+func translateSlot(docs []config.Document, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
+	version, err := config.Hash(docs)
+	if err != nil {
+		return store.Stored{}, fmt.Errorf("hash the config: %w", err)
+	}
+	set, id, err := translate(docs, schemas, t)
+	if err != nil {
+		return store.Stored{}, err
+	}
 	data, err := json.Marshal(id)
 	if err != nil {
-		return store.Stored{}, failed(connect.CodeInternal, "encode the identity: %v", err)
+		return store.Stored{}, fmt.Errorf("encode the identity: %w", err)
 	}
 	return store.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, nil
 }

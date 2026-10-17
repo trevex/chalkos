@@ -13,7 +13,7 @@
 //  3. Write the UKI under a name systemd-boot ignores and check it: it must boot this store, name
 //     the node's image and platform, and carry a signature of the firmware's db when Secure
 //     Boot is on. Then the caller checks the image itself, reading the store through dm-verity,
-//     as chalkd checks the node's config against the image's schemas.
+//     as chalkd checks the node's config against the image's schemas and keeps it for the image.
 //  4. Activate: give the slot the partition UUIDs systemd derives from the root hash and the
 //     labels naming it, and rename the UKI to <id>_<generation>+<tries>.efi, one generation above
 //     the image's highest on the ESP.
@@ -165,8 +165,8 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	// The image boots next already, as after an upgrade without a reboot. The config may have
-	// changed since it was checked, so it is checked again.
+	// The image boots next already, as after an upgrade without a reboot. The check runs again: the
+	// upgrade brings the config the image boots with, which replaces the one staged with it.
 	if staged, ok := stagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
 		if err := n.recheck(ctx, h, inactive, staged, all, booted, running); err != nil {
 			return Result{}, err

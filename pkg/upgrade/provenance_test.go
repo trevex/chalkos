@@ -60,3 +60,12 @@ func TestImagesRecord(t *testing.T) {
 		t.Errorf("an unreadable record = %v, want an empty one", im)
 	}
 }
+
+// TestImagesKeep forgets every image but those kept, as after an upgrade that installed none.
+func TestImagesKeep(t *testing.T) {
+	a, b := bytes.Repeat([]byte{0xaa}, 32), bytes.Repeat([]byte{0xbb}, 32)
+	im := Images{hex.EncodeToString(a): {Tag: "v1"}, hex.EncodeToString(b): {Tag: "v2"}}
+	if got := im.Keep([][]byte{b}); !reflect.DeepEqual(got, Images{hex.EncodeToString(b): {Tag: "v2"}}) {
+		t.Errorf("kept %v", got)
+	}
+}

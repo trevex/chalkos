@@ -613,6 +613,15 @@ message UpgradeHeader {
   ImageHeader image = 1;
   // Reboot the node into the image once it is installed.
   bool reboot = 2;
+  // The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it
+  // against the image's schemas and against the machine as ApplyConfig does: it refuses
+  // destructive storage changes and changes of the fixed Kubernetes settings, makes additive
+  // storage changes, such as a new volume, at once, and keeps the config in the image's config
+  // slot. Empty carries the running image's config over, checked against the image the same way.
+  string config = 5;
+  // Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is;
+  // required when it adds one and the node's fallback is not none.
+  string fallback_secret = 6;
 }
 
 message UpgradeResponse {

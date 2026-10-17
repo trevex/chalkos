@@ -3509,9 +3509,18 @@ type UpgradeHeader struct {
 	// names a boot loader: an upgrade leaves the boot loader as it is.
 	Image *ImageHeader `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
 	// Reboot the node into the image once it is installed.
-	Reboot        bool `protobuf:"varint,2,opt,name=reboot,proto3" json:"reboot,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Reboot bool `protobuf:"varint,2,opt,name=reboot,proto3" json:"reboot,omitempty"`
+	// The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it
+	// against the image's schemas and against the machine as ApplyConfig does: it refuses
+	// destructive storage changes and changes of the fixed Kubernetes settings, makes additive
+	// storage changes, such as a new volume, at once, and keeps the config in the image's config
+	// slot. Empty carries the running image's config over, checked against the image the same way.
+	Config string `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
+	// Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is;
+	// required when it adds one and the node's fallback is not none.
+	FallbackSecret string `protobuf:"bytes,6,opt,name=fallback_secret,json=fallbackSecret,proto3" json:"fallback_secret,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UpgradeHeader) Reset() {
@@ -3556,6 +3565,20 @@ func (x *UpgradeHeader) GetReboot() bool {
 		return x.Reboot
 	}
 	return false
+}
+
+func (x *UpgradeHeader) GetConfig() string {
+	if x != nil {
+		return x.Config
+	}
+	return ""
+}
+
+func (x *UpgradeHeader) GetFallbackSecret() string {
+	if x != nil {
+		return x.FallbackSecret
+	}
+	return ""
 }
 
 type UpgradeResponse struct {
@@ -4100,10 +4123,12 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0eUpgradeRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.UpgradeHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
-	"\amessage\"\x82\x01\n" +
+	"\amessage\"\xc3\x01\n" +
 	"\rUpgradeHeader\x122\n" +
 	"\x05image\x18\x01 \x01(\v2\x1c.chalkos.node.v1.ImageHeaderR\x05image\x12\x16\n" +
-	"\x06reboot\x18\x02 \x01(\bR\x06rebootJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\aschemasR\x10kubernetes_image\"\x99\x01\n" +
+	"\x06reboot\x18\x02 \x01(\bR\x06reboot\x12\x16\n" +
+	"\x06config\x18\x05 \x01(\tR\x06config\x12'\n" +
+	"\x0ffallback_secret\x18\x06 \x01(\tR\x0efallbackSecretJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\aschemasR\x10kubernetes_image\"\x99\x01\n" +
 	"\x0fUpgradeResponse\x12+\n" +
 	"\x11already_installed\x18\x01 \x01(\bR\x10alreadyInstalled\x12\x14\n" +
 	"\x05entry\x18\x02 \x01(\tR\x05entry\x12\x1c\n" +

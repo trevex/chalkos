@@ -3,11 +3,13 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +18,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/identity"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -162,44 +169,203 @@ func imageWith(t *testing.T, files map[string][]byte, facts string) dirStore {
 	return dirStore(root)
 }
 
-// TestUpgradeChecksTheStoredConfig refuses an image whose schemas or Kubernetes facts the node's
-// stored config does not suit, giving the reason, and accepts one it suits.
-func TestUpgradeChecksTheStoredConfig(t *testing.T) {
+// newImage is the root hash of the store of the image the upgrade tests stage.
+var newImage = bytes.Repeat([]byte{0xcd}, 32)
+
+// staged reads the config slot of the image the upgrade tests stage; found is false without one.
+func staged(t *testing.T, s *Server) (store.Stored, bool) {
+	t.Helper()
+	stored, found, err := store.Read(store.Slot(s.Loader.Slots, newImage))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stored, found
+}
+
+// TestStageConfigCarriesTheRunningConfig writes the new image's slot from the running slot's
+// documents as delivered when the upgrade delivers none, as on a partial cluster, translated
+// with the new image's schemas.
+func TestStageConfigCarriesTheRunningConfig(t *testing.T) {
+	s, _ := configServer(t)
+	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, found := staged(t, s)
+	_, running, _, _ := s.runningSlot()
+	if !found || got.Version != hashOf(t, baseConfig) || !reflect.DeepEqual(got.Delivered, running.Delivered) {
+		t.Errorf("staged slot = %+v, found %v; want the running slot's documents", got, found)
+	}
+	var id identity.Identity
+	if err := json.Unmarshal(got.Identity, &id); err != nil || id.Hostname != "n1" {
+		t.Errorf("staged identity = %s, %v", got.Identity, err)
+	}
+}
+
+// TestStageConfigWritesTheDeliveredConfig keeps the config an upgrade delivers in the new image's
+// slot and leaves the running slot as it is.
+func TestStageConfigWritesTheDeliveredConfig(t *testing.T) {
+	s, _ := configServer(t)
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, next, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := staged(t, s); got.Version != hashOf(t, next) {
+		t.Errorf("staged version = %q, want the delivered config's", got.Version)
+	}
+	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+		t.Errorf("running version = %q, want it unchanged", v)
+	}
+}
+
+// TestStageConfigRefuses refuses config the image does not accept, and config that changes the
+// machine's storage destructively, saying how that is carried out; it writes no slot.
+func TestStageConfigRefuses(t *testing.T) {
 	withoutDemo := fixtureSchemas(t)
 	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
 	for name, tc := range map[string]struct {
 		schemas map[string][]byte
 		facts   string
+		config  string
 		want    string
 	}{
-		"suits":                     {fixtureSchemas(t), "", ""},
-		"an unknown kind":           {withoutDemo, "", `does not accept kind "Demo"`},
-		"Kubernetes without a type": {fixtureSchemas(t), testImage, `Node "n1" has no type, but its image runs Kubernetes`},
-		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, "image.json"},
-		"no schemas":                {nil, "", "the image's schemas"},
+		"an unknown kind":           {withoutDemo, "", "", `does not accept kind "Demo"`},
+		"an unknown delivered kind": {withoutDemo, "", baseConfig, `does not accept kind "Demo"`},
+		"Kubernetes without a type": {fixtureSchemas(t), testImage, "", `Node "n1" has no type, but its image runs Kubernetes`},
+		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, "", "image.json"},
+		"no schemas":                {nil, "", "", "the image's schemas"},
+		"a VAR of another size":     {fixtureSchemas(t), "", strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), "var: size 1G instead of filling its disk (destructive); only a reinstall of"},
+		"unparsable config":         {fixtureSchemas(t), "", "kind: [", "parse the config"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
-			err := s.checkStoredConfig(imageWith(t, tc.schemas, tc.facts), "/nix/store/x", "metal")
-			if tc.want == "" {
-				if err != nil {
-					t.Fatal(err)
-				}
-				return
-			}
+			err := s.stageConfig(context.Background(), imageWith(t, tc.schemas, tc.facts), "/nix/store/x", "metal", newImage, tc.config, "")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want one naming %q", err, tc.want)
+			}
+			if _, found := staged(t, s); found {
+				t.Error("wrote the new image's slot")
 			}
 		})
 	}
 }
 
-// TestUpgradeWithoutStoredConfig accepts any image on a node that holds no config, which
-// translates none at boot.
-func TestUpgradeWithoutStoredConfig(t *testing.T) {
-	s, _ := newTestServer(t, normal, vda)
-	if err := s.checkStoredConfig(imageWith(t, nil, testImage), "/nix/store/x", "metal"); err != nil {
+// volumeRules answer the commands that create the volume extraConfig adds on vdb, encrypted and
+// enrolled with the fallback secret checked against STATE's keyslot.
+func volumeRules(s *Server) []rule {
+	dir := filepath.Join(s.Paths.StateDir, "storage")
+	return []rule{
+		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
+		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
+		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system"), out: `[{"file":"` + filepath.Join(dir, "disks", "system", "50-var.conf") + `","uuid":"` + varUUID + `"}]`},
+		{prefix: "blkid -p -o value -s TYPE", out: "crypto_LUKS\n"},
+		{prefix: "cryptsetup luksDump --dump-json-metadata", out: luksDump},
+	}
+}
+
+// TestStageConfigAddsAVolume makes the additive change an upgrade's config makes to the machine
+// at once, while the running image runs: the volume is created, enrolled with the fallback secret
+// and recorded in storage.json, and the new image's slot names it. The running slot does not.
+// Without the fallback secret the volume cannot be enrolled, and nothing changes.
+func TestStageConfigAddsAVolume(t *testing.T) {
+	s, r := configServer(t)
+	r.rules = volumeRules(s)
+	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), "")
+	if err == nil || !strings.Contains(err.Error(), "no fallback secret was sent") {
+		t.Fatalf("err = %v, want the missing secret", err)
+	}
+	if _, found := staged(t, s); found || len(r.calls) != 0 {
+		t.Fatalf("wrote the slot or ran %v", r.calls)
+	}
+	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret); err != nil {
 		t.Fatal(err)
+	}
+	if !contains(r.calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
+		t.Errorf("the volume was not created: %v", r.calls)
+	}
+	recorded, err := storage.ReadSection(filepath.Join(s.Paths.StateDir, "storage", "storage.json"))
+	if err != nil || recorded.Volumes["extra"].MountPoint != "/srv/extra" {
+		t.Errorf("recorded section = %+v, %v", recorded, err)
+	}
+	if got, _ := staged(t, s); got.Version != hashOf(t, extraConfig("ext4")) {
+		t.Errorf("staged version = %q, want the delivered config's", got.Version)
+	}
+	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+		t.Errorf("running version = %q, want it unchanged", v)
+	}
+}
+
+// TestStageConfigKeepsTheFixedFields refuses config that changes what a node holding a share was
+// set up for, as ApplyConfig does: here the node's type.
+func TestStageConfigKeepsTheFixedFields(t *testing.T) {
+	s, _ := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	next := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
+	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), testImage), "/nix/store/x", "metal", newImage, next, "")
+	if err == nil || !strings.Contains(err.Error(), `changes the node's type from "worker" to "controlplane"`) {
+		t.Errorf("err = %v", err)
+	}
+	if err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), testImage), "/nix/store/x", "metal", newImage, workerConfig, ""); err != nil {
+		t.Errorf("the same config: %v", err)
+	}
+}
+
+// TestStageConfigNeedsConfig refuses an upgrade without config on a node whose running slot holds
+// no documents to carry over.
+func TestStageConfigNeedsConfig(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", "")
+	if err == nil || !strings.Contains(err.Error(), "no config to carry over") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// TestUpgradeRetiresConfigSlots keeps the slots of the images the UKIs on the ESP boot, and of the
+// running one, and removes the others with their provenance, also after a refused upgrade, which
+// retired the image it refused.
+func TestUpgradeRetiresConfigSlots(t *testing.T) {
+	c := newCreds(t)
+	s, _ := newTestServer(t, normal, vda)
+	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi", "chalkos_3+3.efi")
+	booted, kept, stale := bytes.Repeat([]byte{'2'}, 32), bytes.Repeat([]byte{'3'}, 32), bytes.Repeat([]byte{'4'}, 32)
+	for _, h := range [][]byte{booted, kept, stale} {
+		if err := store.Write(store.Slot(s.Loader.Slots, h), store.Stored{Version: "v1", Identity: []byte("{}")}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record := upgrade.Images{}
+	for _, h := range [][]byte{booted, kept, stale} {
+		record = record.Record(h, upgrade.Provenance{Tag: "v1"}, [][]byte{booted, kept, stale})
+	}
+	data, err := record.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), string(data))
+	s.InstallImage = func(_ context.Context, h upgrade.Header, r io.Reader) (upgrade.Result, error) {
+		io.Copy(io.Discard, r)
+		// The refusal retires the image chalkos_3 boots.
+		if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_3+3.efi")); err != nil {
+			t.Error(err)
+		}
+		return upgrade.Result{}, errors.New("the node's config does not suit the image")
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
+	stream := conn.Upgrade(context.Background())
+	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: kept}}
+	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("upgrade = %v, want its refusal", err)
+	}
+	slots, err := store.Slots(s.Loader.Slots)
+	if err != nil || len(slots) != 1 || !bytes.Equal(slots[0], booted) {
+		t.Errorf("slots = %q, %v; want the booted image's alone", slots, err)
+	}
+	if images := upgrade.ReadImages(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)); len(images) != 1 || images.Of(booted).Tag != "v1" {
+		t.Errorf("the record of installed images = %v, want the booted image's alone", images)
 	}
 }
 
@@ -264,7 +430,7 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 	h := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: bytes.Repeat([]byte{2}, 32),
 		StoreSize: 1, VeritySize: 1, UKISize: 1, StoreSHA256: sum, VeritySHA256: sum, UKISHA256: sum}
 	// The fake sfdisk prints no table, which ends the upgrade.
-	if _, err := s.installImage(context.Background(), h, bytes.NewReader(nil)); err == nil {
+	if _, err := s.installImage(context.Background(), h, "", "", bytes.NewReader(nil)); err == nil {
 		t.Fatal("the upgrade went on without a partition table")
 	}
 	if calls == 0 {

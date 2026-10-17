@@ -696,6 +696,8 @@ No fields.
 | ----- | ---- | ----------- |
 | `image` | [`ImageHeader`](#message-imageheader) | The image to install. The node refuses another ID or platform than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
+| `config` | `string` | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and against the machine as ApplyConfig does: it refuses destructive storage changes and changes of the fixed Kubernetes settings, makes additive storage changes, such as a new volume, at once, and keeps the config in the image's config slot. Empty carries the running image's config over, checked against the image the same way. |
+| `fallback_secret` | `string` | Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is not none. |
 
 ### UpgradeRequest { #message-upgraderequest }
 

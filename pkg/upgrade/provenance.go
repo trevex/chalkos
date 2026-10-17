@@ -48,16 +48,23 @@ func (im Images) Of(rootHash []byte) Provenance {
 	return im[hex.EncodeToString(rootHash)]
 }
 
-// Record adds the image's provenance to the record and forgets every other image but those whose
-// root hashes keep names, the stores the UKIs on the ESP boot. A build that names no revision or
-// tag keeps what the record knew of its store.
-func (im Images) Record(rootHash []byte, p Provenance, keep [][]byte) Images {
+// Keep forgets every image but those whose root hashes keep names, the stores the UKIs on the ESP
+// boot.
+func (im Images) Keep(keep [][]byte) Images {
 	out := Images{}
 	for _, k := range keep {
 		if old, ok := im[hex.EncodeToString(k)]; ok {
 			out[hex.EncodeToString(k)] = old
 		}
 	}
+	return out
+}
+
+// Record adds the image's provenance to the record and forgets every other image but those whose
+// root hashes keep names, as Keep does. A build that names no revision or tag keeps what the
+// record knew of its store.
+func (im Images) Record(rootHash []byte, p Provenance, keep [][]byte) Images {
+	out := im.Keep(keep)
 	id := hex.EncodeToString(rootHash)
 	if old, ok := im[id]; ok {
 		out[id] = old
