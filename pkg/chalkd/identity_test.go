@@ -182,30 +182,92 @@ var vdc = testDisk{"vdc", "253:32", map[string]string{"ID_PATH": "pci-0000:00:06
 
 // withExtraRef returns a rendered section whose extra disk is referenced by the serial given.
 func withExtraRef(t *testing.T, rendered, serial string) string {
+	return withExtraSelector(t, rendered, storage.Selector{Serial: serial, Type: "hdd"})
+}
+
+// withExtraSelector returns a rendered section whose extra disk is referenced by the selector given.
+func withExtraSelector(t *testing.T, rendered string, sel storage.Selector) string {
 	return editSection(t, rendered, func(s *storage.Section) {
 		d := s.Disks["extra"]
-		d.Ref = storage.Ref{Selector: storage.Selector{Serial: serial, Type: "hdd"}}
+		d.Ref = storage.Ref{Selector: sel}
 		s.Disks["extra"] = d
 	})
 }
 
+// asSSDs makes the named test disks report themselves as SSDs, so that one selector matches them
+// all.
+func asSSDs(t *testing.T, s *Server, names ...string) {
+	t.Helper()
+	for _, n := range names {
+		write(t, filepath.Join(s.Host.SysRoot, "block", n, "queue", "rotational"), "0\n")
+	}
+}
+
 // A destructive change names what carries it out: a reset for a volume it recreates in place, a
-// reinstall for a volume the config removes or moves to another disk, and a fixed reference for a
-// disk reference that finds no disk.
+// reinstall for a volume the config removes or moves to another disk, and a fixed reference
+// for a disk reference that cannot be resolved.
 func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
-	for _, tc := range []struct{ name, next, want string }{
-		{"reformatted", section("", "xfs"), "reset it with chalkctl storage reset n1 extra"},
-		{"reformatted, its reference changed but finding its disk", withExtraRef(t, section("", "xfs"), "chalk-extra"), "reset it with chalkctl storage reset n1 extra"},
-		{"removed", section("", ""), "only a reinstall of n1 carries it out"},
-		{"moved by its reference", withExtraRef(t, section("", "ext4"), "chalk-other"), "but the volume lives on"}, {"moved by its reference, naming a reinstall", withExtraRef(t, section("", "ext4"), "chalk-other"), "only a reinstall of n1 carries it out"},
-		{"its reference finding no disk", withExtraRef(t, section("", "ext4"), "chalk-missing"), "cannot be resolved"}, {"its reference finding no disk, naming the fix", withExtraRef(t, section("", "ext4"), "chalk-missing"), "fix the disk reference or plug in the disk it names"},
+	for _, tc := range []struct {
+		name, next string
+		// prepare changes the disks before the config is applied.
+		prepare func(t *testing.T, s *Server)
+		want    []string
+		notWant []string
+	}{
+		{
+			name: "reformatted",
+			next: section("", "xfs"),
+			want: []string{"reset it with chalkctl storage reset n1 extra"},
+		},
+		{
+			name:    "reformatted, its reference changed but finding its disk",
+			next:    withExtraRef(t, section("", "xfs"), "chalk-extra"),
+			want:    []string{"reset it with chalkctl storage reset n1 extra"},
+			notWant: []string{"cannot be resolved", "reinstall"},
+		},
+		{
+			name: "removed",
+			next: section("", ""),
+			want: []string{"only a reinstall of n1 carries it out"},
+		},
+		{
+			name: "moved by its reference",
+			next: withExtraRef(t, section("", "ext4"), "chalk-other"),
+			want: []string{"but the volume lives on", "only a reinstall of n1 carries it out"},
+		},
+		{
+			name:    "its reference finding no disk",
+			next:    withExtraRef(t, section("", "ext4"), "chalk-missing"),
+			want:    []string{"cannot be resolved", "no disk matches", "fix the disk reference or plug in the disk it names"},
+			notWant: []string{"reinstall"},
+		},
+		{
+			name:    "its reference finding two disks",
+			next:    withExtraSelector(t, section("", "ext4"), storage.Selector{Type: "ssd"}),
+			prepare: func(t *testing.T, s *Server) { asSSDs(t, s, "vdb", "vdc") },
+			want:    []string{"cannot be resolved", "2 disks match", "fix the disk reference"},
+			notWant: []string{"plug in", "reinstall"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true, vdc)
 			withNodeCertificate(t, s)
+			if tc.prepare != nil {
+				tc.prepare(t, s)
+			}
 			_, err := apply(s, identityWith(tc.next), secret)
-			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want a refusal containing %q", err, tc.want)
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+				t.Fatalf("err = %v, want a refusal", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("err = %v, want it to contain %q", err, want)
+				}
+			}
+			for _, not := range tc.notWant {
+				if strings.Contains(err.Error(), not) {
+					t.Errorf("err = %v, want it not to contain %q", err, not)
+				}
 			}
 			if len(r.calls) != 0 {
 				t.Errorf("ran %v for a refused identity", r.calls)
@@ -256,55 +318,68 @@ func reset(s *Server, volume, identity string) error {
 	return s.resetVolume(context.Background(), volume, identity, secret)
 }
 
+// A reset recreates a volume on its disk, also when the config references the disk anew.
 func TestResetVolume(t *testing.T) {
-	s, r := installedServer(t, section("", "ext4"), true)
-	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
-
-	if err := reset(s, "extra", identityWith(section("", "xfs"))); err != nil {
-		t.Fatal(err)
-	}
-	dir := filepath.Join(s.Paths.StateDir, "storage")
-	for i, want := range []string{
-		dumpState,
-		testState,
-		"systemctl stop srv-extra.mount systemd-cryptsetup@extra.service",
-		"wipefs --all /dev/vdb1",
-		"sfdisk --lock --delete /dev/vdb 1",
-		"blkid -p -o export /dev/vdb",
-		"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system") + " --seed=2869f04c-5655-50f4-28b9-6b2eb9700a02 /dev/disk/chalk-boot-disk",
-		"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra") + " --seed=088717f0-ffd4-dba5-a524-7d3d44310d1e --empty=allow /dev/vdb",
+	for _, tc := range []struct{ name, next string }{
+		{"reformatted", section("", "xfs")},
+		{"reformatted, its reference changed but finding its disk", withExtraRef(t, section("", "xfs"), "chalk-extra")},
 	} {
-		if i >= len(r.calls) || r.calls[i] != want {
-			t.Fatalf("command %d = %q, want %q (all: %v)", i, r.calls[min(i, len(r.calls)-1)], want, r.calls)
-		}
-	}
-	if !contains(r.calls, "systemd-cryptenroll --unlock-tpm2-device=auto --password --wipe-slot=password /dev/disk/by-partuuid/"+newUUID) ||
-		!contains(r.calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
-		t.Errorf("the volume was not created and opened again: %v", r.calls)
-	}
-	pins, err := storage.ReadPins(filepath.Join(dir, "disks.json"))
-	if err != nil || pins.Disks["extra"].Partitions["extra"] != newUUID {
-		t.Errorf("pins = %+v, %v", pins.Disks["extra"], err)
-	}
-	recorded, _ := storage.ReadSection(filepath.Join(dir, "storage.json"))
-	if recorded.Volumes["extra"].Format != "xfs" {
-		t.Errorf("recorded section = %+v", recorded.Volumes["extra"])
+		t.Run(tc.name, func(t *testing.T) {
+			s, r := installedServer(t, section("", "ext4"), true)
+			partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+
+			if err := reset(s, "extra", identityWith(tc.next)); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(s.Paths.StateDir, "storage")
+			for i, want := range []string{
+				dumpState,
+				testState,
+				"systemctl stop srv-extra.mount systemd-cryptsetup@extra.service",
+				"wipefs --all /dev/vdb1",
+				"sfdisk --lock --delete /dev/vdb 1",
+				"blkid -p -o export /dev/vdb",
+				"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "system") + " --seed=2869f04c-5655-50f4-28b9-6b2eb9700a02 /dev/disk/chalk-boot-disk",
+				"systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra") + " --seed=088717f0-ffd4-dba5-a524-7d3d44310d1e --empty=allow /dev/vdb",
+			} {
+				if i >= len(r.calls) || r.calls[i] != want {
+					t.Fatalf("command %d = %q, want %q (all: %v)", i, r.calls[min(i, len(r.calls)-1)], want, r.calls)
+				}
+			}
+			if !contains(r.calls, "systemd-cryptenroll --unlock-tpm2-device=auto --password --wipe-slot=password /dev/disk/by-partuuid/"+newUUID) ||
+				!contains(r.calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
+				t.Errorf("the volume was not created and opened again: %v", r.calls)
+			}
+			pins, err := storage.ReadPins(filepath.Join(dir, "disks.json"))
+			if err != nil || pins.Disks["extra"].Partitions["extra"] != newUUID {
+				t.Errorf("pins = %+v, %v", pins.Disks["extra"], err)
+			}
+			recorded, _ := storage.ReadSection(filepath.Join(dir, "storage.json"))
+			if recorded.Volumes["extra"].Format != "xfs" {
+				t.Errorf("recorded section = %+v", recorded.Volumes["extra"])
+			}
+		})
 	}
 }
 
 func TestResetVolumeRefusals(t *testing.T) {
+	ssds := func(t *testing.T, s *Server) { asSSDs(t, s, "vdb", "vdc") }
 	for _, c := range []struct {
 		name, volume, identity string
 		// partitionOn is the disk the volume's partition link resolves to.
 		partitionOn string
-		want        string
+		// prepare changes the disks before the reset.
+		prepare func(t *testing.T, s *Server)
+		want    []string
+		notWant []string
 	}{
-		{"var", "var", identityWith(section("1G", "ext4")), "vdb", "VAR"},
-		{"unknown volume", "nope", identityWith(section("", "ext4")), "vdb", "no volume nope"},
-		{"other volumes change destructively", "extra", identityWith(section("1G", "xfs")), "vdb", "other volumes"},
-		{"partition on another disk", "extra", identityWith(section("", "xfs")), "vda", "refusing to touch it"},
-		{"reference finding another disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", "finds another disk"},
-		{"reference finding no disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-missing")), "vdb", "finds no disk"},
+		{"var", "var", identityWith(section("1G", "ext4")), "vdb", nil, []string{"VAR"}, nil},
+		{"unknown volume", "nope", identityWith(section("", "ext4")), "vdb", nil, []string{"no volume nope"}, nil},
+		{"other volumes change destructively", "extra", identityWith(section("1G", "xfs")), "vdb", nil, []string{"other volumes"}, nil},
+		{"partition on another disk", "extra", identityWith(section("", "xfs")), "vda", nil, []string{"refusing to touch it"}, nil},
+		{"reference finding another disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-other")), "vdb", nil, []string{"finds another disk"}, nil},
+		{"reference finding no disk", "extra", identityWith(withExtraRef(t, section("", "xfs"), "chalk-missing")), "vdb", nil, []string{"cannot be resolved: no disk matches", "; fix the reference or plug in the disk it names"}, nil},
+		{"reference finding two disks", "extra", identityWith(withExtraSelector(t, section("", "xfs"), storage.Selector{Type: "ssd"})), "vdb", ssds, []string{"cannot be resolved: 2 disks match", "; fix the reference"}, []string{"plug in"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true, vdc)
@@ -313,9 +388,22 @@ func TestResetVolumeRefusals(t *testing.T) {
 			} else {
 				partitionLink(t, s, "vda", "vda9", "253:9", "9")
 			}
+			if c.prepare != nil {
+				c.prepare(t, s)
+			}
 			err := reset(s, c.volume, c.identity)
-			if err == nil || !strings.Contains(err.Error(), c.want) {
-				t.Fatalf("err = %v, want %q", err, c.want)
+			if err == nil {
+				t.Fatal("reset the volume")
+			}
+			for _, want := range c.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("err = %v, want it to contain %q", err, want)
+				}
+			}
+			for _, not := range c.notWant {
+				if strings.Contains(err.Error(), not) {
+					t.Errorf("err = %v, want it not to contain %q", err, not)
+				}
 			}
 			for _, call := range r.calls {
 				if strings.HasPrefix(call, "wipefs") || strings.HasPrefix(call, "sfdisk") {

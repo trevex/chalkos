@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -166,6 +167,9 @@ func TestResolveSelectorNoMatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("resolved a selector no disk matches")
 	}
+	if !errors.Is(err, ErrNoDisk) {
+		t.Errorf("err = %v, want it to match ErrNoDisk", err)
+	}
 	for _, want := range []string{"no disk matches", `model "Samsung SSD 870 QVO 4TB"`, "size 4T", `serial "S6PFNX0T100001"`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
@@ -180,6 +184,9 @@ func TestResolveSelectorAmbiguous(t *testing.T) {
 		!strings.Contains(err.Error(), "/dev/nvme0n1") || !strings.Contains(err.Error(), "/dev/sda") {
 		t.Fatalf("err = %v, want both Samsung disks listed", err)
 	}
+	if errors.Is(err, ErrNoDisk) {
+		t.Errorf("err = %v matches ErrNoDisk, but two disks match", err)
+	}
 }
 
 func TestResolvePath(t *testing.T) {
@@ -190,9 +197,13 @@ func TestResolvePath(t *testing.T) {
 			t.Errorf("ResolvePath(%s) = %v, %v", p, d, err)
 		}
 	}
-	for _, p := range []string{"/dev/sda1", "/dev/disk/by-id/missing", "/srv/disk"} {
-		if d, err := h.ResolvePath(p); err == nil {
+	// Only a path at which nothing exists finds no disk; the others name something else.
+	for p, none := range map[string]bool{"/dev/sda1": false, "/dev/disk/by-id/missing": true, "/srv/disk": false} {
+		d, err := h.ResolvePath(p)
+		if err == nil {
 			t.Errorf("ResolvePath(%s) = %v, want an error", p, d)
+		} else if errors.Is(err, ErrNoDisk) != none {
+			t.Errorf("ResolvePath(%s) = %v; matches ErrNoDisk: %v, want %v", p, err, !none, none)
 		}
 	}
 }

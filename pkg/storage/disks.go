@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -180,6 +181,17 @@ func (h Host) disk(name string) (BlockDisk, error) {
 	return BlockDisk{Name: name, Device: "/dev/" + name, Identity: id}, nil
 }
 
+// ErrNoDisk is what a Resolve error matches when no disk matches the reference, as when a
+// selector is mistyped or the disk it names is not plugged in. Several matching disks, a selector
+// this version does not know and a failure to list the disks do not match it.
+var ErrNoDisk = errors.New("no disk matches the reference")
+
+// noDisk is a Resolve error that matches ErrNoDisk and keeps its own message.
+type noDisk struct{ error }
+
+func (e noDisk) Is(target error) bool { return target == ErrNoDisk }
+func (e noDisk) Unwrap() error        { return e.error }
+
 // Resolve finds the one disk a reference names.
 func (h Host) Resolve(ref Ref) (BlockDisk, error) {
 	if ref.Path != "" {
@@ -203,7 +215,7 @@ func (h Host) Resolve(ref Ref) (BlockDisk, error) {
 	case 1:
 		return matches[0], nil
 	case 0:
-		return BlockDisk{}, fmt.Errorf("no disk matches %s; disks: %s", ref, listDisks(disks))
+		return BlockDisk{}, noDisk{fmt.Errorf("no disk matches %s; disks: %s", ref, listDisks(disks))}
 	default:
 		return BlockDisk{}, fmt.Errorf("%d disks match %s, refusing to choose: %s", len(matches), ref, listDisks(matches))
 	}
@@ -220,6 +232,9 @@ func (h Host) ResolvePath(p string) (BlockDisk, error) {
 		return BlockDisk{}, err
 	}
 	target, err := filepath.EvalSymlinks(filepath.Join(root, rel))
+	if errors.Is(err, fs.ErrNotExist) {
+		return BlockDisk{}, noDisk{fmt.Errorf("%s: %w", p, err)}
+	}
 	if err != nil {
 		return BlockDisk{}, fmt.Errorf("%s: %w", p, err)
 	}
