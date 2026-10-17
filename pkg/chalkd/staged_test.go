@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // The images of stagedServer's ESP: the one it runs, booted from chalkos_2.efi, and the one
@@ -196,5 +199,33 @@ func TestGetConfigStaged(t *testing.T) {
 	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true}))
 	if err != nil || resp.Msg.Version != hashOf(t, next) || !strings.Contains(resp.Msg.Documents, `"name":"second"`) {
 		t.Errorf("staged config = %+v, %v", resp, err)
+	}
+}
+
+// TestUpgradeOfAStagedImageNamesApplyConfigStaged names apply-config --staged when the config an
+// upgrade sends again for a staged image is refused, which retires the image; apply-config
+// --staged would have kept it.
+func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
+	c := newCreds(t)
+	s, _ := stagedServer(t, fixtureSchemas(t))
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
+		io.Copy(io.Discard, r)
+		return upgrade.Result{}, errors.New("the config does not suit the image")
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
+	send := func(rootHash []byte) error {
+		stream := conn.Upgrade(context.Background())
+		header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: rootHash}, Config: baseConfig}
+		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := stream.CloseAndReceive()
+		return err
+	}
+	if err := send(bytes.Repeat([]byte{'9'}, 32)); err == nil || strings.Contains(err.Error(), "--staged") {
+		t.Errorf("upgrade to another image = %v, want no --staged named", err)
+	}
+	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the image staged to boot next was retired with it: chalkctl apply-config --staged") {
+		t.Errorf("upgrade of the staged image = %v, want apply-config --staged named", err)
 	}
 }

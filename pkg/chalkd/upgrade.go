@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -61,6 +62,12 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	}
 	header := imageHeader(img)
+	// An image staged already is sent again for its config alone, and a refusal of that config
+	// retires the image with it; apply-config --staged would have refused it and kept the image.
+	s.mu.Lock()
+	staged, _ := s.stagedImage()
+	s.mu.Unlock()
+	resent := staged != nil && bytes.Equal(staged, img.GetRootHash())
 	log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
 	res, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
 		if !stream.Receive() {
@@ -72,6 +79,9 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// A refusal retired the image, so its config slot goes too.
 		s.recordImages(nil)
+		if resent {
+			return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the image staged to boot next was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
+		}
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
 	}
 	s.recordImages(&header)

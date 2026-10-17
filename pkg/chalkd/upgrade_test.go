@@ -348,6 +348,38 @@ func TestStageConfigAddsAVolume(t *testing.T) {
 	}
 }
 
+// TestStageConfigRetriedAfterTheVolume writes the slot again when an upgrade is retried after its
+// config's volume was created, as when the slot's write or the activation failed: storage.json
+// records the volume already, so the retry creates nothing again and needs no fallback secret.
+func TestStageConfigRetriedAfterTheVolume(t *testing.T) {
+	s, r := configServer(t)
+	r.rules = volumeRules(s)
+	stage := func(secret string) error {
+		return s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, extraConfig("ext4"), secret)
+	}
+	if err := stage(secret); err != nil {
+		t.Fatal(err)
+	}
+	running, err := s.runningHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The slot the first try wrote is gone, as one a failed activation retired.
+	if err := store.Retire(s.Loader.Slots, [][]byte{running}); err != nil {
+		t.Fatal(err)
+	}
+	r.calls = nil
+	if err := stage(""); err != nil {
+		t.Fatalf("the retry: %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("the retry ran %v", r.calls)
+	}
+	if got, found := staged(t, s); !found || got.Version != hashOf(t, extraConfig("ext4")) {
+		t.Errorf("staged slot = %+v, found %v; want the delivered config's", got, found)
+	}
+}
+
 // TestApplyConfigNamesAVolumeAnotherImageAdded refuses config for the running image that leaves out
 // a volume the config of another image added, as after a fallback from that image, and says to name
 // the volume rather than to reinstall: the running image's config never named it. While the other
