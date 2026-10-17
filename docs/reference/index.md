@@ -1,6 +1,6 @@
 ---
 title: "Reference"
-description: "Commands, options, the node API and the layout of images, ports and os-release"
+description: "Commands, config kinds, mkImages and image options, the node API and the layout of images, ports and os-release"
 ---
 
 # Reference

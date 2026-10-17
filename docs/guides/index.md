@@ -6,9 +6,10 @@ description: "Step-by-step guides for installing, upgrading and operating chalko
 # Guides
 
 Each guide solves one task on a real cluster, from a starting point it names at the top. They
-assume a [cluster definition](../reference/glossary.md#cluster-definition) in a flake and the
-cluster's [secrets file](../reference/glossary.md#secrets-file); the
-[quick start](../getting-started/index.md) creates both for a lab, and
+assume a flake that builds the cluster's images with `mkImages`, an
+[inventory](../reference/glossary.md#inventory) with the nodes' YAML files, and the cluster's
+[secrets file](../reference/glossary.md#secrets-file); the
+[quick start](../getting-started/index.md) creates all three for a lab, and
 [Config and the inventory](../concepts/config.md) explains what they hold.
 
 ## Install a cluster
@@ -17,7 +18,7 @@ cluster's [secrets file](../reference/glossary.md#secrets-file); the
   machine and install the nodes from your workstation.
 - [Run on KVM, Proxmox or libvirt](kvm-proxmox-libvirt.md): run nodes as virtual machines with
   Secure Boot and a virtual TPM, from a signed `kvm` image or the installer.
-- [Plan a production cluster](production-cluster.md): decide roles, addresses, storage, keys and
+- [Plan a production cluster](production-cluster.md): decide variants, addresses, storage, keys and
   time sources before the first install.
 - [Run a highly available control plane](ha-control-plane.md): run three control planes behind
   a virtual IP, and add, replace or remove one.
@@ -30,13 +31,13 @@ cluster's [secrets file](../reference/glossary.md#secrets-file); the
   VLANs, bonds, drivers or another console.
 - [Support additional hardware](additional-hardware.md): add drivers, firmware and platforms the
   base images do not carry.
-- [Add storage volumes](storage-volumes.md): size VAR and add encrypted or raw volumes on the
-  system disk or on other disks.
 - [Sign images for Secure Boot](secure-boot-signing.md): create a db key, get firmware to trust
   it and sign images and the installer with it.
 
 ## Operate a cluster
 
+- [Add storage volumes](storage-volumes.md): size VAR and add encrypted or raw volumes on the
+  system disk or on other disks, with `SystemDisk` and `Volume` documents.
 - [Upgrade a cluster](upgrade-cluster.md): roll a new chalkos or Kubernetes version through the
   nodes, one at a time or in batches.
 - [Rotate certificates and CAs](rotate-certificates.md): issue client files, renew node

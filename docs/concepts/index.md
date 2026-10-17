@@ -5,15 +5,15 @@ description: "How chalkos works and why it works that way"
 
 # Concepts
 
-These pages explain how chalkos works and why it is built the way it is: how a cluster definition
-becomes signed images, how a node boots, unlocks and falls back from a bad image, and how it runs
-Kubernetes. They describe mechanisms and their limits rather than steps; the
-[guides](../guides/index.md) hold the steps. For the whole model on one page first, read
-[chalkos in five minutes](../getting-started/five-minutes.md). The pages build on each other in
-this order:
+These pages explain how chalkos works and why it is built the way it is: how Nix builds a
+cluster's signed images, how YAML documents configure each node, how a node boots, unlocks and
+falls back from a bad image, and how it runs Kubernetes. They describe mechanisms and their limits
+rather than steps; the [guides](../guides/index.md) hold the steps. For the whole model on one
+page first, read [chalkos in five minutes](../getting-started/five-minutes.md). The pages build on
+each other in this order:
 
-- [Architecture](architecture.md): the parts of chalkos, chalkd, chalkctl and chalklab, and how a
-  cluster definition becomes installed, running nodes.
+- [Architecture](architecture.md): the parts of chalkos, chalkd, chalkctl and chalklab, and how
+  images and config become installed, running nodes.
 - [Variants and platforms](variants.md): how mkImages builds a cluster's images from variants,
   platforms and NixOS modules, and how an extension adds a config kind.
 - [Config and the inventory](config.md): the YAML documents that describe each node, how the
