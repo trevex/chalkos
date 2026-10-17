@@ -85,13 +85,6 @@ The permission a client certificate grants on the node API, taken from its Organ
 it are. A certificate issued through the [node CA](#node-ca) has the role `node`, which may
 only renew its node certificate. See [Security model](../concepts/security.md).
 
-## Cluster definition { #cluster-definition }
-
-The Nix modules that declare a cluster: its settings, [roles](#role), [platforms](#platform) and
-[nodes](#node) under the `chalkos.*` options, evaluated by `chalkos.lib.mkCluster` and exposed
-by a [flake](#flake). It is the only inventory chalkctl reads. See
-[Config and the inventory](../concepts/config.md).
-
 ## Cluster endpoint { #cluster-endpoint }
 
 The URL of the cluster's API server, `spec.endpoint` of the [`Cluster`](kinds.md#cluster)
@@ -109,8 +102,7 @@ set. chalkctl checks the set against the schemas of the node's image and deliver
 and with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd checks it again, keeps it
 on [STATE](#state) and applies it at every boot. A new set replaces the node's previous one as a
 whole. Secrets travel as `Secret` documents and reach only the services that read the kinds
-referencing them. See [Config and the inventory](../concepts/config.md) and
-[Config kinds](kinds.md).
+referencing them. See [Config and the inventory](../concepts/config.md).
 
 ## Config document { #config-document }
 
@@ -171,7 +163,8 @@ NixOS modules outside chalkos, in a [variant](#variant)'s modules, that add serv
 and may declare config [kinds](#kind) under [`chalkos.kinds`](options.md#chalkoskinds), whose
 documents a node's YAML files then carry. The services read those documents with
 [chalkcfg](#chalkcfg) and restart when they change. chalkos's own Kubernetes support declares its
-kinds and consumers the same way. See [`chalkos.consumers`](options.md#chalkosconsumers).
+kinds and consumers the same way. See
+[Variants and platforms](../concepts/variants.md#how-does-an-extension-add-a-kind).
 
 ## Fallback keyslot { #fallback-keyslot }
 
@@ -179,12 +172,6 @@ The second keyslot of every encrypted partition, which unlocks it when the [TPM]
 the node's [recovery key](#recovery-key) by default, a password, or none, as
 `spec.encryption.fallback` of the node's [`SystemDisk`](kinds.md#systemdisk) chooses. See
 [Storage and encryption](../concepts/storage.md).
-
-## Flake { #flake }
-
-A Nix flake that exposes a cluster as `chalkos.<cluster>`, the result of `mkCluster`, and pins
-the chalkos version through `flake.lock`. chalkctl and chalklab evaluate it to read the cluster.
-See [Variants and platforms](../concepts/variants.md).
 
 ## Health check { #health-check }
 
@@ -241,8 +228,8 @@ The file that tells chalkctl about a cluster: each node by name, the address cha
 at, and the YAML files whose documents form its [config](#config), as files every node gets,
 files of named groups and each node's own. chalkctl reads `chalkos.yaml` in the current directory,
 or the file `--inventory` names. It stays on the operator's machine and names no secrets. See
-[Config and the inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes) and
-[Config kinds](kinds.md#inventory).
+[Config and the inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes)
+and its fields in [Config kinds](kinds.md#inventory).
 
 ## Kind { #kind }
 
@@ -276,13 +263,6 @@ The mode chalkd runs in on a node that is not installed: it serves a self-signed
 prints its fingerprint and the node's addresses on the console, and accepts only reads,
 reboots and an install. See [Architecture](../concepts/architecture.md).
 
-## Manifest { #manifest }
-
-The JSON document `mkCluster` generates from the cluster definition (`chalkos.<cluster>.manifest`):
-the cluster's settings, its roles' image paths, every node's [identity](#identity) and the
-documents its extensions add, from which chalkctl generates each node's [config](#config). It is
-how Go code reads what Nix declared. See [Config and the inventory](../concepts/config.md).
-
 ## Module group { #module-group }
 
 A named set of kernel modules an [image](#image) carries, listed in
@@ -296,7 +276,7 @@ variant's or platform's modules. See [The image](../concepts/image.md).
 A machine of the cluster, named in the [inventory](#inventory) and described by its `Node`
 document, which names the `Image` it runs and whether it is a [control plane](#control-plane) or a
 [worker](#worker). It is installed from that image's [image directory](#image-directory). See
-[Config kinds](kinds.md#node).
+[Config and the inventory](../concepts/config.md).
 
 ## Node CA { #node-ca }
 
@@ -341,7 +321,7 @@ The kind of machine an [image](#image) is built for, such as `metal` or `kvm`, n
 [`platforms`](options.md#platforms) argument of `chalkos.lib.mkImages` with NixOS modules of its
 own. Every [variant](#variant) gets one image per platform, so only that platform's images carry
 its drivers and agents. A node refuses an image of another platform than the one it runs. See
-[The image](../concepts/image.md).
+[Variants and platforms](../concepts/variants.md#what-is-a-platform).
 
 ## Reader { #reader }
 
@@ -355,15 +335,6 @@ TPM does not unseal. chalkos derives it per node from the [secrets file](#secret
 file never changes, and
 [`chalkctl recovery-key`](cli/chalkctl_recovery-key.md) prints it. See
 [Storage and encryption](../concepts/storage.md).
-
-## Role { #role }
-
-The unit an [image](#image) is built for: the NixOS modules its nodes run, declared under
-[`chalkos.roles`](options.md#variants) with storage defaults and whether its images run
-Kubernetes. Each role becomes one image per platform. Control planes and workers of a role boot the
-same image; each node's kind makes it one or the other. See
-[Variants and platforms](../concepts/variants.md). A role's images have the role's name as
-their [variant](#variant).
 
 ## Rollback { #rollback }
 
@@ -449,7 +420,8 @@ A named set of NixOS modules that `chalkos.lib.mkImages` builds into one [image]
 GPU drivers. Control planes and workers can run the same variant. Its name is `CHALKOS_VARIANT`
 in the image's os-release and `variant` in its `metadata.json`. No check compares it: a node may
 change its variant through an [upgrade](#upgrade), and the new image's schemas decide which
-[config](#config) it takes. See [mkImages and image options](options.md#variants).
+[config](#config) it takes. See
+[Variants and platforms](../concepts/variants.md#what-is-a-variant).
 
 ## VIP { #vip }
 
