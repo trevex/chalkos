@@ -180,9 +180,11 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 // image with that slot, and a config chalkos-config could not apply would leave boot counting to
 // fall back. It refuses config that changes the fixed Kubernetes settings of a node holding a
 // share, and storage changes that are destructive; additive ones, such as a new volume, are made
-// now, while the running image runs, and storage.json records them. The running image's config
-// does not name such a volume, and its boot leaves it be. system is the image's NixOS system in
-// st, platform its platform and secret the fallback secret. The caller holds s.mu.
+// now, while the running image runs, and storage.json records them. Every boot sets up the volumes
+// storage.json records, so the running image mounts such a volume too, although its config does
+// not name it; its slot counts as removing the volume only once it is written again. system is the
+// image's NixOS system in st, platform its platform and secret the fallback secret. The caller
+// holds s.mu.
 func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) error {
 	_, running, found, err := s.runningSlot()
 	if err != nil {

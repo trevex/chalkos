@@ -395,7 +395,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		if cluster != nil {
-			// A cluster file that differs from the stored config's, as one a failed boot left
+			// A cluster file that differs from the running slot's, as one a failed boot left
 			// missing, counts as changed too.
 			written, err := s.Loader.WriteCluster(cluster)
 			if err != nil {
@@ -440,7 +440,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		restarted = append(restarted, units...)
 	}
 	restarted = append(restarted, kubernetesUnits...)
-	// The loops read the control plane's objects from the stored config, so they start again
+	// The loops read the control plane's objects from the running slot, so they start again
 	// once it is stored.
 	s.actOnLoops(act)
 	// Deliveries without config, as a rotation's, renew nothing: forced renewals would
@@ -486,8 +486,9 @@ type machineChange struct {
 // slot does, whichever image the slot is for: the machine has one storage, which a slot's config
 // may grow but not undo. It refuses destructive changes, naming how each is carried out. A slot
 // whose section lacks a volume the machine has, as the slot of an image that ran before an upgrade
-// added it, is classified so only when it is written again; the boot sets up storage.json alone
-// and leaves such a volume be. The caller holds s.mu.
+// or apply-config --staged added it, is classified so only when it is written again. Every boot
+// sets up each volume storage.json records, so that image mounts the volume too, and nothing at
+// boot removes one. The caller holds s.mu.
 func (s *Server) machineChanges(section storage.Section) (machineChange, error) {
 	recorded, pins, err := s.recorded()
 	if err != nil {
@@ -871,8 +872,8 @@ func sameCluster(a, b *k8s.Cluster) bool {
 // and its cluster were set up for: the node's type, which the share it holds is of, and the
 // settings fixed once the cluster exists, its address families and its pod, service and DNS
 // addresses, for which its certificates, etcd and the ranges the control plane allocated were
-// made. next is the cluster the config gives, and prev the stored config's. The type is compared
-// with the held share, so a stored config without a Kubernetes document changes nothing; a share
+// made. next is the cluster the config gives, and prev the running slot's. The type is compared
+// with the held share, so a running slot without a Kubernetes document changes nothing; a share
 // of the new type delivered with the config is refused too, since the node's etcd data and its
 // Node stay those of the old type until it is reinstalled. Without a stored cluster the settings
 // have nothing to compare with.

@@ -239,8 +239,10 @@ running image's config alone and warns that the staged image keeps its own. Runn
 inventory's, which replaces that config.
 
 A change to the running image that adds a volume the staged image's config lacks is refused: once
-the volume exists, booting the staged image with that config would remove it. Deliver the change
-with `--staged` first, which creates the volume, then without.
+the volume exists, the staged image's config would count as removing it, and the node could not
+write that config again. The staged image would still mount the volume, as every boot sets up the
+volumes `storage.json` records. Deliver the change with `--staged` first, which creates the
+volume, then without.
 
 ## Check that it worked
 

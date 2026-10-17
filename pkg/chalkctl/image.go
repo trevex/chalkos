@@ -168,8 +168,8 @@ func sum(r io.Reader) (*nodev1.ImagePart, error) {
 }
 
 // openUpgradeImage opens an upgrade's image with the contract its directory holds, which chalkctl
-// checks the inventory's config against before any node is drained. The node checks its
-// stored config against the schemas in the image itself.
+// checks the inventory's config against before any node is drained. The node checks the config it
+// gets, or without one its own, against the schemas in the image itself.
 func openUpgradeImage(ctx context.Context, path, key, cert string, stderr io.Writer) (*diskImage, error) {
 	img, err := openImage(ctx, path, key, cert, false, stderr)
 	if err != nil {

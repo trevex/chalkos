@@ -374,7 +374,8 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 // asked what it runs before any is sent anything: one that runs another platform than its config's
 // image stops the run. With an image, a node on another platform is skipped and named; a named one
 // stops the run. A node may get an image of another variant than it runs, which is printed; the
-// node checks its stored config against the image before it becomes the next boot.
+// node checks the config it gets, or without one its own, against the image before the image
+// becomes the next boot.
 func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
 	c := r.cluster
 	candidates := named

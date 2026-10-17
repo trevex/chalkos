@@ -337,10 +337,11 @@ w1 has a staged image with its own config (version 6f0e…); apply-config --stag
 
 The config is the image's; the machine state is the node's. The machine state is what a node keeps
 outside the slots, once for all its images: `storage.json`, the storage as applied, with the disks
-and partitions it is pinned to; the Kubernetes share; the node certificate and the OS CAs it
-trusts; and the Kubernetes cluster file. Every write of a slot (install, upgrade, `apply-config`
-and `apply-config --staged`) classifies its config against the machine state, whichever image
-the slot is for:
+and partitions it is pinned to; the Kubernetes share; and the node certificate and the OS CAs it
+trusts. The Kubernetes cluster file, `/run/chalkos/kubernetes/cluster.json`, is not machine state:
+`chalkos-config` writes it from the slot of the image that boots. Every write of a slot (install,
+upgrade, `apply-config` and `apply-config --staged`) classifies its config against the machine
+state, whichever image the slot is for:
 
 | Change | Class | What carries it out |
 | --- | --- | --- |
@@ -353,15 +354,22 @@ the slot is for:
 A node refuses the whole set when one of its changes is not live, applies none of it, and names
 what the change needs. The live changes are made whichever image the slot is for: an upgrade or
 `apply-config --staged` that adds a volume creates it while the running image runs, enrolled with
-the fallback secret chalkctl sends, and `storage.json` gains it. The running image's config does
-not name the volume. Its boot sets up the storage `storage.json` records and leaves the volume
-alone, and its slot counts as removing the volume only when that slot is written again.
+the fallback secret chalkctl sends, and `storage.json` gains it. Every boot sets up the volumes
+`storage.json` records, so the running image mounts the new volume as well, also after a
+fallback, although its config does not name it. Nothing at boot removes a volume. A slot whose
+config lacks the volume counts as removing it only when that slot is written again, so the next
+config for that image must name the volume too.
 
 That makes the order of two deliveries matter while an image is staged. A config for the running
 image that adds a volume the staged image's config lacks would leave the staged image a slot that
-removes the volume, so the node refuses the config and names the first step: deliver the config to
-the staged image with `chalkctl apply-config --staged <node>`, which creates the volume, then to
-the running image.
+counts as removing the volume, and the next write of that slot would be refused. So the node
+refuses the config and names the first step: deliver the config to the staged image with
+`chalkctl apply-config --staged <node>`, which creates the volume, then to the running image.
+
+The check runs one way. A write of the running image's slot that grows the machine checks the
+staged image's slot against the storage it makes. A write of the staged image's slot, by an
+upgrade or `apply-config --staged`, does not check the running image's slot: the running image
+mounts the new volume, and the next `apply-config` to it must name the volume.
 
 A control plane's addresses are not refused, but they are pinned once it becomes an
 [etcd member](../reference/glossary.md#etcd-member): every later boot waits for exactly those

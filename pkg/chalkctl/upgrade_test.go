@@ -1247,7 +1247,7 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 }
 
 // TestUpgradeNamedNodeOfAnotherVariant gives a named node the image of another variant: an
-// upgrade may change a node's variant, and the node checks its stored config against the image.
+// upgrade may change a node's variant, and the node checks the config it gets against the image.
 func TestUpgradeNamedNodeOfAnotherVariant(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "cp1"); err != nil {

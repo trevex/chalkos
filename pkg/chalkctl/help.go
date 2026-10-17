@@ -229,9 +229,11 @@ Each image on a node keeps its own config. --staged delivers the config for the 
 boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
 it against the image the node's Image names, and the node checks it against the staged image and
 keeps it for that image. Its storage changes count against the node's storage as the running
-image's do, so a new volume is created at once; nothing restarts. Without --staged, chalkctl warns
-of a staged image, whose config stays as it is. A config for the running image that adds storage
-the staged image's config lacks is refused, since booting that image would remove it; deliver the
+image's do, so a new volume is created at once and every image's boot mounts it, also the running
+image's, whose config must name it the next time it is delivered; nothing restarts. Without
+--staged, chalkctl warns of a staged image, whose config stays as it is. A config for the running
+image that adds storage the staged image's config lacks is refused: the staged image's config
+would then count as removing it, and the node could not write that config again. Deliver the
 config with --staged first. The command needs the secrets file.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.

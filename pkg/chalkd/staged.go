@@ -103,11 +103,14 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 }
 
 // checkStaged refuses a change of the machine's storage to section that the config slot of the
-// image staged to boot next could not boot onto: classified against the storage the change makes,
-// as the staged slot would be when it is written again, the slot's config is destructive, such as
-// one that lacks a volume the change adds and so would remove it. The staged slot is brought
-// along first, with chalkctl apply-config --staged, to which the new volume is then additive.
-// pins are the machine's. The caller holds s.mu.
+// image staged to boot next could not be written again with: classified against the storage the
+// change makes, as the staged slot would be when it is written again, the slot's config is
+// destructive, such as one that lacks a volume the change adds. That image would still boot and
+// mount the volume, as every boot sets up the volumes storage.json records, but its next config
+// would be refused for removing it. The staged slot is brought along first, with chalkctl
+// apply-config --staged, to which the new volume is then additive. The check runs this way only:
+// a write of the staged slot does not check the running slot against the storage it makes. pins
+// are the machine's. The caller holds s.mu.
 func (s *Server) checkStaged(section storage.Section, pins storage.Pins) error {
 	staged, err := s.stagedImage()
 	if err != nil {

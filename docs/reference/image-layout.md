@@ -183,7 +183,7 @@ readable by root alone.
 
 | Path | Written by | What it holds |
 | --- | --- | --- |
-| `config/<root-hash>/` | install, Upgrade, ApplyConfig | The config slot of the image whose store has the root hash, which its boot loads: a symbolic link to a directory beside it, which a new set replaces as a whole. An Upgrade forgets the slots of the images no UKI on the ESP boots. |
+| `config/<root-hash>/` | install, Upgrade, ApplyConfig | The config slot of the image whose store has the root hash, which its boot loads: a symbolic link to a directory beside it, which a new set replaces as a whole. An Upgrade forgets the slots of the images no UKI on the ESP boots, and with them a slot an upgrade wrote before a crash kept its image from being activated. |
 | `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's [identity](glossary.md#identity) on that image, which its config translates to and the boot applies: hostname, network units, storage, Kubernetes and time settings. |
 | `config/<root-hash>/delivered/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The slot's config documents as delivered, which GetConfig returns with secrets hashed; `Secret` documents in `delivered/secrets/<name>.json`. |
 | `config/<root-hash>/documents/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The same documents with their schemas' defaults filled in, which the node's services read; `Secret` documents in `documents/secrets/<name>.json`. |
@@ -197,7 +197,7 @@ readable by root alone.
 | `kubernetes/etcd-initialised` | chalkd | etcd answered ready after the bootstrap, so its data exists. |
 | `kubernetes/etcd-initial-cluster` | chalkd | etcd's initial cluster when the node joined an existing one. |
 | `kubernetes/left` | EtcdLeave | The node left etcd; it joins again only once reinstalled. |
-| `storage/storage.json` | install, Upgrade, ApplyConfig | The storage as applied, which every image's boot sets up: machine state, which the config of every slot write is classified against. The boot of an image whose config lacks a volume the file records leaves the volume alone. |
+| `storage/storage.json` | install, Upgrade, ApplyConfig | The storage as applied, which every image's boot sets up: machine state, which the config of every slot write is classified against. Every boot sets up each volume the file records, also one the booted image's config lacks, and nothing at boot removes a volume. |
 | `storage/disks.json` | chalkos-storage, chalkd | The disks the section's names were pinned to, and the PARTUUID of each volume. |
 | `storage/disks/<disk>/*.conf` | chalkos-storage, chalkd | The repart definitions of each disk, from the storage section. |
 | `installed` | install | The marker that the node is installed, written last. |
