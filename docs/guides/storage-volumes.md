@@ -283,6 +283,7 @@ The changes chalkd applies while the node runs, and those it refuses, are these:
 | A smaller size, or a size where none was | no |
 | Another format or encryption mode | no |
 | Another disk, or a reference that now finds another disk | no |
+| A changed reference that finds no disk, or more than one | no |
 | A volume removed | no |
 
 When a change is destructive, the node refuses the whole config and applies none of it,
@@ -319,6 +320,11 @@ reinstalled with the new layout. It also refuses while the config changes other 
 destructively too, naming them (`the config changes other volumes destructively too: ...`), so
 one reset applies one volume's change: undo the other volumes' changes in the files, reset this
 volume, then make the other changes again one at a time.
+
+A reset also refuses a volume whose changed disk reference finds no disk or more than one,
+naming the reason (`the disk reference of volume longhorn cannot be resolved: ...`), and a volume
+whose disk is not plugged in. Fix the reference in the files, or plug the disk in, and reset
+again.
 
 ## Check that it worked
 

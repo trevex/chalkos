@@ -197,12 +197,14 @@ Destructive changes need a volume to be wiped:
 - a `Volume` removed from the node's config;
 - another disk, format or encryption mode;
 - a smaller size, or a filling volume given a fixed size;
-- a changed disk reference that resolves to another physical disk than the pinned one.
+- a changed disk reference that resolves to another physical disk than the pinned one;
+- a changed disk reference that finds no disk, or more than one.
 
 When the section changes any volume destructively, the node refuses the whole config and applies
-none of it, naming each volume and what carries the change out: a reset for a volume recreated in
-place, a reinstall for VAR, a removed volume or one that moves to another disk, and a fixed
-reference for a disk reference that finds no disk.
+none of it, naming each volume and the remedy. A volume recreated in place takes a reset, once the
+disk it lives on is plugged in. VAR, a removed volume or one that moves to another disk takes a
+reinstall. A disk reference that finds no disk needs fixing, or the disk it names plugged in; one
+that finds more than one disk needs fixing.
 [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) wipes one volume and creates
 it again, empty, as the config defines it, sealed to the TPM again and with its fallback keyslot.
 Its data is lost:
