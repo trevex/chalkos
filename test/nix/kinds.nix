@@ -136,6 +136,7 @@ let
         version
         multiple
         spec
+        rules
         ;
     };
 
@@ -933,6 +934,163 @@ lib.runTests {
     expr = lib.hasSuffix "/bin/chalkcfg get Node -o 'jsonpath={.spec.type}'" (
       kubernetesImage.chalkos.kinds.Node.get { path = "spec.type"; }
     );
+    expected = true;
+  };
+  # A field's rules reach its property, also in a submodule, with takes defaulted and the
+  # attributes left null left out.
+  testFieldRulesReachTheSchema = {
+    expr =
+      let
+        props =
+          (specOf {
+            x = mkOption { type = types.str; } // {
+              "x-chalkos-rules" = [
+                {
+                  rule = "self == oldSelf";
+                  message = "x is fixed";
+                  messageExpression = null;
+                }
+              ];
+            };
+            group = mkOption {
+              type = types.submodule {
+                options.y = mkOption { type = types.int; } // {
+                  "x-chalkos-rules" = [
+                    {
+                      rule = "self >= oldSelf";
+                      takes = "reset";
+                    }
+                  ];
+                };
+              };
+            };
+          }).properties;
+      in
+      [
+        props.x."x-chalkos-rules"
+        props.group.properties.y."x-chalkos-rules"
+      ];
+    expected = [
+      [
+        {
+          rule = "self == oldSelf";
+          message = "x is fixed";
+          takes = "refuse";
+        }
+      ]
+      [
+        {
+          rule = "self >= oldSelf";
+          takes = "reset";
+        }
+      ]
+    ];
+  };
+  # A kind's rules reach x-chalkos-kind; a kind without rules has none there.
+  testKindRulesReachTheSchema = {
+    expr =
+      let
+        schemas =
+          (image [
+            demoModule
+            {
+              chalkos.kinds.Demo.rules = [
+                {
+                  rule = "size(documents) <= 1";
+                  message = "one Demo";
+                }
+                {
+                  rule = "documents == oldDocuments";
+                  messageExpression = "\"keep \" + oldDocuments.map(n, n).join(\", \")";
+                  takes = "reinstall";
+                }
+              ];
+            }
+          ]).system.build.chalkosKindSchemas;
+      in
+      {
+        demo = schemas."demo.example.org_v1alpha1_Demo.json"."x-chalkos-kind".rules;
+        cluster = schemas."chalkos.dev_v1alpha1_Cluster.json"."x-chalkos-kind" ? rules;
+      };
+    expected = {
+      demo = [
+        {
+          rule = "size(documents) <= 1";
+          message = "one Demo";
+          takes = "refuse";
+        }
+        {
+          rule = "documents == oldDocuments";
+          messageExpression = "\"keep \" + oldDocuments.map(n, n).join(\", \")";
+          takes = "reinstall";
+        }
+      ];
+      cluster = false;
+    };
+  };
+  # The image's facts reach /etc/chalkos/facts.json: a file, or a command with its inputs.
+  testFactsReachTheImage = {
+    expr =
+      let
+        config = image [
+          {
+            chalkos.facts = {
+              seen.file = "/var/lib/seen.json";
+              probe = {
+                command = "/nix/store/x-probe/bin/probe facts";
+                inputs = [ "fallbackSecret" ];
+              };
+            };
+          }
+        ];
+        defined = config.system.build.chalkosFactDefinitions;
+      in
+      {
+        seen = defined.seen;
+        probe = defined.probe;
+        etc = config.environment.etc."chalkos/facts.json".source == config.system.build.chalkosFacts;
+      };
+    expected = {
+      seen.file = "/var/lib/seen.json";
+      probe = {
+        command = "/nix/store/x-probe/bin/probe facts";
+        inputs = [ "fallbackSecret" ];
+      };
+      etc = true;
+    };
+  };
+  testFactNameIsAnIdentifier = {
+    expr = fails (image [ { chalkos.facts.disk-ids.file = "/x"; } ]).system.build.chalkosFacts.drvPath;
+    expected = true;
+  };
+  testFactWithFileAndCommandFails = {
+    expr =
+      fails
+        (image [
+          {
+            chalkos.facts.x = {
+              file = "/x";
+              command = "/bin/x";
+            };
+          }
+        ]).system.build.chalkosFacts.drvPath;
+    expected = true;
+  };
+  testFactWithoutSourceFails = {
+    expr = fails (image [ { chalkos.facts.x = { }; } ]).system.build.chalkosFacts.drvPath;
+    expected = true;
+  };
+  testFileFactWithInputsFails = {
+    expr =
+      fails
+        (image [
+          {
+            chalkos.facts.x = {
+              file = "/x";
+              inputs = [ "fallbackSecret" ];
+            };
+          }
+        ]).system.build.chalkosFacts.drvPath;
     expected = true;
   };
 }

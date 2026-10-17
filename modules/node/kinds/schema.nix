@@ -180,6 +180,11 @@ let
   # the schema.
   leaksNamePlaceholder = v: lib.hasInfix "‹name›" (builtins.toJSON v);
 
+  # A rule as the schema carries it: as declared, without the attributes left null and with takes
+  # defaulted, so Go reads one shape whether a field or a kind declares it. Other attributes, as a
+  # misspelt message, reach the schema, where the rules check refuses them.
+  ruleSchema = r: lib.filterAttrs (_: v: v != null) ({ takes = "refuse"; } // r);
+
   optionSchema =
     at: opt:
     typeSchema at (opt.type or (throw "${at} declares no type"))
@@ -189,6 +194,10 @@ let
     }
     // lib.optionalAttrs (opt ? example && isPlain opt.example && !leaksNamePlaceholder opt.example) {
       examples = [ opt.example ];
+    }
+    # A field's change rules, declared as mkOption { … } // { "x-chalkos-rules" = [ … ]; }.
+    // lib.optionalAttrs (opt ? "x-chalkos-rules") {
+      "x-chalkos-rules" = map ruleSchema opt."x-chalkos-rules";
     };
 
   # An option without a default must be given; a group must be given when one of its options must.
@@ -248,7 +257,8 @@ rec {
     description = "Kubernetes object";
   };
 
-  # The schema of a whole document of a kind, around the schema of its spec.
+  # The schema of a whole document of a kind, around the schema of its spec. The kind's rules
+  # over its documents go into x-chalkos-kind, where a kind without rules has none.
   envelope =
     {
       kind,
@@ -256,6 +266,7 @@ rec {
       version,
       multiple,
       spec,
+      rules ? [ ],
     }:
     {
       "$schema" = "https://json-schema.org/draft/2020-12/schema";
@@ -289,7 +300,8 @@ rec {
           kind
           multiple
           ;
-      };
+      }
+      // lib.optionalAttrs (rules != [ ]) { rules = map ruleSchema rules; };
     };
 
   # The schema of a kind whose spec is declared with options.
@@ -300,6 +312,7 @@ rec {
       version,
       multiple,
       spec,
+      rules ? [ ],
     }:
     envelope {
       inherit
@@ -307,6 +320,7 @@ rec {
         group
         version
         multiple
+        rules
         ;
       spec = groupSchema "chalkos.kinds.${kind}.spec" spec;
     };

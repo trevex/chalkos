@@ -714,6 +714,123 @@ null or string
 
 
 
+### chalkos\.facts
+
+
+
+Facts about the node that change rules read as ` facts.<name> `, each from a file or a
+command\. chalkd loads a fact once per delivery, when a rule first reads it; chalkctl
+runs no rule that reads one\.
+
+
+
+*Type:*
+attribute set of (submodule)
+
+
+
+*Default:*
+
+```nix
+{ }
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.facts\.\<name>\.command
+
+
+
+Program of the image’s store, with its arguments, that prints the fact as JSON\. It reads
+` {"config": …, "oldConfig": …} ` and its inputs as JSON on standard input, runs through
+` systemd-run ` with the system read-only and no network, and must finish within 30
+seconds with at most 1 MiB of output\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"${pkgs.my-tool}/bin/my-tool facts"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.facts\.\<name>\.file
+
+
+
+File whose JSON content is the fact; a missing file is null\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"/state/kubernetes/share.json"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.facts\.\<name>\.inputs
+
+
+
+Delivery inputs the command receives besides the config: ` fallbackSecret `, the fallback secret delivered with it\.
+
+
+
+*Type:*
+list of value “fallbackSecret” (singular enum)
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
 ### chalkos\.kernel\.allModules
 
 
@@ -948,13 +1065,162 @@ false
 
 
 
+### chalkos\.kinds\.\<name>\.rules
+
+
+
+Change rules over the node’s documents of the kind, CEL expressions that are true for
+every config the node accepts\. ` documents ` and ` oldDocuments ` map document names to
+the documents of the kind in the delivered config and in the running one; ` config `,
+` oldConfig ` and ` facts ` are as for every rule\. A rule that is false refuses the
+config, or says it takes a reset or a reinstall\.
+
+
+
+*Type:*
+list of (submodule)
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  {
+    rule = "size(documents) <= 1";
+    message = "a node is in one rack";
+  }
+]
+
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.rules\.\*\.message
+
+
+
+Why a change is refused and what to do instead\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.rules\.\*\.messageExpression
+
+
+
+CEL expression that yields the message, with the rule’s variables; ` message ` is used when it fails\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"\"the rack moves from \" + oldSelf + \" to \" + self"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.rules\.\*\.rule
+
+
+
+CEL expression that is true for every change the node accepts\.
+
+
+
+*Type:*
+non-empty string
+
+
+
+*Example:*
+
+```nix
+"self == oldSelf"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.kinds\.\<name>\.rules\.\*\.takes
+
+
+
+What a change the rule refuses needs: ` refuse ` cannot be made, ` reset ` takes ` chalkctl storage reset `, ` reinstall ` a reinstall of the node\.
+
+
+
+*Type:*
+one of “refuse”, “reset”, “reinstall”
+
+
+
+*Default:*
+
+```nix
+"refuse"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
 ### chalkos\.kinds\.\<name>\.spec
 
 
 
 Option declarations of the document’s ` spec `, as under a module’s ` options `\. They are
 converted into the kind’s JSON Schema: an option without a default is required, and
-` description `, ` default ` and ` example ` carry over\.
+` description `, ` default ` and ` example ` carry over\. A field declares change rules with
+` mkOption { … } // { "x-chalkos-rules" = [ { rule = "self == oldSelf"; message = "…"; } ]; } `,
+in the shape of ` rules `, where ` self ` is the field’s new value and ` oldSelf ` its value in
+the running config\.
 
 
 

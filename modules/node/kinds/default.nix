@@ -69,6 +69,93 @@ let
     dontFixup = true;
   };
 
+  # A change rule, of a kind or, in the same shape, of a field.
+  ruleModule = {
+    options = {
+      rule = lib.mkOption {
+        type = lib.types.nonEmptyStr;
+        example = "self == oldSelf";
+        description = "CEL expression that is true for every change the node accepts.";
+      };
+      message = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Why a change is refused and what to do instead.";
+      };
+      messageExpression = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = ''"the rack moves from " + oldSelf + " to " + self'';
+        description = "CEL expression that yields the message, with the rule's variables; `message` is used when it fails.";
+      };
+      takes = lib.mkOption {
+        type = lib.types.enum [
+          "refuse"
+          "reset"
+          "reinstall"
+        ];
+        default = "refuse";
+        description = "What a change the rule refuses needs: `refuse` cannot be made, `reset` takes `chalkctl storage reset`, `reinstall` a reinstall of the node.";
+      };
+    };
+  };
+
+  # A fact: node state that rules read as facts.<name>.
+  factModule = {
+    options = {
+      file = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "/state/kubernetes/share.json";
+        description = "File whose JSON content is the fact; a missing file is null.";
+      };
+      command = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = lib.literalExpression ''"''${pkgs.my-tool}/bin/my-tool facts"'';
+        description = ''
+          Program of the image's store, with its arguments, that prints the fact as JSON. It reads
+          `{"config": …, "oldConfig": …}` and its inputs as JSON on standard input, runs through
+          `systemd-run` with the system read-only and no network, and must finish within 30
+          seconds with at most 1 MiB of output.
+        '';
+      };
+      inputs = lib.mkOption {
+        type = lib.types.listOf (lib.types.enum [ "fallbackSecret" ]);
+        default = [ ];
+        description = "Delivery inputs the command receives besides the config: `fallbackSecret`, the fallback secret delivered with it.";
+      };
+    };
+  };
+  factsCfg = config.chalkos.facts;
+  # A fact's name is read as facts.<name> in CEL, so it is an identifier.
+  badFacts = lib.filter (name: builtins.match "[a-z][A-Za-z0-9]*" name == null) (
+    lib.attrNames factsCfg
+  );
+  # A fact is a file or a command, and only a command takes inputs.
+  unsourcedFacts = lib.filter (
+    name: (factsCfg.${name}.file == null) == (factsCfg.${name}.command == null)
+  ) (lib.attrNames factsCfg);
+  fileInputs = lib.filter (name: factsCfg.${name}.file != null && factsCfg.${name}.inputs != [ ]) (
+    lib.attrNames factsCfg
+  );
+  facts =
+    if badFacts != [ ] then
+      throw "chalkos.facts.${lib.head badFacts}: a fact's name must match [a-z][A-Za-z0-9]*, since rules read it as facts.<name>"
+    else if unsourcedFacts != [ ] then
+      throw "chalkos.facts.${lib.head unsourcedFacts}: a fact has either a file or a command"
+    else if fileInputs != [ ] then
+      throw "chalkos.facts.${lib.head fileInputs}: only a command fact takes inputs"
+    else
+      lib.mapAttrs (
+        _: f:
+        if f.file != null then
+          { inherit (f) file; }
+        else
+          { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
+      ) factsCfg;
+  factsFile = pkgs.writeText "chalkos-facts.json" (builtins.toJSON facts);
+
   kindModule =
     { name, config, ... }:
     {
@@ -105,7 +192,29 @@ let
           description = ''
             Option declarations of the document's `spec`, as under a module's `options`. They are
             converted into the kind's JSON Schema: an option without a default is required, and
-            `description`, `default` and `example` carry over.
+            `description`, `default` and `example` carry over. A field declares change rules with
+            `mkOption { … } // { "x-chalkos-rules" = [ { rule = "self == oldSelf"; message = "…"; } ]; }`,
+            in the shape of `rules`, where `self` is the field's new value and `oldSelf` its value in
+            the running config.
+          '';
+        };
+        rules = lib.mkOption {
+          type = lib.types.listOf (lib.types.submodule ruleModule);
+          default = [ ];
+          example = lib.literalExpression ''
+            [
+              {
+                rule = "size(documents) <= 1";
+                message = "a node is in one rack";
+              }
+            ]
+          '';
+          description = ''
+            Change rules over the node's documents of the kind, CEL expressions that are true for
+            every config the node accepts. `documents` and `oldDocuments` map document names to
+            the documents of the kind in the delivered config and in the running one; `config`,
+            `oldConfig` and `facts` are as for every rule. A rule that is false refuses the
+            config, or says it takes a reset or a reinstall.
           '';
         };
         dir = lib.mkOption {
@@ -179,15 +288,22 @@ let
           version
           multiple
           spec
+          rules
           ;
       }) cfg;
 
+  # The schema of each kind of chalkos.kinds, by file name.
+  kindSchemas = lib.listToAttrs (
+    map (k: lib.nameValuePair (schema.fileName k) (schema.kindSchema k)) kinds
+  );
   schemas = pkgs.runCommand "chalkos-schemas" { } ''
     mkdir $out
     cp ${networkdSchemas}/*.json $out/
-    ${lib.concatMapStrings (k: ''
-      cp ${pkgs.writeText (schema.fileName k) (builtins.toJSON (schema.kindSchema k))} $out/${schema.fileName k}
-    '') kinds}
+    ${lib.concatStrings (
+      lib.mapAttrsToList (file: s: ''
+        cp ${pkgs.writeText file (builtins.toJSON s)} $out/${file}
+      '') kindSchemas
+    )}
   '';
 in
 {
@@ -203,6 +319,15 @@ in
           these kinds; chalkctl and chalkd validate each against the kind's schema.
         '';
       };
+      options.facts = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.submodule factModule);
+        default = { };
+        description = ''
+          Facts about the node that change rules read as `facts.<name>`, each from a file or a
+          command. chalkd loads a fact once per delivery, when a rule first reads it; chalkctl
+          runs no rule that reads one.
+        '';
+      };
     };
   };
 
@@ -210,10 +335,14 @@ in
     _module.args.chalkosLib.types = { inherit (schema.types) secretRef; };
 
     system.build.chalkosSchemas = schemas;
+    system.build.chalkosKindSchemas = kindSchemas;
+    system.build.chalkosFacts = factsFile;
+    system.build.chalkosFactDefinitions = facts;
     system.build.chalkosKinds = map (k: {
       apiVersion = "${k.group}/${k.version}";
       inherit (k) kind multiple;
     }) (map networkdKind networkd.kinds ++ kinds);
     environment.etc."chalkos/schemas".source = schemas;
+    environment.etc."chalkos/facts.json".source = factsFile;
   };
 }
