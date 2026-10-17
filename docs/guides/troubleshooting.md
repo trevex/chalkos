@@ -206,10 +206,9 @@ Pod traffic between nodes travels in flannel's VXLAN, on UDP port 8472.
 
 ### A Node has no pod range
 
-A worker's state ends in `the Node has no ipv6 pod range; the control plane allocates ranges of
-the families the cluster was created with`. The families in
-`ipFamilies` changed after the
-cluster was created, which is not supported. Restore the original families.
+A worker's state ends in `the Node has no ipv6 pod range; the control plane allocates ranges of the
+families the cluster was created with`. The families in `ipFamilies` changed after the cluster was
+created, which is not supported. Restore the original families.
 
 ### An upgrade rolled back or stopped
 

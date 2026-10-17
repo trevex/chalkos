@@ -73,11 +73,11 @@ spec:
 A volume is formatted `ext4` by default, or `xfs`, `btrfs` or `swap`; `format: null` leaves a raw
 block device, for software that wants one. A volume without a `disk` goes on the system disk after
 VAR; a volume with a `disk` occupies that disk alone. On each disk at most one partition, VAR
-included, may leave its size unset and fill the space left. [`chalkctl
-validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a volume name that does not
-match `[a-z0-9]([a-z0-9-]*[a-z0-9])?` or is longer than 32 characters, the reserved names `esp`,
-`store`, `store-verity`, `state`, `var` and `system`, two volumes with one mount point or the same
-disk reference, a volume on the `SystemDisk`'s disk reference, and mount points at `/`, `/nix`,
+included, may leave its size unset and fill the space left.
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a volume name that
+does not match `[a-z0-9]([a-z0-9-]*[a-z0-9])?` or is longer than 32 characters, the reserved names
+`esp`, `store`, `store-verity`, `state`, `var` and `system`, two volumes with one mount point or the
+same disk reference, a volume on the `SystemDisk`'s disk reference, and mount points at `/`, `/nix`,
 `/state` or `/var` or below `/nix` or `/state`. Two references that resolve to one disk are refused
 on the node, when it finds the disks. [Config kinds](../reference/kinds.md#volume) lists every
 field.

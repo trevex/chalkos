@@ -153,8 +153,8 @@ systemd-boot and the [UKIs](#uki) of both [slots](#slot), and is 1 GiB by defaul
 
 A control plane that belongs to the cluster's etcd, as a learner while it catches up and as a voter
 after. A control plane pins its addresses on [STATE](#state) when it bootstraps, or before it adds
-itself as a learner, and every later boot waits for exactly them; [`chalkctl etcd
-leave`](cli/chalkctl_etcd_leave.md) undoes both. See [Kubernetes on
+itself as a learner, and every later boot waits for exactly them;
+[`chalkctl etcd leave`](cli/chalkctl_etcd_leave.md) undoes both. See [Kubernetes on
 chalkos](../concepts/kubernetes.md).
 
 ## Extension { #extension }

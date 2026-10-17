@@ -58,10 +58,10 @@ the API server.
 
 Nodes with Kubernetes renew their [node certificates](../reference/glossary.md#node-certificate)
 through a [control plane](../reference/glossary.md#control-plane) once two thirds of the year's
-lifetime have passed. Two kinds of node need [`chalkctl node
-renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose image has no Kubernetes,
-which has no control plane to ask, and a node whose certificate expired, for example after months
-switched off.
+lifetime have passed. Two kinds of node need
+[`chalkctl node renew`](../reference/cli/chalkctl_node_renew.md) instead: a node whose image has no
+Kubernetes, which has no control plane to ask, and a node whose certificate expired, for example
+after months switched off.
 
 ```console
 $ chalkctl node renew w1

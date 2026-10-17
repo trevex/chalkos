@@ -5,13 +5,14 @@ description: "Run a chalkos cluster of two QEMU virtual machines on this machine
 
 # Quick start
 
-This tutorial builds a chalkos cluster of one [control plane](../reference/glossary.md#control-plane) and one [worker](../reference/glossary.md#worker) on your machine, runs
-kubectl against it, upgrades both nodes to a new image and removes the cluster again.
-[chalklab](../reference/glossary.md#chalklab) runs the two nodes as QEMU virtual machines, each
-with UEFI firmware, [Secure Boot](../reference/glossary.md#secure-boot) and a
+This tutorial builds a chalkos cluster of one [control
+plane](../reference/glossary.md#control-plane) and one [worker](../reference/glossary.md#worker) on
+your machine, runs kubectl against it, upgrades both nodes to a new image and removes the cluster
+again. [chalklab](../reference/glossary.md#chalklab) runs the two nodes as QEMU virtual machines,
+each with UEFI firmware, [Secure Boot](../reference/glossary.md#secure-boot) and a
 [TPM](../reference/glossary.md#tpm), so they go through the same install, bootstrap and upgrade
-steps as real machines. It takes about 15 minutes; most of that is Nix downloading and
-building the image the first time.
+steps as real machines. It takes about 15 minutes; most of that is Nix downloading and building the
+image the first time.
 
 ## Before you begin
 
@@ -134,12 +135,11 @@ wrote secrets.json and secrets.pub.json
 warning: secrets.json holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry
 ```
 
-`secrets.json` holds every secret of the cluster in plain text, including the
-[OS CA](../reference/glossary.md#os-ca)'s key, which grants admin access to every node. The
-template's `.gitignore` keeps it out of git. `secrets.pub.json` is the public part: `flake.nix`
-names it in the `osCA` of `mkImages`, so the image trusts the OS CA. A real cluster encrypts its secrets
-with age: `--recipient` in place of `--plaintext` writes `secrets.age`, which can live in the
-repository.
+`secrets.json` holds every secret of the cluster in plain text, including the [OS
+CA](../reference/glossary.md#os-ca)'s key, which grants admin access to every node. The template's
+`.gitignore` keeps it out of git. `secrets.pub.json` is the public part: `flake.nix` names it in the
+`osCA` of `mkImages`, so the image trusts the OS CA. A real cluster encrypts its secrets with age:
+`--recipient` in place of `--plaintext` writes `secrets.age`, which can live in the repository.
 
 Commit the files, including `flake.lock`, so the lab keeps the same chalkos version:
 
@@ -295,9 +295,9 @@ kube-system    kube-scheduler-cp1            1/1     Running   0          2m19s
 
 ## Look at a node with chalkctl
 
-The nodes have no SSH and no login. chalkctl talks to chalkd on each node over mutual TLS
-instead, with the client file `$CHALKOSCONFIG` names, and reaches them at the forwarded ports the
-lab's inventory names. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs:
+The nodes have no SSH and no login. chalkctl talks to chalkd on each node over mutual TLS instead,
+with the client file `$CHALKOSCONFIG` names, and reaches them at the forwarded ports the lab's
+inventory names. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs:
 
 ```console
 $ chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
@@ -547,6 +547,7 @@ state and ports.
 
 - [chalkos in five minutes](five-minutes.md) puts what this tutorial showed into one model.
 - [Architecture](../concepts/architecture.md) explains the parts and how a node is installed.
-- [Upgrades](../concepts/upgrades.md) explains slots, boot counting and [rollback](../reference/glossary.md#rollback), and
-  [Upgrade a cluster](../guides/upgrade-cluster.md) upgrades a real one.
+- [Upgrades](../concepts/upgrades.md) explains slots, boot counting and
+  [rollback](../reference/glossary.md#rollback), and [Upgrade a
+  cluster](../guides/upgrade-cluster.md) upgrades a real one.
 - [Install on bare metal](../guides/install-bare-metal.md) installs chalkos on hardware.

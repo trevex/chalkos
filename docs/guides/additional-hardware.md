@@ -132,9 +132,9 @@ The module must also be in the image's tree, which the build checks; `megaraid_s
 
 Many network, storage and GPU drivers load firmware files at runtime, and the images carry none.
 NixOS's [`hardware.firmware`](https://nixos.org/manual/nixos/stable/options#opt-hardware.firmware)
-adds packages of them. `pkgs.linux-firmware` holds every vendor's files and takes hundreds of MiB
-of the store, which every upgrade sends, so take only the files a driver needs. `modinfo -F
-firmware` lists the files a module asks for:
+adds packages of them. `pkgs.linux-firmware` holds every vendor's files and takes hundreds of MiB of
+the store, which every upgrade sends, so take only the files a driver needs. `modinfo -F firmware`
+lists the files a module asks for:
 
 ```console
 $ modinfo -F firmware mt7921e

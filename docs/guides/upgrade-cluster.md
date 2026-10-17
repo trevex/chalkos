@@ -8,12 +8,12 @@ description: "Roll a new chalkos or Kubernetes version through a cluster, node b
 An [upgrade](../reference/glossary.md#upgrade) installs a new
 [image](../reference/glossary.md#image) on every node and reboots the node into it. Any change to
 what the image holds goes this way: a new chalkos release, a new Kubernetes release, a change to a
-[variant](../reference/glossary.md#variant)'s NixOS modules. [`chalkctl
-upgrade`](../reference/cli/chalkctl_upgrade.md) does it for the whole cluster: it writes each node's
-inactive [slot](../reference/glossary.md#slot), drains the node, reboots it and waits until the new
-image is found healthy, [control planes](../reference/glossary.md#control-plane) one at a time and
-the other nodes in batches. A node whose new image never becomes healthy boots its previous image
-again, and the run stops there.
+[variant](../reference/glossary.md#variant)'s NixOS modules.
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) does it for the whole cluster: it writes
+each node's inactive [slot](../reference/glossary.md#slot), drains the node, reboots it and waits
+until the new image is found healthy, [control planes](../reference/glossary.md#control-plane) one
+at a time and the other nodes in batches. A node whose new image never becomes healthy boots its
+previous image again, and the run stops there.
 
 Each node reboots once. Workloads move off each node while it reboots, within their
 PodDisruptionBudgets.
@@ -116,9 +116,9 @@ chalkctl upgrade --image=images/node-metal
 On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's db,
 and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before the node can boot it.
 `--sign-key` and `--sign-cert` make chalkctl sign the UKIs it sends; an upgrade leaves the boot
-loader as it is. An image you sign beforehand with [`chalkctl
-sign`](../reference/cli/chalkctl_sign.md) needs no `--sign-key`. `--sign-cert` alone makes chalkctl
-check every image against the certificate before sending anything.
+loader as it is. An image you sign beforehand with
+[`chalkctl sign`](../reference/cli/chalkctl_sign.md) needs no `--sign-key`. `--sign-cert` alone
+makes chalkctl check every image against the certificate before sending anything.
 
 ## Run the upgrade
 
@@ -182,14 +182,14 @@ capacity away for one reboot.
 ## Apply config that needs the new image
 
 An upgrade sends images, never config. With an inventory, chalkctl checks each node's files against
-the image the node gets before it drains any node, and stops the run with `the config of <node>:
-...` when the image does not accept them, such as a document of a kind its variant no longer
-declares. The node checks the config it stores against the new image's schemas too, read from the
-slot it has just written, before the image becomes its next boot. A stored config the files no
-longer match, such as one whose removed documents were not delivered yet, stops the upgrade of that
-node with `the node's config does not suit the image: ...; apply config both images accept with
-chalkctl apply-config, then upgrade`. Remove such documents from the node's files and deliver the
-config before the upgrade:
+the image the node gets before it drains any node, and stops the run with
+`the config of <node>: ...` when the image does not accept them, such as a document of a kind its
+variant no longer declares. The node checks the config it stores against the new image's schemas
+too, read from the slot it has just written, before the image becomes its next boot. A stored config
+the files no longer match, such as one whose removed documents were not delivered yet, stops the
+upgrade of that node with `the node's config does not suit the image: ...; apply config both images
+accept with chalkctl apply-config, then upgrade`. Remove such documents from the node's files and
+deliver the config before the upgrade:
 
 ```sh
 chalkctl apply-config <node> --secrets=secrets.age

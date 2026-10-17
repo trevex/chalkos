@@ -9,9 +9,9 @@ An [upgrade](../reference/glossary.md#upgrade) installs a new
 [image](../reference/glossary.md#image) version on a node: the operating system, Kubernetes and
 [chalkd](../reference/glossary.md#chalkd) together. chalkd writes the image into the node's inactive
 [slot](../reference/glossary.md#slot), and the node boots it with a fixed number of tries; an image
-that does not become healthy is replaced by the one before. [`chalkctl
-upgrade`](../reference/cli/chalkctl_upgrade.md) rolls the upgrade through a cluster node by node, so
-the cluster keeps its etcd quorum and its workloads keep running.
+that does not become healthy is replaced by the one before.
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) rolls the upgrade through a cluster node
+by node, so the cluster keeps its etcd quorum and its workloads keep running.
 
 ## What is an upgrade?
 

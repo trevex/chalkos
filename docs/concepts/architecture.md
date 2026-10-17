@@ -266,12 +266,12 @@ chalkctl issued them at install. [Kubernetes on chalkos](kubernetes.md) describe
 
 ### Upgrades
 
-An upgrade replaces the whole image at once. [`chalkctl
-upgrade`](../reference/cli/chalkctl_upgrade.md) sends each node the image its `Image` document
-names, or the one `--image` gives, chalkd writes it into the inactive slot, and the node boots it
-with [boot counting](../reference/glossary.md#boot-counting). If the new image does not become
-healthy within its tries, the node falls back to the image it ran before. [Upgrades](upgrades.md)
-and [Boot, health and rollback](boot-and-rollback.md) explain both halves.
+An upgrade replaces the whole image at once.
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) sends each node the image its `Image`
+document names, or the one `--image` gives, chalkd writes it into the inactive slot, and the node
+boots it with [boot counting](../reference/glossary.md#boot-counting). If the new image does not
+become healthy within its tries, the node falls back to the image it ran before.
+[Upgrades](upgrades.md) and [Boot, health and rollback](boot-and-rollback.md) explain both halves.
 
 ## Limits
 

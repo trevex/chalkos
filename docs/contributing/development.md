@@ -77,7 +77,8 @@ go run ./cmd/chalkctl --help
 go run ./cmd/chalklab --help
 ```
 
-[chalkd](../reference/glossary.md#chalkd) only does useful work on a node; the end-to-end tests and a lab run it there.
+[chalkd](../reference/glossary.md#chalkd) only does useful work on a node; the end-to-end tests and
+a lab run it there.
 
 ## Build images
 
@@ -167,7 +168,8 @@ input's URL:
 inputs.chalkos.url = "git+file://<checkout>";
 ```
 
-Then follow the template's README, with [chalklab](../reference/glossary.md#chalklab) and chalkctl now built from the checkout:
+Then follow the template's README, with [chalklab](../reference/glossary.md#chalklab) and chalkctl
+now built from the checkout:
 
 ```sh
 git init && git add .

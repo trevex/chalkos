@@ -50,9 +50,9 @@ run them in isolation:
   mount, LUKS, the TPM and the firmware's variables with directories and fakes. They stop an
   install or upgrade before each change it makes and check that the disk still boots, so they
   cover interruptions that a VM test could reach only one at a time.
-- The `vxlan-rule` check loads a [worker](../reference/glossary.md#worker)'s firewall as NixOS renders it in a network namespace,
-  with a peer and a pod in namespaces of their own, and sends UDP to check what the VXLAN rule
-  accepts.
+- The `vxlan-rule` check loads a [worker](../reference/glossary.md#worker)'s firewall as NixOS
+  renders it in a network namespace, with a peer and a pod in namespaces of their own, and sends UDP
+  to check what the VXLAN rule accepts.
 
 Prefer this level for anything about partitions, firewall rules or interfaces.
 
@@ -84,9 +84,9 @@ Build checks in `nix/checks.nix` check what an image build produces, without boo
 
 ## End-to-end tests
 
-The end-to-end tests in `test/e2e` boot chalkos images in QEMU with OVMF, Secure Boot and a
-software TPM, through the same `pkg/lab` code [chalklab](../reference/glossary.md#chalklab) uses, and drive the nodes with the real
-chalkctl. Each check runs one test or a group of them:
+The end-to-end tests in `test/e2e` boot chalkos images in QEMU with OVMF, Secure Boot and a software
+TPM, through the same `pkg/lab` code [chalklab](../reference/glossary.md#chalklab) uses, and drive
+the nodes with the real chalkctl. Each check runs one test or a group of them:
 
 | Check | Test | VMs |
 | --- | --- | --- |

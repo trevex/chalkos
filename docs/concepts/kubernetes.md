@@ -59,11 +59,11 @@ The cluster's documents go into the files the [inventory](../reference/glossary.
 every node, so all nodes hold the same ones, and a node's `Kubelet` goes into its own file, as
 [Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes. The
 node's config must hold one `Kubernetes` document on an image with Kubernetes, and its
-[`Cluster`](../reference/kinds.md#cluster) an endpoint: [`chalkctl
-validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a set without one, with `no
-Kubernetes: the config of a node whose image runs Kubernetes holds one Kubernetes document`. Every
-field has a default, so a cluster on IPv4 with the default ranges needs no more than the lab
-template's document:
+[`Cluster`](../reference/kinds.md#cluster) an endpoint:
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a set without one,
+with `no Kubernetes: the config of a node whose image runs Kubernetes holds one Kubernetes
+document`. Every field has a default, so a cluster on IPv4 with the default ranges needs no more
+than the lab template's document:
 
 ```yaml
 # Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range

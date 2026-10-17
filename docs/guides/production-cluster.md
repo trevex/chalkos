@@ -278,9 +278,9 @@ the `Kubernetes` document, or `spec.validSubnets` of a node's own
 address that stays, such as a DNS name.
 
 Set `spec.vxlanSourceSubnets` to the ranges your nodes live in, as `cluster/kubernetes.yaml` above
-does. Without it, nodes accept the pod network's VXLAN traffic from any source. [`chalkctl
-validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses, the
-`nodeIPs` of its `Kubelet` or else the first static address of each family of its `Network`
+does. Without it, nodes accept the pod network's VXLAN traffic from any source.
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses,
+the `nodeIPs` of its `Kubelet` or else the first static address of each family of its `Network`
 documents, or whose `validSubnets` lie outside these ranges.
 
 ## Plan disks, storage and encryption
