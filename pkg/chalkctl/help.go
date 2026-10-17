@@ -202,13 +202,14 @@ const disksLong = `Lists a node's disks with their use, the partitions on them, 
 definition selects disks by: size, type, model, serial number and WWN. An installed node is
 reached with a reader client file or the secrets file; a node in maintenance mode with
 --fingerprint or --insecure as well. A node that the inventory does not name yet is reached at
---address, in maintenance mode, and needs no secrets file or client file.`
+--address, in maintenance mode: an image or installer built with an OS CA accepts only a client
+with the secrets file or a client file, one built without accepts any client.`
 
 const disksExample = `  # The disks of an installed node.
   chalkctl disks w1
 
   # The disks of a machine that booted the installer and is not in the inventory yet.
-  chalkctl disks --address 192.168.1.50 --insecure`
+  chalkctl disks --address 192.168.1.50 --insecure --secrets secrets.age`
 
 const applyConfigLong = `Delivers a node's config to the installed node: the documents of the files the inventory gives
 it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and

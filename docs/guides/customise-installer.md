@@ -106,7 +106,6 @@ carries it:
 }
 ```
 
-
 The port's own file takes it from the default DHCP file and runs no DHCP there. The VLAN device
 gets its address by DHCP here; give it `address` and `gateway` instead for a static one.
 
@@ -146,7 +145,6 @@ its ports:
   };
 }
 ```
-
 
 `802.3ad` needs LACP on the switch ports. Without it, use `active-backup`, which needs nothing
 from the switch. A VLAN on the bond goes into the bond's file as `vlan = [ "vlan42" ];`, as above.
@@ -188,7 +186,6 @@ last one only. A machine whose BMC shows serial-over-LAN on the second port need
 }
 ```
 
-
 `lib.mkAfter` places the entry after the installer's own `console=` entries. A plain list would
 come before them, leaving `ttyS0` last.
 
@@ -205,15 +202,15 @@ Build the installer and sign a copy of its ISO, as in
 [Install on bare metal](install-bare-metal.md#build-the-installer):
 
 ```console
-$ nix build .#installer
-$ ls result
+$ nix build .#installer -o installer
+$ ls installer
 chalkos-installer_0.1.0.iso  chalkos-installer_0.1.0.iso.json  chalkos-installer_0.1.0.raw  repart-output.json
 ```
 
 ```sh
-cp --sparse=always result/chalkos-installer_0.1.0.iso installer.iso
+cp --sparse=always installer/chalkos-installer_0.1.0.iso installer.iso
 chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=result/chalkos-installer_0.1.0.iso.json \
+chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer_0.1.0.iso.json \
   --key=db.key --cert=db.crt
 ```
 

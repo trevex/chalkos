@@ -223,8 +223,8 @@ images = chalkos.lib.mkImages {
 
 Either form of `platforms` names exactly the platforms built, so `metal` stays only because it is
 named. Every variant is built for every platform, as `images.<variant>-<platform>`, here
-`images.node-metal` and `images.node-r650`, and each image is built only when asked for, so only the
-images of `r650` carry its drivers. `metal` and `kvm` carry chalkos's own modules for them before
+`images.node-metal` and `images.node-r650`, and only the images of `r650` carry its drivers, because
+only they hold the platform's modules. `metal` and `kvm` carry chalkos's own modules for them before
 the ones given; a platform of your own starts from chalkos's node modules alone, without `metal`'s,
 so give it a console. Its name, lower-case letters, digits and dashes starting with a letter or
 digit, becomes `CHALKOS_PLATFORM` in the image's os-release.

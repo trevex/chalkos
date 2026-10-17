@@ -196,7 +196,7 @@ A machine reaches maintenance mode in one of two ways:
 certificate with the fingerprint from the console, and sends what makes the machine this node:
 
 ```sh
-chalkctl install <node> --fingerprint=<fingerprint>
+chalkctl install <node> --secrets=secrets.age --fingerprint=<fingerprint>
 ```
 
 `<node>` is the node's name in the inventory and `<fingerprint>` the one on its console.

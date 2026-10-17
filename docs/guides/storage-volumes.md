@@ -19,8 +19,9 @@ its `metadata.name`. Volumes are created with systemd-repart: by
 [chalkd](../reference/glossary.md#chalkd) at install and when
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers a change, and by
 `chalkos-storage.service` in the initrd at every boot. repart only ever adds partitions or grows
-them. A change that would shrink, reformat, re-encrypt or move a volume is refused until you reset
-that volume, which deletes its data.
+them. A change that would shrink, reformat or re-encrypt a volume is refused until you reset
+that volume, which deletes its data; one that removes a volume or moves it to another disk takes a
+reinstall.
 
 ## Before you begin
 
@@ -53,11 +54,12 @@ inventory does not name yet, booted into the [installer](../reference/glossary.m
 reached at its address in [maintenance mode](../reference/glossary.md#maintenance-mode):
 
 ```sh
-chalkctl disks --address=<address> --insecure
+chalkctl disks --address=<address> --insecure --secrets=secrets.age
 ```
 
 `<address>` is the address the console shows. `--insecure` prints the certificate's fingerprint,
-which you compare with the console.
+which you compare with the console. `--secrets` gives chalkctl the certificate an installer built
+with the OS CA requires.
 
 ## Write the node's storage documents
 

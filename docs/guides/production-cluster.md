@@ -140,9 +140,10 @@ Use one variant, `node`, for control planes and workers. Each node's `Node` docu
 and an upgrade builds and signs one image.
 
 Add a [variant](../reference/glossary.md#variant) only for nodes that need other software in their
-image, such as GPU drivers or an extension's service: `variants = { node = { }; gpu.modules = [ ...
-]; }` in the flake adds images named `gpu-<platform>` beside the `node` ones, which a `variants`
-that names only `gpu` would drop, and the nodes that run them name an `Image` document of their own.
+image, such as GPU drivers or an extension's service, and name every variant the flake builds:
+`variants` replaces the default `node` variant, so `variants.gpu.modules` alone builds no `node`
+images. With `node = { };` beside `gpu`, the flake builds `node-<platform>` and `gpu-<platform>`
+images, and the nodes that run the GPU images name an `Image` document of their own.
 Every variant is built for every platform the flake names, so name only the platforms you run.
 [Customise an image](customise-image.md) adds modules to a variant.
 
@@ -276,10 +277,11 @@ the `Kubernetes` document, or `spec.validSubnets` of a node's own
 [`Kubelet`](../reference/kinds.md#kubelet) document. The inventory names such a node by an
 address that stays, such as a DNS name.
 
-Set `spec.vxlanSourceSubnets` to the ranges your nodes live in, as `cluster/kubernetes.yaml`
-above does. Without it, nodes accept the pod network's VXLAN traffic from any source.
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node whose addresses lie
-outside these ranges.
+Set `spec.vxlanSourceSubnets` to the ranges your nodes live in, as `cluster/kubernetes.yaml` above
+does. Without it, nodes accept the pod network's VXLAN traffic from any source. [`chalkctl
+validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses, the
+`nodeIPs` of its `Kubelet` or else the first static address of each family of its `Network`
+documents, or whose `validSubnets` lie outside these ranges.
 
 ## Plan disks, storage and encryption
 

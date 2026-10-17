@@ -24,6 +24,9 @@ member, removing one and replacing a failed machine.
 - Each machine booted into the [installer](../reference/glossary.md#installer), or into its
   image, in [maintenance mode](../reference/glossary.md#maintenance-mode), as
   [Install on bare metal](install-bare-metal.md) describes.
+- The Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate the machines'
+  firmware trusts, `db.key` and `db.crt`, from [Sign images for Secure
+  Boot](secure-boot-signing.md).
 
 ## Define three control planes and the VIP
 
@@ -108,9 +111,12 @@ Install the three nodes as any other node, each at the address and with the fing
 console shows in maintenance mode:
 
 ```sh
-chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
-chalkctl install cp2 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
-chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
+  --sign-key=db.key --sign-cert=db.crt
+chalkctl install cp2 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
+  --sign-key=db.key --sign-cert=db.crt
+chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
+  --sign-key=db.key --sign-cert=db.crt
 ```
 
 `<address>` is the address the installer took on that machine, and `<fingerprint>` the one its
@@ -249,7 +255,7 @@ new machine's disk has another serial number or path. Boot it into the installer
 
 ```sh
 chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
-  --wipe-disk
+  --sign-key=db.key --sign-cert=db.crt --wipe-disk
 ```
 
 It joins as a new member.
@@ -262,7 +268,7 @@ STATE, leaves first and is reinstalled after:
 ```sh
 chalkctl etcd leave cp3
 chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
-  --wipe-disk
+  --sign-key=db.key --sign-cert=db.crt --wipe-disk
 ```
 
 Between the two commands, boot the machine into the installer, through its BMC or boot menu: an

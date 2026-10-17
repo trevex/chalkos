@@ -104,12 +104,12 @@ in three places.
 [ESP](../reference/glossary.md#esp), and nothing else, so no other file on the ESP gains the
 cluster's signature. It needs the image's partition description, `repart-output.json`, or
 `<name>.iso.json` for the installer's ISO. A build output in the Nix store is read-only, so sign a
-copy:
+copy, here of the installer that `nix build .#installer -o installer` links:
 
 ```sh
-cp --sparse=always result/chalkos-installer_0.1.0.iso installer.iso
+cp --sparse=always installer/chalkos-installer_0.1.0.iso installer.iso
 chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=result/chalkos-installer_0.1.0.iso.json \
+chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer_0.1.0.iso.json \
   --key=db.key --cert=db.crt
 ```
 

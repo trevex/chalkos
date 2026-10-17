@@ -191,8 +191,8 @@ self-signed one and prints the certificate's SHA-256 fingerprint and the node's 
 console. chalkctl verifies the node in one of two ways:
 
 ```sh
-chalkctl install <node> --fingerprint=<fingerprint>
-chalkctl install <node> --insecure
+chalkctl install <node> --secrets=secrets.age --fingerprint=<fingerprint>
+chalkctl install <node> --secrets=secrets.age --insecure
 ```
 
 With `--fingerprint`, chalkctl compares the certificate with the fingerprint read off the

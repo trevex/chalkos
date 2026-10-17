@@ -159,11 +159,12 @@ details.
 
 ## An extra disk is missing
 
-The node boots and runs, but `chalkctl status` lists a volume as `missing` and names the disk:
+The node boots and runs, but `chalkctl status` lists a volume as `not mounted` and names the
+disk:
 
 ```text
 VOLUME    DISK      MOUNT POINT        STATE
-longhorn  longhorn  /var/lib/longhorn  missing
+longhorn  longhorn  /var/lib/longhorn  not mounted
 var       system    /var               mounted
 disk longhorn: pinned disk ... is missing
 ```
@@ -205,10 +206,12 @@ its disks is lost, so move workloads off first.
 3. Install it, letting the installer replace what the disk holds:
 
     ```sh
-    chalkctl install <node> --secrets=secrets.age --fingerprint=<fingerprint> --wipe-disk
+    chalkctl install <node> --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
+      --sign-key=db.key --sign-cert=db.crt --wipe-disk
     ```
 
-    `<fingerprint>` is the one the console shows.
+    `<address>` is the address the installer took, which the console shows with
+    `<fingerprint>`.
 
 The node gets the same name, the same recovery key and new certificates. A control plane joins
 etcd as a new member; a worker's kubelet registers its Node again. Uncordon a drained worker with
