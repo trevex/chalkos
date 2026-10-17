@@ -62,7 +62,8 @@ type Runner interface {
 
 // Loader loads the facts of one delivery, each once, when a rule first reads it. A loader For
 // another input shares what it loaded: a file is read once a delivery, and a command runs once
-// for each input it reads.
+// for each input it reads. A loader and the loaders For it are not for concurrent use: chalkd
+// calls them in sequence, under the config lock.
 type Loader struct {
 	Definitions map[string]Definition
 	Run         Runner
