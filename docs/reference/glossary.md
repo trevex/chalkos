@@ -17,8 +17,9 @@ image it ran before stays on disk for a [rollback](#rollback). See
 
 ## Admin { #admin }
 
-The [client role](#client-role) that may call every method of the node API, including
-install, config changes, volume resets, bootstrap, etcd membership changes and rotations. See
+The [client role](#client-role) that may call every method of the node API but the one nodes
+renew their certificates with, which needs the role `node`: install, config changes, volume
+resets, bootstrap, etcd membership changes and rotations among them. See
 [Security model](../concepts/security.md).
 
 ## Blessed boot { #blessed-boot }

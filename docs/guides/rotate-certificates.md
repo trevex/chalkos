@@ -34,10 +34,10 @@ wrote alice.json for alice with the operator role; its certificate expires on 20
 
 A [reader](../reference/glossary.md#reader) may read node information, disks, status, logs and
 etcd's members; an [operator](../reference/glossary.md#operator) may also reboot, drain, uncordon
-and upgrade nodes; an [admin](../reference/glossary.md#admin) may call every method.
-[Security model](../concepts/security.md#who-may-call-the-node-api) lists the methods of each
-role. Without `--out` the file goes to `~/.config/chalkos/config`, where chalkctl looks
-for it; `--config` or `$CHALKOSCONFIG` names another. chalkctl warns 30 days before the
+and upgrade nodes; an [admin](../reference/glossary.md#admin) may call every method but node
+certificate renewal. [Security model](../concepts/security.md#who-may-call-the-node-api) lists the
+methods of each role. Without `--out` the file goes to `~/.config/chalkos/config`, where chalkctl
+looks for it; `--config` or `$CHALKOSCONFIG` names another. chalkctl warns 30 days before the
 certificate expires. Hand the file over as you would a private key: it holds one.
 
 ## Give someone access to the Kubernetes API
