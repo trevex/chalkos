@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,4 +107,46 @@ func TestOpenImageRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
 		t.Fatal(err)
 	}
 	img.Close()
+}
+
+// TestOpenImageTrustsOnlyItsOwnMetadata names the revision and tag of the metadata.json next to
+// the raw image only when it names the image's root hash: a raw image copied next to another
+// image's metadata, of whatever schema version, is opened without provenance.
+func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
+	path := testUpgradeImage(t, "w", "0.2.0")
+	root := hex.EncodeToString(rootOf(t, path))
+	for _, tc := range []struct {
+		name, metadata string
+		want           bool
+	}{
+		{"its root hash", `{"schemaVersion": 0, "rootHash": "` + root + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, true},
+		{"its root hash in upper case", `{"schemaVersion": 0, "rootHash": "` + strings.ToUpper(root) + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, true},
+		{"another root hash", `{"schemaVersion": 0, "rootHash": "` + strings.Repeat("ab", 32) + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, false},
+		{"another root hash and schema version", `{"schemaVersion": 9, "rootHash": "` + strings.Repeat("ab", 32) + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, false},
+		{"no root hash", `{"schemaVersion": 0, "revision": "a1b2c3", "tag": "v1.5.0"}`, false},
+		{"no JSON", `revision=a1b2c3`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeFile(t, filepath.Join(path, "metadata.json"), tc.metadata)
+			img, err := openImage(context.Background(), path, "", "", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer img.Close()
+			if got := img.header.Revision == "a1b2c3" && img.header.Tag == "v1.5.0"; got != tc.want || !tc.want && (img.header.Revision != "" || img.header.Tag != "") {
+				t.Errorf("revision %q and tag %q; want them named: %v", img.header.Revision, img.header.Tag, tc.want)
+			}
+		})
+	}
+	if err := os.Remove(filepath.Join(path, "metadata.json")); err != nil {
+		t.Fatal(err)
+	}
+	img, err := openImage(context.Background(), path, "", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer img.Close()
+	if img.header.Revision != "" || img.header.Tag != "" {
+		t.Errorf("without metadata.json: revision %q and tag %q", img.header.Revision, img.header.Tag)
+	}
 }

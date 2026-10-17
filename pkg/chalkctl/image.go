@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/image"
@@ -131,13 +133,7 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 		RootHash:     img.store.RootHash,
 		Architecture: arch,
 	}
-	// An image directory names where the image came from; a raw image alone does not.
-	switch md, err := schema.ReadMetadata(filepath.Dir(raw)); {
-	case err == nil:
-		h.Revision, h.Tag = md.Revision, md.Tag
-	case !errors.Is(err, fs.ErrNotExist):
-		return nil, err
-	}
+	h.Revision, h.Tag = provenance(filepath.Dir(raw), img.store.RootHash)
 	if h.Store, err = sum(img.store.Data); err != nil {
 		return nil, err
 	}
@@ -298,4 +294,20 @@ func fileArchitecture(path string) (string, error) {
 	}
 	defer f.Close()
 	return uki.Architecture(f)
+}
+
+// provenance is the revision and tag the metadata.json in dir names, when the image directory
+// describes the image of the root hash. A raw image may lie next to the metadata of another,
+// such as one copied into an older build's directory; the node would record that provenance as
+// its own, so metadata of another root hash, or one chalkctl cannot read, names none.
+func provenance(dir string, rootHash []byte) (revision, tag string) {
+	data, err := os.ReadFile(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		return "", ""
+	}
+	var md schema.Metadata
+	if err := json.Unmarshal(data, &md); err != nil || !strings.EqualFold(md.RootHash, hex.EncodeToString(rootHash)) {
+		return "", ""
+	}
+	return md.Revision, md.Tag
 }
