@@ -40,8 +40,8 @@ service NodeService {
   // Reboot reboots the node once the response is sent.
   rpc Reboot(RebootRequest) returns (RebootResponse);
   // Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
-  // the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
-  // so no second cluster is ever initialised.
+  // chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
+  // is bootstrapped or holds etcd data, so no second cluster is ever initialised.
   rpc Bootstrap(BootstrapRequest) returns (BootstrapResponse);
   // EtcdMembers lists etcd's members as the node's own member sees them, with their health.
   // Available on control-plane nodes that are etcd members.
@@ -114,7 +114,7 @@ message InfoResponse {
   string version = 2;
   // Image ID of the running image, such as "chalkos".
   string image_id = 3;
-  // Whether the node runs the installer, which writes a role image to another disk.
+  // Whether the node runs the installer, which writes a node's image to another disk.
   bool installer = 4;
   // Device of the disk the node booted from; empty on the installer booted from a CD.
   string boot_disk = 5;
@@ -201,22 +201,22 @@ message InstallHeader {
   // when the node's fallback is none.
   string fallback_secret = 5;
   oneof target {
-    // The role image already runs from the boot disk.
+    // The node's image already runs from the boot disk.
     InPlace in_place = 6;
     // The installer lays out this disk and writes the streamed image to it.
     DiskReference disk = 7;
   }
-  // The role image the installer writes to the target disk, whose parts follow as chunks; it
-  // must name the boot loader. Installer only.
+  // The image the installer writes to the target disk, whose parts follow as chunks; it must
+  // name the boot loader. Installer only.
   ImageHeader image = 8;
   // Let the installer replace whatever the target disk holds, including an installed node.
   bool wipe_disk = 9;
-  // The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file
-  // name, which the installer lays out the target disk with; installer only. Each role chooses
+  // The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
+  // name, which the installer lays out the target disk with; installer only. Each image chooses
   // its partition sizes, so the installer's own may not fit.
   map<string, string> system_definitions = 10;
   // The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
-  // certificate and a kubelet client certificate for a worker. Empty for a role without
+  // certificate and a kubelet client certificate for a worker. Empty for an image without
   // Kubernetes.
   bytes kubernetes_share = 11;
   // The node's config: YAML documents separated by ---. chalkd checks them as a set against the
@@ -337,7 +337,7 @@ message StatusResponse {
   repeated DiskStatus disks = 2;
   repeated VolumeStatus volumes = 3;
   repeated string failed_units = 4;
-  // Absent on a node of a role without Kubernetes.
+  // Absent on a node whose image has no Kubernetes.
   KubernetesStatus kubernetes = 5;
   // Every certificate the node holds or issues, with its expiry and what needs doing about it.
   repeated CertificateStatus certificates = 6;
@@ -483,7 +483,7 @@ message RebootResponse {}
 message BootstrapRequest {}
 
 message BootstrapResponse {
-  // Objects applied from the cluster's manifests.
+  // Objects applied: chalkos's add-ons and those of the node's Addon documents.
   uint32 applied = 1;
 }
 
@@ -536,7 +536,7 @@ message RenewNodeCertificateResponse {
 enum RotationStep {
   ROTATION_STEP_UNSPECIFIED = 0;
   // On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of
-  // the cluster's manifests, chalkos's addons among them, once the kube-root-ca.crt ConfigMaps of
+  // chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of
   // their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out.
   ROTATION_STEP_RESTART_ADDONS = 1;
   // On a bootstrapped control-plane node: list the Secrets of type

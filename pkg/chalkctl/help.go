@@ -133,10 +133,10 @@ an admin client file or the secrets file.`
 const etcdLeaveExample = `  chalkctl etcd leave cp3`
 
 const bootstrapLong = `Initialises the cluster on one control plane: the node starts etcd as its first member, starts
-the Kubernetes control-plane components and applies the cluster's manifests. chalkctl waits until
-they are applied, up to --timeout. The node refuses when it is bootstrapped already or holds etcd
-data, so a second cluster is never initialised; the other control planes join the first. The
-command needs an admin client file or the secrets file.`
+the Kubernetes control-plane components and applies chalkos's add-ons and the objects of its Addon
+documents. chalkctl waits until they are applied, up to --timeout. The node refuses when it is
+bootstrapped already or holds etcd data, so a second cluster is never initialised; the other
+control planes join the first. The command needs an admin client file or the secrets file.`
 
 const bootstrapExample = `  chalkctl bootstrap cp1`
 

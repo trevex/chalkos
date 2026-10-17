@@ -106,8 +106,8 @@ type NodeServiceClient interface {
 	// Reboot reboots the node once the response is sent.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
-	// the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
-	// so no second cluster is ever initialised.
+	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
+	// is bootstrapped or holds etcd data, so no second cluster is ever initialised.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
 	// EtcdMembers lists etcd's members as the node's own member sees them, with their health.
 	// Available on control-plane nodes that are etcd members.
@@ -417,8 +417,8 @@ type NodeServiceHandler interface {
 	// Reboot reboots the node once the response is sent.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
-	// the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
-	// so no second cluster is ever initialised.
+	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
+	// is bootstrapped or holds etcd data, so no second cluster is ever initialised.
 	Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error)
 	// EtcdMembers lists etcd's members as the node's own member sees them, with their health.
 	// Available on control-plane nodes that are etcd members.

@@ -17,8 +17,8 @@ and never prints Secrets: a service gets the values its kinds reference as syste
 Nor does it print Addon documents, whose Kubernetes objects chalkd keeps in the node's stored
 config, readable by root alone, and applies on control planes.
 
-In a role module, chalkos.kinds.&lt;Kind>.get builds a chalkcfg command whose path the image's
-evaluation checks against the kind's options.
+In a NixOS module of an image, chalkos.kinds.&lt;Kind>.get builds a chalkcfg command whose path the
+image's evaluation checks against the kind's options.
 
 ## Examples
 

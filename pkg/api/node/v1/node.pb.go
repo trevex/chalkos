@@ -134,7 +134,7 @@ type RotationStep int32
 const (
 	RotationStep_ROTATION_STEP_UNSPECIFIED RotationStep = 0
 	// On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of
-	// the cluster's manifests, chalkos's addons among them, once the kube-root-ca.crt ConfigMaps of
+	// chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of
 	// their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out.
 	RotationStep_ROTATION_STEP_RESTART_ADDONS RotationStep = 1
 	// On a bootstrapped control-plane node: list the Secrets of type
@@ -241,7 +241,7 @@ type InfoResponse struct {
 	Version string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	// Image ID of the running image, such as "chalkos".
 	ImageId string `protobuf:"bytes,3,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
-	// Whether the node runs the installer, which writes a role image to another disk.
+	// Whether the node runs the installer, which writes a node's image to another disk.
 	Installer bool `protobuf:"varint,4,opt,name=installer,proto3" json:"installer,omitempty"`
 	// Device of the disk the node booted from; empty on the installer booted from a CD.
 	BootDisk   string     `protobuf:"bytes,5,opt,name=boot_disk,json=bootDisk,proto3" json:"boot_disk,omitempty"`
@@ -867,17 +867,17 @@ type InstallHeader struct {
 	//	*InstallHeader_InPlace
 	//	*InstallHeader_Disk
 	Target isInstallHeader_Target `protobuf_oneof:"target"`
-	// The role image the installer writes to the target disk, whose parts follow as chunks; it
-	// must name the boot loader. Installer only.
+	// The image the installer writes to the target disk, whose parts follow as chunks; it must
+	// name the boot loader. Installer only.
 	Image *ImageHeader `protobuf:"bytes,8,opt,name=image,proto3" json:"image,omitempty"`
 	// Let the installer replace whatever the target disk holds, including an installed node.
 	WipeDisk bool `protobuf:"varint,9,opt,name=wipe_disk,json=wipeDisk,proto3" json:"wipe_disk,omitempty"`
-	// The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file
-	// name, which the installer lays out the target disk with; installer only. Each role chooses
+	// The image's repart definitions of the system region (ESP, slots A and B, STATE) by file
+	// name, which the installer lays out the target disk with; installer only. Each image chooses
 	// its partition sizes, so the installer's own may not fit.
 	SystemDefinitions map[string]string `protobuf:"bytes,10,rep,name=system_definitions,json=systemDefinitions,proto3" json:"system_definitions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA
-	// certificate and a kubelet client certificate for a worker. Empty for a role without
+	// certificate and a kubelet client certificate for a worker. Empty for an image without
 	// Kubernetes.
 	KubernetesShare []byte `protobuf:"bytes,11,opt,name=kubernetes_share,json=kubernetesShare,proto3" json:"kubernetes_share,omitempty"`
 	// The node's config: YAML documents separated by ---. chalkd checks them as a set against the
@@ -1032,7 +1032,7 @@ type isInstallHeader_Target interface {
 }
 
 type InstallHeader_InPlace struct {
-	// The role image already runs from the boot disk.
+	// The node's image already runs from the boot disk.
 	InPlace *InPlace `protobuf:"bytes,6,opt,name=in_place,json=inPlace,proto3,oneof"`
 }
 
@@ -1767,7 +1767,7 @@ type StatusResponse struct {
 	Disks       []*DiskStatus          `protobuf:"bytes,2,rep,name=disks,proto3" json:"disks,omitempty"`
 	Volumes     []*VolumeStatus        `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
 	FailedUnits []string               `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
-	// Absent on a node of a role without Kubernetes.
+	// Absent on a node whose image has no Kubernetes.
 	Kubernetes *KubernetesStatus `protobuf:"bytes,5,opt,name=kubernetes,proto3" json:"kubernetes,omitempty"`
 	// Every certificate the node holds or issues, with its expiry and what needs doing about it.
 	Certificates []*CertificateStatus `protobuf:"bytes,6,rep,name=certificates,proto3" json:"certificates,omitempty"`
@@ -2674,7 +2674,7 @@ func (*BootstrapRequest) Descriptor() ([]byte, []int) {
 
 type BootstrapResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Objects applied from the cluster's manifests.
+	// Objects applied: chalkos's add-ons and those of the node's Addon documents.
 	Applied       uint32 `protobuf:"varint,1,opt,name=applied,proto3" json:"applied,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

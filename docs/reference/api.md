@@ -86,8 +86,8 @@ Reboot reboots the node once the response is sent.
 ### Bootstrap { #method-bootstrap }
 
 Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
-the cluster's manifests. It is refused on a node that is bootstrapped or holds etcd data,
-so no second cluster is ever initialised.
+chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
+is bootstrapped or holds etcd data, so no second cluster is ever initialised.
 
 ### EtcdMembers { #method-etcdmembers }
 
@@ -200,7 +200,7 @@ No fields.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `applied` | `uint32` | Objects applied from the cluster's manifests. |
+| `applied` | `uint32` | Objects applied: chalkos's add-ons and those of the node's Addon documents. |
 
 ### CertificateStatus { #message-certificatestatus }
 
@@ -437,7 +437,7 @@ No fields.
 | `mode` | [`Mode`](#enum-mode) |  |
 | `version` | `string` | chalkos version of the running image. |
 | `image_id` | `string` | Image ID of the running image, such as "chalkos". |
-| `installer` | `bool` | Whether the node runs the installer, which writes a role image to another disk. |
+| `installer` | `bool` | Whether the node runs the installer, which writes a node's image to another disk. |
 | `boot_disk` | `string` | Device of the disk the node booted from; empty on the installer booted from a CD. |
 | `tpm` | `bool` |  |
 | `secure_boot` | [`SecureBoot`](#enum-secureboot) |  |
@@ -456,12 +456,12 @@ No fields.
 | `node_key` | `bytes` |  |
 | `ca_certificate` | `bytes` | PEM certificates of the OS CAs the node trusts, the one that issues client certificates and the node CA first, then those still trusted while it rotates. |
 | `fallback_secret` | `string` | Recovery key or password enrolled as the second keyslot of every encrypted volume; empty when the node's fallback is none. |
-| `in_place` | [`InPlace`](#message-inplace) | The role image already runs from the boot disk. |
+| `in_place` | [`InPlace`](#message-inplace) | The node's image already runs from the boot disk. |
 | `disk` | [`DiskReference`](#message-diskreference) | The installer lays out this disk and writes the streamed image to it. |
-| `image` | [`ImageHeader`](#message-imageheader) | The role image the installer writes to the target disk, whose parts follow as chunks; it must name the boot loader. Installer only. |
+| `image` | [`ImageHeader`](#message-imageheader) | The image the installer writes to the target disk, whose parts follow as chunks; it must name the boot loader. Installer only. |
 | `wipe_disk` | `bool` | Let the installer replace whatever the target disk holds, including an installed node. |
-| `system_definitions` | repeated [`InstallHeader.SystemDefinitionsEntry`](#message-installheadersystemdefinitionsentry) | The role image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each role chooses its partition sizes, so the installer's own may not fit. |
-| `kubernetes_share` | `bytes` | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for a role without Kubernetes. |
+| `system_definitions` | repeated [`InstallHeader.SystemDefinitionsEntry`](#message-installheadersystemdefinitionsentry) | The image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with; installer only. Each image chooses its partition sizes, so the installer's own may not fit. |
+| `kubernetes_share` | `bytes` | The node's Kubernetes share (JSON): the CAs and keys for a control-plane node, the CA certificate and a kubelet client certificate for a worker. Empty for an image without Kubernetes. |
 | `config` | `string` | The node's config: YAML documents separated by ---. chalkd checks them as a set against the schemas of the image it installs, fills in their defaults, keeps them on STATE and translates them into what the node applies at boot. Required. |
 | `schemas` | repeated [`InstallHeader.SchemasEntry`](#message-installheaderschemasentry) | The schemas of the image the installer writes, by file name, as its image directory's schemas/ holds them; config is checked against them. Installer only: in place, chalkd uses the running image's. |
 | `kubernetes_image` | `bytes` | The image.json of the image the installer writes, as its image directory holds it; empty for an image without Kubernetes. Installer only. |
@@ -621,7 +621,7 @@ No fields.
 | `disks` | repeated [`DiskStatus`](#message-diskstatus) |  |
 | `volumes` | repeated [`VolumeStatus`](#message-volumestatus) |  |
 | `failed_units` | repeated `string` |  |
-| `kubernetes` | [`KubernetesStatus`](#message-kubernetesstatus) | Absent on a node of a role without Kubernetes. |
+| `kubernetes` | [`KubernetesStatus`](#message-kubernetesstatus) | Absent on a node whose image has no Kubernetes. |
 | `certificates` | repeated [`CertificateStatus`](#message-certificatestatus) | Every certificate the node holds or issues, with its expiry and what needs doing about it. |
 | `time` | [`TimeStatus`](#message-timestatus) | How the node keeps its clock. |
 | `trust` | repeated [`TrustStatus`](#message-truststatus) | What the node trusts and issues with, by fingerprint. |
@@ -735,7 +735,7 @@ No fields.
 | Name | Number | Description |
 | ---- | ------ | ----------- |
 | `ROTATION_STEP_UNSPECIFIED` | 0 |  |
-| `ROTATION_STEP_RESTART_ADDONS` | 1 | On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of the cluster's manifests, chalkos's addons among them, once the kube-root-ca.crt ConfigMaps of their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out. |
+| `ROTATION_STEP_RESTART_ADDONS` | 1 | On a bootstrapped control-plane node: restart the Deployments, DaemonSets and StatefulSets of chalkos's add-ons and of the node's Addon documents, once the kube-root-ca.crt ConfigMaps of their namespaces hold every Kubernetes CA the node trusts, and wait until they rolled out. |
 | `ROTATION_STEP_LIST_TOKEN_SECRETS` | 2 | On a bootstrapped control-plane node: list the Secrets of type kubernetes.io/service-account-token, whose tokens nothing signs again. |
 | `ROTATION_STEP_REWRITE_ENCRYPTED` | 3 | On a bootstrapped control-plane node: update every object of the resources the API server encrypts without changing it, so the API server encrypts it with its first key, then count the objects etcd holds under each key. |
 | `ROTATION_STEP_COUNT_ENCRYPTED` | 4 | On a bootstrapped control-plane node: count the objects etcd holds under each key. |

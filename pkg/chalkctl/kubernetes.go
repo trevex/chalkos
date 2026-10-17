@@ -39,7 +39,7 @@ func (a *app) bootstrapCommand() *cobra.Command {
 		Example: bootstrapExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.bootstrap(ctx, n, timeout, pos) })
 	n.registerClient(cmd.Flags())
-	cmd.Flags().DurationVar(&timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its manifests")
+	cmd.Flags().DurationVar(&timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its add-ons and Addon objects")
 	return cmd
 }
 
