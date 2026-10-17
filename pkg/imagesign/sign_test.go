@@ -82,7 +82,7 @@ func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
 	fat := fmt.Sprintf("%s@@%d", image, offset)
 	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux", "::/EFI/tools")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTX64.EFI")
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_0.1.0.efi")
+	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_1.efi")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/tools/shell.efi")
 
 	if err := SignImage(context.Background(), image, offset, key, cert); err != nil {
@@ -95,7 +95,7 @@ func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
 		mustRun(t, "mcopy", "-n", "-i", fat, f, out)
 		return exec.Command("sbverify", "--cert", cert, out).Run()
 	}
-	for _, f := range []string{"::/EFI/BOOT/BOOTX64.EFI", "::/EFI/Linux/chalkos_0.1.0.efi"} {
+	for _, f := range []string{"::/EFI/BOOT/BOOTX64.EFI", "::/EFI/Linux/chalkos_1.efi"} {
 		if err := verify(f); err != nil {
 			t.Errorf("%s is not signed: %v", f, err)
 		}
@@ -132,14 +132,14 @@ func TestExtractAndSignUKI(t *testing.T) {
 	if _, err := ExtractUKI(context.Background(), image, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 0 UKIs") {
 		t.Errorf("an ESP without a UKI: %v", err)
 	}
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_0.2.0.efi")
+	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_2.efi")
 	out := filepath.Join(dir, "out")
 	os.Mkdir(out, 0o755)
 	uki, err := ExtractUKI(context.Background(), image, 0, out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(uki) != "chalkos_0.2.0.efi" {
+	if filepath.Base(uki) != "chalkos_2.efi" {
 		t.Errorf("extracted %s", uki)
 	}
 	if err := SignFile(context.Background(), uki, key, cert); err != nil {
@@ -177,7 +177,7 @@ func TestExtractBootLoader(t *testing.T) {
 	mustRun(t, "mkfs.vfat", image)
 	fat := image + "@@0"
 	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux")
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_0.2.0.efi")
+	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_2.efi")
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/fallback.efi")
 	// Another architecture's boot loader is no x86-64 image's.
 	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTAA64.EFI")
