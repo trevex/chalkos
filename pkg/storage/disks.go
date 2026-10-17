@@ -192,12 +192,25 @@ type noDisk struct{ error }
 func (e noDisk) Is(target error) bool { return target == ErrNoDisk }
 func (e noDisk) Unwrap() error        { return e.error }
 
+// ErrListDisks is what a Resolve or Find error matches when the node's disks cannot be listed,
+// which is no fault of the reference or the identity.
+var ErrListDisks = errors.New("list the disks")
+
+// list returns the disks for Resolve and Find, with an error that matches ErrListDisks.
+func (h Host) list() ([]BlockDisk, error) {
+	disks, err := h.Disks()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrListDisks, err)
+	}
+	return disks, nil
+}
+
 // Resolve finds the one disk a reference names.
 func (h Host) Resolve(ref Ref) (BlockDisk, error) {
 	if ref.Path != "" {
 		return h.ResolvePath(ref.Path)
 	}
-	disks, err := h.Disks()
+	disks, err := h.list()
 	if err != nil {
 		return BlockDisk{}, err
 	}
@@ -229,7 +242,7 @@ func (h Host) ResolvePath(p string) (BlockDisk, error) {
 	}
 	root, err := filepath.EvalSymlinks(h.DevRoot)
 	if err != nil {
-		return BlockDisk{}, err
+		return BlockDisk{}, fmt.Errorf("%w: %w", ErrListDisks, err)
 	}
 	target, err := filepath.EvalSymlinks(filepath.Join(root, rel))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -241,7 +254,7 @@ func (h Host) ResolvePath(p string) (BlockDisk, error) {
 	if filepath.Dir(target) != root {
 		return BlockDisk{}, fmt.Errorf("%s points to %s, which is not a disk", p, target)
 	}
-	disks, err := h.Disks()
+	disks, err := h.list()
 	if err != nil {
 		return BlockDisk{}, err
 	}
@@ -256,7 +269,7 @@ func (h Host) ResolvePath(p string) (BlockDisk, error) {
 // Find returns the disk with a pinned identity; ok is false when no disk has it. Several disks
 // with the identity are an error: picking one could open another disk's partitions.
 func (h Host) Find(id Identity) (disk BlockDisk, ok bool, err error) {
-	disks, err := h.Disks()
+	disks, err := h.list()
 	if err != nil {
 		return BlockDisk{}, false, err
 	}

@@ -197,14 +197,35 @@ func TestResolvePath(t *testing.T) {
 			t.Errorf("ResolvePath(%s) = %v, %v", p, d, err)
 		}
 	}
-	// Only a path at which nothing exists finds no disk; the others name something else.
-	for p, none := range map[string]bool{"/dev/sda1": false, "/dev/disk/by-id/missing": true, "/srv/disk": false} {
+	if err := os.Symlink("../../gone", filepath.Join(h.DevRoot, "disk", "by-id", "dangling")); err != nil {
+		t.Fatal(err)
+	}
+	// Only a path at which nothing exists, or a link to nothing, finds no disk; the others name
+	// something else.
+	for p, none := range map[string]bool{"/dev/sda1": false, "/dev/disk/by-id/missing": true, "/dev/disk/by-id/dangling": true, "/srv/disk": false} {
 		d, err := h.ResolvePath(p)
 		if err == nil {
 			t.Errorf("ResolvePath(%s) = %v, want an error", p, d)
 		} else if errors.Is(err, ErrNoDisk) != none {
 			t.Errorf("ResolvePath(%s) = %v; matches ErrNoDisk: %v, want %v", p, err, !none, none)
 		}
+	}
+}
+
+func TestResolveAndFindWhenTheDisksCannotBeListed(t *testing.T) {
+	h := newHost(t, nvmeSystem, sataSSD)
+	if err := os.Remove(filepath.Join(h.SysRoot, "block", "sda", "size")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := h.Resolve(Ref{Selector: Selector{Model: "Samsung*"}})
+	if !errors.Is(err, ErrListDisks) || errors.Is(err, ErrNoDisk) {
+		t.Errorf("Resolve: err = %v, want it to match ErrListDisks only", err)
+	}
+	if _, err := h.ResolvePath("/dev/nvme0n1"); !errors.Is(err, ErrListDisks) {
+		t.Errorf("ResolvePath: err = %v, want it to match ErrListDisks", err)
+	}
+	if _, _, err := h.Find(Identity{Serial: "S6PFNX0T100001"}); !errors.Is(err, ErrListDisks) {
+		t.Errorf("Find: err = %v, want it to match ErrListDisks", err)
 	}
 }
 
