@@ -296,6 +296,10 @@ func TestStageConfigRefuses(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want one naming %q", err, tc.want)
 			}
+			// The running config is carried over, as for an operator, who cannot deliver config.
+			if tc.config == "" && (err == nil || !strings.Contains(err.Error(), "upgrade with config the image accepts, from an inventory, which needs the admin role")) {
+				t.Errorf("err = %v, want the admin role named", err)
+			}
 			if _, found := staged(t, s); found {
 				t.Error("wrote the new image's slot")
 			}
@@ -432,7 +436,7 @@ func TestStageConfigKeepsTheFixedFields(t *testing.T) {
 func TestStageConfigNeedsConfig(t *testing.T) {
 	s, _ := installedServer(t, section("", ""), false)
 	err := s.stageConfig(context.Background(), imageWith(t, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", "")
-	if err == nil || !strings.Contains(err.Error(), "no config to carry over") {
+	if err == nil || !strings.Contains(err.Error(), "no config to carry over") || !strings.Contains(err.Error(), "which needs the admin role") {
 		t.Errorf("err = %v", err)
 	}
 }

@@ -160,11 +160,11 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 			return fmt.Errorf("parse the config: %w", err)
 		}
 	} else if !found || len(docs) == 0 {
-		return errors.New("the node holds no config to carry over to the image; upgrade with the config from an inventory")
+		return errors.New("the node holds no config to carry over to the image; upgrade with the config from an inventory, which needs the admin role")
 	}
 	if err := s.writeSlot(ctx, st, system, platform, rootHash, docs, secret); err != nil {
 		if text == "" {
-			return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory", plain(err))
+			return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory, which needs the admin role", plain(err))
 		}
 		return plain(err)
 	}
