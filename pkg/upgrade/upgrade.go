@@ -167,7 +167,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	// The image boots next already, as after an upgrade without a reboot. The check runs again: the
 	// upgrade brings the config the image boots with, which replaces the one staged with it.
-	if staged, ok := stagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
+	if staged, ok := StagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
 		if err := n.recheck(ctx, h, inactive, staged, all, booted, running); err != nil {
 			return Result{}, err
 		}

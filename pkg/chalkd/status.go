@@ -79,6 +79,9 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	resp.Trust = s.trust()
 	resp.Time = s.timeStatus(ctx)
 	resp.Boot = s.bootStatus()
+	if resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot); err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
 	return connect.NewResponse(resp), nil
 }
 

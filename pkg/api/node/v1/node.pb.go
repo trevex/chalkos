@@ -1467,7 +1467,12 @@ type ApplyConfigRequest struct {
 	// The node's config, as InstallHeader.config holds it, checked against the running image's
 	// schemas. It replaces the node's config as a whole. Empty keeps the node's config and
 	// storage, for a request that delivers only a share, a node certificate or OS CAs.
-	Config        string `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
+	Config string `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
+	// Check the config against the image staged to boot next and keep it in that image's config
+	// slot instead, changing nothing the running image runs but the machine's storage: the config
+	// is classified against it as for the running image, and additive changes are made at once,
+	// with fallback_secret. It takes the config and the fallback secret alone, and an image staged.
+	Staged        bool `protobuf:"varint,8,opt,name=staged,proto3" json:"staged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1542,6 +1547,13 @@ func (x *ApplyConfigRequest) GetConfig() string {
 		return x.Config
 	}
 	return ""
+}
+
+func (x *ApplyConfigRequest) GetStaged() bool {
+	if x != nil {
+		return x.Staged
+	}
+	return false
 }
 
 type ApplyConfigResponse struct {
@@ -1813,8 +1825,11 @@ type StatusResponse struct {
 	// in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
 	// its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos.
 	ConfigVersion string `protobuf:"bytes,11,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The version of the config kept for the image staged to boot next, as config_version gives
+	// the running one's; empty without a staged image or config for it.
+	StagedConfigVersion string `protobuf:"bytes,12,opt,name=staged_config_version,json=stagedConfigVersion,proto3" json:"staged_config_version,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -1913,6 +1928,13 @@ func (x *StatusResponse) GetPlatform() string {
 func (x *StatusResponse) GetConfigVersion() string {
 	if x != nil {
 		return x.ConfigVersion
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetStagedConfigVersion() string {
+	if x != nil {
+		return x.StagedConfigVersion
 	}
 	return ""
 }
@@ -3989,14 +4011,15 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ImageChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x11\n" +
-	"\x0fInstallResponse\"\xec\x01\n" +
+	"\x0fInstallResponse\"\x84\x02\n" +
 	"\x12ApplyConfigRequest\x12'\n" +
 	"\x0ffallback_secret\x18\x02 \x01(\tR\x0efallbackSecret\x12)\n" +
 	"\x10kubernetes_share\x18\x03 \x01(\fR\x0fkubernetesShare\x12)\n" +
 	"\x10node_certificate\x18\x04 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
 	"\bnode_key\x18\x05 \x01(\fR\anodeKey\x12\x14\n" +
 	"\x05trust\x18\x06 \x01(\fR\x05trust\x12\x16\n" +
-	"\x06config\x18\a \x01(\tR\x06configJ\x04\b\x01\x10\x02R\bidentity\"x\n" +
+	"\x06config\x18\a \x01(\tR\x06config\x12\x16\n" +
+	"\x06staged\x18\b \x01(\bR\x06stagedJ\x04\b\x01\x10\x02R\bidentity\"x\n" +
 	"\x13ApplyConfigResponse\x128\n" +
 	"\achanges\x18\x01 \x03(\v2\x1e.chalkos.node.v1.StorageChangeR\achanges\x12'\n" +
 	"\x0frestarted_units\x18\x02 \x03(\tR\x0erestartedUnits\"a\n" +
@@ -4009,7 +4032,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x0ffallback_secret\x18\x03 \x01(\tR\x0efallbackSecret\x12\x16\n" +
 	"\x06config\x18\x04 \x01(\tR\x06configJ\x04\b\x02\x10\x03R\bidentity\"\x15\n" +
 	"\x13ResetVolumeResponse\"\x0f\n" +
-	"\rStatusRequest\"\x9b\x04\n" +
+	"\rStatusRequest\"\xcf\x04\n" +
 	"\x0eStatusResponse\x121\n" +
 	"\x05disks\x18\x02 \x03(\v2\x1b.chalkos.node.v1.DiskStatusR\x05disks\x127\n" +
 	"\avolumes\x18\x03 \x03(\v2\x1d.chalkos.node.v1.VolumeStatusR\avolumes\x12!\n" +
@@ -4023,7 +4046,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x04boot\x18\t \x01(\v2\x1b.chalkos.node.v1.BootStatusR\x04boot\x12\x1a\n" +
 	"\bplatform\x18\n" +
 	" \x01(\tR\bplatform\x12%\n" +
-	"\x0econfig_version\x18\v \x01(\tR\rconfigVersionJ\x04\b\x01\x10\x02R\x10identity_version\"\x8a\x02\n" +
+	"\x0econfig_version\x18\v \x01(\tR\rconfigVersion\x122\n" +
+	"\x15staged_config_version\x18\f \x01(\tR\x13stagedConfigVersionJ\x04\b\x01\x10\x02R\x10identity_version\"\x8a\x02\n" +
 	"\n" +
 	"BootStatus\x124\n" +
 	"\arunning\x18\x01 \x01(\v2\x1a.chalkos.node.v1.BootImageR\arunning\x12\x14\n" +

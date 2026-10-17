@@ -109,6 +109,9 @@ type Server struct {
 	FromParts func(context.Context, install.PartsRequest) error
 	// InstallImage installs an upgrade's image; nil installs it on the boot disk. Tests replace it.
 	InstallImage func(context.Context, upgrade.Header, io.Reader) (upgrade.Result, error)
+	// ReadImage reads the store of an image in the inactive slot, as apply-config --staged checks
+	// config against it; nil mounts it from the boot disk. Tests replace it.
+	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.

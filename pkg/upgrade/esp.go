@@ -95,10 +95,10 @@ func nextGeneration(entries []Entry, imageID string) (uint64, error) {
 	return highest + 1, nil
 }
 
-// stagedEntry is the image's entry that boots next instead of the booted one: the highest
+// StagedEntry is the image's entry that boots next instead of the booted one: the highest
 // generation any name gives, while its UKI is of the image and has tries left. false when that is
 // the booted entry or none has tries.
-func stagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
+func StagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 	var highest Entry
 	var generation uint64
 	tied := false

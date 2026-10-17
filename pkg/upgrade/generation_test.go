@@ -96,7 +96,7 @@ func TestStagedEntry(t *testing.T) {
 		{"two names of the highest generation", []Entry{booted, entry("chalkos_06+3.efi", 0, 3), entry("chalkos_6+3.efi", 6, 3)}, ""},
 		{"a lower generation twice", []Entry{booted, entry("chalkos_02+3.efi", 0, 3), entry("chalkos_3+3.efi", 3, 3)}, "chalkos_3+3.efi"},
 	} {
-		got, ok := stagedEntry(tc.entries, "chalkos", booted)
+		got, ok := StagedEntry(tc.entries, "chalkos", booted)
 		if got.File != tc.want || ok != (tc.want != "") {
 			t.Errorf("%s: staged %q, %v, want %q", tc.name, got.File, ok, tc.want)
 		}

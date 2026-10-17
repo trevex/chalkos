@@ -162,6 +162,7 @@ a node cordoned otherwise as it is.
 | `node_key` | `bytes` |  |
 | `trust` | `bytes` | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
 | `config` | `string` | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only a share, a node certificate or OS CAs. |
+| `staged` | `bool` | Check the config against the image staged to boot next and keep it in that image's config slot instead, changing nothing the running image runs but the machine's storage: the config is classified against it as for the running image, and additive changes are made at once, with fallback_secret. It takes the config and the fallback secret alone, and an image staged. |
 
 ### ApplyConfigResponse { #message-applyconfigresponse }
 
@@ -640,6 +641,7 @@ No fields.
 | `boot` | [`BootStatus`](#message-bootstatus) | The image the node booted, and what upgrades installed beside it. |
 | `platform` | `string` | The platform the running image was built for. |
 | `config_version` | `string` | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos. |
+| `staged_config_version` | `string` | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
 
 ### StorageChange { #message-storagechange }
 

@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/uki"
@@ -117,6 +119,49 @@ func (n *Node) storeDir() string {
 // checkStore mounts the slot's store read-only through dm-verity with the image's root hash and
 // passes it to n.CheckStore with the system the UKI at uki boots, then unmounts it.
 func (n *Node) checkStore(ctx context.Context, h Header, slot Slot, ukiPath string) error {
+	return n.mountStore(ctx, h.RootHash, slot, ukiPath, n.CheckStore)
+}
+
+// ReadImage reads the store of the image with the root hash, which the inactive slot holds, such
+// as the image staged to boot next: mounted read-only through dm-verity as an upgrade checks one,
+// passed to read with the system a UKI on the ESP that boots it names, and unmounted again. The
+// caller holds TableLock, if any, or leaves it unset. It fails for the running image and for one
+// the inactive slot does not hold.
+func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) error) error {
+	running, err := n.running()
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(rootHash, running) {
+		return fmt.Errorf("%x is the running image, not one in the inactive slot", rootHash)
+	}
+	parts, err := n.slots().ReadTable(ctx)
+	if err != nil {
+		return err
+	}
+	_, inactive, err := slots(parts, running)
+	if err != nil {
+		return err
+	}
+	if !inactive.Holds(rootHash) {
+		return fmt.Errorf("the inactive slot does not hold the image %x", rootHash)
+	}
+	entries, err := Entries(n.ESP)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(entries, func(e Entry) bool { return bytes.Equal(e.RootHash, rootHash) })
+	if i < 0 {
+		return fmt.Errorf("no UKI on the ESP boots the image %x", rootHash)
+	}
+	ctx = context.WithoutCancel(ctx)
+	n.closeStore(ctx, n.storeDir(), true, true)
+	return n.mountStore(ctx, rootHash, inactive, filepath.Join(n.ESP, linuxDir, entries[i].File), read)
+}
+
+// mountStore mounts the slot's store read-only through dm-verity with the root hash and passes it
+// to read with the system the UKI at ukiPath boots, then unmounts it.
+func (n *Node) mountStore(ctx context.Context, rootHash []byte, slot Slot, ukiPath string, read func(Store) error) error {
 	f, err := os.Open(ukiPath)
 	if err != nil {
 		return err
@@ -134,7 +179,7 @@ func (n *Node) checkStore(ctx context.Context, h Header, slot Slot, ukiPath stri
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if _, err := n.Run.Run(ctx, "veritysetup", "open", slot.Data.Node, storeMapping, slot.Verity.Node, hex.EncodeToString(h.RootHash)); err != nil {
+	if _, err := n.Run.Run(ctx, "veritysetup", "open", slot.Data.Node, storeMapping, slot.Verity.Node, hex.EncodeToString(rootHash)); err != nil {
 		return fmt.Errorf("open the written store through dm-verity: %w", err)
 	}
 	mounted := false
@@ -143,7 +188,7 @@ func (n *Node) checkStore(ctx context.Context, h Header, slot Slot, ukiPath stri
 		return fmt.Errorf("mount the written store: %w", err)
 	}
 	mounted = true
-	return n.CheckStore(Store{root: dir, Toplevel: system})
+	return read(Store{root: dir, Toplevel: system})
 }
 
 // closeStore unmounts the checked store, when mounted, and closes its dm-verity device. Before an

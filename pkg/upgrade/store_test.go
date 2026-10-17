@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -264,5 +265,43 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 	}
 	if calls[len(calls)-1] != "veritysetup close "+storeMapping {
 		t.Errorf("ran %q, want the store closed", calls)
+	}
+}
+
+// TestReadImage reads the store of an image the inactive slot holds, as a check of a staged
+// config does after the upgrade: through dm-verity, with the system the image's UKI names, closed
+// again afterwards. The running image and one the slot does not hold are refused.
+func TestReadImage(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, old)
+	var calls []string
+	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mounted: func(dir string) {
+		os.RemoveAll(dir)
+		writeStore(t, dir)
+	}}
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	l.node.CheckStore = func(Store) error { return nil }
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	calls = nil
+	var toplevel string
+	if err := l.node.ReadImage(context.Background(), img.root, func(s Store) error {
+		toplevel = s.Toplevel
+		_, err := s.ReadDir(s.Toplevel + "/../x/etc/chalkos/schemas")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	parts := l.table()
+	open := "veritysetup open " + parts[5].Node + " " + storeMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
+	if toplevel != "/nix/store/x" || !slices.Contains(calls, open) || calls[len(calls)-1] != "veritysetup close "+storeMapping {
+		t.Errorf("toplevel %q, ran %q", toplevel, calls)
+	}
+	for name, root := range map[string][]byte{"the running image": old.root, "another image": bytes.Repeat([]byte{0xee}, 32)} {
+		err := l.node.ReadImage(context.Background(), root, func(Store) error { t.Errorf("%s: read", name); return nil })
+		if err == nil {
+			t.Errorf("%s: read without an error", name)
+		}
 	}
 }

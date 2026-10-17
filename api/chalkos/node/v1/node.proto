@@ -311,6 +311,11 @@ message ApplyConfigRequest {
   // schemas. It replaces the node's config as a whole. Empty keeps the node's config and
   // storage, for a request that delivers only a share, a node certificate or OS CAs.
   string config = 7;
+  // Check the config against the image staged to boot next and keep it in that image's config
+  // slot instead, changing nothing the running image runs but the machine's storage: the config
+  // is classified against it as for the running image, and additive changes are made at once,
+  // with fallback_secret. It takes the config and the fallback secret alone, and an image staged.
+  bool staged = 8;
 }
 
 message ApplyConfigResponse {
@@ -362,6 +367,9 @@ message StatusResponse {
   // in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
   // its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos.
   string config_version = 11;
+  // The version of the config kept for the image staged to boot next, as config_version gives
+  // the running one's; empty without a staged image or config for it.
+  string staged_config_version = 12;
 }
 
 message BootStatus {

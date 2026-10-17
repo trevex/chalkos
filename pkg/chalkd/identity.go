@@ -212,6 +212,18 @@ type applyRequest struct {
 func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// An upgrade writes its image's slot, classified against the machine, before the image is
+	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
+	// upgrade holds upgrading while it takes s.mu.
+	if req.Msg.Config != "" {
+		if !s.upgrading.TryLock() {
+			return nil, failed(connect.CodeAborted, "an upgrade is running, which writes the node's config too; apply the config once it ended")
+		}
+		defer s.upgrading.Unlock()
+	}
+	if req.Msg.Staged {
+		return s.applyStaged(ctx, req.Msg)
+	}
 	r := applyRequest{msg: req.Msg}
 	if req.Msg.Config != "" {
 		t, schemas, err := s.runningTarget()
@@ -313,6 +325,12 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		changes = mc.changes
+		// The storage the changes make is the machine's, which the staged image boots onto too.
+		if len(changes) > 0 {
+			if err := s.checkStaged(d.section, mc.pins); err != nil {
+				return nil, err
+			}
+		}
 		if err := s.applyMachine(ctx, mc, m.FallbackSecret); err != nil {
 			return nil, err
 		}

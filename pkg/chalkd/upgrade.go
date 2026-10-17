@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 
@@ -275,11 +276,25 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 	if s.InstallImage != nil {
 		return s.InstallImage(ctx, h, image)
 	}
+	n, err := s.upgradeNode(&s.mu)
+	if err != nil {
+		return upgrade.Result{}, err
+	}
+	n.CheckStore = func(st upgrade.Store) error {
+		return s.stageConfig(ctx, st, st.Toplevel, h.Platform, h.RootHash, text, secret)
+	}
+	return n.Install(ctx, h, image)
+}
+
+// upgradeNode is the node an upgrade changes, its boot disk's partition table read and changed
+// under tableLock; nil for a caller that holds s.mu, which ApplyConfig and ResetVolume change the
+// boot disk's partitions under.
+func (s *Server) upgradeNode(tableLock sync.Locker) (*upgrade.Node, error) {
 	boot, err := s.Host.ResolvePath(s.Paths.BootDisk)
 	if err != nil {
-		return upgrade.Result{}, fmt.Errorf("find the disk the node booted from: %w", err)
+		return nil, fmt.Errorf("find the disk the node booted from: %w", err)
 	}
-	n := &upgrade.Node{
+	return &upgrade.Node{
 		Run:           s.Run,
 		Disk:          boot.Device,
 		ESP:           s.Paths.ESP,
@@ -288,11 +303,6 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
 		Architecture:  uki.GoArchitecture(runtime.GOARCH),
 		OpenPartition: upgrade.OpenPartition,
-		// ApplyConfig and ResetVolume change the boot disk's partitions under the same lock.
-		TableLock: &s.mu,
-		CheckStore: func(st upgrade.Store) error {
-			return s.stageConfig(ctx, st, st.Toplevel, h.Platform, h.RootHash, text, secret)
-		},
-	}
-	return n.Install(ctx, h, image)
+		TableLock:     tableLock,
+	}, nil
 }
