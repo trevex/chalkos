@@ -145,9 +145,9 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 }
 
 // TestUpgradeDeliversConfigOnlyForAdmins refuses an operator's upgrade that carries config or a
-// fallback secret before anything is installed, naming the admin role, also for an image staged
-// already, which the same call sends again. An operator's upgrade without them carries the running
-// config over to the image, and an admin's keeps the config it carries.
+// fallback secret before anything is installed, naming the admin role. An operator's upgrade
+// without them carries the running config over to the image, and an admin's keeps the config it
+// carries.
 func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 	c := newCreds(t)
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
