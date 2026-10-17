@@ -4,7 +4,7 @@
   inputs.chalkos.url = "github:trevex/chalkos";
 
   outputs =
-    { chalkos, ... }:
+    { self, chalkos, ... }:
     let
       system = "x86_64-linux";
       pkgs = chalkos.inputs.nixpkgs.legacyPackages.${system};
@@ -13,6 +13,8 @@
       # in maintenance mode it accepts only the cluster's clients.
       images = chalkos.lib.mkImages {
         osCA = ./secrets.pub.json;
+        # The commit the images are built from, which chalkctl shows beside an image's root hash.
+        revision = self.rev or self.dirtyRev or null;
         platforms = [ "kvm" ];
         variants.node = { };
       };

@@ -147,5 +147,6 @@ in
         mkdir $out
         ln -s ${image}/* $out/
         ln -s ${iso}/* $out/
+        cp ${config.system.build.chalkosMetadata} $out/metadata.json
       '';
 }

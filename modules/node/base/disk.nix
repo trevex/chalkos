@@ -93,11 +93,13 @@ let
         touch $out
       '';
   # What chalkctl reads about an image before it validates config or installs it; the root hash
-  # is added from systemd-repart's output once the image is built.
-  metadata = pkgs.writeText "chalkos-metadata.json" (
+  # is added from systemd-repart's output once the image is built. The revision and tag reach
+  # metadata.json alone, never the store, so they change no root hash.
+  metadataFields = pkgs.writeText "chalkos-metadata.json" (
     builtins.toJSON {
       schemaVersion = 0;
-      inherit (config.system.image) id version;
+      inherit (config.system.image) id;
+      inherit (config.chalkos.provenance) revision tag;
       variant = config.chalkos.variant.name;
       platform = config.chalkos.platform.name;
       # The Kubernetes release and pod network, null on an image without Kubernetes.
@@ -109,6 +111,13 @@ let
       kinds = config.system.build.chalkosKinds;
     }
   );
+  metadata =
+    pkgs.runCommand "${config.image.repart.name}-metadata.json" { nativeBuildInputs = [ pkgs.jq ]; }
+      ''
+        jq --slurpfile repart ${config.system.build.image}/repart-output.json \
+          '. + { rootHash: ([$repart[0][] | .roothash // empty] | first) }' \
+          ${metadataFields} > $out
+      '';
   # What the image fixes about Kubernetes, which chalkctl sends with the schemas, so a node checks
   # config against the image it is for; null on an image without Kubernetes.
   kubernetesImage = config.environment.etc."chalkos/kubernetes/image.json".source or null;
@@ -147,6 +156,25 @@ in
           description = "Size of the STATE partition holding the node's config and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
         };
       };
+      options.provenance = {
+        revision = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = ''
+            The git revision the image is built from, as `metadata.json` records it; mkImages sets
+            it from its `revision` argument. It never reaches the store, so it changes no root hash,
+            and nothing orders or refuses images by it.
+          '';
+        };
+        tag = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = ''
+            The git tag the image is built from, as `metadata.json` records it; mkImages sets it
+            from its `tag` argument. Like the revision, it only says where the image came from.
+          '';
+        };
+      };
     };
   };
 
@@ -166,6 +194,9 @@ in
       enable = true;
       name = lib.mkDefault "chalkos";
       verityStore.enable = true;
+      # An image written to a disk boots its UKI as the first generation, as an install writes it;
+      # an upgrade names the UKI it installs one generation above the highest on the ESP.
+      verityStore.ukiPath = "/EFI/Linux/${config.system.image.id}_1.efi";
       mkfsOptions.erofs = [
         # repart formats erofs with the 512-byte sector size, and libblkid rejects checksummed
         # erofs with blocks of 1 KiB or less; without a detected filesystem, udev never marks the
@@ -187,19 +218,17 @@ in
           }
           // fixed cfg.espSize;
         };
-        # A slot's labels name the version it holds; an upgrade labels the slot it writes the
-        # same way. The boot finds the store by partition UUID, never by label.
+        # A slot's labels name its store by the root hash, which is known only once the image is
+        # built: chalkosImage relabels slot A, as an upgrade labels the slot it writes. The boot
+        # finds the store by partition UUID, never by label.
         ${partitionIds.store-verity}.repartConfig = storePartition cfg.storeVeritySize // {
-          Label = "store-verity_${config.system.image.version}";
           # dm-verity refuses blocks smaller than the disk's logical block size, so 512-byte ones
           # would not open on 4Kn disks. 4 KiB blocks also make the tree, which every upgrade
           # sends, an eighth of the size.
           VerityDataBlockSizeBytes = 4096;
           VerityHashBlockSizeBytes = 4096;
         };
-        ${partitionIds.store}.repartConfig = storePartition cfg.storeSize // {
-          Label = "store_${config.system.image.version}";
-        };
+        ${partitionIds.store}.repartConfig = storePartition cfg.storeSize;
       };
     };
 
@@ -278,21 +307,46 @@ in
     # with them, so they travel with the image.
     environment.etc."chalkos/repart.d".source = systemDefinitions;
     system.build.chalkosImageFits = fits;
+    system.build.chalkosMetadata = metadata;
     system.build.chalkosImage =
+      let
+        image = config.system.build.image;
+        raw = config.image.fileName;
+      in
       pkgs.runCommand "${config.image.repart.name}-image"
         {
           inherit fits;
-          nativeBuildInputs = [ pkgs.jq ];
+          nativeBuildInputs = [
+            pkgs.jq
+            pkgs.util-linux
+          ];
         }
         ''
           mkdir $out
-          ln -s ${config.system.build.image}/* $out/
+          # Slot A's labels name its store by the root hash's first 16 hex digits, which only the
+          # built image knows: the raw image is copied, keeping its holes, and its slot relabelled
+          # by the partition UUIDs repart reported, which repart-output.json names as well.
+          id=$(jq -r '[.[] | .roothash // empty] | first | .[0:16]' ${image}/repart-output.json)
+          cp --sparse=always ${image}/${raw} $out/${raw}
+          chmod u+w $out/${raw}
+          sfdisk --json $out/${raw} > table.json
+          jq -r --arg id "$id" '.[] | select(.roothash != null)
+            | [(.uuid | ascii_downcase), (if (.type | endswith("-verity")) then "store-verity_" else "store_" end) + $id]
+            | @tsv' ${image}/repart-output.json > labels.tsv
+          while IFS=$'\t' read -r uuid label; do
+            n=$(jq -r --arg uuid "$uuid" \
+              '.partitiontable.partitions[] | select((.uuid | ascii_downcase) == $uuid) | .node | capture("(?<n>[0-9]+)$").n' table.json)
+            sfdisk --part-label $out/${raw} "$n" "$label"
+          done < labels.tsv
+          jq --arg id "$id" 'map(
+              if .roothash == null then .
+              elif (.type | endswith("-verity")) then .label = "store-verity_" + $id
+              else .label = "store_" + $id end)' \
+            ${image}/repart-output.json > $out/repart-output.json
           ln -s ${systemDefinitions} $out/repart.d
           ln -s ${config.system.build.chalkosSchemas} $out/schemas
           ${lib.optionalString (kubernetesImage != null) "ln -s ${kubernetesImage} $out/image.json"}
-          jq --slurpfile repart ${config.system.build.image}/repart-output.json \
-            '. + { rootHash: ([$repart[0][] | .roothash // empty] | first) }' \
-            ${metadata} > $out/metadata.json
+          cp ${metadata} $out/metadata.json
         '';
   };
 }

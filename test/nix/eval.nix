@@ -1152,13 +1152,16 @@ lib.runTests {
       installerOSRelease = false;
     };
   };
-  # An image describes itself in os-release and names its store partitions by its version.
+  # An image describes itself in os-release, with an empty IMAGE_VERSION. The build labels its
+  # store partitions without a version; chalkosImage relabels slot A by the root hash.
   testImageDescribesItself = {
     expr =
       let
         image = worker;
         summary = c: {
-          osRelease = lib.filterAttrs (k: _: lib.hasPrefix "CHALKOS_" k) c.system.nixos.extraOSReleaseArgs;
+          osRelease = lib.filterAttrs (
+            k: _: lib.hasPrefix "CHALKOS_" k || k == "IMAGE_VERSION"
+          ) c.system.nixos.extraOSReleaseArgs;
           labels = map (p: p.repartConfig.Label) [
             c.image.repart.partitions."10-store-verity"
             c.image.repart.partitions."20-store"
@@ -1167,34 +1170,31 @@ lib.runTests {
       in
       {
         default = summary (image [ ]);
-        upgraded = summary (image [
-          {
-            system.image.version = "0.2.0";
-            chalkos.upgrade.bootTries = 1;
-          }
-        ]);
+        upgraded = summary (image [ { chalkos.upgrade.bootTries = 1; } ]);
       };
     expected = {
       default = {
         osRelease = {
+          IMAGE_VERSION = "";
           CHALKOS_VARIANT = "worker";
           CHALKOS_PLATFORM = "metal";
           CHALKOS_BOOT_TRIES = "3";
         };
         labels = [
-          "store-verity_0.1.0"
-          "store_0.1.0"
+          "store-verity"
+          "store"
         ];
       };
       upgraded = {
         osRelease = {
+          IMAGE_VERSION = "";
           CHALKOS_VARIANT = "worker";
           CHALKOS_PLATFORM = "metal";
           CHALKOS_BOOT_TRIES = "1";
         };
         labels = [
-          "store-verity_0.2.0"
-          "store_0.2.0"
+          "store-verity"
+          "store"
         ];
       };
     };
@@ -1221,31 +1221,86 @@ lib.runTests {
       bless = true;
     };
   };
-  # Versions fit the store labels and systemd-boot's entry IDs unchanged.
-  testImageVersions = {
-    expr = lib.genAttrs [
-      "0.2.0"
-      "1.0~rc1"
-      "2026.10.9-1"
-      "0.2.0+3"
-      "0.2.0_1"
-      "V1"
-      ""
-      ".1"
-      "1.0.0-abcdefghijklmnopqr"
-      "1.0.0-abcdefghijklmnopq"
-    ] (version: lib.all (a: a.assertion) (worker [ { system.image.version = version; } ]).assertions);
+  # An image has no version: chalkos orders boot entries by generation, so a node image or the
+  # installer that sets system.image.version fails to build. The os-release the UKI carries names
+  # an empty IMAGE_VERSION, without which systemd-boot would order entries by VERSION. The UKI
+  # builds as chalkos.efi and the image as chalkos.raw, whose ESP holds the UKI as the first
+  # generation.
+  testImageHasNoVersion = {
+    expr =
+      let
+        message = "chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance";
+        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
+        installer =
+          modules:
+          (mkImages {
+            variants = { };
+            installer = { inherit modules; };
+          }).nixos.installer.config;
+        node = worker [ ];
+      in
+      {
+        node = refused (worker [ { system.image.version = "0.2.0"; } ]);
+        installer = refused (installer [ { system.image.version = "0.2.0"; } ]);
+        default = refused node || refused (installer [ ]);
+        osRelease = lib.hasInfix "\nIMAGE_VERSION=\"\"\n" node.environment.etc."os-release".text;
+        ukiOSRelease = node.boot.uki.settings.UKI.OSRelease == "@${node.system.build.etc}/etc/os-release";
+        inherit (node.system.boot.loader) ukiFile;
+        inherit (node.image) fileName;
+        inherit (node.image.repart.verityStore) ukiPath;
+        installerFile = (installer [ ]).image.fileName;
+        installerUKIPath = (installer [ ]).image.repart.verityStore.ukiPath;
+      };
     expected = {
-      "0.2.0" = true;
-      "1.0~rc1" = true;
-      "2026.10.9-1" = true;
-      "0.2.0+3" = false;
-      "0.2.0_1" = false;
-      "V1" = false;
-      "" = false;
-      ".1" = false;
-      "1.0.0-abcdefghijklmnopqr" = false;
-      "1.0.0-abcdefghijklmnopq" = true;
+      node = true;
+      installer = true;
+      default = false;
+      osRelease = true;
+      ukiOSRelease = true;
+      ukiFile = "chalkos.efi";
+      fileName = "chalkos.raw";
+      ukiPath = "/EFI/Linux/chalkos_1.efi";
+      installerFile = "chalkos-installer.raw";
+      installerUKIPath = "/EFI/Linux/chalkos-installer_1.efi";
+    };
+  };
+  # mkImages gives its revision and tag to every image and the installer, which only metadata.json
+  # reads: the store, and so the root hash, is the same without them. Both default to null.
+  testMkImagesPassesProvenance = {
+    expr =
+      let
+        given = mkImages {
+          revision = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+          tag = "v1.5.0";
+          platforms = [ "metal" ];
+        };
+        none = mkImages { platforms = [ "metal" ]; };
+      in
+      {
+        given = lib.mapAttrs (_: n: n.config.chalkos.provenance) given.nixos;
+        none = none.nixos.node-metal.config.chalkos.provenance;
+        sameStore =
+          given.nixos.node-metal.config.system.build.toplevel.drvPath
+          == none.nixos.node-metal.config.system.build.toplevel.drvPath;
+        mistyped = fails (mkImages { revision = 1; }).nixos.node-metal.config.chalkos.provenance;
+      };
+    expected = {
+      given = {
+        installer = {
+          revision = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+          tag = "v1.5.0";
+        };
+        node-metal = {
+          revision = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+          tag = "v1.5.0";
+        };
+      };
+      none = {
+        revision = null;
+        tag = null;
+      };
+      sameStore = true;
+      mistyped = true;
     };
   };
   # systemd-repart formats a vfat ESP with no less than 260 MiB, so a smaller one is refused.

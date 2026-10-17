@@ -75,6 +75,26 @@ in
         have nothing to do there; `installer.modules` are its own.
       '';
     };
+    revision = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = lib.literalExpression "self.rev or self.dirtyRev or null";
+      description = ''
+        The git revision the images are built from, which every image directory's and the
+        installer's `metadata.json` record and chalkctl shows beside an image's root hash. It never
+        reaches an image's store, so it changes no root hash, and nothing orders or refuses images
+        by it: a node identifies an image by its root hash alone.
+      '';
+    };
+    tag = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "v1.5.0";
+      description = ''
+        The git tag the images are built from, such as a release's, recorded and shown like
+        `revision`. Nix cannot read git tags, so whatever builds a release passes it.
+      '';
+    };
     specialArgs = mkOption {
       type = types.attrsOf types.raw;
       default = { };

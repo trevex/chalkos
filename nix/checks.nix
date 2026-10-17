@@ -982,7 +982,11 @@ in
             self.lib.mkImages (arguments // { osCA = "${chalkPkgs.test-secrets}/secrets.pub.json"; });
         };
       };
-      template = (import ../templates/lab/flake.nix).outputs { inherit chalkos; };
+      # A flake of no git repository has no revision.
+      template = (import ../templates/lab/flake.nix).outputs {
+        inherit chalkos;
+        self = { };
+      };
       shell = template.devShells.${system}.default;
     in
     assert lib.all (p: lib.elem p shell.nativeBuildInputs) [
@@ -1006,7 +1010,10 @@ in
   # their Image points.
   example-homelab =
     let
-      homelab = (import ../examples/homelab/flake.nix).outputs { chalkos = self; };
+      homelab = (import ../examples/homelab/flake.nix).outputs {
+        chalkos = self;
+        self = { };
+      };
     in
     pkgs.runCommand "chalkos-example-homelab" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''
       cp -r ${../examples/homelab} homelab
@@ -1075,6 +1082,8 @@ in
         nativeBuildInputs = [
           pkgs.jq
           pkgs.check-jsonschema
+          pkgs.util-linux
+          pkgs.mtools
         ];
       }
       ''
@@ -1082,12 +1091,33 @@ in
         jq -e '
           .schemaVersion == 0
           and .id == "chalkos"
+          and (has("version") | not)
+          and .revision == null
+          and .tag == null
           and .variant == "test"
           and .platform == "metal"
           and (.rootHash | test("^[0-9a-f]{64}$"))
           and ([.kinds[].kind] | index("Network") != null)
           and .kubernetes == null
         ' $dir/metadata.json
+        # Slot A's labels name its store by the root hash, in the raw image as in
+        # repart-output.json, and the image boots its UKI as the first generation.
+        id=$(jq -r '.rootHash[0:16]' $dir/metadata.json)
+        want='["store-verity_'$id'","store_'$id'"]'
+        sfdisk --json $dir/chalkos.raw | jq -e --argjson want "$want" \
+          '[.partitiontable.partitions[].name | select(startswith("store"))] == $want' >/dev/null || {
+          echo "error: slot A of chalkos.raw is not labelled $want" >&2
+          exit 1
+        }
+        jq -e --argjson want "$want" '[.[].label | select(startswith("store"))] == $want' $dir/repart-output.json >/dev/null || {
+          echo "error: repart-output.json does not label slot A $want" >&2
+          exit 1
+        }
+        esp=$(jq -r '.[] | select(.type == "esp") | .offset' $dir/repart-output.json)
+        MTOOLS_SKIP_CHECK=1 mdir -b -i "$dir/chalkos.raw@@$esp" ::/EFI/Linux | grep -qi '/chalkos_1\.efi *$' || {
+          echo "error: the image's ESP holds no /EFI/Linux/chalkos_1.efi" >&2
+          exit 1
+        }
         for k in $(jq -r '.kinds[] | "\(.apiVersion | sub("/"; "_"))_\(.kind).json"' $dir/metadata.json); do
           test -f $dir/schemas/$k || { echo "error: metadata.json lists $k, which schemas/ lacks" >&2; exit 1; }
         done

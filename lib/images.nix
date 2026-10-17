@@ -34,6 +34,7 @@ let
           chalkos.platform.name = platform;
           chalkos.kubernetes.enable = v.kubernetes;
           chalkos.maintenance.osCA = cfg.osCA;
+          chalkos.provenance = { inherit (cfg) revision tag; };
         }
       ]
       ++ platformModules
@@ -61,6 +62,7 @@ let
       {
         nixpkgs.hostPlatform = cfg.system;
         chalkos.maintenance.osCA = cfg.osCA;
+        chalkos.provenance = { inherit (cfg) revision tag; };
       }
     ]
     ++ cfg.installer.modules;

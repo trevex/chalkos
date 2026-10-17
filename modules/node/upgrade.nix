@@ -1,8 +1,8 @@
 # What an image needs to be upgraded to and from. The image describes itself in os-release, which
-# its UKI carries signed: chalkd checks an upgrade's platform against its own,
-# and takes the boot tries from the image it installs. Versions name the UKI and the store
-# partitions, so they are restricted to what GPT labels and systemd-boot's entry IDs hold
-# unchanged. A boot the boot loader counts is blessed only once chalkd found the node healthy.
+# its UKI carries signed: chalkd checks an upgrade's platform against its own, and takes the boot
+# tries from the image it installs. An image has no version: its store's root hash identifies
+# it, and chalkd numbers the UKIs it installs by generation, the highest of which systemd-boot
+# boots first. A boot the boot loader counts is blessed only once chalkd found the node healthy.
 {
   config,
   lib,
@@ -12,10 +12,6 @@
 let
   cfg = config.chalkos.upgrade;
   chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
-  inherit (config.system.image) version;
-  # GPT labels hold 36 characters, of which "store-verity_" takes 13. systemd-boot folds entry IDs
-  # to lower case only when the name has no tries counter, and "+" starts that counter.
-  validVersion = version != null && builtins.match "[a-z0-9][a-z0-9.~^-]{0,22}" version != null;
 in
 {
   options.chalkos = lib.mkOption {
@@ -54,8 +50,8 @@ in
   config = {
     assertions = [
       {
-        assertion = validVersion;
-        message = "system.image.version must be 1 to 23 characters of a-z, 0-9, '.', '~', '^' and '-', starting with a letter or digit; it is ${builtins.toJSON version}";
+        assertion = config.system.image.version == null;
+        message = "chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance";
       }
     ];
     # boot-complete.target is pulled in on boots the boot loader counts, by
@@ -86,6 +82,10 @@ in
     };
 
     system.nixos.extraOSReleaseArgs = {
+      # systemd-boot orders the UKIs of one image ID by IMAGE_VERSION before their IDs, and by
+      # VERSION when IMAGE_VERSION is missing, as NixOS leaves it without a version. An empty one
+      # leaves the order to the generations in the UKIs' names.
+      IMAGE_VERSION = "";
       CHALKOS_BOOT_TRIES = toString cfg.bootTries;
     }
     // lib.optionalAttrs (config.chalkos.variant.name != null) {
