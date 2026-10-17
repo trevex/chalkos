@@ -221,7 +221,15 @@ Delivering config with the upgrade needs the admin role: the secrets file, or an
 file. With an operator client file the upgrade still runs, but chalkctl sends no config, prints
 `config not delivered: the operator role cannot deliver config; each node carries its own over`,
 and each node checks the config of the image it runs against the new image and keeps it for that
-image. `--diff` needs the admin role too.
+image. `--diff` needs the admin role too. Without an inventory there is no config to withhold, and
+chalkctl prints the line for each node that says it carries its own config over. A reader client
+file cannot upgrade: chalkctl refuses it before it asks any node anything.
+
+Before it asks for any password or drains any node, chalkctl asks the first node it installs for
+its config. A node that refuses to show it to credentials that read as admin would refuse config
+with the upgrade too, so chalkctl then prints `<node> refuses to show its config to these
+credentials; config not delivered, each node carries its own over` and sends no config for the
+rest of the run.
 
 ### Change the config of a staged image
 
@@ -309,10 +317,11 @@ A volume that the failed image's config added stays on the node. The upgrade cre
 the image booted, and the previous image mounts it too, since every boot sets up the volumes
 `storage.json` records. The previous image's config does not name the volume, so a later
 `chalkctl apply-config` to that image must name it as well. A config without it is refused, and
-the refusal names the volume and says
-`the config of another image added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too`,
-followed by the image whose config still names it, while that image has a slot. The same holds
-for a volume that `apply-config --staged` added for an image the node never booted.
+the refusal names the volume and says `the config of another image added it, with an upgrade or
+chalkctl apply-config --staged, and it stays on the node; name it in this config too`, followed by
+the image whose config still names it, while that image has a slot, and that only a reinstall of
+the node removes the volume. The same holds for a volume that `apply-config --staged` added for an
+image the node never booted.
 
 ## Re-run an interrupted upgrade
 

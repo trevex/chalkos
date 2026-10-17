@@ -161,7 +161,7 @@ the node carries the running image's over to the new image. `chalkctl upgrade` w
 client file therefore sends no config and prints
 `config not delivered: the operator role cannot deliver config; each node carries its own over`.
 GetConfig, which returns a node's config with its secret values hashed, needs the admin role too:
-names, addresses and the shape of the config tell an attacker as much as the values would.
+names, addresses and the shape of the config tell an attacker much about the node.
 
 ## Where do clients get their certificates?
 

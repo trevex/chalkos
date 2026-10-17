@@ -339,9 +339,10 @@ The config is the image's; the machine state is the node's. The machine state is
 outside the slots, once for all its images: `storage.json`, the storage as applied, with the disks
 and partitions it is pinned to; the Kubernetes share; and the node certificate and the OS CAs it
 trusts. The Kubernetes cluster file, `/run/chalkos/kubernetes/cluster.json`, is not machine state:
-`chalkos-config` writes it from the slot of the image that boots. Every write of a slot (install,
-upgrade, `apply-config` and `apply-config --staged`) classifies its config against the machine
-state, whichever image the slot is for:
+`chalkos-config` writes it from the slot of the image that boots, and chalkd writes it again when
+`apply-config` changes the running image's config. Every write of a slot (install, upgrade,
+`apply-config` and `apply-config --staged`) classifies its config against the machine state,
+whichever image the slot is for:
 
 | Change | Class | What carries it out |
 | --- | --- | --- |
