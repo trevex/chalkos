@@ -383,12 +383,14 @@ starts, and chalkd applies a new set the same way after every `apply-config` to 
 - it writes the networkd units to `/run/systemd/network`, where they take precedence over the
   image's own;
 - it writes the time servers for chrony and sets the hostname;
-- it writes the storage section that the next boot's volumes follow, and the Kubernetes
-  configuration chalkd and the kubelet read;
+- it writes the Kubernetes configuration chalkd and the kubelet read;
 - it writes each document to `/run/chalkos/config/<group>/<Kind>/<name>.json`, except `Secret`
   and `Addon` documents;
 - it writes, for each service that reads config, the values that the `secretRef` fields of its
   kinds name into the service's credentials.
+
+The storage section is machine state: only chalkd writes `storage.json`, when a config that
+changes the storage is delivered, and every boot sets up the volumes it records.
 
 A service declares the kinds it reads under
 [`chalkos.consumers`](../reference/options.md#chalkosconsumers) in its image's modules. It reads
