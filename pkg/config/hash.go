@@ -106,6 +106,34 @@ func KindHashes(docs []Document, schemas *schema.Schemas) (map[string]string, er
 	return out, nil
 }
 
+// ChangedKinds names, sorted, the kinds whose documents differ between before and after, or a
+// Secret one of them references, by their KindHashes; a kind in neither set is unchanged. A unit
+// that reads a kind's documents reads the values its secretRefs name too, which the documents
+// alone do not show, so a change rule cannot tell this from config and oldConfig.
+func ChangedKinds(before, after []Document, schemas *schema.Schemas) ([]string, error) {
+	was, err := KindHashes(before, schemas)
+	if err != nil {
+		return nil, err
+	}
+	gets, err := KindHashes(after, schemas)
+	if err != nil {
+		return nil, err
+	}
+	var changed []string
+	for kind, h := range gets {
+		if was[kind] != h {
+			changed = append(changed, kind)
+		}
+	}
+	for kind := range was {
+		if _, ok := gets[kind]; !ok {
+			changed = append(changed, kind)
+		}
+	}
+	slices.Sort(changed)
+	return changed, nil
+}
+
 // SecretRefs returns the secretRefs of d that its kind's schema in schemas marks, ordered by
 // Secret and key; none for a kind schemas does not declare, or without schemas.
 func SecretRefs(d Document, schemas *schema.Schemas) []SecretRef {

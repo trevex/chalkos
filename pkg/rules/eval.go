@@ -109,22 +109,32 @@ func (s *Set) Evaluate(in Input) ([]Failure, error) {
 	return failures, nil
 }
 
-// evaluate runs the program with the variables given; doc is the document of a field's rule.
-func (p *Program) evaluate(vars map[string]any, cfg, oldCfg map[string]any, facts Facts, doc string) ([]Failure, error) {
-	vars["config"], vars["oldConfig"] = cfg, oldCfg
-	var factErr error
-	for _, name := range p.Facts {
-		vars["facts."+name] = func() ref.Val {
+// bindFacts binds <ident>.<name> in vars for each of the names to a function that loads the fact
+// from facts when evaluation first reads it; nil facts reads every fact as null. The first fact
+// that cannot be loaded is kept in factErr.
+func bindFacts(vars map[string]any, ident string, names []string, facts Facts, factErr *error) {
+	for _, name := range names {
+		vars[ident+"."+name] = func() ref.Val {
+			if facts == nil {
+				return types.NullValue
+			}
 			v, err := facts.Fact(name)
 			if err != nil {
-				if factErr == nil {
-					factErr = &FactError{Name: name, Err: err}
+				if *factErr == nil {
+					*factErr = &FactError{Name: name, Err: err}
 				}
 				return types.NewErr("%v", err)
 			}
 			return adapter{}.NativeToValue(celValue(v))
 		}
 	}
+}
+
+// evaluate runs the program with the variables given; doc is the document of a field's rule.
+func (p *Program) evaluate(vars map[string]any, cfg, oldCfg map[string]any, facts Facts, doc string) ([]Failure, error) {
+	vars["config"], vars["oldConfig"] = cfg, oldCfg
+	var factErr error
+	bindFacts(vars, "facts", p.Facts, facts, &factErr)
 	where := p.Where()
 	if doc != "" {
 		where = fmt.Sprintf("%s %q %s", p.Kind.Kind, doc, strings.Join(p.Path, "."))

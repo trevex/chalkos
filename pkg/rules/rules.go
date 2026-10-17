@@ -233,7 +233,7 @@ func compile(k schema.Kind, path []string, r Rule) (*Program, error) {
 		if iss.Err() != nil {
 			return nil, fail("%v", iss.Err())
 		}
-		names, err := factNames(parsed)
+		names, err := factNames(parsed, "facts")
 		if err != nil {
 			return nil, fail("%v", err)
 		}
@@ -296,10 +296,10 @@ func (estimator) EstimateCallCost(string, string, *checker.AstNode, []checker.As
 	return nil
 }
 
-// factNames returns the facts a parsed expression reads, each as facts.<name>. Facts are read by
-// name alone, so a node loads exactly the facts its rules name; any other use of facts, such as
-// facts["share"], has() or facts itself, is refused.
-func factNames(a *cel.Ast) ([]string, error) {
+// factNames returns the facts a parsed expression reads, each as <ident>.<name> for one of
+// idents, such as facts. Facts are read by name alone, so a node loads exactly the facts its
+// rules name; any other use of facts, such as facts["share"], has() or facts itself, is refused.
+func factNames(a *cel.Ast, idents ...string) ([]string, error) {
 	var names []string
 	selected := map[int64]bool{}
 	var bad error
@@ -309,11 +309,11 @@ func factNames(a *cel.Ast) ([]string, error) {
 		}
 		sel := e.AsSelect()
 		op := sel.Operand()
-		if op.Kind() != celast.IdentKind || op.AsIdent() != "facts" {
+		if op.Kind() != celast.IdentKind || !slices.Contains(idents, op.AsIdent()) {
 			return
 		}
 		if sel.IsTestOnly() {
-			bad = errors.New("has() does not apply to facts: a fact the node cannot find reads as null")
+			bad = fmt.Errorf("has() does not apply to %s: a fact the node cannot find reads as null", op.AsIdent())
 		}
 		selected[op.ID()] = true
 		if !slices.Contains(names, sel.FieldName()) {
@@ -321,8 +321,8 @@ func factNames(a *cel.Ast) ([]string, error) {
 		}
 	}))
 	celast.PreOrderVisit(a.NativeRep().Expr(), celast.NewExprVisitor(func(e celast.Expr) {
-		if e.Kind() == celast.IdentKind && e.AsIdent() == "facts" && !selected[e.ID()] && bad == nil {
-			bad = errors.New("facts are read by name, as facts.<name>")
+		if e.Kind() == celast.IdentKind && slices.Contains(idents, e.AsIdent()) && !selected[e.ID()] && bad == nil {
+			bad = fmt.Errorf("%s are read by name, as %s.<name>", e.AsIdent(), e.AsIdent())
 		}
 	}))
 	return names, bad
