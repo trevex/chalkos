@@ -370,8 +370,8 @@ No options or alternatives in a tutorial; they belong in guides.
 Solves one real task for a reader who knows what they want.
 
 1. Opening paragraph: the task, when it is needed and what changes on the cluster.
-2. "Before you begin": what must be true first (a running cluster, a client file of a role, the
-   secrets file), with links.
+2. "Before you begin": what must be true first (a running cluster, a client file of a client
+   role, the secrets file), with links.
 3. One H2 per step, imperative. Each step shows the file or command and says what to expect.
    Choices are explained where they are made, with the default first.
 4. "Check that it worked": commands and the output that shows success.

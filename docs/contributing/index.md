@@ -49,7 +49,7 @@ commits what they generate too. A check fails when they differ.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/): a type, an
 optional scope and a summary in the imperative, such as
-`fix(chalkctl): check every node of an image's role before skipping it` or
+`fix(chalkctl): check every node of an image's variant before skipping it` or
 `docs(chalklab): describe chalklab's commands`.
 The body, when there is one, says what changed and why. Commit messages and code comments stand
 on their own for a reviewer: they carry no trailers and no references to plans, tasks or

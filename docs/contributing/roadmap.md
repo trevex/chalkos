@@ -16,18 +16,18 @@ Each item says what chalkos does today and what the plan changes.
 
 ### Secure Boot key enrolment
 
-Today the firmware's [Secure Boot](../reference/glossary.md#secure-boot) keys are enrolled
-out of band, in the firmware's setup or through a BMC, before a node is installed. chalkos
-signs images with [`chalkctl sign`](../reference/cli/chalkctl_sign.md) and checks signatures
-against the firmware's [db and dbx](../reference/glossary.md#db-and-dbx) when Secure Boot is
-enforced, but it writes no Secure Boot variables. Only [chalklab](../reference/glossary.md#chalklab) enrols keys: its own
-[lab](../reference/glossary.md#lab) keys, into its VMs' firmware.
+Today the firmware's [Secure Boot](../reference/glossary.md#secure-boot) keys are enrolled out of
+band, in the firmware's setup or through a BMC, before a node is installed. chalkos signs images
+with [`chalkctl sign`](../reference/cli/chalkctl_sign.md) and checks signatures against the
+firmware's [db and dbx](../reference/glossary.md#db-and-dbx) when Secure Boot is enforced, but it
+writes no Secure Boot variables. Only [chalklab](../reference/glossary.md#chalklab) enrols keys: its
+own [lab](../reference/glossary.md#lab) keys, into its VMs' firmware.
 
-The plan keeps the Secure Boot keys in the cluster's
-[secrets file](../reference/glossary.md#secrets-file) and lets [chalkd](../reference/glossary.md#chalkd) apply variable updates
-that chalkctl signs beforehand, so a node never holds a key that could sign for the firmware.
-No setting yet selects how enrolment runs or whether a node refuses to install without Secure
-Boot.
+The plan keeps the Secure Boot keys in the cluster's [secrets
+file](../reference/glossary.md#secrets-file) and lets [chalkd](../reference/glossary.md#chalkd)
+apply variable updates that chalkctl signs beforehand, so a node never holds a key that could sign
+for the firmware. No setting yet selects how enrolment runs or whether a node refuses to install
+without Secure Boot.
 
 ### OCI publishing and pulls
 
@@ -45,11 +45,11 @@ cluster from an operator's machine. The plan adds a controller in the cluster, d
 
 ### Boot loader updates
 
-Today an install writes systemd-boot, and an upgrade never changes it: chalkd refuses an
-upgrade image that brings a boot loader. A node keeps the systemd-boot it was installed with
-until it is reinstalled. The plan adds a flag to `chalkctl upgrade` that updates the boot loader
-with an [A/B](../reference/glossary.md#a-b) scheme of its own, so a boot loader that does not start leaves the old one to fall
-back to.
+Today an install writes systemd-boot, and an upgrade never changes it: chalkd refuses an upgrade
+image that brings a boot loader. A node keeps the systemd-boot it was installed with until it is
+reinstalled. The plan adds a flag to `chalkctl upgrade` that updates the boot loader with an
+[A/B](../reference/glossary.md#a-b) scheme of its own, so a boot loader that does not start leaves
+the old one to fall back to.
 
 ### More platforms
 
@@ -82,13 +82,13 @@ These limits hold in the current code, grouped by area.
   [VAR](../reference/glossary.md#var); [Security model](../concepts/security.md)
   explains the consequence.
 - Single certificates are not revoked. Access is revoked by rotating the CA that issued it with
-  [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), and [rotations](../reference/glossary.md#rotation) run when an admin
-  starts them, not on a schedule.
+  [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), and
+  [rotations](../reference/glossary.md#rotation) run when an admin starts them, not on a schedule.
 
 ### Upgrades
 
 - An upgrade sends the whole store, its hash tree and the UKI to each node, about 300 MiB for
-  a Kubernetes role's image as [The image](../concepts/image.md#how-large-is-an-image) measures it.
+  an image with Kubernetes as [The image](../concepts/image.md#how-large-is-an-image) measures it.
 - The boot loader is never updated after install, as above.
 - An upgrade carries no config. chalkd refuses an image whose schemas do not accept the node's
   stored config before it becomes the next boot, but config that only the new image accepts
@@ -96,13 +96,16 @@ These limits hold in the current code, grouped by area.
   [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) checks config against the
   running image. Once `chalkctl upgrade --no-reboot` installed an image, the node does not check
   config applied after it against that image, since a later run finds the image installed and
-  does not send it again; only chalkctl checks the cluster definition's config against it.
+  does not send it again; only chalkctl checks the inventory's config against the image each
+  node's `Image` names, in [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and before
+  an upgrade drains a node.
 
 ### Networking
 
-- A control plane's addresses are pinned when it becomes an [etcd member](../reference/glossary.md#etcd-member), so its addresses cannot
-  change while it runs. Changing them takes
-  [`chalkctl etcd leave`](../reference/cli/chalkctl_etcd_leave.md) and a reinstall.
+- A control plane's addresses are pinned when it becomes an [etcd
+  member](../reference/glossary.md#etcd-member), so its addresses cannot change while it runs.
+  Changing them takes [`chalkctl etcd leave`](../reference/cli/chalkctl_etcd_leave.md) and a
+  reinstall.
 - A cluster's IP families are fixed when it is created.
 - The firewall opens etcd's ports 2379 and 2380 on control planes to every source, not only to
   the other control planes; etcd accepts only certificates of its CA there.
