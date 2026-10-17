@@ -30,6 +30,15 @@ func library() cel.EnvOption {
 
 type chalkosLib struct{}
 
+// The errors of chalkos's functions. They hold no value, so a refusal shows them whole.
+const (
+	errNotCIDR       = "cidr: the argument is not an address range"
+	errNotIP         = "ip: the argument is not an address"
+	errNotSize       = "bytes: the argument is not a size below 8 EiB, digits with an optional K, M, G, T or P suffix"
+	errNegativeIndex = "<cidr>.ip: the index is negative"
+	errPastRange     = "<cidr>.ip: the index is past the range"
+)
+
 func (chalkosLib) CompileOptions() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Function("cidr",
@@ -37,7 +46,7 @@ func (chalkosLib) CompileOptions() []cel.EnvOption {
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
 					p, err := netip.ParsePrefix(string(v.(types.String)))
 					if err != nil {
-						return types.NewErr("cidr: the argument is not an address range")
+						return types.NewErr("%s", errNotCIDR)
 					}
 					return cidr{p.Masked()}
 				}))),
@@ -46,7 +55,7 @@ func (chalkosLib) CompileOptions() []cel.EnvOption {
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
 					a, err := netip.ParseAddr(string(v.(types.String)))
 					if err != nil {
-						return types.NewErr("ip: the argument is not an address")
+						return types.NewErr("%s", errNotIP)
 					}
 					return ip{a}
 				})),
@@ -84,7 +93,7 @@ func (chalkosLib) CompileOptions() []cel.EnvOption {
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
 					n, ok := size(string(v.(types.String)))
 					if !ok {
-						return types.NewErr("bytes: the argument is not a size below 8 EiB, digits with an optional K, M, G, T or P suffix")
+						return types.NewErr("%s", errNotSize)
 					}
 					return types.Int(n)
 				}))),
@@ -115,16 +124,16 @@ type cidr struct{ netip.Prefix }
 // nth is the address n places after the range's first, which must lie in the range.
 func (c cidr) nth(n int64) ref.Val {
 	if n < 0 {
-		return types.NewErr("<cidr>.ip: the index is negative")
+		return types.NewErr("%s", errNegativeIndex)
 	}
 	b := new(big.Int).SetBytes(c.Addr().AsSlice())
 	b.Add(b, big.NewInt(n))
 	if b.BitLen() > c.Addr().BitLen() {
-		return types.NewErr("<cidr>.ip: the index is past the range")
+		return types.NewErr("%s", errPastRange)
 	}
 	a, _ := netip.AddrFromSlice(b.FillBytes(make([]byte, c.Addr().BitLen()/8)))
 	if !c.Contains(a) {
-		return types.NewErr("<cidr>.ip: the index is past the range")
+		return types.NewErr("%s", errPastRange)
 	}
 	return ip{a}
 }

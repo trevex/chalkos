@@ -44,7 +44,7 @@ A rule has these attributes:
 | --- | --- |
 | `rule` | CEL that is true for every config the node accepts. |
 | `message` | What the node says when the rule is false: why, and what to do instead. |
-| `messageExpression` | CEL that yields the message from the rule's variables. When it fails, the node says `message`. |
+| `messageExpression` | CEL that yields the message from the rule's variables. When it fails, the node says `message`, or without one names the rule's kind or field. |
 | `takes` | `refuse` (the default), `reset` or `reinstall`: what the change needs. |
 
 `takes` sorts a refusal. A config whose rules fail is refused as a whole, and the node names the
@@ -61,6 +61,26 @@ that [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) carr
 `reinstall` one that only a reinstall of the node carries out. A field's message follows the kind,
 the document and the field, as in `Kubernetes "kubernetes" spec.ipFamilies: ...`; a kind's
 message names what it is about itself.
+
+A rule without `message` says `the config does not meet a rule of Kubernetes spec.ipFamilies`,
+naming the kind or the field that declares it rather than the rule itself, which can be long. One
+whose `messageExpression` fails says so after that, with the kind of error it fails with, as
+below.
+
+A rule that cannot be evaluated refuses the delivery with an error that names the kind, or the
+kind, the document and the field, and the kind of error, but no value the rule read:
+
+```text
+cannot check: Kubernetes "kubernetes" spec.ipFamilies: a rule cannot be evaluated: no such key
+```
+
+The kind of error is one of `no such key`, `index out of bounds`, `no such overload`,
+`unknown time zone`, `invalid input to a function`, `cost limit exceeded`, `overflow`,
+`division by zero` and `conversion error`, or the whole error of one of chalkos's functions, such
+as `ip: the argument is not an address`, which holds no value. CEL's errors show the key, the index
+or the argument they are about, which can be a value the rule read, so the node shows nothing else
+of them, and of an error of any other kind says only `a rule cannot be evaluated`. A rule that
+yields no bool says which type it yields instead.
 
 ## Which variables does a rule see?
 
@@ -218,9 +238,9 @@ They read these facts:
 - A command fact runs on the node that evaluates the rules, with the running image's program, so a
   fact that a newer image adds is null until that image runs.
 - A message can show a fact's content in an error the node returns. A file fact's `fields` keep
-  what the rules do not need of the file, such as the share's private keys, out of the fact. An
-  error of a rule that cannot be evaluated leaves out what it quotes, and is cut to 512 bytes, but
-  can still show a key that a map lacks.
+  what the rules do not need of the file, such as the share's private keys, out of the fact. The
+  error of a rule that cannot be evaluated or a `messageExpression` that fails shows no value, only
+  the kind of error.
 - The storage kinds' messages show what the `disks` fact found: a volume's disk reference, the
   identity of its pinned disk and of the disk a changed reference finds, and why a disk cannot be
   found.

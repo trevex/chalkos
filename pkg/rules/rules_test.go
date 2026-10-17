@@ -234,44 +234,86 @@ func TestFacts(t *testing.T) {
 	}
 }
 
+// A messageExpression that fails falls back to the rule's message, and without one to a message
+// that names the kind or field and what kind of error it is, without the values it read or the
+// rule, which can be long.
 func TestMessageExpressionFallsBack(t *testing.T) {
-	set := compiled(t, kindSchema("Demo", true, object(nil), []any{
+	long := strings.Repeat("x", 2000)
+	set := compiled(t, kindSchema("Demo", true, object(map[string]any{
+		"x": withRules(map[string]any{"type": "object"},
+			rule(`self.secret == "`+long+`"`, "", "messageExpression", `string(self.m[self.secret])`),
+			rule(`self.secret == "`+long+`"`, "", "messageExpression", `dyn(self.n)`),
+			rule(`self.secret == "`+long+`"`, "")),
+	}), []any{
 		rule("false", "the static message", "messageExpression", `documents.missing`),
-		rule("false", "", "messageExpression", `string(documents.missing)`),
+		rule(`size(documents) == 0 || documents.a.spec.x.secret == "`+long+`"`, "", "messageExpression",
+			`string(documents.a.spec.x.m[documents.a.spec.x.secret])`),
 	}))
-	failures, err := set.Evaluate(Input{})
+	failures, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{"x": {"secret": "s3cret", "m": {}, "n": 7777}}`)}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(failures) != 2 || failures[0].Message != "the static message" || !strings.Contains(failures[1].Message, "whose messageExpression fails") {
-		t.Errorf("failures = %q", messages(failures))
+	want := []string{
+		"the static message",
+		"the config does not meet a rule of Demo, whose messageExpression fails: no such key",
+		`Demo "a" spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: no such key`,
+		`Demo "a" spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: it yields int, not a string`,
+		`Demo "a" spec.x: the config does not meet a rule of Demo spec.x`,
+	}
+	if got := messages(failures); !slices.Equal(got, want) {
+		t.Errorf("failures = %q", got)
+	}
+	for _, f := range failures {
+		if strings.Contains(f.Message, "s3cret") || strings.Contains(f.Message, "7777") || len(f.Message) > 200 {
+			t.Errorf("message %q shows a value or the rule", f.Message)
+		}
 	}
 }
 
 // A rule that cannot be evaluated refuses the config with an error that names the field or kind
-// that declares the rule, and neither the rule, which can be long, nor the values it read.
+// that declares the rule and what kind of error it is: neither the rule, which can be long, nor
+// the values it read. An error of a kind it does not know says only that the rule cannot be
+// evaluated.
 func TestEvaluateErrors(t *testing.T) {
 	items := make([]string, 2000)
 	for i := range items {
 		items[i] = `"x"`
 	}
+	const spec = `{"s": "s3cret", "i": 7777, "z": 0, "max": 9223372036854775807, "m": {}, "l": ["s3cret", 7777], "tz": "Mars/s3cret", "size": "s3cretX"}`
 	for name, tc := range map[string]struct {
 		rule, spec, want string
 	}{
-		"library":     {`bytes(self.size) > 0`, `{"size": "17X"}`, "a rule cannot be evaluated: bytes: the argument is not a size"},
-		"conversion":  {`int(self.size) > 0`, `{"size": "17X"}`, `a rule cannot be evaluated: `},
-		"no such key": {`self.missing == 1`, `{"size": "17X"}`, "a rule cannot be evaluated: no such key: missing"},
-		"not a bool":  {`self.size`, `{"size": "17X"}`, "a rule yields string, not a bool"},
-		"cost":        {`self.list.all(a, self.list.all(b, a == b))`, `{"list": [` + strings.Join(items, ",") + `]}`, "a rule cannot be evaluated: operation cancelled: actual cost limit exceeded"},
+		"no such key":         {`self.m[self.s] == 1`, spec, "a rule cannot be evaluated: no such key"},
+		"index out of bounds": {`self.l[self.i] == 1`, spec, "a rule cannot be evaluated: index out of bounds"},
+		"index out of range":  {`self.s.charAt(self.i) == ""`, spec, "a rule cannot be evaluated: index out of bounds"},
+		"no such overload":    {`self.s + self.i == 1`, spec, "a rule cannot be evaluated: no such overload"},
+		"overload signature":  {`sets.contains([1], self.s)`, spec, "a rule cannot be evaluated: no such overload"},
+		"unknown time zone":   {`timestamp("2020-01-01T00:00:00Z").getHours(self.tz) == 1`, spec, "a rule cannot be evaluated: unknown time zone"},
+		"invalid input":       {`self.l.join(",") == ""`, spec, "a rule cannot be evaluated: invalid input to a function"},
+		"cost":                {`self.list.all(a, self.list.all(b, a == b))`, `{"list": [` + strings.Join(items, ",") + `]}`, "a rule cannot be evaluated: cost limit exceeded"},
+		"overflow":            {`self.max + self.i == 1`, spec, "a rule cannot be evaluated: overflow"},
+		"unsigned overflow":   {`uint(-self.i) == 1u`, spec, "a rule cannot be evaluated: overflow"},
+		"division by zero":    {`self.i / self.z == 1`, spec, "a rule cannot be evaluated: division by zero"},
+		"modulus by zero":     {`self.i % self.z == 1`, spec, "a rule cannot be evaluated: division by zero"},
+		"conversion":          {`int(self.s) > 0`, spec, "a rule cannot be evaluated: conversion error"},
+		"timestamp":           {`timestamp(self.s) > timestamp(0)`, spec, "a rule cannot be evaluated: conversion error"},
+		"library":             {`bytes(self.size) > 0`, spec, "a rule cannot be evaluated: " + errNotSize},
+		"unknown":             {`self.s.matches(self.s + "(")`, spec, "a rule cannot be evaluated"},
+		"unknown slice":       {`self.l.slice(0, self.i) == []`, spec, "a rule cannot be evaluated"},
+		"not a bool":          {`self.s`, spec, "a rule yields string, not a bool"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			set := compiled(t, kindSchema("Demo", true, object(map[string]any{
 				"x": withRules(map[string]any{"type": "object"}, rule(tc.rule, "")),
 			}), nil))
 			_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{"x": `+tc.spec+`}`)}})
-			if err == nil || !strings.HasPrefix(err.Error(), `cannot check: Demo "a" spec.x: `) || !strings.Contains(err.Error(), tc.want) ||
-				strings.Contains(err.Error(), "17X") || strings.Contains(err.Error(), tc.rule) {
-				t.Errorf("err = %v, want %q", err, tc.want)
+			if err == nil || err.Error() != `cannot check: Demo "a" spec.x: `+tc.want {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+			for _, v := range []string{"s3cret", "7777", "9223372036854775807"} {
+				if strings.Contains(err.Error(), v) {
+					t.Errorf("err = %v shows %s", err, v)
+				}
 			}
 		})
 	}
@@ -281,18 +323,8 @@ func TestEvaluateErrors(t *testing.T) {
 func TestEvaluateKindRuleError(t *testing.T) {
 	set := compiled(t, kindSchema("Demo", true, object(nil), []any{rule(`documents.a.spec.missing == 1`, "")}))
 	_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{}`)}})
-	if err == nil || err.Error() != "cannot check: Demo: a rule cannot be evaluated: no such key: missing" {
+	if err == nil || err.Error() != "cannot check: Demo: a rule cannot be evaluated: no such key" {
 		t.Errorf("err = %v", err)
-	}
-}
-
-// What a refusal shows of an error is bounded and leaves out what the error quotes.
-func TestErrorText(t *testing.T) {
-	if got := errorText(errors.New(`strconv.ParseInt: parsing "s3cret": invalid syntax`)); got != `strconv.ParseInt: parsing "…": invalid syntax` {
-		t.Errorf("errorText = %q", got)
-	}
-	if got := bounded(strings.Repeat("é", maxErrorText)); len(got) > maxErrorText+len("…") || !utf8.ValidString(got) {
-		t.Errorf("bounded = %d bytes, valid %v", len(got), utf8.ValidString(got))
 	}
 }
 
@@ -434,5 +466,12 @@ func TestAddonSecretsHashed(t *testing.T) {
 	}
 	if got := ConfigOf(next)[config.KubernetesAPI].(map[string]any)["Addon"].(map[string]any)["a"]; strings.Contains(fmt.Sprint(got), "plain") {
 		t.Errorf("ConfigOf shows the token: %v", got)
+	}
+}
+
+// What a refusal shows of a fact that cannot be loaded is bounded.
+func TestBounded(t *testing.T) {
+	if got := bounded(strings.Repeat("é", maxErrorText)); len(got) > maxErrorText+len("…") || !utf8.ValidString(got) {
+		t.Errorf("bounded = %d bytes, valid %v", len(got), utf8.ValidString(got))
 	}
 }

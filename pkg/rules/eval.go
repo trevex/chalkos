@@ -2,7 +2,6 @@ package rules
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -135,7 +134,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg map[string]any, fact
 		return nil, factErr
 	}
 	if err != nil {
-		return nil, fmt.Errorf("cannot check: %s: a rule cannot be evaluated: %s", where, errorText(err))
+		return nil, fmt.Errorf("cannot check: %s: %s", where, cannotEvaluate(err))
 	}
 	ok, isBool := out.(types.Bool)
 	if !isBool {
@@ -156,23 +155,28 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg map[string]any, fact
 		if s, isString := msg.(types.String); err == nil && isString {
 			f.Message = string(s)
 		} else if f.Message == "" {
-			f.Message = fmt.Sprintf("the config does not meet the rule %s, whose messageExpression fails: %s", p.Rule.Rule, errorText(errors.Join(err, notString(msg))))
+			f.Message = "the config does not meet a rule of " + p.Where() + ", whose messageExpression fails"
+			if why := messageError(msg, err); why != "" {
+				f.Message += ": " + why
+			}
 		}
 	}
 	if f.Message == "" {
-		f.Message = "the config does not meet the rule " + p.Rule.Rule
+		f.Message = "the config does not meet a rule of " + p.Where()
 	}
 	return []Failure{f}, nil
 }
 
-func notString(v ref.Val) error {
-	if v == nil {
-		return nil
+// messageError is what a failure says of a messageExpression that yields msg and err: the kind
+// of error, as evalError says it, or the type it yields instead of a string.
+func messageError(msg ref.Val, err error) string {
+	if err != nil {
+		return evalError(err)
 	}
-	if _, ok := v.(types.String); ok {
-		return nil
+	if msg == nil {
+		return ""
 	}
-	return fmt.Errorf("it yields %s, not a string", v.Type().TypeName())
+	return fmt.Sprintf("it yields %s, not a string", msg.Type().TypeName())
 }
 
 // docView is a document with its object as rules see it.
@@ -324,16 +328,64 @@ func Refusal(failures []Failure, node string) string {
 	return head + ": " + strings.Join(msgs, "; ")
 }
 
-// maxErrorText bounds the error a refusal shows of a rule or a fact that cannot be checked.
+// maxErrorText bounds the error a refusal shows of a fact that cannot be loaded.
 const maxErrorText = 512
 
-// quoted is text a CEL error quotes, such as the string that does not convert to an int.
-var quoted = regexp.MustCompile("\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`")
+// evalErrors are the errors of a rule that cannot be evaluated a refusal names, by how CEL's
+// error starts, and what the refusal says of each. CEL's errors show the value they are about,
+// such as the key a map lacks or the index past a list's end, which can be one a rule read, so a
+// refusal says only what kind of error it is, and of an error not listed here nothing.
+var evalErrors = []struct{ prefix, says string }{
+	{"no such key: ", "no such key"},
+	{"index out of bounds: ", "index out of bounds"},
+	{"index out of range: ", "index out of bounds"},
+	{"no such overload", "no such overload"},
+	{"unknown time zone ", "unknown time zone"},
+	{"operation cancelled: actual cost limit exceeded", "cost limit exceeded"},
+	{"integer overflow", "overflow"},
+	{"unsigned integer overflow", "overflow"},
+	{"duration overflow", "overflow"},
+	{"timestamp overflow", "overflow"},
+	{"division by zero", "division by zero"},
+	{"modulus by zero", "division by zero"},
+	{"type conversion error", "conversion error"},
+	{"invalid RFC 3339 timestamp", "conversion error"},
+	{"a cidr does not convert", "conversion error"},
+	{"an ip does not convert", "conversion error"},
+}
 
-// errorText is the error of a rule that cannot be evaluated as a refusal shows it: with what it
-// quotes left out, since that can be a value the rule read, and bounded.
-func errorText(err error) string {
-	return bounded(quoted.ReplaceAllString(err.Error(), `"…"`))
+// invalidInput is the error of an extension function given an argument it does not take, as
+// join given a list that holds something other than strings: "join: invalid input: <value>".
+var invalidInput = regexp.MustCompile(`^[A-Za-z.]+: invalid input: `)
+
+// libraryErrors are the errors of chalkos's functions, which hold no value.
+var libraryErrors = []string{errNotCIDR, errNotIP, errNotSize, errNegativeIndex, errPastRange}
+
+// evalError is what a refusal says of err, the error of a rule or a messageExpression that cannot
+// be evaluated: the kind of error, or nothing for one evalErrors does not know.
+func evalError(err error) string {
+	text := err.Error()
+	if slices.Contains(libraryErrors, text) {
+		return text
+	}
+	for _, e := range evalErrors {
+		if strings.HasPrefix(text, e.prefix) {
+			return e.says
+		}
+	}
+	if invalidInput.MatchString(text) {
+		return "invalid input to a function"
+	}
+	return ""
+}
+
+// cannotEvaluate is the error of a rule that cannot be evaluated, with what evalError says of
+// err.
+func cannotEvaluate(err error) string {
+	if says := evalError(err); says != "" {
+		return "a rule cannot be evaluated: " + says
+	}
+	return "a rule cannot be evaluated"
 }
 
 // bounded is s cut to maxErrorText bytes, at a character's start.
