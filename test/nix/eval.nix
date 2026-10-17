@@ -1238,12 +1238,20 @@ lib.runTests {
             installer = { inherit modules; };
           }).nixos.installer.config;
         node = worker [ ];
+        osReleaseLines =
+          c:
+          lib.filter (l: lib.hasPrefix "IMAGE_" l || lib.hasPrefix "CHALKOS_" l) (
+            lib.splitString "\n" c.environment.etc."os-release".text
+          );
       in
       {
         node = refused (worker [ { system.image.version = "0.2.0"; } ]);
         installer = refused (installer [ { system.image.version = "0.2.0"; } ]);
         default = refused node || refused (installer [ ]);
-        osRelease = lib.hasInfix "\nIMAGE_VERSION=\"\"\n" node.environment.etc."os-release".text;
+        # The os-release file the UKI embeds, as its text; reading the built UKI's .osrel would
+        # need the system built during evaluation.
+        osRelease = osReleaseLines node;
+        installerOSRelease = osReleaseLines (installer [ ]);
         ukiOSRelease = node.boot.uki.settings.UKI.OSRelease == "@${node.system.build.etc}/etc/os-release";
         inherit (node.system.boot.loader) ukiFile;
         inherit (node.image) fileName;
@@ -1255,7 +1263,18 @@ lib.runTests {
       node = true;
       installer = true;
       default = false;
-      osRelease = true;
+      osRelease = [
+        "CHALKOS_BOOT_TRIES=3"
+        "CHALKOS_PLATFORM=metal"
+        "CHALKOS_VARIANT=worker"
+        "IMAGE_ID=chalkos"
+        "IMAGE_VERSION=\"\""
+      ];
+      installerOSRelease = [
+        "CHALKOS_BOOT_TRIES=3"
+        "IMAGE_ID=\"chalkos-installer\""
+        "IMAGE_VERSION=\"\""
+      ];
       ukiOSRelease = true;
       ukiFile = "chalkos.efi";
       fileName = "chalkos.raw";
