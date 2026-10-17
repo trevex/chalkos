@@ -11,7 +11,9 @@ import (
 
 	"connectrpc.com/connect"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
@@ -87,14 +89,9 @@ func TestShareFactHoldsNoKeys(t *testing.T) {
 	}
 }
 
-// Rules of the running image that do not compile are the node's failure, not the request's.
-func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
-	s, _ := configServer(t)
-	path := filepath.Join(s.Loader.Schemas, "chalkos.dev_v1alpha1_Node.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+// withBrokenRule is the schema raw with a kind's rule that does not compile.
+func withBrokenRule(t *testing.T, raw []byte) []byte {
+	t.Helper()
 	var sch map[string]any
 	if err := json.Unmarshal(raw, &sch); err != nil {
 		t.Fatal(err)
@@ -104,9 +101,39 @@ func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, path, string(data))
+	return data
+}
+
+// Rules of the running image that do not compile are the node's failure, not the request's.
+func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
+	s, _ := configServer(t)
+	path := filepath.Join(s.Loader.Schemas, "chalkos.dev_v1alpha1_Node.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, path, string(withBrokenRule(t, raw)))
 	_, err = sendConfig(s, baseConfig)
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the running image's rules: Node: rule ") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// Rules of an image the request brings that do not compile, as an installer's install carries
+// them, are the request's failure, and install nothing.
+func TestInstallRulesThatDoNotCompile(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	s.Installer = true
+	s.FromParts = func(context.Context, install.PartsRequest) error {
+		t.Error("installed onto the disk")
+		return nil
+	}
+	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1}}
+	h.Schemas = fixtureSchemas(t)
+	h.Schemas["chalkos.dev_v1alpha1_Node.json"] = withBrokenRule(t, h.Schemas["chalkos.dev_v1alpha1_Node.json"])
+	err := sendInstall(t, s, h, nil)
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image's rules: Node: rule ") {
 		t.Errorf("err = %v", err)
 	}
 }
