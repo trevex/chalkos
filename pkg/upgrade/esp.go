@@ -101,6 +101,7 @@ func nextGeneration(entries []Entry, imageID string) (uint64, error) {
 func stagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 	var highest Entry
 	var generation uint64
+	tied := false
 	for _, e := range entries {
 		g, ok, err := nameGeneration(e.ID, imageID)
 		switch {
@@ -109,10 +110,14 @@ func stagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 			// A name past a uint64's range is higher than any other.
 			return Entry{}, false
 		case g > generation:
-			highest, generation = e, g
+			highest, generation, tied = e, g, false
+		case g == generation:
+			tied = true
 		}
 	}
-	if generation == 0 || highest.ImageID != imageID || highest.ID == booted.ID || highest.TriesLeft <= 0 {
+	// Of two names that give the highest generation, such as chalkos_06+3.efi and chalkos_6+3.efi,
+	// systemd-boot's order does not tell which boots next.
+	if generation == 0 || tied || highest.ImageID != imageID || highest.ID == booted.ID || highest.TriesLeft <= 0 {
 		return Entry{}, false
 	}
 	return highest, true

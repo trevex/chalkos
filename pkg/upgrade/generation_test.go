@@ -92,6 +92,9 @@ func TestStagedEntry(t *testing.T) {
 		// systemd-boot boots an entry whose name is higher first, whatever its UKI holds.
 		{"an unreadable UKI above", []Entry{booted, entry("chalkos_3+3.efi", 3, 3), {File: "chalkos_4.efi", ID: "chalkos_4.efi", TriesLeft: -1}}, ""},
 		{"a generation past a uint64 above", []Entry{booted, entry("chalkos_3+3.efi", 3, 3), {File: "chalkos_99999999999999999999.efi", ID: "chalkos_99999999999999999999.efi", TriesLeft: -1}}, ""},
+		// systemd-boot orders entries of one generation by no rule chalkd relies on.
+		{"two names of the highest generation", []Entry{booted, entry("chalkos_06+3.efi", 0, 3), entry("chalkos_6+3.efi", 6, 3)}, ""},
+		{"a lower generation twice", []Entry{booted, entry("chalkos_02+3.efi", 0, 3), entry("chalkos_3+3.efi", 3, 3)}, "chalkos_3+3.efi"},
 	} {
 		got, ok := stagedEntry(tc.entries, "chalkos", booted)
 		if got.File != tc.want || ok != (tc.want != "") {
