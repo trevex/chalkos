@@ -44,26 +44,46 @@ func sandboxed(argv []string) []string {
 }
 
 // run runs argv with stdin and returns its standard output, refusing more than limit bytes. A
-// failure carries what the program wrote to standard error.
+// program that fails is a CommandError that holds the start of what it wrote to standard error.
 func run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	out := &limited{limit: limit}
-	stderr := &capped{limit: 4096}
+	stderr := &capped{limit: maxStderr}
 	cmd.Stdout = out
 	cmd.Stderr = stderr
 	err := cmd.Run()
 	if out.over {
 		return nil, fmt.Errorf("it printed more than %d bytes", limit)
 	}
-	if err != nil {
-		msg := strings.TrimSpace(stderr.buf.String())
-		if msg != "" {
-			return nil, fmt.Errorf("%w: %s", err, msg)
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		status := fmt.Sprintf("exit %d", exit.ExitCode())
+		if exit.ExitCode() < 0 {
+			status = exit.String()
 		}
+		return nil, &CommandError{Status: status, Stderr: strings.TrimSpace(stderr.buf.String())}
+	}
+	if err != nil {
 		return nil, err
 	}
 	return out.buf.Bytes(), nil
+}
+
+// maxStderr bounds what a CommandError keeps of a program's standard error.
+const maxStderr = 4096
+
+// CommandError is a command fact's program that failed. Its error names the exit status alone:
+// the program can echo what it reads on standard input, the config, so chalkd logs what it wrote
+// to standard error to the journal instead of returning it.
+type CommandError struct {
+	// Status is "exit N", or the signal that ended the program.
+	Status string
+	Stderr string
+}
+
+func (e *CommandError) Error() string {
+	return "the command failed (" + e.Status + "); see the node's journal"
 }
 
 // capped keeps the start of what a program writes to standard error, up to limit bytes.

@@ -143,6 +143,16 @@ than 30 seconds or prints more than 1 MiB, or whose output is no JSON, refuses t
 cannot check: fact disks: /nix/store/...-chalkos-storage-facts did not finish within 30s
 ```
 
+A command can echo the config it reads, so the error of one that fails shows only its exit status,
+and what it wrote to standard error goes to the node's journal, cut to 4 KiB:
+
+```text
+cannot check: fact disks: the command failed (exit 1); see the node's journal
+```
+
+The error of a command whose output is no JSON, and of a file that is not JSON, shows nothing of
+the output or of the file's content either.
+
 Facts are the running image's, since they read this node, whichever image the config is for. A
 fact the running image does not declare reads as null, as a fact that a newer image's rules read
 does during the upgrade to that image, so a rule treats null as unknown. An install has no

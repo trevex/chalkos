@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -68,7 +69,7 @@ func TestRead(t *testing.T) {
 func TestFileFact(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "share.json"), `{"kind": "worker", "port": 6443}`)
-	write(t, filepath.Join(dir, "broken.json"), `{"kind":`)
+	write(t, filepath.Join(dir, "broken.json"), `{"kind": s3cret}`)
 	defs := map[string]Definition{
 		"share":   {File: filepath.Join(dir, "share.json")},
 		"missing": {File: filepath.Join(dir, "missing.json")},
@@ -81,7 +82,7 @@ func TestFileFact(t *testing.T) {
 	if v, err := l.Fact("missing"); err != nil || v != nil {
 		t.Errorf("missing = %v, %v; want null", v, err)
 	}
-	if _, err := l.Fact("broken"); err == nil || !strings.Contains(err.Error(), "broken.json is not JSON") {
+	if _, err := l.Fact("broken"); err == nil || err.Error() != filepath.Join(dir, "broken.json")+" is not JSON" {
 		t.Errorf("broken: err = %v", err)
 	}
 	r := &fakeRunner{out: map[string]string{"/bin/disks": `{"extra": {}}`}}
@@ -200,28 +201,6 @@ func TestOverride(t *testing.T) {
 	}
 }
 
-func TestCommandFailures(t *testing.T) {
-	defs := map[string]Definition{"disks": {Command: "/bin/disks"}}
-	for name, tc := range map[string]struct {
-		r    *fakeRunner
-		want string
-	}{
-		"exit status": {&fakeRunner{err: errors.New("exit status 1: no disk")}, "exit status 1: no disk"},
-		"not JSON":    {&fakeRunner{out: map[string]string{"/bin/disks": "disks: ok"}}, "/bin/disks printed no JSON"},
-		"two values":  {&fakeRunner{out: map[string]string{"/bin/disks": "{} {}"}}, "more than one JSON value"},
-		"too long":    {&fakeRunner{out: map[string]string{"/bin/disks": `"` + strings.Repeat("x", MaxOutput) + `"`}}, "printed more than 1048576 bytes"},
-		"timeout":     {&fakeRunner{block: true}, "/bin/disks did not finish within 50ms"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			l := NewLoader(context.Background(), defs, tc.r)
-			l.Timeout = 50 * time.Millisecond
-			if _, err := l.Fact("disks"); err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("err = %v, want %q", err, tc.want)
-			}
-		})
-	}
-}
-
 // The sandbox runs the command as a transient unit that cannot change the node.
 func TestSandboxed(t *testing.T) {
 	want := []string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect",
@@ -237,8 +216,43 @@ func TestSandboxed(t *testing.T) {
 	}
 }
 
-// run passes stdin, returns standard output, refuses more than the limit and names what the
-// program wrote to standard error when it fails.
+// A command that fails, or prints no JSON, refuses with an error that shows nothing of what it
+// wrote, which can echo the config it reads; what it wrote goes to the journal.
+func TestCommandFailures(t *testing.T) {
+	defs := map[string]Definition{"disks": {Command: "/bin/disks"}}
+	for name, tc := range map[string]struct {
+		r         *fakeRunner
+		want, log string
+	}{
+		"exit status": {&fakeRunner{err: &CommandError{Status: "exit 1", Stderr: "no disk for s3cret"}},
+			"the command failed (exit 1); see the node's journal", `fact disks: /bin/disks failed (exit 1): "no disk for s3cret"`},
+		"not JSON": {&fakeRunner{out: map[string]string{"/bin/disks": "s3cret: ok"}},
+			"/bin/disks printed no JSON; see the node's journal", "fact disks: /bin/disks printed no JSON: invalid character"},
+		"two values": {&fakeRunner{out: map[string]string{"/bin/disks": "{} {}"}},
+			"/bin/disks printed no JSON; see the node's journal", "more than one JSON value"},
+		"too long": {&fakeRunner{out: map[string]string{"/bin/disks": `"` + strings.Repeat("x", MaxOutput) + `"`}},
+			"/bin/disks printed more than 1048576 bytes", ""},
+		"timeout": {&fakeRunner{block: true}, "/bin/disks did not finish within 50ms", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var logged bytes.Buffer
+			log.SetOutput(&logged)
+			defer log.SetOutput(os.Stderr)
+			l := NewLoader(context.Background(), defs, tc.r)
+			l.Timeout = 50 * time.Millisecond
+			if _, err := l.Fact("disks"); err == nil || err.Error() != tc.want {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+			if !strings.Contains(logged.String(), tc.log) {
+				t.Errorf("logged %q, want %q", logged.String(), tc.log)
+			}
+		})
+	}
+}
+
+// run passes stdin, returns standard output and refuses more than the limit. A program that fails
+// is a CommandError with its exit status, or the signal that ended it, and the start of what it
+// wrote to standard error, which its error does not show.
 func TestRun(t *testing.T) {
 	ctx := context.Background()
 	out, err := run(ctx, []string{"sh", "-c", "cat"}, []byte(`{"a": 1}`), 100)
@@ -248,7 +262,22 @@ func TestRun(t *testing.T) {
 	if _, err := run(ctx, []string{"sh", "-c", "head -c 200 /dev/zero"}, nil, 100); err == nil || !strings.Contains(err.Error(), "more than 100 bytes") {
 		t.Errorf("long output: err = %v", err)
 	}
-	if _, err := run(ctx, []string{"sh", "-c", "echo no disk >&2; exit 3"}, nil, 100); err == nil || err.Error() != "exit status 3: no disk" {
-		t.Errorf("failure: err = %v", err)
+	for name, tc := range map[string]struct {
+		script, status, stderr string
+	}{
+		"exit":   {"cat >&2; exit 3", "exit 3", `{"config": "s3cret"}`},
+		"signal": {"cat >&2; kill -9 $$", "signal: killed", `{"config": "s3cret"}`},
+		"long":   {"head -c 10000 /dev/zero | tr '\\0' x >&2; exit 1", "exit 1", strings.Repeat("x", maxStderr)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := run(ctx, []string{"sh", "-c", tc.script}, []byte(`{"config": "s3cret"}`), 100)
+			var failed *CommandError
+			if !errors.As(err, &failed) || failed.Status != tc.status || failed.Stderr != tc.stderr {
+				t.Fatalf("err = %#v", err)
+			}
+			if want := "the command failed (" + tc.status + "); see the node's journal"; err.Error() != want {
+				t.Errorf("err = %q, want %q", err, want)
+			}
+		})
 	}
 }

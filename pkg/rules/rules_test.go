@@ -469,9 +469,11 @@ func TestAddonSecretsHashed(t *testing.T) {
 	}
 }
 
-// What a refusal shows of a fact that cannot be loaded is bounded.
-func TestBounded(t *testing.T) {
-	if got := bounded(strings.Repeat("é", maxErrorText)); len(got) > maxErrorText+len("…") || !utf8.ValidString(got) {
-		t.Errorf("bounded = %d bytes, valid %v", len(got), utf8.ValidString(got))
+// What a refusal shows of a fact that cannot be loaded is bounded, cut at a character's start.
+func TestFactErrorBounded(t *testing.T) {
+	err := &FactError{Name: "disks", Err: errors.New(strings.Repeat("é", maxErrorText))}
+	got := strings.TrimPrefix(err.Error(), "cannot check: fact disks: ")
+	if len(got) > maxErrorText+len("…") || !strings.HasSuffix(got, "…") || !utf8.ValidString(got) {
+		t.Errorf("FactError = %d bytes, valid %v", len(got), utf8.ValidString(got))
 	}
 }

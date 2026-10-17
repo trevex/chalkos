@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -140,7 +141,7 @@ func (l *Loader) load(name string) (any, error) {
 	if def.File != "" {
 		v, err = readFile(def.File, def.Fields)
 	} else {
-		v, err = l.command(def, stdin)
+		v, err = l.command(name, def, stdin)
 	}
 	l.shared[key] = loaded{value: v, err: err}
 	return v, err
@@ -158,7 +159,7 @@ func readFile(path string, fields []string) (any, error) {
 	}
 	v, err := decode(data)
 	if err != nil {
-		return nil, fmt.Errorf("%s is not JSON: %w", path, err)
+		return nil, fmt.Errorf("%s is not JSON", path)
 	}
 	if len(fields) == 0 {
 		return v, nil
@@ -190,8 +191,10 @@ func (l *Loader) stdin(def Definition) ([]byte, error) {
 	return json.Marshal(input)
 }
 
-// command runs a command fact with stdin.
-func (l *Loader) command(def Definition, stdin []byte) (any, error) {
+// command runs the command fact name with stdin. What a program that fails wrote to standard error
+// and why what it printed is no JSON go to the journal, not into the error, since the program can
+// echo the config it reads.
+func (l *Loader) command(name string, def Definition, stdin []byte) (any, error) {
 	argv := strings.Fields(def.Command)
 	if len(argv) == 0 {
 		return nil, errors.New("the fact names no command")
@@ -211,13 +214,18 @@ func (l *Loader) command(def Definition, stdin []byte) (any, error) {
 	case ctx.Err() == context.DeadlineExceeded:
 		return nil, fmt.Errorf("%s did not finish within %s", argv[0], timeout)
 	case err != nil:
+		var failed *CommandError
+		if errors.As(err, &failed) {
+			log.Printf("fact %s: %s failed (%s): %q", name, argv[0], failed.Status, failed.Stderr)
+		}
 		return nil, err
 	case len(out) > MaxOutput:
 		return nil, fmt.Errorf("%s printed more than %d bytes", argv[0], MaxOutput)
 	}
 	v, err := decode(out)
 	if err != nil {
-		return nil, fmt.Errorf("%s printed no JSON: %w", argv[0], err)
+		log.Printf("fact %s: %s printed no JSON: %v", name, argv[0], err)
+		return nil, fmt.Errorf("%s printed no JSON; see the node's journal", argv[0])
 	}
 	return v, nil
 }
