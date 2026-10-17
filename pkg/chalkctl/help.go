@@ -218,11 +218,12 @@ documents as the node does. The node replaces its config as a whole, and applies
 storage changes (a new volume, for example) while it runs. When the config changes a volume
 destructively, the node refuses the whole config, applies none of it, and names the remedy:
 chalkctl storage reset recreates a volume in place, once the disk it lives on is plugged in; a
-change to VAR, a removed volume or a move to another disk takes a reinstall; a disk reference
-that finds no disk, or more than one, needs fixing. Otherwise the node restarts the units that
-read what changed, and chalkctl prints the changes and the units. --kubernetes-share also
-delivers a new Kubernetes share: for example a worker's new kubelet certificate. The command
-needs the secrets file.`
+change to VAR, a removed volume or a move to another disk takes a reinstall; a changed disk
+reference that finds no disk needs fixing or its disk plugged in, and one that cannot otherwise
+be resolved, as it finds more than one disk or names something other than a whole disk, needs
+fixing. Otherwise the node restarts the units that read what changed, and chalkctl prints the
+changes and the units. --kubernetes-share also delivers a new Kubernetes share: for example a
+worker's new kubelet certificate. The command needs the secrets file.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl apply-config w1 --secrets secrets.age
