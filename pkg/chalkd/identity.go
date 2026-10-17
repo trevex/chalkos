@@ -350,6 +350,20 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
 		return nil, err
 	}
+	// The config's storage is classified before the node trusts new OS CAs or changes anything
+	// else, so a refused request changes nothing.
+	var mc machineChange
+	if !keep {
+		if mc, err = s.machineChanges(d.section); err != nil {
+			return nil, err
+		}
+		// The storage the changes make is the machine's, which the staged image boots onto too.
+		if len(mc.changes) > 0 {
+			if err := s.checkStaged(d.section, mc.pins); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if len(m.Trust) > 0 {
 		if share == nil {
 			// A control plane keeps renewing node certificates with the node CA it holds.
@@ -373,17 +387,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		old = prev.Identity
 	}
 	if !keep {
-		mc, err := s.machineChanges(d.section)
-		if err != nil {
-			return nil, err
-		}
 		changes = mc.changes
-		// The storage the changes make is the machine's, which the staged image boots onto too.
-		if len(changes) > 0 {
-			if err := s.checkStaged(d.section, mc.pins); err != nil {
-				return nil, err
-			}
-		}
 		if err := s.applyMachine(ctx, mc, m.FallbackSecret); err != nil {
 			return nil, err
 		}

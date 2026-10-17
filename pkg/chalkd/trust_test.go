@@ -378,3 +378,28 @@ func TestTrustNotRecordedIsAnInternalError(t *testing.T) {
 		t.Error("the node trusts OS CAs it did not record")
 	}
 }
+
+// TestApplyConfigRefusesBeforeItTrusts leaves the OS CAs as they are when the request's config
+// changes storage destructively: the config is classified before the node trusts anything new.
+func TestApplyConfigRefusesBeforeItTrusts(t *testing.T) {
+	s, _ := configServer(t)
+	withNodeCertificate(t, s)
+	osCA, err := testOSCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := pki.NewOSCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, admin := adminOf(t, osCA)
+	before := s.Certificate.OSCA()
+	destructive := strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1)
+	req := &nodev1.ApplyConfigRequest{Config: destructive, Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}
+	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(req)); err == nil || !strings.Contains(err.Error(), "destructive") {
+		t.Fatalf("err = %v, want the destructive change refused", err)
+	}
+	if s.Certificate.OSCA() != before {
+		t.Error("a refused request changed the OS CAs")
+	}
+}
