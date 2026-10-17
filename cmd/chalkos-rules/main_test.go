@@ -44,6 +44,7 @@ func TestCheck(t *testing.T) {
 		"a costly rule":                {greeting(fieldRule, `[{"rule": "documents.all(a, documents.all(b, documents.all(c, a + b + c != \"\")))"}]`), lock, "more than the limit"},
 		"a command outside the store":  {greeting(fieldRule, kindRule), `{"lock": {"command": "/usr/bin/lock"}}`, "is no program of the image's store"},
 		"an unknown input":             {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "inputs": ["token"]}}`, `there is no input "token"`},
+		"a command that keeps fields":  {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "fields": ["kind"]}}`, "only a file keeps fields"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, f := dir(t, tc.schema, tc.facts)

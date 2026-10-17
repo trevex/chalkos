@@ -26,9 +26,13 @@ const (
 	MaxOutput = 1 << 20
 )
 
-// Definition is a fact as facts.json declares it: a file, or a command with the inputs it takes.
+// Definition is a fact as facts.json declares it: a file, with the fields of it the fact keeps, or
+// a command with the inputs it takes.
 type Definition struct {
-	File    string   `json:"file,omitempty"`
+	File string `json:"file,omitempty"`
+	// Fields are the keys of the file's object the fact keeps, so a rule and its messages see
+	// nothing else of the file, such as the private keys beside a share's kind; none keeps it all.
+	Fields  []string `json:"fields,omitempty"`
 	Command string   `json:"command,omitempty"`
 	Inputs  []string `json:"inputs,omitempty"`
 }
@@ -107,12 +111,14 @@ func (l *Loader) load(name string) (any, error) {
 	case !ok, l.Install:
 		return nil, nil
 	case def.File != "":
-		return readFile(def.File)
+		return readFile(def.File, def.Fields)
 	}
 	return l.command(def)
 }
 
-func readFile(path string) (any, error) {
+// readFile is a file's JSON, null when it is missing, with only fields kept of its object when
+// fields are given.
+func readFile(path string, fields []string) (any, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -124,7 +130,20 @@ func readFile(path string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s is not JSON: %w", path, err)
 	}
-	return v, nil
+	if len(fields) == 0 {
+		return v, nil
+	}
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s holds no JSON object to keep fields of", path)
+	}
+	kept := map[string]any{}
+	for _, f := range fields {
+		if fv, ok := obj[f]; ok {
+			kept[f] = fv
+		}
+	}
+	return kept, nil
 }
 
 // command runs a command fact with the input it reads: the config, and the inputs it declares.

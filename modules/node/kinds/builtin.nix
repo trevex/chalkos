@@ -205,9 +205,15 @@ let
     s: f: "(${s}.dnsIPs[${f}] != null ? ip(${s}.dnsIPs[${f}]) : cidr(${s}.serviceCIDRs[${f}]).ip(10))";
 in
 {
-  # The Kubernetes share the node holds, which rules compare the node's type and its cluster's
-  # fixed settings with: null until the node has one.
-  chalkos.facts = lib.mkIf kubernetes { share.file = "/state/kubernetes/share.json"; };
+  # The Kubernetes share the node holds, null until it has one: rules compare the node's type with
+  # its kind and keep the cluster's settings while there is one. The fact keeps the kind alone, so
+  # no rule or message sees the share's private keys.
+  chalkos.facts = lib.mkIf kubernetes {
+    share = {
+      file = "/state/kubernetes/share.json";
+      fields = [ "kind" ];
+    };
+  };
 
   chalkos.kinds = {
     Cluster = builtin "chalkos.dev" // {

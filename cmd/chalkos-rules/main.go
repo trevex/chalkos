@@ -70,11 +70,13 @@ func check(schemasDir, factsFile string, out io.Writer) error {
 }
 
 // checkFact refuses a fact that is neither a file nor a program of the image's store with
-// arguments, or that takes inputs a command does not.
+// arguments, that takes inputs a file does not, or keeps fields a command does not.
 func checkFact(name string, d facts.Definition) error {
 	switch {
 	case (d.File == "") == (d.Command == ""):
 		return fmt.Errorf("fact %s: it has either a file or a command", name)
+	case d.Command != "" && len(d.Fields) > 0:
+		return fmt.Errorf("fact %s: only a file keeps fields", name)
 	case d.File != "" && len(d.Inputs) > 0:
 		return fmt.Errorf("fact %s: only a command takes inputs", name)
 	case d.Command != "" && !strings.HasPrefix(d.Command, "/nix/store/"):

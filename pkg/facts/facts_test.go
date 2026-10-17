@@ -98,6 +98,23 @@ func TestFileFact(t *testing.T) {
 	}
 }
 
+// A file fact with fields keeps those keys of the file's object alone.
+func TestFileFactFields(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "share.json"), `{"kind": "worker", "caKey": "PRIVATE", "endpoint": "x"}`)
+	write(t, filepath.Join(dir, "list.json"), `["PRIVATE"]`)
+	l := NewLoader(context.Background(), map[string]Definition{
+		"share": {File: filepath.Join(dir, "share.json"), Fields: []string{"kind", "type"}},
+		"list":  {File: filepath.Join(dir, "list.json"), Fields: []string{"kind"}},
+	}, nil)
+	if v, err := l.Fact("share"); err != nil || !reflect.DeepEqual(v, map[string]any{"kind": "worker"}) {
+		t.Errorf("share = %v, %v", v, err)
+	}
+	if _, err := l.Fact("list"); err == nil || strings.Contains(err.Error(), "PRIVATE") || !strings.Contains(err.Error(), "no JSON object") {
+		t.Errorf("list: err = %v", err)
+	}
+}
+
 // A command reads the config and only the inputs it declares, and prints its fact as JSON. A
 // delivery loads each fact once; a fact the image does not declare is null and runs nothing.
 func TestCommandFact(t *testing.T) {

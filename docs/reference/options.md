@@ -775,11 +775,45 @@ null
 
 
 
+### chalkos\.facts\.\<name>\.fields
+
+
+
+Keys of the file’s JSON object the fact keeps, so rules and their messages see nothing else of the file; empty keeps the whole content\.
+
+
+
+*Type:*
+list of non-empty string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "kind"
+]
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
 ### chalkos\.facts\.\<name>\.file
 
 
 
-File whose JSON content is the fact; a missing file is null\.
+File whose JSON content is the fact: null while the file is missing\. A file that cannot be read, or holds no JSON, refuses the delivery\.
 
 
 

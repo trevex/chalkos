@@ -108,7 +108,13 @@ let
         type = lib.types.nullOr lib.types.str;
         default = null;
         example = "/state/kubernetes/share.json";
-        description = "File whose JSON content is the fact; a missing file is null.";
+        description = "File whose JSON content is the fact: null while the file is missing. A file that cannot be read, or holds no JSON, refuses the delivery.";
+      };
+      fields = lib.mkOption {
+        type = lib.types.listOf lib.types.nonEmptyStr;
+        default = [ ];
+        example = [ "kind" ];
+        description = "Keys of the file's JSON object the fact keeps, so rules and their messages see nothing else of the file; empty keeps the whole content.";
       };
       command = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
@@ -133,13 +139,16 @@ let
   badFacts = lib.filter (name: builtins.match "[a-z][A-Za-z0-9]*" name == null) (
     lib.attrNames factsCfg
   );
-  # A fact is a file or a command, and only a command takes inputs.
+  # A fact is a file or a command; only a command takes inputs, and only a file keeps fields.
   unsourcedFacts = lib.filter (
     name: (factsCfg.${name}.file == null) == (factsCfg.${name}.command == null)
   ) (lib.attrNames factsCfg);
   fileInputs = lib.filter (name: factsCfg.${name}.file != null && factsCfg.${name}.inputs != [ ]) (
     lib.attrNames factsCfg
   );
+  commandFields = lib.filter (
+    name: factsCfg.${name}.command != null && factsCfg.${name}.fields != [ ]
+  ) (lib.attrNames factsCfg);
   facts =
     if badFacts != [ ] then
       throw "chalkos.facts.${lib.head badFacts}: a fact's name must match [a-z][A-Za-z0-9]*, since rules read it as facts.<name>"
@@ -147,11 +156,13 @@ let
       throw "chalkos.facts.${lib.head unsourcedFacts}: a fact has either a file or a command"
     else if fileInputs != [ ] then
       throw "chalkos.facts.${lib.head fileInputs}: only a command fact takes inputs"
+    else if commandFields != [ ] then
+      throw "chalkos.facts.${lib.head commandFields}: only a file fact keeps fields"
     else
       lib.mapAttrs (
         _: f:
         if f.file != null then
-          { inherit (f) file; }
+          { inherit (f) file; } // lib.optionalAttrs (f.fields != [ ]) { inherit (f) fields; }
         else
           { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
       ) factsCfg;

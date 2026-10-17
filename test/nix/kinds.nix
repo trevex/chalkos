@@ -1028,14 +1028,18 @@ lib.runTests {
       cluster = false;
     };
   };
-  # The image's facts reach /etc/chalkos/facts.json: a file, or a command with its inputs.
+  # The image's facts reach /etc/chalkos/facts.json: a file with the fields it keeps, or a command
+  # with its inputs.
   testFactsReachTheImage = {
     expr =
       let
         config = image [
           {
             chalkos.facts = {
-              seen.file = "/var/lib/seen.json";
+              seen = {
+                file = "/var/lib/seen.json";
+                fields = [ "at" ];
+              };
               probe = {
                 command = "/nix/store/x-probe/bin/probe facts";
                 inputs = [ "fallbackSecret" ];
@@ -1051,7 +1055,10 @@ lib.runTests {
         etc = config.environment.etc."chalkos/facts.json".source == config.system.build.chalkosFacts;
       };
     expected = {
-      seen.file = "/var/lib/seen.json";
+      seen = {
+        file = "/var/lib/seen.json";
+        fields = [ "at" ];
+      };
       probe = {
         command = "/nix/store/x-probe/bin/probe facts";
         inputs = [ "fallbackSecret" ];
@@ -1060,7 +1067,8 @@ lib.runTests {
     };
   };
   # Every image declares the facts of the storage kinds' rules, and an image with Kubernetes
-  # the share; the fallback secret reaches the command that checks it alone.
+  # the share, of which it keeps the kind alone; the fallback secret reaches the command that
+  # checks it alone.
   testBuiltinFacts = {
     expr =
       let
@@ -1089,7 +1097,10 @@ lib.runTests {
         "recorded"
       ];
       recorded.file = "/state/storage/storage.json";
-      share.file = "/state/kubernetes/share.json";
+      share = {
+        file = "/state/kubernetes/share.json";
+        fields = [ "kind" ];
+      };
       disks = true;
       fallback = true;
     };
@@ -1144,6 +1155,19 @@ lib.runTests {
             chalkos.facts.x = {
               file = "/x";
               inputs = [ "fallbackSecret" ];
+            };
+          }
+        ]).system.build.chalkosFacts.drvPath;
+    expected = true;
+  };
+  testCommandFactWithFieldsFails = {
+    expr =
+      fails
+        (image [
+          {
+            chalkos.facts.x = {
+              command = "/bin/x";
+              fields = [ "kind" ];
             };
           }
         ]).system.build.chalkosFacts.drvPath;

@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -64,5 +65,21 @@ spec: {data: {token: plain-secret}}
 	}
 	if len(rec.stdin) == 0 || strings.Contains(string(rec.stdin), "plain-") {
 		t.Errorf("the command read %s", rec.stdin)
+	}
+}
+
+// The share fact holds the share's kind alone, none of its keys.
+func TestShareFactHoldsNoKeys(t *testing.T) {
+	s, _ := clusterServer(t, k8s.KindControlPlane)
+	f, err := s.factsFor(context.Background(), nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := f.Fact("share")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"kind": k8s.KindControlPlane}; !reflect.DeepEqual(v, want) {
+		t.Errorf("share = %v, want %v", v, want)
 	}
 }

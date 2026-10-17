@@ -90,8 +90,10 @@ A fact is node state a rule reads as `facts.<name>`, declared in
 [`chalkos.facts`](../reference/options.md#chalkosfacts) and written to `/etc/chalkos/facts.json`.
 It is one of:
 
-- a file, `{ file = "/state/kubernetes/share.json"; }`, whose JSON is the fact, and null while the
-  file is missing;
+- a file, `{ file = "/state/kubernetes/share.json"; fields = [ "kind" ]; }`, whose JSON is the
+  fact, and null while the file is missing. `fields`, when given, keeps only those keys of the
+  file's JSON object, so a rule sees nothing else of the file. A file that cannot be read, holds
+  no JSON or, with `fields`, no JSON object refuses the delivery;
 - a command, `{ command = "${pkg}/bin/tool facts"; }`, a program of the image's store with its
   arguments. It reads `{"config": ..., "oldConfig": ...}` as JSON on standard input, in the shape
   rules see, and prints the fact as JSON. A command that lists `inputs = [ "fallbackSecret" ];`
@@ -182,7 +184,7 @@ They read these facts:
 
 | Fact | Source | Value |
 | --- | --- | --- |
-| `share` | `/state/kubernetes/share.json` | The node's Kubernetes share; declared on images with Kubernetes. |
+| `share` | `/state/kubernetes/share.json` | The kind of the node's Kubernetes share, the share's keys left out; declared on images with Kubernetes. |
 | `recorded` | `/state/storage/storage.json` | The storage section STATE records. |
 | `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
 | `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
@@ -196,8 +198,10 @@ They read these facts:
   slot is visible to no rule.
 - A command fact runs on the node that evaluates the rules, with the running image's program, so a
   fact that a newer image adds is null until that image runs.
-- A message can show a fact's content, such as the share, which holds private keys, in an error
-  the node returns. The built-in rules show the node's type alone.
+- A message can show a fact's content in an error the node returns. A file fact's `fields` keep
+  what the rules do not need of the file, such as the share's private keys, out of the fact. An
+  error of a rule that cannot be evaluated leaves out what it quotes, and is cut to 512 bytes, but
+  can still show a key that a map lacks.
 
 ## Related pages
 

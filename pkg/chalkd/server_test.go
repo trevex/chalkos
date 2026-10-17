@@ -214,7 +214,7 @@ func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ in
 func writeFacts(t *testing.T, s *Server) {
 	t.Helper()
 	defs, err := json.Marshal(map[string]facts.Definition{
-		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")},
+		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}},
 		"recorded": {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
 		"disks":    {Command: "chalkos-storage facts disks"},
 		"fallback": {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
