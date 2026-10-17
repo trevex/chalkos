@@ -214,12 +214,14 @@ let
 in
 {
   # The Kubernetes share the node holds, null until it has one: rules compare the node's type with
-  # its kind and keep the cluster's settings while there is one. The fact keeps the kind alone, so
-  # no rule or message sees the share's private keys.
+  # its kind and keep the cluster's settings while there is one, and the kubelet restarts when it
+  # changes. The fact keeps the kind and the hashes of the share's other keys, so no rule or
+  # message sees its certificates and private keys, and every key a share gains counts.
   chalkos.facts = lib.mkIf kubernetes {
     share = {
       file = "/state/kubernetes/share.json";
       fields = [ "kind" ];
+      hashOthers = true;
     };
   };
 

@@ -6,12 +6,15 @@ package facts
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -33,9 +36,12 @@ type Definition struct {
 	File string `json:"file,omitempty"`
 	// Fields are the keys of the file's object the fact keeps, so a rule and its messages see
 	// nothing else of the file, such as the private keys beside a share's kind; none keeps it all.
-	Fields  []string `json:"fields,omitempty"`
-	Command string   `json:"command,omitempty"`
-	Inputs  []string `json:"inputs,omitempty"`
+	Fields []string `json:"fields,omitempty"`
+	// HashOthers keeps the object's other keys too, each as the SHA-256 of its value, so a rule
+	// can tell that the keys of a share changed without seeing them.
+	HashOthers bool     `json:"hashOthers,omitempty"`
+	Command    string   `json:"command,omitempty"`
+	Inputs     []string `json:"inputs,omitempty"`
 }
 
 // Read reads the facts an image declares; a missing file declares none.
@@ -140,7 +146,7 @@ func (l *Loader) load(name string) (any, error) {
 	var v any
 	var err error
 	if def.File != "" {
-		v, err = readFile(def.File, def.Fields)
+		v, err = readFile(def.File, def.Fields, def.HashOthers)
 	} else {
 		v, err = l.command(name, def, stdin)
 	}
@@ -149,8 +155,8 @@ func (l *Loader) load(name string) (any, error) {
 }
 
 // readFile is a file's JSON, null when it is missing, with only fields kept of its object when
-// fields are given.
-func readFile(path string, fields []string) (any, error) {
+// fields are given, and its other keys as the hashes of their values with hashOthers.
+func readFile(path string, fields []string, hashOthers bool) (any, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -162,7 +168,7 @@ func readFile(path string, fields []string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s is not JSON", path)
 	}
-	if len(fields) == 0 {
+	if len(fields) == 0 && !hashOthers {
 		return v, nil
 	}
 	obj, ok := v.(map[string]any)
@@ -170,12 +176,27 @@ func readFile(path string, fields []string) (any, error) {
 		return nil, fmt.Errorf("%s holds no JSON object to keep fields of", path)
 	}
 	kept := map[string]any{}
-	for _, f := range fields {
-		if fv, ok := obj[f]; ok {
-			kept[f] = fv
+	for k, fv := range obj {
+		switch {
+		case slices.Contains(fields, k):
+			kept[k] = fv
+		case hashOthers:
+			kept[k] = hashOf(fv)
 		}
 	}
 	return kept, nil
+}
+
+// hashOf is the hex SHA-256 of a value of a file's object: of a string as it is, and of any other
+// value as its JSON, as a Secret's values are hashed.
+func hashOf(v any) string {
+	s, isString := v.(string)
+	if !isString {
+		b, _ := json.Marshal(v)
+		s = string(b)
+	}
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 // stdin is what a command fact reads: the config, and the inputs it declares.

@@ -114,7 +114,12 @@ let
         type = lib.types.listOf lib.types.nonEmptyStr;
         default = [ ];
         example = [ "kind" ];
-        description = "Keys of the file's JSON object the fact keeps, so rules and their messages see nothing else of the file; empty keeps the whole content.";
+        description = "Keys of the file's JSON object the fact keeps, so rules and their messages see nothing else of the file; empty keeps the whole content, unless `hashOthers` is set.";
+      };
+      hashOthers = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Keep the other keys of the file's JSON object too, each as the hex SHA-256 of its value, so rules see whether a value changed but not what it holds, as of a file of private keys.";
       };
       command = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
@@ -147,7 +152,8 @@ let
     lib.attrNames factsCfg
   );
   commandFields = lib.filter (
-    name: factsCfg.${name}.command != null && factsCfg.${name}.fields != [ ]
+    name:
+    factsCfg.${name}.command != null && (factsCfg.${name}.fields != [ ] || factsCfg.${name}.hashOthers)
   ) (lib.attrNames factsCfg);
   facts =
     if badFacts != [ ] then
@@ -157,12 +163,16 @@ let
     else if fileInputs != [ ] then
       throw "chalkos.facts.${lib.head fileInputs}: only a command fact takes inputs"
     else if commandFields != [ ] then
-      throw "chalkos.facts.${lib.head commandFields}: only a file fact keeps fields"
+      throw "chalkos.facts.${lib.head commandFields}: only a file fact keeps fields or hashes them"
     else
       lib.mapAttrs (
         _: f:
         if f.file != null then
-          { inherit (f) file; } // lib.optionalAttrs (f.fields != [ ]) { inherit (f) fields; }
+          {
+            inherit (f) file;
+          }
+          // lib.optionalAttrs (f.fields != [ ]) { inherit (f) fields; }
+          // lib.optionalAttrs f.hashOthers { inherit (f) hashOthers; }
         else
           { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
       ) factsCfg;

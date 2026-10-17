@@ -780,7 +780,7 @@ null
 
 
 
-Keys of the file’s JSON object the fact keeps, so rules and their messages see nothing else of the file; empty keeps the whole content\.
+Keys of the file’s JSON object the fact keeps, so rules and their messages see nothing else of the file; empty keeps the whole content, unless ` hashOthers ` is set\.
 
 
 
@@ -835,6 +835,30 @@ null
 
 ```nix
 "/state/kubernetes/share.json"
+```
+
+*Declared by:*
+ - [modules/node/kinds/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kinds/default.nix)
+
+
+
+### chalkos\.facts\.\<name>\.hashOthers
+
+
+
+Keep the other keys of the file’s JSON object too, each as the hex SHA-256 of its value, so rules see whether a value changed but not what it holds, as of a file of private keys\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
 ```
 
 *Declared by:*

@@ -45,6 +45,7 @@ func TestCheck(t *testing.T) {
 		"a command outside the store":  {greeting(fieldRule, kindRule), `{"lock": {"command": "/usr/bin/lock"}}`, "is no program of the image's store"},
 		"an unknown input":             {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "inputs": ["token"]}}`, `there is no input "token"`},
 		"a command that keeps fields":  {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "fields": ["kind"]}}`, "only a file keeps fields"},
+		"a command that hashes":        {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "hashOthers": true}}`, "only a file keeps fields or hashes them"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, f := dir(t, tc.schema, tc.facts)

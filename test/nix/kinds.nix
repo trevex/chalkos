@@ -1067,8 +1067,8 @@ lib.runTests {
     };
   };
   # Every image declares the facts of the storage kinds' rules, and an image with Kubernetes
-  # the share, of which it keeps the kind alone; the fallback secret reaches the command that
-  # checks it alone.
+  # the share, of which it keeps the kind and the hashes of the other keys; the fallback secret
+  # reaches the command that checks it alone.
   testBuiltinFacts = {
     expr =
       let
@@ -1100,6 +1100,7 @@ lib.runTests {
       share = {
         file = "/state/kubernetes/share.json";
         fields = [ "kind" ];
+        hashOthers = true;
       };
       disks = true;
       fallback = true;
@@ -1168,6 +1169,19 @@ lib.runTests {
             chalkos.facts.x = {
               command = "/bin/x";
               fields = [ "kind" ];
+            };
+          }
+        ]).system.build.chalkosFacts.drvPath;
+    expected = true;
+  };
+  testCommandFactThatHashesFails = {
+    expr =
+      fails
+        (image [
+          {
+            chalkos.facts.x = {
+              command = "/bin/x";
+              hashOthers = true;
             };
           }
         ]).system.build.chalkosFacts.drvPath;

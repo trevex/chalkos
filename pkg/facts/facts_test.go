@@ -3,6 +3,8 @@ package facts
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -113,6 +115,29 @@ func TestFileFactFields(t *testing.T) {
 	}
 	if _, err := l.Fact("list"); err == nil || strings.Contains(err.Error(), "PRIVATE") || !strings.Contains(err.Error(), "no JSON object") {
 		t.Errorf("list: err = %v", err)
+	}
+}
+
+// A file fact that hashes the others keeps its fields and the SHA-256 of every other key's value,
+// a string as it is and anything else as its JSON; without fields it hashes every key.
+func TestFileFactHashOthers(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "share.json"), `{"kind": "worker", "caKey": "PRIVATE", "ca": {"key": "PRIVATE"}}`)
+	l := NewLoader(context.Background(), map[string]Definition{
+		"share":  {File: filepath.Join(dir, "share.json"), Fields: []string{"kind"}, HashOthers: true},
+		"hashes": {File: filepath.Join(dir, "share.json"), HashOthers: true},
+	}, nil)
+	sum := func(s string) string {
+		h := sha256.Sum256([]byte(s))
+		return hex.EncodeToString(h[:])
+	}
+	want := map[string]any{"kind": "worker", "caKey": sum("PRIVATE"), "ca": sum(`{"key":"PRIVATE"}`)}
+	if v, err := l.Fact("share"); err != nil || !reflect.DeepEqual(v, want) {
+		t.Errorf("share = %v, %v; want %v", v, err, want)
+	}
+	want["kind"] = sum("worker")
+	if v, err := l.Fact("hashes"); err != nil || !reflect.DeepEqual(v, want) {
+		t.Errorf("hashes = %v, %v; want %v", v, err, want)
 	}
 }
 

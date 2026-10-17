@@ -112,8 +112,10 @@ It is one of:
 
 - a file, `{ file = "/state/kubernetes/share.json"; fields = [ "kind" ]; }`, whose JSON is the
   fact, and null while the file is missing. `fields`, when given, keeps only those keys of the
-  file's JSON object, so a rule sees nothing else of the file. A file that cannot be read, holds
-  no JSON or, with `fields`, no JSON object refuses the delivery;
+  file's JSON object, so a rule sees nothing else of the file. `hashOthers = true` keeps the
+  object's other keys too, each as the hex SHA-256 of its value, so a rule sees whether a value
+  changed but not what it holds. A file that cannot be read, holds no JSON or, with `fields` or
+  `hashOthers`, no JSON object refuses the delivery;
 - a command, `{ command = "${pkg}/bin/tool facts"; }`, a program of the image's store with its
   arguments. It reads `{"config": ..., "oldConfig": ...}` as JSON on standard input, in the shape
   rules see, and prints the fact as JSON. A command that lists `inputs = [ "fallbackSecret" ];`
@@ -233,7 +235,7 @@ They read these facts:
 
 | Fact | Source | Value |
 | --- | --- | --- |
-| `share` | `/state/kubernetes/share.json` | The kind of the node's Kubernetes share, the share's keys left out; declared on images with Kubernetes. |
+| `share` | `/state/kubernetes/share.json` | The kind of the node's Kubernetes share and the SHA-256 of each of its other keys, so its certificates and private keys stay out; declared on images with Kubernetes. |
 | `recorded` | `/state/storage/storage.json` | The storage section STATE records. |
 | `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
 | `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
@@ -249,9 +251,9 @@ They read these facts:
 - A command fact runs on the node that evaluates the rules, with the running image's program, so a
   fact that a newer image adds is null until that image runs.
 - A message can show a fact's content in an error the node returns. A file fact's `fields` keep
-  what the rules do not need of the file, such as the share's private keys, out of the fact. The
-  error of a rule that cannot be evaluated or a `messageExpression` that fails shows no value, only
-  the kind of error.
+  what the rules do not need of the file out of the fact, and `hashOthers` keeps the rest as
+  hashes, as of the share's private keys. The error of a rule that cannot be evaluated or a
+  `messageExpression` that fails shows no value, only the kind of error.
 - The storage kinds' messages show what the `disks` fact found: a volume's disk reference, the
   identity of its pinned disk and of the disk a changed reference finds, and why a disk cannot be
   found.
