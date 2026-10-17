@@ -18,6 +18,8 @@ each other in this order:
   platforms and NixOS modules, and how an extension adds a config kind.
 - [Config and the inventory](config.md): the YAML documents that describe each node, how the
   inventory gives them out, and how chalkctl and chalkd check and apply them.
+- [Change rules and facts](rules.md): the CEL rules with which an image decides which config
+  changes a node accepts, and the node state they read.
 - [The image](image.md): the erofs store on dm-verity, the signed UKI and the A/B slots.
 - [Boot, health and rollback](boot-and-rollback.md): how a node boots, decides whether a boot is
   healthy, and falls back from an image that is not.

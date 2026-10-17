@@ -278,20 +278,23 @@ The changes chalkd applies while the node runs, and those it refuses, are these:
 | Change | Applied while the node runs |
 | --- | --- |
 | A new volume, also on a new disk | yes |
-| A larger size, or no size where a size was | yes, the partition grows |
+| A larger size, or no size where a size was, of a volume or of VAR | yes, the partition grows |
 | Another mount point | yes, the volume is mounted again |
 | A smaller size, or a size where none was | no |
 | Another format or encryption mode | no |
 | Another disk, or a reference that now finds another disk | no |
 | A changed reference that cannot be resolved, meaning one that finds no disk, more than one, or names something other than a whole disk | no |
 | A volume removed | no |
+| Any change to a volume whose disk is not plugged in | no, until the disk is back |
 
 When a change is destructive, the node refuses the whole config and applies none of it,
-naming the volume:
+naming the volume and what carries the change out:
 
 ```text
-the config changes storage destructively: scratch: format xfs instead of ext4 (destructive); reset it with chalkctl storage reset w1 scratch
+the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset w1 scratch
 ```
+
+The image's storage [change rules](../concepts/rules.md) decide which changes the node refuses.
 
 ## Reset a volume
 
@@ -317,14 +320,14 @@ of the config.
 A reset recreates a volume in place. It refuses VAR, which the running node uses, a volume the
 node's config no longer has, and a volume that moves to another disk. Those changes need the node
 reinstalled with the new layout. It also refuses while the config changes other volumes
-destructively too, naming them (`the config changes other volumes destructively too: ...`), so
-one reset applies one volume's change: undo the other volumes' changes in the files, reset this
-volume, then make the other changes again one at a time.
+destructively too, naming them (`a reset of volume scratch does not carry out the config: ...`),
+so one reset applies one volume's change: undo the other volumes' changes in the files, reset
+this volume, then make the other changes again one at a time.
 
 A reset also refuses a volume whose disk is not plugged in, and a volume whose changed disk
 reference cannot be resolved, meaning one that finds no disk, more than one, or names something
 other than a whole disk. It names the reason
-(`the disk reference of volume longhorn cannot be resolved: ...`). Fix the reference in the
+(`Volume longhorn: disk reference ... cannot be resolved: ...`). Fix the reference in the
 files, or plug the disk in, and reset again.
 
 ## Check that it worked

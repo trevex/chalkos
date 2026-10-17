@@ -85,8 +85,9 @@ settings. Some settings are fixed once the cluster exists: `ipFamilies`, the pod
 `podCIDRs`, the service ranges of `serviceCIDRs` and the addresses of `dnsIPs`, because the
 certificates, etcd and the ranges the control plane allocated were made for them. On a node that
 holds a Kubernetes share, `chalkctl apply-config` is refused when it changes them, with a message
-such as `the config changes the cluster's podCIDRs from ... to ...; it is fixed once the cluster
-exists, so keep it, or reinstall the node into a new cluster`.
+such as `the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4
+10.245.0.0/16; they are fixed once the cluster exists, so keep them, or reinstall the node into a
+new cluster`. The [change rules](rules.md) of the `Kubernetes` kind decide this.
 
 ## What runs on every node?
 

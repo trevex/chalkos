@@ -18,10 +18,14 @@
         "type": {
           "anyOf": [{ "enum": ["controlplane", "worker"] }, { "type": "null" }],
           "default": null,
-          "description": "What the node is in Kubernetes."
+          "description": "What the node is in Kubernetes.",
+          "x-chalkos-rules": [{ "rule": "self == oldSelf", "message": "the type is fixed", "takes": "refuse" }]
         }
       }
     }
   },
-  "x-chalkos-kind": { "group": "chalkos.dev", "version": "v1alpha1", "kind": "Node", "multiple": false }
+  "x-chalkos-kind": {
+    "group": "chalkos.dev", "version": "v1alpha1", "kind": "Node", "multiple": false,
+    "rules": [{ "rule": "size(documents) == 1", "message": "one Node", "takes": "refuse" }]
+  }
 }

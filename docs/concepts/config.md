@@ -272,8 +272,13 @@ that deliver config run the same check first, each against the image the config 
   before it drains any node.
 
 chalkd checks again when the config arrives, against the schemas of the image the set is for, and
-refuses an invalid set as a whole. chalkd, not chalkctl, fills in the schemas' defaults, so the slot
-on STATE holds the complete set while the files stay as short as their authors wrote them.
+refuses an invalid set as a whole. chalkd, not chalkctl, fills in the schemas' defaults in the set
+it keeps, so the slot on STATE holds the complete set while the files stay as short as their
+authors wrote them.
+
+Both also check the image's [change rules](rules.md). chalkd runs every rule; chalkctl runs those
+that read no facts about the node, `validate` without the node's config and `apply-config` with
+the config the node serves, so a change a rule refuses fails before it is sent.
 
 ## How does config reach a node?
 
@@ -341,19 +346,21 @@ and partitions it is pinned to; the Kubernetes share; and the node certificate a
 trusts. The Kubernetes cluster file, `/run/chalkos/kubernetes/cluster.json`, is not machine state:
 `chalkos-config` writes it from the slot of the image that boots, and chalkd writes it again when
 `apply-config` changes the running image's config. Every write of a slot (install, upgrade,
-`apply-config` and `apply-config --staged`) classifies its config against the machine state,
-whichever image the slot is for:
+`apply-config` and `apply-config --staged`) checks its config against the
+[change rules](rules.md) of the image the slot is for, which compare it with the running image's
+config and read the machine state from facts. The built-in kinds' rules take:
 
-| Change | Class | What carries it out |
+| Change | Takes | What carries it out |
 | --- | --- | --- |
-| A new volume, a larger one or another mount point | live | The write of the slot: the node makes the change at once. |
+| A new volume, a larger one, a larger VAR or another mount point | nothing | The write of the slot: the node makes the change at once. |
 | A volume formatted or encrypted otherwise, or shrunk | reset | [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md), which recreates the volume and loses its data. |
-| A volume removed or moved to another disk, or any change to VAR | reinstall | A reinstall of the node. |
-| A `Node.spec.type` other than the one the node was installed with, once it holds its Kubernetes share | fixed | A reinstall of the node as the new type. |
-| The cluster's IP families, pod or service ranges or DNS addresses, once the cluster exists | fixed | Nothing: they stay for the cluster's life. |
+| A volume removed or moved to another disk, or a change that would recreate VAR | reinstall | A reinstall of the node. |
+| A `Node.spec.type` other than the one the node was installed with, once it holds its Kubernetes share | refuse | A reinstall of the node as the new type. |
+| The cluster's IP families, pod or service ranges or DNS addresses, once the node holds its Kubernetes share | refuse | Nothing: they stay for the cluster's life. |
 
-A node refuses the whole set when one of its changes is not live, applies none of it, and names
-what the change needs. The live changes are made whichever image the slot is for: an upgrade or
+A node refuses the whole set when one of its rules fails, applies none of it, and names what the
+change needs, as [Change rules and facts](rules.md) shows. The changes that take nothing are made
+whichever image the slot is for: an upgrade or
 `apply-config --staged` that adds a volume creates it while the running image runs, enrolled with
 the fallback secret chalkctl sends, and `storage.json` gains it. Every boot sets up the volumes
 `storage.json` records, so the running image mounts the new volume as well, also after a
@@ -470,12 +477,15 @@ image with other defaults does not change it.
   image change and an [upgrade](upgrades.md).
 - A kind has one version per image, and there is no conversion between versions. A new version of
   a kind is a new set of documents.
+- A rule compares a config with the running image's config alone, and chalkctl runs only the
+  rules that read no facts; see [Change rules and facts](rules.md#limits).
 
 ## Related pages
 
 - [Variants and platforms](variants.md) for the images that accept the config and how an extension
   declares a kind.
 - [Architecture](architecture.md) for where the inventory and the image directories meet chalkctl.
+- [Change rules and facts](rules.md) for how an image decides which changes a node accepts.
 - [Storage and encryption](storage.md) and [Networking](networking.md) for what the storage and
   network kinds do on the node.
 - [Config kinds](../reference/kinds.md) for every field of every kind, the inventory's included.

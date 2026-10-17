@@ -214,16 +214,17 @@ const disksExample = `  # The disks of an installed node.
 const applyConfigLong = `Delivers a node's config to the installed node: the documents of the files the inventory gives
 it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
 image.json. It refuses an image of another platform than the node's Image, and checks the
-documents as the node does. The node replaces its config as a whole, and applies additive
-storage changes (a new volume, for example) while it runs. When the config changes a volume
-destructively, the node refuses the whole config, applies none of it, and names the remedy:
+documents as the node does, with the image's change rules that read no facts about the node
+against the config the node serves. The node replaces its config as a whole, and applies
+additive storage changes (a new volume, for example) while it runs. When the image's rules
+refuse a change, the node refuses the whole config, applies none of it, and names the remedy:
 chalkctl storage reset recreates a volume in place, once the disk it lives on is plugged in; a
-change to VAR, a removed volume or a move to another disk takes a reinstall; a changed disk
-reference that finds no disk needs fixing or its disk plugged in, and one that cannot otherwise
-be resolved, as it finds more than one disk or names something other than a whole disk, needs
-fixing. Otherwise the node restarts the units that read what changed, and chalkctl prints the
-changes and the units. --kubernetes-share also delivers a new Kubernetes share: for example a
-worker's new kubelet certificate.
+change that would recreate VAR, a removed volume or a move to another disk takes a reinstall; a
+changed disk reference that finds no disk needs fixing or its disk plugged in, and one that
+cannot otherwise be resolved, as it finds more than one disk or names something other than a
+whole disk, needs fixing. Otherwise the node restarts the units that read what changed, and
+chalkctl prints the changes and the units. --kubernetes-share also delivers a new Kubernetes
+share: for example a worker's new kubelet certificate.
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
@@ -353,8 +354,10 @@ the secrets file.`
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the files the inventory gives the node form its set, every document is
 checked against the schemas of the image directory the node's Image names, and the set is
-translated as the node translates it. It prints a line for each node whose config is valid and
-names each node whose config is not, and warns of a node whose SystemDisk leaves STATE, which
+translated as the node translates it. The image's change rules that read no facts about a node
+run too, without a running config to compare with: the rules of kinds and the rules of fields
+that do not compare with the running value. It prints a line for each node whose config is valid
+and names each node whose config is not, and warns of a node whose SystemDisk leaves STATE, which
 holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or client
 file.`
 

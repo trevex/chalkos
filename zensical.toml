@@ -22,6 +22,7 @@ nav = [
     "concepts/architecture.md",
     "concepts/variants.md",
     "concepts/config.md",
+    "concepts/rules.md",
     "concepts/image.md",
     "concepts/boot-and-rollback.md",
     "concepts/security.md",

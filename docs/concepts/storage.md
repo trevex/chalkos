@@ -184,12 +184,13 @@ disks hold nothing that a reinstall would lose.
 ## How does storage change after install?
 
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers changed `SystemDisk`
-and `Volume` documents to the running node, which translates them into a storage section and
-compares it with the section on STATE volume by volume.
-Additive changes keep every byte of existing data, and the node applies them while it runs:
+and `Volume` documents to the running node. The storage kinds' [change rules](rules.md) compare
+them with the section STATE records, volume by volume, and the node translates them into a storage
+section, whose additions it makes. Additive changes keep every byte of existing data, and the node
+applies them while it runs:
 
 - a new `Volume`, on the system disk or a new disk;
-- a larger size, or a fixed size changed to fill the disk;
+- a larger size, or a fixed size changed to fill the disk, of a volume or of VAR;
 - a new, changed or removed mount point.
 
 Destructive changes need a volume to be wiped:
@@ -205,7 +206,12 @@ When the section changes any volume destructively, the node refuses the whole co
 none of it, naming each volume and the remedy. A volume recreated in place takes a reset, once the
 disk it lives on is plugged in. VAR, a removed volume or one that moves to another disk takes a
 reinstall. A disk reference that finds no disk needs fixing, or the disk it names plugged in; one
-that cannot otherwise be resolved needs fixing.
+that cannot otherwise be resolved needs fixing. Any change to a volume whose pinned disk is not
+plugged in, additive ones included, is refused until the disk is back:
+
+```text
+the config is refused: Volume data: its disk data (model "WDC WD40EFRX", size 4T, serial "WD-1234") is not plugged in; plug it in
+```
 [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) wipes one volume and creates
 it again, empty, as the config defines it, sealed to the TPM again and with its fallback keyslot.
 Its data is lost:

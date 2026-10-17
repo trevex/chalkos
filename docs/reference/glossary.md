@@ -72,6 +72,13 @@ The command that runs a cluster's `kvm` nodes as QEMU virtual machines on one ma
 with Secure Boot and a TPM, and installs and bootstraps them. See [its commands](cli/chalklab.md)
 and the [quick start](../getting-started/index.md).
 
+## Change rule { #change-rule }
+
+A CEL expression an image's schemas declare on a [kind](#kind) or on one of its fields, which every
+config the image accepts makes true. A rule that is false refuses the config, or says it takes
+[`chalkctl storage reset`](cli/chalkctl_storage_reset.md) or a reinstall. See
+[Change rules and facts](../concepts/rules.md).
+
 ## Client file { #client-file }
 
 A JSON file holding a client certificate of one [client role](#client-role), its key and the
@@ -166,6 +173,13 @@ documents a node's YAML files then carry. The services read those documents with
 [chalkcfg](#chalkcfg) and restart when they change. chalkos's own Kubernetes support declares its
 kinds and consumers the same way. See
 [Variants and platforms](../concepts/variants.md#how-does-an-extension-add-a-kind).
+
+## Fact { #fact }
+
+Node state a [change rule](#change-rule) reads, declared in
+[`chalkos.facts`](options.md#chalkosfacts): the JSON of a file, such as the
+[Kubernetes share](#kubernetes-share), or of a program of the image's store, which chalkd runs in
+a sandbox. See [Change rules and facts](../concepts/rules.md#what-is-a-fact).
 
 ## Fallback keyslot { #fallback-keyslot }
 

@@ -124,7 +124,7 @@ func readKindSchema(path string) (kindSchema, error) {
 }
 
 // writeKind writes a kind's section: its apiVersion, how many documents of it a node's config may
-// hold, and its fields, or a networkd kind's sections.
+// hold, how many change rules it has, and its fields, or a networkd kind's sections.
 func writeKind(b *strings.Builder, k kindSchema) {
 	fmt.Fprintf(b, "\n## %s { #%s }\n\n`apiVersion: %s/%s`\n\n", k.kind, strings.ToLower(k.kind), k.group, k.version)
 	if d := text(k.root["description"]); d != "" {
@@ -136,6 +136,13 @@ func writeKind(b *strings.Builder, k kindSchema) {
 		} else {
 			b.WriteString("A node's config holds at most one.\n\n")
 		}
+	}
+	// The rules' expressions, the storage kinds' especially, read as code rather than as a
+	// reference; the concept page describes what the built-in kinds' rules decide.
+	if n := countRules(k.root); n == 1 {
+		b.WriteString("It has a [change rule](../concepts/rules.md).\n\n")
+	} else if n > 1 {
+		fmt.Fprintf(b, "It has %d [change rules](../concepts/rules.md).\n\n", n)
 	}
 	spec := resolve(k.root, asMap(props(k.root)["spec"]))
 	if isNetworkd(spec) {
@@ -151,6 +158,30 @@ func writeKind(b *strings.Builder, k kindSchema) {
 	for _, r := range rows {
 		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", r.path, r.typ, r.def, r.desc)
 	}
+}
+
+// countRules counts the change rules of a kind's schema: its own, in x-chalkos-kind, and its
+// fields', in their x-chalkos-rules.
+func countRules(v any) int {
+	n := 0
+	switch v := v.(type) {
+	case map[string]any:
+		for key, val := range v {
+			switch key {
+			case "x-chalkos-rules":
+				n += len(asSlice(val))
+			case "x-chalkos-kind":
+				n += len(asSlice(asMap(val)["rules"]))
+			default:
+				n += countRules(val)
+			}
+		}
+	case []any:
+		for _, val := range v {
+			n += countRules(val)
+		}
+	}
+	return n
 }
 
 // fields returns a row for each field of the object schema s, whose path is path, in name order,

@@ -149,9 +149,10 @@ quorum guard on these commands. They need an admin client file or the secrets fi
 
 ## A storage change is refused
 
-`chalkctl apply-config` fails with `the config changes storage destructively: ...`, and the
-node keeps its previous config in full. The change shrinks, reformats, re-encrypts, moves or
-removes a volume, which would lose its data. Reset that one volume with
+`chalkctl apply-config` fails with `the config takes chalkctl storage reset: ...` or
+`the config takes a reinstall of <node>: ...`, and the node keeps its previous config in full.
+The change shrinks, reformats, re-encrypts, moves or removes a volume, which would lose its data.
+Reset that one volume with
 `chalkctl storage reset <node> <volume>`, which deletes its data, then deliver the config
 again. VAR, a removed volume and a volume that moves to another disk cannot be reset; those
 changes need a reinstall. [Add storage volumes](storage-volumes.md#reset-a-volume) has the

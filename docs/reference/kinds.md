@@ -46,6 +46,8 @@ A node's config may hold several, each with a name of its own.
 
 A node's config holds at most one.
 
+It has a [change rule](../concepts/rules.md).
+
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.hostname` | string or null | `null` | Host name set at boot; null uses the node's name. |
@@ -103,6 +105,8 @@ A node's config holds at most one.
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
 A node's config holds at most one.
+
+It has 4 [change rules](../concepts/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -292,6 +296,8 @@ networkd spells it.
 
 A node's config holds at most one.
 
+It has a [change rule](../concepts/rules.md).
+
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.disk` | object | required | Disk holding the system region and VAR. |
@@ -314,6 +320,8 @@ A node's config holds at most one.
 `apiVersion: storage.chalkos.dev/v1alpha1`
 
 A node's config may hold several, each with a name of its own.
+
+It has 7 [change rules](../concepts/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

@@ -253,7 +253,8 @@ hands it to a unit:
 
 ```nix title="extensions/rack.nix"
 # The Rack kind, which records a node's rack position, and a unit that reads it on the node. A
-# variant that carries this module accepts Rack documents.
+# variant that carries this module accepts Rack documents. A node that was surveyed, whose
+# rack-survey tool wrote where it found the node, takes no other location than that.
 {
   config,
   lib,
@@ -264,12 +265,23 @@ hands it to a unit:
   chalkos.kinds.Rack = {
     group = "rack.example.org";
     version = "v1alpha1";
-    spec.location = lib.mkOption {
-      type = lib.types.nonEmptyStr;
-      example = "rack-a/u12";
-      description = "Rack and height unit the node is mounted in.";
-    };
+    spec.location =
+      lib.mkOption {
+        type = lib.types.nonEmptyStr;
+        example = "rack-a/u12";
+        description = "Rack and height unit the node is mounted in.";
+      }
+      // {
+        "x-chalkos-rules" = [
+          {
+            rule = "self == oldSelf || facts.rackSurvey == null || self == facts.rackSurvey.location";
+            messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
+          }
+        ];
+      };
   };
+  # What the rack survey found, {"location": "rack-a/u12"}; null on a node not surveyed yet.
+  chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";
   # chalkd writes the node's Rack below /run/chalkos/config and restarts the unit when it changes.
   chalkos.consumers.rack-location.kinds = [ "Rack" ];
   systemd.services.rack-location = {
@@ -329,6 +341,42 @@ A change of a node's position needs no new image:
 document, and chalkd restarts `rack-location.service`.
 [Variants and platforms](../concepts/variants.md#how-does-an-extension-add-a-kind) explains how
 an extension's kind reaches the image and the node.
+
+## Add a rule and a fact to a kind
+
+A rule decides which changes of your kind's documents a node accepts, and a fact gives it what
+the node knows. `rack.nix` above declares both: the `x-chalkos-rules` of `spec.location` refuse a
+new location that differs from the one a rack survey wrote to the node, and
+[`chalkos.facts`](../reference/options.md#chalkosfacts) declares that file as the fact
+`rackSurvey`. The rule is CEL: `self` is the delivered location, `oldSelf` the one the node runs
+with, and `facts.rackSurvey` the file's JSON, null while the file is missing. Because the rule
+reads `oldSelf`, it runs only once the node has a `Rack` to compare with, so an install takes any
+location.
+
+A rule over all of a kind's documents goes into `chalkos.kinds.<name>.rules`, where `documents`
+maps the names of the delivered documents to them, here allowing two `Peer` documents at most:
+
+```nix
+chalkos.kinds.Peer.rules = [
+  {
+    rule = "size(documents) <= 2";
+    message = "a node has two BGP neighbours at most";
+  }
+];
+```
+
+A fact can also be a command of the image's store, which reads the config as JSON on standard
+input and prints the fact as JSON. The image build compiles every rule and fails on one that
+does not compile or reads a fact no module declares. With the survey file on a node holding
+`{"location": "rack-b/u3"}`, `chalkctl apply-config` refuses another location:
+
+```text
+the config is refused: Rack "rack" spec.location: the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again
+```
+
+`chalkctl validate` runs the rules that read no facts, such as the `Peer` rule; the rack rule
+runs on the node. [Change rules and facts](../concepts/rules.md) explains the variables, the
+functions and where rules run.
 
 ## Know what an image may not change
 

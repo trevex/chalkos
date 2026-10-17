@@ -31,7 +31,7 @@ func TestWriteKinds(t *testing.T) {
 		last = i
 	}
 	for _, want := range []string{
-		"## Node { #node }\n\n`apiVersion: chalkos.dev/v1alpha1`\n\nA node's config holds at most one.\n\n| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n",
+		"## Node { #node }\n\n`apiVersion: chalkos.dev/v1alpha1`\n\nA node's config holds at most one.\n\nIt has 2 [change rules](../concepts/rules.md).\n\n| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n",
 		"| `spec.imageRef` | string | required | Name of the Image document of the image the node runs. |\n",
 		"| `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes. |\n",
 		"`apiVersion: storage.chalkos.dev/v1alpha1`\n\nA node's config may hold several, each with a name of its own.\n\n",
@@ -52,6 +52,9 @@ func TestWriteKinds(t *testing.T) {
 	}
 	if inv := got[strings.Index(got, "## Inventory"):]; strings.Contains(inv, "A node's config") {
 		t.Errorf("the inventory's section counts it as a node's config:\n%s", inv)
+	}
+	if volume := got[strings.Index(got, "## Volume"):]; strings.Contains(volume, "change rule") {
+		t.Errorf("the Volume's section names rules it has none of:\n%s", volume)
 	}
 }
 

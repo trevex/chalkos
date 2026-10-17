@@ -12,16 +12,17 @@ Deliver a node's config from the inventory
 Delivers a node's config to the installed node: the documents of the files the inventory gives
 it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
 image.json. It refuses an image of another platform than the node's Image, and checks the
-documents as the node does. The node replaces its config as a whole, and applies additive
-storage changes (a new volume, for example) while it runs. When the config changes a volume
-destructively, the node refuses the whole config, applies none of it, and names the remedy:
+documents as the node does, with the image's change rules that read no facts about the node
+against the config the node serves. The node replaces its config as a whole, and applies
+additive storage changes (a new volume, for example) while it runs. When the image's rules
+refuse a change, the node refuses the whole config, applies none of it, and names the remedy:
 chalkctl storage reset recreates a volume in place, once the disk it lives on is plugged in; a
-change to VAR, a removed volume or a move to another disk takes a reinstall; a changed disk
-reference that finds no disk needs fixing or its disk plugged in, and one that cannot otherwise
-be resolved, as it finds more than one disk or names something other than a whole disk, needs
-fixing. Otherwise the node restarts the units that read what changed, and chalkctl prints the
-changes and the units. --kubernetes-share also delivers a new Kubernetes share: for example a
-worker's new kubelet certificate.
+change that would recreate VAR, a removed volume or a move to another disk takes a reinstall; a
+changed disk reference that finds no disk needs fixing or its disk plugged in, and one that
+cannot otherwise be resolved, as it finds more than one disk or names something other than a
+whole disk, needs fixing. Otherwise the node restarts the units that read what changed, and
+chalkctl prints the changes and the units. --kubernetes-share also delivers a new Kubernetes
+share: for example a worker's new kubelet certificate.
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
