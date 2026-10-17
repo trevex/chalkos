@@ -312,6 +312,16 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			}
 		}
 	}
+	// The consumers' rules compare the delivery with the running slot, and the facts as they are
+	// once it is applied with the facts as they were, which load before anything changes.
+	next := prev.Documents
+	if !keep {
+		next = r.next.Documents
+	}
+	fx, err := s.effectsOf(ctx, next, prev.Documents, r.schemas, m.FallbackSecret)
+	if err != nil {
+		return nil, err
+	}
 	if len(m.Trust) > 0 {
 		if share == nil {
 			// A control plane keeps renewing node certificates with the node CA it holds.
@@ -379,15 +389,18 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	// them recorded and makes none twice.
 	if !keep {
 		r.next.Identity = d.data
-		units, err := s.applyConfig(ctx, slot, prev, r.next, r.schemas)
-		if err != nil {
+		if err := store.Write(slot, r.next); err != nil {
 			// The cluster or share the loops read is in place already.
 			s.actOnLoops(act)
-			return nil, err
+			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
-		restarted = append(restarted, units...)
 	}
-	restarted = append(restarted, kubernetesUnits...)
+	units, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
+	if err != nil {
+		s.actOnLoops(act)
+		return nil, err
+	}
+	restarted = append(units, kubernetesUnits...)
 	// The loops read the control plane's objects from the running slot, so they start again
 	// once it is stored.
 	s.actOnLoops(act)

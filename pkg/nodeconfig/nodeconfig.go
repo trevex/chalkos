@@ -3,8 +3,7 @@
 // translates to, as
 // /run/chalkos/node.json, which the node's Kubernetes side reads, the networkd units and chrony's
 // time servers, and sets the hostname. It writes the config's documents for the units that read
-// config kinds, and the Kubernetes cluster it describes for chalkd, and tells which units read
-// kinds that changed.
+// config kinds, and the Kubernetes cluster it describes for chalkd.
 package nodeconfig
 
 import (
@@ -15,7 +14,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 
@@ -30,11 +28,27 @@ import (
 // Header marks the networkd units the loader writes, so it removes only its own.
 const Header = "# Written by chalkd from the node identity.\n"
 
-// Consumer is a unit that reads config kinds, as /etc/chalkos/consumers.json records it.
+// Consumer is a unit that reads config kinds, or that a delivery restarts or reloads, as
+// /etc/chalkos/consumers.json records it.
 type Consumer struct {
-	// Kinds are the config kinds the unit reads, by name.
-	Kinds           []string `json:"kinds"`
-	RestartOnChange bool     `json:"restartOnChange"`
+	// Kinds are the config kinds the unit reads, by name; none for a unit that reads no
+	// documents and loads no credentials.
+	Kinds   []string `json:"kinds"`
+	Restart Restart  `json:"restart"`
+	Reload  Reload   `json:"reload"`
+}
+
+// Restart is when a delivery restarts a consumer: When is a CEL rule, and Start starts a unit
+// that does not run too.
+type Restart struct {
+	When  string `json:"when"`
+	Start bool   `json:"start"`
+}
+
+// Reload is when a delivery reloads a consumer, a CEL rule, and the command that reloads it.
+type Reload struct {
+	When    string `json:"when"`
+	Command string `json:"command"`
 }
 
 // Loader holds the paths the identity is applied to; tests point them at temporary directories.
@@ -157,9 +171,12 @@ func (l Loader) writeConfig(stored store.Stored) error {
 	if err != nil {
 		return err
 	}
+	// A unit of no kinds loads no credentials, so it gets no directory.
 	kinds := map[string][]string{}
 	for unit, c := range consumers {
-		kinds[unit] = c.Kinds
+		if len(c.Kinds) > 0 {
+			kinds[unit] = c.Kinds
+		}
 	}
 	found := len(stored.Documents) > 0
 	var schemas *schema.Schemas
@@ -341,24 +358,4 @@ func TimeChanged(old, new []byte) bool {
 	sa, errA := a.Time.ChronySources()
 	sb, errB := b.Time.ChronySources()
 	return errA != nil || errB != nil || sa != sb
-}
-
-// KindRestarts returns the units to restart after the config changed: those that want restarts
-// and read a kind whose hash differs between before and after, config.KindHashes of the old and
-// the new set. A kind in neither set is unchanged.
-func KindRestarts(consumers map[string]Consumer, before, after map[string]string) []string {
-	var units []string
-	for unit, c := range consumers {
-		if !c.RestartOnChange {
-			continue
-		}
-		for _, kind := range c.Kinds {
-			if before[kind] != after[kind] {
-				units = append(units, unit)
-				break
-			}
-		}
-	}
-	sort.Strings(units)
-	return units
 }

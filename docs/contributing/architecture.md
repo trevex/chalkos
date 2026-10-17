@@ -23,10 +23,10 @@ YAML that Go reads. They meet in these places:
   [config kinds](../reference/glossary.md#kind) the image accepts. chalkctl and chalklab read
   them from there, or from a running node through the Contract method.
 - Files the image carries in `/etc/chalkos`, written by the node modules: the same
-  `kubernetes/image.json` and `schemas`, the units that read each kind in `consumers.json`, the
-  system region's repart definitions in `repart.d` and the
-  [OS CA](../reference/glossary.md#os-ca) certificate in `os-ca.crt` when `mkImages` has an
-  `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
+  `kubernetes/image.json` and `schemas`, the units that read each kind or that a delivery
+  restarts or reloads in `consumers.json`, the system region's repart definitions in `repart.d`
+  and the [OS CA](../reference/glossary.md#os-ca) certificate in `os-ca.crt` when `mkImages` has
+  an `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
 - A node's [config](../reference/glossary.md#config): the YAML
   [config documents](../reference/glossary.md#config-document) an inventory gives the node,
   which chalkctl reads (`pkg/inventory`), checks against the schemas of the image its `Image`

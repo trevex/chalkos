@@ -416,13 +416,14 @@ chalkcfg runs on the node, from a consumer's unit or a privileged pod. It prints
 control plane's chalkd applies their objects.
 
 When `apply-config` changes a document of a service's kinds, or a `Secret` one of them references,
-chalkd restarts the service, unless the service sets
-[`restartOnChange = false`](../reference/options.md#chalkosconsumersrestartonchange). It restarts a
-service that runs or stays active after it ran, and starts a failed one again, since the new config
-may be what it lacked; a service that never started or was stopped stays so. `apply-config` prints
-the units it restarted. For chalkos's own renderings, chalkd reloads networkd after every new set,
-reloads chrony's sources when the time servers change, and restarts the kubelet when the node's
-Kubernetes settings change.
+chalkd restarts the service, as its
+[`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) rule says by default;
+`restart.when = "false"` keeps the service running. It restarts a service that runs or stays
+active after it ran, and starts a failed one again, since the new config may be what it lacked; a
+service that never started or was stopped stays so. `apply-config` prints the units it restarted.
+For chalkos's own renderings, chalkd reloads networkd after every new set, reloads chrony's
+sources when the time servers change, and restarts the kubelet when the node's Kubernetes settings
+change.
 
 ## How do secrets reach a service?
 

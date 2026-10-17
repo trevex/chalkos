@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"strings"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 )
@@ -97,77 +95,6 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 		return config.Target{}, nil, failed(connect.CodeInternal, "the image's Kubernetes facts: %v", err)
 	}
 	return t, schemas, nil
-}
-
-// applyConfig writes next to the running image's config slot, dir, which held prev, writes it for
-// its consumers and restarts those whose kinds changed: a kind changes when one of its documents
-// does, or a Secret one of them references. schemas are the running image's, which next was
-// checked against. It returns the restarted units.
-func (s *Server) applyConfig(ctx context.Context, dir string, prev, next store.Stored, schemas *schema.Schemas) ([]string, error) {
-	before, err := config.KindHashes(prev.Documents, schemas)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "hash the stored config: %v", err)
-	}
-	after, err := config.KindHashes(next.Documents, schemas)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "hash the config: %v", err)
-	}
-	consumers, err := nodeconfig.ReadConsumers(s.Loader.Consumers)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	}
-	units := nodeconfig.KindRestarts(consumers, before, after)
-	if err := store.Write(dir, next); err != nil {
-		return nil, failed(connect.CodeInternal, "store the config: %v", err)
-	}
-	// From here on the slot holds the new set, so a retry compares it with itself and restarts
-	// nothing. A failure therefore names the units that still need a restart, rather than
-	// leaving a node whose units read the old config without saying so.
-	if err := s.Loader.LoadConfig(); err != nil {
-		return nil, failed(connect.CodeInternal, "write the config for its consumers: %v%s", err, restartByHand(units))
-	}
-	var pending []string
-	var errs []error
-	for _, unit := range units {
-		if err := s.restartConsumer(ctx, unit); err != nil {
-			pending = append(pending, unit)
-			errs = append(errs, fmt.Errorf("restart %s: %w", unit, err))
-		}
-	}
-	if len(errs) > 0 {
-		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), restartByHand(pending))
-	}
-	return units, nil
-}
-
-// restartConsumer restarts a unit that reads the config if it runs, or ran and stays active. A
-// unit that failed, such as one that found no document of its kind at boot, is started again
-// too: the new config may be what it lacked, and try-restart leaves a failed unit alone. A unit
-// that never started, or was stopped, stays so.
-func (s *Server) restartConsumer(ctx context.Context, unit string) error {
-	out, err := s.Run.Run(ctx, "systemctl", "show", "--property=ActiveState", "--value", unit)
-	if err != nil {
-		log.Printf("the state of %s: %v; restarting it only if it runs", unit, err)
-	}
-	if err != nil || strings.TrimSpace(string(out)) != "failed" {
-		_, err := s.Run.Run(ctx, "systemctl", "try-restart", unit)
-		return err
-	}
-	// The failures that put it in its state count against its start limit, which would refuse
-	// the restart.
-	if _, err := s.Run.Run(ctx, "systemctl", "reset-failed", unit); err != nil {
-		return err
-	}
-	_, err = s.Run.Run(ctx, "systemctl", "restart", unit)
-	return err
-}
-
-// restartByHand tells the operator which units read a config they have not loaded yet.
-func restartByHand(units []string) string {
-	if len(units) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("; the config is stored, so restart %s by hand once that is fixed", strings.Join(units, " "))
 }
 
 // installConfig translates the config an install header delivers into the identity of the node

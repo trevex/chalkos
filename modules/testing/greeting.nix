@@ -2,7 +2,8 @@
 # holds a message and a token from a Secret; chalktest-greeting logs the message and the start of
 # the token's SHA-256, and chalkd restarts it when the Greeting or its Secret changes. Its rules,
 # which the image's rules check compiles, refuse a message too long for one log line, and a new
-# message while the fact greetingLock, a file no test writes, holds one.
+# message while the fact greetingLock, a file no test writes, holds one; while it does, a change of
+# the token's Secret does not restart the unit either.
 {
   config,
   lib,
@@ -44,7 +45,12 @@ in
     };
   };
   chalkos.facts.greetingLock.file = "/run/chalktest-greeting-lock.json";
-  chalkos.consumers.chalktest-greeting.kinds = [ "Greeting" ];
+  chalkos.consumers.chalktest-greeting = {
+    kinds = [ "Greeting" ];
+    # The default rule, "Greeting" in changedKinds, held back by the lock: the unit goes on
+    # logging the locked message with the token it read.
+    restart.when = ''"Greeting" in changedKinds && facts.greetingLock == null'';
+  };
   systemd.services.chalktest-greeting = {
     description = "Log the node's Greeting for chalklab tests";
     wantedBy = [ "multi-user.target" ];

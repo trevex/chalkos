@@ -125,14 +125,14 @@ func hashOf(t *testing.T, text string) string {
 
 // configServer is a normal-mode server that runs baseConfig: STATE holds the set, the identity
 // it translates to and that identity's storage section, pinned. The image has the consumers
-// demo, of the Demo kind, and timesync, of the TimeSync kind.
+// demo, of the Demo kind, and timesync, of the TimeSync kind, which restart by default.
 func configServer(t *testing.T) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := newTestServer(t, normal, vda, vdb)
 	writeSchemas(t, s.Loader.Schemas)
 	write(t, s.Loader.Consumers, `{
-	  "demo": {"kinds": ["Demo"], "restartOnChange": true},
-	  "timesync": {"kinds": ["TimeSync"], "restartOnChange": true}
+	  "demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}},
+	  "timesync": {"kinds": ["TimeSync"], "restart": {"when": "\"TimeSync\" in changedKinds"}}
 	}`)
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
@@ -318,17 +318,139 @@ func TestApplyConfigStartsFailedConsumers(t *testing.T) {
 }
 
 // TestApplyConfigFailingRestartNamesTheUnits: once the new set is stored, a retry finds nothing
-// changed, so the error names the units still to restart.
+// changed, so the error names the units still to restart: every unit of the systemctl call that
+// failed, which does not tell which of them failed. A failed call does not stop the others.
 func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 	s, r := configServer(t)
-	r.rules = append(r.rules, rule{prefix: "systemctl try-restart demo", err: errors.New("exit status 1")})
+	r.rules = append(r.rules,
+		rule{prefix: "systemctl show --property=ActiveState --value timesync", out: "failed\n"},
+		rule{prefix: "systemctl try-restart demo", err: errors.New("exit status 1")})
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1) + timeSyncConfig
 	_, err := sendConfig(s, next)
-	if err == nil || !strings.Contains(err.Error(), "restart demo by hand") || strings.Contains(err.Error(), "timesync by hand") {
+	if err == nil || !strings.Contains(err.Error(), "try-restart demo: exit status 1; the delivery is applied, so restart demo by hand") || strings.Contains(err.Error(), "timesync by hand") {
 		t.Fatalf("err = %v, want it to name demo alone", err)
 	}
-	if !slices.Contains(r.calls, "systemctl try-restart timesync") {
+	if !slices.Contains(r.calls, "systemctl restart timesync") {
 		t.Errorf("commands = %v; a failed restart must not stop the others", r.calls)
+	}
+}
+
+// TestApplyConfigReloadsThenRestarts: once the delivery is applied, chalkd reloads each unit whose
+// reload rule is true and that runs, with the unit's command, before it restarts any unit; a unit
+// it restarts it does not reload. It restarts the units that start too with restart, a failed one
+// after reset-failed, and the rest with try-restart, each kind in one call, and names the
+// restarted units.
+func TestApplyConfigReloadsThenRestarts(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Loader.Consumers, `{
+	  "demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}, "reload": {"when": "true", "command": "democtl reload"}},
+	  "logger": {"kinds": [], "reload": {"when": "\"Demo\" in changedKinds", "command": "systemctl reload logger"}},
+	  "stopped": {"kinds": [], "reload": {"when": "true", "command": "systemctl reload stopped"}},
+	  "watcher": {"kinds": [], "restart": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name"}},
+	  "starter": {"kinds": [], "restart": {"when": "\"Demo\" in changedKinds", "start": true}},
+	  "broken": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}},
+	  "idle": {"kinds": [], "restart": {"when": "\"Cluster\" in changedKinds"}}
+	}`)
+	r.rules = append(r.rules,
+		rule{prefix: "systemctl show --property=ActiveState --value stopped", out: "inactive\n"},
+		rule{prefix: "systemctl show --property=ActiveState --value broken", out: "failed\n"})
+	resp, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range r.calls {
+		if !strings.HasPrefix(c, "networkctl ") {
+			got = append(got, c)
+		}
+	}
+	want := []string{
+		"systemctl show --property=ActiveState --value demo",
+		"systemctl show --property=ActiveState --value logger",
+		"systemctl show --property=ActiveState --value stopped",
+		"systemctl show --property=ActiveState --value broken",
+		"systemctl show --property=ActiveState --value starter",
+		"systemctl show --property=ActiveState --value watcher",
+		"systemctl reload logger",
+		"systemctl reset-failed broken",
+		"systemctl restart broken starter",
+		"systemctl try-restart demo watcher",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("commands:\n got: %s\nwant: %s", strings.Join(got, "\n      "), strings.Join(want, "\n      "))
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"broken", "demo", "starter", "watcher"}) {
+		t.Errorf("restarted %v", resp.RestartedUnits)
+	}
+}
+
+// TestApplyConfigFailingReloadNamesTheUnit: a reload that fails is named for a reload by hand, and
+// the restarts still run.
+func TestApplyConfigFailingReloadNamesTheUnit(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Loader.Consumers, `{
+	  "logger": {"kinds": [], "reload": {"when": "\"Demo\" in changedKinds", "command": "systemctl reload logger"}},
+	  "demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}}
+	}`)
+	r.rules = append(r.rules, rule{prefix: "systemctl reload logger", err: errors.New("exit status 1")})
+	_, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
+	if err == nil || !strings.Contains(err.Error(), "reload logger: exit status 1; the delivery is applied, so reload logger by hand") {
+		t.Fatalf("err = %v, want the reload named", err)
+	}
+	if !slices.Contains(r.calls, "systemctl try-restart demo") {
+		t.Errorf("commands = %v; a failed reload must not stop the restarts", r.calls)
+	}
+}
+
+// TestApplyConfigRestartsOnARuleThatFails: a rule that cannot be evaluated counts as true, so the
+// unit restarts once more than it needed to rather than run on config it has not read.
+func TestApplyConfigRestartsOnARuleThatFails(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Loader.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.missing.spec.name == \"x\""}}}`)
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.calls, "systemctl try-restart demo") {
+		t.Errorf("commands = %v", r.calls)
+	}
+}
+
+// TestApplyConfigRefusesConsumersThatDoNotCompile: the running image's consumers are its own, so
+// one whose rule does not compile fails the delivery before it changes anything.
+func TestApplyConfigRefusesConsumersThatDoNotCompile(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Loader.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "changedKinds =="}}}`)
+	_, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), `the running image's consumers: demo restart: rule "changedKinds =="`) {
+		t.Fatalf("err = %v", err)
+	}
+	if v, _ := store.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.calls) != 0 {
+		t.Errorf("stored %s, ran %v", v, r.calls)
+	}
+}
+
+// TestApplyConfigComparesFactsBeforeAndAfter: a rule reads a fact as it was before the delivery
+// changed anything, as oldFacts, and as it is once the delivery is applied, as facts: here the
+// host name of the node.json the delivery writes, which the test server has none of at first.
+func TestApplyConfigComparesFactsBeforeAndAfter(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Paths.Facts, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
+	write(t, s.Loader.Consumers, `{"namer": {"kinds": [], "restart": {"when": "facts.node != oldFacts.node"}}}`)
+	for _, step := range []struct {
+		name, config string
+		restarts     bool
+	}{
+		{"the first node.json", baseConfig, true},
+		{"the same", baseConfig, false},
+		{"another host name", strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {imageRef: metal, hostname: h2}", 1), true},
+	} {
+		r.calls = nil
+		if _, err := sendConfig(s, step.config); err != nil {
+			t.Fatal(err)
+		}
+		if got := slices.Contains(r.calls, "systemctl try-restart namer"); got != step.restarts {
+			t.Errorf("%s: restarted %v, want %v: %v", step.name, got, step.restarts, r.calls)
+		}
 	}
 }
 

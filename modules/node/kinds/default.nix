@@ -177,10 +177,10 @@ let
           { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
       ) factsCfg;
   factsFile = pkgs.writeText "chalkos-facts.json" (builtins.toJSON facts);
-  # The image builds only when every rule of its schemas compiles, within the cost limit, and
-  # reads facts the image declares.
+  # The image builds only when every rule of its schemas and of its consumers compiles, within the
+  # cost limit, and reads facts the image declares.
   rulesCheck = pkgs.runCommand "chalkos-rules-check" { nativeBuildInputs = [ chalkos-rules ]; } ''
-    chalkos-rules check ${schemas} ${factsFile}
+    chalkos-rules check ${schemas} ${factsFile} ${config.system.build.chalkosConsumers}
     touch $out
   '';
 

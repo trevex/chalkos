@@ -1,6 +1,6 @@
-// Command chalkos-rules checks the change rules of an image when it is built: every rule its
-// schemas declare compiles, within the cost limit, and reads only facts the image declares, each
-// a file or a program of the image's store.
+// Command chalkos-rules checks the rules of an image when it is built: every change rule its
+// schemas declare and every restart and reload rule of its consumers compiles, within the cost
+// limit, and reads only facts the image declares, each a file or a program of the image's store.
 package main
 
 import (
@@ -12,32 +12,38 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-const usage = `usage: chalkos-rules check SCHEMAS FACTS
+const usage = `usage: chalkos-rules check SCHEMAS FACTS CONSUMERS
 
-Compiles every rule of the schemas directory SCHEMAS and checks that each reads only the facts
-FACTS, an image's facts.json, declares.`
+Compiles every rule of the schemas directory SCHEMAS and every restart and reload rule of
+CONSUMERS, an image's consumers.json, and checks that each reads only the facts FACTS, an image's
+facts.json, declares.`
 
 func main() {
-	if len(os.Args) != 4 || os.Args[1] != "check" {
+	if len(os.Args) != 5 || os.Args[1] != "check" {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
-	if err := check(os.Args[2], os.Args[3], os.Stdout); err != nil {
+	if err := check(os.Args[2], os.Args[3], os.Args[4], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "chalkos-rules: "+err.Error())
 		os.Exit(1)
 	}
 }
 
-func check(schemasDir, factsFile string, out io.Writer) error {
+func check(schemasDir, factsFile, consumersFile string, out io.Writer) error {
 	s, err := schema.LoadSchemas(schemasDir)
 	if err != nil {
 		return err
 	}
 	defs, err := facts.Read(factsFile)
+	if err != nil {
+		return err
+	}
+	consumers, err := nodeconfig.ReadConsumers(consumersFile)
 	if err != nil {
 		return err
 	}
@@ -52,20 +58,36 @@ func check(schemasDir, factsFile string, out io.Writer) error {
 		errs = append(errs, err)
 	}
 	read := map[string]bool{}
+	reads := func(where, rule string, names []string) {
+		for _, f := range names {
+			if _, ok := defs[f]; !ok {
+				errs = append(errs, fmt.Errorf("%s: rule %q reads facts.%s, which the image does not declare; it declares %s", where, rule, f, declared(defs)))
+			}
+			read[f] = true
+		}
+	}
 	if set != nil {
 		for _, p := range set.Programs {
-			for _, f := range p.Facts {
-				if _, ok := defs[f]; !ok {
-					errs = append(errs, fmt.Errorf("%s: rule %q reads facts.%s, which the image does not declare; it declares %s", p.Where(), p.Rule.Rule, f, declared(defs)))
-				}
-				read[f] = true
+			reads(p.Where(), p.Rule.Rule, p.Facts)
+		}
+	}
+	effects := 0
+	for _, unit := range sortedNames(consumers) {
+		c := consumers[unit]
+		for _, r := range []struct{ action, when string }{{rules.Restart, c.Restart.When}, {rules.Reload, c.Reload.When}} {
+			e, err := rules.CompileEffect(unit, r.action, r.when)
+			if err != nil {
+				errs = append(errs, err)
+				continue
 			}
+			reads(e.Where(), e.When, e.Facts)
+			effects++
 		}
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	fmt.Fprintf(out, "%d rules compile, reading the facts %s\n", len(set.Programs), declared(read))
+	fmt.Fprintf(out, "%d rules and %d consumer rules compile, reading the facts %s\n", len(set.Programs), effects, declared(read))
 	return nil
 }
 

@@ -241,8 +241,8 @@ Evaluating the image fails when a unit names a kind the image does not declare. 
 field of a kind the unit reads names a key of a `Secret` document; the unit reads its value as
 the systemd credential `secret_<secret>.<key>`, in `$CREDENTIALS_DIRECTORY` or `%d`. chalkcfg
 never prints `Secret`s, and their values never appear below `/run/chalkos/config`. Set
-[`restartOnChange`](../reference/options.md#chalkosconsumersrestartonchange) to `false` for a
-unit that rereads its documents itself.
+[`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) to `"false"` for a unit
+that rereads its documents itself.
 
 ## Add a config kind of your own
 

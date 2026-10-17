@@ -126,23 +126,23 @@ func TestSecretRefs(t *testing.T) {
 
 func TestKindHashes(t *testing.T) {
 	s := imageSchemas(t)
-	kindHashes := func(yaml string) map[string]string {
+	hashes := func(yaml string) map[string]string {
 		t.Helper()
-		h, err := KindHashes(parseDocs(t, yaml), s)
+		h, err := kindHashes(parseDocs(t, yaml), s)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return h
 	}
-	before := kindHashes(hashed)
+	before := hashes(hashed)
 	if _, ok := before["Secret"]; ok || len(before) != 2 {
 		t.Errorf("kinds = %v, want Cluster and Demo alone", before)
 	}
-	secret := kindHashes(strings.Replace(hashed, "token: s3cret", "token: other", 1))
+	secret := hashes(strings.Replace(hashed, "token: s3cret", "token: other", 1))
 	if secret["Demo"] == before["Demo"] || secret["Cluster"] != before["Cluster"] {
 		t.Errorf("a referenced Secret's change: %v -> %v, want Demo alone to change", before, secret)
 	}
-	demo := kindHashes(strings.Replace(hashed, "name: two", "name: three", 1))
+	demo := hashes(strings.Replace(hashed, "name: two", "name: three", 1))
 	if demo["Demo"] == before["Demo"] || demo["Cluster"] != before["Cluster"] {
 		t.Errorf("a Demo's change: %v -> %v, want Demo alone to change", before, demo)
 	}
@@ -179,11 +179,11 @@ kind: Secret
 metadata: {name: spare}
 spec: {data: {token: unused}}
 `
-	before, err := KindHashes(parseDocs(t, unreferenced), s)
+	before, err := kindHashes(parseDocs(t, unreferenced), s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := KindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s)
+	after, err := kindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s)
 	if err != nil {
 		t.Fatal(err)
 	}

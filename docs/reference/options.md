@@ -515,7 +515,7 @@ one of “flannel”, “none”
 
 
 
-Services, by name, that read config kinds\.
+Services, by name, that read config kinds, or that a delivery restarts or reloads\.
 
 
 
@@ -539,15 +539,25 @@ attribute set of (submodule)
 
 
 
-Config kinds the unit reads, at least one, by name: attributes of ` chalkos.kinds `, or
-networkd’s ` Network `, ` NetDev ` and ` Link `\. The documents of a kind of ` chalkos.kinds ` are
-in its ` dir `, networkd’s below ` /run/chalkos/config/networkd.chalkos.dev `\. The values
-their ` secretRef ` fields name are the unit’s credentials ` secret_<secret>.<key> `\.
+Config kinds the unit reads, by name: attributes of ` chalkos.kinds `, or networkd’s
+` Network `, ` NetDev ` and ` Link `\. The documents of a kind of ` chalkos.kinds ` are in its
+` dir `, networkd’s below ` /run/chalkos/config/networkd.chalkos.dev `\. The values their
+` secretRef ` fields name are the unit’s credentials ` secret_<secret>.<key> `\. A unit of
+no kinds reads no documents and loads no credentials, and has its ` restart ` and
+` reload ` rules alone\.
 
 
 
 *Type:*
-non-empty (list of string)
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
 
 
 
@@ -564,11 +574,75 @@ non-empty (list of string)
 
 
 
-### chalkos\.consumers\.\<name>\.restartOnChange
+### chalkos\.consumers\.\<name>\.reload\.command
 
 
 
-Restart the unit when a document of one of its kinds changes, or a Secret one of them references\.
+Command, with its arguments, that reloads the unit; a program of chalkd’s PATH or the image’s store\.
+
+
+
+*Type:*
+non-empty string
+
+
+
+*Default:*
+
+```nix
+"systemctl reload <name>"
+```
+
+
+
+*Example:*
+
+```nix
+"networkctl reload"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.consumers\.\<name>\.reload\.when
+
+
+
+CEL expression that is true when a delivery reloads the unit, with the variables of ` restart.when `\. chalkd reloads each such unit that is active before it restarts any, and does not reload a unit it restarts\.
+
+
+
+*Type:*
+non-empty string
+
+
+
+*Default:*
+
+```nix
+"false"
+```
+
+
+
+*Example:*
+
+```nix
+"changedKinds.exists(k, k in [\"Link\", \"NetDev\", \"Network\"])"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.consumers\.\<name>\.restart\.start
+
+
+
+Start the unit when it does not run, with ` systemctl restart ` instead of ` try-restart `, as for a unit whose condition only the delivery meets\.
 
 
 
@@ -580,7 +654,41 @@ boolean
 *Default:*
 
 ```nix
-true
+false
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.consumers\.\<name>\.restart\.when
+
+
+
+CEL expression that is true when a delivery restarts the unit\. Besides ` config `,
+` oldConfig ` and ` changedKinds `, the names of the kinds whose documents, or the
+Secrets they reference, differ between the two, it reads ` facts.<name> ` after the
+delivery and ` oldFacts.<name> ` before it\. ` false ` never restarts the unit\. chalkd
+restarts every unit whose rule is true in one ` systemctl try-restart `, and a unit
+that failed with ` reset-failed ` and ` restart ` instead\.
+
+
+
+*Type:*
+non-empty string
+
+
+
+*Default:*
+` "<kind>" in changedKinds || … ` for each of ` kinds `, or ` false ` for a unit of no kinds
+
+
+
+*Example:*
+
+```nix
+"\"BGPPeering\" in changedKinds || facts.share != oldFacts.share"
 ```
 
 *Declared by:*

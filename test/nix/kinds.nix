@@ -690,6 +690,7 @@ lib.runTests {
     expr = hasChalkcfg withKindConsumer.systemd.services.bird.path;
     expected = true;
   };
+  # By default a unit restarts when one of its kinds changes, and never reloads.
   testKindConsumerRecordedForChalkd = {
     expr = (consumersOf withKindConsumer).bird;
     expected = {
@@ -697,8 +698,63 @@ lib.runTests {
         "Demo"
         "Network"
       ];
-      restartOnChange = true;
+      restart = {
+        when = ''"Demo" in changedKinds || "Network" in changedKinds'';
+        start = false;
+      };
+      reload = {
+        when = "false";
+        command = "systemctl reload bird";
+      };
     };
+  };
+  testConsumerRulesReachChalkd = {
+    expr =
+      (consumersOf (image [
+        {
+          systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
+          chalkos.consumers.bird = {
+            restart = {
+              when = "facts.share != oldFacts.share";
+              start = true;
+            };
+            reload = {
+              when = ''changedKinds.exists(k, k in ["Link", "NetDev", "Network"])'';
+              command = "birdc configure";
+            };
+          };
+        }
+      ])).bird;
+    expected = {
+      kinds = [ ];
+      restart = {
+        when = "facts.share != oldFacts.share";
+        start = true;
+      };
+      reload = {
+        when = ''changedKinds.exists(k, k in ["Link", "NetDev", "Network"])'';
+        command = "birdc configure";
+      };
+    };
+  };
+  # The image's rules check compiles the consumers' rules too.
+  testRulesCheckReadsTheConsumers = {
+    expr = lib.hasInfix "chalkos-consumers.json" withKindConsumer.system.build.chalkosRulesCheck.buildCommand;
+    expected = true;
+  };
+  testRestartOnChangeIsGone = {
+    expr = fails (
+      consumersOf (image [
+        {
+          systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
+          chalkos.consumers.bird = {
+            kinds = [ "Demo" ];
+            restartOnChange = false;
+          };
+        }
+      ])
+    );
+    expected = true;
   };
   testKindConsumerWithServiceDoesNotWarn = {
     expr = withKindConsumer.warnings;
@@ -716,10 +772,31 @@ lib.runTests {
     expr = fails (consumersOf (consumerOf [ "Nope" ]));
     expected = true;
   };
-  # A consumer reads at least one kind; one of none would load credentials no one writes.
-  testKindConsumerOfNoKindsFails = {
-    expr = fails (consumersOf (consumerOf [ ]));
-    expected = true;
+  # A consumer of no kinds reads no documents, so it gets no credentials, no chalkcfg and no
+  # warning, whose unit may come from systemd.packages.
+  testConsumerOfNoKindsLoadsNoCredentials = {
+    expr =
+      let
+        config = image [
+          {
+            systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
+            chalkos.consumers.bird.reload.when = "true";
+            chalkos.consumers.systemd-journald.reload.when = "true";
+          }
+        ];
+      in
+      {
+        credentials = config.systemd.services.bird.serviceConfig ? LoadCredential;
+        chalkcfg = hasChalkcfg config.systemd.services.bird.path;
+        warnings = config.warnings;
+        restart = (consumersOf config).bird.restart.when;
+      };
+    expected = {
+      credentials = false;
+      chalkcfg = false;
+      warnings = [ ];
+      restart = "false";
+    };
   };
   testKindConsumerOfSecretFails = {
     expr = fails (consumersOf (consumerOf [ "Secret" ]));

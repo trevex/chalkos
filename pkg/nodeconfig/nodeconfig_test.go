@@ -229,8 +229,9 @@ func TestLoadWritesConfig(t *testing.T) {
 	l, _ := newTestLoader(t)
 	copySchemas(t, l.Schemas)
 	write(t, l.Consumers, `{
-	  "demo": {"kinds": ["Demo"], "restartOnChange": true},
-	  "idle": {"kinds": ["Cluster"], "restartOnChange": true}
+	  "demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}},
+	  "idle": {"kinds": ["Cluster"], "restart": {"when": "\"Cluster\" in changedKinds"}},
+	  "reloaded": {"kinds": [], "reload": {"when": "true", "command": "systemctl reload reloaded"}}
 	}`)
 	writeSlot(t, l, running, nodeIdentity, loaderConfig)
 
@@ -252,12 +253,16 @@ func TestLoadWritesConfig(t *testing.T) {
 	if entries, err := os.ReadDir(filepath.Join(l.RunDir, "credentials", "idle")); err != nil || len(entries) != 0 {
 		t.Errorf("idle's credentials = %v, %v; want an empty directory", entries, err)
 	}
+	// A unit of no kinds loads no credentials.
+	if _, err := os.Stat(filepath.Join(l.RunDir, "credentials", "reloaded")); !os.IsNotExist(err) {
+		t.Errorf("reloaded's credentials: %v; want none", err)
+	}
 }
 
 func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	l, _ := newTestLoader(t)
 	writeSlot(t, l, running, nodeIdentity, "")
-	write(t, l.Consumers, `{"demo": {"kinds": ["Demo"], "restartOnChange": true}}`)
+	write(t, l.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}}}`)
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
@@ -266,32 +271,25 @@ func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	}
 }
 
-func TestKindRestarts(t *testing.T) {
-	consumers := map[string]Consumer{
-		"demo":    {Kinds: []string{"Demo"}, RestartOnChange: true},
-		"network": {Kinds: []string{"Network", "Link"}, RestartOnChange: true},
-		"quiet":   {Kinds: []string{"Demo"}, RestartOnChange: false},
-	}
-	before := map[string]string{"Demo": "1", "Network": "2"}
-	for name, c := range map[string]struct {
-		after map[string]string
-		want  []string
-	}{
-		"unchanged":    {map[string]string{"Demo": "1", "Network": "2"}, nil},
-		"kind changed": {map[string]string{"Demo": "3", "Network": "2"}, []string{"demo"}},
-		"kind removed": {map[string]string{"Demo": "1"}, []string{"network"}},
-		"kind added":   {map[string]string{"Demo": "1", "Network": "2", "Link": "4"}, []string{"network"}},
-		"all removed":  {map[string]string{}, []string{"demo", "network"}},
-	} {
-		if got := KindRestarts(consumers, before, c.after); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s: restarts = %v, want %v", name, got, c.want)
-		}
+// ReadConsumers reads each consumer's kinds and rules.
+func TestReadConsumers(t *testing.T) {
+	l, _ := newTestLoader(t)
+	write(t, l.Consumers, `{"networkd": {"kinds": [], "restart": {"when": "false", "start": false},
+	  "reload": {"when": "\"Network\" in changedKinds", "command": "networkctl reload"}}}`)
+	got, err := ReadConsumers(l.Consumers)
+	want := map[string]Consumer{"networkd": {
+		Kinds:   []string{},
+		Restart: Restart{When: "false"},
+		Reload:  Reload{When: `"Network" in changedKinds`, Command: "networkctl reload"},
+	}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("consumers = %+v, %v; want %+v", got, err, want)
 	}
 }
 
 func TestApplyWritesNoKeyCredentials(t *testing.T) {
 	l, _ := newTestLoader(t)
-	write(t, l.Consumers, `{"report": {"keys": ["hostname"], "restartOnChange": true}}`)
+	write(t, l.Consumers, `{"report": {"keys": ["hostname"], "restart": {"when": "true"}}}`)
 	if err := l.Apply([]byte(nodeIdentity)); err != nil {
 		t.Fatal(err)
 	}

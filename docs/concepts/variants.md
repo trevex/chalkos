@@ -242,8 +242,8 @@ The module does three things:
   outside `chalkos.dev`, which chalkos keeps for its own kinds, and only option types the schema
   converter knows are allowed; another type fails the build, naming the option.
 - [`chalkos.consumers`](../reference/options.md#chalkosconsumers) names the unit that reads the
-  kind, so chalkd restarts it when a `Rack` document changes, unless the consumer sets
-  [`restartOnChange = false`](../reference/options.md#chalkosconsumersrestartonchange).
+  kind, so chalkd restarts it when a `Rack` document changes, unless the consumer's
+  [`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) rule says otherwise.
 - [`chalkos.kinds.<Kind>.get`](../reference/options.md#chalkoskindsget) builds the
   [chalkcfg](../reference/glossary.md#chalkcfg) command that prints the value. The evaluation
   checks the path `spec.location` against the kind's options, so a typo fails the build instead of
