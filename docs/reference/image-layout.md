@@ -150,18 +150,18 @@ idle, so a power cut rarely finds its FAT file system in use.
 `chalkos-installer_1.efi`. The image ID consists of lower-case letters, digits, `.`, `_` and
 `-`; the build fails otherwise. The generation is the number in the name without its counter; an
 upgrade reads the highest any name `chalkos_<n>.efi` on the ESP gives and writes the next. The
-name alone counts, as systemd-boot orders the entry by it: a UKI that cannot be read, or whose
-os-release names another image, counts too. A name that gives no generation, such as
+name alone counts, as systemd-boot orders the entry by it: a file that is no UKI, or a UKI whose
+os-release names another image or none, counts too. A name that gives no generation, such as
 `chalkos.efi`, counts for none. An upgrade refuses to run while the entry the node booted, or
 another it keeps, has a generation of 0 or with leading zeros, such as `chalkos_01.efi`, or while
 a name gives a generation too large for one to follow it in 64 bits. chalkd never writes such
 names.
 
-An upgrade first removes every UKI of the image's ID, and every UKI it cannot read whose name
+An upgrade first removes every UKI of the image's ID, and every file that is no UKI whose name
 gives a generation, except the one the node booted and those booting the running store, then
 receives the new one, so the ESP holds the UKIs of both slots and, during an upgrade, a third. An
 install from the installer removes every UKI of the image's ID but the `chalkos_1.efi` it
-writes. UKIs of other image IDs, such as a rescue system's, stay. systemd-boot sorts entries by
+writes. UKIs of other image IDs, or of none, such as a rescue system's, stay. systemd-boot sorts entries by
 image ID, lowest first, before their file names, so such a UKI whose image ID sorts before
 `chalkos`, such as one with `IMAGE_ID=alpine`, boots before every chalkos entry. chalkos itself
 never puts UKIs of other image IDs on the ESP. An upgrade leaves systemd-boot alone: only an

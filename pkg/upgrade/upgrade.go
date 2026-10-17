@@ -248,9 +248,10 @@ func (n *Node) slots() *SlotWriter {
 }
 
 // ofImage reports whether the UKI is of the image: its os-release names the image or, when it
-// cannot be read, its name gives a generation of the image.
+// does not parse as a UKI, its name gives a generation of the image. A UKI whose os-release names
+// no IMAGE_ID is another system's, which systemd-boot sorts by its ID, such as nixos.
 func ofImage(e Entry, imageID string) bool {
-	if e.ImageID == "" {
+	if !e.Readable {
 		_, ok, _ := nameGeneration(e.ID, imageID)
 		return ok
 	}

@@ -209,10 +209,12 @@ func TestGenerationsPastNine(t *testing.T) {
 
 // TestGenerationsByName counts the generation a name on the ESP gives the image, whatever its UKI
 // holds, as systemd-boot orders the entry by its name: an upgrade's entry is the next one. A UKI
-// that cannot be read is retired, as the image's other entries; one of another image stays.
+// that cannot be read is retired, as the image's other entries; one of another image stays, as
+// does one whose os-release names no image ID, which systemd-boot sorts by its ID.
 func TestGenerationsByName(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	rescue := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root)
+	nixos := newUKI(map[string]string{"ID": "nixos", "VERSION_ID": "26.05"}, newImage(t, "c", 3).root)
 	for _, tc := range []struct {
 		name, file string
 		uki        []byte
@@ -221,6 +223,7 @@ func TestGenerationsByName(t *testing.T) {
 	}{
 		{"an unreadable UKI", "chalkos_9.efi", []byte("not a UKI"), "chalkos_10+3.efi", false},
 		{"another image's", "chalkos_2.efi", rescue, "chalkos_3+3.efi", true},
+		{"one without an image ID", "chalkos_5.efi", nixos, "chalkos_6+3.efi", true},
 		{"a huge generation", "chalkos_18446744073709551614.efi", []byte("not a UKI"), "chalkos_18446744073709551615+3.efi", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -785,6 +788,39 @@ func TestEntriesWhileBlessed(t *testing.T) {
 	})
 	if err != nil || len(list) != 1 || list[0].File != "chalkos_2.efi" || list[0].Generation != 2 || list[0].TriesLeft != -1 {
 		t.Errorf("entries = %+v, %v", list, err)
+	}
+}
+
+// TestEntriesReadErrors lists a file that reads but is no UKI as one that cannot be read, and
+// fails on a UKI that does not open or read: which store it boots is then unknown.
+func TestEntriesReadErrors(t *testing.T) {
+	img := newImage(t, "b", 3)
+	esp := t.TempDir()
+	dir := filepath.Join(esp, linuxDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"chalkos_1.efi": img.uki, "chalkos_2.efi": []byte("not a UKI")} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := entries(esp, os.Open)
+	if err != nil || len(list) != 2 || !list[0].Readable || !bytes.Equal(list[0].RootHash, img.root) || list[1].Readable || list[1].RootHash != nil {
+		t.Fatalf("entries = %+v, %v", list, err)
+	}
+	for _, tc := range []struct {
+		name string
+		open func(string) (*os.File, error)
+		want error
+	}{
+		{"open", func(string) (*os.File, error) { return nil, syscall.EACCES }, syscall.EACCES},
+		// Reading a directory fails as a read of a broken file system does.
+		{"read", func(string) (*os.File, error) { return os.Open(dir) }, syscall.EISDIR},
+	} {
+		if list, err := entries(esp, tc.open); !errors.Is(err, tc.want) || !strings.Contains(err.Error(), "chalkos_1.efi on the ESP") {
+			t.Errorf("entries failing to %s = %+v, %v; want %v", tc.name, list, err, tc.want)
+		}
 	}
 }
 

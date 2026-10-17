@@ -128,9 +128,11 @@ chalkd installs in five steps. At every point between them the disk boots the ru
 the new one with all its tries.
 
 1. Retire the inactive slot. chalkd removes every UKI of the image on the ESP except those that
-   boot the running store, including a UKI a stopped upgrade left under its temporary name and one
-   it cannot read whose name gives a generation of the image. Then it
-   gives the slot's partitions random UUIDs and the label `_empty`, so nothing can boot them.
+   boot the running store, including a UKI a stopped upgrade left under its temporary name and a
+   file whose name gives a generation of the image but that is no UKI. A UKI whose os-release
+   names no `IMAGE_ID`, such as another system's, stays, and a UKI the ESP fails to read stops the
+   upgrade. Then chalkd gives the slot's partitions random UUIDs and the label `_empty`, so
+   nothing can boot them.
 2. Write and verify. chalkd writes the store and hash tree into the slot, checks their SHA-256
    sums and verifies the store read back from the disk against the root hash. A slot that already
    holds this store is not written again.

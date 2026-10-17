@@ -332,9 +332,16 @@ func (l *lab) boot() (Entry, string) {
 	if preferred, err := loaderString(l.efivars, "LoaderEntryPreferred"); err != nil || preferred != "" {
 		l.t.Errorf("LoaderEntryPreferred is %q (%v), want it unset", preferred, err)
 	}
-	// Bad entries last, then by the image ID their os-release names, then the highest ID first: the
-	// UKIs of an image carry the same IMAGE_VERSION, an empty one for chalkos's, so systemd-boot
-	// compares their IDs alone.
+	// Bad entries last, then by the image ID their os-release names, or else its ID, then the
+	// highest ID first: the UKIs of an image carry the same IMAGE_VERSION, an empty one for
+	// chalkos's, so systemd-boot compares their IDs alone.
+	osID := map[string]string{}
+	for _, e := range entries {
+		osID[e.File] = e.ImageID
+		if img, readable, _ := readUKI(filepath.Join(l.esp, linuxDir, e.File), os.Open); readable && e.ImageID == "" {
+			osID[e.File] = img.OSRelease["ID"]
+		}
+	}
 	slices.SortStableFunc(entries, func(a, b Entry) int {
 		if a.Bad() != b.Bad() {
 			if a.Bad() {
@@ -342,7 +349,7 @@ func (l *lab) boot() (Entry, string) {
 			}
 			return -1
 		}
-		if c := strings.Compare(a.ImageID, b.ImageID); c != 0 {
+		if c := strings.Compare(osID[a.File], osID[b.File]); c != 0 {
 			return c
 		}
 		return compareIDs(b.ID, a.ID)

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"os"
@@ -33,8 +34,9 @@ type Entry struct {
 	// TriesLeft and TriesDone are the counter in the name; -1 without one, which marks an entry
 	// whose boot was found good, or which was never counted.
 	TriesLeft, TriesDone int
-	// ImageID is the image ID its os-release names, and RootHash the root hash of the store it
-	// boots; both are empty when the UKI cannot be read.
+	// Readable is set when the file parses as a UKI. ImageID is the image ID its os-release names,
+	// and RootHash the root hash of the store it boots; both are empty when it does not parse.
+	Readable bool
 	ImageID  string
 	RootHash []byte
 	// Generation numbers the image's entries, as the name <image ID>_<generation>.efi gives it; 0
@@ -190,11 +192,12 @@ func listEntries(esp string, open func(string) (*os.File, error)) ([]Entry, erro
 		}
 		e := Entry{File: name}
 		e.ID, e.TriesLeft, e.TriesDone = parseEntryName(name)
-		img, err := readUKI(filepath.Join(dir, name), open)
-		switch {
-		case errors.Is(err, fs.ErrNotExist):
+		img, readable, err := readUKI(filepath.Join(dir, name), open)
+		if err != nil {
 			return nil, fmt.Errorf("read %s on the ESP: %w", name, err)
-		case err == nil:
+		}
+		if readable {
+			e.Readable = true
 			e.ImageID = img.ID()
 			e.RootHash, _ = img.UsrHash()
 			e.Generation = entryGeneration(e.ID, e.ImageID)
@@ -204,13 +207,36 @@ func listEntries(esp string, open func(string) (*os.File, error)) ([]Entry, erro
 	return entries, nil
 }
 
-func readUKI(path string, open func(string) (*os.File, error)) (uki.Image, error) {
+// readUKI reads the UKI at path; readable is false for a file that reads but does not parse as a
+// UKI. A file that fails to open or read is an error instead: an upgrade removes the image's UKIs
+// that do not parse, and one the ESP failed to give may boot the running store.
+func readUKI(path string, open func(string) (*os.File, error)) (_ uki.Image, readable bool, _ error) {
 	f, err := open(path)
 	if err != nil {
-		return uki.Image{}, err
+		return uki.Image{}, false, err
 	}
 	defer f.Close()
-	return uki.Read(f)
+	r := &recordingReader{r: f}
+	img, err := uki.Read(r)
+	if r.err != nil {
+		return uki.Image{}, false, r.err
+	}
+	return img, err == nil, nil
+}
+
+// recordingReader keeps the first error a read gave other than the file's end: uki.Read reports
+// it as a file that is no UKI.
+type recordingReader struct {
+	r   io.ReaderAt
+	err error
+}
+
+func (r *recordingReader) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.r.ReadAt(p, off)
+	if err != nil && err != io.EOF && r.err == nil {
+		r.err = err
+	}
+	return n, err
 }
 
 // Booted finds the entry the node booted: the one systemd-boot says it selected, which must boot

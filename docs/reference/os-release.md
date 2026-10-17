@@ -83,7 +83,7 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | --- | --- | --- |
 | `IMAGE_ID` | chalkd's [Upgrade](api.md#method-upgrade) | The new image's ID equals the running image's. |
 | `IMAGE_ID` | chalkd's upgrade and install, on the UKI | The UKI's ID equals the image header's. The UKI's file name on the [ESP](glossary.md#esp) is `<IMAGE_ID>_<generation>.efi`. |
-| `IMAGE_ID` | chalkd's upgrade, on the ESP | Only UKIs of the running image's ID, and those that cannot be read whose names give a generation of it, are removed; other UKIs on the ESP stay. Every name `<IMAGE_ID>_<n>.efi` counts for the highest generation, whatever its UKI holds. |
+| `IMAGE_ID` | chalkd's upgrade, on the ESP | Only UKIs of the running image's ID, and files that are no UKI whose names give a generation of it, are removed; other UKIs on the ESP stay. Every name `<IMAGE_ID>_<n>.efi` counts for the highest generation, whatever its UKI holds. |
 | `IMAGE_VERSION` | chalkctl, reading an image | Set and empty; an image without it or with a value is refused. |
 | `IMAGE_VERSION` | chalkd's upgrade and install, on the UKI | Set and empty, as for chalkctl. |
 | `CHALKOS_PLATFORM` | chalkd's Upgrade | The new image's equals the running image's; a running image without it takes no upgrade. |
