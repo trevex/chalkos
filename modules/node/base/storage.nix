@@ -32,8 +32,24 @@ let
     };
   };
   stateDevice = "${utils.escapeSystemdPath "/dev/disk/chalk-boot/state"}.device";
+  # chalkos-storage facts runs in chalkd's sandbox, whose PATH need not hold cryptsetup.
+  facts = pkgs.writeShellScript "chalkos-storage-facts" ''
+    PATH=${lib.makeBinPath [ pkgs.cryptsetup ]}
+    exec ${exe} facts "$1"
+  '';
 in
 {
+  # What the storage kinds' rules read of the machine: the storage section STATE records, what
+  # the delivered disk references find, and whether the fallback secret opens the node's keyslot.
+  chalkos.facts = {
+    recorded.file = "/state/storage/storage.json";
+    disks.command = "${facts} disks";
+    fallback = {
+      command = "${facts} fallback";
+      inputs = [ "fallbackSecret" ];
+    };
+  };
+
   boot.initrd = {
     # systemd-cryptsetup and the TPM2 token plugin without a crypttab: STATE and VAR are
     # unlocked at runtime because the same image serves encrypted and unencrypted nodes.

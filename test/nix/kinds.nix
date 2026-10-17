@@ -1059,6 +1059,41 @@ lib.runTests {
       etc = true;
     };
   };
+  # Every image declares the facts of the storage kinds' rules, and an image with Kubernetes
+  # the share; the fallback secret reaches the command that checks it alone.
+  testBuiltinFacts = {
+    expr =
+      let
+        defined = kubernetesImage.system.build.chalkosFactDefinitions;
+      in
+      {
+        names = lib.attrNames defined;
+        plain = lib.attrNames plainImage.system.build.chalkosFactDefinitions;
+        recorded = defined.recorded;
+        share = defined.share;
+        disks = lib.hasSuffix " disks" defined.disks.command && !(defined.disks ? inputs);
+        fallback =
+          lib.hasSuffix " fallback" defined.fallback.command
+          && defined.fallback.inputs == [ "fallbackSecret" ];
+      };
+    expected = {
+      names = [
+        "disks"
+        "fallback"
+        "recorded"
+        "share"
+      ];
+      plain = [
+        "disks"
+        "fallback"
+        "recorded"
+      ];
+      recorded.file = "/state/storage/storage.json";
+      share.file = "/state/kubernetes/share.json";
+      disks = true;
+      fallback = true;
+    };
+  };
   testFactNameIsAnIdentifier = {
     expr = fails (image [ { chalkos.facts.disk-ids.file = "/x"; } ]).system.build.chalkosFacts.drvPath;
     expected = true;

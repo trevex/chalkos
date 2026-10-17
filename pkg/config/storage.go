@@ -84,30 +84,6 @@ func definition(label, format string, size *string, mode string, repart map[stri
 	return b.String()
 }
 
-func (d diskRef) ref() (storage.Ref, error) {
-	sel := storage.Selector{}
-	set := func(dst *string, v *string) bool {
-		if v == nil {
-			return false
-		}
-		*dst = *v
-		return true
-	}
-	hasSelector := set(&sel.Model, d.Model)
-	hasSelector = set(&sel.Serial, d.Serial) || hasSelector
-	hasSelector = set(&sel.WWN, d.WWN) || hasSelector
-	hasSelector = set(&sel.Size, d.Size) || hasSelector
-	hasSelector = set(&sel.Type, d.Type) || hasSelector
-	switch {
-	case d.Path != nil && !hasSelector:
-		return storage.Ref{Path: *d.Path}, nil
-	case d.Path == nil && hasSelector:
-		return storage.Ref{Selector: sel}, nil
-	default:
-		return storage.Ref{}, fmt.Errorf("a disk is named by its path or selector keys (model, serial, wwn, size, type), not both or neither")
-	}
-}
-
 func orMode(override *string, node string) string {
 	if override != nil {
 		return *override
@@ -139,7 +115,7 @@ func (s *Set) storage() (storage.Section, error) {
 	if err := sd.decodeSpec(&sys); err != nil {
 		return storage.Section{}, err
 	}
-	systemRef, err := sys.Disk.ref()
+	systemRef, err := sys.Disk.Ref()
 	if err != nil {
 		return storage.Section{}, fmt.Errorf("%s: disk: %w", sd, err)
 	}
@@ -150,7 +126,7 @@ func (s *Set) storage() (storage.Section, error) {
 			return storage.Section{}, err
 		}
 		if v.spec.Disk != nil {
-			r, err := v.spec.Disk.ref()
+			r, err := v.spec.Disk.Ref()
 			if err != nil {
 				return storage.Section{}, fmt.Errorf("%s: disk: %w", d, err)
 			}

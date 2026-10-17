@@ -2,7 +2,10 @@
 // the image they are meant for, and translates them into the node's identity.
 package config
 
-import "github.com/trevex/chalkos/pkg/kubernetes"
+import (
+	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/storage"
+)
 
 // API versions and kinds chalkos declares itself.
 const (
@@ -29,18 +32,8 @@ type secretSpec struct {
 	Data map[string]string `json:"data"`
 }
 
-// diskRef is a disk by path or by selector keys.
-type diskRef struct {
-	Path   *string `json:"path"`
-	Model  *string `json:"model"`
-	Serial *string `json:"serial"`
-	WWN    *string `json:"wwn"`
-	Size   *string `json:"size"`
-	Type   *string `json:"type"`
-}
-
 type systemDiskSpec struct {
-	Disk       diskRef `json:"disk"`
+	Disk       storage.DiskRef `json:"disk"`
 	Encryption struct {
 		Mode     string `json:"mode"`
 		Fallback string `json:"fallback"`
@@ -54,10 +47,10 @@ type systemDiskSpec struct {
 }
 
 type volumeSpec struct {
-	Disk       *diskRef `json:"disk"`
-	Size       *string  `json:"size"`
-	Format     *string  `json:"format"`
-	MountPoint *string  `json:"mountPoint"`
+	Disk       *storage.DiskRef `json:"disk"`
+	Size       *string          `json:"size"`
+	Format     *string          `json:"format"`
+	MountPoint *string          `json:"mountPoint"`
 	Encryption struct {
 		Mode *string `json:"mode"`
 	} `json:"encryption"`

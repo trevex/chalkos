@@ -17,7 +17,9 @@ const usage = `usage: chalkos-storage <mode>
 modes:
   state                                 unlock STATE and mount it at /sysroot/state (initrd)
   initrd                                create volumes, pin disks, and mount VAR at /sysroot/var (initrd)
-  generate [flags] NORMAL [EARLY LATE]  write units for the remaining volumes (systemd generator)`
+  generate [flags] NORMAL [EARLY LATE]  write units for the remaining volumes (systemd generator)
+  facts disks|fallback                  print a fact the storage kinds' rules read, for the
+                                        input of a command fact on standard input`
 
 func main() {
 	log.SetFlags(0)
@@ -35,6 +37,8 @@ func main() {
 		err = node.Default().SetUp(ctx)
 	case "generate":
 		err = runGenerate(os.Args[2:])
+	case "facts":
+		err = runFacts(os.Args[2:], os.Stdin, os.Stdout)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
