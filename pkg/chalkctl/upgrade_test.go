@@ -74,12 +74,12 @@ func shortOf(t *testing.T, dir string) string {
 // the size.
 func testUpgradeImageOfBlocks(t *testing.T, variant, platform, name string, blockSize int) string {
 	t.Helper()
-	return testImageOf(t, variant, platform, name, blockSize, "")
+	return testImageOf(t, variant, platform, name, blockSize, nil)
 }
 
-// testImageOf builds a test image whose UKI's os-release sets IMAGE_VERSION as given; chalkos's
-// images set it empty.
-func testImageOf(t *testing.T, variant, platform, name string, blockSize int, imageVersion string) string {
+// testImageOf builds a test image whose UKI's os-release edit changes, when given, from what
+// chalkos's images name, with an empty IMAGE_VERSION.
+func testImageOf(t *testing.T, variant, platform, name string, blockSize int, edit func(osRelease map[string]string)) string {
 	t.Helper()
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -97,9 +97,13 @@ func testImageOf(t *testing.T, variant, platform, name string, blockSize int, im
 	uki := filepath.Join(dir, "uki.efi")
 	loader := filepath.Join(dir, "systemd-boot.efi")
 	writeFile(t, loader, string(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")})))
-	writeFile(t, uki, string(ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": imageVersion, "CHALKOS_VARIANT": variant, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
-	}, fmt.Sprintf("init=/x usrhash=%x", root))))
+	osRelease := map[string]string{
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": variant, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
+	}
+	if edit != nil {
+		edit(osRelease)
+	}
+	writeFile(t, uki, string(ukitest.UKI(osRelease, fmt.Sprintf("init=/x usrhash=%x", root))))
 	for _, args := range [][]string{
 		{"mkfs.vfat", "-C", esp, "4096"},
 		{"mmd", "-i", esp, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux"},
@@ -163,6 +167,9 @@ type upgradeFake struct {
 	stagedStoreSize, stagedVeritySize uint64
 	// rebooting makes the node unreachable, as while it reboots.
 	rebooting bool
+	// alreadyStaged makes the node answer an upgrade as one that found the image staged already,
+	// though its status did not say so, as when another run staged it in between.
+	alreadyStaged bool
 }
 
 // upgradeLab is a cluster of fake nodes.
@@ -295,6 +302,9 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	name, _ := testImageNames.Load(string(h.RootHash))
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
+	if n.alreadyStaged {
+		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyStaged: true, Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)}), nil
+	}
 	return connect.NewResponse(&nodev1.UpgradeResponse{Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)}), nil
 }
 
@@ -748,6 +758,23 @@ func TestUpgradeWithoutReboot(t *testing.T) {
 	}
 }
 
+// TestUpgradeReportsAStagedImage says so when a node answers that the image is staged already,
+// which its status did not say, and goes on as after an install.
+func TestUpgradeReportsAStagedImage(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.nodes["w1"].alreadyStaged = true
+	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if want := "w1: " + shortOf(t, img) + " is staged already, as chalkos_2+3.efi\n"; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, l.ta.stdout)
+	}
+	if n := l.nodes["w1"]; n.staged != "0.2.0" || n.image != "0.1.0" {
+		t.Errorf("w1 runs %s with %s staged", n.image, n.staged)
+	}
+}
+
 // TestUpgradeWith4KiBVerityBlocks sends the store of an image built with 4 KiB dm-verity blocks
 // and its hash tree, as long as the tree's superblock counts them.
 func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
@@ -860,8 +887,8 @@ func TestImageContractRefusesAnOlderImageDirectory(t *testing.T) {
 }
 
 // TestUpgradeChecksTheImage refuses images that name no variant, whose UKI names an image
-// version, which systemd-boot would order the entry by, or whose UKI the cluster's db certificate
-// did not sign, before any node is asked to change.
+// version or none, by which systemd-boot would order the entry, or whose UKI the cluster's db
+// certificate did not sign, before any node is asked to change.
 func TestUpgradeChecksTheImage(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
 		t.Skip("sbsign not in PATH")
@@ -881,7 +908,8 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 	}{
 		{"an unsigned UKI", img, []string{"--sign-cert", dbCert}, "Secure Boot would refuse the image's UKI: the image is not signed"},
 		{"a UKI signed by another key", signedByOther, []string{"--sign-cert", dbCert}, "not in db"},
-		{"an image version", testImageOf(t, "w", "metal", "0.2.0", 512, "0.2.0"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image's UKI: the UKI's os-release sets IMAGE_VERSION to \"0.2.0\""},
+		{"an image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { o["IMAGE_VERSION"] = "0.2.0" }), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image's UKI: the UKI's os-release sets IMAGE_VERSION to \"0.2.0\""},
+		{"no image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { delete(o, "IMAGE_VERSION") }), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image's UKI: the UKI's os-release has no IMAGE_VERSION"},
 		{"an image without a variant", testUpgradeImage(t, "", "0.2.0"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image names no variant or platform in its os-release"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
