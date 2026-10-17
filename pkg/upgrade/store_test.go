@@ -118,6 +118,11 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "does not suit") {
 		t.Fatalf("install = %v, want the check's refusal", err)
 	}
+	// The image was written, not found staged.
+	var retired *StagedRetiredError
+	if errors.As(err, &retired) {
+		t.Errorf("install = %v, a StagedRetiredError", err)
+	}
 	if toplevel != "/nix/store/x" {
 		t.Errorf("toplevel = %q, want the UKI's init= directory", toplevel)
 	}
@@ -248,14 +253,15 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 		}
 		return nil
 	}
-	if _, err := l.install(img); !errors.Is(err, refusal) || !errors.Is(err, errCrash) || !strings.Contains(err.Error(), "which still boots next") {
+	var retired *StagedRetiredError
+	if _, err := l.install(img); !errors.Is(err, refusal) || !errors.Is(err, errCrash) || !strings.Contains(err.Error(), "which still boots next") || errors.As(err, &retired) {
 		t.Fatalf("install = %v, want the refusal and the failed retirement", err)
 	}
 	l.boots(img, 2)
 	l.node.Change = nil
 
-	if _, err := l.install(img); !errors.Is(err, refusal) {
-		t.Fatalf("install = %v, want the check's refusal", err)
+	if _, err := l.install(img); !errors.Is(err, refusal) || !errors.As(err, &retired) {
+		t.Fatalf("install = %v, want the check's refusal, which retired the staged image", err)
 	}
 	if e, name := l.boot(); name != old.name || l.file(res.Entry) != nil {
 		t.Errorf("after a refusal the disk boots %s from %s, and %s stayed: %v", name, e.File, res.Entry, l.file(res.Entry) != nil)
@@ -303,5 +309,39 @@ func TestReadImage(t *testing.T) {
 		if err == nil {
 			t.Errorf("%s: read without an error", name)
 		}
+	}
+}
+
+// TestOnlyARecheckRetiresTheStagedImage: an install of the staged image that fails before the
+// recheck, or whose slot no longer holds the image so it is written anew, returns no
+// StagedRetiredError, though the image may be gone after the second; the caller only says the
+// staged image was retired with its refused config when the recheck retired it.
+func TestOnlyARecheckRetiresTheStagedImage(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, old)
+	l.node.Run = storeRunner{Runner: l.node.Run, calls: &[]string{}, mounted: func(dir string) {
+		os.RemoveAll(dir)
+		writeStore(t, dir)
+	}}
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	var refusal error
+	l.node.CheckStore = func(Store) error { return refusal }
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	refusal = errors.New("the config does not suit the image")
+	var retired *StagedRetiredError
+
+	other := img
+	other.header.Architecture = "arm64"
+	if _, err := l.node.Install(context.Background(), other.header, other.stream()); err == nil || errors.As(err, &retired) {
+		t.Errorf("install for another architecture = %v, want a refusal that retired nothing", err)
+	}
+	l.boots(img, 2)
+
+	// Another program changed the slot's UUIDs, so the image is written anew and checked then.
+	l.setUUID(5, randomUUID())
+	if _, err := l.install(img); !errors.Is(err, refusal) || errors.As(err, &retired) {
+		t.Errorf("install into a changed slot = %v, want the check's refusal without a StagedRetiredError", err)
 	}
 }

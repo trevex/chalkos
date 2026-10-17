@@ -203,14 +203,17 @@ func TestGetConfigStaged(t *testing.T) {
 }
 
 // TestUpgradeOfAStagedImageNamesApplyConfigStaged names apply-config --staged when the config an
-// upgrade sends again for a staged image is refused, which retires the image; apply-config
-// --staged would have kept it.
+// upgrade sends again for a staged image is refused in the recheck, which retires the image;
+// apply-config --staged would have kept it. Any other failure names it not, also of the staged
+// image: one that came before the recheck, such as of the image's architecture, retired nothing.
 func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	c := newCreds(t)
 	s, _ := stagedServer(t, fixtureSchemas(t))
+	refusal := errors.New("the config does not suit the image")
+	installErr := error(refusal)
 	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, error) {
 		io.Copy(io.Discard, r)
-		return upgrade.Result{}, errors.New("the config does not suit the image")
+		return upgrade.Result{}, installErr
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 	send := func(rootHash []byte) error {
@@ -225,6 +228,11 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	if err := send(bytes.Repeat([]byte{'9'}, 32)); err == nil || strings.Contains(err.Error(), "--staged") {
 		t.Errorf("upgrade to another image = %v, want no --staged named", err)
 	}
+	installErr = errors.New("the image is built for arm64, this machine for x86-64")
+	if err := send(stagedImage); err == nil || strings.Contains(err.Error(), "--staged") {
+		t.Errorf("upgrade of the staged image that fails before the recheck = %v, want no --staged named", err)
+	}
+	installErr = &upgrade.StagedRetiredError{Err: refusal}
 	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the image staged to boot next was retired with it: chalkctl apply-config --staged") {
 		t.Errorf("upgrade of the staged image = %v, want apply-config --staged named", err)
 	}
