@@ -855,16 +855,37 @@ func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 	}
 }
 
+// TestUpgradeWithAnOperatorClientFileAlone upgrades a partial cluster as an operator: there is no
+// inventory, so no config to withhold, and each node says it carries its own over.
+func TestUpgradeWithAnOperatorClientFileAlone(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
+	args := []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--nodes", "w1", "--no-reboot"}
+	for name, addr := range l.addrs {
+		args = append(args, "--address", name+"="+addr)
+	}
+	if err := l.ta.run(context.Background(), args); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	out := l.ta.stdout.String()
+	if !strings.Contains(out, "w1: no inventory to compare the config with; the node carries its own over") || strings.Contains(out, "config not delivered") {
+		t.Errorf("output:\n%s\nwant the line without an inventory and none about withheld config", out)
+	}
+	if n := l.nodes["w1"]; n.staged != "0.2.0" || n.stagedConfig != "" {
+		t.Errorf("w1 stages %q with the config %q, want 0.2.0 without config", n.staged, n.stagedConfig)
+	}
+}
+
 // TestUpgradeWithholdsConfigANodeDoesNotShow sends no config to nodes that refuse to show theirs
 // to the credentials, as they would refuse config with the upgrade, and says so once; --diff stops
-// there instead.
+// there instead. The credentials read as admin, so the line names the node, not the role.
 func TestUpgradeWithholdsConfigANodeDoesNotShow(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.configDenied = true
 	img := testUpgradeImage(t, "w", "0.2.0")
 	err := l.upgrade(img, "--diff")
-	if err == nil || !strings.Contains(err.Error(), "needs the admin role") {
-		t.Errorf("upgrade --diff = %v, want the admin role named", err)
+	if err == nil || !strings.Contains(err.Error(), "w1 refuses to show its config to these credentials; upgrade --diff") {
+		t.Errorf("upgrade --diff = %v, want w1's refusal named", err)
 	}
 	if err := l.upgrade(img, "--nodes", "w1,w2", "--no-reboot", "--max-unavailable", "2"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
@@ -874,18 +895,47 @@ func TestUpgradeWithholdsConfigANodeDoesNotShow(t *testing.T) {
 			t.Errorf("%s stages %q with the config %q, want 0.2.0 without config", name, n.staged, n.stagedConfig)
 		}
 	}
-	if out := l.ta.stdout.String(); strings.Count(out, "config not delivered: the admin role cannot deliver config") != 1 {
-		t.Errorf("output:\n%s", out)
+	out := l.ta.stdout.String()
+	if line := "w1 refuses to show its config to these credentials; config not delivered, each node carries its own over\n"; strings.Count(out, line) != 1 || strings.Contains(out, "role cannot deliver config") {
+		t.Errorf("output:\n%s\nwant %q once", out, line)
 	}
 }
 
-// TestUpgradeAsksForPasswordsBeforeDraining asks for the fallback password of each node whose
-// config adds an encrypted volume one node after the other, before any node is drained, also
-// when a batch upgrades nodes at once, and sends each node its own.
-func TestUpgradeAsksForPasswordsBeforeDraining(t *testing.T) {
+// TestUpgradeWithholdsConfigBeforeDraining asks the first node to install for its config before
+// any password is asked for or any node is drained. Once it refuses to show it, the run withholds
+// config from the start, so a node with the image staged is not sent it again for its config and
+// no password is asked for.
+func TestUpgradeWithholdsConfigBeforeDraining(t *testing.T) {
 	l := newUpgradeLab(t, 1)
+	l.configDenied = true
+	img := testUpgradeImage(t, "w", "0.2.0")
+	withPasswordVolume(t, l, "w1", "w2")
+	prompts := recordPrompts(l)
+	l.nodes["w1"].staged, l.nodes["w1"].stagedRoot, l.nodes["w1"].stagedConfig = "0.2.0", rootOf(t, img), "{}"
+	if err := l.upgrade(img, "--nodes", "w1,w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	events := l.takeEvents()
+	if slices.Contains(events, "w1 upgrade") || !slices.Contains(events, "w2 upgrade") {
+		t.Errorf("events %q, want the image sent to w2 alone", events)
+	}
+	if len(*prompts) != 0 {
+		t.Errorf("asked %q", *prompts)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1 refuses to show its config to these credentials") {
+		t.Errorf("output:\n%s", out)
+	}
+	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" {
+		t.Errorf("the nodes run %v", v)
+	}
+}
+
+// withPasswordVolume gives the nodes' config a fallback password and an encrypted volume the
+// nodes do not have yet.
+func withPasswordVolume(t *testing.T, l *upgradeLab, names ...string) {
+	t.Helper()
 	volume := "apiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\nspec: {size: 1G, format: ext4, mountPoint: /srv/data, encryption: {mode: tpm2}}\n"
-	for _, name := range []string{"w1", "w2"} {
+	for _, name := range names {
 		path := filepath.Join(l.ta.dir, "nodes", name+".yaml")
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -893,12 +943,30 @@ func TestUpgradeAsksForPasswordsBeforeDraining(t *testing.T) {
 		}
 		writeFile(t, path, strings.Replace(string(data), n1SystemDisk, passwordSystemDisk, 1)+"---\n"+volume)
 	}
-	l.ta.answers = []string{"one", "one", "two", "two"}
+}
+
+// recordPrompts records each prompt on the terminal as an event of the lab, and returns them all.
+func recordPrompts(l *upgradeLab) *[]string {
+	var prompts []string
 	read := l.ta.readSecret
 	l.ta.readSecret = func(ctx context.Context, prompt string) ([]byte, error) {
 		l.record("prompt %s", prompt)
+		l.mu.Lock()
+		prompts = append(prompts, prompt)
+		l.mu.Unlock()
 		return read(ctx, prompt)
 	}
+	return &prompts
+}
+
+// TestUpgradeAsksForPasswordsBeforeDraining asks for the fallback password of each node whose
+// config adds an encrypted volume one node after the other, before any node is drained, also
+// when a batch upgrades nodes at once, and sends each node its own.
+func TestUpgradeAsksForPasswordsBeforeDraining(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	withPasswordVolume(t, l, "w1", "w2")
+	l.ta.answers = []string{"one", "one", "two", "two"}
+	recordPrompts(l)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2", "--max-unavailable", "2"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}

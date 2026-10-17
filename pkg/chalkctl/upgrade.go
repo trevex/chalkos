@@ -190,7 +190,11 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	case !pki.Allows(r.role, pki.RoleAdmin) && f.diff:
 		return r.diffNeedsAdmin()
 	case !pki.Allows(r.role, pki.RoleAdmin):
-		r.withhold()
+		// A partial cluster has no inventory, so there is no config to withhold, and each node
+		// says that it carries its own over.
+		if !r.cluster.partial {
+			r.withhold("config not delivered: the %s role cannot deliver config; each node carries its own over", r.roleName())
+		}
 	default:
 		if err := r.checkConfig(); err != nil {
 			return err
@@ -199,6 +203,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	if f.diff {
 		return r.diff(ctx)
 	}
+	if err := r.showsConfig(ctx); err != nil {
+		return err
+	}
 	if err := r.fallbacks(ctx); err != nil {
 		return err
 	}
@@ -206,20 +213,75 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 }
 
 // withhold keeps the run's config and fallback secrets from the nodes, which accept them with an
-// upgrade only from an admin, and says so once.
-func (r *upgradeRun) withhold() {
+// upgrade only from an admin, and prints the line that says why once.
+func (r *upgradeRun) withhold(format string, args ...any) {
 	r.withholdOnce.Do(func() {
 		r.withheld.Store(true)
-		r.say("config not delivered: the %s role cannot deliver config; each node carries its own over", r.roleName())
+		r.say(format, args...)
 	})
+}
+
+// withholdDenied withholds the run's config after the node refused to show its config to the
+// credentials, which read as admin, so it would refuse config with the upgrade too.
+func (r *upgradeRun) withholdDenied(name string) {
+	r.withhold("%s refuses to show its config to these credentials; config not delivered, each node carries its own over", name)
+}
+
+// showsConfig asks the first node the run sends its image for its config, once and before any
+// fallback secret is asked for or any node is drained, when the run delivers config. A node that
+// refuses to show it to credentials that read as admin would refuse config with the upgrade too, so
+// the run withholds config from the start: no node is then sent a staged image again for its
+// config alone, and no password is asked for. configChanges still withholds should a later node
+// refuse.
+func (r *upgradeRun) showsConfig(ctx context.Context) error {
+	if r.withheld.Load() {
+		return nil
+	}
+	for _, name := range r.order() {
+		n := r.nodes[name]
+		if n.delivery == nil {
+			continue
+		}
+		var asked, denied bool
+		if err := r.call(name, func(conn *client.Conn) error {
+			st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			if err != nil {
+				return err
+			}
+			if !r.installs(n, st.Msg) {
+				return nil
+			}
+			asked = true
+			_, err = slotConfig(ctx, conn, false)
+			if connect.CodeOf(err) == connect.CodePermissionDenied {
+				denied = true
+				return nil
+			}
+			return err
+		}); err != nil {
+			return err
+		}
+		if denied {
+			r.withholdDenied(name)
+		}
+		if asked {
+			return nil
+		}
+	}
+	return nil
 }
 
 // roleName names the credentials' role in messages.
 func (r *upgradeRun) roleName() string {
-	if r.role == "" {
+	return roleLabel(r.role)
+}
+
+// roleLabel names a role in messages, as "the ... role".
+func roleLabel(role string) string {
+	if role == "" {
 		return "client file's"
 	}
-	return r.role
+	return role
 }
 
 // diffNeedsAdmin is the error of upgrade --diff with credentials below admin, which may neither
@@ -242,10 +304,12 @@ func (r *upgradeRun) deliveryOf(n *upgradeNode) *delivery {
 func (r *upgradeRun) diff(ctx context.Context) error {
 	r.diffing = true
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
+		var denied bool
 		if err := r.call(name, func(conn *client.Conn) error {
 			changes, err := r.configChanges(ctx, conn, r.nodes[name])
 			if connect.CodeOf(err) == connect.CodePermissionDenied {
-				return r.diffNeedsAdmin()
+				denied = true
+				return nil
 			}
 			if err != nil || changes == nil {
 				return err
@@ -256,6 +320,10 @@ func (r *upgradeRun) diff(ctx context.Context) error {
 			return nil
 		}); err != nil {
 			return err
+		}
+		// The credentials read as admin, so the node, not the role, refused.
+		if denied {
+			return fmt.Errorf("%s refuses to show its config to these credentials; upgrade --diff has nothing to compare the inventory's config with", name)
 		}
 	}
 	return nil
@@ -275,7 +343,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 	}
 	nodeDocs, err := slotConfig(ctx, conn, false)
 	if connect.CodeOf(err) == connect.CodePermissionDenied && !r.diffing {
-		r.withhold()
+		r.withholdDenied(n.name)
 		return nil, nil
 	}
 	if err != nil {
@@ -506,9 +574,8 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 	return &upgradeGroup{key: nc.ImageDir, dir: nc.ImageDir, variant: md.Variant, platform: md.Platform}, nil
 }
 
-// run upgrades the control planes one at a time, then the other nodes in batches.
-func (r *upgradeRun) run(ctx context.Context) error {
-	var controlPlanes, others []string
+// split sorts the nodes to upgrade into the control planes and the others, each by name.
+func (r *upgradeRun) split() (controlPlanes, others []string) {
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
 		if r.nodes[name].kind == identity.KindControlPlane {
 			controlPlanes = append(controlPlanes, name)
@@ -516,6 +583,18 @@ func (r *upgradeRun) run(ctx context.Context) error {
 			others = append(others, name)
 		}
 	}
+	return controlPlanes, others
+}
+
+// order is the order run upgrades the nodes in.
+func (r *upgradeRun) order() []string {
+	controlPlanes, others := r.split()
+	return append(controlPlanes, others...)
+}
+
+// run upgrades the control planes one at a time, then the other nodes in batches.
+func (r *upgradeRun) run(ctx context.Context) error {
+	controlPlanes, others := r.split()
 	images := map[string]bool{}
 	for _, g := range r.groups {
 		r.say("upgrading %s on %s to %s: %s", g.variant, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
