@@ -88,9 +88,8 @@ func unquote(v string) string {
 	return b.String()
 }
 
-// ID, Version, Variant, Platform and BootTries are the image's os-release values chalkos sets.
+// ID, Variant, Platform and BootTries are the image's os-release values chalkos sets.
 func (i Image) ID() string        { return i.OSRelease["IMAGE_ID"] }
-func (i Image) Version() string   { return i.OSRelease["IMAGE_VERSION"] }
 func (i Image) Variant() string   { return i.OSRelease["CHALKOS_VARIANT"] }
 func (i Image) Platform() string  { return i.OSRelease["CHALKOS_PLATFORM"] }
 func (i Image) BootTries() string { return i.OSRelease["CHALKOS_BOOT_TRIES"] }

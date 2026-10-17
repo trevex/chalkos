@@ -49,7 +49,7 @@ func writeLabFiles(t *testing.T, dir, labFile string) string {
 		"chalklab.yaml": labFile,
 	}
 	for _, p := range []string{"kvm", "metal"} {
-		files["images/node-"+p+"/metadata.json"] = `{"schemaVersion": 0, "id": "chalkos", "version": "0.1.0", "variant": "node", "platform": "` + p + `", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
+		files["images/node-"+p+"/metadata.json"] = `{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "` + p + `", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
 	}
 	for name, content := range files {
 		path := filepath.Join(dir, name)
@@ -173,7 +173,7 @@ func checkLabFile(t *testing.T, src, labFile string) {
 		if err := os.MkdirAll(nc.ImageDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		md := `{"schemaVersion": 0, "id": "chalkos", "version": "0.1.0", "variant": "k8s", "platform": "kvm", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
+		md := `{"schemaVersion": 0, "id": "chalkos", "variant": "k8s", "platform": "kvm", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
 		if err := os.WriteFile(filepath.Join(nc.ImageDir, "metadata.json"), []byte(md), 0o644); err != nil {
 			t.Fatal(err)
 		}

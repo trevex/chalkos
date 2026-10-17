@@ -395,6 +395,12 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	imageDir := testUpgradeImage(t, "gpu", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+	// The build named its revision and tag, which the node records.
+	md, err := os.ReadFile(filepath.Join(imageDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(imageDir, "metadata.json"), strings.Replace(string(md), `"kinds"`, `"revision": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "tag": "v1.5.0", "kinds"`, 1))
 	s := maintenanceNode()
 	s.Installer = true
 	var got install.PartsRequest
@@ -412,8 +418,12 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := got.Image
-	if h.ImageID != "chalkos" || len(h.RootHash) != 32 || h.Platform != "metal" || h.BootLoaderSize == 0 {
+	if h.ImageID != "chalkos" || len(h.RootHash) != 32 || h.Platform != "metal" || h.BootLoaderSize == 0 ||
+		h.Provenance != (upgrade.Provenance{Revision: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", Tag: "v1.5.0"}) {
 		t.Errorf("image = %+v", h)
+	}
+	if want := "chalkos " + imageName(h.RootHash, h.Provenance.Revision, h.Provenance.Tag) + ", sending"; !strings.Contains(ta.stdout.String(), want) || !strings.Contains(want, "(v1.5.0, a1b2c3d4e5f6)") {
+		t.Errorf("output lacks %q:\n%s", want, ta.stdout)
 	}
 	size := h.StoreSize + h.VeritySize + h.UKISize + h.BootLoaderSize
 	loader := sha256.Sum256(streamed[max(len(streamed)-int(h.BootLoaderSize), 0):])

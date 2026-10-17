@@ -27,7 +27,10 @@ const metadataVersion = 0
 type Metadata struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	ID            string `json:"id"`
-	Version       string `json:"version"`
+	// Revision and Tag are the git revision and tag the image was built from, as mkImages was
+	// given them; empty when it was not. They say where the image came from and decide nothing.
+	Revision string `json:"revision"`
+	Tag      string `json:"tag"`
 	// Variant is the name of the mkImages variant the image is built as.
 	Variant string `json:"variant"`
 	// Platform is the platform the image is built for, such as metal or kvm.

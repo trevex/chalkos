@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -116,8 +118,9 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 	if hash, err := img.info.UsrHash(); err != nil || !bytes.Equal(hash, img.store.RootHash) {
 		return nil, errors.New("the image's UKI boots another store than the image holds")
 	}
-	if !upgrade.VersionPattern.MatchString(img.info.Version()) {
-		return nil, fmt.Errorf("the image's version %q is not one chalkos installs: 1 to 23 characters of a-z, 0-9, '.', '~', '^' and '-'", img.info.Version())
+	// The node would refuse the UKI only once it received the image.
+	if err := upgrade.CheckImageVersion(img.info); err != nil {
+		return nil, fmt.Errorf("the image's UKI: %w", err)
 	}
 	if img.info.Variant() == "" || img.info.Platform() == "" {
 		return nil, errors.New("the image names no variant or platform in its os-release; it is no node image")
@@ -127,6 +130,13 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool) (_ 
 		Platform:     img.info.Platform(),
 		RootHash:     img.store.RootHash,
 		Architecture: arch,
+	}
+	// An image directory names where the image came from; a raw image alone does not.
+	switch md, err := schema.ReadMetadata(filepath.Dir(raw)); {
+	case err == nil:
+		h.Revision, h.Tag = md.Revision, md.Tag
+	case !errors.Is(err, fs.ErrNotExist):
+		return nil, err
 	}
 	if h.Store, err = sum(img.store.Data); err != nil {
 		return nil, err

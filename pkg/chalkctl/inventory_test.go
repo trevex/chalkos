@@ -80,7 +80,7 @@ func writeImageDir(t *testing.T, dir, variant, platform, rootHash string, kubern
 		k = `{"version": "1.37.1", "cni": "none"}`
 		writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
 	}
-	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "version": "0.1.0", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": %s, "kinds": []}`, variant, platform, rootHash, k))
+	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": %s, "kinds": []}`, variant, platform, rootHash, k))
 	copySchemas(t, filepath.Join(dir, "schemas"))
 }
 

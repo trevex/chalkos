@@ -142,7 +142,7 @@ func TestResolve(t *testing.T) {
 		t.Errorf("an image directory without metadata.json: %v", err)
 	}
 	write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
-		`{"schemaVersion": 0, "id": "chalkos", "version": "0.3.0", "variant": "node", "platform": "metal", "rootHash": "`+hash+`", "kinds": []}`)
+		`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "`+hash+`", "kinds": []}`)
 	md, err := cp1.Resolve()
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestResolve(t *testing.T) {
 		}
 	}
 	write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
-		`{"schemaVersion": 0, "id": "chalkos", "version": "0.3.0", "variant": "node", "platform": "metal", "kinds": []}`)
+		`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "kinds": []}`)
 	w1, err := inv.Node("w1")
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +279,7 @@ func TestResolveRefusesMetadata(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := homelabDir(t)
 			write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
-				`{"schemaVersion": 0, "id": "chalkos", "version": "0.3.0", "variant": "node", "platform": "`+tc.platform+`", "rootHash": "`+tc.hash+`", "kinds": []}`)
+				`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "`+tc.platform+`", "rootHash": "`+tc.hash+`", "kinds": []}`)
 			inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
 			if err != nil {
 				t.Fatal(err)

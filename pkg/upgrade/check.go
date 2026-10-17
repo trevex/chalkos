@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 
 	"github.com/trevex/chalkos/pkg/uki"
@@ -32,10 +31,6 @@ type Header struct {
 	// Provenance is what the build says of where it came from, which the node records and shows.
 	Provenance Provenance
 }
-
-// VersionPattern is what an image version may be: what a GPT label holds after "store-verity_"
-// and what systemd-boot keeps unchanged in an entry's ID.
-var VersionPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.~^-]{0,22}$`)
 
 // maxUKI bounds the UKI an image brings; it must fit the ESP beside another.
 const maxUKI = 512 << 20

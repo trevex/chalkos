@@ -74,6 +74,13 @@ func shortOf(t *testing.T, dir string) string {
 // the size.
 func testUpgradeImageOfBlocks(t *testing.T, variant, platform, name string, blockSize int) string {
 	t.Helper()
+	return testImageOf(t, variant, platform, name, blockSize, "")
+}
+
+// testImageOf builds a test image whose UKI's os-release sets IMAGE_VERSION as given; chalkos's
+// images set it empty.
+func testImageOf(t *testing.T, variant, platform, name string, blockSize int, imageVersion string) string {
+	t.Helper()
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not in PATH", tool)
@@ -91,7 +98,7 @@ func testUpgradeImageOfBlocks(t *testing.T, variant, platform, name string, bloc
 	loader := filepath.Join(dir, "systemd-boot.efi")
 	writeFile(t, loader, string(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")})))
 	writeFile(t, uki, string(ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": name, "CHALKOS_VARIANT": variant, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": imageVersion, "CHALKOS_VARIANT": variant, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/x usrhash=%x", root))))
 	for _, args := range [][]string{
 		{"mkfs.vfat", "-C", esp, "4096"},
@@ -852,9 +859,9 @@ func TestImageContractRefusesAnOlderImageDirectory(t *testing.T) {
 	}
 }
 
-// TestUpgradeChecksTheImage refuses images that name no variant, of a version chalkos does not
-// install, or whose UKI the cluster's db certificate did not sign, before any node is asked to
-// change.
+// TestUpgradeChecksTheImage refuses images that name no variant, whose UKI names an image
+// version, which systemd-boot would order the entry by, or whose UKI the cluster's db certificate
+// did not sign, before any node is asked to change.
 func TestUpgradeChecksTheImage(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
 		t.Skip("sbsign not in PATH")
@@ -874,7 +881,7 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 	}{
 		{"an unsigned UKI", img, []string{"--sign-cert", dbCert}, "Secure Boot would refuse the image's UKI: the image is not signed"},
 		{"a UKI signed by another key", signedByOther, []string{"--sign-cert", dbCert}, "not in db"},
-		{"a version with upper-case letters", testUpgradeImage(t, "w", "0.2.0-RC1"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "is not one chalkos installs"},
+		{"an image version", testImageOf(t, "w", "metal", "0.2.0", 512, "0.2.0"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image's UKI: the UKI's os-release sets IMAGE_VERSION to \"0.2.0\""},
 		{"an image without a variant", testUpgradeImage(t, "", "0.2.0"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image names no variant or platform in its os-release"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
