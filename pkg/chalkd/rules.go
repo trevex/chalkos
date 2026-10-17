@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"slices"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -53,7 +51,7 @@ func (s *Server) checkRules(set *rules.Set, next, old []config.Document, f rules
 		return err
 	}
 	if len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "%s", refusal(failures, nodeOf(next)))
+		return failed(connect.CodeFailedPrecondition, "%s", rules.Refusal(failures, nodeOf(next)))
 	}
 	return nil
 }
@@ -66,27 +64,6 @@ func evaluate(set *rules.Set, next, old []config.Document, f rules.Facts) ([]rul
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
 	return failures, nil
-}
-
-// refusal says what the rules a config fails take, the most a change takes first: a refusal,
-// whose message says what to do instead, a reinstall of the node, or chalkctl storage reset.
-// Each rule's message names the change and its remedy.
-func refusal(failures []rules.Failure, node string) string {
-	takes := func(t rules.Takes) bool {
-		return slices.ContainsFunc(failures, func(f rules.Failure) bool { return f.Takes == t })
-	}
-	head := "the config takes chalkctl storage reset"
-	switch {
-	case takes(rules.Refuse):
-		head = "the config is refused"
-	case takes(rules.Reinstall):
-		head = "the config takes a reinstall of " + node
-	}
-	msgs := make([]string, len(failures))
-	for i, f := range failures {
-		msgs[i] = f.String()
-	}
-	return head + ": " + strings.Join(msgs, "; ")
 }
 
 // jsonValue is v as a fact read from JSON holds it, for a fact that stands in for a file, such as

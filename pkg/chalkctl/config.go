@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/inventory"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -99,10 +100,12 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 }
 
 // delivery is a node's config as chalkctl delivers it, checked against the image it is for, with
-// the identity it translates to there.
+// the identity it translates to there and its documents with their defaults, as the image's rules
+// see them.
 type delivery struct {
 	config.Encoded
-	identity identity.Identity
+	identity  identity.Identity
+	documents []config.Document
 }
 
 // deliveryFor is a node's config as chalkctl delivers it for the image the contract describes,
@@ -127,8 +130,8 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 
 // checkNodeConfig checks a node's config as the node checks it on the image the contract
 // describes: the set's rules, each document against its schema, the identity it translates
-// into, and on an image with Kubernetes the cluster it gives. It returns the config as chalkctl
-// delivers it.
+// into, on an image with Kubernetes the cluster it gives, and the image's change rules that
+// chalkctl can check without the node's config. It returns the config as chalkctl delivers it.
 func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	set, err := config.NewSet(nc.Documents, c.schemas)
 	if err != nil {
@@ -143,11 +146,44 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 			return delivery{}, err
 		}
 	}
+	if err := checkRules(c, set.Documents(), nil, nc.Name); err != nil {
+		return delivery{}, err
+	}
 	e, err := config.Encode(nc.Documents)
 	if err != nil {
 		return delivery{}, err
 	}
-	return delivery{Encoded: e, identity: id}, nil
+	return delivery{Encoded: e, identity: id, documents: set.Documents()}, nil
+}
+
+// checkRules refuses next, a node's config with its defaults, when the change rules of the image
+// the contract describes refuse it, as the node would: those that read no facts, which the node
+// alone has. old is the node's config as it serves it, its Secret values hashed, or nil where
+// chalkctl does not have it, as for validate; without it, the rules of fields that read oldSelf
+// do not run and the rules of kinds see no oldDocuments. Documents of old that the image does not
+// accept compare with nothing.
+func checkRules(c contract, next, old []config.Document, node string) error {
+	set, err := rules.Compile(c.schemas)
+	if err != nil {
+		return fmt.Errorf("the image's rules: %w", err)
+	}
+	var baseline []config.Document
+	for _, d := range old {
+		filled, err := c.schemas.Default(d.Object)
+		if err != nil {
+			continue
+		}
+		d.Object = filled.(map[string]any)
+		baseline = append(baseline, d)
+	}
+	failures, err := set.Evaluate(rules.Input{Documents: next, Old: baseline, OldHashed: true})
+	if err != nil {
+		return err
+	}
+	if len(failures) > 0 {
+		return errors.New(rules.Refusal(failures, node))
+	}
+	return nil
 }
 
 // imageContractOf is the contract of the image a node's Image names, as built for the platform its

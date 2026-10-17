@@ -27,6 +27,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
@@ -765,7 +766,7 @@ func (s *Server) resetVolume(ctx context.Context, name string, next store.Stored
 		return err
 	}
 	if len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, refusal(failures, nodeOf(next.Documents)))
+		return failed(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, rules.Refusal(failures, nodeOf(next.Documents)))
 	}
 
 	if err := s.deleteVolume(ctx, name, v, pins); err != nil {

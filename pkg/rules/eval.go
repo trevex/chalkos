@@ -24,8 +24,10 @@ type Facts interface {
 type Input struct {
 	Documents []config.Document
 	// Old is the running image's config; nil without one, as at an install, where field rules
-	// that read oldSelf do not run and the rules of kinds see no oldDocuments.
-	Old []config.Document
+	// that read oldSelf do not run and the rules of kinds see no oldDocuments. OldHashed tells
+	// that its Secret values are hashed already, as a node serves its config.
+	Old       []config.Document
+	OldHashed bool
 	// Facts is nil where no facts can be read, as in chalkctl: rules that read facts do not run.
 	Facts Facts
 }
@@ -62,7 +64,8 @@ func (e *FactError) Unwrap() error { return e.Err }
 // the set's order. An error is a rule that could not be evaluated, or a fact that could not be
 // loaded, which refuses the delivery as well.
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
-	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
+	next, old := objectsOf(in.Documents, true), objectsOf(in.Old, !in.OldHashed)
+	cfg, oldCfg := configMap(next), configMap(old)
 	var failures []Failure
 	for _, p := range s.Programs {
 		if len(p.Facts) > 0 && in.Facts == nil {
@@ -70,8 +73,8 @@ func (s *Set) Evaluate(in Input) ([]Failure, error) {
 		}
 		if p.Path == nil {
 			vars := map[string]any{
-				"documents":    documentsOf(in.Documents, p),
-				"oldDocuments": documentsOf(in.Old, p),
+				"documents":    documentsOf(next, p),
+				"oldDocuments": documentsOf(old, p),
 			}
 			f, err := p.evaluate(vars, cfg, oldCfg, in.Facts, "")
 			if err != nil {
@@ -80,14 +83,14 @@ func (s *Set) Evaluate(in Input) ([]Failure, error) {
 			failures = append(failures, f...)
 			continue
 		}
-		for _, d := range kindDocuments(in.Documents, p) {
-			self, ok := valueAt(d.Hashed(), p.Path)
+		for _, d := range kindDocuments(next, p) {
+			self, ok := valueAt(d.object, p.Path)
 			if !ok {
 				continue
 			}
 			oldSelf, hasOld := any(nil), false
-			if old, ok := oldDocument(in.Old, p, d.Name); ok {
-				oldSelf, hasOld = valueAt(old.Hashed(), p.Path)
+			if o, ok := oldDocument(old, p, d.Name); ok {
+				oldSelf, hasOld = valueAt(o.object, p.Path)
 			}
 			if p.Transition && !hasOld {
 				continue
@@ -168,9 +171,32 @@ func notString(v ref.Val) error {
 	return fmt.Errorf("it yields %s, not a string", v.Type().TypeName())
 }
 
+// docView is a document with its object as rules see it.
+type docView struct {
+	config.Document
+	object map[string]any
+}
+
+// objectsOf is docs as rules see them, with Secret values replaced by their hashes unless
+// hashed is false, as for documents whose values are hashed already.
+func objectsOf(docs []config.Document, hash bool) []docView {
+	out := make([]docView, len(docs))
+	for i, d := range docs {
+		out[i] = docView{Document: d, object: d.Object}
+		if hash {
+			out[i].object = d.Hashed()
+		}
+	}
+	return out
+}
+
 // ConfigOf is a config set as rules see it and command facts read it: objects by apiVersion, kind
 // and name, Secret values replaced by their hashes.
 func ConfigOf(docs []config.Document) map[string]any {
+	return configMap(objectsOf(docs, true))
+}
+
+func configMap(docs []docView) map[string]any {
 	out := map[string]any{}
 	for _, d := range docs {
 		kinds, ok := out[d.APIVersion].(map[string]any)
@@ -183,48 +209,48 @@ func ConfigOf(docs []config.Document) map[string]any {
 			names = map[string]any{}
 			kinds[d.Kind] = names
 		}
-		names[d.Name] = celValue(d.Hashed())
+		names[d.Name] = celValue(d.object)
 	}
 	return out
 }
 
 // documentsOf is the documents of the program's kind by name.
-func documentsOf(docs []config.Document, p *Program) map[string]any {
+func documentsOf(docs []docView, p *Program) map[string]any {
 	out := map[string]any{}
 	for _, d := range kindDocuments(docs, p) {
-		out[d.Name] = celValue(d.Hashed())
+		out[d.Name] = celValue(d.object)
 	}
 	return out
 }
 
-func kindDocuments(docs []config.Document, p *Program) []config.Document {
-	var out []config.Document
+func kindDocuments(docs []docView, p *Program) []docView {
+	var out []docView
 	for _, d := range docs {
 		if d.APIVersion == p.Kind.APIVersion && d.Kind == p.Kind.Kind {
 			out = append(out, d)
 		}
 	}
-	slices.SortFunc(out, func(a, b config.Document) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(out, func(a, b docView) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
 // oldDocument is the running config's document a field's rule compares with: the one of the same
 // name, or for a kind a node has once, that one whatever its name, so renaming the document does
 // not escape the rule.
-func oldDocument(old []config.Document, p *Program, name string) (config.Document, bool) {
+func oldDocument(old []docView, p *Program, name string) (docView, bool) {
 	docs := kindDocuments(old, p)
 	if !p.Kind.Multiple {
 		if len(docs) == 1 {
 			return docs[0], true
 		}
-		return config.Document{}, false
+		return docView{}, false
 	}
 	for _, d := range docs {
 		if d.Name == name {
 			return d, true
 		}
 	}
-	return config.Document{}, false
+	return docView{}, false
 }
 
 // valueAt is the value at path in obj, which must exist.
@@ -271,4 +297,25 @@ func celValue(v any) any {
 		return v
 	}
 	return v
+}
+
+// Refusal says what the failures of a config's rules take, the most a change takes first: a
+// refusal, whose message says what to do instead, a reinstall of the node, or chalkctl storage
+// reset. Each rule's message names the change and its remedy.
+func Refusal(failures []Failure, node string) string {
+	takes := func(t Takes) bool {
+		return slices.ContainsFunc(failures, func(f Failure) bool { return f.Takes == t })
+	}
+	head := "the config takes chalkctl storage reset"
+	switch {
+	case takes(Refuse):
+		head = "the config is refused"
+	case takes(Reinstall):
+		head = "the config takes a reinstall of " + node
+	}
+	msgs := make([]string, len(failures))
+	for i, f := range failures {
+		msgs[i] = f.String()
+	}
+	return head + ": " + strings.Join(msgs, "; ")
 }

@@ -652,6 +652,11 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		changes.write(a.stdout)
 		return nil
 	}
+	// The rules that compare the config with the node's are checked against the config the node
+	// serves before anything is sent, as the node checks them on delivery.
+	if err := checkRules(c, d.documents, nodeDocs, t.name); err != nil {
+		return fmt.Errorf("%s: %w", t.name, err)
+	}
 	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, "")
 	if err != nil {
 		return err

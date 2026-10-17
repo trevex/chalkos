@@ -284,3 +284,50 @@ func TestCompileErrors(t *testing.T) {
 		})
 	}
 }
+
+// A refusal names the most a change takes first, and each rule's message.
+func TestRefusal(t *testing.T) {
+	reset := Failure{Kind: "Volume", Takes: Reset, Message: "Volume extra: format xfs instead of ext4; reset it"}
+	reinstall := Failure{Kind: "Volume", Takes: Reinstall, Message: "Volume data: removed; only a reinstall removes it"}
+	refuse := Failure{Kind: "Kubernetes", Document: "kubernetes", Path: []string{"spec", "ipFamilies"}, Takes: Refuse, Message: "fixed"}
+	for _, tc := range []struct {
+		failures []Failure
+		want     string
+	}{
+		{[]Failure{reset}, "the config takes chalkctl storage reset: Volume extra: format xfs instead of ext4; reset it"},
+		{[]Failure{reset, reinstall}, "the config takes a reinstall of n1: Volume extra: format xfs instead of ext4; reset it; Volume data: removed; only a reinstall removes it"},
+		{[]Failure{reinstall, refuse}, `the config is refused: Volume data: removed; only a reinstall removes it; Kubernetes "kubernetes" spec.ipFamilies: fixed`},
+	} {
+		if got := Refusal(tc.failures, "n1"); got != tc.want {
+			t.Errorf("Refusal = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+// The running config as a node serves it holds its Secret values hashed already, which rules
+// see as they see the delivered config's.
+func TestOldHashed(t *testing.T) {
+	set := compiled(t, kindSchema("Solo", false, object(nil), []any{
+		rule(`config["chalkos.dev/v1alpha1"].Secret.s.spec.data.token == oldConfig["chalkos.dev/v1alpha1"].Secret.s.spec.data.token`, "the token changes"),
+	}))
+	secret := func(token string) config.Document {
+		return config.FromObject(map[string]any{"apiVersion": config.CoreAPI, "kind": "Secret",
+			"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": token}}})
+	}
+	served := config.Redact([]config.Document{secret("test")})
+	for name, tc := range map[string]struct {
+		old    []config.Document
+		hashed bool
+		want   int
+	}{
+		"served hashed":     {served, true, 0},
+		"as stored":         {[]config.Document{secret("test")}, false, 0},
+		"another token":     {config.Redact([]config.Document{secret("other")}), true, 1},
+		"hashed twice over": {served, false, 1},
+	} {
+		failures, err := set.Evaluate(Input{Documents: []config.Document{secret("test")}, Old: tc.old, OldHashed: tc.hashed})
+		if err != nil || len(failures) != tc.want {
+			t.Errorf("%s: failures = %v, %v; want %d", name, messages(failures), err, tc.want)
+		}
+	}
+}
