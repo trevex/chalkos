@@ -214,10 +214,10 @@ func TestClientFileWithoutAnInventory(t *testing.T) {
 	}
 }
 
-// TestClientFileOfAnotherCluster names the client file when a node does not accept it: one of
-// another cluster's OS CA does not verify the node, and a node refuses a certificate its OS CA
-// did not issue. Both fail the TLS handshake, for unary and streaming calls alike, with or without
-// an inventory.
+// TestClientFileOfAnotherCluster names the client file and the side that failed when a TLS
+// handshake fails for want of trust: the OS CA of another cluster's client file does not verify
+// the node, and a node refuses a certificate its OS CA did not issue. Both fail every call, unary
+// and streaming alike, with or without an inventory.
 func TestClientFileOfAnotherCluster(t *testing.T) {
 	ta := newTestApp(t)
 	current, _ := json.Marshal(ta.identity(t))
@@ -243,8 +243,10 @@ func TestClientFileOfAnotherCluster(t *testing.T) {
 	refused := clientFile("refused.json", pki.Bundle(foreign.OSCA.Certificate, ta.secrets.OSCA.Certificate))
 	ta.withoutSecrets(t)
 
-	for _, path := range []string{other, refused} {
-		want := "the node does not accept this client file, " + path + "; is it another cluster's? ("
+	for path, want := range map[string]string{
+		other:   "this client file's OS CA does not verify the node's certificate, " + other + ": is the file another cluster's or from before an OS CA rotation, or does the address reach another cluster's node? (",
+		refused: "the node does not accept this client file, " + refused + "; is it another cluster's? (",
+	} {
 		for _, args := range [][]string{
 			ta.args([]string{"status", "n1", "--config", path}, addr),
 			{"status", "n1", "--config", path, "--address", addr},

@@ -136,8 +136,11 @@ func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	}
 	o := client.Options{CA: roots, ServerName: t.name, Certificate: t.creds.cert, IgnoreValidity: ignoreValidity, Source: t.source}
 	if path := t.creds.configPath; t.creds.config != nil {
-		o.Untrusted = func(err error) error {
-			return fmt.Errorf("the node does not accept this client file, %s; is it another cluster's? (%w)", path, err)
+		o.Untrusted = func(err error, refused bool) error {
+			if refused {
+				return fmt.Errorf("the node does not accept this client file, %s; is it another cluster's? (%w)", path, err)
+			}
+			return fmt.Errorf("this client file's OS CA does not verify the node's certificate, %s: is the file another cluster's or from before an OS CA rotation, or does the address reach another cluster's node? (%w)", path, err)
 		}
 	}
 	return client.Dial(t.addr, o)

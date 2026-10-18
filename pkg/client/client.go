@@ -46,8 +46,9 @@ type Options struct {
 	Source string
 	// Untrusted, when set, gives the error of a call whose TLS handshake failed because the
 	// node's certificate does not verify against CA or because the node refused Certificate for
-	// an issuer it does not know; it is passed the handshake's error.
-	Untrusted func(error) error
+	// an issuer it does not know; it is passed the handshake's error and whether the node
+	// refused.
+	Untrusted func(err error, refused bool) error
 }
 
 // Conn is a client of one node.
@@ -230,7 +231,7 @@ type untrusted struct {
 	conn     *Conn
 	endpoint string
 	tls      *tls.Config
-	replace  func(error) error
+	replace  func(error, bool) error
 }
 
 func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -238,8 +239,8 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err == nil {
 		return resp, nil
 	}
-	if distrusted(err) {
-		return nil, u.replace(err)
+	if bad, refused := distrusted(err); bad {
+		return nil, u.replace(err, refused)
 	}
 	// In TLS 1.3 the client's handshake ends before the node checks the client's certificate, so
 	// the node's alert may reach the request only as a broken connection. A connection of its
@@ -249,8 +250,9 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Context().Err() != nil || errors.As(err, &op) && op.Op == "dial" {
 		return nil, err
 	}
-	if refused := u.probe(req.Context()); refused != nil {
-		return nil, u.replace(refused)
+	if failed := u.probe(req.Context()); failed != nil {
+		_, refused := distrusted(failed)
+		return nil, u.replace(failed, refused)
 	}
 	return nil, err
 }
@@ -274,21 +276,25 @@ func (u *untrusted) probe(ctx context.Context) error {
 		conn.SetReadDeadline(deadline)
 		_, err = conn.Read(make([]byte, 1))
 	}
-	if err != nil && distrusted(err) {
-		return err
+	if err != nil {
+		if bad, _ := distrusted(err); bad {
+			return err
+		}
 	}
 	return nil
 }
 
-// distrusted reports whether err is a TLS handshake's failure for want of trust: an OS CA that
-// does not verify the node's certificate, or the node's alert that it refused the client's. A
-// remote alert reaches the client as a net.OpError of an unexported type, so only its text tells
-// which alert it was.
-func distrusted(err error) bool {
+// distrusted reports whether err is a TLS handshake's failure for want of trust, and whether the
+// node refused: an OS CA that does not verify the node's certificate fails on the client's side,
+// and the node's alert that it refused the client's certificate on the node's. A remote alert
+// reaches the client as a net.OpError of an unexported type, so only its text tells which alert
+// it was.
+func distrusted(err error) (bad, refused bool) {
 	var unknown x509.UnknownAuthorityError
 	if errors.As(err, &unknown) {
-		return true
+		return true, false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "remote error: tls: unknown certificate authority") || strings.Contains(msg, "remote error: tls: bad certificate")
+	refused = strings.Contains(msg, "remote error: tls: unknown certificate authority") || strings.Contains(msg, "remote error: tls: bad certificate")
+	return refused, refused
 }
