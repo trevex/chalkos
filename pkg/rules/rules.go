@@ -202,6 +202,8 @@ func decodeRules(v any) ([]Rule, error) {
 }
 
 // compile compiles a rule of the kind k, of its field at path or, with a nil path, of the kind.
+// Every rule sees config, oldConfig and node; a kind's rules documents and oldDocuments, a
+// field's self and oldSelf; and each fact it names as facts.<name>.
 func compile(k schema.Kind, path []string, r Rule) (*Program, error) {
 	p := &Program{Rule: r, Kind: k, Path: path}
 	fail := func(format string, args ...any) error {
@@ -210,7 +212,7 @@ func compile(k schema.Kind, path []string, r Rule) (*Program, error) {
 	if strings.TrimSpace(r.Rule) == "" {
 		return nil, fail("the rule is empty")
 	}
-	vars := []string{"config", "oldConfig"}
+	vars := []string{"config", "oldConfig", "node"}
 	if path == nil {
 		vars = append(vars, "documents", "oldDocuments")
 	} else {

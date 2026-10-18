@@ -161,7 +161,8 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 // alone has. old is the node's config as it serves it, its secret values hashed, or nil where
 // chalkctl does not have it, as for validate; without it, the rules of fields that read oldSelf
 // do not run and the rules of kinds see no oldDocuments. Documents of old that the image does not
-// accept compare with nothing.
+// accept compare with nothing. node is the inventory's name of the node, which the rules read as
+// node.name.
 func checkRules(c contract, next, old []config.Document, node string) error {
 	set, err := rules.Compile(c.schemas)
 	if err != nil {
@@ -176,7 +177,7 @@ func checkRules(c contract, next, old []config.Document, node string) error {
 		d.Object = filled.(map[string]any)
 		baseline = append(baseline, d)
 	}
-	failures, err := set.Evaluate(rules.Input{Documents: next, Old: baseline, OldHashed: true})
+	failures, err := set.Evaluate(rules.Input{Documents: next, Old: baseline, OldHashed: true, Node: node})
 	if err != nil {
 		return err
 	}

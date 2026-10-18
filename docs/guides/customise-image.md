@@ -405,9 +405,9 @@ chalkos.consumers.bird = {
 ```
 
 A rule reads the config before and after the delivery as `oldConfig` and `config`, the names of
-the kinds that changed as `changedKinds`, and the facts before and after it as
-`oldFacts.<name>` and `facts.<name>`. A unit that reads no kind restarts on a fact alone, here
-when the node gets a new Kubernetes share:
+the kinds that changed as `changedKinds`, the node's name as `node.name`, and the facts before and
+after it as `oldFacts.<name>` and `facts.<name>`. A unit that reads no kind restarts on a fact
+alone, here when the node gets a new Kubernetes share:
 
 ```nix
 chalkos.consumers.cert-agent.restart.when = "facts.share != oldFacts.share";

@@ -68,6 +68,16 @@ func TestEffectVariables(t *testing.T) {
 	}
 }
 
+// An effect sees the node's name as node.name.
+func TestEffectNodeName(t *testing.T) {
+	e := effect(t, `node.name == "n1"`)
+	for node, due := range map[string]bool{"n1": true, "n2": false, "": false} {
+		if got, errs := dueUnits([]*Effect{e}, EffectInput{Node: node}); len(errs) > 0 || (len(got) == 1) != due {
+			t.Errorf("node %q: due = %v, %v; want %v", node, got, errs, due)
+		}
+	}
+}
+
 // An effect loads a fact when it reads it, from the facts after the delivery or from those before
 // it, so one whose first operand of || holds loads none.
 func TestEffectLoadsFactsLazily(t *testing.T) {

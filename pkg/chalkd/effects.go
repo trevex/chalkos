@@ -142,7 +142,7 @@ func (s *Server) due(ctx context.Context, e *effects, secret string) (reload, re
 	// Command facts read the old config as the rules do.
 	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": e.oldConfig()}
 	due, errs := rules.Due(e.rules, rules.EffectInput{
-		Documents: e.next, Old: e.old, OldHashed: e.oldHashed, ChangedKinds: e.changed, Facts: after, OldFacts: e.before,
+		Documents: e.next, Old: e.old, OldHashed: e.oldHashed, ChangedKinds: e.changed, Node: nodeOf(e.next), Facts: after, OldFacts: e.before,
 	})
 	for _, err := range errs {
 		w := fmt.Sprintf("the rule of %v; taking its effect all the same", err)

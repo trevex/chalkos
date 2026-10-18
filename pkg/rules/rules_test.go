@@ -199,6 +199,27 @@ func TestKindRulesAndConfig(t *testing.T) {
 	}
 }
 
+// Every rule and its messageExpression see the node's name as node.name, "" where it is not
+// given.
+func TestNodeName(t *testing.T) {
+	set := compiled(t, kindSchema("Demo", true,
+		object(map[string]any{"label": withRules(map[string]any{"type": "string"}, rule(`self != node.name`, "a label is not the node's name"))}),
+		[]any{rule(`node.name != "n1"`, "", "messageExpression", `"node " + node.name`)}))
+	docs := []config.Document{doc(t, "Demo", "a", `{"label": "n1"}`)}
+	failures, err := set.Evaluate(Input{Documents: docs, Node: "n1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"node n1", `Demo "a" spec.label: a label is not the node's name`}
+	if got := messages(failures); !slices.Equal(got, want) {
+		t.Errorf("failures = %q, want %q", got, want)
+	}
+	set = compiled(t, kindSchema("Demo", true, object(nil), []any{rule(`node.name == ""`, "the node has a name")}))
+	if failures, err := set.Evaluate(Input{Documents: docs}); err != nil || len(failures) != 0 {
+		t.Errorf("without a name: %v, %v", messages(failures), err)
+	}
+}
+
 // A rule loads the facts it reads when it reads them, each once per evaluation; without facts,
 // as in chalkctl, the rules that read facts are left out. A fact that cannot be loaded refuses.
 func TestFacts(t *testing.T) {

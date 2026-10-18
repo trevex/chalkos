@@ -97,6 +97,7 @@ baseline also when the config is for another image, as with an upgrade.
 | `oldDocuments` | a kind's | The running config's documents of the kind by name. |
 | `config` | every | The whole delivered config by apiVersion, kind and name: `config["storage.chalkos.dev/v1alpha1"].Volume.data`. |
 | `oldConfig` | every | The running config, in the same shape. |
+| `node.name` | every | The node's name: its name in the inventory, which its node certificate carries. |
 | `facts.<name>` | every | The fact of that name. |
 
 A field's rule that reads `oldSelf` runs only where the running config holds the field; one that
@@ -237,7 +238,8 @@ chalkos.consumers.bird = {
 | [`reload.command`](../reference/options.md#chalkosconsumersreloadcommand) | `systemctl reload <unit>` | The command that reloads it. |
 
 They see `config` and `oldConfig`, the config the node runs once the delivery is applied and the
-running slot's config before it, in the shape change rules see them, and these:
+running slot's config before it, in the shape change rules see them, `node.name` as change rules
+see it, and these:
 
 | Variable | Value |
 | --- | --- |

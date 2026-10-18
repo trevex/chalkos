@@ -21,7 +21,7 @@ type Facts interface {
 }
 
 // Input is what rules are evaluated against: the config delivered and the config it replaces,
-// each with its schema defaults, and the node's facts.
+// each with its schema defaults, the node's name and the node's facts.
 type Input struct {
 	Documents []config.Document
 	// Old is the running image's config; nil without one, as at an install, where field rules
@@ -29,6 +29,9 @@ type Input struct {
 	// that its secret values are hashed already, as a node serves its config.
 	Old       []config.Document
 	OldHashed bool
+	// Node is the node's name, which rules read as node.name: the inventory's name of the node,
+	// which its node certificate carries.
+	Node string
 	// Facts is nil where no facts can be read, as in chalkctl: rules that read facts do not run.
 	Facts Facts
 }
@@ -64,11 +67,13 @@ func (e *FactError) Error() string {
 func (e *FactError) Unwrap() error { return e.Err }
 
 // Evaluate runs every rule of the set against in and returns those the config does not meet, in
-// the set's order. An error is a rule that could not be evaluated, or a fact that could not be
-// loaded, which refuses the delivery as well.
+// the set's order. Every rule sees config, oldConfig and node; a kind's rules documents and
+// oldDocuments, a field's self and oldSelf. An error is a rule that could not be evaluated, or a
+// fact that could not be loaded, which refuses the delivery as well.
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
 	next, old := objectsOf(in.Documents, true), objectsOf(in.Old, !in.OldHashed)
 	cfg, oldCfg := configMap(next), configMap(old)
+	node := nodeOf(in.Node)
 	var failures []Failure
 	for _, p := range s.Programs {
 		if len(p.Facts) > 0 && in.Facts == nil {
@@ -79,7 +84,7 @@ func (s *Set) Evaluate(in Input) ([]Failure, error) {
 				"documents":    documentsOf(next, p),
 				"oldDocuments": documentsOf(old, p),
 			}
-			f, err := p.evaluate(vars, cfg, oldCfg, in.Facts, "")
+			f, err := p.evaluate(vars, cfg, oldCfg, node, in.Facts, "")
 			if err != nil {
 				return nil, err
 			}
@@ -99,7 +104,7 @@ func (s *Set) Evaluate(in Input) ([]Failure, error) {
 				continue
 			}
 			vars := map[string]any{"self": self, "oldSelf": oldSelf}
-			f, err := p.evaluate(vars, cfg, oldCfg, in.Facts, d.Name)
+			f, err := p.evaluate(vars, cfg, oldCfg, node, in.Facts, d.Name)
 			if err != nil {
 				return nil, err
 			}
@@ -130,9 +135,14 @@ func bindFacts(vars map[string]any, ident string, names []string, facts Facts, f
 	}
 }
 
+// nodeOf is the node variable of a node named name.
+func nodeOf(name string) map[string]any {
+	return map[string]any{"name": name}
+}
+
 // evaluate runs the program with the variables given; doc is the document of a field's rule.
-func (p *Program) evaluate(vars map[string]any, cfg, oldCfg map[string]any, facts Facts, doc string) ([]Failure, error) {
-	vars["config"], vars["oldConfig"] = cfg, oldCfg
+func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any, facts Facts, doc string) ([]Failure, error) {
+	vars["config"], vars["oldConfig"], vars["node"] = cfg, oldCfg, node
 	var factErr error
 	bindFacts(vars, "facts", p.Facts, facts, &factErr)
 	where := p.Where()

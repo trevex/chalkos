@@ -52,11 +52,11 @@ func TestOf(t *testing.T) {
 	}
 }
 
-// storageConfig is a node of n1's config with the SystemDisk and Volume specs given, as JSON.
+// storageConfig is a node's config with the SystemDisk and Volume specs given, as JSON. It holds
+// no core Node document: the storage rules name the node by node.name.
 func storageConfig(t *testing.T, systemDisk string, volumes map[string]string) []config.Document {
 	t.Helper()
 	docs := []config.Document{
-		builtinDoc(t, config.CoreAPI, "Node", "n1", `{"type": null, "imageRef": "metal", "hostname": null}`),
 		builtinDoc(t, config.StorageAPI, "SystemDisk", "system", systemDisk),
 	}
 	for name, spec := range volumes {
@@ -211,7 +211,7 @@ func TestStorageRules(t *testing.T) {
 				"fallback": fallback,
 			}
 			old := storageConfig(t, systemDisk, map[string]string{"data": dataVolume})
-			failures, err := set.Evaluate(Input{Documents: storageConfig(t, sd, tc.volumes), Old: old, Facts: facts})
+			failures, err := set.Evaluate(Input{Documents: storageConfig(t, sd, tc.volumes), Old: old, Facts: facts, Node: "n1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,8 +223,46 @@ func TestStorageRules(t *testing.T) {
 			}
 			// At an install there is nothing to compare with.
 			facts["recorded"] = nil
-			if failures, err := set.Evaluate(Input{Documents: storageConfig(t, sd, tc.volumes), Facts: facts}); err != nil || len(failures) != 0 {
+			if failures, err := set.Evaluate(Input{Documents: storageConfig(t, sd, tc.volumes), Facts: facts, Node: "n1"}); err != nil || len(failures) != 0 {
 				t.Errorf("without a recorded section: %v, %v", messages(failures), err)
+			}
+		})
+	}
+}
+
+// The storage rules name the node they refuse a change for by node.name.
+func TestStorageRulesNameTheNode(t *testing.T) {
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := Compile(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": "1G"}
+	facts := storageFacts{
+		"recorded": recordedOf(map[string]map[string]any{"data": data}),
+		"disks":    map[string]any{"data": map[string]any{"ref": `serial "d"`, "pinned": true, "identity": `serial "d"`, "changed": false, "found": "", "same": false, "error": "", "errorKind": "", "present": true, "presentError": ""}},
+		"fallback": map[string]any{"sent": true, "matches": true},
+	}
+	old := storageConfig(t, systemDisk, map[string]string{"data": dataVolume})
+	smaller := strings.Replace(dataVolume, `"size": "1G"`, `"size": "512M"`, 1)
+	for _, tc := range []struct {
+		name    string
+		volumes map[string]string
+		want    string
+	}{
+		{"reset", map[string]string{"data": smaller}, "Volume data: smaller: 512M instead of 1G; reset it with chalkctl storage reset w1 data"},
+		{"reinstall", nil, "Volume data: the config removes it; only a reinstall of w1 removes a volume"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: storageConfig(t, systemDisk, tc.volumes), Old: old, Facts: facts, Node: "w1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, []string{tc.want}) {
+				t.Errorf("failures = %q, want %q", got, tc.want)
 			}
 		})
 	}

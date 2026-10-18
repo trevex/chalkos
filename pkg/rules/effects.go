@@ -35,8 +35,8 @@ func (e *Effect) Where() string {
 	return e.Unit + " " + e.Action
 }
 
-// CompileEffect compiles when, the rule of a unit's action. It sees config and oldConfig as
-// change rules do, changedKinds, the names of the kinds whose documents or the Secrets they
+// CompileEffect compiles when, the rule of a unit's action. It sees config, oldConfig and node
+// as change rules do, changedKinds, the names of the kinds whose documents or the Secrets they
 // reference differ between the two, and each fact it names as facts.<name> after the delivery
 // and as oldFacts.<name> before it.
 func CompileEffect(unit, action, when string) (*Effect, error) {
@@ -47,7 +47,7 @@ func CompileEffect(unit, action, when string) (*Effect, error) {
 	if strings.TrimSpace(when) == "" {
 		return nil, fail("the rule is empty")
 	}
-	base, err := newEnv("config", "oldConfig", "changedKinds")
+	base, err := newEnv("config", "oldConfig", "node", "changedKinds")
 	if err != nil {
 		return nil, err
 	}
@@ -75,13 +75,15 @@ func CompileEffect(unit, action, when string) (*Effect, error) {
 
 // EffectInput is what effects are evaluated against once a delivery is applied: the config the
 // node runs and the config it ran before, each with its schema defaults; the kinds that changed
-// between them, as config.ChangedKinds tells; and the node's facts after the delivery and
-// before it. OldHashed tells that the secret values of Old are hashed already, as config.Redact
-// hashes them.
+// between them, as config.ChangedKinds tells; the node's name; and the node's facts after the
+// delivery and before it. OldHashed tells that the secret values of Old are hashed already, as
+// config.Redact hashes them.
 type EffectInput struct {
-	Documents, Old  []config.Document
-	OldHashed       bool
-	ChangedKinds    []string
+	Documents, Old []config.Document
+	OldHashed      bool
+	ChangedKinds   []string
+	// Node is the node's name, which effects read as node.name, as Input.Node is.
+	Node            string
 	Facts, OldFacts Facts
 }
 
@@ -91,12 +93,13 @@ type EffectInput struct {
 // one for each such effect.
 func Due(effects []*Effect, in EffectInput) (due []*Effect, errs []error) {
 	cfg, oldCfg := ConfigOf(in.Documents), configMap(objectsOf(in.Old, !in.OldHashed))
+	node := nodeOf(in.Node)
 	changed := make([]any, len(in.ChangedKinds))
 	for i, k := range in.ChangedKinds {
 		changed[i] = k
 	}
 	for _, e := range effects {
-		ok, err := e.evaluate(cfg, oldCfg, changed, in.Facts, in.OldFacts)
+		ok, err := e.evaluate(cfg, oldCfg, node, changed, in.Facts, in.OldFacts)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", e.Where(), err))
 			ok = true
@@ -108,8 +111,8 @@ func Due(effects []*Effect, in EffectInput) (due []*Effect, errs []error) {
 	return due, errs
 }
 
-func (e *Effect) evaluate(cfg, oldCfg map[string]any, changed []any, facts, oldFacts Facts) (bool, error) {
-	vars := map[string]any{"config": cfg, "oldConfig": oldCfg, "changedKinds": changed}
+func (e *Effect) evaluate(cfg, oldCfg, node map[string]any, changed []any, facts, oldFacts Facts) (bool, error) {
+	vars := map[string]any{"config": cfg, "oldConfig": oldCfg, "node": node, "changedKinds": changed}
 	var factErr error
 	bindFacts(vars, "facts", e.Facts, facts, &factErr)
 	bindFacts(vars, "oldFacts", e.Facts, oldFacts, &factErr)

@@ -65,10 +65,10 @@ func (s *Server) checkRules(set *rules.Set, next, old []config.Document, f rules
 	return nil
 }
 
-// evaluate returns the rules of set next does not meet; an error is a rule that could not be
-// checked, which refuses the delivery too.
+// evaluate returns the rules of set next does not meet, which see the node named as next names
+// it; an error is a rule that could not be checked, which refuses the delivery too.
 func evaluate(set *rules.Set, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
-	failures, err := set.Evaluate(rules.Input{Documents: next, Old: old, Facts: f})
+	failures, err := set.Evaluate(rules.Input{Documents: next, Old: old, Node: nodeOf(next), Facts: f})
 	if err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}

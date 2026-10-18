@@ -161,7 +161,6 @@ let
   # slot's config may grow but not undo. Null facts.recorded, as at an install, has nothing to
   # compare with. A recorded value is "" or null where the documents say null.
   storageAPI = "storage.chalkos.dev/v1alpha1";
-  nodeName = ''config["chalkos.dev/v1alpha1"].Node.map(k, k)[0]'';
   systemDiskSpec = ''config["${storageAPI}"].SystemDisk.map(k, config["${storageAPI}"].SystemDisk[k].spec)[0]'';
   orEmpty = x: ''(${x} == null ? "" : ${x})'';
   shown = x: ''(${x} == "" ? "null" : ${x})'';
@@ -184,7 +183,7 @@ let
     ''(${size} == ${recorded} || ${size} == "" ? "" : ${recorded} == "" ? "size " + ${size} + " instead of filling its disk" : !isSize(${size}) || !isSize(${recorded}) ? "size " + ${size} + " instead of " + ${recorded} : bytes(${size}) < bytes(${recorded}) ? "smaller: " + ${size} + " instead of " + ${recorded} : "")'';
   # Whether two sizes differ, as sizes of the same bytes do not.
   sizeChanged =
-    a: b: ''(${a} != ${b} && !(isSize(${a}) && isSize(${b}) && bytes(${a}) == bytes(${b})))'';
+    a: b: "(${a} != ${b} && !(isSize(${a}) && isSize(${b}) && bytes(${a}) == bytes(${b})))";
   encryptionReason =
     enc: recorded:
     ''(${enc} != ${recorded} ? "encryption " + ${enc} + " instead of " + ${recorded} : "")'';
@@ -204,7 +203,7 @@ let
     rule = "facts.recorded == null || documents.all(n, ${bindVolume "!(${bad})"})";
     messageExpression = ''documents.filter(n, ${bindVolume bad}).map(n, ${bindVolume message}).join("; ")'';
   };
-  reinstall = ''"; only a reinstall of " + ${nodeName} + " carries it out"'';
+  reinstall = ''"; only a reinstall of " + node.name + " carries it out"'';
   # The new volumes that get the fallback keyslot, encrypted with TPM2 on a node with a fallback.
   enrolled = "documents.filter(n, !(n in facts.recorded.volumes) && ${bindVolume ''${volEncryption} == "tpm2"''})";
 
@@ -361,7 +360,7 @@ in
             : "fix the disk reference")
         '')
         (volumeRule "reset" needsReset
-          ''"Volume " + n + ": " + ${resetReasons}.join("; ") + "; reset it with chalkctl storage reset " + ${nodeName} + " " + n''
+          ''"Volume " + n + ": " + ${resetReasons}.join("; ") + "; reset it with chalkctl storage reset " + node.name + " " + n''
         )
         (volumeRule "refuse" missingDisk ''
           facts.disks[n].presentError != ""
@@ -375,8 +374,8 @@ in
           rule = ''facts.recorded == null || facts.recorded.volumes.all(n, n == "var" || n in documents)'';
           messageExpression = ''
             facts.recorded.volumes.filter(n, n != "var" && !(n in documents)).map(n, n in oldDocuments
-              ? "Volume " + n + ": the config removes it; only a reinstall of " + ${nodeName} + " removes a volume"
-              : "Volume " + n + ": an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of " + ${nodeName} + " removes it").join("; ")
+              ? "Volume " + n + ": the config removes it; only a reinstall of " + node.name + " removes a volume"
+              : "Volume " + n + ": an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of " + node.name + " removes it").join("; ")
           '';
         }
         # New encrypted volumes are enrolled with the fallback secret, which must open the node's
