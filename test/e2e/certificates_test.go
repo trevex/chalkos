@@ -55,7 +55,7 @@ func synchronised(t *testing.T, n *node, name string) {
 // cannot reboot it.
 func readerClientFile(t *testing.T, w1 *node, path string) {
 	t.Helper()
-	if _, err := chalkctl(t, nil, "base", "config", "new", "--name", "e2e-reader", "--role", "reader", "--out", path); err != nil {
+	if _, err := chalkctl(t, nil, "", "config", "new", "--name", "e2e-reader", "--role", "reader", "--out", path); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := chalkctlWith(t, w1, "base", path, "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined") {

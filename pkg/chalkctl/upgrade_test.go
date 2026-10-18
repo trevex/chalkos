@@ -1378,7 +1378,7 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
-	c, err := client.NewConfig(l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), "lab", "ops", pki.RoleAdmin, time.Hour, time.Now())
+	c, err := client.NewConfig(l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), "ops", pki.RoleAdmin, time.Hour, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

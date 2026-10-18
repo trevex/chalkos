@@ -27,8 +27,8 @@ func (c *clusterFlags) register(fs *pflag.FlagSet) {
 }
 
 // cluster is what chalkctl knows of the cluster it operates: its name and endpoint, its nodes and
-// their config, from an inventory. Without one it is partial: a client file names it, and each
-// command names its node and --address reaches it.
+// their config, from an inventory. Without one it is partial and nameless: each command names its
+// node and --address reaches it.
 type cluster struct {
 	name, endpoint string
 	partial        bool
@@ -63,22 +63,6 @@ func loadInventory(path string) (*cluster, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &cluster{name: name, endpoint: endpoint, inv: inv, configs: map[string]*inventory.NodeConfig{}}, nil
-}
-
-// checkCredentials names a partial cluster after the client file, and refuses a client file of
-// another cluster.
-func (c *cluster) checkCredentials(creds *credentials) error {
-	if creds.config == nil {
-		return nil
-	}
-	if c.partial {
-		c.name = creds.config.Cluster
-		return nil
-	}
-	if creds.config.Cluster != c.name {
-		return fmt.Errorf("%s is a client file of the cluster %s, not %s", creds.configPath, creds.config.Cluster, c.name)
-	}
-	return nil
 }
 
 // requireNodes refuses a partial cluster for a command that needs the nodes' config.

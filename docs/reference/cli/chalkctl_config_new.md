@@ -17,7 +17,9 @@ status and logs and etcd's members; an operator may also reboot, upgrade, drain 
 nodes; an admin may call every method of chalkd except RenewNodeCertificate, which needs the
 node role (nodes call it to renew their own certificates). The file is written to
 ~/.config/chalkos/config unless --out names another; commands read it from there, or from the
-path --config or $CHALKOSCONFIG names. The command needs the secrets file.
+path --config or $CHALKOSCONFIG names. The command needs the secrets file and no inventory. A
+client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the
+TLS handshake, which chalkctl reports as a node that does not accept the client file.
 
 ```
 chalkctl config new [flags]
@@ -39,7 +41,6 @@ chalkctl config new [flags]
       --force              replace an existing file
   -h, --help               help for new
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --name string        the user's name, which the certificate carries
       --out string         file to write (default ~/.config/chalkos/config)
       --role string        the role the certificate grants: admin, operator or reader

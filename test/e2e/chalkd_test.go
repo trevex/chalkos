@@ -120,7 +120,8 @@ func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
 }
 
 // chalkctl runs the chalkctl binary for the node, or for the cluster when n is nil, against the
-// test cluster, with the named inventory of the fixtures.
+// test cluster, with the named inventory of the fixtures, or none for "", as chalkctl config new
+// takes none.
 func chalkctl(t *testing.T, n *node, inventory string, args ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -131,7 +132,10 @@ func chalkctl(t *testing.T, n *node, inventory string, args ...string) (string, 
 // chalkctlContext is chalkctl ended when ctx is.
 func chalkctlContext(ctx context.Context, t *testing.T, n *node, inventory string, args ...string) (string, error) {
 	t.Helper()
-	args = append(args, "--inventory", inventoryPath(inventory), "--secrets", os.Getenv("CHALKLAB_SECRETS"))
+	if inventory != "" {
+		args = append(args, "--inventory", inventoryPath(inventory))
+	}
+	args = append(args, "--secrets", os.Getenv("CHALKLAB_SECRETS"))
 	if n != nil {
 		args = append(args, "--address", n.addr)
 	}

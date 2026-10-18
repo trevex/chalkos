@@ -15,14 +15,14 @@ import (
 )
 
 // ConfigVersion is the version of the client file this package reads and writes. Version 1 named
-// the nodes' addresses, which an inventory names now.
-const ConfigVersion = 2
+// the nodes' addresses, which an inventory names now; version 2 named the cluster, which the OS CA
+// of the file tells apart now.
+const ConfigVersion = 3
 
 // Config is a client file: a user's certificate from the OS CA, with what is needed to reach
 // and verify the cluster's nodes, for operating the cluster without the secrets file.
 type Config struct {
-	Version int    `json:"version"`
-	Cluster string `json:"cluster"`
+	Version int `json:"version"`
 	// Name is the user's name, the certificate's Common Name, and Role the role its Organization
 	// grants.
 	Name string `json:"name"`
@@ -37,12 +37,12 @@ type Config struct {
 
 // NewConfig issues a client certificate of the role from the OS CA for a new key, valid for
 // validity and never beyond the OS CA, for a cluster whose nodes chain to the OS CAs trusted.
-func NewConfig(osCA pki.CertKey, trusted, cluster, name, role string, validity time.Duration, now time.Time) (Config, error) {
+func NewConfig(osCA pki.CertKey, trusted, name, role string, validity time.Duration, now time.Time) (Config, error) {
 	ck, err := pki.IssueClient(osCA, name, role, validity, now)
 	if err != nil {
 		return Config{}, err
 	}
-	c := Config{Version: ConfigVersion, Cluster: cluster, Name: name, Role: role, Certificate: ck.Certificate, Key: ck.Key, OSCA: pki.Bundle(osCA.Certificate, trusted)}
+	c := Config{Version: ConfigVersion, Name: name, Role: role, Certificate: ck.Certificate, Key: ck.Key, OSCA: pki.Bundle(osCA.Certificate, trusted)}
 	if err := c.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -91,8 +91,8 @@ func (c Config) Validate() error {
 	if c.Version != ConfigVersion {
 		return versionError(c.Version)
 	}
-	if c.Cluster == "" || c.Name == "" {
-		return errors.New("a client file names the cluster and the user")
+	if c.Name == "" {
+		return errors.New("a client file names the user")
 	}
 	cert, _, err := (pki.CertKey{Certificate: c.Certificate, Key: c.Key}).Parse()
 	if err != nil {
@@ -143,7 +143,7 @@ func (c Config) Encode() ([]byte, error) {
 
 // String names the user and never prints the key.
 func (c Config) String() string {
-	return fmt.Sprintf("client.Config{cluster: %s, name: %s, role: %s, key: redacted}", c.Cluster, c.Name, c.Role)
+	return fmt.Sprintf("client.Config{name: %s, role: %s, key: redacted}", c.Name, c.Role)
 }
 
 // GoString redacts the file like String.

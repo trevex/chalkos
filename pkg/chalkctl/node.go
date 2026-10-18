@@ -87,9 +87,6 @@ func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*ta
 	if err != nil {
 		return nil, err
 	}
-	if err := c.checkCredentials(creds); err != nil {
-		return nil, err
-	}
 	return targetIn(c, n, name, creds)
 }
 
@@ -129,13 +126,21 @@ func dialInstalled(t *target) (*client.Conn, error) {
 }
 
 // dialNode connects to an installed node; ignoreValidity accepts a node certificate that expired,
-// for chalkctl node renew alone.
+// for chalkctl node renew alone. A client file names no cluster: one of another cluster carries
+// another OS CA, so the TLS handshake of every call fails, and the error names the file. The
+// secrets file's credentials keep the handshake's error, which points at another problem.
 func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	roots, err := t.creds.roots()
 	if err != nil {
 		return nil, err
 	}
-	return client.Dial(t.addr, client.Options{CA: roots, ServerName: t.name, Certificate: t.creds.cert, IgnoreValidity: ignoreValidity, Source: t.source})
+	o := client.Options{CA: roots, ServerName: t.name, Certificate: t.creds.cert, IgnoreValidity: ignoreValidity, Source: t.source}
+	if path := t.creds.configPath; t.creds.config != nil {
+		o.Untrusted = func(err error) error {
+			return fmt.Errorf("the node does not accept this client file, %s; is it another cluster's? (%w)", path, err)
+		}
+	}
+	return client.Dial(t.addr, o)
 }
 
 // pinning verifies a node in maintenance mode, which serves a self-signed certificate.

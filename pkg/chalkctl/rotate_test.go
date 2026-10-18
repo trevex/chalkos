@@ -413,7 +413,7 @@ func TestRotateOSCA(t *testing.T) {
 	}
 	// A client file issued at the pause carries both roots and works throughout.
 	carol := filepath.Join(l.ta.dir, "carol.json")
-	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol, "--inventory", l.ta.inventory}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol}); err != nil {
 		t.Fatal(err)
 	}
 	if creds, err := l.ta.configCredentials(carol); err != nil || strings.Count(creds.osCA, "BEGIN CERTIFICATE") != 2 {

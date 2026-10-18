@@ -99,7 +99,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 	newReader := func(name string) string {
 		t.Helper()
 		path := filepath.Join(dir, name)
-		if _, err := chalkctl(t, nil, "base", "config", "new", "--name", "e2e-reader", "--role", "reader", "--out", path); err != nil {
+		if _, err := chalkctl(t, nil, "", "config", "new", "--name", "e2e-reader", "--role", "reader", "--out", path); err != nil {
 			t.Fatal(err)
 		}
 		return path

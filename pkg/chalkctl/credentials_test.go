@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ import (
 // now, and returns its path.
 func (ta *testApp) writeConfig(t *testing.T, name, role string, validity time.Duration, now time.Time) string {
 	t.Helper()
-	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", name, role, validity, now)
+	c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), name, role, validity, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +51,12 @@ func (ta *testApp) withoutSecrets(t *testing.T) {
 	}
 }
 
+// TestConfigNew issues a client file from the secrets file alone: it reads no inventory, and the
+// file names no cluster.
 func TestConfigNew(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "alice.json")
-	args := []string{"config", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out, "--inventory", ta.inventory}
+	args := []string{"config", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out}
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +65,17 @@ func TestConfigNew(t *testing.T) {
 		t.Fatal(err)
 	}
 	leaf, _ := c.Leaf()
-	if c.Cluster != "lab" || c.Name != "alice" || c.Role != pki.RoleOperator || c.OSCA != ta.secrets.OSCA.Certificate {
+	if c.Name != "alice" || c.Role != pki.RoleOperator || c.OSCA != ta.secrets.OSCA.Certificate {
 		t.Errorf("client file %v", c)
 	}
 	if got := time.Until(leaf.NotAfter).Round(time.Hour); got != 720*time.Hour {
 		t.Errorf("the certificate lasts %v", got)
+	}
+	if data, _ := os.ReadFile(out); strings.Contains(string(data), `"cluster"`) {
+		t.Errorf("the client file names a cluster: %s", data)
+	}
+	if err := ta.run(context.Background(), append(slices.Clone(args), "--inventory", ta.inventory)); err == nil || !strings.Contains(err.Error(), "unknown flag: --inventory") {
+		t.Errorf("config new --inventory: %v, want the flag unknown", err)
 	}
 	if info, _ := os.Stat(out); info.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", info.Mode())
@@ -78,14 +87,14 @@ func TestConfigNew(t *testing.T) {
 		t.Errorf("--force: %v", err)
 	}
 	// By default the file goes where chalkctl looks for it.
-	if err := ta.run(context.Background(), []string{"config", "new", "--name", "bob", "--role", "reader", "--inventory", ta.inventory}); err != nil {
+	if err := ta.run(context.Background(), []string{"config", "new", "--name", "bob", "--role", "reader"}); err != nil {
 		t.Fatal(err)
 	}
 	if c, err := client.ReadConfig(defaultConfigPath(ta.home)); err != nil || c.Name != "bob" {
 		t.Errorf("default client file: %v, %v", c, err)
 	}
 	for _, bad := range [][]string{{"--name", "x", "--role", "root"}, {"--role", "reader"}, {"--name", "x", "--role", "node"}} {
-		args := append([]string{"config", "new", "--out", filepath.Join(ta.dir, "bad.json"), "--inventory", ta.inventory}, bad...)
+		args := append([]string{"config", "new", "--out", filepath.Join(ta.dir, "bad.json")}, bad...)
 		if err := ta.run(context.Background(), args); err == nil {
 			t.Errorf("config new %v: accepted", bad)
 		}
@@ -184,7 +193,7 @@ func TestClientFileWithoutAnInventory(t *testing.T) {
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
 	ta.withoutSecrets(t)
-	// No inventory: the client file names the cluster, and --address reaches the node.
+	// No inventory: --address reaches the node, and its certificate must name the node.
 	without := func(args ...string) []string {
 		return append(args, "--config", reader, "--address", addr)
 	}
@@ -203,15 +212,52 @@ func TestClientFileWithoutAnInventory(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"etcd", "members", "--config", reader}); err == nil || !strings.Contains(err.Error(), "--via") {
 		t.Errorf("etcd members: %v, want a refusal naming --via", err)
 	}
+}
 
-	// A client file of another cluster is refused where the inventory is at hand.
-	other := ta.writeConfig(t, "dave", pki.RoleReader, time.Hour*24*365, time.Now())
-	c, _ := client.ReadConfig(other)
-	c.Cluster = "elsewhere"
-	data, _ := c.Encode()
-	writeFile(t, other, string(data))
-	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--config", other}, addr)); err == nil || !strings.Contains(err.Error(), "client file of the cluster elsewhere") {
-		t.Errorf("another cluster's client file: %v", err)
+// TestClientFileOfAnotherCluster names the client file when a node does not accept it: one of
+// another cluster's OS CA does not verify the node, and a node refuses a certificate its OS CA
+// did not issue. Both fail the TLS handshake, for unary and streaming calls alike, with or without
+// an inventory.
+func TestClientFileOfAnotherCluster(t *testing.T) {
+	ta := newTestApp(t)
+	current, _ := json.Marshal(ta.identity(t))
+	s, _ := installedNode(t, ta, current)
+	addr := ta.startNode(t, s)
+	foreign, err := pki.GenerateSecrets(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientFile := func(file, trusted string) string {
+		c, err := client.NewConfig(foreign.OSCA, trusted, "dave", pki.RoleAdmin, time.Hour, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := c.Encode()
+		path := filepath.Join(ta.dir, file)
+		writeFile(t, path, string(data))
+		return path
+	}
+	// A client file of another cluster, and one whose certificate another OS CA issued, though
+	// it verifies the node.
+	other := clientFile("other.json", foreign.OSCABundle())
+	refused := clientFile("refused.json", pki.Bundle(foreign.OSCA.Certificate, ta.secrets.OSCA.Certificate))
+	ta.withoutSecrets(t)
+
+	for _, path := range []string{other, refused} {
+		want := "the node does not accept this client file, " + path + "; is it another cluster's? ("
+		for _, args := range [][]string{
+			ta.args([]string{"status", "n1", "--config", path}, addr),
+			{"status", "n1", "--config", path, "--address", addr},
+			ta.args([]string{"logs", "n1", "--config", path}, addr),
+		} {
+			if err := ta.run(context.Background(), args); err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: %v, want %q", strings.Join(args, " "), err, want)
+			}
+		}
+	}
+	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--config", reader}, addr)); err != nil {
+		t.Errorf("status with the cluster's client file: %v", err)
 	}
 }
 
@@ -221,7 +267,7 @@ func TestConfigNewCreatesItsDirectoryPrivate(t *testing.T) {
 	ta := newTestApp(t)
 	for _, force := range []bool{false, true} {
 		dir := filepath.Join(ta.dir, fmt.Sprintf("new-%v", force), "chalkos")
-		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config"), "--inventory", ta.inventory}
+		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config")}
 		if force {
 			args = append(args, "--force")
 		}
@@ -262,7 +308,7 @@ func TestUnreachableAddressNamesItsSource(t *testing.T) {
 func TestCredentialsRole(t *testing.T) {
 	ta := newTestApp(t)
 	clientFile := func(role string) *client.Config {
-		c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "lab", "alice", role, time.Hour, time.Now())
+		c, err := client.NewConfig(ta.secrets.OSCA, ta.secrets.OSCABundle(), "alice", role, time.Hour, time.Now())
 		if err != nil {
 			t.Fatal(err)
 		}

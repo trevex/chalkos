@@ -482,7 +482,7 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 	slices.Sort(upgraded)
 	t.Logf("upgrading %v; %s holds the VIP", upgraded, holders[0])
 	config := filepath.Join(c.dir, "operator.json")
-	if _, err := chalkctl(t, nil, "ha", "config", "new", "--name", "ops", "--role", "operator", "--out", config); err != nil {
+	if _, err := chalkctl(t, nil, "", "config", "new", "--name", "ops", "--role", "operator", "--out", config); err != nil {
 		t.Fatal(err)
 	}
 	clients := map[string]kubernetes.Interface{}

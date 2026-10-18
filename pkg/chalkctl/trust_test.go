@@ -39,7 +39,7 @@ func TestClientFilesAndInstallsTrustBothOSCAs(t *testing.T) {
 	}
 
 	out := filepath.Join(ta.dir, "alice.json")
-	if err := ta.run(context.Background(), []string{"config", "new", "--name", "alice", "--role", "reader", "--out", out, "--inventory", ta.inventory}); err != nil {
+	if err := ta.run(context.Background(), []string{"config", "new", "--name", "alice", "--role", "reader", "--out", out}); err != nil {
 		t.Fatal(err)
 	}
 	c, err := client.ReadConfig(out)

@@ -136,9 +136,6 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
-	if err := c.checkCredentials(creds); err != nil {
-		return err
-	}
 	// The nodes refuse an upgrade below the operator role, but only once a worker is drained.
 	if role := creds.role(); !pki.Allows(role, pki.RoleOperator) {
 		return fmt.Errorf("upgrade needs the %s role; the %s role may not upgrade nodes", pki.RoleOperator, roleLabel(role))

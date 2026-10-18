@@ -197,6 +197,12 @@ unless `--ttl` says otherwise, and writes it to `~/.config/chalkos/config` with 
 chalkctl config new --name=grafana --role=reader --ttl=720h --out=grafana.json
 ```
 
+A client file names no cluster. Its OS CA ties it to one: a node of another cluster serves a
+certificate that the file's OS CA does not verify, and refuses the file's certificate, so the TLS
+handshake fails and chalkctl says `the node does not accept this client file, <path>; is it another
+cluster's?`. A client file issued before an OS CA rotation fails the same way later in the
+rotation.
+
 Commands that accept both take the client file `--config` names, else the secrets file `--secrets`
 names, else the client file `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`. chalkctl
 refuses a client file whose certificate expired and warns during its last 30 days. Installing nodes,

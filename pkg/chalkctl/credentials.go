@@ -152,7 +152,6 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 // configNew issues a client file from the secrets file: a certificate of the role for a new
 // key, and the OS CA.
 type configNewFlags struct {
-	cluster         clusterFlags
 	secrets         secretFlags
 	name, role, out string
 	ttl             time.Duration
@@ -168,7 +167,6 @@ func (a *app) configNewCommand() *cobra.Command {
 		Example: configNewExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.configNew(ctx, f, pos) })
 	fs := cmd.Flags()
-	f.cluster.register(fs)
 	f.secrets.register(fs)
 	fs.StringVar(&f.name, "name", "", "the user's name, which the certificate carries")
 	fs.StringVar(&f.role, "role", "", "the role the certificate grants: admin, operator or reader")
@@ -179,22 +177,14 @@ func (a *app) configNewCommand() *cobra.Command {
 }
 
 func (a *app) configNew(ctx context.Context, f configNewFlags, pos []string) error {
-	cf, sf := f.cluster, f.secrets
 	if len(pos) != 0 || f.name == "" || f.role == "" {
 		return errors.New("usage: chalkctl config new --name NAME --role admin|operator|reader [--ttl 8760h] [--out FILE] [--force]")
 	}
-	c, err := loadCluster(cf)
+	secrets, err := a.loadSecrets(ctx, f.secrets)
 	if err != nil {
 		return err
 	}
-	if c.partial {
-		return errors.New("config new reads the cluster's name from the Cluster document of an inventory's nodes; pass --inventory")
-	}
-	secrets, err := a.loadSecrets(ctx, sf)
-	if err != nil {
-		return err
-	}
-	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), c.name, f.name, f.role, f.ttl, time.Now())
+	config, err := client.NewConfig(secrets.ClientCA(), secrets.OSCABundle(), f.name, f.role, f.ttl, time.Now())
 	if err != nil {
 		return err
 	}

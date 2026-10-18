@@ -381,7 +381,7 @@ var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprin
 func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) error {
 	inventory := filepath.Join(dir, inventoryFile)
 	cluster := []string{"--inventory", inventory, "--secrets", f.secrets}
-	if err := a.chalkctl(ctx, a.stdout, append([]string{"config", "new", "--name", "chalklab", "--role", "admin", "--out", filepath.Join(dir, clientFile)}, cluster...)...); err != nil {
+	if err := a.chalkctl(ctx, a.stdout, "config", "new", "--name", "chalklab", "--role", "admin", "--out", filepath.Join(dir, clientFile), "--secrets", f.secrets); err != nil {
 		return err
 	}
 	for _, n := range l.Nodes {

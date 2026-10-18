@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,10 @@ type Options struct {
 	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	// Source says where the address came from, such as --address; an error reaching it names it.
 	Source string
+	// Untrusted, when set, gives the error of a call whose TLS handshake failed because the
+	// node's certificate does not verify against CA or because the node refused Certificate for
+	// an issuer it does not know; it is passed the handshake's error.
+	Untrusted func(error) error
 }
 
 // Conn is a client of one node.
@@ -208,6 +213,82 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 		ForceAttemptHTTP2:   true,
 	}
 	c.transport = transport
-	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(&http.Client{Transport: transport}, "https://"+endpoint)
+	var rt http.RoundTripper = transport
+	if o.Untrusted != nil {
+		rt = &untrusted{RoundTripper: transport, conn: c, endpoint: endpoint, tls: cfg, replace: o.Untrusted}
+	}
+	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(&http.Client{Transport: rt}, "https://"+endpoint)
 	return c, nil
+}
+
+// untrusted replaces the error of a request whose TLS handshake failed for want of trust, as
+// Options.Untrusted says. Every call, unary or streaming, sends its request through the
+// transport, which performs the handshake and returns its error, so wrapping the transport covers
+// all of them.
+type untrusted struct {
+	http.RoundTripper
+	conn     *Conn
+	endpoint string
+	tls      *tls.Config
+	replace  func(error) error
+}
+
+func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := u.RoundTripper.RoundTrip(req)
+	if err == nil {
+		return resp, nil
+	}
+	if distrusted(err) {
+		return nil, u.replace(err)
+	}
+	// In TLS 1.3 the client's handshake ends before the node checks the client's certificate, so
+	// the node's alert may reach the request only as a broken connection. A connection of its
+	// own, which reads the node's first bytes, receives the alert itself. A request that never
+	// reached the node, or that its caller ended, has nothing to learn from one.
+	var op *net.OpError
+	if req.Context().Err() != nil || errors.As(err, &op) && op.Op == "dial" {
+		return nil, err
+	}
+	if refused := u.probe(req.Context()); refused != nil {
+		return nil, u.replace(refused)
+	}
+	return nil, err
+}
+
+// probe connects to the node with the TLS configuration of the requests and reads its first
+// bytes, the HTTP/2 settings of a node that accepts the client; it returns the error when the
+// node refused the client's certificate.
+func (u *untrusted) probe(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	raw, err := u.conn.netDial(ctx, "tcp", u.endpoint)
+	if err != nil {
+		return nil
+	}
+	defer raw.Close()
+	cfg := u.tls.Clone()
+	cfg.NextProtos = []string{"h2"}
+	conn := tls.Client(raw, cfg)
+	if err = conn.HandshakeContext(ctx); err == nil {
+		deadline, _ := ctx.Deadline()
+		conn.SetReadDeadline(deadline)
+		_, err = conn.Read(make([]byte, 1))
+	}
+	if err != nil && distrusted(err) {
+		return err
+	}
+	return nil
+}
+
+// distrusted reports whether err is a TLS handshake's failure for want of trust: an OS CA that
+// does not verify the node's certificate, or the node's alert that it refused the client's. A
+// remote alert reaches the client as a net.OpError of an unexported type, so only its text tells
+// which alert it was.
+func distrusted(err error) bool {
+	var unknown x509.UnknownAuthorityError
+	if errors.As(err, &unknown) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "remote error: tls: unknown certificate authority") || strings.Contains(msg, "remote error: tls: bad certificate")
 }

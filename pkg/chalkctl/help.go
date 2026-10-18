@@ -64,7 +64,9 @@ status and logs and etcd's members; an operator may also reboot, upgrade, drain 
 nodes; an admin may call every method of chalkd except RenewNodeCertificate, which needs the
 node role (nodes call it to renew their own certificates). The file is written to
 ~/.config/chalkos/config unless --out names another; commands read it from there, or from the
-path --config or $CHALKOSCONFIG names. The command needs the secrets file.`
+path --config or $CHALKOSCONFIG names. The command needs the secrets file and no inventory. A
+client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the
+TLS handshake, which chalkctl reports as a node that does not accept the client file.`
 
 const configNewExample = `  # A reader's client file for a dashboard.
   chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age

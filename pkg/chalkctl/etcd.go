@@ -26,9 +26,6 @@ func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip 
 	if err != nil {
 		return err
 	}
-	if err := c.checkCredentials(creds); err != nil {
-		return err
-	}
 	names := []string{via}
 	if via == "" {
 		if n.address != "" {

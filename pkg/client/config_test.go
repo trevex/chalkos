@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 func TestConfigRoundTrip(t *testing.T) {
 	now := time.Now()
 	osCA, _ := pki.NewOSCA(now)
-	c, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleReader, 30*24*time.Hour, now)
+	c, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleReader, 30*24*time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +38,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if out := fmt.Sprintf("%v %+v %#v", got, got, got); strings.Contains(out, "PRIVATE KEY") {
 		t.Errorf("a formatted client file holds its key: %s", out)
 	}
-	if _, err := NewConfig(osCA, osCA.Certificate, "lab", "bob", pki.RoleNode, time.Hour, now); err == nil {
+	if _, err := NewConfig(osCA, osCA.Certificate, "bob", pki.RoleNode, time.Hour, now); err == nil {
 		t.Error("issued a client file for the node role")
 	}
 }
@@ -47,7 +48,7 @@ func TestConfigValidate(t *testing.T) {
 	osCA, _ := pki.NewOSCA(now)
 	nodeCA, _ := pki.NewNodeCA(osCA, now)
 	other, _ := pki.NewOSCA(now)
-	valid, err := NewConfig(osCA, osCA.Certificate, "lab", "alice", pki.RoleOperator, time.Hour, now)
+	valid, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleOperator, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestConfigValidate(t *testing.T) {
 		"a certificate of the node CA": func(c *Config) {
 			c.Certificate, c.Key = fromNodeCA.Certificate, fromNodeCA.Key
 		},
-		"no cluster": func(c *Config) { c.Cluster = "" },
+		"no name": func(c *Config) { c.Name = "" },
 	} {
 		c := valid
 		edit(&c)
@@ -74,7 +75,7 @@ func TestConfigValidate(t *testing.T) {
 		}
 	}
 	path := filepath.Join(t.TempDir(), "config")
-	os.WriteFile(path, []byte(`{"version": 2, "extra": true}`), 0o600)
+	os.WriteFile(path, []byte(`{"version": 3, "extra": true}`), 0o600)
 	if _, err := ReadConfig(path); err == nil {
 		t.Error("read a client file with an unknown field")
 	}
@@ -85,7 +86,41 @@ func TestConfigValidate(t *testing.T) {
 func TestConfigOfVersion1(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config")
 	os.WriteFile(path, []byte(`{"version": 1, "cluster": "lab", "name": "alice", "role": "reader", "certificate": "", "key": "", "osCA": "", "nodes": {"n1": "10.0.0.11"}}`), 0o600)
-	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 1 is not supported (want 2); issue a new one with chalkctl config new") {
+	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 1 is not supported (want 3); issue a new one with chalkctl config new") {
 		t.Errorf("a client file of version 1: %v", err)
+	}
+}
+
+// TestConfigOfVersion2 refuses a client file of the version that named the cluster, saying how
+// to replace it, rather than refusing its cluster as an unknown field.
+func TestConfigOfVersion2(t *testing.T) {
+	now := time.Now()
+	osCA, _ := pki.NewOSCA(now)
+	c, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleReader, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(map[string]any{"version": 2, "cluster": "lab", "name": c.Name, "role": c.Role, "certificate": c.Certificate, "key": c.Key, "osCA": c.OSCA})
+	path := filepath.Join(t.TempDir(), "config")
+	os.WriteFile(path, data, 0o600)
+	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 2 is not supported (want 3); issue a new one with chalkctl config new") {
+		t.Errorf("a client file of version 2: %v", err)
+	}
+	if data, _ := c.Encode(); strings.Contains(string(data), "cluster") {
+		t.Errorf("a client file names a cluster: %s", data)
+	}
+}
+
+// TestConfigNamesTheUser refuses a client file without the user's name.
+func TestConfigNamesTheUser(t *testing.T) {
+	now := time.Now()
+	osCA, _ := pki.NewOSCA(now)
+	c, err := NewConfig(osCA, osCA.Certificate, "alice", pki.RoleReader, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Name = ""
+	if err := c.Validate(); err == nil || err.Error() != "a client file names the user" {
+		t.Errorf("a client file without a name: %v", err)
 	}
 }
