@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -716,6 +717,54 @@ func TestApplyConfigRetriesAFailedReload(t *testing.T) {
 	}
 	if slices.Contains(r.calls, "networkctl reload") {
 		t.Errorf("the same config again ran %v", r.calls)
+	}
+}
+
+// TestApplyConfigReplacesATornBaseline: a baseline that cannot be decoded, as one a crash cut
+// short, goes to the journal, and the delivery compares with the running slot instead and
+// records that as the baseline.
+func TestApplyConfigReplacesATornBaseline(t *testing.T) {
+	s, r := configServer(t)
+	var logged strings.Builder
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	write(t, s.Paths.EffectsBaseline, `{"documents": [`)
+	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	r.rules = []rule{{prefix: "systemctl try-restart demo", err: errors.New("exit status 1")}}
+	if _, err := sendConfig(s, renamed); err == nil || !strings.Contains(err.Error(), "restart demo by hand") {
+		t.Fatalf("err = %v, want demo restarted for the change from the running slot", err)
+	}
+	if !strings.Contains(logged.String(), "the baseline of the consumers' rules: ") || !strings.Contains(logged.String(), "comparing with the running slot") {
+		t.Errorf("log = %q, want the torn baseline named", logged.String())
+	}
+	if _, found, err := readBaseline(s.Paths.EffectsBaseline); err != nil || !found || !strings.Contains(readFile(t, s.Paths.EffectsBaseline), `"name":"first"`) {
+		t.Errorf("baseline = %s, %v; want the running slot's config", readFile(t, s.Paths.EffectsBaseline), err)
+	}
+}
+
+// TestApplyConfigRefusesWithoutABaseline: a delivery whose baseline cannot be written is refused
+// before it changes anything, since a failure part way would leave a retry nothing to compare
+// with.
+func TestApplyConfigRefusesWithoutABaseline(t *testing.T) {
+	s, r := configServer(t)
+	dir := filepath.Dir(s.Paths.EffectsBaseline)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	_, err := sendConfig(s, renamed)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "record the config and facts the consumers' rules compare with") {
+		t.Fatalf("err = %v, want the baseline's failure", err)
+	}
+	if v, err := store.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {
+		t.Errorf("stored version = %q, %v; want the config from before", v, err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("a refused delivery ran %v", r.calls)
 	}
 }
 
