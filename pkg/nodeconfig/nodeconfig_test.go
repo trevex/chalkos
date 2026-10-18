@@ -275,6 +275,34 @@ func TestReadConsumers(t *testing.T) {
 	}
 }
 
+// ReadConsumers refuses a reload rule whose command names no program chalkd can run: chalkd
+// splits the command on spaces and runs the first word, from its PATH or the image's store.
+func TestReadConsumersRefusesReloadCommands(t *testing.T) {
+	for name, tc := range map[string]struct{ command, want string }{
+		"empty":                  {"", "consumer networkd: the reload command is empty"},
+		"spaces":                 {"  ", "consumer networkd: the reload command is empty"},
+		"outside the store":      {"/usr/bin/networkctl reload", `the reload command "/usr/bin/networkctl reload" names /usr/bin/networkctl, which is neither`},
+		"a relative path":        {"bin/networkctl reload", "names bin/networkctl, which is neither"},
+		"a bare program":         {"networkctl reload", ""},
+		"a program of the store": {"/nix/store/x-systemd/bin/networkctl reload", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l, _ := newTestLoader(t)
+			write(t, l.Consumers, `{"networkd": {"kinds": [], "reload": {"when": "true", "command": "`+tc.command+`"}}}`)
+			_, err := ReadConsumers(l.Consumers)
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+	// A consumer without a reload rule takes no command.
+	l, _ := newTestLoader(t)
+	write(t, l.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "true"}}}`)
+	if _, err := ReadConsumers(l.Consumers); err != nil {
+		t.Errorf("a consumer without a reload rule: %v", err)
+	}
+}
+
 func TestApplyWritesNoKeyCredentials(t *testing.T) {
 	l, _ := newTestLoader(t)
 	write(t, l.Consumers, `{"report": {"keys": ["hostname"], "restart": {"when": "true"}}}`)

@@ -60,6 +60,7 @@ func TestCheck(t *testing.T) {
 		"a consumer rule that does not compile": {greeting(fieldRule, kindRule), lock, consumer(`changedKinds ==`, `false`), `greeter restart: rule "changedKinds =="`},
 		"a consumer rule of a kind's variable":  {greeting(fieldRule, kindRule), lock, consumer(`false`, `size(documents) > 0`), "undeclared reference to 'documents'"},
 		"a consumer rule's undeclared fact":     {greeting(fieldRule, kindRule), lock, consumer(`oldFacts.locked == null`, `false`), `greeter restart: rule "oldFacts.locked == null" reads facts.locked, which the image does not declare`},
+		"an empty reload command":               {greeting(fieldRule, kindRule), lock, strings.Replace(restarts, "systemctl reload greeter", "", 1), "consumer greeter: the reload command is empty"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, f, c := dir(t, tc.schema, tc.facts, tc.consumers)

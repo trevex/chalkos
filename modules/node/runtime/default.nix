@@ -66,7 +66,7 @@ let
             default = "systemctl reload ${name}";
             defaultText = lib.literalExpression ''"systemctl reload <name>"'';
             example = "networkctl reload";
-            description = "Command, with its arguments, that reloads the unit; a program of chalkd's PATH or the image's store.";
+            description = "Command, with its arguments, that reloads the unit. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd's PATH, or an absolute path in the image's store.";
           };
         };
       };

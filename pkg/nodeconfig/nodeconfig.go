@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -321,7 +322,34 @@ func ReadConsumers(path string) (map[string]Consumer, error) {
 	if err := json.Unmarshal(data, &consumers); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+	var errs []error
+	for unit, c := range consumers {
+		if err := checkReloadCommand(c.Reload); err != nil {
+			errs = append(errs, fmt.Errorf("%s: consumer %s: %w", path, unit, err))
+		}
+	}
+	if len(errs) > 0 {
+		slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
+		return nil, errors.Join(errs...)
+	}
 	return consumers, nil
+}
+
+// checkReloadCommand refuses the command of a reload rule that names no program: chalkd splits
+// it on spaces, with no shell quoting, and runs the first word, a program of its PATH or of the
+// image's store. A consumer without a reload rule needs no command.
+func checkReloadCommand(r Reload) error {
+	if r.When == "" {
+		return nil
+	}
+	argv := strings.Fields(r.Command)
+	switch {
+	case len(argv) == 0:
+		return errors.New("the reload command is empty")
+	case strings.Contains(argv[0], "/") && !strings.HasPrefix(argv[0], "/nix/store/"):
+		return fmt.Errorf("the reload command %q names %s, which is neither a program of the image's store nor a bare program name", r.Command, argv[0])
+	}
+	return nil
 }
 
 func writeFile(path string, data []byte, perm fs.FileMode) error {
