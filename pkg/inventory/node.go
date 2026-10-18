@@ -20,8 +20,8 @@ type NodeConfig struct {
 	// plane gets no Addon document: an Addon's objects go to the cluster's API, which only control
 	// planes apply.
 	Documents []config.Document
-	// Type is the Node document's spec.type, empty without one, and Hostname its spec.hostname,
-	// empty for the node's name.
+	// Type is the Node document's spec.type, empty without one, and Hostname the Host document's
+	// spec.hostname, empty without a Host or for a null one, which take the node's name.
 	Type, Hostname string
 	// ImageName is the name of the image the inventory gives the node, and ImageDir that image's
 	// directory, absolute.
@@ -81,7 +81,12 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	}
 	spec, _ := node.Object["spec"].(map[string]any)
 	c.Type, _ = spec["type"].(string)
-	c.Hostname, _ = spec["hostname"].(string)
+	for _, d := range docs {
+		if d.APIVersion == config.CoreAPI && d.Kind == "Host" {
+			host, _ := d.Object["spec"].(map[string]any)
+			c.Hostname, _ = host["hostname"].(string)
+		}
+	}
 	for _, d := range docs {
 		if c.Type != identity.KindControlPlane && d.APIVersion == config.KubernetesAPI && d.Kind == "Addon" {
 			continue

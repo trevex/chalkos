@@ -413,9 +413,8 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 	if got, want := id.Storage.Disks["fast"].Seed, uuidOf("chalkos-seed:lab/n1/fast"); got != want {
 		t.Errorf("seed = %s, want %s, the seed of n1", got, want)
 	}
-	// Node.spec.hostname still names the host; the Kubernetes node keeps the node's name.
-	named := strings.Replace(kube, "spec: {type: worker}", "spec: {type: worker, hostname: host1}", 1)
-	s, err = NewSet(mustParse(t, named), allSchemas(t))
+	// A Host's hostname names the host; the Kubernetes node keeps the node's name.
+	s, err = NewSet(mustParse(t, kube+hostDoc("host1")), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,5 +426,36 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 	}
 	if _, err := s.Identity("", Target{Image: &testImage}); err == nil || !strings.Contains(err.Error(), "no name") {
 		t.Errorf("err = %v, want a refusal of a node without a name", err)
+	}
+}
+
+// hostDoc is a Host document of the hostname, given as YAML.
+func hostDoc(hostname string) string {
+	return "---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: " + hostname + "}\n"
+}
+
+// TestIdentityHostname sets the hostname a Host document gives, and the node's name without one
+// or for a Host whose hostname is null.
+func TestIdentityHostname(t *testing.T) {
+	for name, tc := range map[string]struct{ docs, want string }{
+		"a Host":                    {hostDoc("host1"), "host1"},
+		"a Host without a hostname": {hostDoc("null"), "n1"},
+		"a Host with an empty spec": {"---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {}\n", "n1"},
+		"no Host":                   {"", "n1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// A node of an image without Kubernetes, whose Node has no type.
+			s, err := parseSet(t, strings.Replace(minimal, "spec: {type: worker}", "spec: {}", 1)+tc.docs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id, err := s.Identity("n1", Target{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id.Hostname != tc.want {
+				t.Errorf("hostname = %q, want %q", id.Hostname, tc.want)
+			}
+		})
 	}
 }

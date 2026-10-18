@@ -209,7 +209,7 @@ key or `*` for the values of an attribute set. Evaluating the image fails on a p
 does not have, and the message lists the fields at that point:
 
 ```text
-chalkos.kinds.Node.get: the path "spec.typ" does not follow the kind's options: spec has no field typ; its fields are hostname, type
+chalkos.kinds.Node.get: the path "spec.typ" does not follow the kind's options: spec has no field typ; its fields are type
 ```
 
 The check covers the kind's options, not the documents. A document that leaves the path's field out,

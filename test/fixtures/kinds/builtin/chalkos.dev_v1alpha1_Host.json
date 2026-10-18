@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Host"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "anyOf": [
+            {
+              "pattern": "^(?:[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Host name set at boot; null takes the node's name in the inventory."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Host",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "chalkos.dev",
+    "kind": "Host",
+    "multiple": false,
+    "version": "v1alpha1"
+  }
+}

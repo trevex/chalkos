@@ -488,6 +488,7 @@ lib.runTests {
       "Addon"
       "Cluster"
       "Flannel"
+      "Host"
       "Kubelet"
       "Kubernetes"
       "Link"
@@ -619,6 +620,7 @@ lib.runTests {
   testBuiltinSchemasMatchFixtures = {
     expr = map (kind: builtinSchema kind) [
       "Cluster"
+      "Host"
       "Flannel"
       "Kubelet"
       "Kubernetes"
@@ -632,6 +634,7 @@ lib.runTests {
     ];
     expected = map builtinFixture [
       "chalkos.dev_v1alpha1_Cluster.json"
+      "chalkos.dev_v1alpha1_Host.json"
       "kubernetes.chalkos.dev_v1alpha1_Flannel.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubelet.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubernetes.json"

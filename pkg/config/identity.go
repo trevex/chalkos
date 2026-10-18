@@ -31,8 +31,9 @@ var defaultTimeServers = []identity.TimeServer{
 // Identity translates the set into the identity of the node called name for the image t describes,
 // as the cluster definition rendered it, so every reader of the identity on the node keeps
 // working. Extension kinds stay in the set. The name is the node's name in the inventory, which
-// its node certificate carries; the hostname defaults to it, the Kubernetes node is called by it
-// and the storage seeds derive from it, whatever the Node document is called.
+// its node certificate carries; the hostname defaults to it without a Host that gives one, the
+// Kubernetes node is called by it and the storage seeds derive from it, whatever the Node document
+// is called.
 func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	if name == "" {
 		return identity.Identity{}, fmt.Errorf("the node has no name to translate its config for")
@@ -69,8 +70,14 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 		Storage:      sec,
 		Time:         identity.Time{Servers: slices.Clone(defaultTimeServers)},
 	}
-	if node.Hostname != nil {
-		id.Hostname = *node.Hostname
+	if hostDoc, ok := s.One("Host"); ok {
+		var host hostSpec
+		if err := hostDoc.decodeSpec(&host); err != nil {
+			return identity.Identity{}, err
+		}
+		if host.Hostname != nil {
+			id.Hostname = *host.Hostname
+		}
 	}
 	if ts, ok := s.One("TimeSync"); ok {
 		var spec timeSyncSpec

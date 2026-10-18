@@ -26,8 +26,8 @@ spec:
     - {apiVersion: v1, kind: SecretList, items: [{apiVersion: v1, kind: SECRET, metadata: {name: up}, data: {k: deep}}]}
 ---
 apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: n1}
+kind: Host
+metadata: {name: default}
 spec: {hostname: h1}
 `
 

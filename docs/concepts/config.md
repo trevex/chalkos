@@ -80,7 +80,8 @@ schemas.
 | Kind | Group | Per node | What it holds |
 | --- | --- | --- | --- |
 | [`Cluster`](../reference/kinds.md#cluster) | `chalkos.dev` | exactly one | The cluster's name and the URL of its API server |
-| [`Node`](../reference/kinds.md#node) | `chalkos.dev` | exactly one | The node's type, `controlplane` or `worker`, and its hostname |
+| [`Node`](../reference/kinds.md#node) | `chalkos.dev` | exactly one | The node's type, `controlplane` or `worker` |
+| [`Host`](../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
@@ -193,9 +194,9 @@ spec:
 chalkctl never derives it from the node's `Network` documents, so a node that installs with a DHCP
 address and receives a static one names the static one here; `--address` overrides it for one
 command. The node's name is its name in the inventory, which its node certificate carries; chalkd
-takes the name from the certificate. The hostname defaults to it, the Kubernetes node is called by
-it and the storage seeds derive from it. Each node's `Node` document carries the same name, and
-chalkctl refuses a set whose `Node` is named otherwise.
+takes the name from the certificate. The hostname defaults to it unless a `Host` document gives
+another, the Kubernetes node is called by it and the storage seeds derive from it. Each node's
+`Node` document carries the same name, and chalkctl refuses a set whose `Node` is named otherwise.
 
 The inventory names no secrets file. The commands that issue certificates or deliver config read
 the [secrets file](../reference/glossary.md#secrets-file) from `--secrets FILE`, or from standard

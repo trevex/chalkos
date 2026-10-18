@@ -37,9 +37,11 @@ spec:
   objects: []
 `
 
-// nodeFile is a node's file: its Node of the type and hostname, and its uplink at the address.
+// nodeFile is a node's file: its Node of the type, its Host of a hostname in .lab, and its uplink
+// at the address.
 func nodeFile(name, nodeType, address string) string {
-	return "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: " + name + "}\nspec: {type: " + nodeType + ", hostname: " + name + ".lab}\n---\n" +
+	return "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: " + name + "}\nspec: {type: " + nodeType + "}\n---\n" +
+		"apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: " + name + ".lab}\n---\n" +
 		"apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [" + address + "/24]}}\n"
 }
 
@@ -63,7 +65,7 @@ func kinds(docs []config.Document) []string {
 }
 
 // TestNode gives a node the documents of its files in order, without the Addon on a worker, and
-// reads its type, hostname, static addresses and the image the inventory names for it.
+// reads its type, its Host's hostname, static addresses and the image the inventory names for it.
 func TestNode(t *testing.T) {
 	dir := homelabDir(t)
 	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
@@ -74,7 +76,7 @@ func TestNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(cp1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Addon/monitoring", "Node/cp1", "Network/10-uplink"}) {
+	if got := kinds(cp1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Addon/monitoring", "Node/cp1", "Host/default", "Network/10-uplink"}) {
 		t.Errorf("documents of cp1 = %q", got)
 	}
 	if cp1.Type != "controlplane" || cp1.Hostname != "cp1.lab" || cp1.ImageName != "node-metal" || cp1.ImageDir != filepath.Join(dir, "images", "node-metal") {
@@ -87,8 +89,22 @@ func TestNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Node/w1", "Network/10-uplink"}) {
+	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Node/w1", "Host/default", "Network/10-uplink"}) {
 		t.Errorf("documents of the worker w1 = %q, want no Addon", got)
+	}
+	// A Host whose hostname is null, and no Host, leave the hostname empty for the node's name.
+	const host = "apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: w1.lab}\n---\n"
+	for name, file := range map[string]string{
+		"a Host without a hostname": strings.Replace(nodeFile("w1", "worker", "10.0.0.21"), "{hostname: w1.lab}", "{hostname: null}", 1),
+		"no Host":                   strings.Replace(nodeFile("w1", "worker", "10.0.0.21"), host, "", 1),
+	} {
+		write(t, filepath.Join(dir, "nodes", "w1.yaml"), file)
+		if inv, err = Load(filepath.Join(dir, "chalkos.yaml")); err != nil {
+			t.Fatal(err)
+		}
+		if w1, err = inv.Node("w1"); err != nil || w1.Hostname != "" {
+			t.Errorf("%s: hostname = %q, %v, want none", name, w1.Hostname, err)
+		}
 	}
 }
 

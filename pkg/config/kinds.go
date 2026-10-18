@@ -23,7 +23,10 @@ type SecretRef struct {
 }
 
 type nodeSpec struct {
-	Type     *string `json:"type"`
+	Type *string `json:"type"`
+}
+
+type hostSpec struct {
 	Hostname *string `json:"hostname"`
 }
 

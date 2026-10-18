@@ -1,5 +1,5 @@
-# The kinds every image accepts: the cluster and node a config belongs to, the image the node
-# runs, secrets, storage, time and, on images with Kubernetes, the cluster's Kubernetes settings,
+# The kinds every image accepts: the cluster and node a config belongs to, the node's host name,
+# secrets, storage, time and, on images with Kubernetes, the cluster's Kubernetes settings,
 # registry mirrors and manifests and the kubelet's node settings. chalkd translates them into the
 # node's identity and its Kubernetes cluster.
 {
@@ -258,11 +258,13 @@ in
           default = null;
           description = "What the node is in Kubernetes; null on an image without Kubernetes.";
         };
-        hostname = mkOption {
-          type = types.nullOr (types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?");
-          default = null;
-          description = "Host name set at boot; null uses the node's name.";
-        };
+      };
+    };
+    Host = builtin "chalkos.dev" // {
+      spec.hostname = mkOption {
+        type = types.nullOr (types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?");
+        default = null;
+        description = "Host name set at boot; null takes the node's name in the inventory.";
       };
     };
     Secret = builtin "chalkos.dev" // {

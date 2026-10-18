@@ -239,12 +239,15 @@ func inventoryVersion(t *testing.T, path string) string {
 	return v
 }
 
+// n1Host gives n1 the hostname n1.lab.
+const n1Host = "apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: n1.lab}\n"
+
 // TestInstallFromTheInventory installs n1 in place with the config the inventory gives it, which
 // carries no root hash of its image, and a node certificate that names its hostname and static
 // address.
 func TestInstallFromTheInventory(t *testing.T) {
 	ta := newTestApp(t)
-	path := writeInventory(t, ta.dir, strings.Replace(n1Node, "spec: {}", "spec: {hostname: n1.lab}", 1), n1SystemDisk, n1Network)
+	path := writeInventory(t, ta.dir, n1Node, n1Host, n1SystemDisk, n1Network)
 	s := maintenanceNode()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }

@@ -60,9 +60,10 @@ flowchart TD
 
 A node's [node certificate](../reference/glossary.md#node-certificate) is what chalkd serves and
 what it presents to renew itself. It carries the node's name in the inventory as its subject,
-which chalkd takes as the node's name, and the node's addresses. It lives one year and is stored
-with its key and the node CA's certificate in one file on [STATE](../reference/glossary.md#state),
-`/state/chalkd/node.pem`. chalkctl issues the first one at install.
+which chalkd takes as the node's name, the host name its `Host` document gives and the node's
+addresses. It lives one year and is stored with its key and the node CA's certificate in one file
+on [STATE](../reference/glossary.md#state), `/state/chalkd/node.pem`. chalkctl issues the first
+one at install.
 
 Client certificates come from the OS CA directly, with the role in their Organization. A
 [client file](../reference/glossary.md#client-file) from

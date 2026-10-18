@@ -25,11 +25,8 @@ let
   cel = import ./runtime/cel.nix { inherit lib; };
   core = "chalkos.dev/v1alpha1";
   kubernetesAPI = "kubernetes.chalkos.dev/v1alpha1";
-  # The identity's Kubernetes node: its name, its host name, which defaults to the name, and the
-  # type, which is the cluster's kind.
-  node =
-    c:
-    "cel.bind(d, ${cel.documents c core "Node"}, d.map(n, [n, d[n].spec.hostname != null ? d[n].spec.hostname : n, d[n].spec.type]))";
+  # The node's Node document: its name and the type, which is the cluster's kind.
+  node = c: "cel.bind(d, ${cel.documents c core "Node"}, d.map(n, [n, d[n].spec.type]))";
   # The Address= values of each Network's [Network] sections, as written and in the order of the
   # networks' names, which the identity takes the node's static addresses from. They are compared
   # with their prefix lengths: taking those off loops over the addresses of each section of each
@@ -58,6 +55,8 @@ let
   # here: such a node restarts the kubelet only for these changes.
   kubernetesChanged = lib.concatStringsSep " || " [
     "${node "config"} != ${node "oldConfig"}"
+    # The Host's host name, which the identity's Kubernetes node carries beside its name.
+    (cel.specsChanged core "Host")
     (cel.specsChanged kubernetesAPI "Kubelet")
     "${staticAddresses "config"} != ${staticAddresses "oldConfig"}"
     clusterChanged

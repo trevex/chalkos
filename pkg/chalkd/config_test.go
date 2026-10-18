@@ -555,7 +555,7 @@ func TestApplyConfigComparesFactsBeforeAndAfter(t *testing.T) {
 	}{
 		{"the first node.json", baseConfig, true},
 		{"the same", baseConfig, false},
-		{"another host name", strings.Replace(baseConfig, "metadata: {name: n1}\nspec: {}", "metadata: {name: n1}\nspec: {hostname: h2}", 1), true},
+		{"another host name", baseConfig + hostConfig("default", "h2"), true},
 	} {
 		r.calls = nil
 		if _, err := sendConfig(s, step.config); err != nil {

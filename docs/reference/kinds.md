@@ -29,6 +29,16 @@ A node's config holds at most one.
 | --- | --- | --- | --- |
 | `spec.endpoint` | string or null | `null` | URL of the cluster's Kubernetes API server. |
 
+## Host { #host }
+
+`apiVersion: chalkos.dev/v1alpha1`
+
+A node's config holds at most one.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.hostname` | string or null | `null` | Host name set at boot; null takes the node's name in the inventory. |
+
 ## Node { #node }
 
 `apiVersion: chalkos.dev/v1alpha1`
@@ -39,7 +49,6 @@ It has a [change rule](../concepts/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.hostname` | string or null | `null` | Host name set at boot; null uses the node's name. |
 | `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes; null on an image without Kubernetes. |
 
 ## Secret { #secret }

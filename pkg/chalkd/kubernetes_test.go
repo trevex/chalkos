@@ -691,35 +691,31 @@ func TestCredentialIsShortLived(t *testing.T) {
 // which picks the node's address and fills the firewall's VXLAN chain, and restarts the kubelet.
 // The firewall itself is left alone, so a node whose firewall is disabled takes a new address.
 // TestApplyConfigRestartsKubernetesOnChange: the kubelet and its preparation restart when what
-// they read of the node's config changes, compared with the running slot: the Node's name, host
-// name and type, the Kubelet, the static addresses of the Network documents and the cluster the
-// Cluster and Kubernetes documents give. Other changes, of the Node's image, of a Network beside
-// its addresses or of another kind, restart neither.
+// they read of the node's config changes, compared with the running slot: the Node's name and
+// type, the Host, the Kubelet, the static addresses of the Network documents and the cluster the
+// Cluster and Kubernetes documents give. Other changes, of a Network beside its addresses or of
+// another kind, restart neither.
 func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 	base := workerConfig + networkConfig
 	kubelet := func(spec string) string {
 		return strings.Replace(base, "spec: {nodeIPs: [192.168.100.21]}", "spec: "+spec, 1)
 	}
-	node := func(spec string) string {
-		return strings.Replace(base, "spec: {type: worker}", "spec: "+spec, 1)
-	}
 	for name, c := range map[string]struct {
 		config   string
 		restarts bool
 	}{
-		"unchanged":                    {base, false},
-		"labels":                       {kubelet("{nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}"), true},
-		"taints":                       {kubelet("{nodeIPs: [192.168.100.21], taints: [{key: dedicated, effect: NoSchedule}]}"), true},
-		"nodeIPs":                      {kubelet("{nodeIPs: [192.168.100.22]}"), true},
-		"validSubnets":                 {kubelet("{nodeIPs: [], validSubnets: [192.168.100.0/24]}"), true},
-		"the node name":                {strings.Replace(base, "metadata: {name: n1}", "metadata: {name: n2}", 1), true},
-		"the host name":                {node("{type: worker, hostname: h1}"), true},
-		"the host name the name gives": {node("{type: worker, hostname: n1}"), false},
-		"a static address":             {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
-		"the cluster":                  {strings.Replace(base, "metadata: {name: kubernetes}\nspec: {}", "metadata: {name: kubernetes}\nspec: {domain: lab.local}", 1), true},
-		"the endpoint":                 {strings.Replace(base, "192.168.100.11:6443", "192.168.100.12:6443", 1), true},
-		"a Network's gateway":          {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
-		"a Demo":                       {strings.Replace(base, "name: first", "name: second", 1), false},
+		"unchanged":           {base, false},
+		"labels":              {kubelet("{nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}"), true},
+		"taints":              {kubelet("{nodeIPs: [192.168.100.21], taints: [{key: dedicated, effect: NoSchedule}]}"), true},
+		"nodeIPs":             {kubelet("{nodeIPs: [192.168.100.22]}"), true},
+		"validSubnets":        {kubelet("{nodeIPs: [], validSubnets: [192.168.100.0/24]}"), true},
+		"the node name":       {strings.Replace(base, "metadata: {name: n1}", "metadata: {name: n2}", 1), true},
+		"a Host":              {base + hostConfig("default", "h1"), true},
+		"a static address":    {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
+		"the cluster":         {strings.Replace(base, "metadata: {name: kubernetes}\nspec: {}", "metadata: {name: kubernetes}\nspec: {domain: lab.local}", 1), true},
+		"the endpoint":        {strings.Replace(base, "192.168.100.11:6443", "192.168.100.12:6443", 1), true},
+		"a Network's gateway": {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
+		"a Demo":              {strings.Replace(base, "name: first", "name: second", 1), false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := clusterServer(t, k8s.KindWorker)
@@ -740,6 +736,43 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 				t.Errorf("restarted units %v", resp.RestartedUnits)
 			}
 		})
+	}
+}
+
+// hostConfig is a Host document of the name and hostname.
+func hostConfig(name, hostname string) string {
+	return "---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: " + name + "}\nspec: {hostname: " + hostname + "}\n"
+}
+
+// TestApplyConfigRestartsKubernetesOnHostChange: another hostname in the Host restarts the kubelet
+// and its preparation, and the same Host under another name restarts neither.
+func TestApplyConfigRestartsKubernetesOnHostChange(t *testing.T) {
+	base := workerConfig + networkConfig
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, base); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		name, config string
+		restarts     bool
+	}{
+		{"a Host", base + hostConfig("default", "h1"), true},
+		{"another hostname", base + hostConfig("default", "h2"), true},
+		{"another name", base + hostConfig("host", "h2"), false},
+	} {
+		r.mu.Lock()
+		r.calls = nil
+		r.mu.Unlock()
+		resp, err := sendConfig(s, step.config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet"); got != step.restarts {
+			t.Errorf("%s: restarted %v, want %v: %v", step.name, got, step.restarts, r.calls)
+		}
+		if restarted := slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes", "kubelet"}); restarted != step.restarts {
+			t.Errorf("%s: restarted units %v", step.name, resp.RestartedUnits)
+		}
 	}
 }
 
