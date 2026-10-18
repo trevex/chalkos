@@ -116,10 +116,15 @@ spec:
 ```
 
 The inventory's `metadata.name` names the cluster in chalkctl's messages and in the kubeconfig
-`chalkctl kubeconfig` writes. A node's set holds at most one document of most kinds, and exactly
-one `SystemDisk`, `Kubernetes` and `Node`, so each document lives in the one place that fits it:
-what every node shares in `cluster/`, what a kind of node shares in a group, the rest in the
-node's file. [The kinds reference](../reference/kinds.md) lists every field.
+`chalkctl kubeconfig` writes; it is a label and reaches no node. The keys of `spec.nodes` are the
+nodes' names, which last: each node's certificate, Kubernetes node, etcd member and recovery key
+carry its name, so renaming a node takes a reinstall, as
+[What names a node?](../concepts/config.md#what-names-a-node) describes.
+
+A node's set holds at most one document of most kinds, and exactly one `SystemDisk`, `Kubernetes`
+and `Node`, so each document lives in the one place that fits it: what every node shares in
+`cluster/`, what a kind of node shares in a group, the rest in the node's file.
+[The kinds reference](../reference/kinds.md) lists every field.
 
 ## Choose the variants
 

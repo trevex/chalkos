@@ -84,7 +84,8 @@ config the image accepts makes true. A rule that is false refuses the config, or
 A JSON file holding a client certificate of one [client role](#client-role), its key and the
 [OS CA](#os-ca) certificate, issued with
 [`chalkctl config new`](cli/chalkctl_config_new.md). It lets someone operate nodes without the
-[secrets file](#secrets-file). See [Security model](../concepts/security.md).
+[secrets file](#secrets-file). It names no cluster: its OS CA ties it to one, and a node of another
+cluster fails the TLS handshake with it. See [Security model](../concepts/security.md).
 
 ## Client role { #client-role }
 
@@ -256,9 +257,10 @@ every node gets, files of named groups and each node's own. The inventory names 
 [image directory](#image-directory), relative to the inventory's directory; a node runs its own
 `image`, else that of its groups, else the inventory's `spec.image`. chalkctl reads `chalkos.yaml`
 in the current directory, or the file `--inventory` names. It stays on the operator's machine and
-names no secrets. See [Config and the
-inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes) and its fields in
-[Config kinds](kinds.md#inventory).
+names no secrets. Its keys of `spec.nodes` are the [node names](#node-name); its `metadata.name` is
+a label for messages and the default kubeconfig context. See
+[Config and the inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes) and
+its fields in [Config kinds](kinds.md#inventory).
 
 ## Kind { #kind }
 
@@ -304,9 +306,10 @@ variant's or platform's modules. See [The image](../concepts/image.md).
 ## Node { #node }
 
 A machine of the cluster, named in the [inventory](#inventory), which also names the [image](#image)
-it runs. On an image with Kubernetes, its `Node` document says whether it is a [control
-plane](#control-plane) or a [worker](#worker). It is installed from that image's [image
-directory](#image-directory). See [Config and the inventory](../concepts/config.md).
+it runs. On an image with Kubernetes, its `Node` document of the group `kubernetes.chalkos.dev`
+says whether it is a [control plane](#control-plane) or a [worker](#worker), and gives its labels,
+taints and Kubernetes addresses. It is installed from that image's
+[image directory](#image-directory). See [Config and the inventory](../concepts/config.md).
 
 ## Node CA { #node-ca }
 
@@ -320,6 +323,15 @@ The certificate chalkd serves and authenticates with, issued by the [node CA](#n
 node's name, host name and addresses and valid for one year. chalkd takes the node's name from its
 subject and renews it through a control plane once two thirds of its lifetime have passed. See
 [Certificates](../concepts/certificates.md).
+
+## Node name { #node-name }
+
+A [node](#node)'s key in the [inventory](#inventory)'s `spec.nodes`, such as `cp1`. chalkctl puts it
+into the [node certificate](#node-certificate) at install, and chalkd reads it from there. The
+hostname defaults to it unless a `Host` document gives another, and the Kubernetes node name, the
+etcd member, the seed of the partition UUIDs and the [recovery key](#recovery-key) derive from it,
+so renaming a node takes a reinstall. See
+[Config and the inventory](../concepts/config.md#what-names-a-node).
 
 ## Normal mode { #normal-mode }
 
@@ -371,8 +383,8 @@ members. See [Security model](../concepts/security.md).
 ## Recovery key { #recovery-key }
 
 The default [fallback keyslot](#fallback-keyslot) of every encrypted partition, used when the
-TPM does not unseal. chalkos derives it per node from the [secrets file](#secrets-file), so the
-file never changes, and
+TPM does not unseal. chalkos derives it from the [secrets file](#secrets-file) and the
+[node name](#node-name), so the file never changes, and
 [`chalkctl recovery-key`](cli/chalkctl_recovery-key.md) prints it. See
 [Storage and encryption](../concepts/storage.md).
 

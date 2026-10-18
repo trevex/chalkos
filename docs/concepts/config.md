@@ -101,8 +101,8 @@ Some kinds depend on the image or the node:
   is `match: {macAddress: …}`. A section that networkd allows more than once, such as `[Route]`,
   is a list.
 - An `Addon`'s objects go to the cluster's API, so chalkctl delivers `Addon` documents to control
-  planes alone. A shared file may hold them; a [worker](../reference/glossary.md#worker)'s set
-  leaves them out.
+  planes alone, the nodes whose `Node` has the type `controlplane`. A shared file may hold them;
+  a [worker](../reference/glossary.md#worker)'s set leaves them out.
 
 An extension adds kinds of its own in a group outside `chalkos.dev`, declared in the NixOS modules
 of a [variant](../reference/glossary.md#variant), as
@@ -146,16 +146,16 @@ spec:
 
 [Config kinds](../reference/kinds.md#inventory) lists its fields:
 
-- `metadata.name` names the cluster in chalkctl's messages and the kubeconfig `chalkctl kubeconfig`
-  writes, unless `--context` gives another name.
+- `metadata.name` is a label: it names the cluster in chalkctl's messages and the kubeconfig
+  `chalkctl kubeconfig` writes, as [What names a node?](#what-names-a-node) describes.
 - `spec.images` are the images the nodes run, by name, and `spec.image` the image of every node
   that names none, as [How does the inventory name images?](#how-does-the-inventory-name-images)
   describes.
 - `spec.files` are the files every node gets.
 - `spec.groups.<group>` is a group, which a node joins by naming the group in its `groups`: its
   `files` and its `image`.
-- `spec.nodes.<node>` is each node by name, with its `address`, its `image`, its `groups` and its
-  own `files`.
+- `spec.nodes.<node>` is each node by its name, with its `address`, its `image`, its `groups` and
+  its own `files`.
 
 A node's set is the documents of the shared files, then of its groups' files in the order the node
 names the groups, then of its own files. Paths are relative to the inventory's directory, and a
@@ -188,17 +188,39 @@ spec:
 [maintenance mode](../reference/glossary.md#maintenance-mode) before the node has its config.
 chalkctl never derives it from the node's `Network` documents, so a node that installs with a DHCP
 address and receives a static one names the static one here; `--address` overrides it for one
-command. The node's name is its name in the inventory, which its node certificate carries; chalkd
-takes the name from the certificate. The hostname defaults to it unless a `Host` document gives
-another, the Kubernetes node is called by it and the storage seeds derive from it. No document
-names the node: a kind a node holds once takes any `metadata.name`, and the examples use
-`default`.
+command.
 
 The inventory names no secrets file. The commands that issue certificates or deliver config read
 the [secrets file](../reference/glossary.md#secrets-file) from `--secrets FILE`, or from standard
 input with `--secrets -`. The others authenticate with the secrets file when `--secrets` is given,
 and otherwise with a [client file](../reference/glossary.md#client-file): the one `--config`
 names, else the one `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`.
+
+## What names a node?
+
+A node's [name](../reference/glossary.md#node-name) is its key in the inventory's `spec.nodes`,
+such as `cp1`. At install, chalkctl issues the node's
+[node certificate](../reference/glossary.md#node-certificate) with the name as its subject's common
+name. chalkd reads the name from that certificate whenever it needs it and has no other
+source for it: no config document names the node, and a kind a node holds once takes any
+`metadata.name`, which the examples set to `default`.
+
+The name feeds:
+
+- the hostname, unless a [`Host`](../reference/kinds.md#host) document's `hostname` gives another;
+- the Kubernetes node name, by which the kubelet registers and the node's etcd member is called;
+- the seed of the node's partition UUIDs, as [Storage and encryption](storage.md) describes;
+- the node's [recovery key](../reference/glossary.md#recovery-key), derived from the secrets file
+  and the name;
+- the `node.name` of the [change rules](rules.md) and the consumers' rules.
+
+A node keeps its name for its whole life. Renaming one takes a reinstall, because its etcd member,
+its certificates and its recovery key carry the old name.
+
+The inventory's own `metadata.name` is a label and feeds nothing on a node. chalkctl names the
+cluster by it in its messages, and [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md)
+names the kubeconfig's cluster, user and context after it unless `--context` gives another name.
+Two clusters may share it; their nodes still accept only their own cluster's certificates.
 
 ## What makes a set valid?
 

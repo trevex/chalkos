@@ -56,6 +56,7 @@
         "files": { "$ref": "#/$defs/files", "description": "Config files every node gets." },
         "groups": {
           "type": "object",
+          "description": "Groups of nodes by name, which a node joins by naming them in its groups.",
           "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
           "additionalProperties": {
             "type": "object",
@@ -71,6 +72,7 @@
         },
         "nodes": {
           "type": "object",
+          "description": "The cluster's nodes by name. A node's name is fixed at install, which writes it into the node's certificate; its hostname defaults to it, and the Kubernetes node name, the storage seeds and the recovery key derive from it, so renaming a node takes a reinstall.",
           "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
           "additionalProperties": {
             "type": "object",

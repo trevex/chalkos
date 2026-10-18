@@ -24,7 +24,8 @@ installer gets the image as well: --image, or the directory of the node's image 
 signed for Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the
 disk the node's SystemDisk names: a disk on which blkid finds no signature, or one holding an
 unfinished install of the node, which it continues; any other disk only with --wipe-disk. The node
-reboots into the installed image. The command needs the secrets file.
+reboots into the installed image. The node certificate carries the node's name in the inventory,
+which stays the node's name until it is reinstalled. The command needs the secrets file.
 
 ```
 chalkctl install <node> [flags]

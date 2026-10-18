@@ -49,10 +49,13 @@ an extension's own. The [inventory](../reference/glossary.md#inventory),
 `chalkos.yaml`, names each node, the address chalkctl reaches it at, the image it runs and the files
 of its documents: files every node gets, files of groups and the node's own. Its `images` name the
 image directories, and `image` on a node, on a group or for every node says which one a node runs.
-`chalkctl validate` checks every node's documents against its image's schemas without reaching a
-node; chalkctl delivers them at install and with `chalkctl apply-config`, and chalkd applies them at
-every boot. chalkctl reads only these files and the image directories, so a machine without Nix, an
-airgapped one included, manages the cluster. See [Config and the inventory](../concepts/config.md).
+A node's name in the inventory goes into its node certificate at install and stays its name: its
+Kubernetes node name, its partition UUIDs, its recovery key and by default its hostname derive from
+it. `chalkctl validate` checks every node's documents against its image's schemas without reaching
+a node; chalkctl delivers them at install and with `chalkctl apply-config`, and chalkd applies them
+at every boot. chalkctl reads only these files and the image directories, so a machine without Nix,
+an airgapped one included, manages the cluster. See
+[Config and the inventory](../concepts/config.md).
 
 ## The secrets file stays with the operator
 

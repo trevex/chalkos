@@ -106,8 +106,9 @@ chalkd renders the kubelet's configuration from the node's cluster into
 authentication and authorisation, no anonymous access and no read-only port, the systemd cgroup
 driver, the cluster's DNS address and domain, and `rotateCertificates` with `serverTLSBootstrap`.
 What differs per node the kubelet gets as flags in `$KUBELET_ARGS`: the node name, which is the
-node's name in the inventory, and the addresses, labels and taints of its `Node` document. The
-homelab example's worker carries fast storage and keeps other workloads off:
+node's [name in the inventory](config.md#what-names-a-node), and the addresses, labels and taints
+of its `Node` document. The homelab example's worker carries fast storage and keeps other
+workloads off:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -301,8 +302,9 @@ Beside the apply, from the moment the API server is ready, chalkd runs the appro
 serving certificates, so an object that fails to apply does not leave kubelets without them.
 
 Only control planes apply the `Addon` objects to the cluster's API. An `Addon` may sit in the files
-every node gets, but chalkctl delivers `Addon` documents to control planes alone, and workers never
-hold them; a worker given one anyway applies nothing and restarts nothing. The objects may include
+every node gets, but chalkctl delivers `Addon` documents only to the nodes whose `Node` document
+has the type `controlplane`, and workers never hold them; a worker given one anyway applies nothing
+and restarts nothing. The objects may include
 Secrets, so a control plane keeps its `Addon` documents in its stored config on
 [STATE](../reference/glossary.md#state), readable by root alone: chalkd never writes them below
 `/run/chalkos/config` for the node's services, and `chalkcfg` does not print them.
