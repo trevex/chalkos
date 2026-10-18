@@ -107,24 +107,25 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	if err != nil {
 		return err
 	}
-	name, _, err := inv.Cluster()
-	if err != nil {
+	// chalkctl, which installs the nodes, needs the cluster's one Cluster document; an inventory
+	// without it is refused before the lab is made.
+	if _, _, err := inv.Cluster(); err != nil {
 		return fmt.Errorf("%s: %w", lf.inventory, err)
 	}
 	nodes, images, err := labNodes(inv, lf)
 	if err != nil {
 		return err
 	}
-	dir, err := lab.StateDir(name)
+	dir, err := lab.StateDir(lf.name)
 	if err != nil {
 		return err
 	}
-	l := &lab.Lab{Cluster: name, FirmwareCode: code, FirmwareVars: filepath.Join(dir, "keys", "OVMF_VARS.fd"), GuestForwards: guestForwards, Nodes: nodes}
+	l := &lab.Lab{Name: lf.name, FirmwareCode: code, FirmwareVars: filepath.Join(dir, "keys", "OVMF_VARS.fd"), GuestForwards: guestForwards, Nodes: nodes}
 	if err := l.CheckSockets(dir); err != nil {
 		return err
 	}
 	if _, err := os.Stat(dir); err == nil {
-		return fmt.Errorf("the lab of %s exists in %s; chalklab destroy removes it", name, dir)
+		return fmt.Errorf("the lab %s exists in %s; chalklab destroy removes it", lf.name, dir)
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
@@ -141,7 +142,7 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 	}()
 
 	fmt.Fprintf(a.stdout, "creating the lab's Secure Boot keys in %s\n", filepath.Join(dir, "keys"))
-	if err := a.createKeys(ctx, filepath.Join(dir, "keys"), name, vars); err != nil {
+	if err := a.createKeys(ctx, filepath.Join(dir, "keys"), lf.name, vars); err != nil {
 		return err
 	}
 	if err := os.Mkdir(filepath.Join(dir, "images"), 0o700); err != nil {
@@ -431,7 +432,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 // unsigned builds, of which the lab signed copies, so an upgrade signs the images again.
 func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 	inventory := filepath.Join(dir, inventoryFile)
-	fmt.Fprintf(a.stdout, "\nthe lab of %s runs %s; next:\n", l.Cluster, strings.Join(nodeNames(l), ", "))
+	fmt.Fprintf(a.stdout, "\nthe lab %s runs %s; next:\n", l.Name, strings.Join(nodeNames(l), ", "))
 	if kubernetes {
 		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n", filepath.Join(dir, kubeconfigFile))
 	}

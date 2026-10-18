@@ -195,7 +195,7 @@ bootstrapping cp1; the control plane pulls its images and starts
 cp1 is bootstrapped; applied 19 objects
 wrote /home/alice/.local/state/chalklab/lab/kubeconfig; its certificate is valid for 8760h0m0s
 
-the lab of lab runs cp1, w1; next:
+the lab lab runs cp1, w1; next:
   export KUBECONFIG=/home/alice/.local/state/chalklab/lab/kubeconfig
   export CHALKOSCONFIG=/home/alice/.local/state/chalklab/lab/chalkctl.json
   kubectl get nodes
@@ -234,10 +234,10 @@ The commands chalklab prints last export the kubeconfig for kubectl and the clie
 chalkctl: chalkctl reads the client file `$CHALKOSCONFIG` names when a command passes neither
 `--config` nor `--secrets`.
 
-The lab keeps its state, disks, keys and logs in `~/.local/state/chalklab/lab`, or under
-`$XDG_STATE_HOME/chalklab` when that variable is set; the commands on this page use the default
-path, and `chalklab status` prints the one in use. A supervisor process keeps the virtual
-machines running after the command returns.
+The lab keeps its state, disks, keys and logs in `~/.local/state/chalklab/lab`, after the lab
+file's `metadata.name`, or under `$XDG_STATE_HOME/chalklab` when that variable is set; the
+commands on this page use the default path, and `chalklab status` prints the one in use. A
+supervisor process keeps the virtual machines running after the command returns.
 
 Each virtual machine has two network cards. One is on the lab network, a switch that connects
 only the virtual machines, with the addresses the nodes' `Network` documents give them. The
@@ -343,7 +343,7 @@ machines, their forwarded ports and the lab's files.
 
 ```console
 $ chalklab status
-lab of lab in /home/alice/.local/state/chalklab/lab; its supervisor runs as PID 1540233
+lab lab in /home/alice/.local/state/chalklab/lab; its supervisor runs as PID 1540233
 NODE  TYPE          VM       CHALKD           API SERVER       CONSOLE
 cp1   controlplane  running  127.0.0.1:46353  127.0.0.1:43323  /home/alice/.local/state/chalklab/lab/cp1/console.log
 w1    worker        running  127.0.0.1:44069  -                /home/alice/.local/state/chalklab/lab/w1/console.log

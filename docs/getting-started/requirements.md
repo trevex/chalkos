@@ -83,7 +83,7 @@ machines on one machine, without root.
 | --- | --- |
 | CPU and KVM | An x86-64 Linux machine with virtualisation enabled in its firmware, and read and write access to `/dev/kvm`, which most distributions grant to the `kvm` group. `chalklab create` stops at once without it. |
 | Memory | 3 GiB per control plane and 2 GiB per other node by default, so about 5 GiB of free memory for the `lab` template's two nodes. The lab file's `memory` changes it per node. |
-| Disk | A sparse 16 GiB disk per node in `$XDG_STATE_HOME/chalklab/<cluster>`, which grows as the node writes, plus a signed copy of the image for each node. The `lab` template's lab takes about 2.1 GiB after `chalklab create`. |
+| Disk | A sparse 16 GiB disk per node in `$XDG_STATE_HOME/chalklab/<name>`, which grows as the node writes, plus a signed copy of the image for each node. The `lab` template's lab takes about 2.1 GiB after `chalklab create`. |
 | State directory | A path short enough for the lab's Unix sockets, which may be at most 107 bytes long. With a deep `$XDG_STATE_HOME`, `chalklab create` refuses and asks for a shorter one. |
 | Nix | Nix with flakes; the chalklab package brings QEMU, OVMF with Secure Boot, swtpm and the lab network's switch. |
 

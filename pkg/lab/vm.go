@@ -342,7 +342,7 @@ func runningPID(pidFile, dir string) (int, bool) {
 }
 
 // namesDir reports whether the process runs with dir, or a path in it, among its arguments, so
-// a directory whose name begins the same, such as a lab of another cluster, does not count.
+// a directory whose name begins the same, such as that of another lab, does not count.
 func namesDir(pid int, dir string) bool {
 	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil {

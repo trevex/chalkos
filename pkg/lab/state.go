@@ -14,7 +14,8 @@ const ChalkdPort = 50000
 // Lab is a lab cluster as its state directory records it: a VM for each of its nodes, connected
 // by a switch, with ports on 127.0.0.1 that reach chalkd and the API servers.
 type Lab struct {
-	Cluster string `json:"cluster"`
+	// Name is the lab file's metadata.name, which names the lab's state directory.
+	Name string `json:"name"`
 	// FirmwareCode is the OVMF code every VM runs, and FirmwareVars the variable store with the
 	// lab's Secure Boot keys enrolled, which each VM starts from.
 	FirmwareCode  string         `json:"firmwareCode"`
@@ -75,13 +76,13 @@ func StateRoot() (string, error) {
 	return filepath.Join(base, "chalklab"), nil
 }
 
-// StateDir is the state directory of the lab of a cluster.
-func StateDir(cluster string) (string, error) {
+// StateDir is the state directory of the lab of that name.
+func StateDir(name string) (string, error) {
 	root, err := StateRoot()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, cluster), nil
+	return filepath.Join(root, name), nil
 }
 
 // ReadLab reads the lab of a state directory.
@@ -121,7 +122,7 @@ func (l *Lab) Node(name string) (LabNode, error) {
 	for _, n := range l.Nodes {
 		names = append(names, n.Name)
 	}
-	return LabNode{}, fmt.Errorf("the lab of %s has no node %s; its nodes are %v", l.Cluster, name, names)
+	return LabNode{}, fmt.Errorf("the lab %s has no node %s; its nodes are %v", l.Name, name, names)
 }
 
 // VMConfig is the VM of a node of the lab whose state directory is dir: its disk, firmware

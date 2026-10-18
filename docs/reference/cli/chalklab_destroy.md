@@ -21,14 +21,14 @@ chalklab destroy [flags]
 ## Examples
 
 ```
-  chalklab destroy --cluster lab
+  chalklab destroy --name lab
 ```
 
 ## Options
 
 ```
-      --cluster string   cluster whose lab to remove (default the only lab)
-  -h, --help             help for destroy
+  -h, --help          help for destroy
+      --name string   lab to remove (default the only lab)
 ```
 
 ## SEE ALSO

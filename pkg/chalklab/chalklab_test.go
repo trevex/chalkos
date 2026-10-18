@@ -125,6 +125,18 @@ func TestLabNodes(t *testing.T) {
 	}
 }
 
+// TestReadLabFileKeepsTheName keeps the lab file's metadata.name, which names the lab's state
+// directory.
+func TestReadLabFileKeepsTheName(t *testing.T) {
+	lf, err := readLabFile(writeLabFiles(t, t.TempDir(), strings.Replace(testLab, "metadata: {name: lab}", "metadata: {name: mylab}", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lf.name != "mylab" {
+		t.Errorf("name = %q, want mylab", lf.name)
+	}
+}
+
 // TestReadLabFileRefuses refuses a lab file its schema does not accept.
 func TestReadLabFileRefuses(t *testing.T) {
 	for name, tc := range map[string]struct{ lab, want string }{
@@ -287,7 +299,8 @@ func TestCreateKeys(t *testing.T) {
 }
 
 // TestCreateLeavesNothingWhenItFails refuses a lab that exists, and removes what a failed create
-// made before anything ran. It needs a secrets file.
+// made before anything ran. It needs a secrets file. The lab mylab keeps its state below its own
+// name, not below that of its inventory's Cluster, chalklab.
 func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	fakeKVM(t)
 	// Short, as the lab's socket paths must be.
@@ -299,9 +312,16 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", state)
 	t.Setenv("CHALKLAB_OVMF_CODE", "/fw/CODE.fd")
 	t.Setenv("CHALKLAB_OVMF_VARS", "/fw/VARS.fd")
-	path := writeLabFiles(t, t.TempDir(), testLab)
+	path := writeLabFiles(t, t.TempDir(), strings.Replace(testLab, "metadata: {name: lab}", "metadata: {name: mylab}", 1))
+	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: chalklab}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n"
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "cluster.yaml"), []byte(cluster), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	secrets := filepath.Join(filepath.Dir(path), "secrets.json")
-	dir, _ := lab.StateDir("lab")
+	dir, _ := lab.StateDir("mylab")
+	if dir != filepath.Join(state, "chalklab", "mylab") {
+		t.Fatalf("StateDir(mylab) = %s", dir)
+	}
 	a, _ := testApp()
 	for _, args := range [][]string{{}, {"--secrets", "-"}, {"--secrets", secrets}} {
 		err = a.run(context.Background(), append([]string{"create", "--lab", path}, args...))
@@ -320,11 +340,19 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a failed create left %s: %v", dir, err)
 	}
+	// A lab of the Cluster's name is another lab and does not stand in the way.
+	if err := os.MkdirAll(filepath.Join(state, "chalklab", "chalklab"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = a.run(context.Background(), []string{"create", "--lab", path, "--secrets", secrets})
+	if err == nil || !strings.Contains(err.Error(), "not in the test") {
+		t.Fatalf("create beside the lab chalklab = %v, want the keys' enrolment to fail", err)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	err = a.run(context.Background(), []string{"create", "--lab", path, "--secrets", secrets})
-	if err == nil || !strings.Contains(err.Error(), "chalklab destroy removes it") {
+	if err == nil || !strings.Contains(err.Error(), "the lab mylab exists in "+dir+"; chalklab destroy removes it") {
 		t.Fatalf("create over a lab = %v", err)
 	}
 	if _, err := os.Stat(dir); err != nil {
@@ -341,23 +369,23 @@ func TestLabDir(t *testing.T) {
 	for _, name := range []string{"lab", "other"} {
 		dir, _ := lab.StateDir(name)
 		os.MkdirAll(dir, 0o700)
-		if err := (&lab.Lab{Cluster: name}).Write(dir); err != nil {
+		if err := (&lab.Lab{Name: name}).Write(dir); err != nil {
 			t.Fatal(err)
 		}
 		if name == "lab" {
-			if dir, l, err := labDir(""); err != nil || l.Cluster != "lab" || !strings.HasSuffix(dir, "/chalklab/lab") {
+			if dir, l, err := labDir(""); err != nil || l.Name != "lab" || !strings.HasSuffix(dir, "/chalklab/lab") {
 				t.Errorf("labDir with one lab = %q, %v, %v", dir, l, err)
 			}
 		}
 	}
-	if _, _, err := labDir(""); err == nil || !strings.Contains(err.Error(), "choose one with --cluster") {
+	if _, _, err := labDir(""); err == nil || !strings.Contains(err.Error(), "choose one with --name") {
 		t.Errorf("labDir with two labs = %v", err)
 	}
-	if _, l, err := labDir("other"); err != nil || l.Cluster != "other" {
+	if _, l, err := labDir("other"); err != nil || l.Name != "other" {
 		t.Errorf("labDir(other) = %v, %v", l, err)
 	}
 	if _, _, err := labDir("none"); err == nil {
-		t.Error("found a lab of a cluster without one")
+		t.Error("found a lab that does not exist")
 	}
 }
 
@@ -369,11 +397,35 @@ func writeLab(t *testing.T) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	l := &lab.Lab{Cluster: "lab", Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001, APIPort: 16443}, {Name: "w1", ChalkdPort: 15002}}}
+	l := &lab.Lab{Name: "lab", Nodes: []lab.LabNode{{Name: "cp1", ChalkdPort: 15001, APIPort: 16443}, {Name: "w1", ChalkdPort: 15002}}}
 	if err := l.Write(dir); err != nil {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// TestNameChoosesTheLab shows the lab --name names among several, and knows no --cluster.
+func TestNameChoosesTheLab(t *testing.T) {
+	writeLab(t)
+	dir, _ := lab.StateDir("mylab")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&lab.Lab{Name: "mylab"}).Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	a, out := testApp()
+	if err := a.run(context.Background(), []string{"status", "--name", "mylab"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "lab mylab in "+dir+";") {
+		t.Errorf("status --name mylab = %q", out)
+	}
+	for _, cmd := range []string{"status", "console", "sign", "destroy", "start"} {
+		if err := a.run(context.Background(), []string{cmd, "--cluster", "mylab"}); err == nil || !strings.Contains(err.Error(), "unknown flag: --cluster") {
+			t.Errorf("%s --cluster = %v, want the flag unknown", cmd, err)
+		}
+	}
 }
 
 // TestDestroyTwice removes a lab, and has nothing to destroy the second time.
@@ -386,7 +438,7 @@ func TestDestroyTwice(t *testing.T) {
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("destroy left %s: %v", dir, err)
 	}
-	for _, args := range [][]string{{"destroy"}, {"destroy", "--cluster", "lab"}} {
+	for _, args := range [][]string{{"destroy"}, {"destroy", "--name", "lab"}} {
 		out.Reset()
 		if err := a.run(context.Background(), args); err != nil {
 			t.Errorf("%v of a lab destroyed = %v", args, err)
@@ -446,7 +498,7 @@ func TestStartSignalsTheSupervisor(t *testing.T) {
 		t.Errorf("start printed %q, want the VMs that do not run", out)
 	}
 
-	if err := a.run(context.Background(), []string{"start", "--cluster", "other"}); err == nil || !strings.Contains(err.Error(), "chalklab create") {
+	if err := a.run(context.Background(), []string{"start", "--name", "other"}); err == nil || !strings.Contains(err.Error(), "chalklab create") {
 		t.Errorf("start of no lab = %v, want chalklab create named", err)
 	}
 	missing := filepath.Join(t.TempDir(), "kvm")
@@ -587,7 +639,7 @@ func TestExecute(t *testing.T) {
 		"": 2, "bogus": 2, "status --bogus": 1, "status --help": 0, "console": 1,
 		"console cp1 -f=false": 0, "console cp1 --follow=false": 0,
 		// A flag before a subcommand's name is a usage error, in either form.
-		"--bogus": 2, "--cluster=x status": 2, "--cluster x status": 2,
+		"--bogus": 2, "--name=x status": 2, "--name x status": 2,
 	} {
 		a, out := testApp()
 		var stderr bytes.Buffer
@@ -648,10 +700,10 @@ func TestCommandsDescribed(t *testing.T) {
 // commands after it name no client file, and the kubeconfig only once a control plane runs.
 func TestPrintNext(t *testing.T) {
 	a, out := testApp()
-	l := &lab.Lab{Cluster: "lab", Nodes: []lab.LabNode{{Name: "cp1", Kind: "controlplane"}, {Name: "w1", Kind: "worker"}}}
+	l := &lab.Lab{Name: "lab", Nodes: []lab.LabNode{{Name: "cp1", Kind: "controlplane"}, {Name: "w1", Kind: "worker"}}}
 	a.printNext("/state/lab", l, true)
 	want := `
-the lab of lab runs cp1, w1; next:
+the lab lab runs cp1, w1; next:
   export KUBECONFIG=/state/lab/kubeconfig
   export CHALKOSCONFIG=/state/lab/chalkctl.json
   kubectl get nodes
@@ -682,7 +734,7 @@ func TestPrintNextAllowsDowntimeBelowThreeControlPlanes(t *testing.T) {
 		want  bool
 	}{{[]string{"controlplane", "worker"}, true}, {[]string{"controlplane", "controlplane"}, true}, {[]string{"controlplane", "controlplane", "controlplane"}, false}, {[]string{""}, false}} {
 		a, out := testApp()
-		l := &lab.Lab{Cluster: "lab"}
+		l := &lab.Lab{Name: "lab"}
 		for i, k := range tc.kinds {
 			l.Nodes = append(l.Nodes, lab.LabNode{Name: "n" + strconv.Itoa(i), Kind: k})
 		}

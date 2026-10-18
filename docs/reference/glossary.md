@@ -283,8 +283,9 @@ worker, the cluster CA certificate and a kubelet client certificate. chalkd keep
 A cluster that [chalklab](#chalklab) runs as virtual machines, from a lab file, `chalklab.yaml`,
 that names the cluster's [inventory](#inventory) and each VM's MAC address, memory, CPUs and
 disks. Its state (disks, firmware variables, TPM state, keys, logs, kubeconfig, client file and an
-inventory that reaches the nodes at forwarded ports) lives in `$XDG_STATE_HOME/chalklab/<cluster>`.
-See the [quick start](../getting-started/index.md) and [Config kinds](kinds.md#lab).
+inventory that reaches the nodes at forwarded ports) lives in `$XDG_STATE_HOME/chalklab/<name>`,
+after the lab file's `metadata.name`. See the [quick start](../getting-started/index.md) and
+[Config kinds](kinds.md#lab).
 
 ## Maintenance mode { #maintenance-mode }
 

@@ -29,9 +29,9 @@ chalklab console <node> [flags]
 ## Options
 
 ```
-      --cluster string   cluster of the node's lab (default the only lab)
-  -f, --follow           keep printing what the node writes (default true)
-  -h, --help             help for console
+  -f, --follow        keep printing what the node writes (default true)
+  -h, --help          help for console
+      --name string   lab of the node (default the only lab)
 ```
 
 ## SEE ALSO

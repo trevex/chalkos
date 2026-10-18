@@ -30,6 +30,10 @@ import (
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
+// labName is the metadata.name of the main cluster's lab file, chalklab/lab.yaml, by which
+// chalklab keys the lab's state directory.
+const labName = "chalklab"
+
 // labMemory is the memory in MiB of the VM of each node the main cluster's lab file runs, as the
 // lab file gives it.
 func labMemory(t *testing.T) map[string]int {
@@ -719,7 +723,7 @@ func vxlanRules(t *testing.T, n *node, inventory, name string) (marks, drops []s
 func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int, string) {
 	t.Helper()
 	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
-	state, err := lab.StateDir("chalklab")
+	state, err := lab.StateDir(labName)
 	if err != nil {
 		t.Fatal(err)
 	}

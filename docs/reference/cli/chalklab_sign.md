@@ -31,9 +31,9 @@ chalklab sign <image> [flags]
 ## Options
 
 ```
-      --cluster string   cluster whose lab's keys to sign with (default the only lab)
-  -h, --help             help for sign
-      --out string       directory to copy the image to (made when missing) and sign there; needed for an image in the Nix store, which cannot be signed in place
+  -h, --help          help for sign
+      --name string   lab whose keys to sign with (default the only lab)
+      --out string    directory to copy the image to (made when missing) and sign there; needed for an image in the Nix store, which cannot be signed in place
 ```
 
 ## SEE ALSO

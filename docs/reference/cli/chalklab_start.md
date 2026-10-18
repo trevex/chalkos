@@ -27,8 +27,8 @@ chalklab start [flags]
 ## Options
 
 ```
-      --cluster string   cluster whose lab to start (default the only lab)
-  -h, --help             help for start
+  -h, --help          help for start
+      --name string   lab to start (default the only lab)
 ```
 
 ## SEE ALSO

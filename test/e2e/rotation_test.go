@@ -59,7 +59,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 	}
 	// Every node of the inventory takes part in a rotation: the lab's inventory names cp1 and w1
 	// alone, at their forwarded ports.
-	state, err := lab.StateDir("chalklab")
+	state, err := lab.StateDir(labName)
 	if err != nil {
 		t.Fatal(err)
 	}

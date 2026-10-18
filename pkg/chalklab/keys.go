@@ -17,7 +17,7 @@ import (
 // createKeys creates the lab's Secure Boot keys, PK, KEK and db, in dir, and a firmware variable
 // store with them enrolled and Secure Boot on, from the firmware's template. They are test keys of
 // this lab alone; the private keys are its owner's to read only.
-func (a *app) createKeys(ctx context.Context, dir, cluster, templateVars string) error {
+func (a *app) createKeys(ctx context.Context, dir, labName, templateVars string) error {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func (a *app) createKeys(ctx context.Context, dir, cluster, templateVars string)
 		}
 		tmpl := &x509.Certificate{
 			SerialNumber:          serial,
-			Subject:               pkix.Name{CommonName: fmt.Sprintf("chalklab %s %s", cluster, name)},
+			Subject:               pkix.Name{CommonName: fmt.Sprintf("chalklab %s %s", labName, name)},
 			NotBefore:             now.Add(-time.Hour),
 			NotAfter:              now.AddDate(10, 0, 0),
 			KeyUsage:              x509.KeyUsageDigitalSignature,

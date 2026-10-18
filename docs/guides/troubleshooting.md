@@ -246,7 +246,7 @@ issued, so a small offset does no harm, but a clock that is days off rejects val
   `users.users.<you>.extraGroups`) and log in again.
 - `<node> did not come up in maintenance mode`: the VM booted but chalkd did not print its
   fingerprint. The error names the console log; `chalklab console <node>` shows it.
-- `the lab of <cluster> exists in ...; chalklab destroy removes it`: a lab of this cluster
+- `the lab <name> exists in ...; chalklab destroy removes it`: a lab of the lab file's name
   exists. `chalklab start` starts it again; `chalklab destroy` removes it.
 - The VMs start but are slow, or one stops: the lab needs about 3 GiB of memory for a control
   plane and 2 GiB for each other node. `chalklab status` shows which VMs run.

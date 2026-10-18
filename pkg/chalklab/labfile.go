@@ -22,10 +22,12 @@ const labSchemaFile = "chalklab.chalkos.dev_v1alpha1_Lab.json"
 //go:embed chalklab.chalkos.dev_v1alpha1_Lab.json
 var labSchema []byte
 
-// labFile is a lab file: the inventory of the cluster the lab runs, and the machine of each node
-// it runs.
+// labFile is a lab file: its name, the inventory of the cluster the lab runs, and the machine of
+// each node it runs.
 type labFile struct {
 	path string
+	// name is the lab file's metadata.name, which names the lab's state directory.
+	name string
 	// inventory is the inventory's absolute path.
 	inventory string
 	nodes     map[string]labMachine
@@ -83,5 +85,5 @@ func readLabFile(path string) (*labFile, error) {
 		}
 		inv = abs
 	}
-	return &labFile{path: path, inventory: inv, nodes: spec.Nodes}, nil
+	return &labFile{path: path, name: docs[0].Name, inventory: inv, nodes: spec.Nodes}, nil
 }

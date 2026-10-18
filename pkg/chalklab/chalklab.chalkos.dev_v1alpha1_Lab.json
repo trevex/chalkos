@@ -16,7 +16,7 @@
         "name": {
           "type": "string",
           "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
-          "description": "The lab's name, for its readers. chalklab keys the lab's state by the name of the cluster's Cluster document, not by this one."
+          "description": "The lab's name, by which chalklab keys the lab's state directory, $XDG_STATE_HOME/chalklab/<name>. Two labs on one machine need two names."
         }
       }
     },

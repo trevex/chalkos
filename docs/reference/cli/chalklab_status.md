@@ -27,8 +27,8 @@ chalklab status [flags]
 ## Options
 
 ```
-      --cluster string   cluster whose lab to show (default the only lab)
-  -h, --help             help for status
+  -h, --help          help for status
+      --name string   lab to show (default the only lab)
 ```
 
 ## SEE ALSO
