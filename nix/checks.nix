@@ -1094,6 +1094,28 @@ in
         refused broken 'Demo: rule "documents ==": ERROR: <input>:1:13: Syntax error'
         refused undeclared 'Demo: rule "facts.missing == null" reads facts.missing, which the image does not declare'
         refused consumer 'bird restart: rule "changedKinds ==": ERROR: <input>:1:16: Syntax error'
+        # The command of the networkd units' fact prints null for a path that is missing, and a
+        # hash that follows the names and contents of a directory's files, or a file's content.
+        hash=${lib.head (lib.splitString " " testing.nixos.test-metal.config.chalkos.facts.networkUnits.command)}
+        expect() {
+          if [ "$1" != "$2" ]; then
+            echo "error: chalkos-hash-files $3: $1, want $2" >&2
+            exit 1
+          fi
+        }
+        expect "$(echo '{}' | $hash units)" null "of a missing directory"
+        mkdir units
+        empty=$(echo '{}' | $hash units)
+        printf '[Match]\nName=eth0\n' >units/10-a.network
+        one=$(echo '{}' | $hash units)
+        expect "$(echo '{}' | $hash units)" "$one" "again"
+        mv units/10-a.network units/10-b.network
+        renamed=$(echo '{}' | $hash units)
+        echo '# more' >>units/10-b.network
+        changed=$(echo '{}' | $hash units)
+        file=$(echo '{}' | $hash units/10-b.network)
+        expect "$(printf '%s\n' "$empty" "$one" "$renamed" "$changed" "$file" | sort -u | wc -l)" 5 "of different files"
+        expect "$(echo "$one" | grep -cxE '"[0-9a-f]{64}"')" 1 "of one unit"
         touch $out
       '';
 

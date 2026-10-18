@@ -17,6 +17,7 @@ let
   chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
   chalkos-rules = pkgs.callPackage ../../../nix/chalkos-rules.nix { };
   cel = import ../runtime/cel.nix { inherit lib; };
+  hashFiles = pkgs.callPackage ../../../nix/chalkos-hash-files.nix { };
   cfg = config.chalkos.kinds;
 
   # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
@@ -378,10 +379,14 @@ in
     environment.etc."chalkos/facts.json".source = factsFile;
 
     # The config loader writes the networkd units of the node's networkd documents, with the
-    # values their secretRefs name, so networkd reads them again when one of those changes.
+    # values their secretRefs name, so networkd reads them again when one of those changes, or
+    # when the units differ from those before the delivery: a boot whose config loader failed
+    # left others, or a slot written before the documents were kept holds the units alone.
     chalkos.consumers.systemd-networkd.reload = {
-      when = cel.anyChanged networkd.kinds;
+      when = "${cel.anyChanged networkd.kinds} || facts.networkUnits != oldFacts.networkUnits";
       command = "networkctl reload";
     };
+    # The hash of the units the config loader writes, which hold secret values.
+    chalkos.facts.networkUnits.command = "${hashFiles} /run/systemd/network";
   };
 }

@@ -6,9 +6,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,6 +174,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 		Loader: nodeconfig.Loader{
 			RunDir:          filepath.Join(root, "run", "chalkos"),
 			NetworkDir:      filepath.Join(root, "run", "network"),
+			ChronySources:   filepath.Join(root, "run", "chalkos", "chrony", "identity.sources"),
 			Consumers:       filepath.Join(root, "consumers.json"),
 			Slots:           filepath.Join(root, "state", "config"),
 			Cmdline:         filepath.Join(root, "cmdline"),
@@ -221,14 +224,49 @@ func writeConsumers(t *testing.T, s *Server, extra string) {
 }
 
 // storageFacts runs the commands of the storage facts in the test, as chalkos-storage facts would,
-// against the test server's disks and with its runner.
+// against the test server's disks and with its runner, and chalkos-hash-files.
 type storageFacts struct{ s *Server }
 
 func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ int) ([]byte, error) {
+	if len(argv) == 2 && argv[0] == "chalkos-hash-files" {
+		return hashFiles(argv[1])
+	}
 	if len(argv) != 3 || argv[0] != "chalkos-storage" || argv[1] != "facts" {
 		return nil, fmt.Errorf("the test runs no command %v", argv)
 	}
 	return f.s.storage().Facts(ctx, argv[2], stdin)
+}
+
+// hashFiles prints what chalkos-hash-files prints of path: the hash of its content, or of the names
+// and contents of a directory's files, as a JSON string, and null when it is missing.
+func hashFiles(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []byte("null"), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	files := []string{path}
+	h := sha256.New()
+	if info.IsDir() {
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil, err
+		}
+		files = nil
+		for _, e := range entries {
+			files = append(files, filepath.Join(path, e.Name()))
+		}
+	}
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(h, "%s\n%x\n", filepath.Base(file), sha256.Sum256(data))
+	}
+	return json.Marshal(hex.EncodeToString(h.Sum(nil)))
 }
 
 // writeFacts declares the facts of the built-in kinds' and consumers' rules as an image does, at
@@ -236,10 +274,12 @@ func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ in
 func writeFacts(t *testing.T, s *Server) {
 	t.Helper()
 	defined := map[string]facts.Definition{
-		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
-		"recorded": {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
-		"disks":    {Command: "chalkos-storage facts disks"},
-		"fallback": {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
+		"share":        {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
+		"recorded":     {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
+		"disks":        {Command: "chalkos-storage facts disks"},
+		"fallback":     {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
+		"networkUnits": {Command: "chalkos-hash-files " + s.Loader.NetworkDir},
+		"timeSources":  {Command: "chalkos-hash-files " + s.Loader.ChronySources},
 	}
 	if s.Loader.ClusterFile != "" {
 		defined["cluster"] = facts.Definition{File: s.Loader.ClusterFile}

@@ -154,6 +154,10 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	if err := store.Write(slotOf(t, s), c); err != nil {
 		t.Fatal(err)
 	}
+	// As at boot: the networkd units and the time sources the identity gives are in place.
+	if err := s.Loader.Load(); err != nil {
+		t.Fatal(err)
+	}
 	return s, r
 }
 
@@ -386,7 +390,7 @@ spec: {match: {name: enp1s0}, network: {address: [10.0.0.11/24]}}
 `
 
 // TestApplyConfigReloadsNetworkd: networkd reloads the units the config loader renders when the
-// networkd documents change, and only then.
+// networkd documents change, and not for another change.
 func TestApplyConfigReloadsNetworkd(t *testing.T) {
 	s, r := configServer(t)
 	for _, step := range []struct {
@@ -410,8 +414,9 @@ func TestApplyConfigReloadsNetworkd(t *testing.T) {
 }
 
 // TestApplyConfigReloadsTimeServers: chrony reloads its sources when the TimeSync's servers
-// change, and only then: whether the servers DHCP announces count is chalkos-chrony-dhcp's, which
-// restarts. A chronyd that does not run reads its sources when it starts.
+// change, a server's host, port or NTS among them, and not for another change: whether the
+// servers DHCP announces count is chalkos-chrony-dhcp's, which restarts. A chronyd that does not
+// run reads its sources when it starts.
 func TestApplyConfigReloadsTimeServers(t *testing.T) {
 	s, r := configServer(t)
 	for _, step := range []struct {
@@ -422,7 +427,10 @@ func TestApplyConfigReloadsTimeServers(t *testing.T) {
 		{"the same", baseConfig + timeSyncConfig, "", nil},
 		{"DHCP's servers", baseConfig + strings.Replace(timeSyncConfig, "spec: {servers", "spec: {dhcp: true, servers", 1), "", []string{"systemctl try-restart chalkos-chrony-dhcp"}},
 		{"another server", baseConfig + strings.Replace(timeSyncConfig, "ntp.lan", "ntp2.lan", 1), "", []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp"}},
-		{"a chronyd that does not run", baseConfig + timeSyncConfig, "inactive\n", []string{"systemctl try-restart chalkos-chrony-dhcp"}},
+		{"another port", baseConfig + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460}", 1), "", []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp"}},
+		{"NTS off", baseConfig + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460, nts: false}", 1), "", []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp"}},
+		{"the same servers with another Demo", strings.Replace(baseConfig, "name: first", "name: second", 1) + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460, nts: false}", 1), "", []string{"systemctl try-restart demo"}},
+		{"a chronyd that does not run", baseConfig + timeSyncConfig, "inactive\n", []string{"systemctl try-restart chalkos-chrony-dhcp demo"}},
 	} {
 		r.calls = nil
 		r.rules = []rule{{prefix: "systemctl show --property=ActiveState --value chronyd", out: step.state}}
@@ -508,9 +516,13 @@ func TestApplyConfigRefusesConsumersThatDoNotCompile(t *testing.T) {
 
 // TestApplyConfigComparesFactsBeforeAndAfter: a rule reads a fact as it was before the delivery
 // changed anything, as oldFacts, and as it is once the delivery is applied, as facts: here the
-// host name of the node.json the delivery writes, which the test server has none of at first.
+// host name of the node.json the delivery writes, which the test server has none of at first, as
+// after a boot whose config loader failed.
 func TestApplyConfigComparesFactsBeforeAndAfter(t *testing.T) {
 	s, r := configServer(t)
+	if err := os.Remove(filepath.Join(s.Loader.RunDir, "node.json")); err != nil {
+		t.Fatal(err)
+	}
 	write(t, s.Paths.Facts, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
 	write(t, s.Loader.Consumers, `{"namer": {"kinds": [], "restart": {"when": "facts.node != oldFacts.node"}}}`)
 	for _, step := range []struct {
@@ -724,5 +736,62 @@ func TestApplyConfigComparesWithTheConfigBeforeAFailure(t *testing.T) {
 	}
 	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-chrony-dhcp", "demo"}) {
 		t.Errorf("restarted %v, want demo with the TimeSync's unit", resp.RestartedUnits)
+	}
+}
+
+// TestApplyConfigReloadsNetworkdForUnitsThatDiffer: networkd reloads when the units the config
+// loader writes differ from those it found, as after a boot whose config loader failed, although
+// the networkd documents are the same.
+func TestApplyConfigReloadsNetworkdForUnitsThatDiffer(t *testing.T) {
+	s, r := configServer(t)
+	next := baseConfig + networkConfig
+	if _, err := sendConfig(s, next); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(s.Loader.NetworkDir); err != nil {
+		t.Fatal(err)
+	}
+	r.calls = nil
+	if _, err := sendConfig(s, next); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.calls, "networkctl reload") {
+		t.Errorf("ran %v, want networkd reloaded for the units written again", r.calls)
+	}
+	if _, err := os.Stat(filepath.Join(s.Loader.NetworkDir, "10-uplink.network")); err != nil {
+		t.Errorf("the unit is not written again: %v", err)
+	}
+}
+
+// TestApplyConfigOverALegacySlot: a slot written before the documents were kept holds the
+// identity alone, whose networkd units and time servers the node runs. Config that gives neither
+// changes no networkd or TimeSync document, but the units and the sources file it writes differ,
+// so networkd and chrony reload.
+func TestApplyConfigOverALegacySlot(t *testing.T) {
+	s, r := configServer(t)
+	var id map[string]any
+	if err := json.Unmarshal([]byte(identityOf(t, s)), &id); err != nil {
+		t.Fatal(err)
+	}
+	id["networkUnits"] = map[string]any{"10-legacy.network": "[Match]\nName=enp1s0\n"}
+	id["time"] = map[string]any{"servers": []any{map[string]any{"host": "legacy.ntp"}}}
+	legacy, _ := json.Marshal(id)
+	if err := store.Write(slotOf(t, s), store.Stored{Identity: legacy}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Loader.Apply(legacy); err != nil {
+		t.Fatal(err)
+	}
+	r.calls = nil
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"networkctl reload", "chronyc reload sources"} {
+		if !slices.Contains(r.calls, want) {
+			t.Errorf("ran %v, want %s", r.calls, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(s.Loader.NetworkDir, "10-legacy.network")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the legacy unit stays: %v", err)
 	}
 }

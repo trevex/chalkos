@@ -283,8 +283,8 @@ and the share its loops read are written by then. The built-in consumers are the
 
 | Unit | Rules |
 | --- | --- |
-| `systemd-networkd` | Reloads with `networkctl reload` when a `Network`, `NetDev` or `Link` document changes, or a `Secret` one of them references. |
-| `chronyd` | Reloads with `chronyc reload sources` when the `TimeSync`'s servers change. |
+| `systemd-networkd` | Reloads with `networkctl reload` when a `Network`, `NetDev` or `Link` document changes, or a `Secret` one of them references, or when the units chalkd writes differ from those before the delivery. |
+| `chronyd` | Reloads with `chronyc reload sources` when the `TimeSync`'s servers change, or the sources file chalkd writes differs from the one before the delivery. |
 | `chalkos-chrony-dhcp`, `chalkos-controlplane`, `chalkos-registry-mirrors` | Restart when a document of their kinds changes: `TimeSync`, `Node` and `RegistryMirror`. |
 | `chalkos-kubernetes`, `kubelet` | Restart, and start when they do not run, when the `Node`'s name, host name or type, the `Kubelet`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster`, `Kubernetes` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. On images with Kubernetes. |
 | `chalkd` | Restarts its Kubernetes loops when the cluster changes, and reloads the control plane's loop when the share changes beyond its node CA or, on a control plane, the objects of the `Addon` documents. On images with Kubernetes. |
@@ -321,6 +321,8 @@ They, and the rules of the built-in consumers, read these facts:
 | `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
 | `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
 | `cluster` | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster as chalkd last wrote it, which the kubelet's rules compare before and after a delivery; declared on images with Kubernetes. |
+| `networkUnits` | `chalkos-hash-files /run/systemd/network` | The SHA-256 of the names and contents of the networkd units chalkd writes, which hold the values of their `secretRef` fields. |
+| `timeSources` | `chalkos-hash-files /run/chalkos/chrony/identity.sources` | The SHA-256 of the time sources file chalkd writes for chrony. |
 
 ## Limits
 

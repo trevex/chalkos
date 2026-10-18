@@ -1152,6 +1152,8 @@ lib.runTests {
   # Every image declares the facts of the storage kinds' rules, and an image with Kubernetes
   # the share, of which it keeps the kind and the hashes of the other keys, and the cluster file
   # the kubelet's restart rules read; the fallback secret reaches the command that checks it alone.
+  # Every image hashes the networkd units and the time sources chalkd writes, which networkd's
+  # and chrony's reload rules compare.
   testBuiltinFacts = {
     expr =
       let
@@ -1167,19 +1169,25 @@ lib.runTests {
         fallback =
           lib.hasSuffix " fallback" defined.fallback.command
           && defined.fallback.inputs == [ "fallbackSecret" ];
+        networkUnits = lib.hasSuffix "-chalkos-hash-files /run/systemd/network" defined.networkUnits.command;
+        timeSources = lib.hasSuffix "-chalkos-hash-files /run/chalkos/chrony/identity.sources" defined.timeSources.command;
       };
     expected = {
       names = [
         "cluster"
         "disks"
         "fallback"
+        "networkUnits"
         "recorded"
         "share"
+        "timeSources"
       ];
       plain = [
         "disks"
         "fallback"
+        "networkUnits"
         "recorded"
+        "timeSources"
       ];
       recorded.file = "/state/storage/storage.json";
       share = {
@@ -1190,6 +1198,8 @@ lib.runTests {
       cluster.file = "/run/chalkos/kubernetes/cluster.json";
       disks = true;
       fallback = true;
+      networkUnits = true;
+      timeSources = true;
     };
   };
   # The test image's Greeting refuses a message too long for one log line, and a new one while

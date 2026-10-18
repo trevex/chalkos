@@ -64,7 +64,7 @@
     "kinds": [],
     "reload": {
       "command": "chronyc reload sources",
-      "when": "cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in config && \"TimeSync\" in config[\"time.chalkos.dev/v1alpha1\"]) ? config[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)).map(s, s.servers) != cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in oldConfig && \"TimeSync\" in oldConfig[\"time.chalkos.dev/v1alpha1\"]) ? oldConfig[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)).map(s, s.servers)"
+      "when": "cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in config && \"TimeSync\" in config[\"time.chalkos.dev/v1alpha1\"]) ? config[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)).map(s, s.servers) != cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in oldConfig && \"TimeSync\" in oldConfig[\"time.chalkos.dev/v1alpha1\"]) ? oldConfig[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)).map(s, s.servers) || facts.timeSources != oldFacts.timeSources"
     },
     "restart": {
       "start": false,
@@ -86,7 +86,7 @@
     "kinds": [],
     "reload": {
       "command": "networkctl reload",
-      "when": "\"Link\" in changedKinds || \"NetDev\" in changedKinds || \"Network\" in changedKinds"
+      "when": "\"Link\" in changedKinds || \"NetDev\" in changedKinds || \"Network\" in changedKinds || facts.networkUnits != oldFacts.networkUnits"
     },
     "restart": {
       "start": false,

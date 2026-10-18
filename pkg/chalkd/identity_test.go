@@ -127,6 +127,10 @@ func installedServer(t *testing.T, recorded string, extraPinned bool, more ...te
 	if err := store.Write(slotOf(t, s), store.Stored{Documents: documentsOf(identityWith(recorded)), Identity: []byte(identityWith(recorded))}); err != nil {
 		t.Fatal(err)
 	}
+	// As at boot: the networkd units and the time sources the identity gives are in place.
+	if err := s.Loader.Apply([]byte(identityWith(recorded))); err != nil {
+		t.Fatal(err)
+	}
 	r.rules = []rule{
 		{prefix: "blkid -p -o export /dev/vdb", err: &node.ToolError{Command: "blkid", Code: 2}},
 		{prefix: "systemd-repart --dry-run=no --json=short --definitions=" + filepath.Join(dir, "disks", "extra"), out: `[{"file":"` + filepath.Join(dir, "disks", "extra", "10-extra.conf") + `","uuid":"` + newUUID + `"}]`},
