@@ -129,9 +129,8 @@ spec:
 }
 
 func TestIdentityRejects(t *testing.T) {
-	endpoint := strings.Replace(minimal, "spec: {}", `spec: {endpoint: "https://10.0.0.10:6443"}`, 1)
-	noKubernetes := endpoint + nodeDoc("default", "{type: worker}")
-	noNode := endpoint + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}\n"
+	noKubernetes := minimal + nodeDoc("default", "{type: worker}")
+	noNode := minimal + kubernetesDoc("kubernetes", "{}")
 	for name, tc := range map[string]struct {
 		yaml   string
 		target Target
@@ -388,8 +387,8 @@ func TestVXLANSourcesHoldTheNodesAddresses(t *testing.T) {
 // not from the Node document's name.
 func TestIdentityTakesTheNodesName(t *testing.T) {
 	const volume = "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: fast}\nspec: {disk: {path: /dev/vdb}}\n"
-	kube := strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) + nodeDoc("doc", "{type: worker}") +
-		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}\n" + volume
+	kube := minimal + nodeDoc("doc", "{type: worker}") +
+		kubernetesDoc("kubernetes", "{}") + volume
 	s, err := NewSet(mustParse(t, kube), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)

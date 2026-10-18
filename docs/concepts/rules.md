@@ -298,7 +298,7 @@ its loops read as they are by then. The built-in consumers are these:
 | `systemd-networkd` | Reloads with `networkctl reload` when a `Network`, `NetDev` or `Link` document changes, or a `Secret` one of them references, or when the units chalkd writes differ from those before the delivery. |
 | `chronyd` | Reloads with `chronyc reload sources` when the `TimeSync`'s servers change, or the sources file chalkd writes differs from the one before the delivery. |
 | `chalkos-chrony-dhcp`, `chalkos-controlplane`, `chalkos-registry-mirrors` | Restart when a document of their kinds changes: `TimeSync`, `Node` and `RegistryMirror`. |
-| `chalkos-kubernetes`, `kubelet` | Restart, and start when they do not run, when the `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster`, `Kubernetes` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. On images with Kubernetes. |
+| `chalkos-kubernetes`, `kubelet` | Restart, and start when they do not run, when the `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Kubernetes` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. On images with Kubernetes. |
 | `chalkd` | Restarts its Kubernetes loops when the cluster changes, and reloads the control plane's loop when the share changes beyond its node CA or, on a control plane, the objects of the `Addon` documents. On images with Kubernetes. |
 
 ## How is a rule checked when the image is built?

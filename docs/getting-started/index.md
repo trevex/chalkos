@@ -68,7 +68,8 @@ spec:
     w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}
 ```
 
-`cluster/cluster.yaml` names the cluster and its API server, and Kubernetes with its defaults. Each
+`cluster/cluster.yaml` gives Kubernetes with its defaults and the URL of its API server. The
+inventory's `metadata.name` names the cluster in chalkctl's messages and the kubeconfig. Each
 node's file says what the node is in Kubernetes, which disk holds its system, and its address on the
 lab network, a private network between the virtual machines:
 

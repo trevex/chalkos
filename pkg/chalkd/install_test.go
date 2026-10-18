@@ -298,8 +298,7 @@ func kubernetesImage(t *testing.T, s *Server) {
 }
 
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.
-var workerConfig = strings.Replace(baseConfig,
-	"metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: \"https://192.168.100.11:6443\"}", 1) + `---
+var workerConfig = baseConfig + `---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: default}
@@ -308,7 +307,7 @@ spec: {type: worker, nodeIPs: [192.168.100.21]}
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
-spec: {}
+spec: {endpoint: "https://192.168.100.11:6443"}
 `
 
 func TestInstallInPlaceWithConfig(t *testing.T) {
@@ -329,7 +328,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 	if got.Section.Disks[storage.SystemDisk].Ref.Path != "/dev/vda" {
 		t.Errorf("section = %+v", got.Section)
 	}
-	if got.Config.Version != hashOf(t, baseConfig) || len(got.Config.Documents) != 4 {
+	if got.Config.Version != hashOf(t, baseConfig) || len(got.Config.Documents) != 3 {
 		t.Errorf("config = %+v", got.Config)
 	}
 }
@@ -391,8 +390,8 @@ func TestInstallRefusesConfig(t *testing.T) {
 		want      string
 	}{
 		"invalid": {false, func(h *nodev1.InstallHeader) {
-			h.Config = strings.Replace(baseConfig, "metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: http://lab}", 1)
-		}, `Cluster "lab"`},
+			h.Config = strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: vda}}", 1)
+		}, `SystemDisk "system"`},
 		"in place with schemas": {false, func(h *nodev1.InstallHeader) {
 			h.Config, h.Schemas = baseConfig, map[string][]byte{"x.json": []byte("{}")}
 		}, "running image"},

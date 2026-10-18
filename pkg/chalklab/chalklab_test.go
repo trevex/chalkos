@@ -42,7 +42,7 @@ func writeLabFiles(t *testing.T, dir, labFile string) string {
 			"  images:\n    node-kvm: {source: {directory: images/node-kvm}}\n    node-metal: {source: {directory: images/node-metal}}\n  image: node-kvm\n" +
 			"  files: [cluster.yaml]\n  nodes:\n" +
 			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {image: node-metal, files: [m1.yaml]}\n",
-		"cluster.yaml":  "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n",
+		"cluster.yaml":  "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n",
 		"cp1.yaml":      "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: controlplane}\n",
 		"w1.yaml":       "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: worker}\n",
 		"m1.yaml":       "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: worker}\n",
@@ -300,7 +300,7 @@ func TestCreateKeys(t *testing.T) {
 
 // TestCreateLeavesNothingWhenItFails refuses a lab that exists, and removes what a failed create
 // made before anything ran. It needs a secrets file. The lab mylab keeps its state below its own
-// name, not below that of its inventory's Cluster, chalklab.
+// name, not below that of its inventory, lab.
 func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	fakeKVM(t)
 	// Short, as the lab's socket paths must be.
@@ -313,10 +313,6 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	t.Setenv("CHALKLAB_OVMF_CODE", "/fw/CODE.fd")
 	t.Setenv("CHALKLAB_OVMF_VARS", "/fw/VARS.fd")
 	path := writeLabFiles(t, t.TempDir(), strings.Replace(testLab, "metadata: {name: lab}", "metadata: {name: mylab}", 1))
-	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: chalklab}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n"
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "cluster.yaml"), []byte(cluster), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	secrets := filepath.Join(filepath.Dir(path), "secrets.json")
 	dir, _ := lab.StateDir("mylab")
 	if dir != filepath.Join(state, "chalklab", "mylab") {
@@ -340,13 +336,13 @@ func TestCreateLeavesNothingWhenItFails(t *testing.T) {
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a failed create left %s: %v", dir, err)
 	}
-	// A lab of the Cluster's name is another lab and does not stand in the way.
-	if err := os.MkdirAll(filepath.Join(state, "chalklab", "chalklab"), 0o700); err != nil {
+	// A lab of the inventory's name is another lab and does not stand in the way.
+	if err := os.MkdirAll(filepath.Join(state, "chalklab", "lab"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	err = a.run(context.Background(), []string{"create", "--lab", path, "--secrets", secrets})
 	if err == nil || !strings.Contains(err.Error(), "not in the test") {
-		t.Fatalf("create beside the lab chalklab = %v, want the keys' enrolment to fail", err)
+		t.Fatalf("create beside the lab lab = %v, want the keys' enrolment to fail", err)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)

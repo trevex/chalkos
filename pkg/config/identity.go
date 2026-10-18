@@ -38,7 +38,6 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	if name == "" {
 		return identity.Identity{}, fmt.Errorf("the node has no name to translate its config for")
 	}
-	cluster, _ := s.One("Cluster")
 	sec, err := s.storage(name)
 	if err != nil {
 		return identity.Identity{}, err
@@ -53,7 +52,6 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	}
 	id := identity.Identity{
 		Hostname:     name,
-		Cluster:      cluster.Name,
 		Platform:     t.Platform,
 		Network:      NetworkMap(networkDocs),
 		NetworkUnits: units,

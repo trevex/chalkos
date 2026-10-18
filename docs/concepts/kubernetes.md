@@ -49,7 +49,7 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 
 | Kind | Count | Holds |
 | --- | --- | --- |
-| [`Kubernetes`](../reference/kinds.md#kubernetes) | one, required | The cluster's address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), VXLAN source ranges, scheduling on control planes and extra flags of every component |
+| [`Kubernetes`](../reference/kinds.md#kubernetes) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), VXLAN source ranges, scheduling on control planes and extra flags of every component |
 | [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints and addresses |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | one per registry | The mirrors containerd tries before a registry |
 | [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes |
@@ -58,13 +58,14 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 The cluster's documents go into the files the [inventory](../reference/glossary.md#inventory) gives
 every node, so all nodes hold the same ones, and a node's `Node` goes into its own file, as
 [Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes. The
-node's config must hold one `Kubernetes` and one `Node` document on an image with Kubernetes, and
-its [`Cluster`](../reference/kinds.md#cluster) an endpoint:
+node's config must hold one `Kubernetes` and one `Node` document on an image with Kubernetes:
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a set without one,
 with `no Kubernetes: the config of a node whose image runs Kubernetes holds one Kubernetes
 document` or `no Node: the config of a node whose image runs Kubernetes holds one Node
-document`. Every field has a default, so a cluster on IPv4 with the default ranges needs no more
-than the lab template's document:
+document`. The `Kubernetes` document names the
+[cluster endpoint](../reference/glossary.md#cluster-endpoint), the URL of the API server, which
+every node names alike. Every other field has a default, so a cluster on IPv4 with the default
+ranges needs no more than the lab template's document:
 
 ```yaml
 # Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
@@ -72,12 +73,14 @@ than the lab template's document:
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
-spec: {}
+spec:
+  # cp1 on the lab network: the API server of the only control plane.
+  endpoint: https://192.168.123.11:6443
 ```
 
 chalkctl delivers the documents at install and with
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md). chalkd builds the node's
-cluster from its `Node`, `Cluster`, `Kubernetes` and `Flannel` documents and `image.json` into
+cluster from its `Node`, `Kubernetes` and `Flannel` documents and `image.json` into
 `/run/chalkos/kubernetes/cluster.json`, at boot and on every apply.
 
 A changed cluster restarts `chalkos-kubernetes` and the kubelet, as their consumers' rules say,
@@ -169,6 +172,7 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  endpoint: https://10.0.0.10:6443
   extraArgs:
     kube-apiserver: {audit-log-maxage: "30"}
 ```

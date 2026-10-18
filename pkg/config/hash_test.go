@@ -12,9 +12,9 @@ import (
 
 const hashed = `
 apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
-spec: {endpoint: "https://10.0.0.1:6443"}
+kind: Host
+metadata: {name: default}
+spec: {hostname: n1}
 ---
 apiVersion: demo.example.org/v1alpha1
 kind: Demo
@@ -56,9 +56,9 @@ apiVersion: demo.example.org/v1alpha1
 metadata: {name: b}
 ---
 apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
-spec: {endpoint: "https://10.0.0.1:6443"}
+kind: Host
+metadata: {name: default}
+spec: {hostname: n1}
 `
 
 func hashOf(t *testing.T, yaml string) string {
@@ -136,14 +136,14 @@ func TestKindHashes(t *testing.T) {
 	}
 	before := hashes(hashed)
 	if _, ok := before["Secret"]; ok || len(before) != 2 {
-		t.Errorf("kinds = %v, want Cluster and Demo alone", before)
+		t.Errorf("kinds = %v, want Demo and Host alone", before)
 	}
 	secret := hashes(strings.Replace(hashed, "token: s3cret", "token: other", 1))
-	if secret["Demo"] == before["Demo"] || secret["Cluster"] != before["Cluster"] {
+	if secret["Demo"] == before["Demo"] || secret["Host"] != before["Host"] {
 		t.Errorf("a referenced Secret's change: %v -> %v, want Demo alone to change", before, secret)
 	}
 	demo := hashes(strings.Replace(hashed, "name: two", "name: three", 1))
-	if demo["Demo"] == before["Demo"] || demo["Cluster"] != before["Cluster"] {
+	if demo["Demo"] == before["Demo"] || demo["Host"] != before["Host"] {
 		t.Errorf("a Demo's change: %v -> %v, want Demo alone to change", before, demo)
 	}
 }
@@ -159,14 +159,14 @@ func TestChangedKinds(t *testing.T) {
 		"unchanged":                  {hashed, nil},
 		"a Secret a Demo references": {strings.Replace(hashed, "token: s3cret", "token: other", 1), []string{"Demo"}},
 		"a Demo":                     {strings.Replace(hashed, "name: two", "name: three", 1), []string{"Demo"}},
-		"all removed":                {"", []string{"Cluster", "Demo"}},
+		"all removed":                {"", []string{"Demo", "Host"}},
 	} {
 		got, err := ChangedKinds(before, parseDocs(t, c.after), s)
 		if err != nil || !slices.Equal(got, c.want) {
 			t.Errorf("%s: changed = %v, %v; want %v", name, got, err, c.want)
 		}
 	}
-	if got, err := ChangedKinds(nil, before, s); err != nil || !slices.Equal(got, []string{"Cluster", "Demo"}) {
+	if got, err := ChangedKinds(nil, before, s); err != nil || !slices.Equal(got, []string{"Demo", "Host"}) {
 		t.Errorf("all added: changed = %v, %v", got, err)
 	}
 }
@@ -200,9 +200,9 @@ metadata: {name: s}
 spec: {data: {token: test}}
 ---
 apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
-spec: {endpoint: "https://10.0.0.1:6443"}
+kind: Host
+metadata: {name: default}
+spec: {hostname: n1}
 `)
 	sum := sha256.Sum256([]byte("test"))
 	if got := docs[0].Hashed()["spec"].(map[string]any)["data"].(map[string]any)["token"]; got != hex.EncodeToString(sum[:]) {
@@ -212,6 +212,6 @@ spec: {endpoint: "https://10.0.0.1:6443"}
 		t.Errorf("Hashed changed the Secret itself: %v", got)
 	}
 	if !reflect.DeepEqual(docs[1].Hashed(), docs[1].Object) {
-		t.Errorf("the Cluster = %v", docs[1].Hashed())
+		t.Errorf("the Host = %v", docs[1].Hashed())
 	}
 }

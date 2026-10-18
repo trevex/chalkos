@@ -26,8 +26,8 @@ func (a *app) validateCommand() *cobra.Command {
 }
 
 // validate checks the config of the nodes named, or of every node of the inventory, and names
-// every node whose config is invalid. The nodes' Cluster documents are checked first, as every
-// other command reads them when it loads the inventory. A valid config that leaves the node's
+// every node whose config is invalid. The endpoints of the nodes' Kubernetes documents are checked
+// first, as every other command reads them when it loads the inventory. A valid config that leaves the node's
 // secrets unencrypted draws a warning.
 func (a *app) validate(path string, names []string) error {
 	if path == "" {
@@ -53,7 +53,7 @@ func (a *app) validate(path string, names []string) error {
 			return fmt.Errorf("the inventory %s names no node", path)
 		}
 	}
-	if _, _, err := inv.Cluster(); err != nil {
+	if _, err := inv.Endpoint(); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	var failed []string

@@ -95,7 +95,7 @@ only renew its node certificate. See [Security model](../concepts/security.md).
 
 ## Cluster endpoint { #cluster-endpoint }
 
-The URL of the cluster's API server, `spec.endpoint` of the [`Cluster`](kinds.md#cluster)
+The URL of the cluster's API server, `spec.endpoint` of the [`Kubernetes`](kinds.md#kubernetes)
 document, at which kubelets, kubeconfigs and joining control planes reach it. Nodes also renew
 their [node certificates](#node-certificate) at port 50000 of its host, so it points at a control
 plane, a [VIP](#vip) or a load balancer that forwards both ports. See

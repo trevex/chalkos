@@ -44,8 +44,8 @@ chalkos version. See [Variants and platforms](../concepts/variants.md) and
 Everything that differs between clusters and nodes is a node's
 [config](../reference/glossary.md#config): [config
 documents](../reference/glossary.md#config-document) in the style of Kubernetes objects, each of a
-[kind](../reference/glossary.md#kind) such as `Cluster`, `Node`, `Network`, `SystemDisk`,
-`Kubernetes` or an extension's own. The [inventory](../reference/glossary.md#inventory),
+[kind](../reference/glossary.md#kind) such as `Node`, `Network`, `SystemDisk`, `Kubernetes` or
+an extension's own. The [inventory](../reference/glossary.md#inventory),
 `chalkos.yaml`, names each node, the address chalkctl reaches it at, the image it runs and the files
 of its documents: files every node gets, files of groups and the node's own. Its `images` name the
 image directories, and `image` on a node, on a group or for every node says which one a node runs.

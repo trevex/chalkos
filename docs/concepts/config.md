@@ -26,19 +26,14 @@ that nothing reads. A file holds any number of documents, separated by `---`.
 The lab template's shared file holds the documents every node of the lab gets:
 
 ```yaml title="cluster/cluster.yaml"
-apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
-spec:
-  # cp1 on the lab network: the API server of the only control plane.
-  endpoint: https://192.168.123.11:6443
----
 # Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
 # 10.96.0.0/12.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
-spec: {}
+spec:
+  # cp1 on the lab network: the API server of the only control plane.
+  endpoint: https://192.168.123.11:6443
 ```
 
 Each node's own file gives its type, its system disk and its address on the lab network:
@@ -78,14 +73,13 @@ schemas.
 
 | Kind | Group | Per node | What it holds |
 | --- | --- | --- | --- |
-| [`Cluster`](../reference/kinds.md#cluster) | `chalkos.dev` | exactly one | The cluster's name and the URL of its API server |
 | [`Host`](../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
 | [`Network`](../reference/kinds.md#network), [`NetDev`](../reference/kinds.md#netdev), [`Link`](../reference/kinds.md#link) | `networkd.chalkos.dev` | any | systemd-networkd's `.network`, `.netdev` and `.link` files, one document per file |
-| [`Kubernetes`](../reference/kinds.md#kubernetes) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the components |
+| [`Kubernetes`](../reference/kinds.md#kubernetes) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The URL of the cluster's API server, IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the components |
 | [`Node`](../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints and Kubernetes addresses |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | `kubernetes.chalkos.dev` | any | The mirrors of one container registry |
 | [`Flannel`](../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU |
@@ -152,6 +146,8 @@ spec:
 
 [Config kinds](../reference/kinds.md#inventory) lists its fields:
 
+- `metadata.name` names the cluster in chalkctl's messages and the kubeconfig `chalkctl kubeconfig`
+  writes, unless `--context` gives another name.
 - `spec.images` are the images the nodes run, by name, and `spec.image` the image of every node
   that names none, as [How does the inventory name images?](#how-does-the-inventory-name-images)
   describes.
@@ -208,8 +204,8 @@ names, else the one `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`.
 
 A node's set is valid when:
 
-- it holds exactly one `Cluster` and one `SystemDisk`, and on an image with Kubernetes one
-  `Kubernetes` and one `Node`;
+- it holds exactly one `SystemDisk`, and on an image with Kubernetes one `Kubernetes` and one
+  `Node`;
 - every other kind appears at most once, unless the kind allows several (`Secret`, `Volume`,
   `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with
   `multiple = true`);
@@ -217,14 +213,15 @@ A node's set is valid when:
 - no two documents of a kind share a `metadata.name`;
 - every `secretRef` names a `Secret` in the set and a key that `Secret` holds;
 - every document is valid against its kind's schema;
-- on an image with Kubernetes, it holds one `Kubernetes` document; its defaults make `spec: {}` a
-  valid one.
+- on an image with Kubernetes, it holds one `Kubernetes` document, which names the cluster's
+  `endpoint`; its defaults fill in the other fields.
 
 Beyond the schemas, chalkctl and chalkd translate the set as the node will use it, which checks
 what a schema cannot express: overlapping ranges, a VIP outside the node's networks, a volume that
 does not fit its disk, an extra flag that would override one chalkos sets. Every node of an
-inventory must hold a `Cluster` of the same name and endpoint, because each node takes the
-cluster's name and endpoint from its own `Cluster`.
+inventory whose set holds a `Kubernetes` document must name the same `endpoint` in it, because
+each node takes the endpoint from its own `Kubernetes` document; chalkctl refuses an inventory
+whose nodes name different ones.
 
 ## How does the inventory name images?
 

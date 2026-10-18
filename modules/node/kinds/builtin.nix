@@ -1,7 +1,7 @@
-# The kinds every image accepts: the cluster a config belongs to, the node's host name, secrets,
-# storage, time and, on images with Kubernetes, the cluster's Kubernetes settings, registry
-# mirrors and manifests and the node's type and its kubelet's settings. chalkd translates them
-# into the node's identity and its Kubernetes cluster.
+# The kinds every image accepts: the node's host name, secrets, storage, time and, on images with
+# Kubernetes, the cluster's Kubernetes settings with its API server's endpoint, registry mirrors
+# and manifests and the node's type and its kubelet's settings. chalkd translates them into the
+# node's identity and its Kubernetes cluster.
 {
   config,
   lib,
@@ -225,13 +225,6 @@ in
   };
 
   chalkos.kinds = {
-    Cluster = builtin "chalkos.dev" // {
-      spec.endpoint = mkOption {
-        type = types.nullOr (types.strMatching "https://.+");
-        default = null;
-        description = "URL of the cluster's Kubernetes API server.";
-      };
-    };
     Host = builtin "chalkos.dev" // {
       spec.hostname = mkOption {
         type = types.nullOr (types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?");
@@ -461,6 +454,10 @@ in
         (fixedRule "dnsIPs" dnsIP (v: "string(${v})"))
       ];
       spec = {
+        endpoint = mkOption {
+          type = types.strMatching "https://.+";
+          description = "URL of the cluster's Kubernetes API server, which every node of the cluster names alike.";
+        };
         domain = mkOption {
           type = types.nonEmptyStr;
           default = "cluster.local";

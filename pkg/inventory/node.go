@@ -135,60 +135,63 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	return md, nil
 }
 
-// Cluster returns the name and endpoint of the cluster: those of the Cluster document every
-// node's files hold, alike, or with no nodes those of the shared files. The endpoint is empty
-// when the Cluster names none.
-func (inv *Inventory) Cluster() (name, endpoint string, err error) {
-	type cluster struct{ name, endpoint string }
-	of := func(files []string) (cluster, error) {
-		var found []cluster
+// Endpoint returns the URL of the cluster's Kubernetes API server: the endpoint the Kubernetes
+// documents of the nodes' files name, alike, or with no nodes the one of the shared files' Kubernetes
+// document. A node whose files hold no Kubernetes document names none and is skipped; the endpoint
+// is empty when no node names one.
+func (inv *Inventory) Endpoint() (string, error) {
+	// of is the endpoint of the Kubernetes document the files hold, and whether they hold one.
+	of := func(files []string) (string, bool, error) {
+		var found []string
 		for _, f := range files {
 			docs, err := inv.read(f)
 			if err != nil {
-				return cluster{}, err
+				return "", false, err
 			}
 			for _, d := range docs {
-				if d.APIVersion == config.CoreAPI && d.Kind == "Cluster" {
+				if d.APIVersion == config.KubernetesAPI && d.Kind == "Kubernetes" {
 					spec, _ := d.Object["spec"].(map[string]any)
 					e, _ := spec["endpoint"].(string)
-					found = append(found, cluster{d.Name, e})
+					found = append(found, e)
 				}
 			}
 		}
-		if len(found) != 1 {
-			return cluster{}, fmt.Errorf("its files hold %d Cluster documents, not one", len(found))
+		switch len(found) {
+		case 0:
+			return "", false, nil
+		case 1:
+			return found[0], true, nil
 		}
-		return found[0], nil
+		return "", false, fmt.Errorf("its files hold %d Kubernetes documents, not one", len(found))
 	}
 	if len(inv.Spec.Nodes) == 0 {
 		files, err := inv.expand(inv.Spec.Files)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
-		c, err := of(files)
+		e, _, err := of(files)
 		if err != nil {
-			return "", "", fmt.Errorf("the shared files: %w", err)
+			return "", fmt.Errorf("the shared files: %w", err)
 		}
-		return c.name, c.endpoint, nil
+		return e, nil
 	}
-	var first cluster
-	var firstNode string
+	var first, firstNode string
 	for _, n := range inv.NodeNames() {
 		files, err := inv.Files(n)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
-		c, err := of(files)
+		e, ok, err := of(files)
 		if err != nil {
-			return "", "", fmt.Errorf("node %s: %w", n, err)
+			return "", fmt.Errorf("node %s: %w", n, err)
 		}
-		if firstNode == "" {
-			first, firstNode = c, n
-			continue
-		}
-		if c != first {
-			return "", "", fmt.Errorf("the nodes %s and %s are in different clusters: %s at %q and %s at %q", firstNode, n, first.name, first.endpoint, c.name, c.endpoint)
+		switch {
+		case !ok:
+		case firstNode == "":
+			first, firstNode = e, n
+		case e != first:
+			return "", fmt.Errorf("the nodes %s and %s name different endpoints in their Kubernetes documents: %q and %q", firstNode, n, first, e)
 		}
 	}
-	return first.name, first.endpoint, nil
+	return first, nil
 }

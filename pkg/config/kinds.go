@@ -77,11 +77,8 @@ type nodeSpec struct {
 	ValidSubnets []string `json:"validSubnets"`
 }
 
-type clusterSpec struct {
-	Endpoint *string `json:"endpoint"`
-}
-
 type kubernetesSpec struct {
+	Endpoint                       string                       `json:"endpoint"`
 	Domain                         string                       `json:"domain"`
 	AllowSchedulingOnControlPlanes bool                         `json:"allowSchedulingOnControlPlanes"`
 	IPFamilies                     []string                     `json:"ipFamilies"`

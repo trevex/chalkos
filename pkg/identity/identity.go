@@ -25,9 +25,7 @@ const (
 // Identity is the node's identity without secrets, as the node applies it.
 type Identity struct {
 	Hostname string `json:"hostname"`
-	// Cluster is the cluster's name, which the node's Cluster document carries, and Platform the
-	// platform the node's image is built for, which its config is translated for.
-	Cluster  string         `json:"cluster"`
+	// Platform is the platform the node's image is built for, which its config is translated for.
 	Platform string         `json:"platform"`
 	Network  map[string]any `json:"network"`
 	// NetworkUnits are the systemd-networkd unit files rendered from Network, by file name.

@@ -80,6 +80,7 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  endpoint: https://10.0.0.10:6443
   nodeIP:
     validSubnets: [10.0.0.0/24, "!10.0.0.200/29"]
 ```
@@ -135,6 +136,7 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  endpoint: https://10.0.0.10:6443
   ipFamilies: [ipv6, ipv4]
 ```
 
@@ -146,20 +148,15 @@ kubelet gives pods one name server; it still answers A and AAAA queries.
 A VIP is an address of the API server that no single machine owns: one healthy control plane holds
 it at a time, so the [cluster endpoint](../reference/glossary.md#cluster-endpoint) stays reachable
 while a control plane reboots or fails. `vip.addresses` of the `Kubernetes` document takes at most
-one address per family, and the [`Cluster`](../reference/kinds.md#cluster) document's endpoint is
-then one of them or a name that resolves to them. Both documents go into the files every node gets:
+one address per family, and the document's `endpoint` is then one of them or a name that resolves
+to them. The document goes into the files every node gets:
 
 ```yaml
-apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: homelab}
-spec:
-  endpoint: https://10.0.0.10:6443
----
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  endpoint: https://10.0.0.10:6443
   vip: {addresses: [10.0.0.10]}
 ```
 

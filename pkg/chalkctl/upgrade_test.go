@@ -1689,7 +1689,7 @@ func TestApplyConfigPrintsWhatItChanges(t *testing.T) {
 	if err := l.applyConfig("w1"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "w1: config 5 added, 0 removed, 0 changed\n"; !strings.Contains(l.ta.stdout.String(), want) {
+	if want := "w1: config 4 added, 0 removed, 0 changed\n"; !strings.Contains(l.ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", l.ta.stdout, want)
 	}
 	l.takeEvents()
@@ -1723,7 +1723,7 @@ func TestUpgradeDiff(t *testing.T) {
 		t.Errorf("--diff asked %q", got)
 	}
 	out := l.ta.stdout.String()
-	if !strings.Contains(out, "w1: config unchanged\n") || !strings.Contains(out, "w2: config 5 added, 0 removed, 0 changed\n+ Cluster \"lab\"\n") {
+	if !strings.Contains(out, "w1: config unchanged\n") || !strings.Contains(out, "w2: config 4 added, 0 removed, 0 changed\n+ Kubernetes \"kubernetes\"\n") {
 		t.Errorf("output:\n%s", out)
 	}
 	l.ta.stdout.Reset()

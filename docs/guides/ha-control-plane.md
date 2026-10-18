@@ -32,24 +32,16 @@ member, removing one and replacing a failed machine.
 
 Put the VIP in `spec.vip.addresses` of the [`Kubernetes`](../reference/kinds.md#kubernetes)
 document every node gets, and make the
-[cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the
-[`Cluster`](../reference/kinds.md#cluster) document, point at it. Every node and client reaches
-the API server at the endpoint, so the endpoint has to follow the VIP from one control plane to
-the next.
-
-```yaml title="cluster/cluster.yaml"
-apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: prod}
-spec:
-  endpoint: https://10.0.0.10:6443
-```
+[cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the same
+document, point at it. Every node and client reaches the API server at the endpoint, so the
+endpoint has to follow the VIP from one control plane to the next.
 
 ```yaml title="cluster/kubernetes.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  endpoint: https://10.0.0.10:6443
   vip: {addresses: [10.0.0.10]}
 ```
 

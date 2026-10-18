@@ -34,10 +34,11 @@ spec:
     n1: {address: 10.0.0.11, files: [nodes/n1.yaml]}
 `
 
-// testClusterYAML is the Cluster lab.
-const testClusterYAML = `apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
+// testClusterYAML is the cluster's Kubernetes document, of the kind's defaults and the endpoint
+// https://10.0.0.10:6443, which the nodes share.
+const testClusterYAML = `apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Kubernetes
+metadata: {name: kubernetes}
 spec:
   endpoint: https://10.0.0.10:6443
 `
@@ -142,20 +143,20 @@ func TestValidateWarnsOfUnencryptedState(t *testing.T) {
 	}
 }
 
-// TestValidateTheCluster refuses an inventory whose nodes' Cluster documents differ, as every
-// other command does.
+// TestValidateTheCluster refuses an inventory whose nodes' Kubernetes documents name different
+// endpoints, as every other command does.
 func TestValidateTheCluster(t *testing.T) {
 	dir := t.TempDir()
 	path := writeInventory(t, dir)
-	// cluster.yaml holds nothing; n1 and n2 each get a Cluster of another endpoint.
+	// cluster.yaml holds nothing; n1 and n2 each get a Kubernetes document of another endpoint.
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), "")
-	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://%s:6443\"}\n"
+	cluster := "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {endpoint: \"https://%s:6443\"}\n"
 	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.10")}, "---\n"))
 	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
 	ta := newTestApp(t)
-	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "the nodes n1 and n2 are in different clusters") {
-		t.Errorf("validate of nodes in different clusters = %v", err)
+	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "the nodes n1 and n2 name different endpoints in their Kubernetes documents") {
+		t.Errorf("validate of nodes of different endpoints = %v", err)
 	}
 }
 
@@ -187,18 +188,17 @@ type testNode struct{ name, kind, variant string }
 
 // writeNodes writes an inventory of the cluster lab with the nodes, the i-th at 10.0.0.<11+i> on
 // metal with the image <variant>-metal, whose directory images gives by variant, else
-// images/<variant>-metal below dir. A node of a kind gets a Kubernetes document. It returns the
-// inventory's path.
+// images/<variant>-metal below dir. A node of a kind gets a Kubernetes Node, and the nodes share
+// testClusterYAML. It returns the inventory's path.
 func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]string) string {
 	t.Helper()
-	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://10.0.0.10:6443\"}\n"
 	variants := map[string]bool{}
 	var defined, listed string
 	for i, n := range nodes {
 		docs := []string{n1SystemDisk,
 			fmt.Sprintf("apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.%d/24]}}\n", 11+i)}
 		if n.kind != "" {
-			docs = append(docs, nodeDoc(n.kind), kubernetesDoc)
+			docs = append(docs, nodeDoc(n.kind))
 		}
 		writeFile(t, filepath.Join(dir, "nodes", n.name+".yaml"), strings.Join(docs, "---\n"))
 		listed += fmt.Sprintf("    %s: {address: 10.0.0.%d, image: %s-metal, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.variant, n.name)
@@ -211,13 +211,10 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 			defined += fmt.Sprintf("    %s-metal: {source: {directory: %q}}\n", n.variant, image)
 		}
 	}
-	writeFile(t, filepath.Join(dir, "cluster.yaml"), cluster)
+	writeFile(t, filepath.Join(dir, "cluster.yaml"), testClusterYAML)
 	writeFile(t, filepath.Join(dir, "chalkos.yaml"), "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n  images:\n"+defined+"  files: [cluster.yaml]\n  nodes:\n"+listed)
 	return filepath.Join(dir, "chalkos.yaml")
 }
-
-// kubernetesDoc is a Kubernetes document of the kind's defaults.
-const kubernetesDoc = "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}\n"
 
 // nodeDoc is a Kubernetes Node document of the type.
 func nodeDoc(nodeType string) string {
@@ -517,7 +514,7 @@ func appendDocument(t *testing.T, path, doc string) {
 const passwordSystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}, encryption: {fallback: password}}\n"
 
 // TestPartialClusterRefusals refuses, without an inventory and with the secrets file at hand, the
-// commands that need the nodes' config or the cluster's name, and etcd members without --via.
+// commands that need the nodes' config or the cluster's endpoint, and etcd members without --via.
 func TestPartialClusterRefusals(t *testing.T) {
 	ta := newTestApp(t)
 	for _, tc := range []struct {

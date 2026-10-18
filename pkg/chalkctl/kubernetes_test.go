@@ -25,7 +25,7 @@ import (
 // withKind makes n1 a Kubernetes node of the kind, on an image with Kubernetes.
 func withKind(t *testing.T, ta *testApp, kind string) {
 	t.Helper()
-	ta.writeNode(t, nodeDoc(kind), n1SystemDisk, n1Network, kubernetesDoc)
+	ta.writeNode(t, nodeDoc(kind), n1SystemDisk, n1Network)
 	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "metal", testRootHash, true)
 	ta.kind = kind
 }
@@ -188,7 +188,7 @@ func TestKubeconfig(t *testing.T) {
 }
 
 // TestKubeconfigContext checks that the kubeconfig's cluster, user and context are named after
-// the inventory, not after the Cluster document, unless --context names them.
+// the inventory unless --context names them.
 func TestKubeconfigContext(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -200,7 +200,6 @@ func TestKubeconfigContext(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ta := newTestApp(t)
-			writeFile(t, filepath.Join(ta.dir, "cluster.yaml"), strings.Replace(testClusterYAML, "{name: lab}", "{name: other}", 1))
 			out := filepath.Join(ta.dir, "kubeconfig")
 			args := append([]string{"kubeconfig", "--inventory", ta.inventory, "--out", out}, tc.args...)
 			if err := ta.run(context.Background(), args); err != nil {
@@ -231,6 +230,17 @@ func TestKubeconfigContext(t *testing.T) {
 				t.Errorf("kubeconfig names %+v, %+v, %+v, %q; want %s", kc.Clusters, kc.Users, kc.Contexts, kc.Current, tc.want)
 			}
 		})
+	}
+}
+
+// TestKubeconfigNeedsAnEndpoint refuses an inventory whose nodes' Kubernetes documents name no
+// endpoint, as there is none to point clients at.
+func TestKubeconfigNeedsAnEndpoint(t *testing.T) {
+	ta := newTestApp(t)
+	writeFile(t, filepath.Join(ta.dir, "cluster.yaml"), "")
+	err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-"})
+	if err == nil || !strings.Contains(err.Error(), "no Kubernetes document of the cluster lab names an endpoint") {
+		t.Errorf("kubeconfig without an endpoint = %v", err)
 	}
 }
 

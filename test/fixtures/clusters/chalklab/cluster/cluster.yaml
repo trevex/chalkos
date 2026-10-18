@@ -1,5 +1,0 @@
-apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: chalklab}
-spec:
-  endpoint: https://192.168.100.11:6443

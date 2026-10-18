@@ -33,7 +33,7 @@ func readFile(t *testing.T, path string) string {
 
 func TestWriteRuntime(t *testing.T) {
 	run := t.TempDir()
-	consumers := map[string][]string{"demo": {"Demo"}, "idle": {"Cluster"}}
+	consumers := map[string][]string{"demo": {"Demo"}, "idle": {"Host"}}
 	if err := WriteRuntime(run, parse(t, set), demoSchemas(t), consumers); err != nil {
 		t.Fatal(err)
 	}

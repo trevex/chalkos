@@ -34,11 +34,10 @@ let
     "cel.bind(d, ${
       cel.documents c "networkd.chalkos.dev/v1alpha1" "Network"
     }, d.map(n, has(d[n].spec.network) ? ${cel.oneOrMany "d[n].spec.network"}.map(s, type(s) == map && has(s.address) ? s.address : null) : []))";
-  # The cluster the Cluster, Kubernetes and Flannel documents give, or a cluster file that changed,
-  # as one a boot whose config loader failed left missing.
+  # The cluster the Kubernetes and Flannel documents give, the endpoint among it, or a cluster file
+  # that changed, as one a boot whose config loader failed left missing.
   clusterChanged = lib.concatStringsSep " || " [
     "facts.cluster != oldFacts.cluster"
-    (cel.specsChanged core "Cluster")
     (cel.specsChanged kubernetesAPI "Kubernetes")
     (cel.specsChanged kubernetesAPI "Flannel")
   ];

@@ -15,9 +15,9 @@ import (
 
 const set = `
 apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
-spec: {endpoint: "https://10.0.0.1:6443"}
+kind: Host
+metadata: {name: default}
+spec: {hostname: n1}
 ---
 apiVersion: demo.example.org/v1alpha1
 kind: Demo
@@ -93,13 +93,13 @@ func TestWriteAndRead(t *testing.T) {
 		t.Errorf("link = %q, %v; want a relative link", target, err)
 	}
 	for path, want := range map[string]os.FileMode{
-		"documents/chalkos.dev/Cluster/lab.json": 0o644,
-		"delivered/chalkos.dev/Cluster/lab.json": 0o644,
-		"documents/secrets":                      0o700,
-		"documents/secrets/demo.json":            0o600,
-		"delivered/secrets":                      0o700,
-		"delivered/secrets/demo.json":            0o600,
-		"identity.json":                          0o600,
+		"documents/chalkos.dev/Host/default.json": 0o644,
+		"delivered/chalkos.dev/Host/default.json": 0o644,
+		"documents/secrets":                       0o700,
+		"documents/secrets/demo.json":             0o600,
+		"delivered/secrets":                       0o700,
+		"delivered/secrets/demo.json":             0o600,
+		"identity.json":                           0o600,
 	} {
 		if m := mode(t, filepath.Join(dir, path)); m != want {
 			t.Errorf("%s mode = %v, want %v", path, m, want)

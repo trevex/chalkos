@@ -218,7 +218,7 @@ func TestLoadWritesConfig(t *testing.T) {
 	copySchemas(t, l.Schemas)
 	write(t, l.Consumers, `{
 	  "demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}},
-	  "idle": {"kinds": ["Cluster"], "restart": {"when": "\"Cluster\" in changedKinds"}},
+	  "idle": {"kinds": ["Host"], "restart": {"when": "\"Host\" in changedKinds"}},
 	  "reloaded": {"kinds": [], "reload": {"when": "true", "command": "systemctl reload reloaded"}}
 	}`)
 	writeSlot(t, l, running, nodeIdentity, loaderConfig)
@@ -317,15 +317,11 @@ func TestApplyWritesNoKeyCredentials(t *testing.T) {
 // kubernetesConfig is a worker's set with its Kubernetes and Node documents as chalkd stores them,
 // schema defaults filled in.
 const kubernetesConfig = `
-apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
-spec: {endpoint: "https://10.0.0.10:6443"}
----
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  endpoint: "https://10.0.0.10:6443"
   domain: cluster.local
   allowSchedulingOnControlPlanes: false
   ipFamilies: [ipv4]

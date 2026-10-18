@@ -175,7 +175,7 @@ node or its surroundings. The table lists both sides:
 | Kernel, kernel modules and initrd | Hostname |
 | NixOS services and the variant's modules | systemd-networkd units: `Network`, `NetDev` and `Link` documents |
 | Kubernetes release ([`chalkos.kubernetes.package`](../reference/options.md#chalkoskubernetespackage)) and the images of etcd, the pod sandbox and CoreDNS | Whether the node is a control plane or a worker, its labels, taints and addresses |
-| The pod network ([`chalkos.cni.provider`](../reference/options.md#chalkoscniprovider)): flannel or none, and the CNI plugins | Cluster name and endpoint, and the cluster's Kubernetes settings: ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons |
+| The pod network ([`chalkos.cni.provider`](../reference/options.md#chalkoscniprovider)): flannel or none, and the CNI plugins | The cluster's endpoint and its Kubernetes settings: ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons |
 | The [OS CA](../reference/glossary.md#os-ca) for maintenance mode, from `osCA` | Storage: system disk, VAR, volumes and encryption |
 | Partition sizes of the system region ([`chalkos.disk`](../reference/options.md#chalkosdiskstoresize)) | Time servers and whether DHCP may add more |
 | Boot tries and health timeout ([`chalkos.upgrade`](../reference/options.md#chalkosupgradeboottries)) | `Secret` documents and documents of the kinds extensions declare |

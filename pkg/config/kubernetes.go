@@ -32,8 +32,8 @@ func single(docs []Document, apiVersion, kind string) (Document, bool) {
 }
 
 // ClusterOf builds the Kubernetes cluster a node's documents give on an image with the facts img:
-// its kind from the Kubernetes Node's type, its endpoint from the Cluster, its settings from the
-// Kubernetes document and, on a flannel image, flannel's from the Flannel document, and checks it.
+// its kind from the Kubernetes Node's type, its endpoint and settings from the Kubernetes document
+// and, on a flannel image, flannel's from the Flannel document, and checks it.
 // It holds the per-family values of the cluster's families alone, and each error names the
 // document whose setting fails. docs carry their schema defaults, as a Set and the stored config
 // do.
@@ -46,17 +46,6 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 	if err := nodeDoc.decodeSpec(&node); err != nil {
 		return kubernetes.Cluster{}, err
 	}
-	clusterDoc, ok := single(docs, CoreAPI, "Cluster")
-	if !ok {
-		return kubernetes.Cluster{}, errors.New("no Cluster: a node's config holds one Cluster")
-	}
-	var cluster clusterSpec
-	if err := clusterDoc.decodeSpec(&cluster); err != nil {
-		return kubernetes.Cluster{}, err
-	}
-	if cluster.Endpoint == nil {
-		return kubernetes.Cluster{}, fmt.Errorf("%s has no endpoint, which the nodes of an image with Kubernetes need", clusterDoc)
-	}
 	kdoc, ok := single(docs, KubernetesAPI, "Kubernetes")
 	if !ok {
 		return kubernetes.Cluster{}, errors.New("no Kubernetes: the config of a node whose image runs Kubernetes holds one Kubernetes document")
@@ -67,7 +56,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 	}
 	c := kubernetes.Cluster{
 		Kind:                           node.Type,
-		Endpoint:                       *cluster.Endpoint,
+		Endpoint:                       k.Endpoint,
 		Version:                        img.Version,
 		Images:                         img.Images,
 		Domain:                         k.Domain,
@@ -86,7 +75,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 		ExtraArgs:          k.ExtraArgs,
 	}
 	if _, err := c.EndpointHost(); err != nil {
-		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", clusterDoc, err)
+		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
 	}
 	if err := c.Validate(); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)

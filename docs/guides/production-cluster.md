@@ -37,7 +37,6 @@ prod/
 ├── secrets.pub.json     the public half of the secrets file, which the images carry
 ├── chalkos.yaml         the inventory
 ├── cluster/             files every node gets
-│   ├── cluster.yaml
 │   ├── kubernetes.yaml
 │   ├── registries.yaml
 │   └── time.yaml
@@ -116,21 +115,11 @@ spec:
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ```
 
-`cluster/cluster.yaml` names the cluster:
-
-```yaml title="cluster/cluster.yaml"
-apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: prod}
-spec:
-  # The VIP the control planes hold.
-  endpoint: https://10.0.0.10:6443
-```
-
-A node's set holds at most one document of most kinds, and exactly one `Cluster`, `SystemDisk`,
-`Kubernetes` and `Node`, so each document lives in the one place that fits it: what every node
-shares in `cluster/`, what a kind of node shares in a group, the rest in the node's file. [The
-kinds reference](../reference/kinds.md) lists every field.
+The inventory's `metadata.name` names the cluster in chalkctl's messages and in the kubeconfig
+`chalkctl kubeconfig` writes. A node's set holds at most one document of most kinds, and exactly
+one `SystemDisk`, `Kubernetes` and `Node`, so each document lives in the one place that fits it:
+what every node shares in `cluster/`, what a kind of node shares in a group, the rest in the
+node's file. [The kinds reference](../reference/kinds.md) lists every field.
 
 ## Choose the variants
 
@@ -196,7 +185,7 @@ spec:
 ## Decide how clients reach the API server
 
 The [cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the
-[`Cluster`](../reference/kinds.md#cluster) document, is the URL kubelets, kubeconfigs and
+[`Kubernetes`](../reference/kinds.md#kubernetes) document, is the URL kubelets, kubeconfigs and
 workers use to reach the control planes. Workers also renew their
 [node certificates](../reference/glossary.md#node-certificate) through it:
 [chalkd](../reference/glossary.md#chalkd) on a worker connects to the endpoint's host on port
@@ -217,13 +206,16 @@ A VIP failover takes seconds: the holder's lease lives 10 seconds, and the HA en
 requires the VIP to move within 30 seconds of its holder's link going down. Clients with an open
 connection to the old holder notice only when it times out.
 
-The VIP is `spec.vip.addresses` of the `Kubernetes` document every node gets:
+The VIP is `spec.vip.addresses` of the `Kubernetes` document every node gets, and the endpoint
+points at it:
 
 ```yaml title="cluster/kubernetes.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  # The VIP the control planes hold.
+  endpoint: https://10.0.0.10:6443
   vip: {addresses: [10.0.0.10]}
   # Nodes accept the pod network's VXLAN traffic only from the nodes' own network.
   vxlanSourceSubnets: [10.0.0.0/24]
@@ -251,6 +243,7 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
 metadata: {name: kubernetes}
 spec:
+  endpoint: https://10.0.0.10:6443
   ipFamilies: [ipv4, ipv6]
   podCIDRs:
     ipv4: 10.244.0.0/16

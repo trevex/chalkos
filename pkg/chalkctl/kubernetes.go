@@ -133,7 +133,7 @@ func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) e
 		contextName = c.inv.Name
 	}
 	if c.endpoint == "" {
-		return fmt.Errorf("the Cluster %s names no endpoint, which a kubeconfig points clients at", c.name)
+		return fmt.Errorf("no Kubernetes document of the cluster %s names an endpoint, which a kubeconfig points clients at", c.name)
 	}
 	secrets, err := a.loadSecrets(ctx, sf)
 	if err != nil {

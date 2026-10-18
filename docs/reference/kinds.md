@@ -19,16 +19,6 @@ must be set, and an object whose default reads "see below" takes the defaults of
 that follow it. A field the tables do not list is refused, except within a Kubernetes object or
 an object whose type reads "object, any fields".
 
-## Cluster { #cluster }
-
-`apiVersion: chalkos.dev/v1alpha1`
-
-A node's config holds at most one.
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `spec.endpoint` | string or null | `null` | URL of the cluster's Kubernetes API server. |
-
 ## Host { #host }
 
 `apiVersion: chalkos.dev/v1alpha1`
@@ -84,6 +74,7 @@ It has 4 [change rules](../concepts/rules.md).
 | `spec.dnsIPs.ipv4` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.dnsIPs.ipv6` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster. |
+| `spec.endpoint` | string | required | URL of the cluster's Kubernetes API server, which every node of the cluster names alike. |
 | `spec.extraArgs` | object | see below |  |
 | `spec.extraArgs.etcd` | map of string | `{}` | Extra flags of etcd, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |

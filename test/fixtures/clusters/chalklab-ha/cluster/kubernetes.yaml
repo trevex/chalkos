@@ -7,6 +7,7 @@ spec:
   dnsIPs:
     ipv6: fd00:10:96::a
   domain: cluster.local
+  endpoint: https://[fd00:100::10]:6443
   extraArgs:
     etcd: {}
     kube-apiserver: {}

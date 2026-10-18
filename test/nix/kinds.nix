@@ -486,7 +486,6 @@ lib.runTests {
     expr = lib.sort lib.lessThan (kindNames kubernetesImage);
     expected = [
       "Addon"
-      "Cluster"
       "Flannel"
       "Host"
       "Kubernetes"
@@ -618,7 +617,6 @@ lib.runTests {
   };
   testBuiltinSchemasMatchFixtures = {
     expr = map (kind: builtinSchema kind) [
-      "Cluster"
       "Host"
       "Flannel"
       "Kubernetes"
@@ -631,7 +629,6 @@ lib.runTests {
       "Volume"
     ];
     expected = map builtinFixture [
-      "chalkos.dev_v1alpha1_Cluster.json"
       "chalkos.dev_v1alpha1_Host.json"
       "kubernetes.chalkos.dev_v1alpha1_Flannel.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubernetes.json"
@@ -1090,7 +1087,7 @@ lib.runTests {
       in
       {
         demo = schemas."demo.example.org_v1alpha1_Demo.json"."x-chalkos-kind".rules;
-        cluster = schemas."chalkos.dev_v1alpha1_Cluster.json"."x-chalkos-kind" ? rules;
+        host = schemas."chalkos.dev_v1alpha1_Host.json"."x-chalkos-kind" ? rules;
       };
     expected = {
       demo = [
@@ -1105,7 +1102,7 @@ lib.runTests {
           takes = "reinstall";
         }
       ];
-      cluster = false;
+      host = false;
     };
   };
   # The image's facts reach /etc/chalkos/facts.json: a file with the fields it keeps, or a command

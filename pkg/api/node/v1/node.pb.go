@@ -4022,7 +4022,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\r\n" +
-	"\vInfoRequest\"\xad\x03\n" +
+	"\vInfoRequest\"\x9e\x03\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x03 \x01(\tR\aimageId\x12\x1c\n" +
@@ -4037,8 +4037,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\bplatform\x18\f \x01(\tR\bplatform\x12\x1b\n" +
 	"\troot_hash\x18\r \x01(\fR\brootHash\x12\x1a\n" +
 	"\brevision\x18\x0e \x01(\tR\brevision\x12\x10\n" +
-	"\x03tag\x18\x0f \x01(\tR\x03tagJ\x04\b\n" +
-	"\x10\vR\acluster\"\x0e\n" +
+	"\x03tag\x18\x0f \x01(\tR\x03tag\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +
@@ -4064,7 +4063,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x12\n" +
 	"\x04uuid\x18\x06 \x01(\tR\x04uuid\x12\x18\n" +
 	"\acontent\x18\a \x01(\tR\acontent\"\x11\n" +
-	"\x0fContractRequest\"\xa2\x02\n" +
+	"\x0fContractRequest\"\x93\x02\n" +
 	"\x10ContractResponse\x12H\n" +
 	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x18\n" +
 	"\avariant\x18\x04 \x01(\tR\avariant\x12\x1a\n" +
@@ -4072,7 +4071,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x10kubernetes_image\x18\x06 \x01(\fR\x0fkubernetesImage\x1a:\n" +
 	"\fSchemasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01J\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\x12kubernetes_clusterR\acluster\"\x8a\x01\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01J\x04\b\x02\x10\x03R\x12kubernetes_cluster\"\x8a\x01\n" +
 	"\x0eInstallRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.InstallHeaderH\x00R\x06header\x123\n" +
 	"\x05chunk\x18\x02 \x01(\v2\x1b.chalkos.node.v1.ImageChunkH\x00R\x05chunkB\t\n" +
@@ -4106,7 +4105,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06serial\x18\x03 \x01(\tR\x06serial\x12\x10\n" +
 	"\x03wwn\x18\x04 \x01(\tR\x03wwn\x12\x12\n" +
 	"\x04size\x18\x05 \x01(\tR\x04size\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\"\xa4\x03\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\"\x95\x03\n" +
 	"\vImageHeader\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1b\n" +
 	"\troot_hash\x18\x05 \x01(\fR\brootHash\x120\n" +
@@ -4119,7 +4118,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	" \x01(\tR\farchitecture\x12\x1a\n" +
 	"\bplatform\x18\v \x01(\tR\bplatform\x12\x1a\n" +
 	"\brevision\x18\f \x01(\tR\brevision\x12\x10\n" +
-	"\x03tag\x18\r \x01(\tR\x03tagJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\aclusterR\x04role\"7\n" +
+	"\x03tag\x18\r \x01(\tR\x03tagJ\x04\b\x04\x10\x05R\x04role\"7\n" +
 	"\tImagePart\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\fR\x06sha256\" \n" +

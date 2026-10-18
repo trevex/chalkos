@@ -1,6 +1,5 @@
 {
   "hostname": "w1",
-  "cluster": "homelab",
   "platform": "metal",
   "network": {},
   "networkUnits": {},

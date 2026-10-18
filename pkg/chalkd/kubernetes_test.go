@@ -692,8 +692,8 @@ func TestCredentialIsShortLived(t *testing.T) {
 // The firewall itself is left alone, so a node whose firewall is disabled takes a new address.
 // TestApplyConfigRestartsKubernetesOnChange: the kubelet and its preparation restart when what
 // they read of the node's config changes, compared with the running slot: the Node's spec, the
-// Host, the static addresses of the Network documents and the cluster the Cluster and Kubernetes
-// documents give. Other changes, of a Network beside its addresses, of the Node's name or of
+// Host, the static addresses of the Network documents and the cluster the Kubernetes document
+// gives, its endpoint among it. Other changes, of a Network beside its addresses, of the Node's name or of
 // another kind, restart neither.
 func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 	base := workerConfig + networkConfig
@@ -712,7 +712,7 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 		"the Node's name":     {strings.Replace(base, "kind: Node\nmetadata: {name: default}", "kind: Node\nmetadata: {name: node}", 1), false},
 		"a Host":              {base + hostConfig("default", "h1"), true},
 		"a static address":    {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
-		"the cluster":         {strings.Replace(base, "metadata: {name: kubernetes}\nspec: {}", "metadata: {name: kubernetes}\nspec: {domain: lab.local}", 1), true},
+		"the cluster":         {strings.Replace(base, `spec: {endpoint: "https://192.168.100.11:6443"}`, `spec: {endpoint: "https://192.168.100.11:6443", domain: lab.local}`, 1), true},
 		"the endpoint":        {strings.Replace(base, "192.168.100.11:6443", "192.168.100.12:6443", 1), true},
 		"a Network's gateway": {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
 		"a Demo":              {strings.Replace(base, "name: first", "name: second", 1), false},
@@ -1192,10 +1192,11 @@ func clusterServer(t *testing.T, kind string) (*Server, *fakeRunner) {
 	return s, r
 }
 
-// withKubernetesSpec is workerConfig with the Kubernetes document's spec given.
+// withKubernetesSpec is workerConfig with the fields the YAML mapping spec gives added to its
+// Kubernetes document's endpoint.
 func withKubernetesSpec(spec string) string {
-	return strings.Replace(workerConfig, "kind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}",
-		"kind: Kubernetes\nmetadata: {name: kubernetes}\nspec: "+spec, 1)
+	return strings.Replace(workerConfig, `spec: {endpoint: "https://192.168.100.11:6443"}`,
+		`spec: {endpoint: "https://192.168.100.11:6443", `+strings.TrimPrefix(spec, "{"), 1)
 }
 
 func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
@@ -1652,7 +1653,7 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
-	if _, err := sendConfig(s, strings.Replace(config, "spec: {}", "spec: {domain: lab.local}", 1)); err != nil {
+	if _, err := sendConfig(s, strings.Replace(config, `:6443"}`, `:6443", domain: lab.local}`, 1)); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })

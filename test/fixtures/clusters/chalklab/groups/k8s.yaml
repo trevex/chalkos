@@ -8,6 +8,7 @@ spec:
     ipv4: 10.96.0.10
     ipv6: fd00:10:96::a
   domain: cluster.local
+  endpoint: https://192.168.100.11:6443
   extraArgs:
     etcd: {}
     kube-apiserver: {}

@@ -106,32 +106,6 @@ func TestStorageVolumesOnSystemAndOwnDisk(t *testing.T) {
 	}
 }
 
-// The seed derives from the node's and the disk's name alone, so the Cluster document's name
-// leaves it unchanged.
-func TestStorageSeedIgnoresClusterName(t *testing.T) {
-	docs := "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: fast}\nspec: {disk: {path: /dev/vdb}}\n"
-	seeds := map[string]map[string]string{}
-	for _, cluster := range []string{"lab", "other"} {
-		s, err := parseSet(t, strings.Replace(minimal, "{name: lab}", "{name: "+cluster+"}", 1)+docs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sec, err := s.storage("n1")
-		if err != nil {
-			t.Fatal(err)
-		}
-		seeds[cluster] = map[string]string{}
-		for disk, d := range sec.Disks {
-			seeds[cluster][disk] = d.Seed
-		}
-	}
-	for _, disk := range []string{"system", "fast"} {
-		if a, b := seeds["lab"][disk], seeds["other"][disk]; a != b || a != uuidOf("chalkos-seed:n1/"+disk) {
-			t.Errorf("seed of %s = %s with Cluster lab, %s with Cluster other", disk, a, b)
-		}
-	}
-}
-
 func TestReservedRepartKeysInKeyOrder(t *testing.T) {
 	s, err := parseSet(t, minimal+"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\n"+
 		"spec: {size: 1G, repart: {Type: x, Label: y, Weight: \"10\"}}\n")

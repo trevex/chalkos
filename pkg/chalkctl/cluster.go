@@ -26,9 +26,9 @@ func (c *clusterFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&c.inventory, "inventory", "", "inventory naming the cluster's nodes, their addresses and their config files (default "+inventory.DefaultFile+" in the current directory, when it exists)")
 }
 
-// cluster is what chalkctl knows of the cluster it operates: its name and endpoint, its nodes and
-// their config, from an inventory. Without one it is partial and nameless: each command names its
-// node and --address reaches it.
+// cluster is what chalkctl knows of the cluster it operates: its name, the inventory's, which
+// messages call it by, its Kubernetes endpoint, its nodes and their config, from an inventory.
+// Without one it is partial and nameless: each command names its node and --address reaches it.
 type cluster struct {
 	name, endpoint string
 	partial        bool
@@ -52,17 +52,18 @@ func loadCluster(f clusterFlags) (*cluster, error) {
 	return &cluster{partial: true}, nil
 }
 
-// loadInventory reads an inventory and the cluster its nodes' Cluster documents name.
+// loadInventory reads an inventory and the endpoint its nodes' Kubernetes documents name, which
+// every command refuses to act on when the nodes name different ones.
 func loadInventory(path string) (*cluster, error) {
 	inv, err := inventory.Load(path)
 	if err != nil {
 		return nil, err
 	}
-	name, endpoint, err := inv.Cluster()
+	endpoint, err := inv.Endpoint()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	return &cluster{name: name, endpoint: endpoint, inv: inv, configs: map[string]*inventory.NodeConfig{}}, nil
+	return &cluster{name: inv.Name, endpoint: endpoint, inv: inv, configs: map[string]*inventory.NodeConfig{}}, nil
 }
 
 // requireNodes refuses a partial cluster for a command that needs the nodes' config.

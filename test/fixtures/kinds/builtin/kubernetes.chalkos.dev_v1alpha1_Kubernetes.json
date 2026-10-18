@@ -67,6 +67,11 @@
           "minLength": 1,
           "type": "string"
         },
+        "endpoint": {
+          "description": "URL of the cluster's Kubernetes API server, which every node of the cluster names alike.",
+          "pattern": "^(?:https://.+)$",
+          "type": "string"
+        },
         "extraArgs": {
           "additionalProperties": false,
           "properties": {
@@ -256,6 +261,9 @@
           "type": "array"
         }
       },
+      "required": [
+        "endpoint"
+      ],
       "type": "object"
     }
   },

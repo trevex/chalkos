@@ -24,14 +24,9 @@ import (
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
-// baseConfig is a node of the test server's image, a node of the cluster lab without
-// Kubernetes, with a Demo whose token is a secret.
+// baseConfig is a node of the test server's image without Kubernetes, with a Demo whose token is a
+// secret.
 const baseConfig = `
-apiVersion: chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: lab}
-spec: {}
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -188,7 +183,7 @@ func TestApplyConfig(t *testing.T) {
 	}
 	var id identity.Identity
 	if err := json.Unmarshal([]byte(identityOf(t, s)), &id); err != nil ||
-		id.Hostname != "n1" || id.Cluster != "lab" || id.Platform != "metal" {
+		id.Hostname != "n1" || id.Platform != "metal" {
 		t.Errorf("identity on STATE = %+v, %v", id, err)
 	}
 	if got := readFile(t, filepath.Join(s.Loader.RunDir, "credentials", "demo", "demo.token")); got != "n3w" {
@@ -270,9 +265,9 @@ func TestApplyConfigTakesTheNodesNameFromItsCertificate(t *testing.T) {
 
 func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	s, r := configServer(t)
-	_, err := sendConfig(s, strings.Replace(baseConfig, "metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: http://lab}", 1))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `Cluster "lab"`) {
-		t.Fatalf("err = %v, want a refusal naming the Cluster", err)
+	_, err := sendConfig(s, strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: vda}}", 1))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `SystemDisk "system"`) {
+		t.Fatalf("err = %v, want a refusal naming the SystemDisk", err)
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v for a refused config", r.calls)
@@ -370,7 +365,7 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	  "watcher": {"kinds": [], "restart": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name"}},
 	  "starter": {"kinds": [], "restart": {"when": "\"Demo\" in changedKinds", "start": true}},
 	  "broken": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}},
-	  "idle": {"kinds": [], "restart": {"when": "\"Cluster\" in changedKinds"}}
+	  "idle": {"kinds": [], "restart": {"when": "\"Host\" in changedKinds"}}
 	}`)
 	r.rules = append(r.rules,
 		rule{prefix: "systemctl show --property=ActiveState --value stopped", out: "inactive\n"},
