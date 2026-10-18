@@ -58,6 +58,14 @@ Recovery keys derived before this release took the cluster's name as well. A nod
 keeps the key it was enrolled with, which `chalkctl recovery-key` no longer prints: unlock it with
 the old key you noted, or reinstall the node to enroll the new one.
 
+Such a node also refuses a delivery that adds an encrypted volume, because chalkctl sends the new
+key and the node checks it against the existing fallback keyslot. chalkctl never reads a recovery
+key from `--password-file`, so to add the volume without a reinstall, set `encryption.fallback` to
+`password` in the node's [`SystemDisk`](../reference/kinds.md#systemdisk) document and pass the
+old key in a file with `--password-file`. The new volume is enrolled with the old key too. Keep
+`password` in the config until you reinstall the node, which enrolls the new key and lets the
+config go back to `recovery-key`. Without the old key, only a reinstall adds the volume.
+
 The prompt comes back at every boot until PCR 7 matches the sealed keys again. chalkos has no
 command that seals the keys to the new PCR 7, so there are two ways out:
 

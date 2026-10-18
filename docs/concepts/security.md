@@ -126,7 +126,13 @@ chalkctl recovery-key <node>
 Recovery keys derived before this release took the cluster's name as well, so they differ from
 the ones derived now. A node installed before keeps the key it was enrolled with, which
 `chalkctl recovery-key` no longer prints; such a node unlocks with that old key until it is
-reinstalled.
+reinstalled. A delivery that adds an encrypted volume to such a node is refused, because chalkctl
+sends the new key and the node checks it against the existing fallback keyslot. chalkctl derives
+a recovery key and never reads one from `--password-file`, so the delivery goes through only when
+the node's [`SystemDisk`](../reference/kinds.md#systemdisk) document sets `encryption.fallback` to
+`password` and `--password-file` holds the old key. The new volume is then enrolled with the old
+key as well, and the config keeps `password` until a reinstall of the node enrolls the new key.
+Without the old key, only a reinstall adds the volume.
 
 [Storage and encryption](storage.md) describes the keyslots and what happens on a node whose
 fallback is `none`.
