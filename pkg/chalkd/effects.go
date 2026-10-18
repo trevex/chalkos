@@ -156,7 +156,9 @@ func (s *Server) due(ctx context.Context, e *effects, secret string) (reload, re
 }
 
 // consume carries out what the consumers' rules ask of a delivery once it is applied. With stored
-// set the delivery wrote the running slot, whose documents it writes for the consumers first. It
+// set the delivery wrote the running slot, whose documents it writes for the consumers first; so
+// does a delivery that compares with a baseline, since the one that failed part way may have
+// written the slot and not its documents, which the consumers would restart on otherwise. It
 // returns the restarted units and the warnings of rules that could not be evaluated. Once every
 // effect is taken it removes the baseline; until then a retry compares with it and takes them
 // again.
@@ -165,7 +167,7 @@ func (s *Server) consume(ctx context.Context, e *effects, stored bool, secret st
 	if err != nil {
 		return nil, nil, err
 	}
-	if stored {
+	if stored || e.oldHashed {
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What chalkd's loops read, the slot, the cluster file and the share, is in place.
 			s.actOnSelf(slices.Contains(reload, selfUnit), slices.Contains(restart, selfUnit))

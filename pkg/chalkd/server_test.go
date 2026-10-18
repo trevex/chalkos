@@ -52,6 +52,8 @@ type fakeRunner struct {
 	inputs map[string]string
 	// quiet holds the command lines run without their standard error reaching the log.
 	quiet map[string]bool
+	// before, when set, sees each command line before the command is answered.
+	before func(line string)
 }
 
 func (f *fakeRunner) RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
@@ -89,6 +91,9 @@ func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, ar
 	defer f.mu.Unlock()
 	line := strings.Join(append([]string{name}, args...), " ")
 	f.calls = append(f.calls, line)
+	if f.before != nil {
+		f.before(line)
+	}
 	if env != nil {
 		if f.envs == nil {
 			f.envs = map[string][]string{}

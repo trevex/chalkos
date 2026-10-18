@@ -1368,6 +1368,68 @@ func TestApplyConfigActsOnTheLoopsWhenTheConsumersConfigFails(t *testing.T) {
 	}
 }
 
+// A share delivered alone after a slot whose documents could not be written for their consumers
+// writes them before it restarts the consumers the failed delivery changed, and keeps the
+// baseline while it cannot; once it is applied whole, a retry of the config restarts nothing.
+func TestApplyConfigWritesTheConsumersConfigForAShareAfterAFailure(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	// A file where demo's credentials go.
+	credentials := filepath.Join(s.Loader.RunDir, "credentials", "demo")
+	if err := os.RemoveAll(credentials); err != nil {
+		t.Fatal(err)
+	}
+	write(t, credentials, "")
+	next := strings.Replace(workerConfig, "token: s3cret", "token: n3w", 1)
+	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "write the config for its consumers") {
+		t.Fatalf("err = %v, want the consumers' config to fail", err)
+	}
+	share := testShare(t, k8s.KindWorker)
+	send := func() (*nodev1.ApplyConfigResponse, error) {
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	r.calls = nil
+	if _, err := send(); err == nil || !strings.Contains(err.Error(), "write the config for its consumers") {
+		t.Fatalf("err = %v, want the consumers' config to fail again", err)
+	}
+	if slices.Contains(r.calls, "systemctl try-restart demo") {
+		t.Errorf("ran %v, want demo left alone on the files from before", r.calls)
+	}
+	if _, err := os.Stat(s.Paths.EffectsBaseline); err != nil {
+		t.Fatalf("baseline after a share that failed: %v", err)
+	}
+	if err := os.Remove(credentials); err != nil {
+		t.Fatal(err)
+	}
+	var credential string
+	r.before = func(line string) {
+		if line == "systemctl try-restart demo" {
+			b, _ := os.ReadFile(filepath.Join(credentials, "demo.token"))
+			credential = string(b)
+		}
+	}
+	resp, err := send()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes", "demo", "kubelet"}) || credential != "n3w" {
+		t.Errorf("restarted %v, demo's credential %q when it restarted; want demo on the new one", resp.RestartedUnits, credential)
+	}
+	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("baseline after a delivery applied whole: %v", err)
+	}
+	r.before = nil
+	if resp, err = sendConfig(s, next); err != nil || len(resp.RestartedUnits) != 0 {
+		t.Errorf("the retry of the config restarted %v: %v", resp.GetRestartedUnits(), err)
+	}
+}
+
 // A cluster file that differs from the one the running slot's config gives, as one a boot whose
 // config loader failed left missing, restarts the kubelet too.
 func TestApplyConfigRestartsForAClusterFileThatDiffers(t *testing.T) {
