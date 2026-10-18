@@ -6,10 +6,10 @@ description: "How YAML config documents describe each node, how the inventory gi
 # Config and the inventory
 
 A node's [config](../reference/glossary.md#config) is the set of YAML documents that makes it this
-node: its name and type, the image it runs, its disks, network, time servers, Kubernetes settings
-and the values of [extensions](../reference/glossary.md#extension). The image is the same on many
-nodes; the config is what differs. An [inventory](../reference/glossary.md#inventory) names the
-cluster's nodes, the address [chalkctl](../reference/glossary.md#chalkctl) reaches each at and the
+node: its name and type, its disks, network, time servers, Kubernetes settings and the values of
+[extensions](../reference/glossary.md#extension). The image is the same on many nodes; the config
+is what differs. An [inventory](../reference/glossary.md#inventory) names the cluster's nodes, the
+address [chalkctl](../reference/glossary.md#chalkctl) reaches each at, the image each runs and the
 files whose documents form each node's config. chalkctl checks the config against the node's image
 and delivers it; [chalkd](../reference/glossary.md#chalkd) checks it again, keeps it on
 [STATE](../reference/glossary.md#state) for the image it is for and applies it at every boot of
@@ -33,13 +33,6 @@ spec:
   # cp1 on the lab network: the API server of the only control plane.
   endpoint: https://192.168.123.11:6443
 ---
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: node-kvm}
-spec:
-  # nix build .#node-kvm -o images/node-kvm puts the image here.
-  source: {directory: ../images/node-kvm}
----
 # Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
 # 10.96.0.0/12.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -48,8 +41,8 @@ metadata: {name: kubernetes}
 spec: {}
 ```
 
-Each node's own file names the node, the image it runs, its system disk and its address on the
-lab network:
+Each node's own file names the node and its type, its system disk and its address on the lab
+network:
 
 ```yaml title="nodes/cp1.yaml"
 apiVersion: chalkos.dev/v1alpha1
@@ -57,7 +50,6 @@ kind: Node
 metadata: {name: cp1}
 spec:
   type: controlplane
-  imageRef: node-kvm
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -88,8 +80,7 @@ schemas.
 | Kind | Group | Per node | What it holds |
 | --- | --- | --- | --- |
 | [`Cluster`](../reference/kinds.md#cluster) | `chalkos.dev` | exactly one | The cluster's name and the URL of its API server |
-| [`Node`](../reference/kinds.md#node) | `chalkos.dev` | exactly one | The node's type, `controlplane` or `worker`, the `Image` it runs and its hostname |
-| [`Image`](../reference/kinds.md#image) | `chalkos.dev` | one or more | The [image directory](../reference/glossary.md#image-directory) of a build |
+| [`Node`](../reference/kinds.md#node) | `chalkos.dev` | exactly one | The node's type, `controlplane` or `worker`, and its hostname |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
@@ -141,13 +132,18 @@ names. It stays on the operator's machine and never reaches a node. The lab temp
 reads:
 
 ```yaml title="chalkos.yaml"
-# The lab's nodes, the address chalkctl reaches each at on the lab network, and their config
-# files: every node gets cluster/, each its own file in nodes/. chalklab reaches the nodes at
-# ports it forwards instead, through the inventory it writes into the lab's state directory.
+# The lab's nodes, the address chalkctl reaches each at on the lab network, the image they run
+# and their config files: every node gets cluster/, each its own file in nodes/. chalklab reaches
+# the nodes at ports it forwards instead, through the inventory it writes into the lab's state
+# directory.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: lab}
 spec:
+  images:
+    # nix build .#node-kvm -o images/node-kvm puts the image here.
+    node-kvm: {source: {directory: images/node-kvm}}
+  image: node-kvm
   files: [cluster/*.yaml]
   nodes:
     cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
@@ -156,10 +152,14 @@ spec:
 
 [Config kinds](../reference/kinds.md#inventory) lists its fields:
 
+- `spec.images` are the images the nodes run, by name, and `spec.image` the image of every node
+  that names none, as [How does the inventory name images?](#how-does-the-inventory-name-images)
+  describes.
 - `spec.files` are the files every node gets.
-- `spec.groups.<group>.files` are the files of a group, which a node joins by naming the group in
-  its `groups`.
-- `spec.nodes.<node>` is each node by name, with its `address`, its `groups` and its own `files`.
+- `spec.groups.<group>` is a group, which a node joins by naming the group in its `groups`: its
+  `files` and its `image`.
+- `spec.nodes.<node>` is each node by name, with its `address`, its `image`, its `groups` and its
+  own `files`.
 
 A node's set is the documents of the shared files, then of its groups' files in the order the node
 names the groups, then of its own files. Paths are relative to the inventory's directory, and a
@@ -176,6 +176,9 @@ apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}
 spec:
+  images:
+    node-metal: {source: {directory: images/node-metal}}
+  image: node-metal
   files: [cluster/*.yaml]
   groups:
     gpu: {files: [groups/gpu.yaml]}
@@ -204,11 +207,10 @@ names, else the one `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`.
 
 A node's set is valid when:
 
-- it holds exactly one `Cluster`, one `Node` and one `SystemDisk`, and the `Image` that the `Node`'s
-  `spec.imageRef` names;
-- every other kind appears at most once, unless the kind allows several (`Image`, `Secret`,
-  `Volume`, `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared
-  with `multiple = true`);
+- it holds exactly one `Cluster`, one `Node` and one `SystemDisk`;
+- every other kind appears at most once, unless the kind allows several (`Secret`, `Volume`,
+  `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with
+  `multiple = true`);
 - every document's `apiVersion` and `kind` is one the node's image declares;
 - no two documents of a kind share a `metadata.name`;
 - every `secretRef` names a `Secret` in the set and a key that `Secret` holds;
@@ -222,20 +224,47 @@ does not fit its disk, an extra flag that would override one chalkos sets. Every
 inventory must hold a `Cluster` of the same name and endpoint, because each node takes the
 cluster's name and endpoint from its own `Cluster`.
 
-## How does an Image document name an image?
+## How does the inventory name images?
 
-An `Image` document names the [image directory](../reference/glossary.md#image-directory) of one
-build in `spec.source.directory`, relative to the file that holds the document; a symbolic link to
-that file does not move the directory it resolves against. The directory is what `nix build` writes
+The inventory's `spec.images` names each image the nodes run and the
+[image directory](../reference/glossary.md#image-directory) of its build in
+`source.directory`, relative to the inventory's directory. The directory is what `nix build` writes
 for one variant on one platform, such as `images/node-kvm` in the lab template. Its `metadata.json`
 names the image's variant, platform and [root hash](../reference/glossary.md#root-hash), and its
 `schemas/` holds the schemas of the kinds the image accepts.
 
-The root hash stays on the operator's machine. chalkctl reads it from `metadata.json` when it needs
-it and never puts it into the config it delivers, so a new build of an image changes no node's
-config, and an [upgrade](../reference/glossary.md#upgrade) needs no `apply-config` after it. The
-`Node`'s `spec.imageRef` names the `Image` by its `metadata.name`, so a shared file may hold the
-`Image` of every variant and each node picks its own.
+A node runs one image, named in one of three places:
+
+- the node's own `image`, which wins;
+- else the `image` of its groups. Two groups of the node that name different images refuse the
+  inventory;
+- else `spec.image`.
+
+A node that gets no image from any of them is refused, as is an `image` that names no image of
+`spec.images`. This inventory runs every node on `node-metal` and the GPU workers of the group
+`gpu` on `gpu-metal`:
+
+```yaml title="chalkos.yaml"
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: homelab}
+spec:
+  images:
+    node-metal: {source: {directory: images/node-metal}}
+    gpu-metal: {source: {directory: images/gpu-metal}}
+  image: node-metal
+  files: [cluster/*.yaml]
+  groups:
+    gpu: {image: gpu-metal, files: [groups/gpu.yaml]}
+  nodes:
+    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
+    w2: {address: 10.0.0.22, groups: [gpu], files: [nodes/w2.yaml]}
+```
+
+The image stays out of the node's config. chalkctl reads the root hash from `metadata.json` when
+it needs it and never puts it, or the image's name, into the config it delivers, so a new build of
+an image or a node's move to another image changes no node's config, and an
+[upgrade](../reference/glossary.md#upgrade) needs no `apply-config` after it.
 
 ## How is config checked?
 
@@ -243,9 +272,9 @@ Config is checked twice, against the schemas of the image it is for, so an error
 anything reaches a node and a node still never stores config its image does not accept.
 
 chalkctl checks first. [`chalkctl validate`](../reference/cli/chalkctl_validate.md) builds the set
-of each node, or of the nodes it names, and checks it against the schemas in the image directory
-its `Image` names. It reaches no node and needs neither a secrets file nor a client file, so it
-runs in CI or before a commit:
+of each node, or of the nodes it names, and checks it against the schemas in the directory of the
+node's image in the inventory. It reaches no node and needs neither a secrets file nor a client
+file, so it runs in CI or before a commit:
 
 ```sh
 chalkctl validate
@@ -255,8 +284,8 @@ It prints a line for each node whose config is valid and names each error, and i
 whose `SystemDisk` leaves STATE unencrypted. For the lab template:
 
 ```text
-cp1: valid for the Image node-kvm (node on kvm, root hash 1044caccb099), config 7080d0996b95ef02999ede113b5fe02895fc1a3b87749fb5ad4a3ab28a105986
-w1: valid for the Image node-kvm (node on kvm, root hash 1044caccb099), config 0505d3467f8f64576cd78a10ed1c82f904e09f9229d588f402f630d2458f3861
+cp1: valid for the image node-kvm (node on kvm, root hash 1044caccb099), config 7080d0996b95ef02999ede113b5fe02895fc1a3b87749fb5ad4a3ab28a105986
+w1: valid for the image node-kvm (node on kvm, root hash 1044caccb099), config 0505d3467f8f64576cd78a10ed1c82f904e09f9229d588f402f630d2458f3861
 ```
 
 Each line names the image's variant and platform, the start of its root hash, and the hash of the
@@ -264,12 +293,12 @@ node's config that [`chalkctl status`](../reference/cli/chalkctl_status.md) comp
 that deliver config run the same check first, each against the image the config is for:
 
 - [`chalkctl install`](../reference/cli/chalkctl_install.md) against the image it installs: the
-  image directory the `Image` names, or the one `--image` gives;
+  directory of the node's image in the inventory, or the one `--image` gives;
 - [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) against the image the node
   runs, whose schemas and [contract](../reference/glossary.md#contract) the node returns through the
   [Contract](../reference/api.md#method-contract) method, refusing an image of another
-  [platform](../reference/glossary.md#platform) than the node's `Image`. With `--staged`, against
-  the image the node's `Image` names, which the staged image is;
+  [platform](../reference/glossary.md#platform) than the node's image in the inventory. With
+  `--staged`, against the node's image in the inventory, which the staged image is;
 - [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) against the image each node gets,
   before it drains any node.
 
@@ -465,9 +494,9 @@ gives it, in two ways:
   `not the inventory's; chalkctl apply-config <node> delivers it`.
   With an image staged, status compares the staged slot's config the same way, and one that
   differs shows `not the inventory's; chalkctl apply-config --staged <node> delivers it`.
-- The image: chalkctl compares the root hash of the store the node booted with the root hash in
-  the `metadata.json` of the directory its `Image` names, and names both when they differ, or
-  says when the image is installed and waits for the node's next boot.
+- The image: chalkctl compares the root hash of the store the node booted with the root hash in the
+  `metadata.json` of the directory of its image in the inventory, and names both when they differ,
+  or says when the image is installed and waits for the node's next boot.
 
 The hash covers the documents as the files give them, before chalkd fills in defaults, so a new
 image with other defaults does not change it.

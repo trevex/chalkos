@@ -11,7 +11,7 @@ Create a lab of the cluster's nodes, install them and bootstrap the cluster
 
 Creates the lab of a lab file and brings the cluster up. chalklab reads the lab file
 (chalklab.yaml, or --lab) and the inventory it names; each node the lab file names runs the kvm
-image its Image document names. chalklab creates the lab's Secure Boot keys and enrolls them in
+image the inventory names for it. chalklab creates the lab's Secure Boot keys and enrolls them in
 the VMs' firmware, copies each node's image and signs the copy with them, gives each node a disk
 backed by it and the empty disks the lab file adds, and starts the supervisor, which runs a TPM
 and a VM per node. Each VM's NIC on the lab network gets the MAC address the lab file gives it,

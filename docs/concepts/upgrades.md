@@ -44,19 +44,19 @@ same command again continues.
 
 ## Where does chalkctl get the images?
 
-Without `--image`, each node gets the image its `Image` document names: chalkctl asks every
-node what it runs, refuses a node that runs another platform than that image, and opens each
-image directory once for the nodes that share it. Control planes and workers that name one
-`Image` get the same image:
+Without `--image`, each node gets the image the inventory names for it: chalkctl asks every node
+what it runs, refuses a node that runs another platform than that image, and opens each image
+directory once for the nodes that share it. Control planes and workers of one image in the
+inventory get the same image:
 
 ```sh
 chalkctl upgrade
 ```
 
-The image in an `Image`'s directory must be the build whose root hash its `metadata.json` names,
-which `chalkctl status` compares the nodes with; rebuild the image or link its directory again
-otherwise. The root hash stays on the operator's machine, so a new build changes no node's
-config, and an upgrade needs no `chalkctl apply-config` after it.
+The image in the directory of an inventory's image must be the build whose root hash its
+`metadata.json` names, which `chalkctl status` compares the nodes with; rebuild the image or link
+its directory again otherwise. The root hash stays on the operator's machine, so a new build changes
+no node's config, and an upgrade needs no `chalkctl apply-config` after it.
 
 With `--image`, it takes a prebuilt image, a raw image with `repart-output.json` beside it or an
 image directory, and installs it on the nodes that run the image's variant, or on the nodes
@@ -328,7 +328,7 @@ is installed like any other image.
 
 | Flag | Effect |
 | --- | --- |
-| `--image` | Install a prebuilt image on the nodes that run its variant and platform, or on the nodes `--nodes` names, instead of each node's Image |
+| `--image` | Install a prebuilt image on the nodes that run its variant and platform, or on the nodes `--nodes` names, instead of each node's image in the inventory |
 | `--nodes` | Upgrade only the named nodes |
 | `--max-unavailable` | Upgrade this many workers and nodes without Kubernetes at once, 1 by default |
 | `--allow-downtime` | Upgrade one or two control planes, whose etcd and API server are down while one reboots |

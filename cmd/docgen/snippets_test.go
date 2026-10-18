@@ -80,7 +80,7 @@ func TestCodeBlocks(t *testing.T) {
 	if blocks[0].title != "nodes/w1.yaml" || blocks[0].first != 6 {
 		t.Errorf("first block: title %q, first line %d", blocks[0].title, blocks[0].first)
 	}
-	if blocks[1].lines[0] != "apiVersion: chalkos.dev/v1alpha1" || blocks[1].lines[4] != "  imageRf: node-metal" {
+	if blocks[1].lines[0] != "apiVersion: chalkos.dev/v1alpha1" || blocks[1].lines[4] != "  hostnme: node-metal" {
 		t.Errorf("indented block's lines: %q", blocks[1].lines)
 	}
 }

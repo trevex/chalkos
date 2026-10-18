@@ -1,10 +1,15 @@
-# The lab's nodes, the address chalkctl reaches each at on the lab network, and their config
-# files: every node gets cluster/, each its own file in nodes/. chalklab reaches the nodes at
-# ports it forwards instead, through the inventory it writes into the lab's state directory.
+# The lab's nodes, the address chalkctl reaches each at on the lab network, the image they run
+# and their config files: every node gets cluster/, each its own file in nodes/. chalklab reaches
+# the nodes at ports it forwards instead, through the inventory it writes into the lab's state
+# directory.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: lab}
 spec:
+  images:
+    # nix build .#node-kvm -o images/node-kvm puts the image here.
+    node-kvm: {source: {directory: images/node-kvm}}
+  image: node-kvm
   files: [cluster/*.yaml]
   nodes:
     cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}

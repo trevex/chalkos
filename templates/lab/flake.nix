@@ -20,8 +20,8 @@
       };
     in
     {
-      # nix build .#node-kvm -o images/node-kvm: the image where the Image document in
-      # cluster/cluster.yaml points.
+      # nix build .#node-kvm -o images/node-kvm: the image where the inventory, chalkos.yaml,
+      # points.
       packages.${system}.node-kvm = images.images.node-kvm;
 
       # nix develop: chalklab and chalkctl of the chalkos this flake pins, and kubectl.

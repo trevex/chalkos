@@ -130,7 +130,7 @@ spec:
 
 func TestIdentityRejects(t *testing.T) {
 	noKubernetes := strings.Replace(minimal, "spec: {}", `spec: {endpoint: "https://10.0.0.10:6443"}`, 1)
-	noType := strings.Replace(minimal, "spec: {type: worker, imageRef: metal}", "spec: {imageRef: metal}", 1) +
+	noType := strings.Replace(minimal, "spec: {type: worker}", "spec: {}", 1) +
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}\n"
 	for name, tc := range map[string]struct {
 		yaml   string
@@ -314,7 +314,7 @@ func TestKubeletLabels(t *testing.T) {
 // TestSwapVolumeWithoutKubernetes takes a swap volume on a node whose image runs no Kubernetes,
 // as no kubelet refuses it there.
 func TestSwapVolumeWithoutKubernetes(t *testing.T) {
-	s, err := parseSet(t, strings.Replace(minimal, "spec: {type: worker, imageRef: metal}", "spec: {imageRef: metal}", 1)+
+	s, err := parseSet(t, strings.Replace(minimal, "spec: {type: worker}", "spec: {}", 1)+
 		"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: swap}\nspec: {size: 4G, format: swap}\n")
 	if err != nil {
 		t.Fatal(err)
@@ -414,7 +414,7 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 		t.Errorf("seed = %s, want %s, the seed of n1", got, want)
 	}
 	// Node.spec.hostname still names the host; the Kubernetes node keeps the node's name.
-	named := strings.Replace(kube, "spec: {type: worker, imageRef: metal}", "spec: {type: worker, imageRef: metal, hostname: host1}", 1)
+	named := strings.Replace(kube, "spec: {type: worker}", "spec: {type: worker, hostname: host1}", 1)
 	s, err = NewSet(mustParse(t, named), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)

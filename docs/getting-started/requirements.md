@@ -70,7 +70,7 @@ The machine that runs chalkctl and kubectl:
 | Requirement | What chalkos needs |
 | --- | --- |
 | chalkctl and kubectl | From the chalkos flake's packages or the `lab` template's development shell. chalkctl is a static binary and needs no Nix to run, so it can be copied to a machine without Nix, an airgapped one included. |
-| Files | The inventory, `chalkos.yaml`, the YAML files it names, and the [image directories](../reference/glossary.md#image-directory) the nodes' `Image` documents point at, for installs, upgrades and `chalkctl validate`. |
+| Files | The inventory, `chalkos.yaml`, the YAML files it names, and the [image directories](../reference/glossary.md#image-directory) the inventory names for the nodes, for installs, upgrades and `chalkctl validate`. |
 | age identity | To decrypt `secrets.age`: an age key in `~/.config/chalkos/age.key`, or the SSH key `~/.ssh/id_ed25519` or `~/.ssh/id_rsa` the file was encrypted to, or a file named with `--identity`. A [client file](../reference/glossary.md#client-file) needs none. |
 | Network | Reach to each node's TCP 50000 and to the API server's TCP 6443. |
 

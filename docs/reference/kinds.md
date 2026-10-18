@@ -29,17 +29,6 @@ A node's config holds at most one.
 | --- | --- | --- | --- |
 | `spec.endpoint` | string or null | `null` | URL of the cluster's Kubernetes API server. |
 
-## Image { #image }
-
-`apiVersion: chalkos.dev/v1alpha1`
-
-A node's config may hold several, each with a name of its own.
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `spec.source` | object | required |  |
-| `spec.source.directory` | string | required | Directory of an image build, as nix build makes it; a relative path is relative to the directory of the file that holds the document, as the inventory names that file, without following a symlink to it. |
-
 ## Node { #node }
 
 `apiVersion: chalkos.dev/v1alpha1`
@@ -51,7 +40,6 @@ It has a [change rule](../concepts/rules.md).
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.hostname` | string or null | `null` | Host name set at boot; null uses the node's name. |
-| `spec.imageRef` | string | required | Name of the Image document of the image the node runs. |
 | `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes; null on an image without Kubernetes. |
 
 ## Secret { #secret }
@@ -357,17 +345,23 @@ A node's config holds at most one.
 
 `apiVersion: chalkctl.chalkos.dev/v1alpha1`
 
-The nodes of a cluster, where chalkctl reaches each, and the config files each gets. Paths are relative to the inventory's directory; globs are allowed.
+The nodes of a cluster, where chalkctl reaches each, the image each runs and the config files each gets. Paths are relative to the inventory's directory; globs are allowed in file lists.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.files` | list of string | none | Config files every node gets. |
 | `spec.groups` | map of object | none |  |
 | `spec.groups.<name>.files` | list of string | none | Config files the group's nodes get. |
+| `spec.groups.<name>.image` | string | none | The image of the group's nodes that name none, over spec.image. A node in groups that name different images is refused. |
+| `spec.image` | string | none | The image of every node that names none and whose groups name none. |
+| `spec.images` | map of object | none | The images the nodes run, by name. |
+| `spec.images.<name>.source` | object | required | Where the image comes from. |
+| `spec.images.<name>.source.directory` | string | required | Directory of an image build as nix build makes it, holding its metadata.json; a relative directory is relative to the inventory's directory. |
 | `spec.nodes` | map of object | none |  |
 | `spec.nodes.<name>.address` | string | none | Where chalkctl reaches the node's chalkd: a host or host:port. |
 | `spec.nodes.<name>.files` | list of string | none | The node's own config files. |
-| `spec.nodes.<name>.groups` | list of string | none | Groups whose files the node gets, in this order. |
+| `spec.nodes.<name>.groups` | list of string | none | Groups whose files the node gets, in this order; the node runs their image unless it names its own. |
+| `spec.nodes.<name>.image` | string | none | The image the node runs, over that of its groups and spec.image. |
 
 ## Lab { #lab }
 

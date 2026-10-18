@@ -1,9 +1,13 @@
-# The cluster's nodes, the address chalkctl reaches each at, and their config files: every node
-# gets cluster/, each its own file in nodes/.
+# The cluster's nodes, the address chalkctl reaches each at, the image they run and their config
+# files: every node gets cluster/, each its own file in nodes/.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}
 spec:
+  images:
+    # nix build .#node-metal -o images/node-metal puts the image here.
+    node-metal: {source: {directory: images/node-metal}}
+  image: node-metal
   files: [cluster/*.yaml]
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}

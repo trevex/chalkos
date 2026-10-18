@@ -1,5 +1,0 @@
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: storage-metal}
-spec:
-  source: {directory: ../images/storage-metal}

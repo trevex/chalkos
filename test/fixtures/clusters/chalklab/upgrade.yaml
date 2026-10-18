@@ -4,10 +4,12 @@ apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: chalklab}
 spec:
+  images:
+    test-upgrade-metal: {source: {directory: images/test-upgrade-metal}}
   files: [cluster/*.yaml]
   groups:
-    test-upgrade: {files: [groups/test-upgrade.yaml]}
+    test-upgrade: {image: test-upgrade-metal}
   nodes:
     chalklab:
       groups: [test-upgrade]
-      files: [nodes/chalklab/node-upgrade.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting.yaml, nodes/chalklab/farewell.yaml]
+      files: [nodes/chalklab/node.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting.yaml, nodes/chalklab/farewell.yaml]

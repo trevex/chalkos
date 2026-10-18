@@ -25,8 +25,8 @@ var singletons = []struct{ apiVersion, kind string }{
 
 // NewSet checks docs as a node's config against the image's schemas: each document is valid, its
 // kind is one the image accepts, kinds that are not multiple appear once, names are unique per
-// kind, Cluster, Node and SystemDisk are present, the Node's Image is in the set, and every
-// secretRef names a key of a Secret in the set.
+// kind, Cluster, Node and SystemDisk are present, and every secretRef names a key of a Secret in
+// the set.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {
@@ -61,14 +61,6 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 		}
 	}
 	SortDocuments(set.docs)
-	var node nodeSpec
-	n, _ := set.One("Node")
-	if err := n.decodeSpec(&node); err != nil {
-		return nil, err
-	}
-	if _, ok := set.get(CoreAPI, "Image", node.ImageRef); !ok {
-		return nil, fmt.Errorf("%s runs Image %q, which the config does not hold", n, node.ImageRef)
-	}
 	for _, d := range set.Of(CoreAPI, "Secret") {
 		var spec secretSpec
 		if err := d.decodeSpec(&spec); err != nil {
@@ -111,15 +103,6 @@ func (s *Set) One(kind string) (Document, bool) {
 			return docs[0], true
 		}
 		return Document{}, false
-	}
-	return Document{}, false
-}
-
-func (s *Set) get(apiVersion, kind, name string) (Document, bool) {
-	for _, d := range s.Of(apiVersion, kind) {
-		if d.Name == name {
-			return d, true
-		}
 	}
 	return Document{}, false
 }

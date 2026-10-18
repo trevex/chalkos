@@ -32,20 +32,20 @@ func testApp() (*app, *bytes.Buffer) {
 	}, &out
 }
 
-// writeLabFiles writes an inventory of cp1 and w1, whose Image node-kvm is images/node-kvm, and
-// m1, whose Image node-metal is a metal image, and the lab file given; it returns the lab file's
+// writeLabFiles writes an inventory of cp1 and w1, whose image node-kvm is images/node-kvm, and
+// m1, whose image node-metal is a metal image, and the lab file given; it returns the lab file's
 // path.
 func writeLabFiles(t *testing.T, dir, labFile string) string {
 	t.Helper()
 	files := map[string]string{
-		"chalkos.yaml": "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n  files: [cluster.yaml]\n  nodes:\n" +
-			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {files: [m1.yaml]}\n",
-		"cluster.yaml": "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n---\n" +
-			"apiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: node-kvm}\nspec: {source: {directory: images/node-kvm}}\n---\n" +
-			"apiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: node-metal}\nspec: {source: {directory: images/node-metal}}\n",
-		"cp1.yaml":      "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: cp1}\nspec: {type: controlplane, imageRef: node-kvm}\n",
-		"w1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: w1}\nspec: {type: worker, imageRef: node-kvm}\n",
-		"m1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: m1}\nspec: {type: worker, imageRef: node-metal}\n",
+		"chalkos.yaml": "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n" +
+			"  images:\n    node-kvm: {source: {directory: images/node-kvm}}\n    node-metal: {source: {directory: images/node-metal}}\n  image: node-kvm\n" +
+			"  files: [cluster.yaml]\n  nodes:\n" +
+			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {image: node-metal, files: [m1.yaml]}\n",
+		"cluster.yaml":  "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n",
+		"cp1.yaml":      "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: cp1}\nspec: {type: controlplane}\n",
+		"w1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: w1}\nspec: {type: worker}\n",
+		"m1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: m1}\nspec: {type: worker}\n",
 		"chalklab.yaml": labFile,
 	}
 	for _, p := range []string{"kvm", "metal"} {
@@ -75,9 +75,9 @@ spec:
 `
 
 // TestLabNodes runs the nodes of the lab file, each with its MAC address and the machine its type
-// gives it unless the lab file says otherwise, from the image directory of its Image; it refuses a
-// node of a metal image, two nodes of one MAC address, a multicast or broadcast MAC address, and a
-// node the inventory lacks.
+// gives it unless the lab file says otherwise, from the directory of its image in the inventory; it
+// refuses a node of a metal image, two nodes of one MAC address, a multicast or broadcast MAC
+// address, and a node the inventory lacks.
 func TestLabNodes(t *testing.T) {
 	dir := t.TempDir()
 	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
@@ -103,7 +103,7 @@ func TestLabNodes(t *testing.T) {
 		t.Errorf("images = %v", images)
 	}
 	for name, tc := range map[string]struct{ lab, want string }{
-		"a metal image":     {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "chalklab runs kvm images, but the Image node-metal of m1 is built for metal"},
+		"a metal image":     {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "chalklab runs kvm images, but the image node-metal of m1 is built for metal"},
 		"one MAC address":   {strings.Replace(testLab, "52:54:00:7b:00:12", "52:54:00:7b:00:11", 1), "the same MAC address 52:54:00:7b:00:11"},
 		"a multicast MAC":   {strings.Replace(testLab, "52:54:00:7b:00:12", "01:00:5e:00:00:12", 1), "the MAC address 01:00:5e:00:00:12 of w1 is a multicast address"},
 		"the broadcast MAC": {strings.Replace(testLab, "52:54:00:7b:00:12", "ff:ff:ff:ff:ff:ff", 1), "the MAC address ff:ff:ff:ff:ff:ff of w1 is a multicast address"},
@@ -149,8 +149,8 @@ func TestTheLabFiles(t *testing.T) {
 }
 
 // checkLabFile reads the lab file at labFile below a copy of src, with a kvm image where each of
-// its nodes' Image points, and checks that each node's MAC address is the one its Network
-// documents match.
+// its nodes' image in the inventory points, and checks that each node's MAC address is the one its
+// Network documents match.
 func checkLabFile(t *testing.T, src, labFile string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -658,8 +658,8 @@ the lab of lab runs cp1, w1; next:
   chalkctl status cp1 --inventory /state/lab/chalkos.yaml
   chalklab status
   chalklab destroy
-The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with
-the lab's db key, or with --image of an image chalklab sign signed:
+The lab's inventory names unsigned images, which the lab's firmware refuses: upgrade with the
+lab's db key, or with --image of an image chalklab sign signed:
   chalkctl upgrade --inventory /state/lab/chalkos.yaml --allow-downtime \
     --sign-key /state/lab/keys/db.key --sign-cert /state/lab/keys/db.crt
 `

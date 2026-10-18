@@ -7,7 +7,7 @@ apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: w1}
 spec:
-  imageRef: node-metal
+  hostname: node-metal
 ```
 
 - A block in a list, indented, with a misspelled field:
@@ -17,7 +17,7 @@ spec:
     kind: Node
     metadata: {name: w2}
     spec:
-      imageRf: node-metal
+      hostnme: node-metal
     ```
 
 A kind no image declares, and a Kubernetes object, which is not checked:
@@ -38,7 +38,7 @@ A fragment, which is not checked:
 
 ```yaml
 spec:
-  imageRf: node-metal
+  hostnme: node-metal
 ```
 
 An extension's kind, whose schema refuses the field:
@@ -81,12 +81,12 @@ Two documents, the second with a misspelled field, and a syntax error on a block
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: w4}
-spec: {imageRef: node-metal}
+spec: {hostname: node-metal}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: w5}
-spec: {imageRf: node-metal}
+spec: {hostnme: node-metal}
 ```
 
 ```yaml

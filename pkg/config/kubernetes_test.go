@@ -80,7 +80,7 @@ func TestClusterRejects(t *testing.T) {
 		"no Kubernetes": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1), "no Kubernetes"},
 		"no endpoint": {minimal + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n",
 			"has no endpoint"},
-		"no type": {strings.Replace(strings.Replace(minimal, "type: worker, ", "", 1), "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
+		"no type": {strings.Replace(strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1), "spec: {type: worker}", "spec: {}", 1) +
 			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n", "has no type"},
 		"overlapping ranges": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
 			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {podCIDRs: {ipv4: 10.96.0.0/16}}\n",

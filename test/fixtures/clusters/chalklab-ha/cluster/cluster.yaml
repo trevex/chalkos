@@ -4,12 +4,6 @@ metadata: {name: chalklab-ha}
 spec:
   endpoint: https://[fd00:100::10]:6443
 ---
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: k8s-metal}
-spec:
-  source: {directory: ../images/k8s-metal}
----
 apiVersion: time.chalkos.dev/v1alpha1
 kind: TimeSync
 metadata: {name: time}

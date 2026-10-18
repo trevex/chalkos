@@ -37,11 +37,6 @@
           "default": null,
           "description": "Host name set at boot; null uses the node's name."
         },
-        "imageRef": {
-          "description": "Name of the Image document of the image the node runs.",
-          "minLength": 1,
-          "type": "string"
-        },
         "type": {
           "anyOf": [
             {
@@ -58,9 +53,6 @@
           "description": "What the node is in Kubernetes; null on an image without Kubernetes."
         }
       },
-      "required": [
-        "imageRef"
-      ],
       "type": "object"
     }
   },

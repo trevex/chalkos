@@ -23,25 +23,23 @@ type NodeConfig struct {
 	// Type is the Node document's spec.type, empty without one, and Hostname its spec.hostname,
 	// empty for the node's name.
 	Type, Hostname string
-	// ImageName is the name of the Image document the Node names, and ImageDir the directory its
-	// source names. A relative source is resolved against the directory of the file that holds
-	// the Image, as the inventory names that file: a symlink to the file is not followed, so a
-	// shared file linked into several directories points each at its own images.
+	// ImageName is the name of the image the inventory gives the node, and ImageDir that image's
+	// directory, absolute.
 	ImageName, ImageDir string
 	// Image is ImageDir's metadata.json, once Resolve read it. It stays on the operator's machine:
 	// the documents chalkctl delivers carry no root hash.
 	Image *schema.Metadata
 }
 
-// Node builds a node's config from its files: their documents, of which no two share a kind and
-// a name, with exactly one Node, named as the inventory names the node, and the Image it names.
+// Node builds a node's config from its files and the inventory's image of it: their documents,
+// of which no two share a kind and a name, with exactly one Node, named as the inventory names
+// the node.
 func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	files, err := inv.Files(name)
 	if err != nil {
 		return nil, err
 	}
 	var docs []config.Document
-	var sources []string
 	seen := map[string]string{}
 	for _, f := range files {
 		read, err := inv.read(f)
@@ -58,10 +56,13 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 			}
 			seen[key] = f
 			docs = append(docs, d)
-			sources = append(sources, f)
 		}
 	}
-	c := &NodeConfig{Name: name}
+	imageName, imageDir, err := inv.Image(name)
+	if err != nil {
+		return nil, err
+	}
+	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: imageDir}
 	var node *config.Document
 	for i := range docs {
 		if docs[i].APIVersion != config.CoreAPI || docs[i].Kind != "Node" {
@@ -81,26 +82,11 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	spec, _ := node.Object["spec"].(map[string]any)
 	c.Type, _ = spec["type"].(string)
 	c.Hostname, _ = spec["hostname"].(string)
-	ref, _ := spec["imageRef"].(string)
-	for i, d := range docs {
+	for _, d := range docs {
 		if c.Type != identity.KindControlPlane && d.APIVersion == config.KubernetesAPI && d.Kind == "Addon" {
 			continue
 		}
-		if d.APIVersion == config.CoreAPI && d.Kind == "Image" && d.Name == ref {
-			dir, err := sourceDirectory(d)
-			if err != nil {
-				return nil, fmt.Errorf("node %s: %w", name, err)
-			}
-			// The file's directory as named, not where a symlink to it points.
-			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(filepath.Dir(sources[i]), dir)
-			}
-			c.ImageName, c.ImageDir = ref, filepath.Clean(dir)
-		}
 		c.Documents = append(c.Documents, d)
-	}
-	if c.ImageName == "" {
-		return nil, fmt.Errorf("node %s runs the Image %q, which its files do not hold", name, ref)
 	}
 	return c, nil
 }
@@ -124,17 +110,6 @@ func cloneValue(v any) any {
 	return v
 }
 
-// sourceDirectory is the directory an Image document's source names.
-func sourceDirectory(d config.Document) (string, error) {
-	spec, _ := d.Object["spec"].(map[string]any)
-	source, _ := spec["source"].(map[string]any)
-	dir, _ := source["directory"].(string)
-	if dir == "" {
-		return "", fmt.Errorf("its Image %q names no source directory", d.Name)
-	}
-	return dir, nil
-}
-
 // rootHash is a store's dm-verity root hash as metadata.json writes it.
 var rootHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -153,17 +128,17 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	md, err := schema.ReadMetadata(c.ImageDir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s has no metadata.json; build the image or link its directory there", c.ImageName, c.Name, c.ImageDir)
+		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s has no metadata.json; build the image or link its directory there", c.ImageName, c.Name, c.ImageDir)
 	case err != nil:
-		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %w", c.ImageName, c.Name, err)
+		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %w", c.ImageName, c.Name, err)
 	}
 	switch {
 	case md.RootHash == "":
-		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names no root hash", c.ImageName, c.Name, file)
+		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names no root hash", c.ImageName, c.Name, file)
 	case !rootHash.MatchString(md.RootHash):
-		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names the root hash %q, which is not 64 lower-case hex digits", c.ImageName, c.Name, file, md.RootHash)
+		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names the root hash %q, which is not 64 lower-case hex digits", c.ImageName, c.Name, file, md.RootHash)
 	case md.Platform == "":
-		return schema.Metadata{}, fmt.Errorf("the Image %q of node %s: %s names no platform", c.ImageName, c.Name, file)
+		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names no platform", c.ImageName, c.Name, file)
 	}
 	c.Image = &md
 	return md, nil

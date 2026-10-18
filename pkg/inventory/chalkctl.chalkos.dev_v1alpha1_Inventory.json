@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Inventory",
-  "description": "The nodes of a cluster, where chalkctl reaches each, and the config files each gets. Paths are relative to the inventory's directory; globs are allowed.",
+  "description": "The nodes of a cluster, where chalkctl reaches each, the image each runs and the config files each gets. Paths are relative to the inventory's directory; globs are allowed in file lists.",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "spec"],
@@ -20,6 +20,35 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "images": {
+          "type": "object",
+          "description": "The images the nodes run, by name.",
+          "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source"],
+            "properties": {
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["directory"],
+                "description": "Where the image comes from.",
+                "properties": {
+                  "directory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Directory of an image build as nix build makes it, holding its metadata.json; a relative directory is relative to the inventory's directory."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "image": {
+          "$ref": "#/$defs/image",
+          "description": "The image of every node that names none and whose groups name none."
+        },
         "files": { "$ref": "#/$defs/files", "description": "Config files every node gets." },
         "groups": {
           "type": "object",
@@ -28,6 +57,10 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "image": {
+                "$ref": "#/$defs/image",
+                "description": "The image of the group's nodes that name none, over spec.image. A node in groups that name different images is refused."
+              },
               "files": { "$ref": "#/$defs/files", "description": "Config files the group's nodes get." }
             }
           }
@@ -44,10 +77,14 @@
                 "minLength": 1,
                 "description": "Where chalkctl reaches the node's chalkd: a host or host:port."
               },
+              "image": {
+                "$ref": "#/$defs/image",
+                "description": "The image the node runs, over that of its groups and spec.image."
+              },
               "groups": {
                 "type": "array",
                 "items": { "type": "string", "minLength": 1 },
-                "description": "Groups whose files the node gets, in this order."
+                "description": "Groups whose files the node gets, in this order; the node runs their image unless it names its own."
               },
               "files": { "$ref": "#/$defs/files", "description": "The node's own config files." }
             }
@@ -57,7 +94,8 @@
     }
   },
   "$defs": {
-    "files": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+    "files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "image": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" }
   },
   "x-chalkos-kind": {
     "group": "chalkctl.chalkos.dev",

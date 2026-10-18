@@ -38,8 +38,8 @@ for bare metal, with an extension that adds a config kind:
       };
     in
     {
-      # nix build .#node-metal -o images/node-metal: the image where the Image document in
-      # cluster/cluster.yaml points.
+      # nix build .#node-metal -o images/node-metal: the image where the inventory, chalkos.yaml,
+      # points.
       packages.x86_64-linux.node-metal = images.images.node-metal;
     };
 }
@@ -72,8 +72,8 @@ its name. `mkImages` returns three attribute sets:
 The flake pins the chalkos version in `flake.lock`, so its images change only when the lock file or
 the flake's own modules do. Nix is needed only to build images:
 [chalkctl](../reference/glossary.md#chalkctl) and [chalklab](../reference/glossary.md#chalklab)
-never evaluate the flake. A node's [`Image`](../reference/kinds.md#image) document names the
-directory a build was linked to, so the machine that runs chalkctl needs the directory and no Nix.
+never evaluate the flake. The [inventory](../reference/kinds.md#inventory) names the directory a
+node's build was linked to, so the machine that runs chalkctl needs the directory and no Nix.
 
 ## What is a variant?
 

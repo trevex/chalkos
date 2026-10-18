@@ -3,9 +3,11 @@ apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: chalklab}
 spec:
+  images:
+    test-metal: {source: {directory: images/test-metal}}
   files: [cluster/*.yaml]
   groups:
-    test: {files: [groups/test.yaml]}
+    test: {image: test-metal}
   nodes:
     chalklab:
       groups: [test]

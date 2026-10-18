@@ -55,10 +55,10 @@ checks a path against the kind's options when the image is evaluated. See
 ## chalkctl { #chalkctl }
 
 The command-line client of chalkos. It reads a cluster from an [inventory](#inventory) and the
-[image directories](#image-directory) its nodes' `Image` documents name, installs, upgrades and
-operates nodes through [chalkd](#chalkd), and issues certificates from the
-[secrets file](#secrets-file). It never builds images or runs Nix. See
-[its commands](cli/chalkctl.md) and [Architecture](../concepts/architecture.md).
+[image directories](#image-directory) it names for the nodes, installs, upgrades and operates nodes
+through [chalkd](#chalkd), and issues certificates from the [secrets file](#secrets-file). It never
+builds images or runs Nix. See [its commands](cli/chalkctl.md) and
+[Architecture](../concepts/architecture.md).
 
 ## chalkd { #chalkd }
 
@@ -233,14 +233,13 @@ See [The image](../concepts/image.md).
 
 ## Image directory { #image-directory }
 
-The build output of an [image](#image), `images.<variant>-<platform>` of `chalkos.lib.mkImages`:
-the raw image, systemd-repart's report of its partitions, the definitions of the system region,
+The build output of an [image](#image), `images.<variant>-<platform>` of `chalkos.lib.mkImages`: the
+raw image, systemd-repart's report of its partitions, the definitions of the system region,
 `metadata.json`, which names the image's variant, platform, [root hash](#root-hash),
-[provenance](#provenance) and kinds,
-the kinds' JSON Schemas in `schemas/` and, on an image with Kubernetes, what it fixes about
-Kubernetes in `image.json`. A node's `Image` document names it in
-`spec.source.directory`, and chalkctl reads it to validate config, sign, install and upgrade. See
-[Image and partition layout](image-layout.md#outputs-of-an-image-build).
+[provenance](#provenance) and kinds, the kinds' JSON Schemas in `schemas/` and, on an image with
+Kubernetes, what it fixes about Kubernetes in `image.json`. The [inventory](#inventory) names it in
+an image's `source.directory`, and chalkctl reads it to validate config, sign, install and upgrade.
+See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
 ## Installer { #installer }
 
@@ -251,12 +250,15 @@ platform. See [Architecture](../concepts/architecture.md).
 
 ## Inventory { #inventory }
 
-The file that tells chalkctl about a cluster: each node by name, the address chalkctl reaches it
-at, and the YAML files whose documents form its [config](#config), as files every node gets,
-files of named groups and each node's own. chalkctl reads `chalkos.yaml` in the current directory,
-or the file `--inventory` names. It stays on the operator's machine and names no secrets. See
-[Config and the inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes)
-and its fields in [Config kinds](kinds.md#inventory).
+The file that tells chalkctl about a cluster: each node by name, the address chalkctl reaches it at,
+the [image](#image) it runs, and the YAML files whose documents form its [config](#config), as files
+every node gets, files of named groups and each node's own. The inventory names each image by its
+[image directory](#image-directory), relative to the inventory's directory; a node runs its own
+`image`, else that of its groups, else the inventory's `spec.image`. chalkctl reads `chalkos.yaml`
+in the current directory, or the file `--inventory` names. It stays on the operator's machine and
+names no secrets. See [Config and the
+inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes) and its fields in
+[Config kinds](kinds.md#inventory).
 
 ## Kind { #kind }
 
@@ -300,10 +302,10 @@ variant's or platform's modules. See [The image](../concepts/image.md).
 
 ## Node { #node }
 
-A machine of the cluster, named in the [inventory](#inventory) and described by its `Node`
-document, which names the `Image` it runs and whether it is a [control plane](#control-plane) or a
-[worker](#worker). It is installed from that image's [image directory](#image-directory). See
-[Config and the inventory](../concepts/config.md).
+A machine of the cluster, named in the [inventory](#inventory), which also names the [image](#image)
+it runs, and described by its `Node` document, which says whether it is a [control
+plane](#control-plane) or a [worker](#worker). It is installed from that image's [image
+directory](#image-directory). See [Config and the inventory](../concepts/config.md).
 
 ## Node CA { #node-ca }
 

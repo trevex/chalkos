@@ -201,9 +201,9 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 }
 
 // labNodes are the VMs of the lab file's nodes, in name order, with each node's image directory:
-// its Image's, which must hold a kvm image. A VM gets the MAC address the lab file gives it, and
-// the machine the lab file gives it or else its type's: 3072 MiB for a control plane, 2048 MiB
-// otherwise, 2 CPUs and one disk of 16G.
+// that of its image in the inventory, which must hold a kvm image. A VM gets the MAC address the
+// lab file gives it, and the machine the lab file gives it or else its type's: 3072 MiB for a
+// control plane, 2048 MiB otherwise, 2 CPUs and one disk of 16G.
 func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.LabNode, map[string]string, error) {
 	images := map[string]string{}
 	macs := map[string]string{}
@@ -219,7 +219,7 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.LabNode, map[string]
 			return nil, nil, err
 		}
 		if md.Platform != platform {
-			return nil, nil, fmt.Errorf("chalklab runs %s images, but the Image %s of %s is built for %s", platform, nc.ImageName, name, md.Platform)
+			return nil, nil, fmt.Errorf("chalklab runs %s images, but the image %s of %s is built for %s", platform, nc.ImageName, name, md.Platform)
 		}
 		hw, err := net.ParseMAC(m.MAC)
 		if err != nil {
@@ -427,7 +427,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 
 // printNext prints the commands that use the lab: the kubeconfig when a control plane was
 // bootstrapped, and the client file as $CHALKOSCONFIG, which chalkctl reads when no --config or
-// --secrets is given, so the commands after it name neither. The lab's Image documents name the
+// --secrets is given, so the commands after it name neither. The lab's inventory names the
 // unsigned builds, of which the lab signed copies, so an upgrade signs the images again.
 func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 	inventory := filepath.Join(dir, inventoryFile)
@@ -453,7 +453,7 @@ func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 	if controlPlanes == 1 || controlPlanes == 2 {
 		downtime = " --allow-downtime"
 	}
-	fmt.Fprintf(a.stdout, "The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with\nthe lab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s%s \\\n    --sign-key %s --sign-cert %s\n",
+	fmt.Fprintf(a.stdout, "The lab's inventory names unsigned images, which the lab's firmware refuses: upgrade with the\nlab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s%s \\\n    --sign-key %s --sign-cert %s\n",
 		inventory, downtime, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
 }
 

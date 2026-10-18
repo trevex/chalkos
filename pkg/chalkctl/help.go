@@ -5,14 +5,14 @@ package chalkctl
 
 const rootLong = `chalkctl signs, installs and operates the nodes of a chalkos cluster. It reads the cluster from
 an inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
-address chalkctl reaches it at and the config files it gets, and talks to chalkd on each node
-over mutual TLS. chalkctl never builds images: each node's Image document names the directory of
-an image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
+address chalkctl reaches it at, the image it runs and the config files it gets, and talks to chalkd
+on each node over mutual TLS. chalkctl never builds images: the inventory names the directory of
+each image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
 or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
-reader role. Each command's help says which of the two it needs. The secrets file is read only
-where --secrets names it, as a path or as - for standard input, encrypted with age or not; the
-inventory names none. Commands that accept both take --config or --secrets, not both, else the
-client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
+reader role. Each command's help says which of the two it needs. The secrets file is read only where
+--secrets names it, as a path or as - for standard input, encrypted with age or not; the inventory
+names none. Commands that accept both take --config or --secrets, not both, else the client file
+$CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.`
@@ -158,7 +158,7 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
   chalkctl rotate kubernetes-ca --secrets secrets.age --resume
   chalkctl rotate kubernetes-ca --secrets secrets.age --finish`
 
-const upgradeExample = `  # Upgrade the whole cluster, each node to the image its Image names.
+const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
 
   # Upgrade the nodes that run an image's variant, two at a time, with a prebuilt image, which
@@ -181,13 +181,13 @@ pinned to that fingerprint.
 
 chalkctl sends the node its config, the documents of the files the inventory gives it, checked
 against the schemas of the image it installs, a node certificate, the OS CA, the secret of its
-encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node,
-its Kubernetes share. A node that runs its image already installs in place. A node that runs the
-installer gets the image as well: --image, or the directory the node's Image names, signed for
-Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the disk the
-node's SystemDisk names: a disk on which blkid finds no signature, or one holding an unfinished
-install of the node, which it continues; any other disk only with --wipe-disk. The node reboots
-into the installed image. The command needs the secrets file.`
+encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
+Kubernetes share. A node that runs its image already installs in place. A node that runs the
+installer gets the image as well: --image, or the directory of the node's image in the inventory,
+signed for Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the
+disk the node's SystemDisk names: a disk on which blkid finds no signature, or one holding an
+unfinished install of the node, which it continues; any other disk only with --wipe-disk. The node
+reboots into the installed image. The command needs the secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --secrets secrets.age \
@@ -213,22 +213,22 @@ const disksExample = `  # The disks of an installed node.
 
 const applyConfigLong = `Delivers a node's config to the installed node: the documents of the files the inventory gives
 it. chalkctl first asks the node for the contract of the image it runs: its platform, schemas and
-image.json. It refuses an image of another platform than the node's Image, and checks the
-documents as the node does, with the image's change rules that read no facts about the node
-against the config the node serves. The node replaces its config as a whole, and applies
-additive storage changes (a new volume, for example) while it runs. When the image's rules
-refuse a change, the node refuses the whole config, applies none of it, and names the remedy:
-chalkctl storage reset recreates a volume in place, once the disk it lives on is plugged in; a
-change that would recreate VAR, a removed volume or a move to another disk takes a reinstall; a
-changed disk reference that finds no disk needs fixing or its disk plugged in, and one that
-cannot otherwise be resolved, as it finds more than one disk or names something other than a
-whole disk, needs fixing. Otherwise the node restarts the units that read what changed, and
-chalkctl prints the changes and the units. --kubernetes-share also delivers a new Kubernetes
-share: for example a worker's new kubelet certificate.
+image.json. It refuses an image of another platform than the node's image in the inventory, and
+checks the documents as the node does, with the image's change rules that read no facts about the
+node against the config the node serves. The node replaces its config as a whole, and applies
+additive storage changes (a new volume, for example) while it runs. When the image's rules refuse a
+change, the node refuses the whole config, applies none of it, and names the remedy: chalkctl
+storage reset recreates a volume in place, once the disk it lives on is plugged in; a change that
+would recreate VAR, a removed volume or a move to another disk takes a reinstall; a changed disk
+reference that finds no disk needs fixing or its disk plugged in, and one that cannot otherwise be
+resolved, as it finds more than one disk or names something other than a whole disk, needs fixing.
+Otherwise the node restarts the units that read what changed, and chalkctl prints the changes and
+the units. --kubernetes-share also delivers a new Kubernetes share: for example a worker's new
+kubelet certificate.
 
 Each image on a node keeps its own config. --staged delivers the config for the image staged to
 boot next, as an upgrade with --no-reboot leaves it, instead of the running image: chalkctl checks
-it against the image the node's Image names, and the node checks it against the staged image and
+it against the node's image in the inventory, and the node checks it against the staged image and
 keeps it for that image. Its storage changes count against the node's storage as the running
 image's do, so a new volume is created at once and every image's boot mounts it, also the running
 image's, whose config must name it the next time it is delivered; nothing restarts. Without
@@ -263,10 +263,10 @@ const statusLong = `Shows an installed node's status: the config it runs and whe
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
 healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
-with the journal of the boot that failed; whether its store is the image its Image names; its
-volumes and their state; Kubernetes; the certificates it serves and when they expire; the CAs it
-trusts; its clock; and the units that failed. The command needs a reader client file or the secrets
-file.`
+with the journal of the boot that failed; whether its store is the image the inventory names for
+it; its volumes and their state; Kubernetes; the certificates it serves and when they expire; the
+CAs it trusts; its clock; and the units that failed. The command needs a reader client file or
+the secrets file.`
 
 const statusExample = `  chalkctl status cp1
 
@@ -296,8 +296,8 @@ const recoveryKeyExample = `  chalkctl recovery-key w1`
 
 const upgradeLong = `Installs on each node a new image: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image each node (every node of the inventory, or those --nodes names) gets the image its
-Image document names, which must be the build whose root hash its directory's metadata.json
+Without --image each node (every node of the inventory, or those --nodes names) gets the image the
+inventory names for it, which must be the build whose root hash its directory's metadata.json
 names, as status compares nodes with it: rebuild the image or link its directory again
 otherwise. A node that runs on another platform than its image stops the run before any node is
 sent anything. With --image the nodes that run the image's variant get it, or those --nodes
@@ -353,7 +353,7 @@ the secrets file.`
 
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the files the inventory gives the node form its set, every document is
-checked against the schemas of the image directory the node's Image names, and the set is
+checked against the schemas of the directory of the node's image in the inventory, and the set is
 translated as the node translates it. The image's change rules that read no facts about a node
 run too, without a running config to compare with: the rules of kinds and the rules of fields
 that do not compare with the running value. It prints a line for each node whose config is valid

@@ -3,7 +3,6 @@ kind: Node
 metadata: {name: cp1}
 spec:
   type: controlplane
-  imageRef: node-kvm
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk

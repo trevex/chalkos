@@ -16,8 +16,8 @@
       };
     in
     {
-      # nix build .#node-metal -o images/node-metal: the image where the Image document in
-      # cluster/cluster.yaml points.
+      # nix build .#node-metal -o images/node-metal: the image where the inventory, chalkos.yaml,
+      # points.
       packages.x86_64-linux.node-metal = images.images.node-metal;
     };
 }

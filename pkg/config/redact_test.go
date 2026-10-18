@@ -28,7 +28,7 @@ spec:
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: n1}
-spec: {imageRef: metal}
+spec: {hostname: h1}
 `
 
 func sum(s string) string {
@@ -50,7 +50,7 @@ func TestRedact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"token":"` + sum("s3cret") + `"`, `"k":"` + sum("dg==") + `"`, `"p":"` + sum("plain") + `"`, `"k":"visible"`, `"k":"shown"`, `"k":"` + sum("bGlzdA==") + `"`, `"p":"` + sum("hidden") + `"`, `"k":"` + sum("deep") + `"`, `"imageRef":"metal"`} {
+	for _, want := range []string{`"token":"` + sum("s3cret") + `"`, `"k":"` + sum("dg==") + `"`, `"p":"` + sum("plain") + `"`, `"k":"visible"`, `"k":"shown"`, `"k":"` + sum("bGlzdA==") + `"`, `"p":"` + sum("hidden") + `"`, `"k":"` + sum("deep") + `"`, `"hostname":"h1"`} {
 		if !strings.Contains(string(text), want) {
 			t.Errorf("redacted %s, want it to hold %s", text, want)
 		}
@@ -90,7 +90,7 @@ func TestRedacted(t *testing.T) {
 		{1, "spec.objects.3.stringData.p", true},
 		{1, "spec.objects.4.items.0.data.k", true},
 		{1, "spec.objects.4.items.0.metadata.name", false},
-		{2, "spec.imageRef", false},
+		{2, "spec.hostname", false},
 	} {
 		if got := Redacted(docs[tc.doc], strings.Split(tc.path, ".")); got != tc.want {
 			t.Errorf("Redacted(%s, %s) = %v, want %v", docs[tc.doc], tc.path, got, tc.want)

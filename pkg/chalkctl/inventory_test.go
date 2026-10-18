@@ -22,33 +22,30 @@ import (
 )
 
 // testInventoryYAML is the inventory of the test cluster lab: n1 at 10.0.0.11, of cluster.yaml
-// and nodes/n1.yaml.
+// and nodes/n1.yaml, running the image test-metal, the directory images/test-metal.
 const testInventoryYAML = `apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: lab}
 spec:
+  images:
+    test-metal: {source: {directory: images/test-metal}}
+  image: test-metal
   files: [cluster.yaml]
   nodes:
     n1: {address: 10.0.0.11, files: [nodes/n1.yaml]}
 `
 
-// testClusterYAML is the Cluster lab and the Image test-metal, the directory images/test-metal.
+// testClusterYAML is the Cluster lab.
 const testClusterYAML = `apiVersion: chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: lab}
 spec:
   endpoint: https://10.0.0.10:6443
----
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: test-metal}
-spec:
-  source: {directory: images/test-metal}
 `
 
 // n1's documents: its Node, its system disk of serial chalk-target and its static address.
 const (
-	n1Node       = "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n1}\nspec: {imageRef: test-metal}\n"
+	n1Node       = "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n1}\nspec: {}\n"
 	n1SystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}}\n"
 	n1Network    = "apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.11/24]}}\n"
 )
@@ -84,7 +81,7 @@ func writeImageDir(t *testing.T, dir, variant, platform, rootHash string, kubern
 	copySchemas(t, filepath.Join(dir, "schemas"))
 }
 
-// TestValidate checks each node's config against the schemas of its Image's directory, without a
+// TestValidate checks each node's config against the schemas of its image's directory, without a
 // secrets file or a node, and names every node whose config is invalid.
 func TestValidate(t *testing.T) {
 	ta := newTestApp(t)
@@ -93,7 +90,7 @@ func TestValidate(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
-	if want := "n1: valid for the Image test-metal (test on metal, root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
+	if want := "n1: valid for the image test-metal (test on metal, root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", ta.stdout, want)
 	}
 	// n2's Network misspells a key.
@@ -152,8 +149,8 @@ func TestValidateWarnsOfUnencryptedState(t *testing.T) {
 func TestValidateTheCluster(t *testing.T) {
 	dir := t.TempDir()
 	path := writeInventory(t, dir)
-	// cluster.yaml keeps the Image alone; n1 and n2 each get a Cluster of another endpoint.
-	writeFile(t, filepath.Join(dir, "cluster.yaml"), strings.SplitN(testClusterYAML, "---\n", 2)[1])
+	// cluster.yaml holds nothing; n1 and n2 each get a Cluster of another endpoint.
+	writeFile(t, filepath.Join(dir, "cluster.yaml"), "")
 	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://%s:6443\"}\n"
 	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join([]string{n1Node, n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.10")}, "---\n"))
 	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{strings.Replace(n1Node, "{name: n1}", "{name: n2}", 1), n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
@@ -165,7 +162,7 @@ func TestValidateTheCluster(t *testing.T) {
 }
 
 // TestValidateKubernetes checks a Kubernetes node's config against its image's image.json as the
-// node does, and names a node whose Image directory holds no image.
+// node does, and names a node whose image directory holds no image.
 func TestValidateKubernetes(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeNodes(t, ta.dir, []testNode{{"cp1", identity.KindControlPlane, "k8s"}, {"n1", "", "plain"}}, nil)
@@ -175,7 +172,7 @@ func TestValidateKubernetes(t *testing.T) {
 		!strings.Contains(err.Error(), "images/plain-metal has no metadata.json; build the image or link its directory there") {
 		t.Errorf("validate without n1's image = %v", err)
 	}
-	if !strings.Contains(ta.stdout.String(), "cp1: valid for the Image k8s-metal (k8s on metal") {
+	if !strings.Contains(ta.stdout.String(), "cp1: valid for the image k8s-metal (k8s on metal") {
 		t.Errorf("stdout = %q, want cp1 valid", ta.stdout)
 	}
 	// A mirror over plain HTTP is refused where the node reads the cluster's Kubernetes settings.
@@ -187,22 +184,22 @@ func TestValidateKubernetes(t *testing.T) {
 	}
 }
 
-// testNode is a node of a test inventory: its name, Kubernetes kind and the variant of its Image.
+// testNode is a node of a test inventory: its name, Kubernetes kind and the variant of its image.
 type testNode struct{ name, kind, variant string }
 
 // writeNodes writes an inventory of the cluster lab with the nodes, the i-th at 10.0.0.<11+i> on
-// metal with the Image <variant>-metal, whose directory images gives by variant, else
+// metal with the image <variant>-metal, whose directory images gives by variant, else
 // images/<variant>-metal below dir. A node of a kind gets a Kubernetes document. It returns the
 // inventory's path.
 func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]string) string {
 	t.Helper()
-	cluster := []string{"apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://10.0.0.10:6443\"}\n"}
+	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://10.0.0.10:6443\"}\n"
 	variants := map[string]bool{}
-	inventory := "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n  files: [cluster.yaml]\n  nodes:\n"
+	var defined, listed string
 	for i, n := range nodes {
-		node := fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: %s}\nspec: {imageRef: %s-metal", n.name, n.variant)
+		node := fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: %s}\nspec: {", n.name)
 		if n.kind != "" {
-			node += ", type: " + n.kind
+			node += "type: " + n.kind
 		}
 		docs := []string{node + "}\n", n1SystemDisk,
 			fmt.Sprintf("apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.%d/24]}}\n", 11+i)}
@@ -210,18 +207,18 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 			docs = append(docs, kubernetesDoc)
 		}
 		writeFile(t, filepath.Join(dir, "nodes", n.name+".yaml"), strings.Join(docs, "---\n"))
-		inventory += fmt.Sprintf("    %s: {address: 10.0.0.%d, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.name)
+		listed += fmt.Sprintf("    %s: {address: 10.0.0.%d, image: %s-metal, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.variant, n.name)
 		if !variants[n.variant] {
 			variants[n.variant] = true
 			image := images[n.variant]
 			if image == "" {
 				image = filepath.Join(dir, "images", n.variant+"-metal")
 			}
-			cluster = append(cluster, fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: %s-metal}\nspec:\n  source: {directory: %q}\n", n.variant, image))
+			defined += fmt.Sprintf("    %s-metal: {source: {directory: %q}}\n", n.variant, image)
 		}
 	}
-	writeFile(t, filepath.Join(dir, "cluster.yaml"), strings.Join(cluster, "---\n"))
-	writeFile(t, filepath.Join(dir, "chalkos.yaml"), inventory)
+	writeFile(t, filepath.Join(dir, "cluster.yaml"), cluster)
+	writeFile(t, filepath.Join(dir, "chalkos.yaml"), "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n  images:\n"+defined+"  files: [cluster.yaml]\n  nodes:\n"+listed)
 	return filepath.Join(dir, "chalkos.yaml")
 }
 
@@ -247,7 +244,7 @@ func inventoryVersion(t *testing.T, path string) string {
 // address.
 func TestInstallFromTheInventory(t *testing.T) {
 	ta := newTestApp(t)
-	path := writeInventory(t, ta.dir, strings.Replace(n1Node, "{imageRef: test-metal}", "{imageRef: test-metal, hostname: n1.lab}", 1), n1SystemDisk, n1Network)
+	path := writeInventory(t, ta.dir, strings.Replace(n1Node, "spec: {}", "spec: {hostname: n1.lab}", 1), n1SystemDisk, n1Network)
 	s := maintenanceNode()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
@@ -259,8 +256,8 @@ func TestInstallFromTheInventory(t *testing.T) {
 		t.Fatalf("install request config = %+v, want the inventory's", got.Config)
 	}
 	for _, d := range got.Config.Documents {
-		if _, ok := d.Object["spec"].(map[string]any)["rootHash"]; d.Kind == "Image" && ok {
-			t.Errorf("the node's Image names a root hash: %v", d.Object)
+		if _, ok := d.Object["spec"].(map[string]any)["rootHash"]; ok {
+			t.Errorf("%s names a root hash: %v", d, d.Object)
 		}
 	}
 	cert, err := pki.VerifyNode(string(got.NodeCertificate), string(got.NodeKey), ta.secrets.OSCA.Certificate, time.Now())
@@ -275,15 +272,15 @@ func TestInstallFromTheInventory(t *testing.T) {
 	}
 }
 
-// TestInstallTakesTheImageOfItsImageDocument sends the installer the image the node's Image names
-// when --image names none, and refuses an image directory whose metadata.json names another
-// build than its image.
-func TestInstallTakesTheImageOfItsImageDocument(t *testing.T) {
+// TestInstallTakesItsImageFromTheInventory sends the installer the image the inventory names for
+// the node when --image names none, and refuses an image directory whose metadata.json names
+// another build than its image.
+func TestInstallTakesItsImageFromTheInventory(t *testing.T) {
 	ta := newTestApp(t)
 	img := testUpgradeImage(t, "test", "0.1.0")
 	writeFile(t, filepath.Join(img, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	path := writeInventory(t, ta.dir)
-	writeFile(t, filepath.Join(ta.dir, "cluster.yaml"), strings.Replace(testClusterYAML, "directory: images/test-metal", "directory: "+img, 1))
+	writeFile(t, path, strings.Replace(testInventoryYAML, "directory: images/test-metal", "directory: "+img, 1))
 	s := maintenanceNode()
 	s.Installer = true
 	var got install.PartsRequest
@@ -308,7 +305,7 @@ func TestInstallTakesTheImageOfItsImageDocument(t *testing.T) {
 }
 
 // TestStatusComparesWithTheInventory reports whether a node runs the config the inventory gives
-// it, which a new build of its image leaves as it is, and the platform of the node's Image.
+// it, which a new build of its image leaves as it is, and the platform of the node's image.
 func TestStatusComparesWithTheInventory(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeInventory(t, ta.dir)
@@ -357,7 +354,7 @@ func TestImageLine(t *testing.T) {
 		t.Errorf("the line of the image the config names = %q", got)
 	}
 	got := c.imageLine("n1", &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xcd}, 32)}})
-	if !strings.Contains(got, "not that of the Image test-metal its config names, "+testRootHash) {
+	if !strings.Contains(got, "not that of the image test-metal the inventory names, "+testRootHash) {
 		t.Errorf("the line of another image = %q", got)
 	}
 }
@@ -469,14 +466,14 @@ func TestCommandsThatNeedAnInventory(t *testing.T) {
 		}
 	}
 	operator := ta.writeConfig(t, "alice", pki.RoleOperator, 24*time.Hour, time.Now())
-	if err := ta.run(context.Background(), []string{"upgrade", "--config", operator}); err == nil || !strings.Contains(err.Error(), "which only an inventory gives") {
+	if err := ta.run(context.Background(), []string{"upgrade", "--config", operator}); err == nil || !strings.Contains(err.Error(), "which needs an inventory") {
 		t.Errorf("upgrade without --image or an inventory = %v", err)
 	}
 }
 
-// TestImageLineOfAStagedImage advises a reboot to a node that has the image of its Image staged,
-// by its root hash; another image staged is no reason to reboot. It says why the store is not
-// compared when the Image's directory cannot be read.
+// TestImageLineOfAStagedImage advises a reboot to a node that has its image in the inventory
+// staged, by its root hash; another image staged is no reason to reboot. It says why the store is
+// not compared when the image's directory cannot be read.
 func TestImageLineOfAStagedImage(t *testing.T) {
 	dir := t.TempDir()
 	c, err := loadInventory(writeInventory(t, dir))
@@ -499,8 +496,8 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	if c, err = loadInventory(filepath.Join(dir, "chalkos.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.imageLine("n1", &nodev1.BootStatus{Running: running}); !strings.Contains(got, "its store is not compared with the image of its config: ") || !strings.Contains(got, "has no metadata.json") {
-		t.Errorf("the line without the Image's directory = %q", got)
+	if got := c.imageLine("n1", &nodev1.BootStatus{Running: running}); !strings.Contains(got, "its store is not compared with its image in the inventory: ") || !strings.Contains(got, "has no metadata.json") {
+		t.Errorf("the line without the image's directory = %q", got)
 	}
 }
 

@@ -18,13 +18,13 @@ pinned to that fingerprint.
 
 chalkctl sends the node its config, the documents of the files the inventory gives it, checked
 against the schemas of the image it installs, a node certificate, the OS CA, the secret of its
-encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node,
-its Kubernetes share. A node that runs its image already installs in place. A node that runs the
-installer gets the image as well: --image, or the directory the node's Image names, signed for
-Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the disk the
-node's SystemDisk names: a disk on which blkid finds no signature, or one holding an unfinished
-install of the node, which it continues; any other disk only with --wipe-disk. The node reboots
-into the installed image. The command needs the secrets file.
+encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
+Kubernetes share. A node that runs its image already installs in place. A node that runs the
+installer gets the image as well: --image, or the directory of the node's image in the inventory,
+signed for Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the
+disk the node's SystemDisk names: a disk on which blkid finds no signature, or one holding an
+unfinished install of the node, which it continues; any other disk only with --wipe-disk. The node
+reboots into the installed image. The command needs the secrets file.
 
 ```
 chalkctl install <node> [flags]
@@ -50,7 +50,7 @@ chalkctl install <node> [flags]
       --fingerprint string     SHA-256 fingerprint the node prints on its console in maintenance mode
   -h, --help                   help for install
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --image string           image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory the node's Image names)
+      --image string           image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory of the node's image in the inventory)
       --insecure               accept any certificate and print the node's fingerprint
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --password-file string   file holding the password of a node whose fallback is a password

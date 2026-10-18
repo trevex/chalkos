@@ -325,7 +325,7 @@ spec: {endpoint: "https://10.0.0.10:6443"}
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: w1}
-spec: {type: worker, imageRef: metal, hostname: null}
+spec: {type: worker, hostname: null}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes

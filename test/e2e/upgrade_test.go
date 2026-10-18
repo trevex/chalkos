@@ -46,7 +46,7 @@ func TestUpgrade(t *testing.T) {
 			"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt"), "--timeout", "10m")
 	}
 	upgraded := time.Now()
-	if out, err := upgrade("upgrade", "CHALKLAB_UPGRADE_IMAGE_DIR"); err != nil || !strings.Contains(out, `chalklab: config 2 added, 1 removed (Image "test-metal"), 1 changed`+"\n") ||
+	if out, err := upgrade("upgrade", "CHALKLAB_UPGRADE_IMAGE_DIR"); err != nil || !strings.Contains(out, `chalklab: config 1 added, 0 removed, 0 changed`+"\n") ||
 		!strings.Contains(out, "chalklab: installed "+next[:12]+", which boots next as chalkos_2+3.efi") ||
 		!strings.Contains(out, "upgraded 1 node to "+next[:12]) {
 		t.Fatalf("upgrade to %s: %v", next[:12], err)
@@ -70,7 +70,7 @@ func TestUpgrade(t *testing.T) {
 
 	failed := time.Now()
 	out, err := upgrade("base", "CHALKLAB_UNHEALTHY_IMAGE_DIR")
-	if err == nil || !strings.Contains(out, `chalklab: config 1 added, 2 removed (Image "test-upgrade-metal", Farewell "bye"), 1 changed`+"\n") ||
+	if err == nil || !strings.Contains(out, `chalklab: config 0 added, 1 removed (Farewell "bye"), 0 changed`+"\n") ||
 		!strings.Contains(out, "chalklab: installed "+bad[:12]+", which boots next as chalkos_3+1.efi") ||
 		!strings.Contains(out, "chalklab: upgrade to "+bad[:12]+" failed: rolled back to "+next[:12]) || !strings.Contains(out, "units failed: chalktest-broken.service") {
 		t.Fatalf("upgrade to %s: %v", bad[:12], err)

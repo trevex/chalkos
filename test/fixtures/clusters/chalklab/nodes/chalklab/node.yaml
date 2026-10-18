@@ -1,8 +1,7 @@
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: chalklab}
-spec:
-  imageRef: test-metal
+spec: {}
 ---
 # The token of the Greeting.
 apiVersion: chalkos.dev/v1alpha1

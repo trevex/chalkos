@@ -50,7 +50,7 @@ every variant shares and the variant's own, and builds each into an unsigned raw
 [image directory](../reference/glossary.md#image-directory). It also builds one installer, which
 installs images of every platform. mkImages takes no node, address or cluster setting; its only
 input of a cluster is the optional public part of its secrets, for the OS CA. So one image serves
-every node whose [`Image`](../reference/kinds.md#image) document names it, control planes and
+every node the [inventory](../reference/kinds.md#inventory) runs on it, control planes and
 [workers](../reference/glossary.md#worker) alike.
 [Variants and platforms](variants.md) explains variants, platforms and the order of their modules.
 
@@ -80,9 +80,9 @@ removing a volume or moving it to another disk takes a reinstall.
 ## What runs on the operator's machine?
 
 chalkctl reads the cluster from an inventory, `chalkos.yaml` in the current directory or the file
-`--inventory` names. The inventory names each node, the address chalkctl reaches it at and the
-YAML files of its config; each node's `Image` document names the image directory of its image,
-which chalkctl reads when a command needs the image. chalkctl never builds images or runs Nix.
+`--inventory` names. The inventory names each node, the address chalkctl reaches it at, the YAML
+files of its config and the image it runs, by the image directory of its build, which chalkctl
+reads when a command needs the image. chalkctl never builds images or runs Nix.
 Without an inventory, a command that only reaches a node works with a client file and
 `--address`. [Config and the inventory](config.md) describes the files.
 
@@ -98,7 +98,7 @@ chalkctl authenticates in one of two ways:
 
 chalklab runs the nodes a lab file names as QEMU virtual machines on one machine, each with
 [Secure Boot](../reference/glossary.md#secure-boot) and a [TPM](../reference/glossary.md#tpm).
-It never builds images: it copies the `kvm` image each node's `Image` document names, signs the
+It never builds images: it copies the `kvm` image the inventory names for each node, signs the
 copy with lab keys it enrols in the VMs' firmware, boots each node and installs it with chalkctl.
 A [lab](../reference/glossary.md#lab) is how the [quick start](../getting-started/index.md) runs.
 
@@ -210,7 +210,7 @@ VAR and the volumes, enrols the second keyslot of every encrypted volume unless 
 `none`, writes the config and certificates, gives the [ESP](../reference/glossary.md#esp) a random
 partition UUID and writes the `installed` marker.
 
-On a node that runs the installer, chalkctl also sends the image the node's `Image` document names,
+On a node that runs the installer, chalkctl also sends the image the inventory names for the node,
 or the one `--image` gives, in the same parts an upgrade sends, plus the boot loader. The sequence
 shows what the installer does with them.
 
@@ -267,8 +267,8 @@ chalkctl issued them at install. [Kubernetes on chalkos](kubernetes.md) describe
 ### Upgrades
 
 An upgrade replaces the whole image at once.
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) sends each node the image its `Image`
-document names, or the one `--image` gives, chalkd writes it into the inactive slot, and the node
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) sends each node the image the inventory
+names for it, or the one `--image` gives, chalkd writes it into the inactive slot, and the node
 boots it with [boot counting](../reference/glossary.md#boot-counting). If the new image does not
 become healthy within its tries, the node falls back to the image it ran before.
 [Upgrades](upgrades.md) and [Boot, health and rollback](boot-and-rollback.md) explain both halves.

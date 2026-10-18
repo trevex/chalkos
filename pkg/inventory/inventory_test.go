@@ -24,9 +24,13 @@ const homelab = `apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}
 spec:
+  images:
+    node-metal: {source: {directory: images/node-metal}}
+    node-gpu: {source: {directory: /srv/images/node-gpu}}
+  image: node-metal
   files: [cluster/*.yaml]
   groups:
-    gpu: {files: [gpu/*.yaml]}
+    gpu: {image: node-gpu, files: [gpu/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
     w1: {address: 10.0.0.21, groups: [gpu], files: [nodes/w1.yaml]}
@@ -45,6 +49,9 @@ func TestLoadMakesPathsAbsolute(t *testing.T) {
 	}
 	if got := inv.Spec.Files; !slices.Equal(got, []string{filepath.Join(dir, "cluster", "*.yaml")}) {
 		t.Errorf("files = %q", got)
+	}
+	if got := inv.Spec.Images["node-metal"].Source.Directory; got != filepath.Join(dir, "images", "node-metal") {
+		t.Errorf("the directory of node-metal = %s", got)
 	}
 	if got := inv.Spec.Groups["gpu"].Files; !slices.Equal(got, []string{filepath.Join(dir, "gpu", "*.yaml")}) {
 		t.Errorf("gpu's files = %q", got)

@@ -148,31 +148,30 @@ os-release. [`variants.<name>.kubernetes`](../reference/options.md#variantskuber
 by default, decides whether its images run Kubernetes; control planes and workers share one
 variant, and each node's `Node` document makes it one or the other.
 
-A node runs the image its `Node` document's `imageRef` names. Add an `Image` document for the new
-variant to `cluster/cluster.yaml`, which every node gets, beside the one for `node-metal`:
+A node runs the image the [inventory](../reference/kinds.md#inventory) names for it. Add the new
+variant's image to the inventory's `spec.images`, beside `node-metal`, and name it on the node
+that has the GPU, here `w1`:
 
-```yaml
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: gpu-metal}
+```yaml title="chalkos.yaml"
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: homelab}
 spec:
-  # nix build .#gpu-metal -o images/gpu-metal puts the image here.
-  source: {directory: ../images/gpu-metal}
+  images:
+    node-metal: {source: {directory: images/node-metal}}
+    # nix build .#gpu-metal -o images/gpu-metal puts the image here.
+    gpu-metal: {source: {directory: images/gpu-metal}}
+  image: node-metal
+  files: [cluster/*.yaml]
+  nodes:
+    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
+    w1: {address: 10.0.0.21, image: gpu-metal, files: [nodes/w1.yaml]}
 ```
 
-Then point the node that has the GPU at it, in its own file, here `nodes/w1.yaml`:
-
-```yaml title="nodes/w1.yaml"
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: w1}
-spec:
-  type: worker
-  imageRef: gpu-metal
-```
-
-The other documents of `nodes/w1.yaml` stay as they are. A node's config may hold several `Image`
-documents; chalkctl reads only the image directory of the one its `Node` names.
+A relative directory is relative to the inventory's directory. A node's own `image` wins, then
+the `image` of its groups, then `spec.image`; a node in two groups that name different images, or
+one that ends up with no image, makes chalkctl refuse the inventory. Several GPU nodes can share a
+group with `image: gpu-metal` instead. The node's config files stay as they are.
 
 ## Read a node's config in a unit
 
@@ -210,7 +209,7 @@ key or `*` for the values of an attribute set. Evaluating the image fails on a p
 does not have, and the message lists the fields at that point:
 
 ```text
-chalkos.kinds.Node.get: the path "spec.typ" does not follow the kind's options: spec has no field typ; its fields are hostname, imageRef, type
+chalkos.kinds.Node.get: the path "spec.typ" does not follow the kind's options: spec has no field typ; its fields are hostname, type
 ```
 
 The check covers the kind's options, not the documents. A document that leaves the path's field out,
@@ -473,8 +472,8 @@ with a release's `tag` passed too, `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`.
 
 ## Build the images and check the config
 
-Build each image where its `Image` document points, then check every node's config against the
-schemas of the image it names:
+Build each image where the inventory points, then check every node's config against the schemas
+of its image:
 
 ```sh
 nix build .#node-metal -o images/node-metal
@@ -483,14 +482,14 @@ chalkctl validate
 ```
 
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) reaches no node: it reads each
-node's files from the inventory and the schemas from the image directory its `Image` names, so a
+node's files from the inventory and the schemas from the directory of the node's image, so a
 `Rack` document on a node whose image lacks the kind, or a misspelled field, fails here.
 
 ## Roll the change out
 
 Upgrade the nodes with [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), which signs
 each image with the cluster's [db](../reference/glossary.md#db-and-dbx) key and gives each node
-the image its `Image` document names, `w1` the new `gpu-metal`:
+the image the inventory names for it, `w1` the new `gpu-metal`:
 
 ```sh
 chalkctl upgrade --sign-key=db.key --sign-cert=db.crt
@@ -505,8 +504,8 @@ boots with. A node may move to an image of another variant the same way.
 ## Check that it worked
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows the image each node booted,
-whether that boot was found healthy, whether it runs the image its `Image` names and the config
-the inventory gives it, and names failed units. The unit's journal shows what it read:
+whether that boot was found healthy, whether it runs the image and the config the inventory gives
+it, and names failed units. The unit's journal shows what it read:
 
 ```sh
 chalkctl status w1

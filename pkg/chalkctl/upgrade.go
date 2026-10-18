@@ -24,7 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// upgradeRun upgrades nodes to the image given, or to the images their Image documents name.
+// upgradeRun upgrades nodes to the image given, or to the images the inventory names for them.
 type upgradeRun struct {
 	a       *app
 	cluster *cluster
@@ -72,8 +72,8 @@ type upgradeNode struct {
 	secret string
 }
 
-// upgradeGroup is the nodes that get one image: the image given, or the one an Image directory
-// holds.
+// upgradeGroup is the nodes that get one image: the image given, or the one an image directory of
+// the inventory holds.
 type upgradeGroup struct {
 	// key tells groups apart: the image directory, or empty for the image given.
 	key, dir          string
@@ -108,7 +108,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 	f.secrets.register(fs)
 	fs.StringVar(&f.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
 	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
-	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default each node's Image's directory)")
+	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
 	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer, to check the images' signatures against before they are sent")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
@@ -158,7 +158,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 			return err
 		}
 	} else if c.inv == nil {
-		return errors.New("without --image each node gets the image its Image document names, which only an inventory gives; pass --image, or --inventory")
+		return errors.New("without --image each node gets the image the inventory names for it, which needs an inventory; pass --image, or --inventory")
 	}
 	r := &upgradeRun{
 		a: a, cluster: c, creds: creds, addresses: addresses,
@@ -440,13 +440,13 @@ func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoRespon
 	return info, st, err
 }
 
-// find picks the nodes to upgrade and groups them by the image they get. The nodes are those
-// named, or else every node of the inventory, or without one every node --address names; with an
-// image and no nodes named, those that run the image's variant. Without an image each node gets
-// the image its Image names, and the nodes of one image directory form a group. Every node is
-// asked what it runs before any is sent anything: one that runs another platform than its config's
-// image stops the run. With an image, a node on another platform is skipped and named; a named one
-// stops the run. A node may get an image of another variant than it runs, which is printed; the
+// find picks the nodes to upgrade and groups them by the image they get. The nodes are those named,
+// or else every node of the inventory, or without one every node --address names; with an image and
+// no nodes named, those that run the image's variant. Without an image each node gets the image the
+// inventory names for it, and the nodes of one image directory form a group. Every node is asked
+// what it runs before any is sent anything: one that runs another platform than its image in the
+// inventory stops the run. With an image, a node on another platform is skipped and named; a named
+// one stops the run. A node may get an image of another variant than it runs, which is printed; the
 // node checks the config it gets, or without one its own, against the image before the image
 // becomes the next boot.
 func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
@@ -478,7 +478,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		if err != nil {
 			return err
 		}
-		// Without an image a node gets its Image's, which must be built for the platform it runs.
+		// Without an image a node gets its image in the inventory, which must be built for the platform
+		// it runs.
 		if img == nil {
 			if err := c.samePlatform(name, info.Platform); err != nil {
 				return err
@@ -527,8 +528,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	// The control planes drain the nodes and keep etcd's quorum, so every node's type is read,
 	// also of nodes the run leaves alone. Loading the inventory read every node's files already,
 	// so a node whose files are broken stops every command, and this adds only a node whose
-	// documents do not form a Node of its name and its Image. Without an inventory, the nodes
-	// --address names that the run leaves alone are asked.
+	// documents do not form a Node of its name. Without an inventory, the nodes --address names
+	// that the run leaves alone are asked.
 	for _, name := range r.nodeNames() {
 		if _, probed := probedCPs[name]; c.partial && !probed {
 			_, st, err := r.probe(ctx, name)
@@ -563,7 +564,8 @@ func (r *upgradeRun) nodeNames() []string {
 	return r.cluster.nodeNames()
 }
 
-// groupOf is the group of the image a node gets: the image given, or the one its Image names.
+// groupOf is the group of the image a node gets: the image given, or the one the inventory
+// names for it.
 func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error) {
 	if img != nil {
 		return &upgradeGroup{variant: img.info.Variant(), platform: img.info.Platform(), image: img}, nil

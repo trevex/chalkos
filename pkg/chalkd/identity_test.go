@@ -88,8 +88,7 @@ func documentsOf(identity string) []config.Document {
 	v := sec.Volumes[storage.VarVolume]
 	docs := []config.Document{
 		doc(config.CoreAPI, "Cluster", "lab", map[string]any{"endpoint": nil}),
-		doc(config.CoreAPI, "Node", "n1", map[string]any{"type": nil, "imageRef": "metal", "hostname": nil}),
-		doc(config.CoreAPI, "Image", "metal", map[string]any{"source": map[string]any{"directory": "./images/metal"}}),
+		doc(config.CoreAPI, "Node", "n1", map[string]any{"type": nil, "hostname": nil}),
 		doc(config.StorageAPI, "SystemDisk", "system", map[string]any{
 			"disk":       ref(sec.Disks[storage.SystemDisk].Ref),
 			"encryption": map[string]any{"mode": sec.Encryption, "fallback": sec.Fallback},

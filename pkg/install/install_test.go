@@ -928,7 +928,7 @@ func TestInPlaceStoresConfig(t *testing.T) {
 	i := newTestInstaller(t, r, vda, vdb)
 	r.add(inPlaceRules(i)...)
 	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
-	docs, err := config.Parse(strings.NewReader("apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n1}\nspec: {imageRef: metal}\n"))
+	docs, err := config.Parse(strings.NewReader("apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n1}\nspec: {}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

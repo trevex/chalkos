@@ -2,7 +2,6 @@ apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: cp1}
 spec:
-  imageRef: k8s-kvm
   type: controlplane
 ---
 apiVersion: storage.chalkos.dev/v1alpha1

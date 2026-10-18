@@ -65,9 +65,9 @@ let
         touch $out
       '';
   testImage.CHALKLAB_IMAGE_DIR = "${chalkPkgs.test-image}";
-  # The image directories the e2e fixtures' Image documents point at, below
-  # test/fixtures/clusters, where the fixtures check links them. images.json there names, by
-  # where each points, the variable that names the image in the e2e tests, which read it too.
+  # The image directories the e2e fixtures' inventories name, below test/fixtures/clusters,
+  # where the fixtures check links them. images.json there names, by where each points, the
+  # variable that names the image in the e2e tests, which read it too.
   fixtureImages =
     let
       images = {
@@ -639,7 +639,7 @@ in
         node=/run/chalkos/config/chalkos.dev/Node/n1.json
         mkdir -p "$(dirname "$node")"
         node_type() {
-          printf '{"apiVersion":"chalkos.dev/v1alpha1","kind":"Node","metadata":{"name":"n1"},"spec":{"type":"%s","imageRef":"kvm"}}\n' "$1" >"$node"
+          printf '{"apiVersion":"chalkos.dev/v1alpha1","kind":"Node","metadata":{"name":"n1"},"spec":{"type":"%s"}}\n' "$1" >"$node"
         }
 
         closed "without the table"
@@ -1268,7 +1268,7 @@ in
       '';
 
   # Every node of the e2e fixtures has config its image accepts, as chalkctl validate checks it
-  # against the image directory its Image names.
+  # against the directory of its image in the inventory.
   fixtures = pkgs.runCommand "chalkos-fixtures" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''
     cp -r ${../test/fixtures/clusters} clusters
     chmod -R u+w clusters

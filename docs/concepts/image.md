@@ -9,7 +9,7 @@ An [image](../reference/glossary.md#image) is the whole operating system of a no
 raw disk image: systemd-boot, a [UKI](../reference/glossary.md#uki) with the kernel and initrd, and
 a read-only Nix [store](../reference/glossary.md#store). `chalkos.lib.mkImages` builds one per
 [variant](../reference/glossary.md#variant) and [platform](../reference/glossary.md#platform), and
-every node whose [`Image`](../reference/kinds.md#image) document names it boots the same bytes. One
+every node the [inventory](../reference/kinds.md#inventory) runs on it boots the same bytes. One
 signature on the UKI covers the whole store, so the firmware's signature check extends to every
 block the node reads, and an upgrade replaces all of it at once.
 
@@ -249,8 +249,8 @@ slot sizes it was installed with, and refuses a store that does not fit them.
 one variant on one platform, `images.<variant>-<platform>` of the flake's mkImages call. The lab
 template's flake exposes `images.node-kvm` as the package `node-kvm`, the image both its
 [control plane](../reference/glossary.md#control-plane) and its
-[worker](../reference/glossary.md#worker) boot, and its `Image` document names the directory the
-build is linked to:
+[worker](../reference/glossary.md#worker) boot, and its inventory names the directory the build is
+linked to:
 
 ```console
 $ nix build .#node-kvm -o images/node-kvm
@@ -272,7 +272,7 @@ schemas
 - `metadata.json`, `schemas` and `image.json` describe what the image is and what config it
   accepts, and `metadata.json` names the image's root hash and the revision and tag it was built
   from; `image.json` exists only on an image with Kubernetes. chalkctl reads them when it
-  validates, installs or upgrades a node whose `Image` names the directory.
+  validates, installs or upgrades a node whose image in the inventory is the directory.
   [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build) lists them.
 
 The image is unsigned, and the signing key never enters the Nix store. chalkctl signs at the

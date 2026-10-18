@@ -3,7 +3,6 @@ kind: Node
 metadata: {name: w1}
 spec:
   type: worker
-  imageRef: node-metal
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk

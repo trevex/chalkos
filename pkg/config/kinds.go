@@ -24,7 +24,6 @@ type SecretRef struct {
 
 type nodeSpec struct {
 	Type     *string `json:"type"`
-	ImageRef string  `json:"imageRef"`
 	Hostname *string `json:"hostname"`
 }
 

@@ -80,11 +80,12 @@ as `tag = "v1.5.0";`. Both are for display only. Make the change itself:
 
 ## Decide how the images are built and signed
 
-Without `--image`, `chalkctl upgrade` gives each node the image its `Image` document names, the
+Without `--image`, `chalkctl upgrade` gives each node the image the inventory names for it, the
 [image directory](../reference/glossary.md#image-directory) of a build. Build the images first,
-where the `Image` documents point, and check the nodes' config against them with
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md). The homelab example's `Image`
-names `../images/node-metal`, relative to `cluster/cluster.yaml`:
+where the inventory's images point, and check the nodes' config against them with
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md). The homelab example's inventory names
+the image `node-metal` at `images/node-metal`, relative to `chalkos.yaml`, and makes it every
+node's with `spec.image`:
 
 ```sh
 nix build .#node-metal -o images/node-metal
@@ -95,9 +96,9 @@ chalkctl validate
 runs the same check before it drains any node and stops the run on a config the new image does
 not accept, so fix it now:
 [Upgrade with config the new image needs](#upgrade-with-config-the-new-image-needs) says how. A
-node that runs another platform than its `Image` stops the run before any node is sent anything.
-chalkctl compares no variant: a node whose `Image` names another variant's build gets that image,
-and chalkctl prints the change.
+node that runs another platform than its image in the inventory stops the run before any node is
+sent anything. chalkctl compares no variant: a node whose image in the inventory is another
+variant's build gets that image, and chalkctl prints the change.
 
 With `--image`, it installs an image you built before, a raw image with `repart-output.json`
 next to it or an image directory, on the nodes that run that image's variant, or on the nodes
@@ -197,7 +198,7 @@ chalkctl upgrade --nodes=<node> --diff
 ```
 
 `<node>` is the node's name in the inventory. `chalkctl validate` checks the files against the
-image the node's `Image` names, which is the image the upgrade installs without `--image`.
+node's image in the inventory, which is the image the upgrade installs without `--image`.
 `--diff` prints, for each node, what its config changes against the config of the image it runs,
 and changes nothing:
 
@@ -240,11 +241,11 @@ the image. Deliver a change to that config with `--staged`:
 chalkctl apply-config <node> --staged --secrets=secrets.age
 ```
 
-chalkctl checks the files against the image the node's `Image` names and the node checks them
-against the staged image; nothing restarts. `chalkctl apply-config` without `--staged` changes the
-running image's config alone and warns that the staged image keeps its own. Running
-`chalkctl upgrade` again sends the image once more to a node whose staged config is not the
-inventory's, which replaces that config.
+chalkctl checks the files against the node's image in the inventory and the node checks them against
+the staged image; nothing restarts. `chalkctl apply-config` without `--staged` changes the running
+image's config alone and warns that the staged image keeps its own. Running `chalkctl upgrade` again
+sends the image once more to a node whose staged config is not the inventory's, which replaces that
+config.
 
 A change to the running image that adds a volume the staged image's config lacks is refused: once
 the volume exists, the staged image's config would count as removing it, and the node could not
@@ -358,9 +359,9 @@ such as etcd's data after a Kubernetes upgrade, is for you to check.
   falls back to. Wait for the check, at most `healthTimeout` per try.
 - `Secure Boot would refuse the UKI`: the image is unsigned or signed with a key the firmware's db
   does not hold. Sign it with the db key.
-- `w1 runs an image built for kvm, but its Image node-metal is built for metal; changing a node's
-  platform is a reinstall`: the node's `Image` names a build of another platform. Changing a node's
-  platform is a reinstall, not an upgrade.
+- `w1 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
+  platform is a reinstall`: the inventory names a build of another platform for the node.
+  Changing a node's platform is a reinstall, not an upgrade.
 - A drain that does not finish within `--timeout` leaves the node cordoned and stops the run.
   A PodDisruptionBudget that allows no eviction is the usual cause; `kubectl get pdb -A` shows
   it.

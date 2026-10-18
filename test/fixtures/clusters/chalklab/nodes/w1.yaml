@@ -2,7 +2,6 @@ apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: w1}
 spec:
-  imageRef: k8s-kvm
   type: worker
 ---
 apiVersion: storage.chalkos.dev/v1alpha1

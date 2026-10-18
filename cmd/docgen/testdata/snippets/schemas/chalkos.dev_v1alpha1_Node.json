@@ -14,8 +14,8 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageRef"],
-      "properties": { "imageRef": { "type": "string", "minLength": 1 } }
+      "required": ["hostname"],
+      "properties": { "hostname": { "type": "string", "minLength": 1 } }
     }
   },
   "x-chalkos-kind": { "group": "chalkos.dev", "version": "v1alpha1", "kind": "Node", "multiple": false }

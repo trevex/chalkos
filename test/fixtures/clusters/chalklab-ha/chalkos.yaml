@@ -4,6 +4,9 @@ apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: chalklab-ha}
 spec:
+  images:
+    k8s-metal: {source: {directory: images/k8s-metal}}
+  image: k8s-metal
   files: [cluster/*.yaml]
   nodes:
     cp1: {address: 192.168.100.11, files: [nodes/cp1.yaml]}

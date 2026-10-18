@@ -29,9 +29,9 @@ YAML that Go reads. They meet in these places:
   an `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
 - A node's [config](../reference/glossary.md#config): the YAML
   [config documents](../reference/glossary.md#config-document) an inventory gives the node,
-  which chalkctl reads (`pkg/inventory`), checks against the schemas of the image its `Image`
-  points at and translates into the [identity](../reference/glossary.md#identity) the node
-  applies (`pkg/config`). chalkctl delivers the documents to
+  which chalkctl reads (`pkg/inventory`), checks against the schemas of the image the inventory
+  names for the node and translates into the [identity](../reference/glossary.md#identity) the
+  node applies (`pkg/config`). chalkctl delivers the documents to
   [chalkd](../reference/glossary.md#chalkd), which checks them again against its own image's
   schemas, keeps them on [STATE](../reference/glossary.md#state) and translates them the same
   way.

@@ -33,7 +33,7 @@ func TestEncode(t *testing.T) {
 // TestEncodeVersionIgnoresOrder gives documents the same version in every order, so the order of
 // the files that hold them does not change a node's config version.
 func TestEncodeVersionIgnoresOrder(t *testing.T) {
-	docs, err := Parse(strings.NewReader("apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: b}\nspec: {source: {directory: ./b}}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: a}\nspec: {source: {directory: ./a}}\n"))
+	docs, err := Parse(strings.NewReader("apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: b}\nspec: {data: {k: b}}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: a}\nspec: {data: {k: a}}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

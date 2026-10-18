@@ -498,7 +498,7 @@ func (l *upgradeLab) upgrade(img string, args ...string) error {
 }
 
 // useInventory describes the lab's nodes in an inventory, which the lab's runs read from then on:
-// each node runs the Image of its variant on metal, whose directory images gives by variant.
+// each node runs the image of its variant on metal, whose directory images gives by variant.
 func (l *upgradeLab) useInventory(t *testing.T, images map[string]string) {
 	t.Helper()
 	var nodes []testNode
@@ -519,8 +519,8 @@ func (l *upgradeLab) run(args ...string) error {
 }
 
 // TestUpgradeGivesEachNodeItsImage upgrades the nodes of an inventory without --image, each to the
-// image its Image names, one image per directory, the control planes first; a node that runs
-// another platform than its Image's stops the run.
+// image the inventory names for it, one image per directory, the control planes first; a node
+// that runs another platform than its image stops the run.
 func TestUpgradeGivesEachNodeItsImage(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	images := map[string]string{
@@ -547,7 +547,7 @@ func TestUpgradeGivesEachNodeItsImage(t *testing.T) {
 		}
 	}
 	l.nodes["w3"].platform = "kvm"
-	if err := l.run("upgrade", "--nodes", "w3"); err == nil || !strings.Contains(err.Error(), "w3 runs an image built for kvm, but its Image w-metal is built for metal") {
+	if err := l.run("upgrade", "--nodes", "w3"); err == nil || !strings.Contains(err.Error(), "w3 runs an image built for kvm, but its image w-metal is built for metal") {
 		t.Errorf("a node on another platform = %v", err)
 	}
 }
@@ -1349,14 +1349,14 @@ func TestUpgradeSkipsOtherPlatforms(t *testing.T) {
 }
 
 // TestUpgradeStopsAtAnotherPlatform stops without --image before any node is sent anything when a
-// node runs another platform than its Image's.
+// node runs another platform than its image.
 func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w2"].platform = "kvm"
 	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
-	want := "w2 runs an image built for kvm, but its Image w-metal is built for metal; changing a node's platform is a reinstall"
+	want := "w2 runs an image built for kvm, but its image w-metal is built for metal; changing a node's platform is a reinstall"
 	if err := l.run("upgrade", "--nodes", "w1,w2"); err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("upgrade of the Images = %v, want %q", err, want)
+		t.Errorf("upgrade of the inventory's images = %v, want %q", err, want)
 	}
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Errorf("asked %q", got)
@@ -1365,8 +1365,8 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 
 // TestUpgradeWithAClientFileAlone installs an image, without an inventory, on the nodes --address
 // names that run its variant and platform, after asking each what it runs, and names those of
-// its variant on another platform; without --image it is refused, as no Image names the nodes'
-// images.
+// its variant on another platform; without --image it is refused, as no inventory names the
+// nodes' images.
 func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
@@ -1553,8 +1553,10 @@ func (l *upgradeLab) applyConfig(name string, args ...string) error {
 	return l.ta.run(context.Background(), append([]string{"apply-config", name, "--inventory", l.inventory, "--address", l.addrs[name]}, args...))
 }
 
-// TestApplyConfigStaged delivers the inventory's config for the staged image, checked against the
-// image the node's Image names, and the running image's config warns of the staged one; status
+//	TestApplyConfigStaged delivers the inventory's config for the staged image, checked against the
+//
+// image the inventory names for the node, and the running image's config warns of the staged one;
+// status
 // compares both with the inventory.
 func TestApplyConfigStaged(t *testing.T) {
 	l := newUpgradeLab(t, 1)
@@ -1607,8 +1609,8 @@ func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
 	if err := json.Unmarshal(raw, &sch); err != nil {
 		t.Fatal(err)
 	}
-	imageRef := sch["properties"].(map[string]any)["spec"].(map[string]any)["properties"].(map[string]any)["imageRef"].(map[string]any)
-	imageRef["x-chalkos-rules"] = []any{map[string]any{"rule": "self == oldSelf", "message": "the imageRef is fixed"}}
+	nodeType := sch["properties"].(map[string]any)["spec"].(map[string]any)["properties"].(map[string]any)["type"].(map[string]any)
+	nodeType["x-chalkos-rules"] = []any{map[string]any{"rule": "self == oldSelf", "message": "the type is fixed"}}
 	data, err := json.Marshal(sch)
 	if err != nil {
 		t.Fatal(err)
@@ -1618,9 +1620,9 @@ func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
 	n := l.nodes["w1"]
 	want := l.inventoryConfig("w1")
 	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), want
-	n.config = strings.Replace(want, `"imageRef":"`, `"imageRef":"old-`, 1)
+	n.config = strings.Replace(want, `"type":"worker"`, `"type":"controlplane"`, 1)
 	err = l.applyConfig("w1", "--staged")
-	if err == nil || !strings.Contains(err.Error(), `Node "w1" spec.imageRef: the imageRef is fixed`) {
+	if err == nil || !strings.Contains(err.Error(), `Node "w1" spec.type: the type is fixed`) {
 		t.Fatalf("err = %v", err)
 	}
 	if l.ta.stdout.String() != "w1: config unchanged\n" {
@@ -1679,7 +1681,7 @@ func TestApplyConfigPrintsWhatItChanges(t *testing.T) {
 	if err := l.applyConfig("w1"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "w1: config 8 added, 0 removed, 0 changed\n"; !strings.Contains(l.ta.stdout.String(), want) {
+	if want := "w1: config 5 added, 0 removed, 0 changed\n"; !strings.Contains(l.ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", l.ta.stdout, want)
 	}
 	l.takeEvents()
@@ -1713,7 +1715,7 @@ func TestUpgradeDiff(t *testing.T) {
 		t.Errorf("--diff asked %q", got)
 	}
 	out := l.ta.stdout.String()
-	if !strings.Contains(out, "w1: config unchanged\n") || !strings.Contains(out, "w2: config 8 added, 0 removed, 0 changed\n+ Cluster \"lab\"\n") {
+	if !strings.Contains(out, "w1: config unchanged\n") || !strings.Contains(out, "w2: config 5 added, 0 removed, 0 changed\n+ Cluster \"lab\"\n") {
 		t.Errorf("output:\n%s", out)
 	}
 	l.ta.stdout.Reset()

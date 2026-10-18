@@ -4,11 +4,15 @@ apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: chalklab}
 spec:
+  images:
+    test-metal: {source: {directory: images/test-metal}}
+    storage-metal: {source: {directory: images/storage-metal}}
+    k8s-kvm: {source: {directory: images/k8s-kvm}}
   files: [cluster/*.yaml]
   groups:
-    test: {files: [groups/test.yaml]}
-    storage: {files: [groups/storage.yaml]}
-    k8s: {files: [groups/k8s.yaml]}
+    test: {image: test-metal}
+    storage: {image: storage-metal}
+    k8s: {image: k8s-kvm, files: [groups/k8s.yaml]}
   nodes:
     chalklab:
       groups: [test]

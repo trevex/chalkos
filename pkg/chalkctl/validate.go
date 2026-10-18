@@ -74,8 +74,9 @@ func (a *app) validate(path string, names []string) error {
 	return nil
 }
 
-// validateNode checks a node's config against the image its Image names, as the node would, and
-// returns what a valid config warrants a warning for. Its errors and warnings name the node.
+// validateNode checks a node's config against the image the inventory names for it, as the node
+// would, and returns what a valid config warrants a warning for. Its errors and warnings name the
+// node.
 func validateNode(inv *inventory.Inventory, name string) (string, []string, error) {
 	nc, err := inv.Node(name)
 	if err != nil {
@@ -99,6 +100,6 @@ func validateNode(inv *inventory.Inventory, name string) (string, []string, erro
 	if d.identity.Storage.Encryption == storage.EncryptionNone {
 		warnings = append(warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))
 	}
-	line := fmt.Sprintf("%s: valid for the Image %s (%s on %s, root hash %.12s), config %s", name, nc.ImageName, md.Variant, md.Platform, md.RootHash, d.Version)
+	line := fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config %s", name, nc.ImageName, md.Variant, md.Platform, md.RootHash, d.Version)
 	return line, warnings, nil
 }

@@ -20,7 +20,7 @@ You need:
 
 - The cluster's repository: a flake that builds its images with `chalkos.lib.mkImages` and
   exposes them and the installer as packages, an [inventory](../reference/glossary.md#inventory)
-  that names every node with its address and files, and each node's YAML with its `Node`,
+  that names every node with its address, image and files, and each node's YAML with its `Node`,
   `SystemDisk` and `Network` documents. [Plan a production cluster](production-cluster.md) lays
   one out, and [Config and the inventory](../concepts/config.md) explains the files. The commands
   below run in the repository's directory, where `chalkos.yaml` is.
@@ -72,8 +72,9 @@ installer where you can.
 
 ## Build the image and check the config
 
-Build the image the nodes run into the directory their `Image` document names, here
-`images/node-metal` for `source: {directory: ../images/node-metal}` in `cluster/cluster.yaml`:
+Build the image the nodes run into the directory the inventory names for it, here
+`images/node-metal` for `node-metal: {source: {directory: images/node-metal}}` in the inventory's
+`spec.images`:
 
 ```sh
 nix build .#node-metal -o images/node-metal
@@ -158,7 +159,6 @@ kind: Node
 metadata: {name: cp1}
 spec:
   type: controlplane
-  imageRef: node-metal
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -185,7 +185,7 @@ chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fi
   --sign-key=db.key --sign-cert=db.crt
 ```
 
-chalkctl takes the image from the directory the node's `Image` document names, refuses it unless
+chalkctl takes the image from the directory of the node's image in the inventory, refuses it unless
 it is the build whose root hash that directory's `metadata.json` names, signs the image's UKI and
 boot loader with the db key, and checks them against the certificate `--sign-cert` names. It then
 sends the node its [config](../reference/glossary.md#config), the documents of the files the
@@ -334,8 +334,8 @@ as a password manager.
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs: its config and
 whether it is the one the inventory gives, the image it booted by its
 [root hash](../reference/glossary.md#root-hash) and whether the boot was found healthy,
-whether its store is the image its `Image` names, its volumes, Kubernetes, its certificates and
-any failed units. With the client file from the step before:
+whether its store is the image the inventory names for it, its volumes, Kubernetes, its
+certificates and any failed units. With the client file from the step before:
 
 ```sh
 chalkctl status cp1

@@ -1,6 +1,6 @@
 // Package inventory reads chalkctl's inventory: the file that names a cluster's nodes, the
-// address chalkctl reaches each at, and the config files each node gets. Paths in an inventory
-// are relative to its directory, and globs are allowed.
+// address chalkctl reaches each at, the image each runs and the config files each node gets.
+// Paths in an inventory are relative to its directory, and its file lists allow globs.
 package inventory
 
 import (
@@ -49,27 +49,45 @@ type Metadata struct {
 // Secure Boot certificate: an inventory may be shared with whoever operates the nodes, and
 // chalkctl takes those from its flags.
 type Spec struct {
+	// Images are the images the nodes run, by name.
+	Images map[string]Image `json:"images,omitempty"`
+	// Image is the image of the nodes that name none and whose groups name none.
+	Image string `json:"image,omitempty"`
 	// Files are the config files every node gets, as paths or globs.
 	Files  []string         `json:"files,omitempty"`
 	Groups map[string]Group `json:"groups,omitempty"`
 	Nodes  map[string]Node  `json:"nodes,omitempty"`
 }
 
-// Group is config files that the nodes in the group get.
+// Image is an image the nodes may run.
+type Image struct {
+	Source ImageSource `json:"source"`
+}
+
+// ImageSource is where an image comes from: the directory of an image build, as nix build makes
+// it.
+type ImageSource struct {
+	Directory string `json:"directory"`
+}
+
+// Group is the image and the config files that the nodes in the group get.
 type Group struct {
+	Image string   `json:"image,omitempty"`
 	Files []string `json:"files,omitempty"`
 }
 
-// Node is a node of the cluster: where chalkctl reaches it, the groups it is in and its own
-// config files.
+// Node is a node of the cluster: where chalkctl reaches it, the image it runs, the groups it is
+// in and its own config files.
 type Node struct {
 	Address string   `json:"address,omitempty"`
+	Image   string   `json:"image,omitempty"`
 	Groups  []string `json:"groups,omitempty"`
 	Files   []string `json:"files,omitempty"`
 }
 
 // Inventory is an inventory as chalkctl reads it: its spec with every path absolute. Its files
-// are globs, in which the inventory's directory is escaped.
+// are globs, in which the inventory's directory is escaped; its image directories are plain
+// paths.
 type Inventory struct {
 	// Path is the inventory file's absolute path.
 	Path string
@@ -80,7 +98,7 @@ type Inventory struct {
 }
 
 // Load reads an inventory and checks it against its schema and its own references: every group a
-// node is in must be defined.
+// node is in and every image named must be defined, and every node must have one image.
 func Load(path string) (*Inventory, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -98,7 +116,7 @@ func Load(path string) (*Inventory, error) {
 }
 
 // parse reads the inventory at path from data: one document, valid against the inventory's
-// schema, with its paths made absolute against its directory.
+// schema, with its paths made absolute against its directory and an image for every node.
 func parse(path string, data []byte) (*Inventory, error) {
 	docs, err := config.Parse(bytes.NewReader(data))
 	if err != nil {
@@ -124,10 +142,27 @@ func parse(path string, data []byte) (*Inventory, error) {
 	}
 	dir := filepath.Dir(path)
 	spec := d.Spec
+	images := map[string]Image{}
+	for name, im := range spec.Images {
+		images[name] = Image{Source: ImageSource{Directory: absolute(dir, im.Source.Directory)}}
+	}
+	defined := func(image, where string) error {
+		if _, ok := images[image]; image != "" && !ok {
+			return fmt.Errorf("%s names the image %s, which the inventory does not define", where, image)
+		}
+		return nil
+	}
+	if err := defined(spec.Image, "spec.image"); err != nil {
+		return nil, err
+	}
 	spec.Files = absoluteAll(dir, spec.Files)
 	groups := map[string]Group{}
-	for name, g := range spec.Groups {
-		groups[name] = Group{Files: absoluteAll(dir, g.Files)}
+	for _, name := range slices.Sorted(maps.Keys(spec.Groups)) {
+		g := spec.Groups[name]
+		if err := defined(g.Image, "the group "+name); err != nil {
+			return nil, err
+		}
+		groups[name] = Group{Image: g.Image, Files: absoluteAll(dir, g.Files)}
 	}
 	nodes := map[string]Node{}
 	for _, name := range slices.Sorted(maps.Keys(spec.Nodes)) {
@@ -137,11 +172,50 @@ func parse(path string, data []byte) (*Inventory, error) {
 				return nil, fmt.Errorf("node %s is in the group %s, which the inventory does not define", name, g)
 			}
 		}
+		if err := defined(n.Image, "node "+name); err != nil {
+			return nil, err
+		}
 		n.Files = absoluteAll(dir, n.Files)
 		nodes[name] = n
 	}
-	spec.Groups, spec.Nodes = groups, nodes
-	return &Inventory{Path: path, Name: d.Metadata.Name, Spec: spec, parsed: map[string][]config.Document{}}, nil
+	spec.Images, spec.Groups, spec.Nodes = images, groups, nodes
+	inv := &Inventory{Path: path, Name: d.Metadata.Name, Spec: spec, parsed: map[string][]config.Document{}}
+	for _, name := range inv.NodeNames() {
+		if _, _, err := inv.Image(name); err != nil {
+			return nil, err
+		}
+	}
+	return inv, nil
+}
+
+// Image is the name and directory of the image a node runs: its own, else that of its groups,
+// which must not name different ones, else spec.image.
+func (inv *Inventory) Image(node string) (name, dir string, err error) {
+	n, ok := inv.Spec.Nodes[node]
+	if !ok {
+		return "", "", inv.noNode(node)
+	}
+	name = n.Image
+	if name == "" {
+		var group string
+		for _, g := range n.Groups {
+			image := inv.Spec.Groups[g].Image
+			switch {
+			case image == "" || image == name:
+			case name != "":
+				return "", "", fmt.Errorf("node %s is in the groups %s and %s, which name different images: %s and %s", node, group, g, name, image)
+			default:
+				name, group = image, g
+			}
+		}
+	}
+	if name == "" {
+		name = inv.Spec.Image
+	}
+	if name == "" {
+		return "", "", fmt.Errorf("node %s has no image; name one in spec.image, in a group of the node or on the node", node)
+	}
+	return name, inv.Spec.Images[name].Source.Directory, nil
 }
 
 // absolute resolves a path of the inventory against its directory; empty stays empty.
@@ -191,7 +265,7 @@ func (inv *Inventory) NodeNames() []string { return slices.Sorted(maps.Keys(inv.
 func (inv *Inventory) Files(node string) ([]string, error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {
-		return nil, fmt.Errorf("the inventory %s has no node %s; its nodes are %s", inv.Path, node, strings.Join(inv.NodeNames(), ", "))
+		return nil, inv.noNode(node)
 	}
 	patterns := slices.Clone(inv.Spec.Files)
 	for _, g := range n.Groups {
@@ -203,6 +277,11 @@ func (inv *Inventory) Files(node string) ([]string, error) {
 		return nil, fmt.Errorf("node %s: %w", node, err)
 	}
 	return files, nil
+}
+
+// noNode is the error for a node the inventory does not have.
+func (inv *Inventory) noNode(node string) error {
+	return fmt.Errorf("the inventory %s has no node %s; its nodes are %s", inv.Path, node, strings.Join(inv.NodeNames(), ", "))
 }
 
 // expand lists the files of paths and globs, each of which must name one at least, once each in

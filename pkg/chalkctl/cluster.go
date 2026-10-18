@@ -148,7 +148,8 @@ func (c *cluster) nodesOf(kind, skip string) ([]string, error) {
 	return names, nil
 }
 
-// platform is the platform of a node's image: that of its Image's directory.
+// platform is the platform of a node's image: that of the directory of its image in the
+// inventory.
 func (c *cluster) platform(name string) (string, error) {
 	nc, err := c.config(name)
 	if err != nil {
@@ -164,13 +165,13 @@ func (c *cluster) declares(name, platform string) string {
 	if err != nil {
 		return "its config declares " + platform
 	}
-	return fmt.Sprintf("its Image %s is built for %s", nc.ImageName, platform)
+	return fmt.Sprintf("its image %s is built for %s", nc.ImageName, platform)
 }
 
-// imageDir is the directory of the image a node's Image names.
+// imageDir is the directory of the node's image in the inventory.
 func (c *cluster) imageDir(name string) (string, error) {
 	if c.inv == nil {
-		return "", errors.New("the image comes from --image without an inventory, whose Image documents name the nodes' image directories; pass --inventory")
+		return "", errors.New("the image comes from --image without an inventory, which names the nodes' image directories; pass --inventory")
 	}
 	nc, err := c.config(name)
 	if err != nil {
@@ -179,8 +180,8 @@ func (c *cluster) imageDir(name string) (string, error) {
 	return nc.ImageDir, nil
 }
 
-// sameBuild refuses an image taken from a node's Image directory whose store has another root hash
-// than the directory's metadata.json names, which the node stores in its Image.
+// sameBuild refuses an image taken from the directory of a node's image whose store has another
+// root hash than the directory's metadata.json names.
 func (c *cluster) sameBuild(name string, img *diskImage) error {
 	nc, err := c.config(name)
 	if err != nil {
@@ -301,8 +302,8 @@ func (c *cluster) configState(name, version string, staged bool) string {
 	return "the inventory's"
 }
 
-// imageLine is the status line of a node whose store has another root hash than the image its
-// config's Image names, or whose Image's directory cannot be read; empty when it has that image,
+// imageLine is the status line of a node whose store has another root hash than the image the
+// inventory names for it, or whose image directory cannot be read; empty when it has that image,
 // or when the node or its config is unknown, which the config line reports.
 func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 	running := boot.GetRunning().GetRootHash()
@@ -316,11 +317,11 @@ func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 	md, err := nc.Resolve()
 	switch {
 	case err != nil:
-		return fmt.Sprintf("its store is not compared with the image of its config: %v", err)
+		return fmt.Sprintf("its store is not compared with its image in the inventory: %v", err)
 	case hex.EncodeToString(running) == md.RootHash:
 		return ""
 	}
-	line := fmt.Sprintf("its store's root hash is %x, not that of the Image %s its config names, %s", running, nc.ImageName, md.RootHash)
+	line := fmt.Sprintf("its store's root hash is %x, not that of the image %s the inventory names, %s", running, nc.ImageName, md.RootHash)
 	// After an upgrade with --no-reboot the image waits for the node's next boot.
 	if want, err := hex.DecodeString(md.RootHash); err == nil && bytes.Equal(boot.GetStaged().GetRootHash(), want) {
 		return fmt.Sprintf("%s; it has %s staged, which it boots with its next reboot: chalkctl reboot %s", line, bootImageName(boot.GetStaged()), name)

@@ -89,12 +89,12 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | `CHALKOS_PLATFORM` | chalkd's Upgrade | The new image's equals the running image's; a running image without it takes no upgrade. |
 | `CHALKOS_PLATFORM` | chalkd's upgrade and install, on the UKI | The UKI's platform equals the image header's. |
 | `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkctl, reading an image | Both are set; an image without them is no node image and is refused. |
-| `CHALKOS_PLATFORM` | chalkctl install and upgrade | The image is built for the platform of the image the node runs, or, on the installer, of the image the node's `Image` document names, as its directory's `metadata.json` gives it. |
+| `CHALKOS_PLATFORM` | chalkctl install and upgrade | The image is built for the platform of the image the node runs, or, on the installer, of the node's image in the inventory, as its directory's `metadata.json` gives it. |
 | `CHALKOS_PLATFORM` | chalkd's [Install](api.md#method-install) in place and [ApplyConfig](api.md#method-applyconfig) | The config is translated for the running image's platform: changing a node's platform is a reinstall. |
-| `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Contract](api.md#method-contract) | Reported as they are, with the image's schemas and `image.json`. chalkctl's install in place, `apply-config` and `storage reset` refuse a node whose image is built for another platform than the image its `Image` document names. |
+| `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Contract](api.md#method-contract) | Reported as they are, with the image's schemas and `image.json`. chalkctl's install in place, `apply-config` and `storage reset` refuse a node whose image is built for another platform than its image in the inventory. |
 | `CHALKOS_BOOT_TRIES` | chalkd's upgrade, on the UKI | A positive integer, which becomes the boot counter in the UKI's name, `+3` by default. An install writes no counter. |
 | `IMAGE_ID`, `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's [Info](api.md#method-info) | Reported as they are; empty on an image that sets none. |
-| `CHALKOS_PLATFORM` | chalkd's [Status](api.md#method-status) | Reported, and shown by [`chalkctl status`](cli/chalkctl_status.md) beside the platform of the image the node's `Image` document names. |
+| `CHALKOS_PLATFORM` | chalkd's [Status](api.md#method-status) | Reported, and shown by [`chalkctl status`](cli/chalkctl_status.md) beside the platform of the node's image in the inventory. |
 
 No check compares `CHALKOS_VARIANT`: a node may change its variant through an upgrade, and the
 check of its config against the new image's schemas decides whether the image suits it.

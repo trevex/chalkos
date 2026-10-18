@@ -1,5 +1,5 @@
 # The images the e2e tests boot, and their secrets. The tests' clusters are the YAML of
-# test/fixtures/clusters, whose Image documents point at these images' directories.
+# test/fixtures/clusters, whose inventories name these images' directories.
 { self, pkgs }:
 let
   secrets = import ./secrets.nix { inherit pkgs; };

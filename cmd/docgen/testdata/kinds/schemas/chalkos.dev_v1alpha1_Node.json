@@ -8,12 +8,12 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageRef"],
+      "required": ["hostname"],
       "properties": {
-        "imageRef": {
+        "hostname": {
           "type": "string",
           "minLength": 1,
-          "description": "Name of the Image document of the image the node runs."
+          "description": "Host name set at boot."
         },
         "type": {
           "anyOf": [{ "enum": ["controlplane", "worker"] }, { "type": "null" }],

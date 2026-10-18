@@ -117,7 +117,7 @@ Sign the installer this way, and a node image that a VM boots directly. Ctrl+C d
 can leave an image partly signed; sign a fresh copy then.
 
 `chalkctl install` with `--sign-key` and `--sign-cert` signs the image a machine receives
-from the installer, the image directory the node's `Image` document names. chalkctl copies the
+from the installer, the directory of the node's image in the inventory. chalkctl copies the
 UKI and the boot loader off the image, signs the copies and streams them with the store, so the
 image in the Nix store stays as it is:
 

@@ -21,7 +21,7 @@ const diffNode = `
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: n1}
-spec: {imageRef: metal, type: worker, labels: {zone: a, rack: r1}}
+spec: {type: worker, labels: {zone: a, rack: r1}}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume
@@ -38,7 +38,7 @@ const diffInventory = `
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: n1}
-spec: {imageRef: metal, type: controlplane, labels: {zone: a, room: b}}
+spec: {type: controlplane, labels: {zone: a, room: b}}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume

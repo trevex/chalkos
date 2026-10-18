@@ -48,25 +48,29 @@ wrote: "/home/alice/lab/nodes/w1.yaml"
 Nix builds the [image](../reference/glossary.md#image); YAML files describe the cluster.
 `flake.nix` pins chalkos as an input, builds the image the nodes run with `mkImages`, and
 gives a development shell. `chalkos.yaml` is the inventory: it names the two nodes, the address
-chalkctl reaches each at, and the files each gets, every file of `cluster/` and its own file of
-`nodes/`. `chalklab.yaml` is the lab file, which names the nodes chalklab runs as virtual
-machines.
+chalkctl reaches each at, the image both run, and the files each gets, every file of `cluster/` and
+its own file of `nodes/`. The image `node-kvm` is the directory `images/node-kvm`, relative to the
+inventory, and `image` makes it the image of every node. `chalklab.yaml` is the lab file, which
+names the nodes chalklab runs as virtual machines.
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: lab}
 spec:
+  images:
+    # nix build .#node-kvm -o images/node-kvm puts the image here.
+    node-kvm: {source: {directory: images/node-kvm}}
+  image: node-kvm
   files: [cluster/*.yaml]
   nodes:
     cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
     w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}
 ```
 
-`cluster/cluster.yaml` names the cluster and its API server, the image both nodes run and
-Kubernetes with its defaults. Each node's file says what the node is in Kubernetes, which disk
-holds its system, and its address on the lab network, a private network between the virtual
-machines:
+`cluster/cluster.yaml` names the cluster and its API server, and Kubernetes with its defaults. Each
+node's file says what the node is in Kubernetes, which disk holds its system, and its address on the
+lab network, a private network between the virtual machines:
 
 ```yaml title="nodes/cp1.yaml"
 apiVersion: chalkos.dev/v1alpha1
@@ -74,7 +78,6 @@ kind: Node
 metadata: {name: cp1}
 spec:
   type: controlplane
-  imageRef: node-kvm
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -149,15 +152,15 @@ git add . && git commit -m "A chalkos lab"
 
 ## Build the image
 
-The image is built into `images/node-kvm`, where the `Image` document of `cluster/cluster.yaml`
-points. [`chalkctl validate`](../reference/cli/chalkctl_validate.md) then checks each node's
-config against the image's schemas, without a node:
+The image is built into `images/node-kvm`, where the inventory's image `node-kvm` points.
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md) then checks each node's config against
+the image's schemas, without a node:
 
 ```console
 $ nix build .#node-kvm -o images/node-kvm
 $ chalkctl validate
-cp1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d
-w1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850
+cp1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config 9a7c16c9b2b0e6409c9353ac5551057be4f2cd205fe8fd43f1dbd0c90a4a512d
+w1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config d4f933588f60a6da6b7b33edf93e421474b28d08f0b8dc3d9eed49ab9d2e4850
 ```
 
 The first build takes most of the tutorial's time. The template's `.gitignore` keeps `images/`
@@ -199,8 +202,8 @@ the lab of lab runs cp1, w1; next:
   chalkctl status cp1 --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml
   chalklab status
   chalklab destroy
-The lab's Image documents name unsigned images, which the lab's firmware refuses: upgrade with
-the lab's db key, or with --image of an image chalklab sign signed:
+The lab's inventory names unsigned images, which the lab's firmware refuses: upgrade with the
+lab's db key, or with --image of an image chalklab sign signed:
   chalkctl upgrade --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml --allow-downtime \
     --sign-key /home/alice/.local/state/chalklab/lab/keys/db.key --sign-cert /home/alice/.local/state/chalklab/lab/keys/db.crt
 ```
@@ -392,8 +395,8 @@ the secrets file, which `--secrets` names; a client file does not suffice:
 
 ```console
 $ chalkctl validate
-cp1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config fdf98e0f1ca7c61fb4eecd3e6bb260c5e8c343adee34d499a2b5407e7eedbc9c
-w1: valid for the Image node-kvm (node on kvm, root hash 2ece03b0fa09), config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e
+cp1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config fdf98e0f1ca7c61fb4eecd3e6bb260c5e8c343adee34d499a2b5407e7eedbc9c
+w1: valid for the image node-kvm (node on kvm, root hash 2ece03b0fa09), config 3731f10df5beb905747533b2726ac8727fe1073068fe705f73919a62663b288e
 $ chalkctl apply-config cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
 cp1 runs config fdf98e0f1ca7c61fb4eecd3e6bb260c5e8c343adee34d499a2b5407e7eedbc9c
 $ chalkctl apply-config w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
@@ -430,9 +433,9 @@ git commit -am "Add the debug tools"
 nix build .#node-kvm -o images/node-kvm
 ```
 
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) gives each node the image its `Image`
-names, signs it and rolls it through the cluster, one node at a time. The lab's firmware boots
-only images signed with the lab's Secure Boot key, so pass the key and certificate that
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) gives each node the image the inventory
+names for it, signs it and rolls it through the cluster, one node at a time. The lab's firmware
+boots only images signed with the lab's Secure Boot key, so pass the key and certificate that
 `chalklab create` printed and `chalklab status` lists:
 
 ```console

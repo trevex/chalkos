@@ -33,14 +33,9 @@ metadata: {name: lab}
 spec: {}
 ---
 apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: metal}
-spec: {source: {directory: ./images/metal}}
----
-apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: n1}
-spec: {imageRef: metal}
+spec: {}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -280,7 +275,7 @@ func TestApplyConfigTakesTheNodesNameFromItsCertificate(t *testing.T) {
 
 func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	s, r := configServer(t)
-	_, err := sendConfig(s, strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {}", 1))
+	_, err := sendConfig(s, strings.Replace(baseConfig, "metadata: {name: n1}\nspec: {}", "metadata: {name: n1}\nspec: {type: gateway}", 1))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `Node "n1"`) {
 		t.Fatalf("err = %v, want a refusal naming the Node", err)
 	}
@@ -560,7 +555,7 @@ func TestApplyConfigComparesFactsBeforeAndAfter(t *testing.T) {
 	}{
 		{"the first node.json", baseConfig, true},
 		{"the same", baseConfig, false},
-		{"another host name", strings.Replace(baseConfig, "spec: {imageRef: metal}", "spec: {imageRef: metal, hostname: h2}", 1), true},
+		{"another host name", strings.Replace(baseConfig, "metadata: {name: n1}\nspec: {}", "metadata: {name: n1}\nspec: {hostname: h2}", 1), true},
 	} {
 		r.calls = nil
 		if _, err := sendConfig(s, step.config); err != nil {

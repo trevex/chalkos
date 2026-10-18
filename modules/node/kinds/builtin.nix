@@ -258,23 +258,10 @@ in
           default = null;
           description = "What the node is in Kubernetes; null on an image without Kubernetes.";
         };
-        imageRef = mkOption {
-          type = types.nonEmptyStr;
-          description = "Name of the Image document of the image the node runs.";
-        };
         hostname = mkOption {
           type = types.nullOr (types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?");
           default = null;
           description = "Host name set at boot; null uses the node's name.";
-        };
-      };
-    };
-    Image = builtin "chalkos.dev" // {
-      multiple = true;
-      spec = {
-        source.directory = mkOption {
-          type = types.nonEmptyStr;
-          description = "Directory of an image build, as nix build makes it; a relative path is relative to the directory of the file that holds the document, as the inventory names that file, without following a symlink to it.";
         };
       };
     };

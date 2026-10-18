@@ -54,12 +54,12 @@ func runTests(m *testing.M) int {
 }
 
 // fixtures is a copy of CHALKLAB_FIXTURES, the e2e clusters' inventories and config files, with
-// the image directories the environment names linked where their Image documents point; empty
-// without CHALKLAB_FIXTURES.
+// the image directories the environment names linked where their inventories point; empty without
+// CHALKLAB_FIXTURES.
 var fixtures string
 
-// fixtureImagesFile names, by where each of the fixtures' Image documents points, the variable
-// that names the image directory to link there. The fixtures check reads it too.
+// fixtureImagesFile names, by where each of the fixtures' images points, the variable that names
+// the image directory to link there. The fixtures check reads it too.
 const fixtureImagesFile = "images.json"
 
 // copyFixtures copies the fixtures to a new directory, which chalkctl may read beside the image

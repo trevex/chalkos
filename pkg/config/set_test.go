@@ -38,14 +38,9 @@ metadata: {name: lab}
 spec: {}
 ---
 apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: metal}
-spec: {source: {directory: ./images/metal}}
----
-apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: n1}
-spec: {type: worker, imageRef: metal}
+spec: {type: worker}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -67,7 +62,7 @@ func TestParseSkipsEmptyDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(docs) != 4 || docs[2].Kind != "Node" || docs[2].Name != "n1" {
+	if len(docs) != 3 || docs[1].Kind != "Node" || docs[1].Name != "n1" {
 		t.Fatalf("docs = %+v", docs)
 	}
 }
@@ -110,12 +105,12 @@ func TestOneFindsAnExtensionKindByName(t *testing.T) {
 }
 
 func TestOneIsFalseForAMultipleKind(t *testing.T) {
-	s, err := parseSet(t, minimal)
+	s, err := parseSet(t, minimal+"---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: a}\nspec: {data: {}}\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := s.One("Image"); ok {
-		t.Error(`One("Image") = true, want false: Image is a multiple kind`)
+	if _, ok := s.One("Secret"); ok {
+		t.Error(`One("Secret") = true, want false: Secret is a multiple kind`)
 	}
 }
 
@@ -123,13 +118,12 @@ func TestNewSetRejects(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
 		"missing Cluster": {strings.Replace(minimal,
 			"apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {}\n---\n", "", 1), "Cluster"},
-		"two Nodes": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n2}\nspec: {imageRef: metal}\n",
+		"two Nodes": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n2}\nspec: {}\n",
 			"more than one Node"},
 		"unknown kind": {minimal + "---\napiVersion: x.example.org/v1\nkind: Thing\nmetadata: {name: a}\nspec: {}\n",
 			`does not accept kind "Thing"`},
-		"missing image": {strings.Replace(minimal, "imageRef: metal", "imageRef: kvm", 1), `Image "kvm"`},
-		"duplicate name": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Image\nmetadata: {name: metal}\nspec: {source: {directory: ./x}}\n",
-			`two Image documents named "metal"`},
+		"duplicate name": {minimal + strings.Repeat("---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: a}\nspec: {data: {}}\n", 2),
+			`two Secret documents named "a"`},
 		"invalid document": {strings.Replace(minimal, "{path: /dev/vda}", "{path: vda}", 1), "SystemDisk"},
 	} {
 		t.Run(name, func(t *testing.T) {

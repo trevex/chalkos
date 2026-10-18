@@ -701,7 +701,7 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 		return strings.Replace(base, "spec: {nodeIPs: [192.168.100.21]}", "spec: "+spec, 1)
 	}
 	node := func(spec string) string {
-		return strings.Replace(base, "spec: {type: worker, imageRef: metal}", "spec: "+spec, 1)
+		return strings.Replace(base, "spec: {type: worker}", "spec: "+spec, 1)
 	}
 	for name, c := range map[string]struct {
 		config   string
@@ -713,19 +713,13 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 		"nodeIPs":                      {kubelet("{nodeIPs: [192.168.100.22]}"), true},
 		"validSubnets":                 {kubelet("{nodeIPs: [], validSubnets: [192.168.100.0/24]}"), true},
 		"the node name":                {strings.Replace(base, "metadata: {name: n1}", "metadata: {name: n2}", 1), true},
-		"the host name":                {node("{type: worker, imageRef: metal, hostname: h1}"), true},
-		"the host name the name gives": {node("{type: worker, imageRef: metal, hostname: n1}"), false},
+		"the host name":                {node("{type: worker, hostname: h1}"), true},
+		"the host name the name gives": {node("{type: worker, hostname: n1}"), false},
 		"a static address":             {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
 		"the cluster":                  {strings.Replace(base, "metadata: {name: kubernetes}\nspec: {}", "metadata: {name: kubernetes}\nspec: {domain: lab.local}", 1), true},
 		"the endpoint":                 {strings.Replace(base, "192.168.100.11:6443", "192.168.100.12:6443", 1), true},
-		"the Node's image": {node("{type: worker, imageRef: metal2}") + `---
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: metal2}
-spec: {source: {directory: ./images/metal2}}
-`, false},
-		"a Network's gateway": {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
-		"a Demo":              {strings.Replace(base, "name: first", "name: second", 1), false},
+		"a Network's gateway":          {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
+		"a Demo":                       {strings.Replace(base, "name: first", "name: second", 1), false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := clusterServer(t, k8s.KindWorker)
@@ -1536,7 +1530,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 // the stored config gives no cluster, and a share of the new type delivered with the config does
 // not change it. A node without a share takes any type.
 func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
-	controlPlane := strings.Replace(workerConfig, "spec: {type: worker, imageRef: metal}", "spec: {type: controlplane, imageRef: metal}", 1)
+	controlPlane := strings.Replace(workerConfig, "spec: {type: worker}", "spec: {type: controlplane}", 1)
 	const refused = `the node's type from "worker" to "controlplane"`
 	for name, tc := range map[string]struct {
 		share, stored bool

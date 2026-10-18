@@ -11,7 +11,7 @@ Check nodes' config against the schemas of their images
 
 Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the files the inventory gives the node form its set, every document is
-checked against the schemas of the image directory the node's Image names, and the set is
+checked against the schemas of the directory of the node's image in the inventory, and the set is
 translated as the node translates it. The image's change rules that read no facts about a node
 run too, without a running config to compare with: the rules of kinds and the rules of fields
 that do not compare with the running value. It prints a line for each node whose config is valid

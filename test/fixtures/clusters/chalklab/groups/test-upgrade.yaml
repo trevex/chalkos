@@ -1,5 +1,0 @@
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: test-upgrade-metal}
-spec:
-  source: {directory: ../images/test-upgrade-metal}

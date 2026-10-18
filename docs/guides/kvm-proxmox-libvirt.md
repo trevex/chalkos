@@ -40,25 +40,31 @@ You need:
 
 ## Give the nodes the kvm image
 
-A node runs the image its `Node` document's `imageRef` names, and its platform is that image's.
+A node runs the image the inventory names for it, and its platform is that image's.
 Every image carries the virtio drivers; the `kvm` image also writes its console to the first serial
 port alone and runs the QEMU guest agent, which the `metal` image lacks. Build the `kvm` platform in
 the flake, `platforms = [ "kvm" ];` or `[ "metal" "kvm" ]` for a cluster of both, expose its image
 as a package, `packages.x86_64-linux.node-kvm = images.images.node-kvm;` as the lab template's flake
-does, and name its image directory in an [`Image`](../reference/kinds.md#image) document of
-`cluster/cluster.yaml`:
+does, and name its image directory in the [inventory](../reference/kinds.md#inventory)'s
+`spec.images`. `spec.image` gives it to every node that names no image of its own or through a
+group:
 
-```yaml
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: node-kvm}
+```yaml title="chalkos.yaml"
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: prod}
 spec:
-  # nix build .#node-kvm -o images/node-kvm puts the image here.
-  source: {directory: ../images/node-kvm}
+  images:
+    # nix build .#node-kvm -o images/node-kvm puts the image here.
+    node-kvm: {source: {directory: images/node-kvm}}
+  image: node-kvm
+  files: [cluster/*.yaml]
+  nodes:
+    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
 ```
 
-Each VM node's own file names that image, and its `SystemDisk` names the device a virtio block
-disk gets, `/dev/vda`:
+A relative directory is relative to the inventory's directory. Each VM node's `SystemDisk` names
+the device a virtio block disk gets, `/dev/vda`:
 
 ```yaml title="nodes/cp1.yaml"
 apiVersion: chalkos.dev/v1alpha1
@@ -66,7 +72,6 @@ kind: Node
 metadata: {name: cp1}
 spec:
   type: controlplane
-  imageRef: node-kvm
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -89,7 +94,7 @@ reinstall.
 
 ## Build and sign the image
 
-Build the `kvm` image where its `Image` document points, check the nodes' config against it, and
+Build the `kvm` image where the inventory points, check the nodes' config against it, and
 sign a writable copy of it with [`chalkctl sign`](../reference/cli/chalkctl_sign.md), so the VM's
 firmware boots it:
 
@@ -104,7 +109,7 @@ chalkctl sign --image=node.raw --repart-json=images/node-kvm/repart-output.json 
 
 The image holds the [ESP](../reference/glossary.md#esp), with its UKI as the first boot entry
 `chalkos_1.efi`, and [slot](../reference/glossary.md#slot) A only, and
-every node whose `Image` is `node-kvm` boots the same signed image; what differs between nodes
+every node whose image is `node-kvm` boots the same signed image; what differs between nodes
 reaches them at install. Sign before the first boot: an in-place install sends no image, so the
 image the VM boots is the one the node keeps until its first
 [upgrade](../reference/glossary.md#upgrade).
@@ -312,7 +317,7 @@ inventory names. Install it at that address with `--address`:
 chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
-chalkctl checks that the image the VM runs is built for the platform of the node's `Image`,
+chalkctl checks that the image the VM runs is built for the platform of the node's image,
 prints `installing cp1 in place` and, once the node accepted everything,
 `cp1 is installed and reboots`. It sends no image: the node keeps the image it runs, makes STATE
 match the encryption policy of its `SystemDisk`, writes its config and certificates there,
@@ -337,7 +342,7 @@ images to.
 ## Check that it worked
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows the node's platform and whether
-it matches its `Image`, and the hypervisor sees the guest agent:
+it matches its image in the inventory, and the hypervisor sees the guest agent:
 
 ```sh
 chalkctl status cp1 --secrets=secrets.age
@@ -353,7 +358,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 | The firmware reports `Access Denied` and boots nothing | The image is unsigned or signed with a key whose certificate is not in the VM's db. Sign the image, or enrol `db.crt`. |
 | Nothing appears on the console after the firmware | The VM has no serial port, or the console shows the screen; the kvm image writes to `ttyS0` only. |
 | `the config places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | The node's `SystemDisk` names another disk than the one the VM booted from. Fix `spec.disk` in the node's file. |
-| `cp1 runs an image built for metal, but its Image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from `images/node-kvm` and sign it. |
+| `cp1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from `images/node-kvm` and sign it. |
 | The node asks for its recovery key after a hypervisor change | The variable store or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
 
 ## What next

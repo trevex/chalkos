@@ -488,7 +488,6 @@ lib.runTests {
       "Addon"
       "Cluster"
       "Flannel"
-      "Image"
       "Kubelet"
       "Kubernetes"
       "Link"
@@ -621,7 +620,6 @@ lib.runTests {
     expr = map (kind: builtinSchema kind) [
       "Cluster"
       "Flannel"
-      "Image"
       "Kubelet"
       "Kubernetes"
       "Addon"
@@ -635,7 +633,6 @@ lib.runTests {
     expected = map builtinFixture [
       "chalkos.dev_v1alpha1_Cluster.json"
       "kubernetes.chalkos.dev_v1alpha1_Flannel.json"
-      "chalkos.dev_v1alpha1_Image.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubelet.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubernetes.json"
       "kubernetes.chalkos.dev_v1alpha1_Addon.json"

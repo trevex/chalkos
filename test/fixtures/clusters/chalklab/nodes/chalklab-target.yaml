@@ -2,8 +2,7 @@
 apiVersion: chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: chalklab-target}
-spec:
-  imageRef: test-metal
+spec: {}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk

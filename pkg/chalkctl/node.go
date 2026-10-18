@@ -290,7 +290,7 @@ func (a *app) installCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.node.register(fs)
 	f.pin.register(fs)
-	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory the node's Image names)")
+	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory of the node's image in the inventory)")
 	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
 	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer, to check the image's signatures against before it is sent")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
@@ -586,7 +586,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	f.node.register(fs)
 	registerPasswordFile(fs, &f.passwordFile)
 	fs.BoolVar(&f.kubernetesShare, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
-	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the image its Image names")
+	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, checked against the node's image in the inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing")
 	return cmd
 }
@@ -613,8 +613,8 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	// The staged image is the one the node's Image names, as after an upgrade without a reboot; the
-	// node checks the config against the staged image itself again, and refuses it without one.
+	// The staged image is the node's image in the inventory, as after an upgrade without a reboot;
+	// the node checks the config against the staged image itself again, and refuses it without one.
 	var c contract
 	if f.staged {
 		c, err = t.cluster.imageContractOf(t.name)

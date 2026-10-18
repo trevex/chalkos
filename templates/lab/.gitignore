@@ -1,8 +1,8 @@
 # The cluster's secrets in plain text. secrets.pub.json, their public part, belongs to the
 # repository: the flake reads it.
 secrets.json
-# What nix build links, the image the Image documents point at, and the images chalklab sign
-# --out copies.
+# What nix build links, the image the inventory points at, and the images chalklab sign --out
+# copies.
 result*
 images/
 *-image/

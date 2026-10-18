@@ -79,13 +79,20 @@ as packages:
 ```
 
 The inventory gives every node the files of `cluster/`, the nodes of a group the group's files,
-and each node its own file, in that order. Each node's `address` is where chalkctl reaches it:
+and each node its own file, in that order. Each node's `address` is where chalkctl reaches it.
+`spec.images` names the image directories, relative to the inventory's directory, here the
+`images/` directory `nix build` links, and `spec.image` the image every node runs unless it or
+one of its groups names another:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: prod}
 spec:
+  images:
+    # nix build .#node-metal -o images/node-metal puts the image here.
+    node-metal: {source: {directory: images/node-metal}}
+  image: node-metal
   files: [cluster/*.yaml]
   groups:
     storage: {files: [groups/storage.yaml]}
@@ -108,8 +115,7 @@ spec:
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ```
 
-`cluster/cluster.yaml` names the cluster and the image its nodes run. The `Image` document's
-directory is relative to the file, so it points at the `images/` directory `nix build` links:
+`cluster/cluster.yaml` names the cluster:
 
 ```yaml title="cluster/cluster.yaml"
 apiVersion: chalkos.dev/v1alpha1
@@ -118,13 +124,6 @@ metadata: {name: prod}
 spec:
   # The VIP the control planes hold.
   endpoint: https://10.0.0.10:6443
----
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: node-metal}
-spec:
-  # nix build .#node-metal -o images/node-metal puts the image here.
-  source: {directory: ../images/node-metal}
 ```
 
 A node's set holds at most one document of most kinds, and exactly one `Cluster`, `Node` and
@@ -143,7 +142,9 @@ Add a [variant](../reference/glossary.md#variant) only for nodes that need other
 image, such as GPU drivers or an extension's service, and name every variant the flake builds:
 `variants` replaces the default `node` variant, so `variants.gpu.modules` alone builds no `node`
 images. With `node = { };` beside `gpu`, the flake builds `node-<platform>` and `gpu-<platform>`
-images, and the nodes that run the GPU images name an `Image` document of their own.
+images, and the nodes that run the GPU images name theirs in the inventory, on the node or on a
+group: a node's own `image` wins over its groups', which win over `spec.image`, and a node in two
+groups that name different images is refused.
 Every variant is built for every platform the flake names, so name only the platforms you run.
 [Customise an image](customise-image.md) adds modules to a variant.
 
@@ -174,7 +175,6 @@ kind: Node
 metadata: {name: cp1}
 spec:
   type: controlplane
-  imageRef: node-metal
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -476,7 +476,7 @@ generation; it is allowed, at your own risk, and nothing warns of it.
 
 A routine that works: change the flake, build the images into `images/` again, run
 `chalkctl validate`, upgrade a lab of the same variants with them, then run `chalkctl upgrade`
-on the cluster, which gives each node the image its `Image` document names. Kubernetes moves one
+on the cluster, which gives each node the image the inventory names for it. Kubernetes moves one
 minor release at a time, as upstream requires. [Upgrade a cluster](upgrade-cluster.md) describes
 a run.
 
@@ -512,7 +512,7 @@ tools that work at the Kubernetes level, and back up these yourself:
 
 ## Check that it worked
 
-Build the image the `Image` document points at, then check every node's config against it.
+Build the image the inventory points at, then check every node's config against it.
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) reaches no node and needs no secrets
 file:
 
@@ -523,7 +523,7 @@ chalkctl validate
 
 `nix build` fails on what only the image knows, such as an unknown option. `chalkctl validate`
 prints a line for each valid node, such as
-`cp1: valid for the Image node-metal (node on metal, root hash 2ece03b0fa09), config <hash>`,
+`cp1: valid for the image node-metal (node on metal, root hash 2ece03b0fa09), config <hash>`,
 names each node whose config is not valid with the reason, and warns of a node whose STATE is
 unencrypted. Run both in CI, so a change to the flake or a YAML file never reaches a node
 unchecked.

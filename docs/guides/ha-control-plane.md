@@ -43,12 +43,6 @@ kind: Cluster
 metadata: {name: prod}
 spec:
   endpoint: https://10.0.0.10:6443
----
-apiVersion: chalkos.dev/v1alpha1
-kind: Image
-metadata: {name: node-metal}
-spec:
-  source: {directory: ../images/node-metal}
 ```
 
 ```yaml title="cluster/kubernetes.yaml"
@@ -68,7 +62,6 @@ kind: Node
 metadata: {name: cp1}
 spec:
   type: controlplane
-  imageRef: node-metal
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
@@ -85,13 +78,16 @@ spec:
 ```
 
 `nodes/cp2.yaml` and `nodes/cp3.yaml` are alike, at 10.0.0.12 and 10.0.0.13, and the inventory
-names all three at those addresses:
+names all three at those addresses, with the image they run:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: prod}
 spec:
+  images:
+    node-metal: {source: {directory: images/node-metal}}
+  image: node-metal
   files: [cluster/*.yaml]
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}

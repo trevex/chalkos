@@ -32,7 +32,7 @@ func TestWriteKinds(t *testing.T) {
 	}
 	for _, want := range []string{
 		"## Node { #node }\n\n`apiVersion: chalkos.dev/v1alpha1`\n\nA node's config holds at most one.\n\nIt has 2 [change rules](../concepts/rules.md).\n\n| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n",
-		"| `spec.imageRef` | string | required | Name of the Image document of the image the node runs. |\n",
+		"| `spec.hostname` | string | required | Host name set at boot. |\n",
 		"| `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes. |\n",
 		"`apiVersion: storage.chalkos.dev/v1alpha1`\n\nA node's config may hold several, each with a name of its own.\n\n",
 		"| `spec.disk` | object | see below | The disk the volume is on. |\n| `spec.disk.path` | string | none | Path below /dev. |\n",

@@ -120,7 +120,7 @@ func (ta *testApp) configVersion(t *testing.T) string {
 	return inventoryVersion(t, ta.inventory)
 }
 
-// identity is n1's identity as its config translates on the image its Image names.
+// identity is n1's identity as its config translates on its image in the inventory.
 func (ta *testApp) identity(t *testing.T) identity.Identity {
 	t.Helper()
 	c, err := loadInventory(ta.inventory)
@@ -172,7 +172,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	pair, _ := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.Key))
 	leaf, _ := x509.ParseCertificate(pair.Certificate[0])
 	s.Fingerprint = pki.Fingerprint(leaf.Raw)
-	// The node runs the image the test node's Image names.
+	// The node runs the test node's image in the inventory.
 	if s.Paths.OSRelease == "" {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
@@ -365,7 +365,7 @@ func TestInstallInPlace(t *testing.T) {
 }
 
 // TestInstallInPlaceRefusesAnotherPlatform refuses to install a node in place that runs an image
-// of another platform than its Image's.
+// of another platform than its image's.
 func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
 	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "kvm", testRootHash, false)
@@ -374,7 +374,7 @@ func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
 	s.InPlace = func(context.Context, install.Request) error { called = true; return nil }
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr))
-	if want := "n1 runs an image built for metal, but its Image test-metal is built for kvm; changing a node's platform is a reinstall"; err == nil || !strings.Contains(err.Error(), want) {
+	if want := "n1 runs an image built for metal, but its image test-metal is built for kvm; changing a node's platform is a reinstall"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("install = %v, want %q", err, want)
 	}
 	if called {
@@ -402,7 +402,8 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 
 // TestInstallFromPartsStreamsTheImage sends the installer the image's store, hash tree, UKI and
 // boot loader with the header describing them, and the image's definitions. The image may be
-// another than the node's Image names: the installer checks the config against the image's schemas.
+// another than the node's image in the inventory: the installer checks the config against the
+// image's schemas.
 func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	ta := newTestApp(t)
 	imageDir := testUpgradeImage(t, "gpu", "0.1.0")
@@ -1163,7 +1164,7 @@ func TestCount(t *testing.T) {
 }
 
 // TestApplyConfigRefusesAnotherPlatform refuses to deliver config to a node whose image was built
-// for another platform than its Image's: the node would translate the config
+// for another platform than its image's: the node would translate the config
 // for its own.
 func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
@@ -1171,7 +1172,7 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=kvm\n")
 	addr := ta.startNode(t, s)
-	want := "n1 runs an image built for kvm, but its Image test-metal is built for metal; changing a node's platform is a reinstall"
+	want := "n1 runs an image built for kvm, but its image test-metal is built for metal; changing a node's platform is a reinstall"
 	for _, cmd := range [][]string{{"apply-config", "n1"}, {"storage", "reset", "n1", "var"}} {
 		err := ta.run(context.Background(), ta.args(cmd, addr))
 		if err == nil || !strings.Contains(err.Error(), want) {
@@ -1184,7 +1185,7 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 }
 
 // TestApplyConfigToAnImageOfAnotherVariant delivers config to a node that runs an image of another
-// variant than its Image's: the node checks the config against its image's schemas.
+// variant than its image's: the node checks the config against its image's schemas.
 func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{"hostname": "old"}`))
@@ -1201,7 +1202,7 @@ func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 }
 
 // TestInstallInPlaceOnAnImageOfAnotherVariant installs a node in place that runs an image of
-// another variant than its Image's: the node checks the config against its image's schemas.
+// another variant than its image's: the node checks the config against its image's schemas.
 func TestInstallInPlaceOnAnImageOfAnotherVariant(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
@@ -1289,7 +1290,7 @@ func TestStatusWithABrokenConfig(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	ta.writeNode(t, strings.Replace(n1Node, "imageRef: test-metal", "imageRef: missing", 1), n1SystemDisk, n1Network)
+	ta.writeNode(t, strings.Replace(n1Node, "{name: n1}", "{name: n9}", 1), n1SystemDisk, n1Network)
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
@@ -1303,7 +1304,7 @@ func TestStatusWithABrokenConfig(t *testing.T) {
 // the inventory names, so commands still reach it.
 func TestAddressWithABrokenConfig(t *testing.T) {
 	ta := newTestApp(t)
-	ta.writeNode(t, strings.Replace(n1Node, "imageRef: test-metal", "imageRef: missing", 1), n1SystemDisk, n1Network)
+	ta.writeNode(t, strings.Replace(n1Node, "{name: n1}", "{name: n9}", 1), n1SystemDisk, n1Network)
 	c, err := loadInventory(ta.inventory)
 	if err != nil {
 		t.Fatal(err)

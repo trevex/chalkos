@@ -11,8 +11,8 @@ Install new images on the cluster's nodes, one control plane at a time
 
 Installs on each node a new image: control planes one at a time, each only while etcd keeps its
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
-Without --image each node (every node of the inventory, or those --nodes names) gets the image its
-Image document names, which must be the build whose root hash its directory's metadata.json
+Without --image each node (every node of the inventory, or those --nodes names) gets the image the
+inventory names for it, which must be the build whose root hash its directory's metadata.json
 names, as status compares nodes with it: rebuild the image or link its directory again
 otherwise. A node that runs on another platform than its image stops the run before any node is
 sent anything. With --image the nodes that run the image's variant get it, or those --nodes
@@ -55,7 +55,7 @@ chalkctl upgrade [flags]
 ## Examples
 
 ```
-  # Upgrade the whole cluster, each node to the image its Image names.
+  # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
 
   # Upgrade the nodes that run an image's variant, two at a time, with a prebuilt image, which
@@ -73,7 +73,7 @@ chalkctl upgrade [flags]
       --diff                   print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing; needs the admin role
   -h, --help                   help for upgrade
       --identity strings       age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-      --image string           image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default each node's Image's directory)
+      --image string           image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --max-unavailable int    how many workers and nodes without Kubernetes upgrade at once (default 1)
       --no-reboot              install the images on the nodes without draining or rebooting them; they boot with their next reboot
