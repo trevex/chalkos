@@ -52,6 +52,10 @@ let
   # fact keeps the hashes of its keys.
   withoutNodeCA = s: ''${s}.filter(k, k != "nodeCA").map(k, k + "=" + ${s}[k])'';
   shareChanged = "cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : ${withoutNodeCA "was"} != ${withoutNodeCA "gets"}))";
+  # Only what the kubelet and its preparation read counts. chalkd once compared the whole identity
+  # when it had no Kubernetes part, as for a Node without a type, and restarted the kubelet for any
+  # other change of it, such as of the storage or the time servers. That was a mistake, corrected
+  # here: such a node restarts the kubelet only for these changes.
   kubernetesChanged = lib.concatStringsSep " || " [
     "${node "config"} != ${node "oldConfig"}"
     (cel.specsChanged kubernetesAPI "Kubelet")

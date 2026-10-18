@@ -250,6 +250,10 @@ documents reference is in the kind's schema, and a unit reads their values as it
 chalkd loads the facts the rules read before a delivery changes anything, and again once it is
 applied, so a rule compares a file that the delivery writes, such as the node's Kubernetes share.
 
+Delivery is idempotent: a delivery that changes nothing the rules compare takes no effect. The
+same config delivered again restarts no unit, and the same share delivered again restarts neither
+the kubelet nor chalkd's loops, since the share fact before and after it is the same.
+
 chalkd evaluates every consumer's rules once it has applied a delivery, after it stored the config
 in the running slot, also for a delivery without config, as of a share:
 

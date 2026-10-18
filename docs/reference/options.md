@@ -672,8 +672,9 @@ CEL expression that is true when a delivery restarts the unit\. Besides ` config
 ` oldConfig ` and ` changedKinds `, the names of the kinds whose documents, or the
 Secrets they reference, differ between the two, it reads ` facts.<name> ` after the
 delivery and ` oldFacts.<name> ` before it\. ` false ` never restarts the unit\. chalkd
-restarts every unit whose rule is true in one ` systemctl try-restart `, and a unit
-that failed with ` reset-failed ` and ` restart ` instead\.
+restarts every unit whose rule is true in one ` systemctl try-restart `, the units
+with ` restart.start ` set in one ` systemctl restart ` instead, which starts them when
+they do not run, and a unit that failed with ` reset-failed ` and ` restart `\.
 
 
 

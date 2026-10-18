@@ -413,6 +413,9 @@ when the node gets a new Kubernetes share:
 chalkos.consumers.cert-agent.restart.when = "facts.share != oldFacts.share";
 ```
 
+Only images with Kubernetes declare the `share` fact, so on an image without Kubernetes the build
+refuses this rule as one that reads an undeclared fact.
+
 The image build compiles these rules with the kinds' rules.
 [Change rules and facts](../concepts/rules.md#which-units-does-a-change-restart-or-reload)
 explains when chalkd evaluates them and how it restarts and reloads units.
