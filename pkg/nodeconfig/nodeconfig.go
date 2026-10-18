@@ -192,14 +192,13 @@ func (l Loader) writeConfig(stored store.Stored) error {
 	if found {
 		if c, err = l.Cluster(stored.Documents); err != nil {
 			// No Kubernetes side runs on settings the config does not give.
-			if _, rerr := l.WriteCluster(nil); rerr != nil {
+			if rerr := l.WriteCluster(nil); rerr != nil {
 				return errors.Join(err, rerr)
 			}
 			return fmt.Errorf("the node runs no Kubernetes: its stored config gives no Kubernetes cluster for this image: %w; deliver config that does with chalkctl apply-config", err)
 		}
 	}
-	_, err = l.WriteCluster(c)
-	return err
+	return l.WriteCluster(c)
 }
 
 // Cluster returns the Kubernetes cluster docs give on this image, from the image's facts and the
@@ -222,31 +221,31 @@ func (l Loader) Cluster(docs []config.Document) (*kubernetes.Cluster, error) {
 	return &c, nil
 }
 
-// WriteCluster writes c as the node's cluster file, or removes the file for nil, and reports
-// whether its content changed.
-func (l Loader) WriteCluster(c *kubernetes.Cluster) (bool, error) {
+// WriteCluster writes c as the node's cluster file, or removes the file for nil. A file that
+// holds c already is left as it is.
+func (l Loader) WriteCluster(c *kubernetes.Cluster) error {
 	if l.ClusterFile == "" {
-		return false, nil
-	}
-	old, err := os.ReadFile(l.ClusterFile)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return false, err
+		return nil
 	}
 	if c == nil {
 		if err := os.Remove(l.ClusterFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return false, err
+			return err
 		}
-		return old != nil, nil
+		return nil
+	}
+	old, err := os.ReadFile(l.ClusterFile)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
 	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
-		return false, err
+		return err
 	}
 	data = append(data, '\n')
 	if bytes.Equal(old, data) {
-		return false, nil
+		return nil
 	}
-	return true, writeFile(l.ClusterFile, data, 0o644)
+	return writeFile(l.ClusterFile, data, 0o644)
 }
 
 // Apply writes what the identity determines and sets the hostname.

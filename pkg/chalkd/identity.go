@@ -338,7 +338,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		if cluster != nil {
-			if _, err := s.Loader.WriteCluster(cluster); err != nil {
+			if err := s.Loader.WriteCluster(cluster); err != nil {
 				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
 			}
 		}

@@ -344,13 +344,13 @@ func TestLoadWritesTheCluster(t *testing.T) {
 	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4 != "10.96.0.10" || c.Images.KubeProxy != "p" {
 		t.Errorf("cluster = %+v", c)
 	}
-	// The same cluster changes nothing; another does.
-	if changed, err := l.WriteCluster(&c); err != nil || changed {
-		t.Errorf("rewrite: changed = %v, %v", changed, err)
-	}
+	// Another cluster replaces it.
 	c.Domain = "lab.local"
-	if changed, err := l.WriteCluster(&c); err != nil || !changed {
-		t.Errorf("new domain: changed = %v, %v", changed, err)
+	if err := l.WriteCluster(&c); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := kubernetes.ReadCluster(l.ClusterFile); err != nil || got.Domain != "lab.local" {
+		t.Errorf("new domain: %+v, %v", got, err)
 	}
 }
 
