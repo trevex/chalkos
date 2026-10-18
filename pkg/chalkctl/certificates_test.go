@@ -77,6 +77,37 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 	}
 }
 
+// node renew prints why a consumer's rule could not be evaluated as a warning, as apply-config
+// does.
+func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
+	ta := newTestApp(t)
+	cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, _ := json.Marshal(ta.identity(t))
+	s, _ := installedNode(t, ta, current)
+	var consumers map[string]any
+	raw, err := os.ReadFile(s.Loader.Consumers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &consumers); err != nil {
+		t.Fatal(err)
+	}
+	consumers["report"] = map[string]any{"kinds": []string{}, "restart": map[string]any{"when": `config["chalkos.dev/v1alpha1"].Node.missing.spec.type == "worker"`}}
+	data, _ := json.Marshal(consumers)
+	writeFile(t, s.Loader.Consumers, string(data))
+	addr := ta.nodeWithCertificate(t, s, cert)
+	if err := ta.run(context.Background(), ta.args([]string{"node", "renew", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	want := "chalkctl: warning: n1: the rule of report restart: a rule cannot be evaluated: no such key; taking its effect all the same\n"
+	if ta.stderr.String() != want {
+		t.Errorf("stderr = %q, want %q", ta.stderr, want)
+	}
+}
+
 func TestNodeRenewVerifiesTheNode(t *testing.T) {
 	ta := newTestApp(t)
 	other := newTestApp(t)

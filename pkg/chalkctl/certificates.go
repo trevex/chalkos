@@ -53,12 +53,14 @@ func (a *app) nodeRenew(ctx context.Context, n nodeCommand, pos []string) error 
 	if err != nil {
 		return err
 	}
-	if _, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{
+	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{
 		NodeCertificate: []byte(cert.Certificate),
 		NodeKey:         []byte(cert.Key),
-	})); err != nil {
+	}))
+	if err != nil {
 		return fmt.Errorf("deliver the node certificate of %s: %w", t.name, nodeError(err, t.name))
 	}
+	a.warnDelivery(t.name, resp.Msg)
 	leaf, err := pki.ParseCertificate([]byte(cert.Certificate))
 	if err != nil {
 		return err
