@@ -931,6 +931,65 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	}
 }
 
+// The same share delivered again changes no file the kubelet or chalkd's loops read, so nothing
+// restarts and the loops are left alone: a delivery that changes nothing does nothing.
+func TestApplyConfigTheSameShareAgainDoesNothing(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	share := []byte(readFile(t, filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")))
+	acted := loops(s)
+	r.calls = nil
+	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Msg.RestartedUnits) != 0 || len(r.calls) != 0 || len(*acted) != 0 {
+		t.Errorf("restarted %v, ran %v, acted on the loops %v", resp.Msg.RestartedUnits, r.calls, *acted)
+	}
+}
+
+// A share that differs in its node CA alone, delivered with config, restarts the kubelet when the
+// config changes what it reads, and only then; chalkd's loops are left alone.
+func TestApplyConfigNodeCAWithConfig(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindControlPlane)
+	controlPlane := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
+	if _, err := sendConfig(s, controlPlane); err != nil {
+		t.Fatal(err)
+	}
+	withNodeCA := func() []byte {
+		current, err := knode.ReadShare(s.Kubernetes.Paths)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nodeCA := testNodeCA(t)
+		current.NodeCA = &nodeCA
+		data, err := current.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	acted := loops(s)
+	for _, step := range []struct {
+		name, config string
+		want         []string
+	}{
+		{"the Kubelet's labels", strings.Replace(controlPlane, "spec: {nodeIPs: [192.168.100.21]}", "spec: {nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", 1), []string{"chalkos-kubernetes", "kubelet"}},
+		{"a Demo", strings.NewReplacer("spec: {nodeIPs: [192.168.100.21]}", "spec: {nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", "name: first", "name: second").Replace(controlPlane), []string{"demo"}},
+	} {
+		r.calls, *acted = nil, nil
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, KubernetesShare: withNodeCA()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(resp.Msg.RestartedUnits, step.want) || len(*acted) != 0 {
+			t.Errorf("%s: restarted %v, acted on the loops %v; want %v", step.name, resp.Msg.RestartedUnits, *acted, step.want)
+		}
+	}
+}
+
 func TestControlPlaneRenewsItsCertificates(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	if _, err := bootstrap(s, context.Background()); err != nil {
