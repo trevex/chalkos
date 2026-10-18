@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -163,6 +165,37 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	}
 	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))})); err != nil {
 		t.Errorf("OS CAs with the node CA's: %v", err)
+	}
+}
+
+// TestRefusedTrustLeavesTheBaseline checks that OS CAs refused once the consumers' rules loaded
+// leave no baseline of their own, which would make the next delivery compare with a state nothing
+// changed, and leave one an earlier delivery that failed part way recorded as it was.
+func TestRefusedTrustLeavesTheBaseline(t *testing.T) {
+	s, _ := kubernetesServer(t, k8s.KindControlPlane, false)
+	withNodeCertificate(t, s)
+	osCA, _ := testOSCA()
+	next, _ := pki.NewOSCA(time.Now())
+	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
+	k, _ := pki.NewKubernetesSecrets(time.Now())
+	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
+	write(t, s.Kubernetes.Paths.Share(), string(share))
+	_, admin := adminOf(t, osCA)
+	refuse := func() {
+		t.Helper()
+		if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("OS CAs without the node CA's: %v, want a refusal", err)
+		}
+	}
+	refuse()
+	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("baseline after a refused delivery: %v", err)
+	}
+	earlier := `{"documents":[],"facts":{}}`
+	write(t, s.Paths.EffectsBaseline, earlier)
+	refuse()
+	if got := readFile(t, s.Paths.EffectsBaseline); got != earlier {
+		t.Errorf("baseline after a refused delivery = %s, want the earlier one %s", got, earlier)
 	}
 }
 

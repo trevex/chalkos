@@ -317,11 +317,13 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		if share == nil {
 			// A control plane keeps renewing node certificates with the node CA it holds.
 			if err := s.checkKeptNodeCA(osCA); err != nil {
+				s.refused(fx)
 				return nil, err
 			}
 		}
 		if err := s.Certificate.ReplaceTrust(osCA, peerOf(ctx)...); err != nil {
 			if isRefusedTrust(err) {
+				s.refused(fx)
 				return nil, failed(connect.CodeInvalidArgument, "%v", err)
 			}
 			return nil, failed(connect.CodeInternal, "%v", err)

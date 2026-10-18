@@ -30,8 +30,10 @@ type effects struct {
 	next, old []config.Document
 	// oldHashed tells that the secret values of old, a baseline's, are hashed already.
 	oldHashed bool
-	changed   []string
-	before    rules.Facts
+	// recorded tells that effectsOf wrote the baseline for this delivery, which no earlier one left.
+	recorded bool
+	changed  []string
+	before   rules.Facts
 }
 
 // effectsOf compiles the rules of the running image's consumers for a delivery that makes next,
@@ -41,8 +43,9 @@ type effects struct {
 // does not compile is the node's own failure.
 // The rules compare with the baseline instead while there is one, as a delivery that failed part
 // way left it; otherwise effectsOf records old and the facts as the baseline, which consume
-// removes once the delivery is applied whole. A retry, or another delivery, then takes the
-// effects of what the failed delivery changed already too.
+// removes once the delivery is applied whole, and refused once it is refused before it changed
+// anything. A retry, or another delivery, then takes the effects of what the failed delivery
+// changed already too.
 func (s *Server) effectsOf(ctx context.Context, next, old []config.Document, schemas *schema.Schemas, secret string) (*effects, error) {
 	consumers, err := nodeconfig.ReadConsumers(s.Loader.Consumers)
 	if err != nil {
@@ -101,6 +104,7 @@ func (s *Server) effectsOf(ctx context.Context, next, old []config.Document, sch
 	if err := newBaseline(old, e.factNames(), before).write(s.Paths.EffectsBaseline); err != nil {
 		return nil, failed(connect.CodeInternal, "record the config and facts the consumers' rules compare with: %v", err)
 	}
+	e.recorded = true
 	return e, nil
 }
 
@@ -180,6 +184,14 @@ func (s *Server) consume(ctx context.Context, e *effects, stored bool, secret st
 	}
 	s.dropBaseline()
 	return restarted, warnings, nil
+}
+
+// refused removes the baseline of a delivery refused before it changed anything, which leaves the
+// next one nothing to take again. A baseline an earlier delivery that failed part way left stays.
+func (s *Server) refused(e *effects) {
+	if e.recorded {
+		s.dropBaseline()
+	}
 }
 
 // failedToStore acts on chalkd's own rules for a delivery whose slot could not be written, as the
