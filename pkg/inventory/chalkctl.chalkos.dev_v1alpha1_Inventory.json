@@ -13,7 +13,11 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" }
+        "name": {
+          "type": "string",
+          "description": "Name of the inventory, a label only: chalkctl kubeconfig names the kubeconfig's cluster, user and context after it by default.",
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        }
       }
     },
     "spec": {

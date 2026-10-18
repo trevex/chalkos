@@ -187,6 +187,61 @@ func TestKubeconfig(t *testing.T) {
 	}
 }
 
+// TestKubeconfigContext checks that the kubeconfig's cluster, user and context are named after
+// the inventory, not after the Cluster document, unless --context names them.
+func TestKubeconfigContext(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"inventory", nil, "lab"},
+		{"flag", []string{"--context", "home@lab"}, "home@lab"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ta := newTestApp(t)
+			writeFile(t, filepath.Join(ta.dir, "cluster.yaml"), strings.Replace(testClusterYAML, "{name: lab}", "{name: other}", 1))
+			out := filepath.Join(ta.dir, "kubeconfig")
+			args := append([]string{"kubeconfig", "--inventory", ta.inventory, "--out", out}, tc.args...)
+			if err := ta.run(context.Background(), args); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := os.ReadFile(out)
+			type named struct {
+				Name string `json:"name"`
+			}
+			var kc struct {
+				Clusters []named `json:"clusters"`
+				Users    []named `json:"users"`
+				Contexts []struct {
+					Name    string `json:"name"`
+					Context struct {
+						Cluster string `json:"cluster"`
+						User    string `json:"user"`
+					} `json:"context"`
+				} `json:"contexts"`
+				Current string `json:"current-context"`
+			}
+			if err := json.Unmarshal(data, &kc); err != nil {
+				t.Fatal(err)
+			}
+			if len(kc.Clusters) != 1 || kc.Clusters[0].Name != tc.want || len(kc.Users) != 1 || kc.Users[0].Name != tc.want ||
+				len(kc.Contexts) != 1 || kc.Contexts[0].Name != tc.want || kc.Contexts[0].Context.Cluster != tc.want ||
+				kc.Contexts[0].Context.User != tc.want || kc.Current != tc.want {
+				t.Errorf("kubeconfig names %+v, %+v, %+v, %q; want %s", kc.Clusters, kc.Users, kc.Contexts, kc.Current, tc.want)
+			}
+		})
+	}
+}
+
+func TestKubeconfigRefusesEmptyContext(t *testing.T) {
+	ta := newTestApp(t)
+	err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-", "--context", ""})
+	if err == nil || !strings.Contains(err.Error(), "--context") {
+		t.Errorf("kubeconfig --context '': %v", err)
+	}
+}
+
 func TestStatusShowsKubernetes(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, identity.KindWorker)

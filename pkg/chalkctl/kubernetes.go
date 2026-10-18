@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -77,21 +78,28 @@ func (a *app) bootstrap(ctx context.Context, n nodeCommand, timeout time.Duratio
 }
 
 type kubeconfigFlags struct {
-	cluster           clusterFlags
-	secrets           secretFlags
-	ttl               time.Duration
-	out, server, name string
-	force             bool
+	cluster                    clusterFlags
+	secrets                    secretFlags
+	ttl                        time.Duration
+	out, server, name, context string
+	// contextSet is whether --context was given, so that an empty name is refused rather than
+	// replaced by the default.
+	contextSet bool
+	force      bool
 }
 
 func (a *app) kubeconfigCommand() *cobra.Command {
 	var f kubeconfigFlags
-	cmd := a.command(&cobra.Command{
+	var cmd *cobra.Command
+	cmd = a.command(&cobra.Command{
 		Use:     "kubeconfig",
 		Short:   "Write an admin kubeconfig",
 		Long:    kubeconfigLong,
 		Example: kubeconfigExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.kubeconfig(ctx, f, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error {
+		f.contextSet = cmd.Flags().Changed("context")
+		return a.kubeconfig(ctx, f, pos)
+	})
 	fs := cmd.Flags()
 	f.cluster.register(fs)
 	f.secrets.register(fs)
@@ -100,13 +108,14 @@ func (a *app) kubeconfigCommand() *cobra.Command {
 	fs.BoolVar(&f.force, "force", false, "replace an existing file")
 	fs.StringVar(&f.server, "server", "", "URL clients reach the API server at, when it differs from the cluster endpoint; the certificate is still verified for the endpoint")
 	fs.StringVar(&f.name, "name", "admin", "user name in the admin certificate")
+	fs.StringVar(&f.context, "context", "", "name of the kubeconfig's cluster, user and context (default the inventory's metadata.name)")
 	return cmd
 }
 
 func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) error {
 	cf, sf := f.cluster, f.secrets
 	if len(pos) != 0 {
-		return errors.New("usage: chalkctl kubeconfig [--ttl 8760h] [--out FILE] [--server URL]")
+		return errors.New("usage: chalkctl kubeconfig [--ttl 8760h] [--out FILE] [--server URL] [--context NAME]")
 	}
 	c, err := loadCluster(cf)
 	if err != nil {
@@ -114,6 +123,14 @@ func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) e
 	}
 	if err := c.requireNodes("kubeconfig"); err != nil {
 		return err
+	}
+	// A kubeconfig's names may hold almost any character; only an empty one names nothing.
+	contextName := f.context
+	switch {
+	case f.contextSet && strings.TrimSpace(contextName) == "":
+		return errors.New("--context needs a name")
+	case !f.contextSet:
+		contextName = c.inv.Name
 	}
 	if c.endpoint == "" {
 		return fmt.Errorf("the Cluster %s names no endpoint, which a kubeconfig points clients at", c.name)
@@ -127,7 +144,7 @@ func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) e
 	if err != nil {
 		return err
 	}
-	kc := kpki.Kubeconfig{Name: c.name, Server: c.endpoint, CA: []byte(k.CABundle()), Client: admin}
+	kc := kpki.Kubeconfig{Name: contextName, Server: c.endpoint, CA: []byte(k.CABundle()), Client: admin}
 	if f.server != "" {
 		endpoint, err := url.Parse(c.endpoint)
 		if err != nil {

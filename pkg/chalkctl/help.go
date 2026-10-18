@@ -146,10 +146,14 @@ const kubeconfigLong = `Writes a kubeconfig with a client certificate for the Ku
 secrets file for --name in the group chalkos:cluster-admins, which is bound to cluster-admin,
 and valid for --ttl. The file holds the certificate's private key and is written with mode
 0600. --server points clients at another URL than the cluster endpoint (a forwarded port, for
-example), while they still verify the API server's certificate for the endpoint. The command
-needs the secrets file.`
+example), while they still verify the API server's certificate for the endpoint. The
+kubeconfig's cluster, user and context are named after the inventory's metadata.name, or after
+--context. The command needs the secrets file.`
 
 const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
+
+  # With the context home, to merge into a kubeconfig that holds other clusters.
+  chalkctl kubeconfig --secrets secrets.age --context home --out home.kubeconfig
 
   # Through a port forwarded to the API server.
   chalkctl kubeconfig --secrets secrets.age --server https://127.0.0.1:6443 --out -`

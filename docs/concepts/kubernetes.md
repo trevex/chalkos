@@ -313,7 +313,8 @@ chalkctl kubeconfig --out=<file>
 ```
 
 `--server` points it at another URL, such as a forwarded port, while it still verifies the API
-server's certificate for the endpoint.
+server's certificate for the endpoint. The kubeconfig's cluster, user and context are named after
+the inventory's `metadata.name`, or after `--context`.
 
 ## What does the status show?
 
