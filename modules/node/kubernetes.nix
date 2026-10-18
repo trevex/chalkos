@@ -19,6 +19,47 @@ let
   run = "/run/chalkos/kubernetes";
   flannel = config.chalkos.cni.provider == "flannel";
 
+  # When the node's Kubernetes files change, which the preparation writes and the kubelet reads:
+  # the node's address, the firewall's VXLAN rule, the kubelet's credentials and flags and the
+  # control plane's certificates come from the share, the node's identity and its cluster.
+  cel = import ./runtime/cel.nix { inherit lib; };
+  core = "chalkos.dev/v1alpha1";
+  kubernetesAPI = "kubernetes.chalkos.dev/v1alpha1";
+  # The identity's Kubernetes node: its name, its host name, which defaults to the name, and the
+  # type, which is the cluster's kind.
+  node =
+    c:
+    "cel.bind(d, ${cel.documents c core "Node"}, d.map(n, [n, d[n].spec.hostname != null ? d[n].spec.hostname : n, d[n].spec.type]))";
+  # The Address= values of each Network's [Network] sections, as written and in the order of the
+  # networks' names, which the identity takes the node's static addresses from. They are compared
+  # with their prefix lengths: taking those off loops over the addresses of each section of each
+  # network, which costs more than a rule may.
+  staticAddresses =
+    c:
+    "cel.bind(d, ${
+      cel.documents c "networkd.chalkos.dev/v1alpha1" "Network"
+    }, d.map(n, has(d[n].spec.network) ? ${cel.oneOrMany "d[n].spec.network"}.map(s, type(s) == map && has(s.address) ? s.address : null) : []))";
+  # The cluster the Node's type and the Cluster, Kubernetes and Flannel documents give, or a
+  # cluster file that changed, as one a boot whose config loader failed left missing.
+  clusterChanged = lib.concatStringsSep " || " [
+    "facts.cluster != oldFacts.cluster"
+    (cel.specsChanged core "Cluster")
+    (cel.specsChanged kubernetesAPI "Kubernetes")
+    (cel.specsChanged kubernetesAPI "Flannel")
+  ];
+  # A share that differs in more than its node CA: the node CA is read from the share whenever a
+  # node certificate is issued, and nothing else uses it, so a new one restarts nothing. The share
+  # fact keeps the hashes of its keys.
+  withoutNodeCA = s: ''${s}.filter(k, k != "nodeCA").map(k, k + "=" + ${s}[k])'';
+  shareChanged = "cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : ${withoutNodeCA "was"} != ${withoutNodeCA "gets"}))";
+  kubernetesChanged = lib.concatStringsSep " || " [
+    "${node "config"} != ${node "oldConfig"}"
+    (cel.specsChanged kubernetesAPI "Kubelet")
+    "${staticAddresses "config"} != ${staticAddresses "oldConfig"}"
+    clusterChanged
+    shareChanged
+  ];
+
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
   # node's addresses, which flanneld uses and other nodes send to: on the interface holding one,
   # or on any for one on a loopback or dummy interface. chalkd picks them after the firewall
@@ -149,6 +190,20 @@ in
       chalkos.consumers = lib.mkIf enable {
         chalkos-registry-mirrors.kinds = [ "RegistryMirror" ];
         chalkos-controlplane.kinds = [ "Node" ];
+        # Both start too: a node runs no kubelet until it holds a share, which the delivery of
+        # its first one changes.
+        chalkos-kubernetes.restart = {
+          when = kubernetesChanged;
+          start = true;
+        };
+        kubelet.restart = {
+          when = kubernetesChanged;
+          start = true;
+        };
+      };
+      # The cluster file chalkd writes, which the kubelet's rules compare.
+      chalkos.facts = lib.mkIf enable {
+        cluster.file = "${run}/cluster.json";
       };
     }
     (lib.mkIf enable {

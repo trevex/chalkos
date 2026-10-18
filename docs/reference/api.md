@@ -178,7 +178,7 @@ a node cordoned otherwise as it is.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `changes` | repeated [`StorageChange`](#message-storagechange) | Storage changes that were applied. |
-| `restarted_units` | repeated `string` | Units restarted because config kinds they read, or the Kubernetes settings, changed. |
+| `restarted_units` | repeated `string` | Units the delivery restarted, as the restart rules of the image's consumers say. |
 
 ### BootImage { #message-bootimage }
 

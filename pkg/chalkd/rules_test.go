@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -73,7 +72,8 @@ spec: {data: {token: plain-secret}}
 	}
 }
 
-// The share fact holds the share's kind alone, none of its keys.
+// The share fact holds the share's kind and the SHA-256 of each of its other keys, none of its
+// certificates and keys.
 func TestShareFactHoldsNoKeys(t *testing.T) {
 	s, _ := clusterServer(t, k8s.KindControlPlane)
 	f, err := s.factsFor(context.Background(), nil, nil, "")
@@ -84,8 +84,14 @@ func TestShareFactHoldsNoKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := map[string]any{"kind": k8s.KindControlPlane}; !reflect.DeepEqual(v, want) {
-		t.Errorf("share = %v, want %v", v, want)
+	share, _ := v.(map[string]any)
+	if share["kind"] != k8s.KindControlPlane || share["nodeCA"] == nil {
+		t.Fatalf("share = %v, want its kind and the hash of its node CA", v)
+	}
+	for key, value := range share {
+		if h, ok := value.(string); key != "kind" && (!ok || len(h) != 64 || strings.Trim(h, "0123456789abcdef") != "") {
+			t.Errorf("share[%s] = %v, want a hex SHA-256", key, value)
+		}
 	}
 }
 

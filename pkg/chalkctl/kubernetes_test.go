@@ -98,6 +98,10 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 	// The cluster file chalkd writes from the node's config.
 	s.Loader.ClusterFile = s.Kubernetes.Paths.Cluster
 	writeFile(t, s.Kubernetes.Paths.Cluster, clusterFile("worker"))
+	// The facts the kubelet's restart rules read, as the image declares them.
+	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
+	  "share": {"file": "`+s.Kubernetes.Paths.Share()+`", "fields": ["kind"], "hashOthers": true},
+	  "cluster": {"file": "`+s.Loader.ClusterFile+`"}}`)
 	return s, r
 }
 
@@ -117,7 +121,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if share, err := kpki.ParseShare(data); err != nil || share.Node() != "n1" {
 		t.Errorf("share on the node: %v", err)
 	}
-	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet") {
 		t.Errorf("node ran %v", r.calls)
 	}
 
@@ -126,7 +130,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
+	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet") {
 		t.Error("apply-config without --kubernetes-share restarted the kubelet")
 	}
 }

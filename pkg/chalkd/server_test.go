@@ -230,16 +230,20 @@ func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ in
 	return f.s.storage().Facts(ctx, argv[2], stdin)
 }
 
-// writeFacts declares the facts of the built-in kinds' rules as an image does, at the test
-// server's paths.
+// writeFacts declares the facts of the built-in kinds' and consumers' rules as an image does, at
+// the test server's paths; the cluster file only once the server writes one.
 func writeFacts(t *testing.T, s *Server) {
 	t.Helper()
-	defs, err := json.Marshal(map[string]facts.Definition{
-		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}},
+	defined := map[string]facts.Definition{
+		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
 		"recorded": {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
 		"disks":    {Command: "chalkos-storage facts disks"},
 		"fallback": {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
-	})
+	}
+	if s.Loader.ClusterFile != "" {
+		defined["cluster"] = facts.Definition{File: s.Loader.ClusterFile}
+	}
+	defs, err := json.Marshal(defined)
 	if err != nil {
 		t.Fatal(err)
 	}

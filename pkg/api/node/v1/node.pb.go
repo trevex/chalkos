@@ -1663,7 +1663,7 @@ type ApplyConfigResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Storage changes that were applied.
 	Changes []*StorageChange `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
-	// Units restarted because config kinds they read, or the Kubernetes settings, changed.
+	// Units the delivery restarted, as the restart rules of the image's consumers say.
 	RestartedUnits []string `protobuf:"bytes,2,rep,name=restarted_units,json=restartedUnits,proto3" json:"restarted_units,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache

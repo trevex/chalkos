@@ -197,7 +197,15 @@ func (s *Server) applyEffects(ctx context.Context, consumers map[string]nodeconf
 	run("try-restart", try)
 	if len(errs) > 0 {
 		slices.Sort(restartByHand)
-		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), byHand(reloadByHand, restartByHand))
+		hand := byHand(reloadByHand, restartByHand)
+		// The Kubernetes units start only once their preparation succeeds, whose reason tells
+		// more than systemctl's error.
+		if len(restartByHand) > 0 && s.Kubernetes != nil {
+			if problem, err := preparation(s.Kubernetes.Paths); err == nil && problem != "" && problem != preparing {
+				return nil, failed(connect.CodeFailedPrecondition, "%v; the node runs no kubelet: %s%s", errors.Join(errs...), problem, hand)
+			}
+		}
+		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), hand)
 	}
 	slices.Sort(restarted)
 	return restarted, nil

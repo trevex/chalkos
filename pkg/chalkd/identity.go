@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -337,12 +336,6 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		log.Printf("trusting %s from now on", count(strings.Count(osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
 	}
 	var changes []storage.Change
-	var restarted []string
-	// The identity the node ran, which the Kubernetes side compares with the one it runs next.
-	old := d.data
-	if !keep {
-		old = prev.Identity
-	}
 	if !keep {
 		changes = mc.changes
 		if err := s.applyMachine(ctx, mc, m.FallbackSecret); err != nil {
@@ -367,10 +360,9 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		}
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
-	var kubernetesUnits []string
 	act := keepLoops
 	if s.Kubernetes != nil {
-		if kubernetesUnits, act, err = s.applyKubernetes(ctx, old, d.data, share, clusterChanged); err != nil {
+		if act, err = s.recordShare(share, clusterChanged); err != nil {
 			return nil, err
 		}
 		// A control plane applies the objects of changed Addon documents at once, as its loop
@@ -382,10 +374,10 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	}
 	// The slot comes last, documents and identity in one rename: until it is written, STATE holds
 	// the identity and the set the node ran before, which a boot applies whole, and a retry
-	// compares the delivery with them and applies the identity, Kubernetes and the consumers'
-	// config again. storage.json, written before, is the machine's rather than an image's:
-	// applyStorage records the section once its additive changes are made, so a retry finds
-	// them recorded and makes none twice.
+	// compares the delivery with them and applies the identity and the consumers' config again,
+	// and restarts what their rules ask. storage.json, written before, is the machine's rather
+	// than an image's: applyStorage records the section once its additive changes are made, so a
+	// retry finds them recorded and makes none twice.
 	if !keep {
 		r.next.Identity = d.data
 		if err := store.Write(slot, r.next); err != nil {
@@ -394,12 +386,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
 	}
-	units, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
+	restarted, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
 	if err != nil {
 		s.actOnLoops(act)
 		return nil, err
 	}
-	restarted = append(units, kubernetesUnits...)
 	// The loops read the control plane's objects from the running slot, so they start again
 	// once it is stored.
 	s.actOnLoops(act)
@@ -621,46 +612,23 @@ func (k *Kubernetes) act(a loopAction) {
 	}
 }
 
-// applyKubernetes records a delivered share and, when it, the node's Kubernetes identity or its
-// cluster changed, prepares the node's Kubernetes files again and restarts what reads them. It
-// returns the restarted units and what the loops must do: a changed cluster starts them all
-// again, a share the control plane's loop.
-func (s *Server) applyKubernetes(ctx context.Context, old, data, share []byte, clusterChanged bool) ([]string, loopAction, error) {
-	before, errBefore := k8s.ParseNode(old)
-	after, errAfter := k8s.ParseNode(data)
-	// An identity that does not parse counts as changed, unless it is the same.
-	changed := clusterChanged || !bytes.Equal(old, data) && (errBefore != nil || errAfter != nil || !reflect.DeepEqual(before, after))
-	if share == nil && !changed {
-		return nil, keepLoops, nil
-	}
+// recordShare records a delivered share, which the kubelet's consumers compare with the one the
+// node held. It returns what the loops must do: a changed cluster starts them all again, a share
+// that differs in more than its node CA the control plane's loop.
+func (s *Server) recordShare(share []byte, clusterChanged bool) (loopAction, error) {
+	nodeCAOnly := share != nil && s.onlyNodeCAChanges(share)
 	if share != nil {
-		nodeCAOnly := !changed && s.onlyNodeCAChanges(share)
 		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
-			return nil, keepLoops, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
+			return keepLoops, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
 		}
-		// The node CA is read from the share whenever a node certificate is issued; nothing else
-		// uses it, so a new one restarts nothing.
-		if nodeCAOnly {
-			log.Print("recorded the delivered share, which differs at most in the node CA; nothing restarts")
-			return nil, keepLoops, nil
-		}
-	}
-	// The node's address, the firewall's VXLAN rule, the kubelet's credentials and flags and the
-	// control plane's certificates come from the share and the identity.
-	units := []string{"chalkos-kubernetes.service", "kubelet.service"}
-	if _, err := s.Run.Run(ctx, "systemctl", append([]string{"restart"}, units...)...); err != nil {
-		if problem, perr := preparation(s.Kubernetes.Paths); perr == nil && problem != "" && problem != preparing {
-			return nil, keepLoops, failed(connect.CodeFailedPrecondition, "the node runs no kubelet: %s", problem)
-		}
-		return nil, keepLoops, failed(connect.CodeInternal, "restart %s: %v", strings.Join(units, " "), err)
 	}
 	switch {
 	case clusterChanged:
-		return units, restartLoops, nil
-	case share != nil:
-		return units, reloadLoops, nil
+		return restartLoops, nil
+	case share != nil && !nodeCAOnly:
+		return reloadLoops, nil
 	}
-	return units, keepLoops, nil
+	return keepLoops, nil
 }
 
 // storedKubernetes compares the running slot, stored, with next on this image: it returns the

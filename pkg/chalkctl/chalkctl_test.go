@@ -634,12 +634,14 @@ func TestApplyConfigAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The node's slot held no documents, so the config's Network and Node are new: networkd
-	// reloads, and chalkos-controlplane, which reads the Node, restarts.
+	// reloads, and the units of the default image that read the Node restart.
 	if !reflect.DeepEqual(r.calls, []string{
 		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
 		"systemctl show --property=ActiveState --value systemd-networkd",
 		"systemctl show --property=ActiveState --value chalkos-controlplane",
-		"networkctl reload", "systemctl try-restart chalkos-controlplane",
+		"systemctl show --property=ActiveState --value chalkos-kubernetes",
+		"systemctl show --property=ActiveState --value kubelet",
+		"networkctl reload", "systemctl restart chalkos-kubernetes kubelet", "systemctl try-restart chalkos-controlplane",
 	}) {
 		t.Errorf("node ran %v", r.calls)
 	}

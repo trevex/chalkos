@@ -341,7 +341,7 @@ message GetConfigResponse {
 message ApplyConfigResponse {
   // Storage changes that were applied.
   repeated StorageChange changes = 1;
-  // Units restarted because config kinds they read, or the Kubernetes settings, changed.
+  // Units the delivery restarted, as the restart rules of the image's consumers say.
   repeated string restarted_units = 2;
 }
 

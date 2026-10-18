@@ -1150,8 +1150,8 @@ lib.runTests {
     };
   };
   # Every image declares the facts of the storage kinds' rules, and an image with Kubernetes
-  # the share, of which it keeps the kind and the hashes of the other keys; the fallback secret
-  # reaches the command that checks it alone.
+  # the share, of which it keeps the kind and the hashes of the other keys, and the cluster file
+  # the kubelet's restart rules read; the fallback secret reaches the command that checks it alone.
   testBuiltinFacts = {
     expr =
       let
@@ -1162,6 +1162,7 @@ lib.runTests {
         plain = lib.attrNames plainImage.system.build.chalkosFactDefinitions;
         recorded = defined.recorded;
         share = defined.share;
+        cluster = defined.cluster;
         disks = lib.hasSuffix " disks" defined.disks.command && !(defined.disks ? inputs);
         fallback =
           lib.hasSuffix " fallback" defined.fallback.command
@@ -1169,6 +1170,7 @@ lib.runTests {
       };
     expected = {
       names = [
+        "cluster"
         "disks"
         "fallback"
         "recorded"
@@ -1185,6 +1187,7 @@ lib.runTests {
         fields = [ "kind" ];
         hashOthers = true;
       };
+      cluster.file = "/run/chalkos/kubernetes/cluster.json";
       disks = true;
       fallback = true;
     };

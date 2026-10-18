@@ -510,33 +510,33 @@ func TestApplyConfigComparesFactsBeforeAndAfter(t *testing.T) {
 	}
 }
 
-// TestApplyConfigFailureKeepsKubernetesRestarts: Kubernetes is restarted even when the slot cannot
-// be written after it, and since the slot still holds the old identity, a retry restarts it again
-// rather than finding nothing changed.
-func TestApplyConfigFailureKeepsKubernetesRestarts(t *testing.T) {
-	s, r := kubernetesServer(t, k8s.KindWorker, true)
+// TestApplyConfigFailureToStoreRestartsNothing: no unit restarts before the slot holds the new
+// config, so one that cannot be written restarts nothing, and since the slot still holds the old
+// config, a retry restarts what the change asks for rather than finding nothing changed.
+func TestApplyConfigFailureToStoreRestartsNothing(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
 	slots := filepath.Dir(slotOf(t, s))
 	// The directory of slots takes no new slot directory.
 	if err := os.Chmod(slots, 0o555); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(slots, 0o755) })
-	if _, err := apply(s, kubernetesIdentity("n1"), ""); err == nil || !strings.Contains(err.Error(), "store the config") {
+	if _, err := sendConfig(s, workerConfig); err == nil || !strings.Contains(err.Error(), "store the config") {
 		t.Fatalf("err = %v, want the slot's failure", err)
 	}
-	restart := "systemctl restart chalkos-kubernetes.service kubelet.service"
-	if !slices.Contains(r.calls, restart) {
-		t.Errorf("commands = %v, want Kubernetes restarted", r.calls)
+	restart := "systemctl restart chalkos-kubernetes kubelet"
+	if slices.Contains(r.calls, restart) {
+		t.Errorf("commands = %v, want nothing restarted", r.calls)
 	}
 	if err := os.Chmod(slots, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	r.calls = nil
-	if _, err := apply(s, kubernetesIdentity("n1"), ""); err != nil {
+	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(r.calls, restart) {
-		t.Errorf("the retry ran %v, want Kubernetes restarted again", r.calls)
+		t.Errorf("the retry ran %v, want Kubernetes restarted", r.calls)
 	}
 }
 

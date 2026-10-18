@@ -13,4 +13,9 @@ rec {
   specs =
     c: apiVersion: kind:
     "cel.bind(d, ${documents c apiVersion kind}, d.map(n, d[n].spec))";
+  # Whether the specs of a kind differ between oldConfig and config.
+  specsChanged =
+    apiVersion: kind: "${specs "config" apiVersion kind} != ${specs "oldConfig" apiVersion kind}";
+  # x as a list: a section or a value of networkd's documents is one, or a list of them.
+  oneOrMany = x: "(type(${x}) == list ? ${x} : [${x}])";
 }
