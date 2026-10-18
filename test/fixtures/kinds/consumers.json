@@ -1,0 +1,63 @@
+{
+  "chalkos-chrony-dhcp": {
+    "kinds": [
+      "TimeSync"
+    ],
+    "reload": {
+      "command": "systemctl reload chalkos-chrony-dhcp",
+      "when": "false"
+    },
+    "restart": {
+      "start": false,
+      "when": "\"TimeSync\" in changedKinds"
+    }
+  },
+  "chalkos-controlplane": {
+    "kinds": [
+      "Node"
+    ],
+    "reload": {
+      "command": "systemctl reload chalkos-controlplane",
+      "when": "false"
+    },
+    "restart": {
+      "start": false,
+      "when": "\"Node\" in changedKinds"
+    }
+  },
+  "chalkos-registry-mirrors": {
+    "kinds": [
+      "RegistryMirror"
+    ],
+    "reload": {
+      "command": "systemctl reload chalkos-registry-mirrors",
+      "when": "false"
+    },
+    "restart": {
+      "start": false,
+      "when": "\"RegistryMirror\" in changedKinds"
+    }
+  },
+  "chronyd": {
+    "kinds": [],
+    "reload": {
+      "command": "chronyc reload sources",
+      "when": "cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in config && \"TimeSync\" in config[\"time.chalkos.dev/v1alpha1\"]) ? config[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)).map(s, s.servers) != cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in oldConfig && \"TimeSync\" in oldConfig[\"time.chalkos.dev/v1alpha1\"]) ? oldConfig[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)).map(s, s.servers)"
+    },
+    "restart": {
+      "start": false,
+      "when": "false"
+    }
+  },
+  "systemd-networkd": {
+    "kinds": [],
+    "reload": {
+      "command": "networkctl reload",
+      "when": "\"Link\" in changedKinds || \"NetDev\" in changedKinds || \"Network\" in changedKinds"
+    },
+    "restart": {
+      "start": false,
+      "when": "false"
+    }
+  }
+}

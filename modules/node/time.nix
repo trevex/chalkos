@@ -15,6 +15,8 @@ let
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
   dhcpEnabled = config.chalkos.kinds.TimeSync.get { path = "spec.dhcp"; };
+  cel = import ./runtime/cel.nix { inherit lib; };
+  servers = c: "${cel.specs c "time.chalkos.dev/v1alpha1" "TimeSync"}.map(s, s.servers)";
 in
 {
   services.chrony = {
@@ -98,6 +100,14 @@ in
       mv "$tmp" ${dhcpSources}/dhcp.sources
       chronyc reload sources || true
     '';
+  };
+
+  # The sources file holds the TimeSync's servers, or chalkos's own without a TimeSync, so chrony
+  # reads it again when they change; whether the servers DHCP announces count is
+  # chalkos-chrony-dhcp's. A chronyd that does not run reads it when it starts.
+  chalkos.consumers.chronyd.reload = {
+    when = "${servers "config"} != ${servers "oldConfig"}";
+    command = "chronyc reload sources";
   };
 
   # chalkd reads chrony's tracking state for the node's status.

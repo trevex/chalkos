@@ -26,7 +26,6 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
-	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -349,7 +348,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		if err := s.applyMachine(ctx, mc, m.FallbackSecret); err != nil {
 			return nil, err
 		}
-		if err := s.applyIdentity(ctx, old, d.data); err != nil {
+		if err := s.applyIdentity(d.data); err != nil {
 			return nil, err
 		}
 		if cluster != nil {
@@ -590,21 +589,12 @@ func (s *Server) stopUnits(ctx context.Context, units []string) error {
 	return nil
 }
 
-// applyIdentity applies the identity data in place of old, the one the node ran. The running slot
-// records it, with the config it came from, once the delivery is applied.
-func (s *Server) applyIdentity(ctx context.Context, old, data []byte) error {
+// applyIdentity applies the identity data: the networkd units and the time servers it gives,
+// which networkd and chrony read again as their consumers' rules say. The running slot records
+// it, with the config it came from, once the delivery is applied.
+func (s *Server) applyIdentity(data []byte) error {
 	if err := s.Loader.Apply(data); err != nil {
 		return failed(connect.CodeInternal, "apply the identity: %v", err)
-	}
-	if _, err := s.Run.Run(ctx, "networkctl", "reload"); err != nil {
-		return failed(connect.CodeInternal, "%v", err)
-	}
-	if nodeconfig.TimeChanged(old, data) {
-		// chrony reads the sources file again when it starts, so a chrony that is down misses
-		// nothing.
-		if _, err := s.Run.Run(ctx, "chronyc", "reload", "sources"); err != nil {
-			log.Printf("time servers: %v", err)
-		}
 	}
 	return nil
 }

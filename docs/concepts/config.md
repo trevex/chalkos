@@ -421,8 +421,9 @@ chalkd restarts the service, as its
 `restart.when = "false"` keeps the service running. It restarts a service that runs or stays
 active after it ran, and starts a failed one again, since the new config may be what it lacked; a
 service that never started or was stopped stays so. `apply-config` prints the units it restarted.
-For chalkos's own renderings, chalkd reloads networkd after every new set, reloads chrony's
-sources when the time servers change, and restarts the kubelet when the node's Kubernetes settings
+chalkos's own renderings have consumers too: networkd reloads when a `Network`, `NetDev` or `Link`
+document changes, or a `Secret` one of them references, chrony reloads its sources when the
+`TimeSync`'s servers change, and chalkd restarts the kubelet when the node's Kubernetes settings
 change.
 
 ## How do secrets reach a service?

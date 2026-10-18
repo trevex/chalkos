@@ -347,15 +347,3 @@ func writeFile(path string, data []byte, perm fs.FileMode) error {
 	}
 	return os.Rename(tmp.Name(), path)
 }
-
-// TimeChanged reports whether the time servers of two identities differ; an identity that does
-// not parse counts as changed.
-func TimeChanged(old, new []byte) bool {
-	var a, b identityFields
-	if json.Unmarshal(old, &a) != nil || json.Unmarshal(new, &b) != nil {
-		return true
-	}
-	sa, errA := a.Time.ChronySources()
-	sb, errB := b.Time.ChronySources()
-	return errA != nil || errB != nil || sa != sb
-}

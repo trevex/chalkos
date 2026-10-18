@@ -566,7 +566,13 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	}
 	s.Loader.RunDir = filepath.Join(root, "run")
 	s.Loader.NetworkDir = filepath.Join(root, "network")
+	// The consumers of the default image, whose rules the node carries out.
 	s.Loader.Consumers = filepath.Join(root, "consumers.json")
+	consumers, err := os.ReadFile("../../test/fixtures/kinds/consumers.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, s.Loader.Consumers, string(consumers))
 	s.Loader.SetHostname = func(string) error { return nil }
 	// The node runs the image of the root hash abab…, whose slot holds the identity alone.
 	s.Loader.Slots = filepath.Join(root, "state", "config")
@@ -627,7 +633,14 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.calls, []string{"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking", "networkctl reload", "chronyc reload sources"}) {
+	// The node's slot held no documents, so the config's Network and Node are new: networkd
+	// reloads, and chalkos-controlplane, which reads the Node, restarts.
+	if !reflect.DeepEqual(r.calls, []string{
+		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
+		"systemctl show --property=ActiveState --value systemd-networkd",
+		"systemctl show --property=ActiveState --value chalkos-controlplane",
+		"networkctl reload", "systemctl try-restart chalkos-controlplane",
+	}) {
 		t.Errorf("node ran %v", r.calls)
 	}
 	want := ta.configVersion(t)

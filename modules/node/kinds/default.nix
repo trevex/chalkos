@@ -16,6 +16,7 @@ let
   getLib = import ./get.nix { inherit lib; };
   chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
   chalkos-rules = pkgs.callPackage ../../../nix/chalkos-rules.nix { };
+  cel = import ../runtime/cel.nix { inherit lib; };
   cfg = config.chalkos.kinds;
 
   # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
@@ -375,5 +376,12 @@ in
     }) (map networkdKind networkd.kinds ++ kinds);
     environment.etc."chalkos/schemas".source = schemas;
     environment.etc."chalkos/facts.json".source = factsFile;
+
+    # The config loader writes the networkd units of the node's networkd documents, with the
+    # values their secretRefs name, so networkd reads them again when one of those changes.
+    chalkos.consumers.systemd-networkd.reload = {
+      when = cel.anyChanged networkd.kinds;
+      command = "networkctl reload";
+    };
   };
 }

@@ -647,6 +647,12 @@ lib.runTests {
       "storage.chalkos.dev_v1alpha1_Volume.json"
     ];
   };
+  # chalkd's tests carry out the built-in consumers' rules from this fixture, so it is the
+  # consumers.json of the default image.
+  testBuiltinConsumersMatchFixture = {
+    expr = consumersOf kubernetesImage;
+    expected = builtins.fromJSON (builtins.readFile ../fixtures/kinds/consumers.json);
+  };
   testReservedGroupFails = {
     expr = fails (
       schemasOf (image [

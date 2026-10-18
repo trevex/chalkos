@@ -187,18 +187,6 @@ func TestApplyWritesTimeServers(t *testing.T) {
 	}
 }
 
-func TestTimeChanged(t *testing.T) {
-	a := []byte(`{"time": {"servers": [{"host": "a", "nts": true}]}}`)
-	b := []byte(`{"hostname": "other", "time": {"servers": [{"host": "a", "nts": true}]}}`)
-	c := []byte(`{"time": {"servers": [{"host": "a", "nts": false}]}}`)
-	if TimeChanged(a, b) {
-		t.Error("the same servers changed")
-	}
-	if !TimeChanged(a, c) || !TimeChanged(nil, a) {
-		t.Error("other servers did not change")
-	}
-}
-
 const loaderConfig = `
 apiVersion: demo.example.org/v1alpha1
 kind: Demo

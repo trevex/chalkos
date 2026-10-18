@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -195,7 +196,27 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	writeSchemas(t, s.Loader.Schemas)
 	s.Facts = storageFacts{s}
 	writeFacts(t, s)
+	writeConsumers(t, s, "{}")
 	return s, r
+}
+
+// writeConsumers declares the consumers of the default image, whose rules the tests carry out,
+// and those of extra, a JSON object of consumers by unit, at the test server's path.
+func writeConsumers(t *testing.T, s *Server, extra string) {
+	t.Helper()
+	var consumers, more map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(readFile(t, "../../test/fixtures/kinds/consumers.json")), &consumers); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(extra), &more); err != nil {
+		t.Fatal(err)
+	}
+	maps.Copy(consumers, more)
+	data, err := json.Marshal(consumers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, s.Loader.Consumers, string(data))
 }
 
 // storageFacts runs the commands of the storage facts in the test, as chalkos-storage facts would,

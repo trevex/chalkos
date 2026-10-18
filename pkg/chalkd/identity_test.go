@@ -195,7 +195,6 @@ func TestApplyConfigAddsVolume(t *testing.T) {
 		enroll,
 		"systemctl daemon-reload",
 		"systemctl start systemd-cryptsetup@extra.service srv-extra.mount",
-		"networkctl reload",
 	}
 	if !reflect.DeepEqual(r.calls, want) {
 		t.Errorf("commands:\n got: %s\nwant: %s", strings.Join(r.calls, "\n      "), strings.Join(want, "\n      "))
@@ -224,7 +223,7 @@ func TestApplyConfigWithoutStorageChanges(t *testing.T) {
 	if _, err := apply(s, identityWith(section("", "")), ""); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.calls, []string{"networkctl reload"}) {
+	if len(r.calls) != 0 {
 		t.Errorf("commands = %v", r.calls)
 	}
 }
@@ -921,34 +920,11 @@ func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 	}
 }
 
-func TestApplyConfigReloadsTimeServers(t *testing.T) {
+// A time server that is no host is refused, as the config loader would refuse it at every boot.
+func TestApplyConfigRefusesATimeServerThatIsNoHost(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	withTime := func(host string) string {
-		return `{"hostname": "n1", "cluster": "lab", "platform": "metal", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "` + host + `", "nts": true}]}}`
-	}
-	count := func() int {
-		n := 0
-		for _, c := range r.calls {
-			if c == "chronyc reload sources" {
-				n++
-			}
-		}
-		return n
-	}
-	apply := func(id string) error {
-		_, err := deliver(context.Background(), s, id, &nodev1.ApplyConfigRequest{})
-		return err
-	}
-	if err := apply(withTime("ptbtime1.ptb.de")); err != nil {
-		t.Fatal(err)
-	}
-	if err := apply(withTime("ptbtime1.ptb.de")); err != nil {
-		t.Fatal(err)
-	}
-	if count() != 1 {
-		t.Errorf("chrony reloaded its sources %d times, want once for one change: %v", count(), r.calls)
-	}
-	if err := apply(withTime("a b")); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("a time server that is no host: %v", err)
+	id := `{"hostname": "n1", "cluster": "lab", "platform": "metal", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "a b", "nts": true}]}}`
+	if _, err := apply(s, id, ""); connect.CodeOf(err) != connect.CodeInvalidArgument || len(r.calls) != 0 {
+		t.Errorf("a time server that is no host: %v, ran %v", err, r.calls)
 	}
 }

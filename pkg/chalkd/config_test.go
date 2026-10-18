@@ -124,16 +124,13 @@ func hashOf(t *testing.T, text string) string {
 }
 
 // configServer is a normal-mode server that runs baseConfig: STATE holds the set, the identity
-// it translates to and that identity's storage section, pinned. The image has the consumers
-// demo, of the Demo kind, and timesync, of the TimeSync kind, which restart by default.
+// it translates to and that identity's storage section, pinned. The image has the built-in
+// consumers and demo, of the Demo kind, which restarts by default.
 func configServer(t *testing.T) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := newTestServer(t, normal, vda, vdb)
 	writeSchemas(t, s.Loader.Schemas)
-	write(t, s.Loader.Consumers, `{
-	  "demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}},
-	  "timesync": {"kinds": ["TimeSync"], "restart": {"when": "\"TimeSync\" in changedKinds"}}
-	}`)
+	writeConsumers(t, s, `{"demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}}}`)
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +172,7 @@ func TestApplyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"networkctl reload", "systemctl show --property=ActiveState --value demo", "systemctl try-restart demo"}; !slices.Equal(r.calls, want) {
+	if want := []string{"systemctl show --property=ActiveState --value demo", "systemctl try-restart demo"}; !slices.Equal(r.calls, want) {
 		t.Errorf("commands = %v, want %v", r.calls, want)
 	}
 	if !slices.Equal(resp.RestartedUnits, []string{"demo"}) || len(resp.Changes) != 0 {
@@ -232,7 +229,7 @@ func TestApplyConfigRestartsByKind(t *testing.T) {
 		"unchanged":                  {baseConfig, nil},
 		"a Secret a Demo references": {strings.Replace(baseConfig, "token: s3cret", "token: n3w", 1), []string{"demo"}},
 		"a Demo":                     {strings.Replace(baseConfig, "name: first", "name: second", 1), []string{"demo"}},
-		"a TimeSync added":           {baseConfig + timeSyncConfig, []string{"timesync"}},
+		"a TimeSync added":           {baseConfig + timeSyncConfig, []string{"chalkos-chrony-dhcp"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
@@ -323,14 +320,14 @@ func TestApplyConfigStartsFailedConsumers(t *testing.T) {
 func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 	s, r := configServer(t)
 	r.rules = append(r.rules,
-		rule{prefix: "systemctl show --property=ActiveState --value timesync", out: "failed\n"},
+		rule{prefix: "systemctl show --property=ActiveState --value chalkos-chrony-dhcp", out: "failed\n"},
 		rule{prefix: "systemctl try-restart demo", err: errors.New("exit status 1")})
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1) + timeSyncConfig
 	_, err := sendConfig(s, next)
-	if err == nil || !strings.Contains(err.Error(), "try-restart demo: exit status 1; the delivery is applied, so restart demo by hand") || strings.Contains(err.Error(), "timesync by hand") {
+	if err == nil || !strings.Contains(err.Error(), "try-restart demo: exit status 1; the delivery is applied, so restart demo by hand") || strings.Contains(err.Error(), "chalkos-chrony-dhcp by hand") {
 		t.Fatalf("err = %v, want it to name demo alone", err)
 	}
-	if !slices.Contains(r.calls, "systemctl restart timesync") {
+	if !slices.Contains(r.calls, "systemctl restart chalkos-chrony-dhcp") {
 		t.Errorf("commands = %v; a failed restart must not stop the others", r.calls)
 	}
 }
@@ -358,12 +355,7 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
-	for _, c := range r.calls {
-		if !strings.HasPrefix(c, "networkctl ") {
-			got = append(got, c)
-		}
-	}
+	got := r.calls
 	want := []string{
 		"systemctl show --property=ActiveState --value demo",
 		"systemctl show --property=ActiveState --value logger",
@@ -381,6 +373,70 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	}
 	if !slices.Equal(resp.RestartedUnits, []string{"broken", "demo", "starter", "watcher"}) {
 		t.Errorf("restarted %v", resp.RestartedUnits)
+	}
+}
+
+// networkConfig is a networkd Network document, which the config loader renders as a unit.
+const networkConfig = `---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec: {match: {name: enp1s0}, network: {address: [10.0.0.11/24]}}
+`
+
+// TestApplyConfigReloadsNetworkd: networkd reloads the units the config loader renders when the
+// networkd documents change, and only then.
+func TestApplyConfigReloadsNetworkd(t *testing.T) {
+	s, r := configServer(t)
+	for _, step := range []struct {
+		name, config string
+		reloads      bool
+	}{
+		{"unchanged", baseConfig, false},
+		{"a Network added", baseConfig + networkConfig, true},
+		{"the same Network", baseConfig + networkConfig, false},
+		{"another Demo", strings.Replace(baseConfig, "name: first", "name: second", 1) + networkConfig, false},
+		{"another address", baseConfig + strings.Replace(networkConfig, "10.0.0.11", "10.0.0.12", 1), true},
+	} {
+		r.calls = nil
+		if _, err := sendConfig(s, step.config); err != nil {
+			t.Fatal(err)
+		}
+		if got := slices.Contains(r.calls, "networkctl reload"); got != step.reloads {
+			t.Errorf("%s: reloaded %v, want %v: %v", step.name, got, step.reloads, r.calls)
+		}
+	}
+}
+
+// TestApplyConfigReloadsTimeServers: chrony reloads its sources when the TimeSync's servers
+// change, and only then: whether the servers DHCP announces count is chalkos-chrony-dhcp's, which
+// restarts. A chronyd that does not run reads its sources when it starts.
+func TestApplyConfigReloadsTimeServers(t *testing.T) {
+	s, r := configServer(t)
+	for _, step := range []struct {
+		name, config, state string
+		want                []string
+	}{
+		{"a TimeSync added", baseConfig + timeSyncConfig, "", []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp"}},
+		{"the same", baseConfig + timeSyncConfig, "", nil},
+		{"DHCP's servers", baseConfig + strings.Replace(timeSyncConfig, "spec: {servers", "spec: {dhcp: true, servers", 1), "", []string{"systemctl try-restart chalkos-chrony-dhcp"}},
+		{"another server", baseConfig + strings.Replace(timeSyncConfig, "ntp.lan", "ntp2.lan", 1), "", []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp"}},
+		{"a chronyd that does not run", baseConfig + timeSyncConfig, "inactive\n", []string{"systemctl try-restart chalkos-chrony-dhcp"}},
+	} {
+		r.calls = nil
+		r.rules = []rule{{prefix: "systemctl show --property=ActiveState --value chronyd", out: step.state}}
+		if _, err := sendConfig(s, step.config); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, c := range r.calls {
+			if !strings.HasPrefix(c, "systemctl show ") {
+				got = append(got, c)
+			}
+		}
+		if !slices.Equal(got, step.want) {
+			t.Errorf("%s: commands %v, want %v", step.name, got, step.want)
+		}
 	}
 }
 
