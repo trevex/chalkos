@@ -289,8 +289,8 @@ const rebootExample = `  chalkctl reboot w1`
 
 const recoveryKeyLong = `Prints the recovery key of a node, which unlocks its encrypted volumes when the TPM does not:
 for example after a change of the Secure Boot keys or state, which the TPM measures in PCR 7. It
-is derived from the secrets file's recovery secret, the cluster's name and the node's name, so no
-file stores it. The command needs the secrets file.`
+is derived from the secrets file's recovery secret and the node's name, so no file stores it. The
+command needs the secrets file.`
 
 const recoveryKeyExample = `  chalkctl recovery-key w1`
 

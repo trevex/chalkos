@@ -115,13 +115,18 @@ key. The consequences:
 
 When the TPM does not unseal, the console asks for the second keyslot of each volume: the node's
 [recovery key](../reference/glossary.md#recovery-key) by default, or a password. The recovery key
-is derived from a secret in the secrets file, the cluster's name and the node's name, so no file
-stores it and installing a node never changes the secrets file.
+is derived from a secret in the secrets file and the node's name, so no file stores it and
+installing a node never changes the secrets file.
 [`chalkctl recovery-key`](../reference/cli/chalkctl_recovery-key.md) prints it:
 
 ```sh
 chalkctl recovery-key <node>
 ```
+
+Recovery keys derived before this release took the cluster's name as well, so they differ from
+the ones derived now. A node installed before keeps the key it was enrolled with, which
+`chalkctl recovery-key` no longer prints; such a node unlocks with that old key until it is
+reinstalled.
 
 [Storage and encryption](storage.md) describes the keyslots and what happens on a node whose
 fallback is `none`.

@@ -50,9 +50,13 @@ chalkctl recovery-key <node>
 it at each prompt; the node then boots on. A node whose fallback is a password takes that
 password instead.
 
-The recovery key is derived from the secrets file, the cluster's name and the node's name, so it
-is the same for the node's whole life, also across reinstalls. Whoever has read it can unlock
-that node's disks with physical access for good. Keep the console session private.
+The recovery key is derived from the secrets file and the node's name, so it is the same for the
+node's whole life, also across reinstalls. Whoever has read it can unlock that node's disks with
+physical access for good. Keep the console session private.
+
+Recovery keys derived before this release took the cluster's name as well. A node installed before
+keeps the key it was enrolled with, which `chalkctl recovery-key` no longer prints: unlock it with
+the old key you noted, or reinstall the node to enroll the new one.
 
 The prompt comes back at every boot until PCR 7 matches the sealed keys again. chalkos has no
 command that seals the keys to the new PCR 7, so there are two ways out:

@@ -305,7 +305,7 @@ func TestGenSecretsAgeAndRecoveryKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	secrets, _ := pki.ReadSecrets(encrypted, func() ([]age.Identity, error) { return []age.Identity{id}, nil })
-	want, _ := pki.RecoveryKey(secrets.RecoverySecret, "lab", "n1")
+	want, _ := pki.RecoveryKey(secrets.RecoverySecret, "n1")
 	if got := strings.TrimSpace(ta.stdout.String()); got != want {
 		t.Errorf("recovery key = %q, want %q", got, want)
 	}
@@ -341,7 +341,7 @@ func TestInstallInPlace(t *testing.T) {
 	if got.Config.Version != want || got.Section.Disks[storage.SystemDisk].Ref.Selector.Serial != "chalk-target" {
 		t.Errorf("install request config = %+v, section = %+v; want the config of version %s", got.Config, got.Section, want)
 	}
-	key, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "lab", "n1")
+	key, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "n1")
 	if got.FallbackSecret != key {
 		t.Errorf("fallback secret = %q, want the node's recovery key", got.FallbackSecret)
 	}

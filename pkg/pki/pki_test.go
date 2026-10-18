@@ -245,7 +245,7 @@ func TestAllows(t *testing.T) {
 
 func TestRecoveryKey(t *testing.T) {
 	secret := []byte(strings.Repeat("s", RecoverySecretSize))
-	key, err := RecoveryKey(secret, "homelab", "w1")
+	key, err := RecoveryKey(secret, "w1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,20 +253,19 @@ func TestRecoveryKey(t *testing.T) {
 	if !regexp.MustCompile(`^([cbdefghijklnrtuv]{8}-){7}[cbdefghijklnrtuv]{8}$`).MatchString(key) {
 		t.Errorf("recovery key %q is not formatted like a systemd recovery key", key)
 	}
-	if want := "tlvujiln-vffneuhk-idrhucle-evlgjnvd-ljvggbvr-djbthrbc-cgfrvhcb-vucrunlc"; key != want {
+	if want := "kekkkver-neluervv-ndcbbvht-ujthgtir-lnjnfket-blnruebv-nrdtbjig-nhefnrbg"; key != want {
 		t.Errorf("recovery key = %q, want %q", key, want)
 	}
-	again, _ := RecoveryKey(secret, "homelab", "w1")
-	other, _ := RecoveryKey(secret, "homelab", "w2")
-	otherCluster, _ := RecoveryKey(secret, "lab", "w1")
-	if again != key || other == key || otherCluster == key {
-		t.Error("recovery keys must be stable per node and differ between nodes and clusters")
+	again, _ := RecoveryKey(secret, "w1")
+	other, _ := RecoveryKey(secret, "w2")
+	if again != key || other == key {
+		t.Error("recovery keys must be stable per node and differ between nodes")
 	}
-	if _, err := RecoveryKey(secret[:16], "homelab", "w1"); err == nil {
+	if _, err := RecoveryKey(secret[:16], "w1"); err == nil {
 		t.Error("accepted a short secret")
 	}
-	if _, err := RecoveryKey(secret, "a\x00b", "c"); err == nil {
-		t.Error("accepted a cluster name containing a NUL byte")
+	if _, err := RecoveryKey(secret, "a\x00b"); err == nil || !strings.Contains(err.Error(), "node name") {
+		t.Errorf("err = %v, want a node name containing a NUL byte refused", err)
 	}
 }
 

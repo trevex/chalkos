@@ -391,7 +391,7 @@ func TestAddressFromTheInventory(t *testing.T) {
 func TestSecretsOnlyFromTheFlag(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeInventory(t, ta.dir)
-	want, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "lab", "n1")
+	want, _ := pki.RecoveryKey(ta.secrets.RecoverySecret, "n1")
 	recoveryKey := []string{"recovery-key", "n1", "--inventory", path}
 	// The app's own run names no secrets file of the test's.
 	if err := ta.app.run(context.Background(), recoveryKey); err == nil || !strings.Contains(err.Error(), "--secrets") {

@@ -223,7 +223,7 @@ func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, 
 	if err != nil {
 		return err
 	}
-	key, err := pki.RecoveryKey(secrets.RecoverySecret, c.name, pos[0])
+	key, err := pki.RecoveryKey(secrets.RecoverySecret, pos[0])
 	if err != nil {
 		return err
 	}
