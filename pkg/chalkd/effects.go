@@ -194,10 +194,11 @@ func (s *Server) refused(e *effects) {
 	}
 }
 
-// failedToStore acts on chalkd's own rules for a delivery whose slot could not be written, as the
-// files its loops read besides the slot, the cluster file and the share, are in place. The
-// baseline stays, so a retry takes every effect of the delivery.
-func (s *Server) failedToStore(ctx context.Context, e *effects, secret string) {
+// failedPartWay acts on chalkd's own rules for a delivery that failed once it changed the node
+// and before its slot was written: the files its loops read besides the slot, the cluster file
+// and the share, may be written by then, and the rules compare them as they are. The baseline
+// stays, so a retry takes every effect of the delivery.
+func (s *Server) failedPartWay(ctx context.Context, e *effects, secret string) {
 	reload, restart, _, err := s.due(ctx, e, secret)
 	if err != nil {
 		log.Printf("the rules of chalkd's loops: %v", err)

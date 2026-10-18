@@ -282,8 +282,9 @@ file. A reboot clears it, since every unit starts at boot.
 A consumer named `chalkd` is chalkd itself, which acts on its rules in-process: a reload starts
 the control plane's loop again, which reads the share and applies the control plane's objects, and
 a restart every Kubernetes loop, which read the cluster when they start. It acts on them also
-when a delivery fails to store the slot or to write the consumers' config, since the cluster file
-and the share its loops read are written by then. The built-in consumers are these:
+when a delivery fails part way, as when it cannot write the cluster file, the node certificate,
+the share, the slot or the consumers' config: the rules compare the cluster file and the share
+its loops read as they are by then. The built-in consumers are these:
 
 | Unit | Rules |
 | --- | --- |

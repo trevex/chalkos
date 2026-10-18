@@ -1368,6 +1368,56 @@ func TestApplyConfigActsOnTheLoopsWhenTheConsumersConfigFails(t *testing.T) {
 	}
 }
 
+// A delivery that fails once it wrote the cluster file, here to record its node certificate,
+// restarts chalkd's loops all the same, which read the new cluster, and its retry restarts them
+// again.
+func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodeCA := withNodeCertificate(t, s)
+	cert, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acted := loops(s)
+	send := func() (*nodev1.ApplyConfigResponse, error) {
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{
+			Config: withKubernetesSpec("{domain: lab.local}"), NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key),
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	dir := filepath.Join(s.Paths.StateDir, "chalkd")
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	if _, err := send(); err == nil || !strings.Contains(err.Error(), "record the node certificate") {
+		t.Fatalf("err = %v, want the node certificate's failure", err)
+	}
+	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
+		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
+	}
+	if !slices.Equal(*acted, []string{"restart"}) {
+		t.Errorf("acted on the loops %v, want them restarted for the new cluster", *acted)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.calls, *acted = nil, nil
+	resp, err := send()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes", "kubelet"}) || !slices.Equal(*acted, []string{"restart"}) {
+		t.Errorf("the retry restarted %v, acted on the loops %v", resp.RestartedUnits, *acted)
+	}
+}
+
 // A share delivered alone after a slot whose documents could not be written for their consumers
 // writes them before it restarts the consumers the failed delivery changed, and keeps the
 // baseline while it cannot; once it is applied whole, a retry of the config restarts nothing.

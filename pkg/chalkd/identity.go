@@ -341,18 +341,21 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		}
 		if cluster != nil {
 			if err := s.Loader.WriteCluster(cluster); err != nil {
+				s.failedPartWay(ctx, fx, m.FallbackSecret)
 				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
 			}
 		}
 	}
 	if len(m.NodeCertificate) > 0 {
 		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
+			s.failedPartWay(ctx, fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInvalidArgument, "%v", err)
 		}
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
 	if share != nil {
 		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
+			s.failedPartWay(ctx, fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
 		}
 	}
@@ -366,7 +369,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if !keep {
 		r.next.Identity = d.data
 		if err := store.Write(slot, r.next); err != nil {
-			s.failedToStore(ctx, fx, m.FallbackSecret)
+			s.failedPartWay(ctx, fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
 	}
