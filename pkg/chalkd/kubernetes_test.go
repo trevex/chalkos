@@ -819,6 +819,22 @@ func TestApplyConfigReportsFailedRestart(t *testing.T) {
 	}
 }
 
+// The preparation's reason is the Kubernetes units' alone: another unit whose restart fails on a
+// node whose preparation failed says only its own error.
+func TestApplyConfigReportsThePreparationForKubernetesUnitsAlone(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	withoutFirewall(t, s)
+	r.rules = append([]rule{{prefix: "systemctl try-restart demo", err: errors.New("exit status 1")}}, r.rules...)
+	_, err := sendConfig(s, strings.Replace(workerConfig, "name: first", "name: second", 1))
+	want := "try-restart demo: exit status 1; the delivery is applied, so restart demo by hand"
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "kubelet") {
+		t.Errorf("err = %v, want %s", err, want)
+	}
+}
+
 func TestApplyConfigRefusesInvalidAddressSettings(t *testing.T) {
 	s, r := kubernetesServer(t, k8s.KindWorker, true)
 	for name, kubernetes := range map[string]string{

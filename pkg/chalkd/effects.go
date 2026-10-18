@@ -212,8 +212,8 @@ func (s *Server) applyEffects(ctx context.Context, consumers map[string]nodeconf
 		slices.Sort(restartByHand)
 		hand := byHand(reloadByHand, restartByHand)
 		// The Kubernetes units start only once their preparation succeeds, whose reason tells
-		// more than systemctl's error.
-		if len(restartByHand) > 0 && s.Kubernetes != nil {
+		// more than systemctl's error; another unit's failure has its own.
+		if slices.ContainsFunc(restartByHand, isKubernetesUnit) && s.Kubernetes != nil {
 			if problem, err := preparation(s.Kubernetes.Paths); err == nil && problem != "" && problem != preparing {
 				return nil, failed(connect.CodeFailedPrecondition, "%v; the node runs no kubelet: %s%s", errors.Join(errs...), problem, hand)
 			}
@@ -222,6 +222,12 @@ func (s *Server) applyEffects(ctx context.Context, consumers map[string]nodeconf
 	}
 	slices.Sort(restarted)
 	return restarted, nil
+}
+
+// isKubernetesUnit tells whether unit is one of the units the node's Kubernetes preparation
+// starts: the preparation itself, and the kubelet that waits for it.
+func isKubernetesUnit(unit string) bool {
+	return unit == "chalkos-kubernetes" || unit == "kubelet"
 }
 
 // actOnSelf reloads or restarts chalkd's Kubernetes loops, on a node with Kubernetes; a restart
