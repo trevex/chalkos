@@ -109,15 +109,15 @@ func TestInstallInPlace(t *testing.T) {
 	}
 }
 
-// TestInstallTakesTheNodesNameFromTheHeadersCertificate translates the config for the node the
-// node certificate in the header names, whatever its Node document is called, and refuses a
-// header whose certificate names no node before it translates the config.
+// TestInstallTakesTheNodesNameFromTheHeadersCertificate translates the config, whose documents
+// name no node, for the node the node certificate in the header names, and refuses a header whose
+// certificate names no node before it translates the config.
 func TestInstallTakesTheNodesNameFromTheHeadersCertificate(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
-	h.Config = strings.Replace(installConfig, "metadata: {name: n1}", "metadata: {name: doc}", 1)
+	h.Config = installConfig
 	h.NodeCertificate = nodeChain(t, "w1")
 	if err := sendInstall(t, s, h, nil); err != nil {
 		t.Fatal(err)
@@ -298,12 +298,12 @@ func kubernetesImage(t *testing.T, s *Server) {
 }
 
 // workerConfig is baseConfig for a Kubernetes worker with a fixed address.
-var workerConfig = strings.Replace(strings.Replace(baseConfig, "metadata: {name: n1}\nspec: {}", "metadata: {name: n1}\nspec: {type: worker}", 1),
+var workerConfig = strings.Replace(baseConfig,
 	"metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: \"https://192.168.100.11:6443\"}", 1) + `---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubelet
-metadata: {name: kubelet}
-spec: {nodeIPs: [192.168.100.21]}
+kind: Node
+metadata: {name: default}
+spec: {type: worker, nodeIPs: [192.168.100.21]}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
@@ -329,7 +329,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 	if got.Section.Disks[storage.SystemDisk].Ref.Path != "/dev/vda" {
 		t.Errorf("section = %+v", got.Section)
 	}
-	if got.Config.Version != hashOf(t, baseConfig) || len(got.Config.Documents) != 5 {
+	if got.Config.Version != hashOf(t, baseConfig) || len(got.Config.Documents) != 4 {
 		t.Errorf("config = %+v", got.Config)
 	}
 }
@@ -391,8 +391,8 @@ func TestInstallRefusesConfig(t *testing.T) {
 		want      string
 	}{
 		"invalid": {false, func(h *nodev1.InstallHeader) {
-			h.Config = strings.Replace(baseConfig, "metadata: {name: n1}\nspec: {}", "metadata: {name: n1}\nspec: {type: gateway}", 1)
-		}, `Node "n1"`},
+			h.Config = strings.Replace(baseConfig, "metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: http://lab}", 1)
+		}, `Cluster "lab"`},
 		"in place with schemas": {false, func(h *nodev1.InstallHeader) {
 			h.Config, h.Schemas = baseConfig, map[string][]byte{"x.json": []byte("{}")}
 		}, "running image"},

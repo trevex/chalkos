@@ -93,7 +93,7 @@ func (s *Server) kubernetesShare(d delivered, data []byte, osCA string, cluster 
 	}
 	c := cluster
 	if share.Kind != c.Kind {
-		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's config gives it the type %s", share.Kind, c.Kind)
+		return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's Node document gives it the type %s", share.Kind, c.Kind)
 	}
 	var nodeName string
 	if d.kubernetes != nil {

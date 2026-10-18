@@ -1,7 +1,7 @@
-# The kinds every image accepts: the cluster and node a config belongs to, the node's host name,
-# secrets, storage, time and, on images with Kubernetes, the cluster's Kubernetes settings,
-# registry mirrors and manifests and the kubelet's node settings. chalkd translates them into the
-# node's identity and its Kubernetes cluster.
+# The kinds every image accepts: the cluster a config belongs to, the node's host name, secrets,
+# storage, time and, on images with Kubernetes, the cluster's Kubernetes settings, registry
+# mirrors and manifests and the node's type and its kubelet's settings. chalkd translates them
+# into the node's identity and its Kubernetes cluster.
 {
   config,
   lib,
@@ -232,34 +232,6 @@ in
         description = "URL of the cluster's Kubernetes API server.";
       };
     };
-    Node = builtin "chalkos.dev" // {
-      # The share's certificates are those of its kind, and a control plane's etcd data stays its
-      # own, until the node is reinstalled; a share of another type delivered with the config
-      # changes neither. A Node without a type runs no Kubernetes, as on an image without it,
-      # which reads no share.
-      rules = lib.optionals kubernetes [
-        {
-          rule = "facts.share == null || documents.all(n, documents[n].spec.type == null || documents[n].spec.type == facts.share.kind)";
-          messageExpression = ''
-            cel.bind(type, documents.map(n, documents[n].spec.type)[0],
-              "the config changes the node's type from \"" + facts.share.kind + "\" to \"" + type
-              + "\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a " + type)
-          '';
-        }
-      ];
-      spec = {
-        type = mkOption {
-          type = types.nullOr (
-            types.enum [
-              "controlplane"
-              "worker"
-            ]
-          );
-          default = null;
-          description = "What the node is in Kubernetes; null on an image without Kubernetes.";
-        };
-      };
-    };
     Host = builtin "chalkos.dev" // {
       spec.hostname = mkOption {
         type = types.nullOr (types.strMatching "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?");
@@ -438,8 +410,28 @@ in
     };
   }
   // lib.optionalAttrs kubernetes {
-    Kubelet = builtin "kubernetes.chalkos.dev" // {
+    Node = builtin "kubernetes.chalkos.dev" // {
+      # The share's certificates are those of its kind, and a control plane's etcd data stays its
+      # own, until the node is reinstalled; a share of another type delivered with the config
+      # changes neither.
+      rules = [
+        {
+          rule = "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)";
+          messageExpression = ''
+            cel.bind(type, documents.map(n, documents[n].spec.type)[0],
+              "the config changes the node's type from \"" + facts.share.kind + "\" to \"" + type
+              + "\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a " + type)
+          '';
+        }
+      ];
       spec = {
+        type = mkOption {
+          type = types.enum [
+            "controlplane"
+            "worker"
+          ];
+          description = "What the node is in the cluster; it is fixed once the node holds a Kubernetes share.";
+        };
         labels = mkOption {
           type = types.attrsOf types.str;
           default = { };

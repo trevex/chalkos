@@ -49,7 +49,7 @@ func identityWith(storageSection string) string {
 }
 
 // documentsOf is the config of node n1 of the cluster lab whose storage section an identity
-// renders: its Cluster, Node and Image, and the SystemDisk and Volume documents that translate
+// renders: its Cluster, and the SystemDisk and Volume documents that translate
 // into the section, with their defaults. The storage rules read these documents; the identity is
 // what the tests deliver; one that does not parse, which the node refuses first, has none.
 func documentsOf(identity string) []config.Document {
@@ -88,7 +88,6 @@ func documentsOf(identity string) []config.Document {
 	v := sec.Volumes[storage.VarVolume]
 	docs := []config.Document{
 		doc(config.CoreAPI, "Cluster", "lab", map[string]any{"endpoint": nil}),
-		doc(config.CoreAPI, "Node", "n1", map[string]any{"type": nil, "hostname": nil}),
 		doc(config.StorageAPI, "SystemDisk", "system", map[string]any{
 			"disk":       ref(sec.Disks[storage.SystemDisk].Ref),
 			"encryption": map[string]any{"mode": sec.Encryption, "fallback": sec.Fallback},

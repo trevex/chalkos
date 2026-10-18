@@ -6,7 +6,7 @@ description: "How YAML config documents describe each node, how the inventory gi
 # Config and the inventory
 
 A node's [config](../reference/glossary.md#config) is the set of YAML documents that makes it this
-node: its name and type, its disks, network, time servers, Kubernetes settings and the values of
+node: its type, host name, disks, network, time servers, Kubernetes settings and the values of
 [extensions](../reference/glossary.md#extension). The image is the same on many nodes; the config
 is what differs. An [inventory](../reference/glossary.md#inventory) names the cluster's nodes, the
 address [chalkctl](../reference/glossary.md#chalkctl) reaches each at, the image each runs and the
@@ -41,13 +41,12 @@ metadata: {name: kubernetes}
 spec: {}
 ```
 
-Each node's own file names the node and its type, its system disk and its address on the lab
-network:
+Each node's own file gives its type, its system disk and its address on the lab network:
 
 ```yaml title="nodes/cp1.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: cp1}
+metadata: {name: default}
 spec:
   type: controlplane
 ---
@@ -80,7 +79,6 @@ schemas.
 | Kind | Group | Per node | What it holds |
 | --- | --- | --- | --- |
 | [`Cluster`](../reference/kinds.md#cluster) | `chalkos.dev` | exactly one | The cluster's name and the URL of its API server |
-| [`Node`](../reference/kinds.md#node) | `chalkos.dev` | exactly one | The node's type, `controlplane` or `worker` |
 | [`Host`](../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
@@ -88,7 +86,7 @@ schemas.
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
 | [`Network`](../reference/kinds.md#network), [`NetDev`](../reference/kinds.md#netdev), [`Link`](../reference/kinds.md#link) | `networkd.chalkos.dev` | any | systemd-networkd's `.network`, `.netdev` and `.link` files, one document per file |
 | [`Kubernetes`](../reference/kinds.md#kubernetes) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the components |
-| [`Kubelet`](../reference/kinds.md#kubelet) | `kubernetes.chalkos.dev` | at most one | The node's labels, taints and Kubernetes addresses |
+| [`Node`](../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints and Kubernetes addresses |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | `kubernetes.chalkos.dev` | any | The mirrors of one container registry |
 | [`Flannel`](../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU |
 | [`Addon`](../reference/kinds.md#addon) | `kubernetes.chalkos.dev` | any | Kubernetes objects the control planes apply |
@@ -99,9 +97,10 @@ volume; without it, a node holds at most one, and chalkctl and chalkd refuse a s
 
 Some kinds depend on the image or the node:
 
-- An image declares only the kinds its modules bring. `Kubernetes`, `Kubelet`, `RegistryMirror`
-  and `Addon` exist on images with Kubernetes, and `Flannel` only on those built with flannel as
-  their pod network, so a document of one of them is an unknown kind on any other image.
+- An image declares only the kinds its modules bring. `Kubernetes`, `Node`, `RegistryMirror` and
+  `Addon` exist on images with Kubernetes, and `Flannel` only on those built with flannel as their
+  pod network, so a document of one of them is an unknown kind on any other image. A node without
+  Kubernetes has no type.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
   suffix, so `10-uplink` becomes `/run/systemd/network/10-uplink.network` and networkd's order by
   file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with `MACAddress=`
@@ -169,8 +168,8 @@ one file, so a typo fails instead of leaving documents out. A file named twice c
 
 The order decides nothing about values, because documents never merge: two documents of the same
 kind and name in one node's set are an error that names both files. A group is the place for what
-a subset of nodes shares, such as the `Kubelet` labels of GPU workers. This inventory extends the
-homelab example's with a group `gpu` and a GPU worker `w2` in it:
+a subset of nodes shares, such as the `Node` of GPU workers with their type and labels. This
+inventory extends the homelab example's with a group `gpu` and a GPU worker `w2` in it:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -195,8 +194,9 @@ chalkctl never derives it from the node's `Network` documents, so a node that in
 address and receives a static one names the static one here; `--address` overrides it for one
 command. The node's name is its name in the inventory, which its node certificate carries; chalkd
 takes the name from the certificate. The hostname defaults to it unless a `Host` document gives
-another, the Kubernetes node is called by it and the storage seeds derive from it. Each node's
-`Node` document carries the same name, and chalkctl refuses a set whose `Node` is named otherwise.
+another, the Kubernetes node is called by it and the storage seeds derive from it. No document
+names the node: a kind a node holds once takes any `metadata.name`, and the examples use
+`default`.
 
 The inventory names no secrets file. The commands that issue certificates or deliver config read
 the [secrets file](../reference/glossary.md#secrets-file) from `--secrets FILE`, or from standard
@@ -208,7 +208,8 @@ names, else the one `$CHALKOSCONFIG` names, else `~/.config/chalkos/config`.
 
 A node's set is valid when:
 
-- it holds exactly one `Cluster`, one `Node` and one `SystemDisk`;
+- it holds exactly one `Cluster` and one `SystemDisk`, and on an image with Kubernetes one
+  `Kubernetes` and one `Node`;
 - every other kind appears at most once, unless the kind allows several (`Secret`, `Volume`,
   `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with
   `multiple = true`);
@@ -507,8 +508,8 @@ image with other defaults does not change it.
 - chalkctl reads every file of a node's set as plain YAML, `Secret` documents included. A file of
   `Secret`s must be in plain text where chalkctl runs: kept out of version control, or decrypted
   into place by a tool such as sops before the command and removed after.
-- Documents never merge and the inventory has no patches or templates, so two nodes whose `Kubelet`
-  differs in one label each hold a whole `Kubelet` of their own.
+- Documents never merge and the inventory has no patches or templates, so two nodes whose `Node`
+  differs in one label each hold a whole `Node` of their own.
 - Config carries data, not code. A new service, or a change to how a service reads its value, is an
   image change and an [upgrade](upgrades.md).
 - A kind has one version per image, and there is no conversion between versions. A new version of

@@ -22,10 +22,6 @@ type SecretRef struct {
 	Key  string `json:"key"`
 }
 
-type nodeSpec struct {
-	Type *string `json:"type"`
-}
-
 type hostSpec struct {
 	Hostname *string `json:"hostname"`
 }
@@ -68,7 +64,9 @@ type timeSyncSpec struct {
 	DHCP bool `json:"dhcp"`
 }
 
-type kubeletSpec struct {
+// nodeSpec is the Kubernetes Node's.
+type nodeSpec struct {
+	Type   string            `json:"type"`
 	Labels map[string]string `json:"labels"`
 	Taints []struct {
 		Key    string  `json:"key"`

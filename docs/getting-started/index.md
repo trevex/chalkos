@@ -73,9 +73,9 @@ node's file says what the node is in Kubernetes, which disk holds its system, an
 lab network, a private network between the virtual machines:
 
 ```yaml title="nodes/cp1.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: cp1}
+metadata: {name: default}
 spec:
   type: controlplane
 ---

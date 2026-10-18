@@ -25,7 +25,7 @@ import (
 // withKind makes n1 a Kubernetes node of the kind, on an image with Kubernetes.
 func withKind(t *testing.T, ta *testApp, kind string) {
 	t.Helper()
-	ta.writeNode(t, strings.Replace(n1Node, "spec: {}", "spec: {type: "+kind+"}", 1), n1SystemDisk, n1Network, kubernetesDoc)
+	ta.writeNode(t, nodeDoc(kind), n1SystemDisk, n1Network, kubernetesDoc)
 	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "metal", testRootHash, true)
 	ta.kind = kind
 }

@@ -1450,9 +1450,9 @@ string matching the pattern v\[0-9]+((alpha|beta)\[0-9]+)?
 
 
 Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
-node’s Kubernetes configuration\. One image serves control planes and workers: the
-node’s Node document makes it one or the other\. mkImages sets it from the variant’s
-` kubernetes `; the installer runs none\.
+node’s Kubernetes configuration\. One image serves control planes and workers: the type
+of the node’s Kubernetes Node document makes it one or the other\. mkImages sets it from
+the variant’s ` kubernetes `; the installer runs none\.
 
 
 

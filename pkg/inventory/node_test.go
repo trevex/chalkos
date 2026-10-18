@@ -37,10 +37,10 @@ spec:
   objects: []
 `
 
-// nodeFile is a node's file: its Node of the type, its Host of a hostname in .lab, and its uplink
-// at the address.
+// nodeFile is a node's file: its Kubernetes Node of the type, its Host of a hostname in .lab, and
+// its uplink at the address.
 func nodeFile(name, nodeType, address string) string {
-	return "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: " + name + "}\nspec: {type: " + nodeType + "}\n---\n" +
+	return "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: " + nodeType + "}\n---\n" +
 		"apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: " + name + ".lab}\n---\n" +
 		"apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [" + address + "/24]}}\n"
 }
@@ -76,7 +76,7 @@ func TestNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(cp1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Addon/monitoring", "Node/cp1", "Host/default", "Network/10-uplink"}) {
+	if got := kinds(cp1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Addon/monitoring", "Node/default", "Host/default", "Network/10-uplink"}) {
 		t.Errorf("documents of cp1 = %q", got)
 	}
 	if cp1.Type != "controlplane" || cp1.Hostname != "cp1.lab" || cp1.ImageName != "node-metal" || cp1.ImageDir != filepath.Join(dir, "images", "node-metal") {
@@ -89,7 +89,7 @@ func TestNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Node/w1", "Host/default", "Network/10-uplink"}) {
+	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Cluster/homelab", "Node/default", "Host/default", "Network/10-uplink"}) {
 		t.Errorf("documents of the worker w1 = %q, want no Addon", got)
 	}
 	// A Host whose hostname is null, and no Host, leave the hostname empty for the node's name.
@@ -108,16 +108,38 @@ func TestNode(t *testing.T) {
 	}
 }
 
-// TestNodeRefuses refuses a node whose files hold a document twice, no Node, or a Node of another
-// name.
+// TestNodeWithoutAKubernetesNode takes a node whose files hold no Kubernetes Node, as a node of an
+// image without Kubernetes has, without a type and without the Addon, and a Node of any name.
+func TestNodeWithoutAKubernetesNode(t *testing.T) {
+	dir := homelabDir(t)
+	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), "apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {}\n")
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp1, err := inv.Node("cp1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(cp1.Documents); cp1.Type != "" || !slices.Equal(got, []string{"Cluster/homelab", "Network/10-uplink"}) {
+		t.Errorf("type = %q, documents = %q, want no type and no Addon", cp1.Type, got)
+	}
+	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), strings.Replace(nodeFile("cp1", "controlplane", "10.0.0.11"), "{name: default}", "{name: cp2}", 1))
+	if inv, err = Load(filepath.Join(dir, "chalkos.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if cp1, err = inv.Node("cp1"); err != nil || cp1.Type != "controlplane" || !slices.Contains(kinds(cp1.Documents), "Addon/monitoring") {
+		t.Errorf("a Node named cp2: %+v, %v, want a control plane with the Addon", cp1, err)
+	}
+}
+
+// TestNodeRefuses refuses a node whose files hold a document twice.
 func TestNodeRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
 		file, content, want string
 	}{
 		"a document twice": {"nodes/cp1.yaml", nodeFile("cp1", "controlplane", "10.0.0.11") + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: homelab}\nspec: {}\n",
 			`cluster/all.yaml and nodes/cp1.yaml both hold Cluster "homelab"`},
-		"no Node":                {"nodes/cp1.yaml", "apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {}\n", "its files hold no Node document"},
-		"a Node of another name": {"nodes/cp1.yaml", nodeFile("cp2", "controlplane", "10.0.0.11"), `its files hold the Node "cp2"`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := homelabDir(t)

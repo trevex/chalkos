@@ -18,9 +18,9 @@ func parseDocs(t *testing.T, yaml string) []config.Document {
 }
 
 const diffNode = `
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: n1}
+metadata: {name: default}
 spec: {type: worker, labels: {zone: a, rack: r1}}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
@@ -35,9 +35,9 @@ spec: {data: {token: s3cret, kept: same}}
 `
 
 const diffInventory = `
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: n1}
+metadata: {name: default}
 spec: {type: controlplane, labels: {zone: a, room: b}}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
@@ -62,12 +62,12 @@ func TestDiffConfig(t *testing.T) {
 	}
 	var b bytes.Buffer
 	changes.write(&b)
-	want := `~ Node "n1"
+	want := `~ Secret "token"
+    spec.data.token: changed
+~ Node "default"
     spec.labels.rack: "r1" → (none)
     spec.labels.room: (none) → "b"
     spec.type: "worker" → "controlplane"
-~ Secret "token"
-    spec.data.token: changed
 + Volume "data"
 - Volume "old" (on the node, not in the inventory)
 `

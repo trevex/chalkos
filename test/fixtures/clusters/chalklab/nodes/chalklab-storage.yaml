@@ -1,9 +1,4 @@
 # A fixed VAR, an unencrypted and a raw volume next to it, and a volume on a second disk.
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: chalklab-storage}
-spec: {}
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}

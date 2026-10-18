@@ -1,9 +1,3 @@
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: cp2}
-spec:
-  type: controlplane
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -29,9 +23,10 @@ spec:
       - fd00:100::12/64
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubelet
-metadata: {name: kubelet}
+kind: Node
+metadata: {name: default}
 spec:
+  type: controlplane
   labels: {}
   nodeIPs:
     - fd00:100::12

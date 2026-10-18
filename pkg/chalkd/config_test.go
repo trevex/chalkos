@@ -24,17 +24,12 @@ import (
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
-// baseConfig is a node of the test server's image, a worker of the cluster lab without
+// baseConfig is a node of the test server's image, a node of the cluster lab without
 // Kubernetes, with a Demo whose token is a secret.
 const baseConfig = `
 apiVersion: chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: lab}
-spec: {}
----
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: n1}
 spec: {}
 ---
 apiVersion: storage.chalkos.dev/v1alpha1
@@ -247,12 +242,12 @@ func TestApplyConfigRestartsByKind(t *testing.T) {
 	}
 }
 
-// TestApplyConfigTakesTheNodesNameFromItsCertificate translates the config for the node its node
-// certificate names, whatever its Node document is called, names that node in a refusal, and
-// translates no config on a node without a node certificate.
+// TestApplyConfigTakesTheNodesNameFromItsCertificate translates the config, whose documents name
+// no node, for the node its node certificate names, names that node in a refusal, and translates
+// no config on a node without a node certificate.
 func TestApplyConfigTakesTheNodesNameFromItsCertificate(t *testing.T) {
 	s, _ := configServer(t)
-	doc := strings.Replace(baseConfig, "metadata: {name: n1}", "metadata: {name: doc}", 1)
+	doc := baseConfig
 	if _, err := sendConfig(s, doc); err != nil {
 		t.Fatal(err)
 	}
@@ -275,9 +270,9 @@ func TestApplyConfigTakesTheNodesNameFromItsCertificate(t *testing.T) {
 
 func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	s, r := configServer(t)
-	_, err := sendConfig(s, strings.Replace(baseConfig, "metadata: {name: n1}\nspec: {}", "metadata: {name: n1}\nspec: {type: gateway}", 1))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `Node "n1"`) {
-		t.Fatalf("err = %v, want a refusal naming the Node", err)
+	_, err := sendConfig(s, strings.Replace(baseConfig, "metadata: {name: lab}\nspec: {}", "metadata: {name: lab}\nspec: {endpoint: http://lab}", 1))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `Cluster "lab"`) {
+		t.Fatalf("err = %v, want a refusal naming the Cluster", err)
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("ran %v for a refused config", r.calls)

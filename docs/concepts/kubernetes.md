@@ -31,8 +31,8 @@ in Kubernetes, so control planes and workers boot the same image. A node keeps i
 holds its [Kubernetes share](../reference/glossary.md#kubernetes-share): chalkd refuses config that
 changes it, because the share holds certificates for that type. The images of a
 [variant](../reference/glossary.md#variant) built with
-[`kubernetes = false`](../reference/options.md#variantskubernetes) run no Kubernetes, and their
-nodes leave `spec.type` unset:
+[`kubernetes = false`](../reference/options.md#variantskubernetes) run no Kubernetes and have no
+`Node` kind, so their nodes have no type:
 
 | Type | Runs |
 | --- | --- |
@@ -50,18 +50,19 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 | Kind | Count | Holds |
 | --- | --- | --- |
 | [`Kubernetes`](../reference/kinds.md#kubernetes) | one, required | The cluster's address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), VXLAN source ranges, scheduling on control planes and extra flags of every component |
-| [`Kubelet`](../reference/kinds.md#kubelet) | at most one | The node's own labels, taints and addresses |
+| [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints and addresses |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | one per registry | The mirrors containerd tries before a registry |
 | [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes |
 | [`Addon`](../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |
 
 The cluster's documents go into the files the [inventory](../reference/glossary.md#inventory) gives
-every node, so all nodes hold the same ones, and a node's `Kubelet` goes into its own file, as
+every node, so all nodes hold the same ones, and a node's `Node` goes into its own file, as
 [Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes. The
-node's config must hold one `Kubernetes` document on an image with Kubernetes, and its
-[`Cluster`](../reference/kinds.md#cluster) an endpoint:
+node's config must hold one `Kubernetes` and one `Node` document on an image with Kubernetes, and
+its [`Cluster`](../reference/kinds.md#cluster) an endpoint:
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a set without one,
 with `no Kubernetes: the config of a node whose image runs Kubernetes holds one Kubernetes
+document` or `no Node: the config of a node whose image runs Kubernetes holds one Node
 document`. Every field has a default, so a cluster on IPv4 with the default ranges needs no more
 than the lab template's document:
 
@@ -102,14 +103,15 @@ chalkd renders the kubelet's configuration from the node's cluster into
 authentication and authorisation, no anonymous access and no read-only port, the systemd cgroup
 driver, the cluster's DNS address and domain, and `rotateCertificates` with `serverTLSBootstrap`.
 What differs per node the kubelet gets as flags in `$KUBELET_ARGS`: the node name, which is the
-node's name in the inventory, and the addresses, labels and taints of its `Kubelet` document. The
+node's name in the inventory, and the addresses, labels and taints of its `Node` document. The
 homelab example's worker carries fast storage and keeps other workloads off:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubelet
-metadata: {name: kubelet}
+kind: Node
+metadata: {name: default}
 spec:
+  type: worker
   labels: {node.kubernetes.io/storage: ssd}
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ```
@@ -179,7 +181,7 @@ server's `anonymous-auth`, `authentication-config`, `authorization-mode` and
 `node-labels`, `pod-manifest-path`, `read-only-port`, `register-with-taints`,
 `rotate-certificates`, `tls-cert-file` and `tls-private-key-file`, which set where it finds its
 configuration, credentials and static pods, the node's name, addresses, labels and taints, and
-who may use its API. A node's labels and taints come from its `Kubelet` document instead.
+who may use its API. A node's labels and taints come from its `Node` document instead.
 
 ## How does a cluster start?
 
@@ -362,7 +364,7 @@ Other states name what the node waits for or why it stopped:
 - [Install on bare metal](../guides/install-bare-metal.md#bootstrap-the-first-control-plane) for
   the bootstrap, and [Run a highly available control plane](../guides/ha-control-plane.md) for
   joins and membership changes.
-- [Config kinds](../reference/kinds.md#kubernetes) for every field of `Kubernetes`, `Kubelet`,
+- [Config kinds](../reference/kinds.md#kubernetes) for every field of `Kubernetes`, `Node`,
   `RegistryMirror`, `Flannel` and `Addon`.
 - [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md),
   [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) and

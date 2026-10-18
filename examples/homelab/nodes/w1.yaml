@@ -1,9 +1,3 @@
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: w1}
-spec:
-  type: worker
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -30,9 +24,10 @@ spec:
 # Longhorn's replicas go to nodes labelled with fast storage, and only workloads that tolerate
 # the taint run here.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubelet
-metadata: {name: kubelet}
+kind: Node
+metadata: {name: default}
 spec:
+  type: worker
   labels: {node.kubernetes.io/storage: ssd}
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ---

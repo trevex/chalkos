@@ -1124,15 +1124,18 @@ func TestUpgradeNeedsTheImageContract(t *testing.T) {
 }
 
 // TestUpgradeChecksTheConfigBeforeDraining refuses an image the inventory's config of a node does
-// not suit before any node is drained or sent the image.
+// not suit before any node is drained or sent the image: one without Kubernetes, which accepts no
+// Node.
 func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
-	if err := os.Remove(filepath.Join(img, "image.json")); err != nil {
-		t.Fatal(err)
+	for _, f := range []string{"image.json", filepath.Join("schemas", "kubernetes.chalkos.dev_v1alpha1_Node.json")} {
+		if err := os.Remove(filepath.Join(img, f)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	err := l.upgrade(img, "--nodes", "w1")
-	if err == nil || !strings.Contains(err.Error(), "its image runs no Kubernetes") {
+	if err == nil || !strings.Contains(err.Error(), `does not accept kind "Node"`) {
 		t.Fatalf("upgrade = %v, want the config refused for an image without Kubernetes", err)
 	}
 	if events := l.takeEvents(); len(events) != 0 {
@@ -1144,8 +1147,13 @@ func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 // image, no node is drained or sent it, not even those before it.
 func TestUpgradeChecksEveryNodesConfigFirst(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	appendDocument(t, filepath.Join(l.ta.dir, "nodes", "w2.yaml"), "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: kubelet}\nspec: {labels: {kubernetes.io/role: edge}}\n")
-	err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2")
+	path := filepath.Join(l.ta.dir, "nodes", "w2.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, strings.Replace(string(data), "spec: {type: worker}", "spec: {type: worker, labels: {kubernetes.io/role: edge}}", 1))
+	err = l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2")
 	if err == nil || !strings.Contains(err.Error(), "w2") || !strings.Contains(err.Error(), "kubernetes.io/role") {
 		t.Fatalf("upgrade = %v, want w2's config refused", err)
 	}
@@ -1600,7 +1608,7 @@ func TestApplyConfigStaged(t *testing.T) {
 func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
-	path := filepath.Join(img, "schemas", "chalkos.dev_v1alpha1_Node.json")
+	path := filepath.Join(img, "schemas", "kubernetes.chalkos.dev_v1alpha1_Node.json")
 	var sch map[string]any
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -1622,7 +1630,7 @@ func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
 	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), want
 	n.config = strings.Replace(want, `"type":"worker"`, `"type":"controlplane"`, 1)
 	err = l.applyConfig("w1", "--staged")
-	if err == nil || !strings.Contains(err.Error(), `Node "w1" spec.type: the type is fixed`) {
+	if err == nil || !strings.Contains(err.Error(), `Node "default" spec.type: the type is fixed`) {
 		t.Fatalf("err = %v", err)
 	}
 	if l.ta.stdout.String() != "w1: config unchanged\n" {

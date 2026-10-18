@@ -58,14 +58,14 @@ and the API server advertise the primary family's. Before the kubelet starts, th
 
 A family's address is fixed or picked:
 
-- Fixed: `nodeIPs` of the node's [`Kubelet`](../reference/kinds.md#kubelet) document, at most one
+- Fixed: `nodeIPs` of the node's [`Node`](../reference/kinds.md#node) document, at most one
   address per family. By default it is the first address of each family among the
   `network.address` keys of the node's `Network` documents, in the order of their names, unless
   subnets to pick from apply to the node. The node waits until an
   interface holds the address.
 - Picked: the node takes the first of its global unicast addresses that `nodeIP.validSubnets` of
   the [`Kubernetes`](../reference/kinds.md#kubernetes) document selects, or `validSubnets` of the
-  node's own `Kubelet` document, which replaces the cluster's. A leading `!` excludes a subnet.
+  node's own `Node` document, which replaces the cluster's. A leading `!` excludes a subnet.
   Addresses are compared IPv4 before IPv6, then by interface name and address, so the choice does
   not depend on the order the kernel lists them in. With no subnets, every global unicast address
   qualifies.
@@ -307,4 +307,4 @@ interface lo, whose MTU flannel would take; set the Flannel document's spec.mtu`
   for VXLAN and MTU problems.
 - [Ports and firewall](../reference/ports-and-firewall.md).
 - [Config kinds](../reference/kinds.md) for every field of `Network`, `NetDev`, `Link`,
-  `Kubernetes`, `Kubelet` and `Flannel`.
+  `Kubernetes`, `Node` and `Flannel`.

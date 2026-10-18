@@ -489,7 +489,6 @@ lib.runTests {
       "Cluster"
       "Flannel"
       "Host"
-      "Kubelet"
       "Kubernetes"
       "Link"
       "NetDev"
@@ -502,8 +501,8 @@ lib.runTests {
       "Volume"
     ];
   };
-  testImageWithoutKubernetesHasNoKubelet = {
-    expr = lib.elem "Kubelet" (kindNames plainImage);
+  testImageWithoutKubernetesHasNoNode = {
+    expr = lib.elem "Node" (kindNames plainImage);
     expected = false;
   };
   testImageWithoutKubernetesHasNoKubernetesKinds = {
@@ -622,7 +621,6 @@ lib.runTests {
       "Cluster"
       "Host"
       "Flannel"
-      "Kubelet"
       "Kubernetes"
       "Addon"
       "Node"
@@ -636,10 +634,9 @@ lib.runTests {
       "chalkos.dev_v1alpha1_Cluster.json"
       "chalkos.dev_v1alpha1_Host.json"
       "kubernetes.chalkos.dev_v1alpha1_Flannel.json"
-      "kubernetes.chalkos.dev_v1alpha1_Kubelet.json"
       "kubernetes.chalkos.dev_v1alpha1_Kubernetes.json"
       "kubernetes.chalkos.dev_v1alpha1_Addon.json"
-      "chalkos.dev_v1alpha1_Node.json"
+      "kubernetes.chalkos.dev_v1alpha1_Node.json"
       "kubernetes.chalkos.dev_v1alpha1_RegistryMirror.json"
       "chalkos.dev_v1alpha1_Secret.json"
       "storage.chalkos.dev_v1alpha1_SystemDisk.json"
@@ -671,12 +668,12 @@ lib.runTests {
       fails
         (image [
           {
-            chalkos.kinds.Node = {
+            chalkos.kinds.Host = {
               group = "demo.example.org";
               version = "v1";
             };
           }
-        ]).chalkos.kinds.Node.group;
+        ]).chalkos.kinds.Host.group;
     expected = true;
   };
   testKindConsumerLoadsItsSecrets = {

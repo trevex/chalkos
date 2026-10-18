@@ -180,7 +180,7 @@ func (c Cluster) validateExtraArgs() error {
 			}
 			err := fmt.Errorf("extraArgs: %s --%s is set by chalkos and cannot be overridden", component, name)
 			if component == "kubelet" && (flagName(name) == "node-labels" || flagName(name) == "register-with-taints") {
-				err = fmt.Errorf("%w; give the node's labels and taints in its Kubelet document", err)
+				err = fmt.Errorf("%w; give the node's labels and taints in its Node document", err)
 			}
 			return err
 		}

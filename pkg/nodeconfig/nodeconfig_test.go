@@ -314,18 +314,13 @@ func TestApplyWritesNoKeyCredentials(t *testing.T) {
 	}
 }
 
-// kubernetesConfig is a worker's set with its Kubernetes document as chalkd stores it, schema
-// defaults filled in.
+// kubernetesConfig is a worker's set with its Kubernetes and Node documents as chalkd stores them,
+// schema defaults filled in.
 const kubernetesConfig = `
 apiVersion: chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: lab}
 spec: {endpoint: "https://10.0.0.10:6443"}
----
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: w1}
-spec: {type: worker}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Kubernetes
@@ -342,6 +337,16 @@ spec:
   vxlanSourceSubnets: []
   vip: {addresses: [], mode: l2, interface: null}
   extraArgs: {etcd: {}, kube-apiserver: {}, kube-controller-manager: {}, kube-scheduler: {}, kubelet: {}}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: worker
+  labels: {}
+  taints: []
+  nodeIPs: null
+  validSubnets: null
 `
 
 const kubernetesImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",

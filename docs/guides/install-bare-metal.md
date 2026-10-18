@@ -154,9 +154,9 @@ or a selector on the serial number, model, WWN, size or type. Device names such 
 can change between boots.
 
 ```yaml title="nodes/cp1.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: cp1}
+metadata: {name: default}
 spec:
   type: controlplane
 ---

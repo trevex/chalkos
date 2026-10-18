@@ -643,15 +643,14 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	// The node's slot held no documents, so the config's Network and Node are new: networkd
-	// reloads, and the units of the default image that read the Node restart.
+	// The node's slot held no documents, so the config's Network is new: networkd reloads, and
+	// the units of the default image that read the node's static addresses restart.
 	if !reflect.DeepEqual(r.calls, []string{
 		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
 		"systemctl show --property=ActiveState --value systemd-networkd",
-		"systemctl show --property=ActiveState --value chalkos-controlplane",
 		"systemctl show --property=ActiveState --value chalkos-kubernetes",
 		"systemctl show --property=ActiveState --value kubelet",
-		"networkctl reload", "systemctl restart chalkos-kubernetes kubelet", "systemctl try-restart chalkos-controlplane",
+		"networkctl reload", "systemctl restart chalkos-kubernetes kubelet",
 	}) {
 		t.Errorf("node ran %v", r.calls)
 	}
@@ -686,7 +685,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	if err := json.Unmarshal(raw, &consumers); err != nil {
 		t.Fatal(err)
 	}
-	consumers["report"] = map[string]any{"kinds": []string{}, "restart": map[string]any{"when": `config["chalkos.dev/v1alpha1"].Node.missing.spec.type == "worker"`}}
+	consumers["report"] = map[string]any{"kinds": []string{}, "restart": map[string]any{"when": `config["chalkos.dev/v1alpha1"].Cluster.missing.spec.endpoint == ""`}}
 	data, _ := json.Marshal(consumers)
 	writeFile(t, s.Loader.Consumers, string(data))
 	addr := ta.startNode(t, s)
@@ -697,7 +696,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	if ta.stderr.String() != want {
 		t.Errorf("stderr = %q, want %q", ta.stderr, want)
 	}
-	if !slices.Contains(r.calls, "systemctl try-restart chalkos-controlplane report") {
+	if !slices.Contains(r.calls, "systemctl try-restart report") {
 		t.Errorf("node ran %v, want report restarted", r.calls)
 	}
 }
@@ -743,7 +742,7 @@ func TestInstalledNodeRequiresOSCA(t *testing.T) {
 
 	// The node's certificate names n1, so it cannot pass for n2.
 	writeFile(t, ta.inventory, testInventoryYAML+"    n2: {address: 10.0.0.11, files: [nodes/n2.yaml]}\n")
-	writeFile(t, filepath.Join(ta.dir, "nodes", "n2.yaml"), strings.Join([]string{strings.Replace(n1Node, "{name: n1}", "{name: n2}", 1), n1SystemDisk, n1Network}, "---\n"))
+	writeFile(t, filepath.Join(ta.dir, "nodes", "n2.yaml"), strings.Join([]string{n1SystemDisk, n1Network}, "---\n"))
 	err = ta.run(context.Background(), ta.args([]string{"status", "n2"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "x509") || !strings.Contains(err.Error(), "not n2") {
 		t.Fatalf("err = %v, want the node's certificate refused for the name n2", err)
@@ -775,13 +774,13 @@ func TestPasswordPromptConfirms(t *testing.T) {
 
 // withPassword gives n1 the password fallback and the volume data, encrypted as given.
 func withPassword(t *testing.T, ta *testApp, encryption string) {
-	ta.writeNode(t, n1Node, passwordSystemDisk, n1Network,
+	ta.writeNode(t, passwordSystemDisk, n1Network,
 		"apiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\nspec: {size: 1G, format: ext4, mountPoint: /srv/data, encryption: {mode: "+encryption+"}}\n")
 }
 
 func TestApplyConfigAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	ta := newTestApp(t)
-	ta.writeNode(t, n1Node, passwordSystemDisk, n1Network)
+	ta.writeNode(t, passwordSystemDisk, n1Network)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
 
@@ -1290,7 +1289,7 @@ func TestStatusWithABrokenConfig(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	ta.writeNode(t, strings.Replace(n1Node, "{name: n1}", "{name: n9}", 1), n1SystemDisk, n1Network)
+	ta.writeNode(t, n1SystemDisk, n1SystemDisk, n1Network)
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
@@ -1304,7 +1303,7 @@ func TestStatusWithABrokenConfig(t *testing.T) {
 // the inventory names, so commands still reach it.
 func TestAddressWithABrokenConfig(t *testing.T) {
 	ta := newTestApp(t)
-	ta.writeNode(t, strings.Replace(n1Node, "{name: n1}", "{name: n9}", 1), n1SystemDisk, n1Network)
+	ta.writeNode(t, n1SystemDisk, n1SystemDisk, n1Network)
 	c, err := loadInventory(ta.inventory)
 	if err != nil {
 		t.Fatal(err)

@@ -17,13 +17,41 @@ var testImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlannel, 
 // documents.
 func kubernetesSet(t *testing.T, spec, more string) *Set {
 	t.Helper()
+	return kubernetesNodeSet(t, spec, "", more)
+}
+
+// kubernetesNodeSet is kubernetesSet with the fields node gives, as YAML, in the worker's Node.
+func kubernetesNodeSet(t *testing.T, spec, node, more string) *Set {
+	t.Helper()
+	if node != "" {
+		node = ", " + node
+	}
 	yaml := strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
-		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: " + spec + "\n" + more
+		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: " + spec + "\n" +
+		nodeDoc("default", "{type: worker"+node+"}") + more
 	s, err := NewSet(mustParse(t, yaml), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
+}
+
+// nodeDoc is a Kubernetes Node document called name with the spec given as YAML.
+func nodeDoc(name, spec string) string {
+	return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
+}
+
+// The cluster's kind is the Kubernetes Node's type.
+func TestClusterTakesTheNodesType(t *testing.T) {
+	s, err := NewSet(mustParse(t, strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1)+
+		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n"+
+		nodeDoc("cp", "{type: controlplane}")), allSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := s.Cluster(testImage); err != nil || c.Kind != kubernetes.KindControlPlane {
+		t.Errorf("kind = %q, %v, want %q", c.Kind, err, kubernetes.KindControlPlane)
+	}
 }
 
 func TestClusterFromDefaults(t *testing.T) {
@@ -74,18 +102,20 @@ spec: {mtu: 1430}
 }
 
 func TestClusterRejects(t *testing.T) {
+	worker := nodeDoc("default", "{type: worker}")
 	for name, tc := range map[string]struct {
 		yaml, want string
 	}{
-		"no Kubernetes": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1), "no Kubernetes"},
-		"no endpoint": {minimal + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n",
+		"no Kubernetes": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) + worker, "no Kubernetes"},
+		"no endpoint": {minimal + worker + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n",
 			"has no endpoint"},
-		"no type": {strings.Replace(strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1), "spec: {type: worker}", "spec: {}", 1) +
-			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n", "has no type"},
-		"overlapping ranges": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
+		"no Node": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
+			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n",
+			"no Node: the config of a node whose image runs Kubernetes holds one Node document"},
+		"overlapping ranges": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) + worker +
 			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {podCIDRs: {ipv4: 10.96.0.0/16}}\n",
 			`Kubernetes "k": podCIDRs.ipv4 10.96.0.0/16 and serviceCIDRs.ipv4 10.96.0.0/12 overlap`},
-		"protected kubelet flag": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) +
+		"protected kubelet flag": {strings.Replace(minimal, "spec: {}", "spec: {endpoint: \"https://10.0.0.10:6443\"}", 1) + worker +
 			"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {extraArgs: {kubelet: {anonymous-auth: \"true\"}}}\n",
 			`Kubernetes "k": extraArgs: kubelet --anonymous-auth is set by chalkos and cannot be overridden`},
 	} {
@@ -161,7 +191,7 @@ func TestTimeDHCP(t *testing.T) {
 
 // The identity's address families come from the Kubernetes document.
 func TestIdentityTakesTheDocumentsFamilies(t *testing.T) {
-	s := kubernetesSet(t, "{ipFamilies: [ipv6]}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubelet\nmetadata: {name: k}\nspec: {nodeIPs: [10.0.0.1]}\n")
+	s := kubernetesNodeSet(t, "{ipFamilies: [ipv6]}", "nodeIPs: [10.0.0.1]", "")
 	_, err := s.Identity("n1", Target{Image: &testImage})
 	if err == nil || !strings.Contains(err.Error(), "an ipv4 address, but the cluster's ipFamilies are [ ipv6 ]") {
 		t.Fatalf("err = %v", err)
@@ -194,7 +224,7 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 
 // Errors name the document that holds the setting.
 func TestClusterNamesTheDocument(t *testing.T) {
-	endpoint := strings.Replace(minimal, "spec: {}", `spec: {endpoint: "https://:6443"}`, 1) +
+	endpoint := strings.Replace(minimal, "spec: {}", `spec: {endpoint: "https://:6443"}`, 1) + nodeDoc("default", "{type: worker}") +
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: k}\nspec: {}\n"
 	s, err := NewSet(mustParse(t, endpoint), allSchemas(t))
 	if err != nil {

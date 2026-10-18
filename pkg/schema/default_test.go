@@ -84,7 +84,7 @@ func TestRawReturnsTheSchemaDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, ok := s.Raw("chalkos.dev/v1alpha1", "Node")
+	raw, ok := s.Raw("kubernetes.chalkos.dev/v1alpha1", "Node")
 	if !ok || raw.(map[string]any)["title"] != "Node" {
 		t.Fatalf("Raw = %v, %v", raw, ok)
 	}

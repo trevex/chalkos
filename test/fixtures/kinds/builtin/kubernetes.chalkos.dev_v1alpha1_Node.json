@@ -6,7 +6,7 @@
       "const": "kubernetes.chalkos.dev/v1alpha1"
     },
     "kind": {
-      "const": "Kubelet"
+      "const": "Node"
     },
     "metadata": {
       "additionalProperties": false,
@@ -88,6 +88,13 @@
           },
           "type": "array"
         },
+        "type": {
+          "description": "What the node is in the cluster; it is fixed once the node holds a Kubernetes share.",
+          "enum": [
+            "controlplane",
+            "worker"
+          ]
+        },
         "validSubnets": {
           "anyOf": [
             {
@@ -105,6 +112,9 @@
           "description": "Subnets the node picks its address from instead of the cluster's; null uses those."
         }
       },
+      "required": [
+        "type"
+      ],
       "type": "object"
     }
   },
@@ -114,12 +124,19 @@
     "metadata",
     "spec"
   ],
-  "title": "Kubelet",
+  "title": "Node",
   "type": "object",
   "x-chalkos-kind": {
     "group": "kubernetes.chalkos.dev",
-    "kind": "Kubelet",
+    "kind": "Node",
     "multiple": false,
+    "rules": [
+      {
+        "messageExpression": "cel.bind(type, documents.map(n, documents[n].spec.type)[0],\n  \"the config changes the node's type from \\\"\" + facts.share.kind + \"\\\" to \\\"\" + type\n  + \"\\\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a \" + type)\n",
+        "rule": "facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)",
+        "takes": "refuse"
+      }
+    ],
     "version": "v1alpha1"
   }
 }

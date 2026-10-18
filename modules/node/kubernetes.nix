@@ -25,8 +25,6 @@ let
   cel = import ./runtime/cel.nix { inherit lib; };
   core = "chalkos.dev/v1alpha1";
   kubernetesAPI = "kubernetes.chalkos.dev/v1alpha1";
-  # The node's Node document: its name and the type, which is the cluster's kind.
-  node = c: "cel.bind(d, ${cel.documents c core "Node"}, d.map(n, [n, d[n].spec.type]))";
   # The Address= values of each Network's [Network] sections, as written and in the order of the
   # networks' names, which the identity takes the node's static addresses from. They are compared
   # with their prefix lengths: taking those off loops over the addresses of each section of each
@@ -36,8 +34,8 @@ let
     "cel.bind(d, ${
       cel.documents c "networkd.chalkos.dev/v1alpha1" "Network"
     }, d.map(n, has(d[n].spec.network) ? ${cel.oneOrMany "d[n].spec.network"}.map(s, type(s) == map && has(s.address) ? s.address : null) : []))";
-  # The cluster the Node's type and the Cluster, Kubernetes and Flannel documents give, or a
-  # cluster file that changed, as one a boot whose config loader failed left missing.
+  # The cluster the Cluster, Kubernetes and Flannel documents give, or a cluster file that changed,
+  # as one a boot whose config loader failed left missing.
   clusterChanged = lib.concatStringsSep " || " [
     "facts.cluster != oldFacts.cluster"
     (cel.specsChanged core "Cluster")
@@ -50,14 +48,13 @@ let
   withoutNodeCA = s: ''${s}.filter(k, k != "nodeCA").map(k, k + "=" + ${s}[k])'';
   shareChanged = "cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : ${withoutNodeCA "was"} != ${withoutNodeCA "gets"}))";
   # Only what the kubelet and its preparation read counts. chalkd once compared the whole identity
-  # when it had no Kubernetes part, as for a Node without a type, and restarted the kubelet for any
-  # other change of it, such as of the storage or the time servers. That was a mistake, corrected
-  # here: such a node restarts the kubelet only for these changes.
+  # when it had no Kubernetes part, and restarted the kubelet for any other change of it, such as
+  # of the storage or the time servers. That was a mistake, corrected here.
   kubernetesChanged = lib.concatStringsSep " || " [
-    "${node "config"} != ${node "oldConfig"}"
+    # The node's type, which is the cluster's kind, its labels, taints and addresses.
+    (cel.specsChanged kubernetesAPI "Node")
     # The Host's host name, which the identity's Kubernetes node carries beside its name.
     (cel.specsChanged core "Host")
-    (cel.specsChanged kubernetesAPI "Kubelet")
     "${staticAddresses "config"} != ${staticAddresses "oldConfig"}"
     clusterChanged
     shareChanged
@@ -67,7 +64,7 @@ let
   # anyway changes nothing it runs.
   addonObjects = c: "${cel.specs c kubernetesAPI "Addon"}.map(s, s.objects).flatten()";
   addonsApplied = ''(cel.bind(d, ${
-    cel.documents "config" core "Node"
+    cel.documents "config" kubernetesAPI "Node"
   }, d.exists(n, d[n].spec.type == "controlplane")) && ${addonObjects "config"} != ${addonObjects "oldConfig"})'';
 
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
@@ -158,9 +155,9 @@ in
           default = false;
           description = ''
             Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
-            node's Kubernetes configuration. One image serves control planes and workers: the
-            node's Node document makes it one or the other. mkImages sets it from the variant's
-            `kubernetes`; the installer runs none.
+            node's Kubernetes configuration. One image serves control planes and workers: the type
+            of the node's Kubernetes Node document makes it one or the other. mkImages sets it from
+            the variant's `kubernetes`; the installer runs none.
           '';
         };
         package = lib.mkOption {

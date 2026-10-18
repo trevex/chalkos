@@ -1,6 +1,6 @@
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: cp1}
+metadata: {name: default}
 spec:
   type: controlplane
 ---

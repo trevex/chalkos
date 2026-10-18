@@ -39,18 +39,6 @@ A node's config holds at most one.
 | --- | --- | --- | --- |
 | `spec.hostname` | string or null | `null` | Host name set at boot; null takes the node's name in the inventory. |
 
-## Node { #node }
-
-`apiVersion: chalkos.dev/v1alpha1`
-
-A node's config holds at most one.
-
-It has a [change rule](../concepts/rules.md).
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `spec.type` | one of `controlplane`, `worker` or null | `null` | What the node is in Kubernetes; null on an image without Kubernetes. |
-
 ## Secret { #secret }
 
 `apiVersion: chalkos.dev/v1alpha1`
@@ -80,22 +68,6 @@ A node's config holds at most one.
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.mtu` | integer of at least 1 or null | `null` | MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address. |
-
-## Kubelet { #kubelet }
-
-`apiVersion: kubernetes.chalkos.dev/v1alpha1`
-
-A node's config holds at most one.
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `spec.labels` | map of string | `{}` | Kubernetes labels applied to the node. |
-| `spec.nodeIPs` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
-| `spec.taints` | list of object | `[]` | Kubernetes taints applied to the node. |
-| `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | What happens to pods that do not tolerate the taint. |
-| `spec.taints[].key` | string | required | Taint key. |
-| `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |
-| `spec.validSubnets` | list of string or null | `null` | Subnets the node picks its address from instead of the cluster's; null uses those. |
 
 ## Kubernetes { #kubernetes }
 
@@ -136,6 +108,25 @@ It has 4 [change rules](../concepts/rules.md).
 | `spec.vip.interface` | string or null | `null` | Interface the addresses are added to; null means the one holding the node's address of their family. |
 | `spec.vip.mode` | `l2` | `"l2"` | How the holder announces the addresses. |
 | `spec.vxlanSourceSubnets` | list of string | `[]` | Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source. |
+
+## Node { #node }
+
+`apiVersion: kubernetes.chalkos.dev/v1alpha1`
+
+A node's config holds at most one.
+
+It has a [change rule](../concepts/rules.md).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.labels` | map of string | `{}` | Kubernetes labels applied to the node. |
+| `spec.nodeIPs` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
+| `spec.taints` | list of object | `[]` | Kubernetes taints applied to the node. |
+| `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | What happens to pods that do not tolerate the taint. |
+| `spec.taints[].key` | string | required | Taint key. |
+| `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |
+| `spec.type` | one of `controlplane`, `worker` | required | What the node is in the cluster; it is fixed once the node holds a Kubernetes share. |
+| `spec.validSubnets` | list of string or null | `null` | Subnets the node picks its address from instead of the cluster's; null uses those. |
 
 ## RegistryMirror { #registrymirror }
 

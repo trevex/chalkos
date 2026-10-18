@@ -67,9 +67,9 @@ A relative directory is relative to the inventory's directory. Each VM node's `S
 the device a virtio block disk gets, `/dev/vda`:
 
 ```yaml title="nodes/cp1.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: cp1}
+metadata: {name: default}
 spec:
   type: controlplane
 ---

@@ -23,9 +23,14 @@ func TestBuiltinRulesCompile(t *testing.T) {
 	}
 	count := map[string]int{}
 	for _, p := range set.Programs {
-		count[p.Kind.Kind]++
+		count[p.Kind.APIVersion+" "+p.Kind.Kind]++
 	}
-	for kind, want := range map[string]int{"Volume": 7, "SystemDisk": 1, "Node": 1, "Kubernetes": 4} {
+	for kind, want := range map[string]int{
+		"storage.chalkos.dev/v1alpha1 Volume":        7,
+		"storage.chalkos.dev/v1alpha1 SystemDisk":    1,
+		"kubernetes.chalkos.dev/v1alpha1 Node":       1,
+		"kubernetes.chalkos.dev/v1alpha1 Kubernetes": 4,
+	} {
 		if count[kind] != want {
 			t.Errorf("%s has %d rules, want %d", kind, count[kind], want)
 		}
@@ -52,8 +57,8 @@ func TestOf(t *testing.T) {
 	}
 }
 
-// storageConfig is a node's config with the SystemDisk and Volume specs given, as JSON. It holds
-// no core Node document: the storage rules name the node by node.name.
+// storageConfig is a node's config with the SystemDisk and Volume specs given, as JSON. The
+// storage rules name the node by node.name.
 func storageConfig(t *testing.T, systemDisk string, volumes map[string]string) []config.Document {
 	t.Helper()
 	docs := []config.Document{

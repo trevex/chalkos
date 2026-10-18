@@ -57,9 +57,9 @@ Each control plane has a file of its own with `type: controlplane`, its system d
 static address:
 
 ```yaml title="nodes/cp1.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: cp1}
+metadata: {name: default}
 spec:
   type: controlplane
 ---

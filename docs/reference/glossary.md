@@ -104,7 +104,7 @@ plane, a [VIP](#vip) or a load balancer that forwards both ports. See
 ## Config { #config }
 
 A node's configuration at runtime: a set of [config documents](#config-document), each of a
-[kind](#kind) its image accepts, such as `Node`, `Network`, `SystemDisk`, `Kubelet` or an
+[kind](#kind) its image accepts, such as `Node`, `Network`, `SystemDisk`, `Kubernetes` or an
 extension's own. The [inventory](#inventory) names the YAML files whose documents form a node's
 set. chalkctl checks the set against the schemas of the node's image and delivers it at install
 and with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd checks it again, keeps it
@@ -303,7 +303,7 @@ variant's or platform's modules. See [The image](../concepts/image.md).
 ## Node { #node }
 
 A machine of the cluster, named in the [inventory](#inventory), which also names the [image](#image)
-it runs, and described by its `Node` document, which says whether it is a [control
+it runs. On an image with Kubernetes, its `Node` document says whether it is a [control
 plane](#control-plane) or a [worker](#worker). It is installed from that image's [image
 directory](#image-directory). See [Config and the inventory](../concepts/config.md).
 

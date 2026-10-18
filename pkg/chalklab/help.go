@@ -25,8 +25,8 @@ the VMs' firmware, copies each node's image and signs the copy with them, gives 
 backed by it and the empty disks the lab file adds, and starts the supervisor, which runs a TPM
 and a VM per node. Each VM's NIC on the lab network gets the MAC address the lab file gives it,
 which the node's Network document must match; chalklab does not read the Network documents.
-A node's memory, CPUs and disks default by its Node's type: 3072 MiB for a control plane, 2048 MiB
-for another node, 2 CPUs and one disk of 16G.
+A node's memory, CPUs and disks default by the type of its Kubernetes Node: 3072 MiB for a control
+plane, 2048 MiB for another node, 2 CPUs and one disk of 16G.
 
 chalklab first writes an admin client file. Each node boots its image in maintenance mode;
 chalklab reads chalkd's certificate fingerprint from the console and installs the node in place

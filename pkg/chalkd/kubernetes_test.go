@@ -691,25 +691,25 @@ func TestCredentialIsShortLived(t *testing.T) {
 // which picks the node's address and fills the firewall's VXLAN chain, and restarts the kubelet.
 // The firewall itself is left alone, so a node whose firewall is disabled takes a new address.
 // TestApplyConfigRestartsKubernetesOnChange: the kubelet and its preparation restart when what
-// they read of the node's config changes, compared with the running slot: the Node's name and
-// type, the Host, the Kubelet, the static addresses of the Network documents and the cluster the
-// Cluster and Kubernetes documents give. Other changes, of a Network beside its addresses or of
+// they read of the node's config changes, compared with the running slot: the Node's spec, the
+// Host, the static addresses of the Network documents and the cluster the Cluster and Kubernetes
+// documents give. Other changes, of a Network beside its addresses, of the Node's name or of
 // another kind, restart neither.
 func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 	base := workerConfig + networkConfig
-	kubelet := func(spec string) string {
-		return strings.Replace(base, "spec: {nodeIPs: [192.168.100.21]}", "spec: "+spec, 1)
+	node := func(spec string) string {
+		return strings.Replace(base, "spec: {type: worker, nodeIPs: [192.168.100.21]}", "spec: "+spec, 1)
 	}
 	for name, c := range map[string]struct {
 		config   string
 		restarts bool
 	}{
 		"unchanged":           {base, false},
-		"labels":              {kubelet("{nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}"), true},
-		"taints":              {kubelet("{nodeIPs: [192.168.100.21], taints: [{key: dedicated, effect: NoSchedule}]}"), true},
-		"nodeIPs":             {kubelet("{nodeIPs: [192.168.100.22]}"), true},
-		"validSubnets":        {kubelet("{nodeIPs: [], validSubnets: [192.168.100.0/24]}"), true},
-		"the node name":       {strings.Replace(base, "metadata: {name: n1}", "metadata: {name: n2}", 1), true},
+		"labels":              {node("{type: worker, nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}"), true},
+		"taints":              {node("{type: worker, nodeIPs: [192.168.100.21], taints: [{key: dedicated, effect: NoSchedule}]}"), true},
+		"nodeIPs":             {node("{type: worker, nodeIPs: [192.168.100.22]}"), true},
+		"validSubnets":        {node("{type: worker, nodeIPs: [], validSubnets: [192.168.100.0/24]}"), true},
+		"the Node's name":     {strings.Replace(base, "kind: Node\nmetadata: {name: default}", "kind: Node\nmetadata: {name: node}", 1), false},
 		"a Host":              {base + hostConfig("default", "h1"), true},
 		"a static address":    {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
 		"the cluster":         {strings.Replace(base, "metadata: {name: kubernetes}\nspec: {}", "metadata: {name: kubernetes}\nspec: {domain: lab.local}", 1), true},
@@ -1003,8 +1003,8 @@ func TestApplyConfigNodeCAWithConfig(t *testing.T) {
 		name, config string
 		want         []string
 	}{
-		{"the Kubelet's labels", strings.Replace(controlPlane, "spec: {nodeIPs: [192.168.100.21]}", "spec: {nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", 1), []string{"chalkos-kubernetes", "kubelet"}},
-		{"a Demo", strings.NewReplacer("spec: {nodeIPs: [192.168.100.21]}", "spec: {nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", "name: first", "name: second").Replace(controlPlane), []string{"demo"}},
+		{"the Node's labels", strings.Replace(controlPlane, "nodeIPs: [192.168.100.21]}", "nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", 1), []string{"chalkos-controlplane", "chalkos-kubernetes", "kubelet"}},
+		{"a Demo", strings.NewReplacer("nodeIPs: [192.168.100.21]}", "nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", "name: first", "name: second").Replace(controlPlane), []string{"demo"}},
 	} {
 		r.calls, *acted = nil, nil
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, KubernetesShare: withNodeCA()}))
@@ -1563,7 +1563,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 // the stored config gives no cluster, and a share of the new type delivered with the config does
 // not change it. A node without a share takes any type.
 func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
-	controlPlane := strings.Replace(workerConfig, "spec: {type: worker}", "spec: {type: controlplane}", 1)
+	controlPlane := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
 	const refused = `the node's type from "worker" to "controlplane"`
 	for name, tc := range map[string]struct {
 		share, stored bool

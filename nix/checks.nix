@@ -571,8 +571,8 @@ in
     '';
 
   # The worker's control-plane ports with its firewall, in a network namespace: a peer connects to
-  # 6443, 2379 and 2380 over IPv4 and IPv6, which the firewall accepts once the node's Node
-  # document makes it a control plane, and refuses again once it makes it a worker.
+  # 6443, 2379 and 2380 over IPv4 and IPv6, which the firewall accepts once the node's Kubernetes
+  # Node document makes it a control plane, and refuses again once it makes it a worker.
   controlplane-ports =
     let
       script = worker.systemd.services.chalkos-controlplane.serviceConfig.ExecStart;
@@ -636,10 +636,10 @@ in
             if reaches '[fd00::11]' $port; then fail "$port open over IPv6 $1"; fi
           done
         }
-        node=/run/chalkos/config/chalkos.dev/Node/n1.json
+        node=/run/chalkos/config/kubernetes.chalkos.dev/Node/default.json
         mkdir -p "$(dirname "$node")"
         node_type() {
-          printf '{"apiVersion":"chalkos.dev/v1alpha1","kind":"Node","metadata":{"name":"n1"},"spec":{"type":"%s"}}\n' "$1" >"$node"
+          printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Node","metadata":{"name":"default"},"spec":{"type":"%s"}}\n' "$1" >"$node"
         }
 
         closed "without the table"

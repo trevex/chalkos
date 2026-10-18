@@ -19,14 +19,14 @@ type Set struct {
 // singletons are the kinds a set holds exactly once.
 var singletons = []struct{ apiVersion, kind string }{
 	{CoreAPI, "Cluster"},
-	{CoreAPI, "Node"},
 	{StorageAPI, "SystemDisk"},
 }
 
 // NewSet checks docs as a node's config against the image's schemas: each document is valid, its
 // kind is one the image accepts, kinds that are not multiple appear once, names are unique per
-// kind, Cluster, Node and SystemDisk are present, and every secretRef names a key of a Secret in
-// the set.
+// kind, Cluster and SystemDisk are present, and every secretRef names a key of a Secret in the
+// set. The Kubernetes documents an image with Kubernetes requires are its cluster's, which
+// ClusterOf checks.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {

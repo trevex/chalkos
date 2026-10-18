@@ -3,11 +3,6 @@ kind: Cluster
 metadata: {name: homelab}
 spec: {endpoint: "https://10.0.0.11:6443"}
 ---
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: cp1}
-spec: {type: controlplane}
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -15,9 +10,9 @@ spec:
   disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubelet
-metadata: {name: kubelet}
-spec: {}
+kind: Node
+metadata: {name: default}
+spec: {type: controlplane}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network

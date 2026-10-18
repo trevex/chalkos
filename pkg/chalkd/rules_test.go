@@ -113,14 +113,14 @@ func withBrokenRule(t *testing.T, raw []byte) []byte {
 // Rules of the running image that do not compile are the node's failure, not the request's.
 func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
 	s, _ := configServer(t)
-	path := filepath.Join(s.Loader.Schemas, "chalkos.dev_v1alpha1_Node.json")
+	path := filepath.Join(s.Loader.Schemas, "storage.chalkos.dev_v1alpha1_SystemDisk.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	write(t, path, string(withBrokenRule(t, raw)))
 	_, err = sendConfig(s, baseConfig)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the running image's rules: Node: rule ") {
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the running image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -137,9 +137,9 @@ func TestInstallRulesThatDoNotCompile(t *testing.T) {
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1}}
 	h.Schemas = fixtureSchemas(t)
-	h.Schemas["chalkos.dev_v1alpha1_Node.json"] = withBrokenRule(t, h.Schemas["chalkos.dev_v1alpha1_Node.json"])
+	h.Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"] = withBrokenRule(t, h.Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"])
 	err := sendInstall(t, s, h, nil)
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image's rules: Node: rule ") {
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)
 	}
 }

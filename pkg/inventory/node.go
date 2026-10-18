@@ -14,14 +14,15 @@ import (
 
 // NodeConfig is a node's config as the inventory gives it.
 type NodeConfig struct {
-	// Name is the node's name, which its Node document carries too.
+	// Name is the inventory's name of the node, which its node certificate carries.
 	Name string
 	// Documents are the documents of the node's files, in their order. A node that is no control
 	// plane gets no Addon document: an Addon's objects go to the cluster's API, which only control
 	// planes apply.
 	Documents []config.Document
-	// Type is the Node document's spec.type, empty without one, and Hostname the Host document's
-	// spec.hostname, empty without a Host or for a null one, which take the node's name.
+	// Type is the Kubernetes Node document's spec.type, empty without one, as on an image without
+	// Kubernetes, and Hostname the Host document's spec.hostname, empty without a Host or for a
+	// null one, which take the node's name.
 	Type, Hostname string
 	// ImageName is the name of the image the inventory gives the node, and ImageDir that image's
 	// directory, absolute.
@@ -32,8 +33,7 @@ type NodeConfig struct {
 }
 
 // Node builds a node's config from its files and the inventory's image of it: their documents,
-// of which no two share a kind and a name, with exactly one Node, named as the inventory names
-// the node.
+// of which no two share a kind and a name.
 func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	files, err := inv.Files(name)
 	if err != nil {
@@ -63,25 +63,11 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		return nil, err
 	}
 	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: imageDir}
-	var node *config.Document
-	for i := range docs {
-		if docs[i].APIVersion != config.CoreAPI || docs[i].Kind != "Node" {
-			continue
-		}
-		if node != nil {
-			return nil, fmt.Errorf("node %s: its files hold the Nodes %q and %q", name, node.Name, docs[i].Name)
-		}
-		node = &docs[i]
-	}
-	if node == nil {
-		return nil, fmt.Errorf("node %s: its files hold no Node document", name)
-	}
-	if node.Name != name {
-		return nil, fmt.Errorf("node %s: its files hold the Node %q; a node's Node document carries the name the inventory gives it", name, node.Name)
-	}
-	spec, _ := node.Object["spec"].(map[string]any)
-	c.Type, _ = spec["type"].(string)
 	for _, d := range docs {
+		if d.APIVersion == config.KubernetesAPI && d.Kind == "Node" {
+			node, _ := d.Object["spec"].(map[string]any)
+			c.Type, _ = node["type"].(string)
+		}
 		if d.APIVersion == config.CoreAPI && d.Kind == "Host" {
 			host, _ := d.Object["spec"].(map[string]any)
 			c.Hostname, _ = host["hostname"].(string)

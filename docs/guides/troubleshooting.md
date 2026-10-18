@@ -140,7 +140,7 @@ The Kubernetes line says `preparation failed: no ipv4 node address matches ...`,
 selector and the addresses the node has. The node waited `spec.nodeIP.timeout` of the cluster's
 [`Kubernetes`](../reference/kinds.md#kubernetes) document, 300 seconds by default, for an address
 that matches its fixed `nodeIPs` or its `validSubnets` in its
-[`Kubelet`](../reference/kinds.md#kubelet) document, or the cluster's `nodeIP.validSubnets`, and
+[`Node`](../reference/kinds.md#node) document, or the cluster's `nodeIP.validSubnets`, and
 found none, so it runs neither the kubelet nor static pods. Check the node's `Network` documents
 and DHCP, and that the subnets list the network the node is on. Then deliver the corrected
 documents with `chalkctl apply-config <node> --secrets=secrets.age`, or reboot once the network
@@ -178,7 +178,7 @@ kubectl get csr
 
 A pending `kubernetes.io/kubelet-serving` request usually asks for an address the Node does not
 report. Check the node's addresses in `kubectl get node <node> -o wide` against its `Network`
-and `Kubelet` documents.
+and `Node` documents.
 
 ### Image pulls fail
 

@@ -254,9 +254,9 @@ spec:
 The node's own file holds its config as on any other platform:
 
 ```yaml title="nodes/w3.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: w3}
+metadata: {name: default}
 spec:
   type: worker
 ---

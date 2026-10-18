@@ -284,7 +284,7 @@ func TestStageConfigRefuses(t *testing.T) {
 	}{
 		"an unknown kind":           {withoutDemo, "", "", `does not accept kind "Demo"`},
 		"an unknown delivered kind": {withoutDemo, "", baseConfig, `does not accept kind "Demo"`},
-		"Kubernetes without a type": {fixtureSchemas(t), testImage, "", `Node "n1" has no type, but its image runs Kubernetes`},
+		"Kubernetes without a Node": {fixtureSchemas(t), testImage, "", "no Node: the config of a node whose image runs Kubernetes holds one Node document"},
 		"a broken image.json":       {fixtureSchemas(t), `{"version": ""}`, "", "image.json"},
 		"no schemas":                {nil, "", "", "the image's schemas"},
 		"a VAR of another size":     {fixtureSchemas(t), "", strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), "VAR: size 1G instead of filling its disk; only a reinstall of n1 carries it out"},

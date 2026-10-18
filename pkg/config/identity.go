@@ -39,14 +39,6 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 		return identity.Identity{}, fmt.Errorf("the node has no name to translate its config for")
 	}
 	cluster, _ := s.One("Cluster")
-	nodeDoc, _ := s.One("Node")
-	var node nodeSpec
-	if err := nodeDoc.decodeSpec(&node); err != nil {
-		return identity.Identity{}, err
-	}
-	if node.Type != nil && t.Image == nil {
-		return identity.Identity{}, fmt.Errorf("%s has type %s, but its image runs no Kubernetes", nodeDoc, *node.Type)
-	}
 	sec, err := s.storage(name)
 	if err != nil {
 		return identity.Identity{}, err
@@ -95,7 +87,7 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	}
 	if t.Image != nil {
 		// The node's addresses follow the families and nodeIP.validSubnets of the cluster the
-		// documents give, which needs the Node's type and a Kubernetes document.
+		// documents give, which needs a Node and a Kubernetes document.
 		c, err := s.Cluster(*t.Image)
 		if err != nil {
 			return identity.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
@@ -133,12 +125,12 @@ func refusedLabel(key string) bool {
 	return in("kubernetes.io", "k8s.io") && !slices.Contains(kubeletLabels, key) && !in(kubeletLabelNamespaces...)
 }
 
-// kubelet fills in the node's Kubernetes settings from its Kubelet document, or the kind's
-// defaults without one, and refuses settings the kubelet would not start with. The errors come
-// in this order: refused labels and swap volumes by name, then the node's addresses.
+// kubelet fills in the node's Kubernetes settings from its Node document, which the cluster c
+// was built with, and refuses settings the kubelet would not start with. The errors come in this
+// order: refused labels and swap volumes by name, then the node's addresses.
 func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) error {
-	var spec kubeletSpec
-	if d, ok := s.One("Kubelet"); ok {
+	var spec nodeSpec
+	if d, ok := s.One("Node"); ok {
 		if err := d.decodeSpec(&spec); err != nil {
 			return err
 		}
@@ -158,7 +150,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	sort.Strings(labels)
 	for _, key := range labels {
 		if refusedLabel(key) {
-			add("Kubelet: label %q: the kubelet sets labels in the kubernetes.io and k8s.io namespaces on its own node only under kubelet.kubernetes.io/ and node.kubernetes.io/ or from the list %s", key, strings.Join(kubeletLabels, ", "))
+			add("Node: label %q: the kubelet sets labels in the kubernetes.io and k8s.io namespaces on its own node only under kubelet.kubernetes.io/ and node.kubernetes.io/ or from the list %s", key, strings.Join(kubeletLabels, ", "))
 		}
 	}
 	for _, t := range spec.Taints {
@@ -181,7 +173,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	}
 	_, subnetErr := nodeip.ParseFilter(spec.ValidSubnets)
 	if subnetErr != nil {
-		add("Kubelet: %v", subnetErr)
+		add("Node: %v", subnetErr)
 	}
 	nodeIPs := spec.NodeIPs
 	if nodeIPs == nil {
@@ -194,7 +186,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 			seen = append(seen, nodeip.FamilyOf(ip))
 			addrs = append(addrs, ip)
 		} else {
-			add("Kubelet: nodeIPs: %q is not an address", a)
+			add("Node: nodeIPs: %q is not an address", a)
 		}
 	}
 	var unique []nodeip.Family
@@ -205,12 +197,12 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	}
 	for _, f := range unique {
 		if count(seen, f) > 1 {
-			add("Kubelet: nodeIPs: more than one %s address; give at most one per family", f)
+			add("Node: nodeIPs: more than one %s address; give at most one per family", f)
 		}
 	}
 	for _, f := range unique {
 		if !slices.Contains(families, f) {
-			add("Kubelet: nodeIPs: an %s address, but the cluster's ipFamilies are [ %s ]", f, joinFamilies(families))
+			add("Node: nodeIPs: an %s address, but the cluster's ipFamilies are [ %s ]", f, joinFamilies(families))
 		}
 	}
 	// The other nodes take VXLAN only from vxlanSourceSubnets, so every address the node has or
@@ -218,12 +210,12 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	// sources are the Kubernetes document's error, reported with the cluster.
 	if sources, err := c.VXLANSources(); err == nil {
 		if err := kubernetes.CheckVXLANSources(sources, addrs); err != nil {
-			add("Kubelet: nodeIPs: %v", err)
+			add("Node: nodeIPs: %v", err)
 		}
 		for _, s := range subnets {
 			p, err := netip.ParsePrefix(s)
 			if err == nil && !kubernetes.InVXLANSources(sources, p) {
-				add("Kubelet: the node picks its address from %s, which is not inside vxlanSourceSubnets, from which alone the other nodes take VXLAN", s)
+				add("Node: the node picks its address from %s, which is not inside vxlanSourceSubnets, from which alone the other nodes take VXLAN", s)
 			}
 		}
 	}
@@ -231,7 +223,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	if subnetErr == nil {
 		for _, f := range families {
 			if !slices.Contains(seen, f) && !picks(subnets, f) {
-				add("Kubelet: no %s address in nodeIPs, and no %s subnet in the validSubnets that apply, so the node cannot pick its %s address", f, f, f)
+				add("Node: no %s address in nodeIPs, and no %s subnet in the validSubnets that apply, so the node cannot pick its %s address", f, f, f)
 			}
 		}
 	}

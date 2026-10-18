@@ -103,14 +103,15 @@ spec:
     w1: {address: 10.0.0.21, groups: [storage], files: [nodes/w1.yaml]}
 ```
 
-The storage group gives its nodes the labels and taints of storage nodes. A set holds one
-`Kubelet` document, so the files of a node in the group hold no other:
+The storage group makes its nodes workers with the labels and taints of storage nodes. A set
+holds one `Node` document, so the files of a node in the group hold no other:
 
 ```yaml title="groups/storage.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubelet
-metadata: {name: kubelet}
+kind: Node
+metadata: {name: default}
 spec:
+  type: worker
   labels: {node.kubernetes.io/storage: ssd}
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ```
@@ -126,10 +127,10 @@ spec:
   endpoint: https://10.0.0.10:6443
 ```
 
-A node's set holds at most one document of most kinds, and exactly one `Cluster`, `Node` and
-`SystemDisk`, so each document lives in the one place that fits it: what every node shares in
-`cluster/`, what a kind of node shares in a group, the rest in the node's file. [The kinds
-reference](../reference/kinds.md) lists every field.
+A node's set holds at most one document of most kinds, and exactly one `Cluster`, `SystemDisk`,
+`Kubernetes` and `Node`, so each document lives in the one place that fits it: what every node
+shares in `cluster/`, what a kind of node shares in a group, the rest in the node's file. [The
+kinds reference](../reference/kinds.md) lists every field.
 
 ## Choose the variants
 
@@ -170,9 +171,9 @@ A node is a control plane when its [`Node`](../reference/kinds.md#node) document
 `type: controlplane`, and a worker with `type: worker`:
 
 ```yaml title="nodes/cp1.yaml"
-apiVersion: chalkos.dev/v1alpha1
+apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
-metadata: {name: cp1}
+metadata: {name: default}
 spec:
   type: controlplane
 ---
@@ -274,13 +275,13 @@ inventory. Two things depend on it:
 
 Workers may take their address from DHCP instead and pick it with `spec.nodeIP.validSubnets` of
 the `Kubernetes` document, or `spec.validSubnets` of a node's own
-[`Kubelet`](../reference/kinds.md#kubelet) document. The inventory names such a node by an
+[`Node`](../reference/kinds.md#node) document. The inventory names such a node by an
 address that stays, such as a DNS name.
 
 Set `spec.vxlanSourceSubnets` to the ranges your nodes live in, as `cluster/kubernetes.yaml` above
 does. Without it, nodes accept the pod network's VXLAN traffic from any source.
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses,
-the `nodeIPs` of its `Kubelet` or else the first static address of each family of its `Network`
+the `nodeIPs` of its `Node` or else the first static address of each family of its `Network`
 documents, or whose `validSubnets` lie outside these ranges.
 
 ## Plan disks, storage and encryption

@@ -37,11 +37,6 @@ kind: Cluster
 metadata: {name: lab}
 spec: {}
 ---
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: n1}
-spec: {type: worker}
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -62,7 +57,7 @@ func TestParseSkipsEmptyDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(docs) != 3 || docs[1].Kind != "Node" || docs[1].Name != "n1" {
+	if len(docs) != 2 || docs[1].Kind != "SystemDisk" || docs[1].Name != "system" {
 		t.Fatalf("docs = %+v", docs)
 	}
 }
@@ -118,8 +113,8 @@ func TestNewSetRejects(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
 		"missing Cluster": {strings.Replace(minimal,
 			"apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {}\n---\n", "", 1), "Cluster"},
-		"two Nodes": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n2}\nspec: {}\n",
-			"more than one Node"},
+		"two Nodes":             {minimal + nodeDoc("a", "{type: worker}") + nodeDoc("b", "{type: worker}"), "more than one Node"},
+		"a Node without a type": {minimal + nodeDoc("default", "{}"), "type"},
 		"two Hosts": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: a}\nspec: {}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: b}\nspec: {}\n",
 			"more than one Host"},
 		"unknown kind": {minimal + "---\napiVersion: x.example.org/v1\nkind: Thing\nmetadata: {name: a}\nspec: {}\n",

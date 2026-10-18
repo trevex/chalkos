@@ -32,21 +32,19 @@ func single(docs []Document, apiVersion, kind string) (Document, bool) {
 }
 
 // ClusterOf builds the Kubernetes cluster a node's documents give on an image with the facts img:
-// its kind from the Node's type, its endpoint from the Cluster, its settings from the Kubernetes
-// document and, on a flannel image, flannel's from the Flannel document, and checks it. It holds
-// the per-family values of the cluster's families alone, and each error names the document whose
-// setting fails. docs carry their schema defaults, as a Set and the stored config do.
+// its kind from the Kubernetes Node's type, its endpoint from the Cluster, its settings from the
+// Kubernetes document and, on a flannel image, flannel's from the Flannel document, and checks it.
+// It holds the per-family values of the cluster's families alone, and each error names the
+// document whose setting fails. docs carry their schema defaults, as a Set and the stored config
+// do.
 func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error) {
-	nodeDoc, ok := single(docs, CoreAPI, "Node")
+	nodeDoc, ok := single(docs, KubernetesAPI, "Node")
 	if !ok {
-		return kubernetes.Cluster{}, errors.New("no Node: a node's config holds one Node")
+		return kubernetes.Cluster{}, errors.New("no Node: the config of a node whose image runs Kubernetes holds one Node document")
 	}
 	var node nodeSpec
 	if err := nodeDoc.decodeSpec(&node); err != nil {
 		return kubernetes.Cluster{}, err
-	}
-	if node.Type == nil {
-		return kubernetes.Cluster{}, fmt.Errorf("%s has no type, but its image runs Kubernetes", nodeDoc)
 	}
 	clusterDoc, ok := single(docs, CoreAPI, "Cluster")
 	if !ok {
@@ -68,7 +66,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 		return kubernetes.Cluster{}, err
 	}
 	c := kubernetes.Cluster{
-		Kind:                           *node.Type,
+		Kind:                           node.Type,
 		Endpoint:                       *cluster.Endpoint,
 		Version:                        img.Version,
 		Images:                         img.Images,

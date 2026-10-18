@@ -43,9 +43,9 @@ func writeLabFiles(t *testing.T, dir, labFile string) string {
 			"  files: [cluster.yaml]\n  nodes:\n" +
 			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {image: node-metal, files: [m1.yaml]}\n",
 		"cluster.yaml":  "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n",
-		"cp1.yaml":      "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: cp1}\nspec: {type: controlplane}\n",
-		"w1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: w1}\nspec: {type: worker}\n",
-		"m1.yaml":       "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: m1}\nspec: {type: worker}\n",
+		"cp1.yaml":      "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: controlplane}\n",
+		"w1.yaml":       "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: worker}\n",
+		"m1.yaml":       "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: worker}\n",
 		"chalklab.yaml": labFile,
 	}
 	for _, p := range []string{"kvm", "metal"} {

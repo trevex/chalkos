@@ -238,7 +238,7 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	}
 	c := valid
 	c.ExtraArgs = map[string]map[string]string{"kubelet": {"node_labels": "a=b"}}
-	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "Kubelet document") {
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "in its Node document") {
 		t.Errorf("node_labels: err = %v, want the labels' document named", err)
 	}
 	// Flags reach the components as --name=value: a name with its dashes, an = or whitespace would

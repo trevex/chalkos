@@ -43,9 +43,8 @@ spec:
   endpoint: https://10.0.0.10:6443
 `
 
-// n1's documents: its Node, its system disk of serial chalk-target and its static address.
+// n1's documents: its system disk of serial chalk-target and its static address.
 const (
-	n1Node       = "apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: n1}\nspec: {}\n"
 	n1SystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}}\n"
 	n1Network    = "apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.11/24]}}\n"
 )
@@ -54,11 +53,11 @@ const (
 var testRootHash = strings.Repeat("ab", 32)
 
 // writeInventory writes the test cluster's inventory into dir, with n1 of the documents given or
-// else of n1Node, n1SystemDisk and n1Network, and returns the inventory's path.
+// else of n1SystemDisk and n1Network, and returns the inventory's path.
 func writeInventory(t *testing.T, dir string, docs ...string) string {
 	t.Helper()
 	if len(docs) == 0 {
-		docs = []string{n1Node, n1SystemDisk, n1Network}
+		docs = []string{n1SystemDisk, n1Network}
 	}
 	writeFile(t, filepath.Join(dir, "chalkos.yaml"), testInventoryYAML)
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), testClusterYAML)
@@ -96,7 +95,7 @@ func TestValidate(t *testing.T) {
 	// n2's Network misspells a key.
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
 	writeFile(t, filepath.Join(ta.dir, "nodes", "n2.yaml"), strings.Join([]string{
-		strings.Replace(n1Node, "{name: n1}", "{name: n2}", 1), n1SystemDisk,
+		n1SystemDisk,
 		"apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {gatway: 10.0.0.1}}\n",
 	}, "---\n"))
 	ta.stdout.Reset()
@@ -124,7 +123,7 @@ func TestValidateWarnsOfUnencryptedState(t *testing.T) {
 	ta := newTestApp(t)
 	ta.withoutSecrets(t)
 	unencrypted := strings.Replace(n1SystemDisk, "spec: {disk: {serial: chalk-target}}", "spec: {disk: {serial: chalk-target}, encryption: {mode: none}}", 1)
-	path := writeInventory(t, ta.dir, n1Node, unencrypted, n1Network)
+	path := writeInventory(t, ta.dir, unencrypted, n1Network)
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
@@ -152,8 +151,8 @@ func TestValidateTheCluster(t *testing.T) {
 	// cluster.yaml holds nothing; n1 and n2 each get a Cluster of another endpoint.
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), "")
 	cluster := "apiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {endpoint: \"https://%s:6443\"}\n"
-	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join([]string{n1Node, n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.10")}, "---\n"))
-	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{strings.Replace(n1Node, "{name: n1}", "{name: n2}", 1), n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
+	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.10")}, "---\n"))
+	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
 	ta := newTestApp(t)
 	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "the nodes n1 and n2 are in different clusters") {
@@ -197,14 +196,10 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 	variants := map[string]bool{}
 	var defined, listed string
 	for i, n := range nodes {
-		node := fmt.Sprintf("apiVersion: chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: %s}\nspec: {", n.name)
-		if n.kind != "" {
-			node += "type: " + n.kind
-		}
-		docs := []string{node + "}\n", n1SystemDisk,
+		docs := []string{n1SystemDisk,
 			fmt.Sprintf("apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.%d/24]}}\n", 11+i)}
 		if n.kind != "" {
-			docs = append(docs, kubernetesDoc)
+			docs = append(docs, nodeDoc(n.kind), kubernetesDoc)
 		}
 		writeFile(t, filepath.Join(dir, "nodes", n.name+".yaml"), strings.Join(docs, "---\n"))
 		listed += fmt.Sprintf("    %s: {address: 10.0.0.%d, image: %s-metal, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.variant, n.name)
@@ -224,6 +219,11 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 
 // kubernetesDoc is a Kubernetes document of the kind's defaults.
 const kubernetesDoc = "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {}\n"
+
+// nodeDoc is a Kubernetes Node document of the type.
+func nodeDoc(nodeType string) string {
+	return "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: " + nodeType + "}\n"
+}
 
 // inventoryVersion is the version of n1's config as the inventory at path gives it.
 func inventoryVersion(t *testing.T, path string) string {
@@ -247,7 +247,7 @@ const n1Host = "apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: d
 // address.
 func TestInstallFromTheInventory(t *testing.T) {
 	ta := newTestApp(t)
-	path := writeInventory(t, ta.dir, n1Node, n1Host, n1SystemDisk, n1Network)
+	path := writeInventory(t, ta.dir, n1Host, n1SystemDisk, n1Network)
 	s := maintenanceNode()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
@@ -336,7 +336,7 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 	if out := ta.stdout.String(); inventoryVersion(t, path) != version || !strings.Contains(out, "config "+version+" (the inventory's)") {
 		t.Errorf("status after a new build of the image = %q", out)
 	}
-	writeFile(t, filepath.Join(ta.dir, "nodes", "n1.yaml"), strings.Join([]string{n1Node, n1SystemDisk, strings.Replace(n1Network, "10.0.0.11", "10.0.0.12", 1)}, "---\n"))
+	writeFile(t, filepath.Join(ta.dir, "nodes", "n1.yaml"), strings.Join([]string{n1SystemDisk, strings.Replace(n1Network, "10.0.0.11", "10.0.0.12", 1)}, "---\n"))
 	ta.stdout.Reset()
 	if err := ta.run(context.Background(), args("status", "n1")); err != nil {
 		t.Fatal(err)

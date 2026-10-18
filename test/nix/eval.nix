@@ -714,7 +714,7 @@ lib.runTests {
       {
         clusterFile = config.environment.etc ? "chalkos/kubernetes/cluster.json";
         # The image opens neither the API server's nor etcd's ports, which etcd authenticates by its
-        # CA, nor makes etcd's directory: chalkos-controlplane does both by Node.spec.type.
+        # CA, nor makes etcd's directory: chalkos-controlplane does both by the Node's type.
         firewall = lib.any (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
           6443
           2379

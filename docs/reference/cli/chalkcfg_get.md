@@ -43,7 +43,7 @@ chalkcfg get [<kind> [<name>]] [flags]
 
   # A field of every document of a kind, one line per document.
   chalkcfg get Node -o jsonpath='{.spec.type}'
-  chalkcfg get Kubelet -o go-template='{{range .spec.taints}}{{.key}} {{end}}'
+  chalkcfg get Node -o go-template='{{range .spec.taints}}{{.key}} {{end}}'
 ```
 
 ## Options

@@ -3,11 +3,6 @@ kind: Cluster
 metadata: {name: homelab}
 spec: {endpoint: "https://10.0.0.11:6443"}
 ---
-apiVersion: chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: w1}
-spec: {type: worker}
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -24,9 +19,10 @@ spec:
   mountPoint: /var/lib/longhorn
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubelet
-metadata: {name: kubelet}
+kind: Node
+metadata: {name: default}
 spec:
+  type: worker
   labels: {node.kubernetes.io/storage: ssd}
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ---
