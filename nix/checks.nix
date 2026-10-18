@@ -1116,6 +1116,22 @@ in
         file=$(echo '{}' | $hash units/10-b.network)
         expect "$(printf '%s\n' "$empty" "$one" "$renamed" "$changed" "$file" | sort -u | wc -l)" 5 "of different files"
         expect "$(echo "$one" | grep -cxE '"[0-9a-f]{64}"')" 1 "of one unit"
+        # A file or directory it cannot read fails it.
+        unreadable() {
+          if echo '{}' | $hash "$1" >hashed 2>err; then
+            echo "error: chalkos-hash-files hashed $2 as $(cat hashed)" >&2
+            exit 1
+          fi
+        }
+        chmod 000 units/10-b.network
+        unreadable units "a directory with a file it cannot read"
+        unreadable units/10-b.network "a file it cannot read"
+        chmod 644 units/10-b.network
+        chmod 100 units
+        unreadable units "a directory it cannot list"
+        chmod 000 units
+        unreadable units "a directory it cannot enter"
+        chmod 755 units
         touch $out
       '';
 
