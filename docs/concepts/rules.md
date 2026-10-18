@@ -276,8 +276,13 @@ Until a delivery is applied whole, the rules compare with the state from before 
 that failed part way, not with what that delivery wrote: chalkd records that state's config and
 the facts its rules read in `/run/chalkd/effects-baseline.json`, readable by root alone, with
 `Secret` values as their hashes and facts as their definitions keep them. A retry, or another
-delivery, takes every effect the failed one did not, and the delivery that succeeds removes the
-file. A reboot clears it, since every unit starts at boot.
+delivery, takes every effect of the failed delivery again, the reloads and restarts that succeeded
+included, and acts on chalkd's loops again. It writes the running slot's config for its consumers
+first, also when it delivers no config of its own, such as a share. The delivery that succeeds
+removes the file, and one refused before it changed anything leaves it as it was. chalkd refuses a
+delivery whose file it cannot write, before the delivery changes anything, and logs a file it
+cannot read and replaces it with the running slot's state. A reboot clears the file, since every
+unit starts at boot.
 
 A consumer named `chalkd` is chalkd itself, which acts on its rules in-process: a reload starts
 the control plane's loop again, which reads the share and applies the control plane's objects, and
