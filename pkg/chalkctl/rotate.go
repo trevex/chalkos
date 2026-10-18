@@ -304,8 +304,12 @@ func (r *rotation) call(name string, fn func(conn *client.Conn, t *target) error
 // deliver sends a node what req carries.
 func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyConfigRequest) error {
 	return r.call(name, func(conn *client.Conn, _ *target) error {
-		_, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
-		return err
+		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
+		if err != nil {
+			return err
+		}
+		r.a.warnDelivery(name, resp.Msg)
+		return nil
 	})
 }
 

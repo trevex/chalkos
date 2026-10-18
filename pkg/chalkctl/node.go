@@ -687,12 +687,21 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	for _, u := range resp.Msg.RestartedUnits {
 		fmt.Fprintf(a.stdout, "restarted %s\n", u)
 	}
+	a.warnDelivery(t.name, resp.Msg)
 	if f.staged {
 		fmt.Fprintf(a.stdout, "%s boots config %s with its staged image\n", t.name, d.Version)
 		return nil
 	}
 	fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
 	return nil
+}
+
+// warnDelivery prints why a restart or reload rule of the node's consumers could not be evaluated,
+// whose effect the node took all the same.
+func (a *app) warnDelivery(name string, resp *nodev1.ApplyConfigResponse) {
+	for _, w := range resp.GetWarnings() {
+		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", name, w)
+	}
 }
 
 func (a *app) resetVolumeCommand() *cobra.Command {

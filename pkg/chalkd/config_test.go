@@ -474,12 +474,18 @@ func TestApplyConfigFailingReloadNamesTheUnit(t *testing.T) {
 }
 
 // TestApplyConfigRestartsOnARuleThatFails: a rule that cannot be evaluated counts as true, so the
-// unit restarts once more than it needed to rather than run on config it has not read.
+// unit restarts once more than it needed to rather than run on config it has not read. The
+// response says why as a warning, without the values the rule read.
 func TestApplyConfigRestartsOnARuleThatFails(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Loader.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.missing.spec.name == \"x\""}}}`)
-	if _, err := sendConfig(s, baseConfig); err != nil {
+	write(t, s.Loader.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.token.missing == \"s3cret\""}}}`)
+	resp, err := sendConfig(s, baseConfig)
+	if err != nil {
 		t.Fatal(err)
+	}
+	want := []string{"the rule of demo restart: a rule cannot be evaluated: no such key; taking its effect all the same"}
+	if !slices.Equal(resp.Warnings, want) {
+		t.Errorf("warnings = %q, want %q", resp.Warnings, want)
 	}
 	if !slices.Contains(r.calls, "systemctl try-restart demo") {
 		t.Errorf("commands = %v", r.calls)

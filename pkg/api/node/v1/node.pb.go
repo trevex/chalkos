@@ -1665,8 +1665,11 @@ type ApplyConfigResponse struct {
 	Changes []*StorageChange `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
 	// Units the delivery restarted, as the restart rules of the image's consumers say.
 	RestartedUnits []string `protobuf:"bytes,2,rep,name=restarted_units,json=restartedUnits,proto3" json:"restarted_units,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Why a restart or reload rule of a consumer could not be evaluated, without the values it
+	// read; the delivery took the rule's effect all the same.
+	Warnings      []string `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ApplyConfigResponse) Reset() {
@@ -1709,6 +1712,13 @@ func (x *ApplyConfigResponse) GetChanges() []*StorageChange {
 func (x *ApplyConfigResponse) GetRestartedUnits() []string {
 	if x != nil {
 		return x.RestartedUnits
+	}
+	return nil
+}
+
+func (x *ApplyConfigResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
 	}
 	return nil
 }
@@ -4129,10 +4139,11 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06staged\x18\x01 \x01(\bR\x06staged\"K\n" +
 	"\x11GetConfigResponse\x12\x1c\n" +
 	"\tdocuments\x18\x01 \x01(\tR\tdocuments\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\"x\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\"\x94\x01\n" +
 	"\x13ApplyConfigResponse\x128\n" +
 	"\achanges\x18\x01 \x03(\v2\x1e.chalkos.node.v1.StorageChangeR\achanges\x12'\n" +
-	"\x0frestarted_units\x18\x02 \x03(\tR\x0erestartedUnits\"a\n" +
+	"\x0frestarted_units\x18\x02 \x03(\tR\x0erestartedUnits\x12\x1a\n" +
+	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"a\n" +
 	"\rStorageChange\x12\x16\n" +
 	"\x06volume\x18\x01 \x01(\tR\x06volume\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12 \n" +

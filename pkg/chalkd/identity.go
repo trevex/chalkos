@@ -368,7 +368,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
 	}
-	restarted, _, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
+	restarted, warnings, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if s.RenewOnApplyConfig && !keep {
 		s.forceRenewals()
 	}
-	resp := &nodev1.ApplyConfigResponse{RestartedUnits: restarted}
+	resp := &nodev1.ApplyConfigResponse{RestartedUnits: restarted, Warnings: warnings}
 	for _, c := range changes {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}

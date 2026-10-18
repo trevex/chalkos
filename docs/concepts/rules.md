@@ -261,11 +261,12 @@ in the running slot, also for a delivery without config, as of a share:
    `systemctl restart` those with `restart.start` set; and with `systemctl reset-failed` and
    `restart` those that failed, since the new config may be what they lacked.
 
-A rule that cannot be evaluated counts as true, and its error goes to the node's journal: a unit
-restarts once more than it needed to rather than run on config it has not read.
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) prints the restarted units. A
-reload or restart that fails fails the delivery, and the error names the units to reload or
-restart by hand.
+A rule that cannot be evaluated counts as true: a unit restarts once more than it needed to rather
+than run on config it has not read. Its error, which shows none of the values the rule read, goes
+to the node's journal and back to the client as a warning.
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) prints the restarted units and
+the warnings. A reload or restart that fails fails the delivery, and the error names the units to
+reload or restart by hand.
 
 Until a delivery is applied whole, the rules compare with the state from before the first delivery
 that failed part way, not with what that delivery wrote: chalkd records that state's config and

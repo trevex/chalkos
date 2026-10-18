@@ -664,6 +664,35 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	}
 }
 
+// apply-config prints why a consumer's rule could not be evaluated as a warning, without the
+// values it read; the node took the rule's effect all the same.
+func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
+	ta := newTestApp(t)
+	s, r := installedNode(t, ta, []byte(`{}`))
+	var consumers map[string]any
+	raw, err := os.ReadFile(s.Loader.Consumers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &consumers); err != nil {
+		t.Fatal(err)
+	}
+	consumers["report"] = map[string]any{"kinds": []string{}, "restart": map[string]any{"when": `config["chalkos.dev/v1alpha1"].Node.missing.spec.type == "worker"`}}
+	data, _ := json.Marshal(consumers)
+	writeFile(t, s.Loader.Consumers, string(data))
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	want := "chalkctl: warning: n1: the rule of report restart: a rule cannot be evaluated: no such key; taking its effect all the same\n"
+	if ta.stderr.String() != want {
+		t.Errorf("stderr = %q, want %q", ta.stderr, want)
+	}
+	if !slices.Contains(r.calls, "systemctl try-restart chalkos-controlplane report") {
+		t.Errorf("node ran %v, want report restarted", r.calls)
+	}
+}
+
 func TestApplyConfigNamesTheRemedy(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))

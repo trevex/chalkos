@@ -161,6 +161,10 @@ func (a *app) deliverNodeCA(ctx context.Context, c *cluster, address, name strin
 	if err != nil {
 		return err
 	}
-	_, err = conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
-	return nodeError(err, name)
+	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+	if err != nil {
+		return nodeError(err, name)
+	}
+	a.warnDelivery(name, resp.Msg)
+	return nil
 }

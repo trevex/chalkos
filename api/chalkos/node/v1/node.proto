@@ -343,6 +343,9 @@ message ApplyConfigResponse {
   repeated StorageChange changes = 1;
   // Units the delivery restarted, as the restart rules of the image's consumers say.
   repeated string restarted_units = 2;
+  // Why a restart or reload rule of a consumer could not be evaluated, without the values it
+  // read; the delivery took the rule's effect all the same.
+  repeated string warnings = 3;
 }
 
 message StorageChange {
