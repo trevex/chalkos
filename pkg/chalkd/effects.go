@@ -17,6 +17,11 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
+// selfUnit is the consumer that is chalkd itself, which acts on its rules in-process: a reload
+// starts the control plane's loop again, which reads the share and applies the control plane's
+// objects, and a restart every Kubernetes loop, which read the cluster when they start.
+const selfUnit = "chalkd"
+
 // effects are the restart and reload rules of the running image's consumers, and what a delivery
 // compares them with: the kinds it changes and the facts as they were before it changed anything.
 type effects struct {
@@ -128,13 +133,21 @@ func (s *Server) consume(ctx context.Context, e *effects, stored bool, secret st
 }
 
 // applyEffects reloads the units of reload that run, then restarts those of restart, and returns
-// the restarted units. A unit it restarts is not reloaded: the restart reads all a reload would.
+// the restarted units; chalkd itself acts on its own rules last. A unit it restarts is not
+// reloaded: the restart reads all a reload would.
 // The restarts take one systemctl call each way: try-restart for a unit that runs, or ran and
 // stays active, so a unit that never started, or was stopped, stays so; restart for a unit that
 // starts too; and for a unit that failed, such as one that found no document of its kind at boot,
 // reset-failed and restart, since the new config may be what it lacked and try-restart leaves a
 // failed unit alone.
 func (s *Server) applyEffects(ctx context.Context, consumers map[string]nodeconfig.Consumer, reload, restart []string) ([]string, error) {
+	isSelf := func(unit string) bool { return unit == selfUnit }
+	reloadSelf, restartSelf := slices.ContainsFunc(reload, isSelf), slices.ContainsFunc(restart, isSelf)
+	reload = slices.DeleteFunc(slices.Clone(reload), isSelf)
+	restart = slices.DeleteFunc(slices.Clone(restart), isSelf)
+	// Once the units it restarts read the new config, and whether or not they could: the
+	// cluster and the share the loops read are in place.
+	defer s.actOnSelf(reloadSelf, restartSelf)
 	states := map[string]string{}
 	for _, unit := range append(slices.Clone(reload), restart...) {
 		if _, ok := states[unit]; ok {
@@ -209,6 +222,20 @@ func (s *Server) applyEffects(ctx context.Context, consumers map[string]nodeconf
 	}
 	slices.Sort(restarted)
 	return restarted, nil
+}
+
+// actOnSelf reloads or restarts chalkd's Kubernetes loops, on a node with Kubernetes; a restart
+// starts the control plane's loop again too.
+func (s *Server) actOnSelf(reload, restart bool) {
+	if s.Kubernetes == nil {
+		return
+	}
+	switch {
+	case restart:
+		s.Kubernetes.Restart()
+	case reload:
+		s.Kubernetes.Reload()
+	}
 }
 
 // byHand tells the operator which units still need what the delivery does to them.

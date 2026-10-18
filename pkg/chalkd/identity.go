@@ -256,22 +256,15 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
-	// The cluster the config gives, checked before anything changes, and whether it differs from
-	// the running slot's; nil on an image without Kubernetes or without new config. The slot is
-	// replaced last, so a retry after a failed restart still finds the cluster changed.
+	// The cluster the config gives, checked before anything changes; nil on an image without
+	// Kubernetes or without new config.
 	var cluster *k8s.Cluster
-	clusterChanged, addonsChanged := false, false
 	// The delivery's facts, loaded once for the running slot's check and the staged slot's.
 	var delivered *facts.Loader
 	if !keep {
 		if s.Kubernetes != nil {
 			if cluster, err = s.Loader.Cluster(r.next.Documents); err != nil {
 				return nil, failed(connect.CodeInvalidArgument, "the config: %v", err)
-			}
-			if cluster != nil {
-				var was *k8s.Cluster
-				was, addonsChanged = s.storedKubernetes(prev, found, r.next.Documents)
-				clusterChanged = !sameCluster(was, cluster)
 			}
 		}
 		// The image's rules compare the config with the running slot's and the storage STATE
@@ -345,13 +338,9 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		if cluster != nil {
-			// A cluster file that differs from the running slot's, as one a failed boot left
-			// missing, counts as changed too.
-			written, err := s.Loader.WriteCluster(cluster)
-			if err != nil {
+			if _, err := s.Loader.WriteCluster(cluster); err != nil {
 				return nil, failed(connect.CodeInternal, "write the Kubernetes cluster: %v", err)
 			}
-			clusterChanged = clusterChanged || written
 		}
 	}
 	if len(m.NodeCertificate) > 0 {
@@ -360,16 +349,9 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		}
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
-	act := keepLoops
-	if s.Kubernetes != nil {
-		if act, err = s.recordShare(share, clusterChanged); err != nil {
-			return nil, err
-		}
-		// A control plane applies the objects of changed Addon documents at once, as its loop
-		// does whenever it starts. A worker applies none: chalkctl delivers none to it, and one it is
-		// given anyway changes nothing it runs.
-		if act == keepLoops && addonsChanged && cluster.Kind == k8s.KindControlPlane {
-			act = reloadLoops
+	if share != nil {
+		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
+			return nil, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
 		}
 	}
 	// The slot comes last, documents and identity in one rename: until it is written, STATE holds
@@ -381,19 +363,13 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if !keep {
 		r.next.Identity = d.data
 		if err := store.Write(slot, r.next); err != nil {
-			// The cluster or share the loops read is in place already.
-			s.actOnLoops(act)
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
 	}
 	restarted, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
 	if err != nil {
-		s.actOnLoops(act)
 		return nil, err
 	}
-	// The loops read the control plane's objects from the running slot, so they start again
-	// once it is stored.
-	s.actOnLoops(act)
 	// Deliveries without config, as a rotation's, renew nothing: forced renewals would
 	// restart the control plane's pods on top of the restarts the rotation waits for. They come
 	// after the loops started again, which would end a renewal under way.
@@ -588,81 +564,6 @@ func (s *Server) applyIdentity(data []byte) error {
 		return failed(connect.CodeInternal, "apply the identity: %v", err)
 	}
 	return nil
-}
-
-// loopAction is what a delivery asks of the Kubernetes loops once it is stored.
-type loopAction int
-
-const (
-	keepLoops loopAction = iota
-	// reloadLoops starts the control plane's loop again, which applies the control plane's
-	// objects and reads the share.
-	reloadLoops
-	// restartLoops starts every loop again, which reads the cluster.
-	restartLoops
-)
-
-// act does what a delivery asks of the loops.
-func (k *Kubernetes) act(a loopAction) {
-	switch a {
-	case restartLoops:
-		k.Restart()
-	case reloadLoops:
-		k.Reload()
-	}
-}
-
-// recordShare records a delivered share, which the kubelet's consumers compare with the one the
-// node held. It returns what the loops must do: a changed cluster starts them all again, a share
-// that differs in more than its node CA the control plane's loop.
-func (s *Server) recordShare(share []byte, clusterChanged bool) (loopAction, error) {
-	nodeCAOnly := share != nil && s.onlyNodeCAChanges(share)
-	if share != nil {
-		if err := install.WriteShare(s.Paths.StateDir, share); err != nil {
-			return keepLoops, failed(connect.CodeInternal, "record the Kubernetes share: %v", err)
-		}
-	}
-	switch {
-	case clusterChanged:
-		return restartLoops, nil
-	case share != nil && !nodeCAOnly:
-		return reloadLoops, nil
-	}
-	return keepLoops, nil
-}
-
-// storedKubernetes compares the running slot, stored, with next on this image: it returns the
-// cluster the slot gives, nil without a slot or for one that gives none, as one written before the
-// image had Kubernetes settings, and whether the objects of next's Addon documents differ from
-// the slot's.
-func (s *Server) storedKubernetes(stored store.Stored, found bool, next []config.Document) (*k8s.Cluster, bool) {
-	was, errWas := config.AddonObjectsOf(stored.Documents)
-	gets, errGets := config.AddonObjectsOf(next)
-	addonsChanged := errWas != nil || errGets != nil || !sameJSON(was, gets)
-	if !found {
-		return nil, addonsChanged
-	}
-	c, err := s.Loader.Cluster(stored.Documents)
-	if err != nil {
-		log.Printf("the stored config gives no Kubernetes cluster: %v", err)
-		return nil, addonsChanged
-	}
-	return c, addonsChanged
-}
-
-// sameJSON reports whether a and b encode to the same JSON.
-func sameJSON(a, b any) bool {
-	ja, errA := json.Marshal(a)
-	jb, errB := json.Marshal(b)
-	return errA == nil && errB == nil && bytes.Equal(ja, jb)
-}
-
-// sameCluster reports whether two clusters are equal as their cluster files hold them.
-func sameCluster(a, b *k8s.Cluster) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return sameJSON(a, b)
 }
 
 func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.ResetVolumeRequest]) (*connect.Response[nodev1.ResetVolumeResponse], error) {
@@ -877,28 +778,4 @@ func (s *Server) checkNodeCertificate(chain, key []byte) error {
 		return failed(connect.CodeInvalidArgument, "%v", err)
 	}
 	return nil
-}
-
-// onlyNodeCAChanges reports whether a delivered share differs from the node's in the node CA
-// alone, as after chalkctl node-ca rotate.
-func (s *Server) onlyNodeCAChanges(delivered []byte) bool {
-	current, err := knode.ReadShare(s.Kubernetes.Paths)
-	if err != nil {
-		return false
-	}
-	next, err := kpki.ParseShare(delivered)
-	if err != nil {
-		return false
-	}
-	current.NodeCA, next.NodeCA = nil, nil
-	a, errA := current.Encode()
-	b, errB := next.Encode()
-	return errA == nil && errB == nil && bytes.Equal(a, b)
-}
-
-// actOnLoops does what a delivery asks of the Kubernetes loops, on a node with Kubernetes.
-func (s *Server) actOnLoops(a loopAction) {
-	if s.Kubernetes != nil {
-		s.Kubernetes.act(a)
-	}
 }

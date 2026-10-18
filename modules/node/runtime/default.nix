@@ -129,7 +129,11 @@ in
       options.consumers = lib.mkOption {
         type = lib.types.attrsOf consumer;
         default = { };
-        description = "Services, by name, that read config kinds, or that a delivery restarts or reloads.";
+        description = ''
+          Services, by name, that read config kinds, or that a delivery restarts or reloads. A
+          consumer named `chalkd` is chalkd itself, which acts on its rules in-process: a reload
+          starts the control plane's loop again, and a restart every Kubernetes loop.
+        '';
       };
     };
   };

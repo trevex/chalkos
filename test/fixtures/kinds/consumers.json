@@ -1,4 +1,15 @@
 {
+  "chalkd": {
+    "kinds": [],
+    "reload": {
+      "command": "systemctl reload chalkd",
+      "when": "cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != \"nodeCA\").map(k, k + \"=\" + was[k]) != gets.filter(k, k != \"nodeCA\").map(k, k + \"=\" + gets[k]))) || (cel.bind(d, ((\"chalkos.dev/v1alpha1\" in config && \"Node\" in config[\"chalkos.dev/v1alpha1\"]) ? config[\"chalkos.dev/v1alpha1\"].Node : {}), d.exists(n, d[n].spec.type == \"controlplane\")) && cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Addon\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten() != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Addon\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten())"
+    },
+    "restart": {
+      "start": false,
+      "when": "facts.cluster != oldFacts.cluster || cel.bind(d, ((\"chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"chalkos.dev/v1alpha1\"]) ? config[\"chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"chalkos.dev/v1alpha1\"]) ? oldConfig[\"chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Kubernetes\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Kubernetes : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Kubernetes\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Kubernetes : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Flannel\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Flannel\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec))"
+    }
+  },
   "chalkos-chrony-dhcp": {
     "kinds": [
       "TimeSync"

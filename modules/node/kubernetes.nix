@@ -59,6 +59,13 @@ let
     clusterChanged
     shareChanged
   ];
+  # A control plane applies the objects of changed Addon documents at once, as its loop does
+  # whenever it starts. A worker applies none: chalkctl delivers none to it, and one it is given
+  # anyway changes nothing it runs.
+  addonObjects = c: "${cel.specs c kubernetesAPI "Addon"}.map(s, s.objects).flatten()";
+  addonsApplied = ''(cel.bind(d, ${
+    cel.documents "config" core "Node"
+  }, d.exists(n, d[n].spec.type == "controlplane")) && ${addonObjects "config"} != ${addonObjects "oldConfig"})'';
 
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
   # node's addresses, which flanneld uses and other nodes send to: on the interface holding one,
@@ -199,6 +206,13 @@ in
         kubelet.restart = {
           when = kubernetesChanged;
           start = true;
+        };
+        # chalkd's Kubernetes loops, which chalkd starts again itself: every loop reads the
+        # cluster when it starts, and the control plane's loop reads the share and applies the
+        # control plane's objects.
+        chalkd = {
+          restart.when = clusterChanged;
+          reload.when = "${shareChanged} || ${addonsApplied}";
         };
       };
       # The cluster file chalkd writes, which the kubelet's rules compare.

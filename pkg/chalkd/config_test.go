@@ -440,6 +440,20 @@ func TestApplyConfigReloadsTimeServers(t *testing.T) {
 	}
 }
 
+// TestApplyConfigActsOnItselfInProcess: chalkd acts on the rules of its own consumer itself, on
+// its Kubernetes loops, and neither asks systemd nor names itself as restarted.
+func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
+	s, r := configServer(t)
+	write(t, s.Loader.Consumers, `{"chalkd": {"kinds": [], "restart": {"when": "true"}, "reload": {"when": "true", "command": "systemctl reload chalkd"}}}`)
+	resp, err := sendConfig(s, baseConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.calls) != 0 || len(resp.RestartedUnits) != 0 {
+		t.Errorf("ran %v, restarted %v", r.calls, resp.RestartedUnits)
+	}
+}
+
 // TestApplyConfigFailingReloadNamesTheUnit: a reload that fails is named for a reload by hand, and
 // the restarts still run.
 func TestApplyConfigFailingReloadNamesTheUnit(t *testing.T) {
