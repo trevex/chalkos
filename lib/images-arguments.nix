@@ -155,7 +155,7 @@ in
               default = true;
               description = ''
                 Whether the variant's images run Kubernetes. One image serves control planes and
-                workers: each node's Node document makes it one or the other.
+                workers: each node's Kubernetes Node document makes it one or the other.
               '';
             };
           };

@@ -136,9 +136,9 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 }
 
 // Endpoint returns the URL of the cluster's Kubernetes API server: the endpoint the Kubernetes
-// documents of the nodes' files name, alike, or with no nodes the one of the shared files' Kubernetes
-// document. A node whose files hold no Kubernetes document names none and is skipped; the endpoint
-// is empty when no node names one.
+// documents of the nodes' files name, alike, or with no nodes the one of the shared files'
+// Kubernetes document. A node whose files hold no Kubernetes document names none and is skipped;
+// the endpoint is empty when no node names one.
 func (inv *Inventory) Endpoint() (string, error) {
 	// of is the endpoint of the Kubernetes document the files hold, and whether they hold one.
 	of := func(files []string) (string, bool, error) {

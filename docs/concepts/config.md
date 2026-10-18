@@ -226,17 +226,15 @@ Two clusters may share it; their nodes still accept only their own cluster's cer
 
 A node's set is valid when:
 
-- it holds exactly one `SystemDisk`, and on an image with Kubernetes one `Kubernetes` and one
-  `Node`;
+- it holds exactly one `SystemDisk`, and on an image with Kubernetes one `Kubernetes`, which
+  names the cluster's `endpoint` and whose defaults fill in its other fields, and one `Node`;
 - every other kind appears at most once, unless the kind allows several (`Secret`, `Volume`,
   `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with
   `multiple = true`);
 - every document's `apiVersion` and `kind` is one the node's image declares;
 - no two documents of a kind share a `metadata.name`;
 - every `secretRef` names a `Secret` in the set and a key that `Secret` holds;
-- every document is valid against its kind's schema;
-- on an image with Kubernetes, it holds one `Kubernetes` document, which names the cluster's
-  `endpoint`; its defaults fill in the other fields.
+- every document is valid against its kind's schema.
 
 Beyond the schemas, chalkctl and chalkd translate the set as the node will use it, which checks
 what a schema cannot express: overlapping ranges, a VIP outside the node's networks, a volume that

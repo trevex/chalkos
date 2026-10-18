@@ -376,7 +376,7 @@ attribute set of (submodule)
 
 
 Whether the variant’s images run Kubernetes\. One image serves control planes and
-workers: each node’s Node document makes it one or the other\.
+workers: each node’s Kubernetes Node document makes it one or the other\.
 
 
 
@@ -671,10 +671,11 @@ false
 CEL expression that is true when a delivery restarts the unit\. Besides ` config `,
 ` oldConfig ` and ` changedKinds `, the names of the kinds whose documents, or the
 Secrets they reference, differ between the two, it reads the node’s name as
-` node.name `, ` facts.<name> ` after the delivery and ` oldFacts.<name> ` before it\. ` false ` never restarts the unit\. chalkd
-restarts every unit whose rule is true in one ` systemctl try-restart `, the units
-with ` restart.start ` set in one ` systemctl restart ` instead, which starts them when
-they do not run, and a unit that failed with ` reset-failed ` and ` restart `\.
+` node.name `, ` facts.<name> ` after the delivery and ` oldFacts.<name> ` before it\.
+` false ` never restarts the unit\. chalkd restarts every unit whose rule is true in
+one ` systemctl try-restart `, the units with ` restart.start ` set in one
+` systemctl restart ` instead, which starts them when they do not run, and a unit
+that failed with ` reset-failed ` and ` restart `\.
 
 
 
@@ -1242,8 +1243,8 @@ false
 Change rules over the node’s documents of the kind, CEL expressions that are true for
 every config the node accepts\. ` documents ` and ` oldDocuments ` map document names to
 the documents of the kind in the delivered config and in the running one; ` config `,
-` oldConfig `, ` node.name ` and ` facts ` are as for every rule\. A rule that is false refuses the
-config, or says it takes a reset or a reinstall\.
+` oldConfig `, ` node.name ` and ` facts ` are as for every rule\. A rule that is false
+refuses the config, or says it takes a reset or a reinstall\.
 
 
 

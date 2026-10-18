@@ -525,8 +525,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	// The control planes drain the nodes and keep etcd's quorum, so every node's type is read,
 	// also of nodes the run leaves alone. Loading the inventory read every node's files already,
 	// so a node whose files are broken stops every command, and this adds only a node whose
-	// documents do not form a Node of its name. Without an inventory, the nodes --address names
-	// that the run leaves alone are asked.
+	// files hold the same document twice. Without an inventory, the nodes --address names that
+	// the run leaves alone are asked.
 	for _, name := range r.nodeNames() {
 		if _, probed := probedCPs[name]; c.partial && !probed {
 			_, st, err := r.probe(ctx, name)

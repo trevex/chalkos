@@ -243,8 +243,8 @@ let
             Change rules over the node's documents of the kind, CEL expressions that are true for
             every config the node accepts. `documents` and `oldDocuments` map document names to
             the documents of the kind in the delivered config and in the running one; `config`,
-            `oldConfig`, `node.name` and `facts` are as for every rule. A rule that is false refuses the
-            config, or says it takes a reset or a reinstall.
+            `oldConfig`, `node.name` and `facts` are as for every rule. A rule that is false
+            refuses the config, or says it takes a reset or a reinstall.
           '';
         };
         dir = lib.mkOption {
