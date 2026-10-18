@@ -264,14 +264,21 @@ in the running slot, also for a delivery without config, as of a share:
 A rule that cannot be evaluated counts as true, and its error goes to the node's journal: a unit
 restarts once more than it needed to rather than run on config it has not read.
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) prints the restarted units. A
-reload or restart that fails fails the delivery, whose config the slot holds already, so the error
-names the units to reload or restart by hand: a retry compares the config with itself and acts on
-none.
+reload or restart that fails fails the delivery, and the error names the units to reload or
+restart by hand.
+
+Until a delivery is applied whole, the rules compare with the state from before the first delivery
+that failed part way, not with what that delivery wrote: chalkd records that state's config and
+the facts its rules read in `/run/chalkd/effects-baseline.json`, readable by root alone, with
+`Secret` values as their hashes and facts as their definitions keep them. A retry, or another
+delivery, takes every effect the failed one did not, and the delivery that succeeds removes the
+file. A reboot clears it, since every unit starts at boot.
 
 A consumer named `chalkd` is chalkd itself, which acts on its rules in-process: a reload starts
 the control plane's loop again, which reads the share and applies the control plane's objects, and
-a restart every Kubernetes loop, which read the cluster when they start. The built-in consumers
-are these:
+a restart every Kubernetes loop, which read the cluster when they start. It acts on them also
+when a delivery fails to store the slot or to write the consumers' config, since the cluster file
+and the share its loops read are written by then. The built-in consumers are these:
 
 | Unit | Rules |
 | --- | --- |

@@ -355,18 +355,20 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		}
 	}
 	// The slot comes last, documents and identity in one rename: until it is written, STATE holds
-	// the identity and the set the node ran before, which a boot applies whole, and a retry
-	// compares the delivery with them and applies the identity and the consumers' config again,
-	// and restarts what their rules ask. storage.json, written before, is the machine's rather
-	// than an image's: applyStorage records the section once its additive changes are made, so a
-	// retry finds them recorded and makes none twice.
+	// the identity and the set the node ran before, which a boot applies whole, and a retry applies
+	// the identity and the consumers' config again. Until a delivery is applied whole, its
+	// consumers' rules compare with the baseline effectsOf recorded, so a retry restarts what they
+	// ask for whatever the failed attempt wrote. storage.json, written before, is the machine's
+	// rather than an image's: applyStorage records the section once its additive changes are made,
+	// so a retry finds them recorded and makes none twice.
 	if !keep {
 		r.next.Identity = d.data
 		if err := store.Write(slot, r.next); err != nil {
+			s.failedToStore(ctx, fx, m.FallbackSecret)
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
 	}
-	restarted, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
+	restarted, _, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
 	if err != nil {
 		return nil, err
 	}

@@ -67,23 +67,28 @@ type Paths struct {
 	FailedBoot string
 	// Facts is where the image declares the facts its rules read.
 	Facts string
+	// EffectsBaseline, below /run, is what the consumers' rules of a delivery that failed part way
+	// compare with until a delivery is applied whole: the config and the facts as they were before
+	// the first delivery that failed.
+	EffectsBaseline string
 }
 
 // DefaultPaths are the paths on a node.
 func DefaultPaths() Paths {
 	return Paths{
-		StateDir:       "/state",
-		BootDisk:       "/dev/disk/chalk-boot-disk",
-		BootPartitions: "/dev/disk/chalk-boot",
-		OSRelease:      "/etc/os-release",
-		EFIVars:        "/sys/firmware/efi/efivars",
-		TPM:            "/sys/class/tpm",
-		StorageStatus:  "/run/chalkos/storage-status.json",
-		MountInfo:      "/proc/self/mountinfo",
-		ESP:            "/efi",
-		Cmdline:        "/proc/cmdline",
-		FailedBoot:     "/var/lib/chalkd/failed-boot",
-		Facts:          facts.DefaultPath,
+		StateDir:        "/state",
+		BootDisk:        "/dev/disk/chalk-boot-disk",
+		BootPartitions:  "/dev/disk/chalk-boot",
+		OSRelease:       "/etc/os-release",
+		EFIVars:         "/sys/firmware/efi/efivars",
+		TPM:             "/sys/class/tpm",
+		StorageStatus:   "/run/chalkos/storage-status.json",
+		MountInfo:       "/proc/self/mountinfo",
+		ESP:             "/efi",
+		Cmdline:         "/proc/cmdline",
+		FailedBoot:      "/var/lib/chalkd/failed-boot",
+		Facts:           facts.DefaultPath,
+		EffectsBaseline: "/run/chalkd/effects-baseline.json",
 	}
 }
 
@@ -134,6 +139,8 @@ type Server struct {
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
+	// actedOnSelf, when set, is told what each delivery asked of chalkd's own loops; tests set it.
+	actedOnSelf func(reload, restart bool)
 
 	// mu serialises calls that change the node.
 	mu        sync.Mutex

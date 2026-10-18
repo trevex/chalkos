@@ -214,6 +214,12 @@ func ConfigOf(docs []config.Document) map[string]any {
 	return configMap(objectsOf(docs, true))
 }
 
+// HashedConfigOf is ConfigOf of documents whose secret values are hashed already, as
+// config.Redact gives them.
+func HashedConfigOf(docs []config.Document) map[string]any {
+	return configMap(objectsOf(docs, false))
+}
+
 func configMap(docs []docView) map[string]any {
 	out := map[string]any{}
 	for _, d := range docs {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -314,9 +315,9 @@ func TestApplyConfigStartsFailedConsumers(t *testing.T) {
 	}
 }
 
-// TestApplyConfigFailingRestartNamesTheUnits: once the new set is stored, a retry finds nothing
-// changed, so the error names the units still to restart: every unit of the systemctl call that
-// failed, which does not tell which of them failed. A failed call does not stop the others.
+// TestApplyConfigFailingRestartNamesTheUnits: the error names the units still to restart, for an
+// operator who does not deliver the config again: every unit of the systemctl call that failed,
+// which does not tell which of them failed. A failed call does not stop the others.
 func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 	s, r := configServer(t)
 	r.rules = append(r.rules,
@@ -660,5 +661,62 @@ func TestGetConfig(t *testing.T) {
 	}
 	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true})); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("staged: %v, want not found", err)
+	}
+}
+
+// TestApplyConfigRetriesAFailedReload: a reload that failed is taken again when the delivery is,
+// although the slot holds the delivered config already. The baseline the retry compares with is
+// readable by root alone and holds the Secrets' values as their hashes; the delivery that is
+// applied whole removes it.
+func TestApplyConfigRetriesAFailedReload(t *testing.T) {
+	s, r := configServer(t)
+	next := baseConfig + networkConfig
+	r.rules = []rule{{prefix: "networkctl reload", err: errors.New("exit status 1")}}
+	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "reload systemd-networkd by hand") {
+		t.Fatalf("err = %v, want the reload named", err)
+	}
+	info, err := os.Stat(s.Paths.EffectsBaseline)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("baseline: %v, %v; want it readable by root alone", info, err)
+	}
+	if b := readFile(t, s.Paths.EffectsBaseline); strings.Contains(b, "s3cret") || !strings.Contains(b, `"name":"first"`) {
+		t.Errorf("baseline = %s, want the config before the delivery with its Secret hashed", b)
+	}
+	r.rules, r.calls = nil, nil
+	if _, err := sendConfig(s, next); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.calls, "networkctl reload") {
+		t.Errorf("the retry ran %v, want networkd reloaded", r.calls)
+	}
+	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("baseline after a delivery applied whole: %v", err)
+	}
+	r.calls = nil
+	if _, err := sendConfig(s, next); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(r.calls, "networkctl reload") {
+		t.Errorf("the same config again ran %v", r.calls)
+	}
+}
+
+// TestApplyConfigComparesWithTheConfigBeforeAFailure: a delivery after one that failed part way
+// compares with the config from before that one, not with what it applied: the Demo the failed
+// delivery renamed is renamed still, so demo restarts.
+func TestApplyConfigComparesWithTheConfigBeforeAFailure(t *testing.T) {
+	s, r := configServer(t)
+	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	r.rules = []rule{{prefix: "systemctl try-restart demo", err: errors.New("exit status 1")}}
+	if _, err := sendConfig(s, renamed); err == nil {
+		t.Fatal("the failed restart went unreported")
+	}
+	r.rules, r.calls = nil, nil
+	resp, err := sendConfig(s, renamed+timeSyncConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-chrony-dhcp", "demo"}) {
+		t.Errorf("restarted %v, want demo with the TimeSync's unit", resp.RestartedUnits)
 	}
 }

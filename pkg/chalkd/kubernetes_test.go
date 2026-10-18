@@ -1144,9 +1144,10 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 	}
 }
 
-// A restart that failed once the config was stored names the units to restart by hand: the
-// stored config, which a retry compares with, is the delivered one already, so a retry restarts
-// nothing.
+// A restart that failed once the config was stored names the units to restart by hand. The
+// consumers' rules compare a retry with the config and facts from before the delivery that
+// failed, so the retry restarts them, although the slot and the cluster file are the delivered
+// ones already.
 func TestApplyConfigNamesAFailedClusterRestart(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
 	if _, err := sendConfig(s, workerConfig); err != nil {
@@ -1154,7 +1155,7 @@ func TestApplyConfigNamesAFailedClusterRestart(t *testing.T) {
 	}
 	next := withKubernetesSpec("{domain: lab.local}")
 	r.rules = []rule{{prefix: "systemctl restart chalkos-kubernetes kubelet", err: errors.New("exit status 1")}}
-	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes kubelet by hand") {
+	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes kubelet by hand once that is fixed, or deliver it again") {
 		t.Fatalf("err = %v, want the units named", err)
 	}
 	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
@@ -1165,8 +1166,146 @@ func TestApplyConfigNamesAFailedClusterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.RestartedUnits) != 0 || slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet") {
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes", "kubelet"}) || !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet") {
 		t.Errorf("the retry restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	}
+	// Applied whole, the delivery leaves no baseline: the next one compares with the slot.
+	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("baseline after a delivery applied whole: %v", err)
+	}
+	r.calls = nil
+	if resp, err = sendConfig(s, next); err != nil || len(resp.RestartedUnits) != 0 {
+		t.Errorf("the same config again restarted %v: %v", resp.GetRestartedUnits(), err)
+	}
+}
+
+// loops records what deliveries ask of chalkd's own loops.
+func loops(s *Server) *[]string {
+	var acted []string
+	s.actedOnSelf = func(reload, restart bool) {
+		switch {
+		case restart:
+			acted = append(acted, "restart")
+		case reload:
+			acted = append(acted, "reload")
+		}
+	}
+	return &acted
+}
+
+// A share delivered with the same config, whose slot cannot be written once the share is
+// recorded, restarts nothing but chalkd's loops, which read the share. Its retry compares with the
+// share from before, so it restarts the kubelet and its preparation and reloads the loops again,
+// although STATE holds the delivered share already.
+func TestApplyConfigRetriesAShareWhoseSlotFailed(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	acted := loops(s)
+	share := testShare(t, k8s.KindWorker)
+	send := func() (*nodev1.ApplyConfigResponse, error) {
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: workerConfig, KubernetesShare: share}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	slots := filepath.Dir(slotOf(t, s))
+	if err := os.Chmod(slots, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	r.calls = nil
+	if _, err := send(); err == nil || !strings.Contains(err.Error(), "store the config") {
+		t.Fatalf("err = %v, want the slot's failure", err)
+	}
+	if recorded := readFile(t, filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")); !strings.Contains(recorded, "BEGIN CERTIFICATE") {
+		t.Fatalf("share.json = %s, want the delivered share recorded", recorded)
+	}
+	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet") || !slices.Equal(*acted, []string{"reload"}) {
+		t.Errorf("ran %v, acted on the loops %v; want the loops reloaded alone", r.calls, *acted)
+	}
+	if err := os.Chmod(slots, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.calls, *acted = nil, nil
+	resp, err := send()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes", "kubelet"}) || !slices.Equal(*acted, []string{"reload"}) {
+		t.Errorf("the retry restarted %v, acted on the loops %v", resp.RestartedUnits, *acted)
+	}
+}
+
+// A share delivered alone whose kubelet restart fails restarts the kubelet when it is delivered
+// again. The baseline the retry compares with holds the share's kind and the hashes of its other
+// keys, readable by root alone, and none of its certificates or keys.
+func TestApplyConfigRetriesAShareWhoseRestartFailed(t *testing.T) {
+	s, r := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	share := testShare(t, k8s.KindWorker)
+	send := func() (*nodev1.ApplyConfigResponse, error) {
+		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{KubernetesShare: share}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	r.rules = []rule{{prefix: "systemctl restart chalkos-kubernetes kubelet", err: errors.New("exit status 1")}}
+	if _, err := send(); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes kubelet by hand") {
+		t.Fatalf("err = %v, want the units named", err)
+	}
+	info, err := os.Stat(s.Paths.EffectsBaseline)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("baseline: %v, %v; want it readable by root alone", info, err)
+	}
+	if b := readFile(t, s.Paths.EffectsBaseline); strings.Contains(b, "BEGIN") || strings.Contains(b, "s3cret") || !strings.Contains(b, `"kind":"worker"`) {
+		t.Errorf("baseline = %s, want the kind and hashes alone", b)
+	}
+	r.rules, r.calls = nil, nil
+	resp, err := send()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(resp.RestartedUnits, []string{"chalkos-kubernetes", "kubelet"}) {
+		t.Errorf("the retry restarted %v, ran %v", resp.RestartedUnits, r.calls)
+	}
+}
+
+// A slot whose documents cannot be written for their consumers leaves chalkd's loops acted on
+// all the same, since what they read is in place, and its retry acts on them again.
+func TestApplyConfigActsOnTheLoopsWhenTheConsumersConfigFails(t *testing.T) {
+	s, _ := clusterServer(t, k8s.KindWorker)
+	if _, err := sendConfig(s, workerConfig); err != nil {
+		t.Fatal(err)
+	}
+	acted := loops(s)
+	// A file where demo's credentials go.
+	credentials := filepath.Join(s.Loader.RunDir, "credentials", "demo")
+	if err := os.RemoveAll(credentials); err != nil {
+		t.Fatal(err)
+	}
+	write(t, credentials, "")
+	next := withKubernetesSpec("{domain: lab.local}")
+	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "write the config for its consumers") {
+		t.Fatalf("err = %v, want the consumers' config to fail", err)
+	}
+	if !slices.Equal(*acted, []string{"restart"}) {
+		t.Errorf("acted on the loops %v, want them restarted for the new cluster", *acted)
+	}
+	if err := os.Remove(credentials); err != nil {
+		t.Fatal(err)
+	}
+	*acted = nil
+	if _, err := sendConfig(s, next); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(*acted, []string{"restart"}) {
+		t.Errorf("the retry acted on the loops %v", *acted)
 	}
 }
 

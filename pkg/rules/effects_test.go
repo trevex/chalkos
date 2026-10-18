@@ -144,3 +144,25 @@ func TestCompileEffectErrors(t *testing.T) {
 		})
 	}
 }
+
+// An effect compares the config with an old one whose secret values are hashed already, as a
+// delivery that failed part way recorded it, as with the old config as delivered.
+func TestEffectOldHashed(t *testing.T) {
+	secret := config.FromObject(map[string]any{
+		"apiVersion": "chalkos.dev/v1alpha1", "kind": "Secret",
+		"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": "s3cret"}},
+	})
+	e := effect(t, `config["chalkos.dev/v1alpha1"].Secret == oldConfig["chalkos.dev/v1alpha1"].Secret`)
+	for name, in := range map[string]EffectInput{
+		"as delivered": {Documents: []config.Document{secret}, Old: []config.Document{secret}},
+		"hashed":       {Documents: []config.Document{secret}, Old: config.Redact([]config.Document{secret}), OldHashed: true},
+	} {
+		if got, errs := dueUnits([]*Effect{e}, in); len(errs) > 0 || len(got) != 1 {
+			t.Errorf("%s: due = %v, %v; want the same Secret", name, got, errs)
+		}
+	}
+	in := EffectInput{Documents: []config.Document{secret}, Old: config.Redact([]config.Document{secret})}
+	if got, errs := dueUnits([]*Effect{e}, in); len(errs) > 0 || len(got) != 0 {
+		t.Errorf("hashed twice: due = %v, %v; want another Secret", got, errs)
+	}
+}
