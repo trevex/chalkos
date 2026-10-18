@@ -418,9 +418,12 @@ control plane's chalkd applies their objects.
 When `apply-config` changes a document of a service's kinds, or a `Secret` one of them references,
 chalkd restarts the service, as its
 [`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) rule says by default;
-`restart.when = "false"` keeps the service running. It restarts a service that runs or stays
-active after it ran, and starts a failed one again, since the new config may be what it lacked; a
-service that never started or was stopped stays so. `apply-config` prints the units it restarted.
+another rule restarts it on other changes, `restart.when = "false"` keeps it running, and
+`reload` reloads it instead, as
+[Change rules and facts](rules.md#which-units-does-a-change-restart-or-reload) describes. It
+restarts a service that runs or stays active after it ran, and starts a failed one again, since
+the new config may be what it lacked; a service that never started or was stopped stays so.
+`apply-config` prints the units it restarted.
 chalkos's own renderings have consumers too: networkd reloads when a `Network`, `NetDev` or `Link`
 document changes, or a `Secret` one of them references, chrony reloads its sources when the
 `TimeSync`'s servers change, and chalkd restarts the kubelet when the node's Kubernetes settings

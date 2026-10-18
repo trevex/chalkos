@@ -384,6 +384,39 @@ where the document is.
 runs on the node. [Change rules and facts](../concepts/rules.md) explains the variables, the
 functions and where rules run.
 
+## Choose what a change restarts
+
+chalkd restarts a unit under `chalkos.consumers` when a document of its kinds changes, or a
+`Secret` one of them references.
+[`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) replaces that rule with a CEL
+expression of your own, and [`reload`](../reference/options.md#chalkosconsumersreloadwhen) reloads
+the unit instead. A BGP daemon reads its `Peer` documents again on a reload, which keeps the
+sessions a restart would drop:
+
+```nix
+chalkos.consumers.bird = {
+  kinds = [ "Peer" ];
+  restart.when = "false";
+  reload = {
+    when = ''"Peer" in changedKinds'';
+    command = "${pkgs.bird2}/bin/birdc configure";
+  };
+};
+```
+
+A rule reads the config before and after the delivery as `oldConfig` and `config`, the names of
+the kinds that changed as `changedKinds`, and the facts before and after it as
+`oldFacts.<name>` and `facts.<name>`. A unit that reads no kind restarts on a fact alone, here
+when the node gets a new Kubernetes share:
+
+```nix
+chalkos.consumers.cert-agent.restart.when = "facts.share != oldFacts.share";
+```
+
+The image build compiles these rules with the kinds' rules.
+[Change rules and facts](../concepts/rules.md#which-units-does-a-change-restart-or-reload)
+explains when chalkd evaluates them and how it restarts and reloads units.
+
 ## Know what an image may not change
 
 The image is an appliance: the root file system is a tmpfs, `/etc` is read-only, users are fixed

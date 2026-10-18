@@ -121,6 +121,14 @@ kinds. On the node, chalkd writes each document except `Secret`s and `Addon`s to
 `/run/chalkos/config/<group>/<Kind>/<name>.json`. See
 [Config and the inventory](../concepts/config.md#what-is-a-config-document).
 
+## Consumer { #consumer }
+
+A unit that reads [config](#config) kinds, or that a delivery restarts or reloads, as
+[`chalkos.consumers`](options.md#chalkosconsumers) declares it. Its restart and reload rules,
+CEL expressions like a [change rule](#change-rule), say which changes act on it; by default a
+unit restarts when a document of its kinds changes. See
+[Change rules and facts](../concepts/rules.md#which-units-does-a-change-restart-or-reload).
+
 ## Contract { #contract }
 
 What an image accepts as [config](#config): the variant and platform it was built for, the JSON

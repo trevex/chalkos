@@ -1,6 +1,6 @@
 ---
 title: "Change rules and facts"
-description: "How an image's CEL rules decide which config changes a node accepts, and the node state they read"
+description: "How an image's CEL rules decide which config changes a node accepts and what they restart or reload, and the node state they read"
 ---
 
 # Change rules and facts
@@ -13,6 +13,8 @@ reinstall instead, and says so in its message. The image's own kinds and the kin
 modules, so what a node accepts is part of the image and changes with an upgrade. A rule that
 needs the node's state, such as what its disks hold, reads it from a
 [fact](../reference/glossary.md#fact): the JSON of a file, or of a program of the image's store.
+The units that read the config, chalkos's own among them, declare in rules of the same kind
+which changes restart or reload them.
 
 ## Where are rules declared?
 
@@ -209,11 +211,82 @@ extensions of cel-go, and chalkos's address and size functions:
 | `bytes(s)` | A size such as `1G` or `512M` in bytes, an int, with the suffixes powers of 1024 as in repart. It takes the place of CEL's conversion of a string to bytes. |
 | `isSize(s)` | Whether `bytes(s)` reads `s`: digits with an optional K, M, G, T or P suffix, below 8 EiB. A recorded section an older image wrote can hold a size that `bytes` does not read. |
 
+## Which units does a change restart or reload?
+
+A unit under [`chalkos.consumers`](../reference/options.md#chalkosconsumers), one that reads
+config kinds or that a delivery acts on, has a restart rule and a reload rule: CEL expressions
+that are true when a delivery restarts or reloads the unit. bird reads its peers again on
+`birdc configure`, which keeps the sessions a restart would drop:
+
+```nix
+chalkos.consumers.bird = {
+  kinds = [ "Peer" ];
+  restart.when = "false";
+  reload = {
+    when = ''"Peer" in changedKinds'';
+    command = "${pkgs.bird2}/bin/birdc configure";
+  };
+};
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| [`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) | `"<kind>" in changedKinds \|\| …` for each of the unit's kinds; `false` without kinds | When a delivery restarts the unit. |
+| [`restart.start`](../reference/options.md#chalkosconsumersrestartstart) | `false` | Whether a restart starts the unit too when it does not run. |
+| [`reload.when`](../reference/options.md#chalkosconsumersreloadwhen) | `false` | When a delivery reloads the unit. |
+| [`reload.command`](../reference/options.md#chalkosconsumersreloadcommand) | `systemctl reload <unit>` | The command that reloads it. |
+
+They see `config` and `oldConfig`, the config the node runs once the delivery is applied and the
+running slot's config before it, in the shape change rules see them, and these:
+
+| Variable | Value |
+| --- | --- |
+| `changedKinds` | The names of the kinds whose documents differ between the two configs, or a `Secret` that one of their `secretRef` fields names. |
+| `facts.<name>` | The fact once the delivery is applied. |
+| `oldFacts.<name>` | The fact before the delivery changed anything. |
+
+`changedKinds` tells what `config` and `oldConfig` alone do not: which `Secret`s a kind's
+documents reference is in the kind's schema, and a unit reads their values as its credentials.
+chalkd loads the facts the rules read before a delivery changes anything, and again once it is
+applied, so a rule compares a file that the delivery writes, such as the node's Kubernetes share.
+
+chalkd evaluates every consumer's rules once it has applied a delivery, after it stored the config
+in the running slot, also for a delivery without config, as of a share:
+
+1. It reloads each unit whose reload rule is true and that runs, with its command. A unit that
+   does not run reads its config when it starts, and a unit whose restart rule is true too is
+   restarted instead.
+2. It restarts each unit whose restart rule is true: in one `systemctl try-restart` the units that
+   run, or ran and stay active, so a unit that never started or was stopped stays so; in one
+   `systemctl restart` those with `restart.start` set; and with `systemctl reset-failed` and
+   `restart` those that failed, since the new config may be what they lacked.
+
+A rule that cannot be evaluated counts as true, and its error goes to the node's journal: a unit
+restarts once more than it needed to rather than run on config it has not read.
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) prints the restarted units. A
+reload or restart that fails fails the delivery, whose config the slot holds already, so the error
+names the units to reload or restart by hand: a retry compares the config with itself and acts on
+none.
+
+A consumer named `chalkd` is chalkd itself, which acts on its rules in-process: a reload starts
+the control plane's loop again, which reads the share and applies the control plane's objects, and
+a restart every Kubernetes loop, which read the cluster when they start. The built-in consumers
+are these:
+
+| Unit | Rules |
+| --- | --- |
+| `systemd-networkd` | Reloads with `networkctl reload` when a `Network`, `NetDev` or `Link` document changes, or a `Secret` one of them references. |
+| `chronyd` | Reloads with `chronyc reload sources` when the `TimeSync`'s servers change. |
+| `chalkos-chrony-dhcp`, `chalkos-controlplane`, `chalkos-registry-mirrors` | Restart when a document of their kinds changes: `TimeSync`, `Node` and `RegistryMirror`. |
+| `chalkos-kubernetes`, `kubelet` | Restart, and start when they do not run, when the `Node`'s name, host name or type, the `Kubelet`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster`, `Kubernetes` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. On images with Kubernetes. |
+| `chalkd` | Restarts its Kubernetes loops when the cluster changes, and reloads the control plane's loop when the share changes beyond its node CA or, on a control plane, the objects of the `Addon` documents. On images with Kubernetes. |
+
 ## How is a rule checked when the image is built?
 
-The image build runs `chalkos-rules check` over the image's schemas and facts, and fails on any
-rule that does not parse or type-check, on a rule that reads a fact the image does not declare and
-on a command fact that is no program of the store. It also refuses a rule whose estimated cost
+The image build runs `chalkos-rules check` over the image's schemas, facts and consumers, and
+fails on any rule that does not parse or type-check, a consumer's rules among them, on a rule
+that reads a fact the image does not declare and on a command fact that is no program of the
+store. It also refuses a rule whose estimated cost
 exceeds 10,000,000, estimated with 256 elements in every list, map and string, which a loop over
 a kind's documents inside another loop over them fits and a third nested loop does not. A rule is
 stopped at a cost of 1,000,000 on the config it meets.
@@ -231,7 +304,7 @@ stopped at a cost of 1,000,000 on the config it meets.
 | `Volume` | No volume the machine records is left out. | reinstall |
 | `Volume` | A new encrypted volume comes with the fallback secret, which opens the node's fallback keyslot. | refuse |
 
-They read these facts:
+They, and the rules of the built-in consumers, read these facts:
 
 | Fact | Source | Value |
 | --- | --- | --- |
@@ -239,12 +312,16 @@ They read these facts:
 | `recorded` | `/state/storage/storage.json` | The storage section STATE records. |
 | `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
 | `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
+| `cluster` | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster as chalkd last wrote it, which the kubelet's rules compare before and after a delivery; declared on images with Kubernetes. |
 
 ## Limits
 
 - A rule binds `self` to a path through the properties of objects, so it cannot be declared on the
   items of a list or the values of a map; it is declared on the list or the map, which a kind's
   rule or a field's rule compares whole. Lists are not matched item by item by a key.
+- A consumer's rule compares documents as written, so a change that makes no difference to the
+  unit still counts: an `Address=` value whose prefix length alone changes restarts the kubelet,
+  and adding a `TimeSync` that names chalkos's own servers reloads chrony's sources.
 - Rules compare the config with the running image's config alone. The one check that reads another
   slot's config is that of a storage change of the running image's config, which evaluates the
   storage rules against the staged image's slot as it would be written again.
@@ -269,5 +346,6 @@ They read these facts:
 - [Storage and encryption](storage.md) for what the storage rules protect.
 - [Customise the image](../guides/customise-image.md#add-a-rule-and-a-fact-to-a-kind) for a rule and
   a fact on an extension's kind.
-- [`chalkos.kinds`](../reference/options.md#chalkoskinds) and
-  [`chalkos.facts`](../reference/options.md#chalkosfacts) for the options.
+- [`chalkos.kinds`](../reference/options.md#chalkoskinds),
+  [`chalkos.facts`](../reference/options.md#chalkosfacts) and
+  [`chalkos.consumers`](../reference/options.md#chalkosconsumers) for the options.
