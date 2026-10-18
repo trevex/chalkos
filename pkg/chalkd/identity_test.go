@@ -113,10 +113,12 @@ func documentsOf(identity string) []config.Document {
 	return docs
 }
 
-// installedServer is a normal-mode server whose STATE records the section and its pins.
+// installedServer is a normal-mode server of node n1, as its node certificate names it, whose
+// STATE records the section and its pins.
 func installedServer(t *testing.T, recorded string, extraPinned bool, more ...testDisk) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := newTestServer(t, normal, append([]testDisk{vda, vdb}, more...)...)
+	withNodeCertificate(t, s)
 	dir := filepath.Join(s.Paths.StateDir, "storage")
 	write(t, filepath.Join(dir, "storage.json"), recorded)
 	pins := `"system": {"ref": "/dev/vda", "identity": {"path": "pci-0000:00:04.0", "size": 17179869184, "type": "hdd"}, "partitions": {"var": "` + varUUID + `"}}`
@@ -452,7 +454,7 @@ func resetWith(s *Server, volume, identity, fallback string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.resetVolume(context.Background(), volume, store.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, schemas, fallback)
+	return s.resetVolume(context.Background(), "n1", volume, store.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, schemas, fallback)
 }
 
 // A reset recreates a volume on its disk, also when the config references the disk anew.

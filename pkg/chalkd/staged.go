@@ -106,17 +106,17 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 }
 
 // checkStaged refuses a change of the machine's storage to section that the config slot of the
-// image staged to boot next could not be written again with: that slot's config fails the
-// storage rules against the storage the change makes, as when it lacks a volume the change adds.
-// That image would still boot and mount the volume, as every boot sets up the volumes
-// storage.json records, but its next config would be refused for removing it. The staged slot is
-// brought along first, with chalkctl apply-config --staged, to which the new volume is then
-// additive. The slot is checked as it would be written again once the change is made: against
-// section as the recorded storage and next, the config this change runs, as the running config,
-// with the running image's storage rules, whose schemas are given, and the delivery's facts f,
-// which its commands read for the staged slot. The check runs this way only: a write of the staged
-// slot does not check the running slot against the storage it makes. The caller holds s.mu.
-func (s *Server) checkStaged(schemas *schema.Schemas, next []config.Document, section storage.Section, f *facts.Loader) error {
+// image staged to boot next could not be written again with: that slot's config fails the storage
+// rules against the storage the change makes, as when it lacks a volume the change adds. That image
+// would still boot and mount the volume, as every boot sets up the volumes storage.json records,
+// but its next config would be refused for removing it. The staged slot is brought along first,
+// with chalkctl apply-config --staged, to which the new volume is then additive. The slot is
+// checked as it would be written again once the change is made: against section as the recorded
+// storage and next, the config this change runs, as the running config, with the running image's
+// storage rules, whose schemas are given, which see the node called name, and the delivery's facts
+// f, which its commands read for the staged slot. The check runs this way only: a write of the
+// staged slot does not check the running slot against the storage it makes. The caller holds s.mu.
+func (s *Server) checkStaged(schemas *schema.Schemas, name string, next []config.Document, section storage.Section, f *facts.Loader) error {
 	staged, err := s.stagedImage()
 	if err != nil {
 		return failed(connect.CodeInternal, "find the staged image: %v", err)
@@ -137,7 +137,7 @@ func (s *Server) checkStaged(schemas *schema.Schemas, next []config.Document, se
 	}
 	sf := f.For(factInput(held.Documents, next))
 	sf.Override("recorded", jsonValue(section))
-	failures, err := evaluate(set.Of(config.StorageAPI), held.Documents, next, sf)
+	failures, err := evaluate(set.Of(config.StorageAPI), name, held.Documents, next, sf)
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func (s *Server) checkStaged(schemas *schema.Schemas, next []config.Document, se
 	for i, f := range failures {
 		msgs[i] = f.String()
 	}
-	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], strings.Join(msgs, "; "), s.nodeName())
+	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], strings.Join(msgs, "; "), name)
 }
 
 // stagedVersion is the version of the config slot of the image the boot status names as staged;

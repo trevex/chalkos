@@ -125,19 +125,21 @@ func hashOf(t *testing.T, text string) string {
 	return h
 }
 
-// configServer is a normal-mode server that runs baseConfig: STATE holds the set, the identity
-// it translates to and that identity's storage section, pinned. The image has the built-in
-// consumers and demo, of the Demo kind, which restarts by default.
+// configServer is a normal-mode server of node n1, as its node certificate names it, that runs
+// baseConfig: STATE holds the set, the identity it translates to and that identity's storage
+// section, pinned. The image has the built-in consumers and demo, of the Demo kind, which
+// restarts by default.
 func configServer(t *testing.T) (*Server, *fakeRunner) {
 	t.Helper()
 	s, r := newTestServer(t, normal, vda, vdb)
+	withNodeCertificate(t, s)
 	writeSchemas(t, s.Loader.Schemas)
 	writeConsumers(t, s, `{"demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}}}`)
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := configure(baseConfig, schemas, config.Target{Platform: "metal"})
+	c, err := configure("n1", baseConfig, schemas, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,6 +249,32 @@ func TestApplyConfigRestartsByKind(t *testing.T) {
 				t.Errorf("restarted %v, want %v", resp.RestartedUnits, c.want)
 			}
 		})
+	}
+}
+
+// TestApplyConfigTakesTheNodesNameFromItsCertificate translates the config for the node its node
+// certificate names, whatever its Node document is called, names that node in a refusal, and
+// translates no config on a node without a node certificate.
+func TestApplyConfigTakesTheNodesNameFromItsCertificate(t *testing.T) {
+	s, _ := configServer(t)
+	doc := strings.Replace(baseConfig, "metadata: {name: n1}", "metadata: {name: doc}", 1)
+	if _, err := sendConfig(s, doc); err != nil {
+		t.Fatal(err)
+	}
+	var id identity.Identity
+	if err := json.Unmarshal([]byte(identityOf(t, s)), &id); err != nil {
+		t.Fatal(err)
+	}
+	if id.Hostname != "n1" {
+		t.Errorf("hostname = %q, want n1, the node certificate's name", id.Hostname)
+	}
+	_, err := sendConfig(s, strings.Replace(doc, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1))
+	if err == nil || !strings.Contains(err.Error(), "the config takes a reinstall of n1: ") || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") {
+		t.Errorf("err = %v, want a refusal naming n1", err)
+	}
+	s.Certificate = nil
+	if _, err := sendConfig(s, doc); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "node certificate") {
+		t.Errorf("err = %v, want an internal error for the missing node certificate", err)
 	}
 }
 
@@ -614,7 +642,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := configure(extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
+	c, err := configure("n1", extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
 	}

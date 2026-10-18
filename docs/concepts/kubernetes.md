@@ -101,9 +101,9 @@ chalkd renders the kubelet's configuration from the node's cluster into
 `/run/chalkos/kubernetes/kubelet/config.json`, the same on every node of the cluster: webhook
 authentication and authorisation, no anonymous access and no read-only port, the systemd cgroup
 driver, the cluster's DNS address and domain, and `rotateCertificates` with `serverTLSBootstrap`.
-What differs per node comes from its `Kubelet` document as flags, which the kubelet gets in
-`$KUBELET_ARGS`: the node name, its addresses, its labels and its taints. The homelab example's
-worker carries fast storage and keeps other workloads off:
+What differs per node the kubelet gets as flags in `$KUBELET_ARGS`: the node name, which is the
+node's name in the inventory, and the addresses, labels and taints of its `Kubelet` document. The
+homelab example's worker carries fast storage and keeps other workloads off:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1

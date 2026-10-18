@@ -148,7 +148,7 @@ func (ta *testApp) identity(t *testing.T) identity.Identity {
 }
 
 // startNode serves a chalkd in the mode with the test cluster's OS CA. In normal mode it serves
-// a node certificate for n1.
+// a node certificate for n1, which names the node to chalkd too.
 func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	t.Helper()
 	cert := ta.secrets.OSCA
@@ -160,6 +160,14 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	}
 	if err != nil {
 		t.Fatal(err)
+	}
+	if s.Mode == nodev1.Mode_MODE_NORMAL && s.Certificate == nil {
+		dir := filepath.Join(t.TempDir(), "chalkd")
+		writeFile(t, filepath.Join(dir, chalkd.NodeCertificateFile), cert.Certificate+cert.Key)
+		writeFile(t, filepath.Join(dir, chalkd.CAFile), ta.secrets.OSCA.Certificate)
+		if s.Certificate, err = chalkd.LoadNodeCertificate(dir); err != nil {
+			t.Fatal(err)
+		}
 	}
 	pair, _ := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.Key))
 	leaf, _ := x509.ParseCertificate(pair.Certificate[0])

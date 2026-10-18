@@ -28,10 +28,15 @@ var defaultTimeServers = []identity.TimeServer{
 	{Host: "ptbtime3.ptb.de", NTS: true},
 }
 
-// Identity translates the set into the node's identity for the image t describes, as the cluster
-// definition rendered it, so every reader of the identity on the node keeps working. Extension
-// kinds stay in the set.
-func (s *Set) Identity(t Target) (identity.Identity, error) {
+// Identity translates the set into the identity of the node called name for the image t describes,
+// as the cluster definition rendered it, so every reader of the identity on the node keeps
+// working. Extension kinds stay in the set. The name is the node's name in the inventory, which
+// its node certificate carries; the hostname defaults to it, the Kubernetes node is called by it
+// and the storage seeds derive from it, whatever the Node document is called.
+func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
+	if name == "" {
+		return identity.Identity{}, fmt.Errorf("the node has no name to translate its config for")
+	}
 	cluster, _ := s.One("Cluster")
 	nodeDoc, _ := s.One("Node")
 	var node nodeSpec
@@ -41,7 +46,7 @@ func (s *Set) Identity(t Target) (identity.Identity, error) {
 	if node.Type != nil && t.Image == nil {
 		return identity.Identity{}, fmt.Errorf("%s has type %s, but its image runs no Kubernetes", nodeDoc, *node.Type)
 	}
-	sec, err := s.storage()
+	sec, err := s.storage(name)
 	if err != nil {
 		return identity.Identity{}, err
 	}
@@ -54,7 +59,7 @@ func (s *Set) Identity(t Target) (identity.Identity, error) {
 		return identity.Identity{}, err
 	}
 	id := identity.Identity{
-		Hostname:     nodeDoc.Name,
+		Hostname:     name,
 		Cluster:      cluster.Name,
 		Platform:     t.Platform,
 		Network:      NetworkMap(networkDocs),
@@ -88,7 +93,7 @@ func (s *Set) Identity(t Target) (identity.Identity, error) {
 		if err != nil {
 			return identity.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
 		}
-		if err := s.kubelet(&id, nodeDoc.Name, c); err != nil {
+		if err := s.kubelet(&id, name, c); err != nil {
 			return identity.Identity{}, err
 		}
 	}

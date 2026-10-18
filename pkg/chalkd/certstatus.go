@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -148,14 +149,26 @@ func (k *Kubernetes) trust() []*nodev1.TrustStatus {
 	return list
 }
 
-// nodeName is the node's name for the commands its messages advise: the subject of its node
-// certificate, which chalkctl issues to the node's name in the inventory. A node
+// name is the node's name: the subject of its node certificate, which chalkctl issues to the
+// node's name in the inventory. chalkd keeps the name nowhere else. Config is translated and
+// checked in normal mode, where chalkd always serves its node certificate, and at an install,
+// which takes the name from the certificate its header carries instead; a node in normal mode
+// without one, or with one that names no node, is broken, and no name stands in for it.
+func (s *Server) name() (string, error) {
+	if s.Certificate == nil {
+		return "", failed(connect.CodeInternal, "the node serves no node certificate, which names the node")
+	}
+	if leaf := s.Certificate.Current().Leaf; leaf != nil && leaf.Subject.CommonName != "" {
+		return leaf.Subject.CommonName, nil
+	}
+	return "", failed(connect.CodeInternal, "the node's node certificate names no node")
+}
+
+// nodeName is the node's name for the commands its messages advise, as name has it. A node
 // without one says <node>, which chalkctl replaces with the name it was called with.
 func (s *Server) nodeName() string {
-	if s.Certificate != nil {
-		if leaf := s.Certificate.Current().Leaf; leaf != nil && leaf.Subject.CommonName != "" {
-			return leaf.Subject.CommonName
-		}
+	if name, err := s.name(); err == nil {
+		return name
 	}
 	return "<node>"
 }

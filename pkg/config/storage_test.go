@@ -51,7 +51,7 @@ func TestStorageRejects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.storage(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := s.storage("n1"); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
@@ -68,7 +68,7 @@ func TestStorageErrorsReadLikeNix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.storage()
+	_, err = s.storage("n1")
 	want := "invalid storage:\n" +
 		"- Volume data: mountPoint must be an absolute path of the characters A-Z, a-z, 0-9, ., _, - and /, other than /, /nix, /state and /var, and not below /nix or /state\n" +
 		"- Volume a and Volume b reference the same disk; a volume with a disk occupies it alone\n" +
@@ -87,7 +87,7 @@ func TestStorageVolumesOnSystemAndOwnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sec, err := s.storage()
+	sec, err := s.storage("n1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestReservedRepartKeysInKeyOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.storage()
+	_, err = s.storage("n1")
 	want := "invalid storage:\n" +
 		"- Volume data: repart must not set Label; it comes from the typed options\n" +
 		"- Volume data: repart must not set Type; it comes from the typed options"
@@ -132,7 +132,7 @@ func TestRepartRejectsLineBreaks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.storage(); err == nil || !strings.Contains(err.Error(), "Volume data: repart") || !strings.Contains(err.Error(), "line break") {
+			if _, err := s.storage("n1"); err == nil || !strings.Contains(err.Error(), "Volume data: repart") || !strings.Contains(err.Error(), "line break") {
 				t.Fatalf("err = %v", err)
 			}
 		})
@@ -145,7 +145,7 @@ func TestOwnDiskDefinitionMatchesNix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sec, err := s.storage()
+	sec, err := s.storage("n1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestStorageRefusesNamesMountPointsAndKeys(t *testing.T) {
 		t.Helper()
 		s, err := parseSet(t, minimal+extra)
 		if err == nil {
-			_, err = s.storage()
+			_, err = s.storage("n1")
 		}
 		switch {
 		case want == "" && err != nil:
@@ -224,7 +224,7 @@ func TestStorageEncryptionModes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			sec, err := s.storage()
+			sec, err := s.storage("n1")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -314,8 +314,9 @@ hold the OS CA's key. See [Certificates](../concepts/certificates.md).
 ## Node certificate { #node-certificate }
 
 The certificate chalkd serves and authenticates with, issued by the [node CA](#node-ca) for the
-node's name and addresses and valid for one year. chalkd renews it through a control plane once
-two thirds of its lifetime have passed. See [Certificates](../concepts/certificates.md).
+node's name and addresses and valid for one year. chalkd takes the node's name from its subject
+and renews it through a control plane once two thirds of its lifetime have passed. See
+[Certificates](../concepts/certificates.md).
 
 ## Normal mode { #normal-mode }
 

@@ -134,7 +134,7 @@ func TestInstallRulesThatDoNotCompile(t *testing.T) {
 		t.Error("installed onto the disk")
 		return nil
 	}
-	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
+	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1}}
 	h.Schemas = fixtureSchemas(t)
 	h.Schemas["chalkos.dev_v1alpha1_Node.json"] = withBrokenRule(t, h.Schemas["chalkos.dev_v1alpha1_Node.json"])

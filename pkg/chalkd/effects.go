@@ -27,6 +27,8 @@ const selfUnit = "chalkd"
 type effects struct {
 	consumers map[string]nodeconfig.Consumer
 	rules     []*rules.Effect
+	// node is the node's name, which the rules read as node.name.
+	node      string
 	next, old []config.Document
 	// oldHashed tells that the secret values of old, a baseline's, are hashed already.
 	oldHashed bool
@@ -36,22 +38,22 @@ type effects struct {
 	before   rules.Facts
 }
 
-// effectsOf compiles the rules of the running image's consumers for a delivery that makes next,
-// checked against schemas, the config of the running slot in place of old, and loads every fact
-// they read: the caller calls it before the delivery changes anything. A delivery without config
-// keeps old, which changes no kind. The image's build compiled the rules already, so one that
-// does not compile is the node's own failure.
+// effectsOf compiles the rules of the running image's consumers for a delivery to the node called
+// name that makes next, checked against schemas, the config of the running slot in place of old,
+// and loads every fact they read: the caller calls it before the delivery changes anything. A
+// delivery without config keeps old, which changes no kind. The image's build compiled the rules
+// already, so one that does not compile is the node's own failure.
 // The rules compare with the baseline instead while there is one, as a delivery that failed part
 // way left it; otherwise effectsOf records old and the facts as the baseline, which consume
 // removes once the delivery is applied whole, and refused once it is refused before it changed
 // anything. A retry, or another delivery, then takes the effects of what the failed delivery
 // changed already too.
-func (s *Server) effectsOf(ctx context.Context, next, old []config.Document, schemas *schema.Schemas, secret string) (*effects, error) {
+func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string) (*effects, error) {
 	consumers, err := nodeconfig.ReadConsumers(s.Loader.Consumers)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	e := &effects{consumers: consumers, next: next, old: old}
+	e := &effects{consumers: consumers, node: name, next: next, old: old}
 	var errs []error
 	for _, unit := range sortedNames(consumers) {
 		c := consumers[unit]
@@ -142,7 +144,7 @@ func (s *Server) due(ctx context.Context, e *effects, secret string) (reload, re
 	// Command facts read the old config as the rules do.
 	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": e.oldConfig()}
 	due, errs := rules.Due(e.rules, rules.EffectInput{
-		Documents: e.next, Old: e.old, OldHashed: e.oldHashed, ChangedKinds: e.changed, Node: nodeOf(e.next), Facts: after, OldFacts: e.before,
+		Documents: e.next, Old: e.old, OldHashed: e.oldHashed, ChangedKinds: e.changed, Node: e.node, Facts: after, OldFacts: e.before,
 	})
 	for _, err := range errs {
 		w := fmt.Sprintf("the rule of %v; taking its effect all the same", err)

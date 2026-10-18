@@ -212,11 +212,15 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	}
 	r := applyRequest{msg: req.Msg}
 	if req.Msg.Config != "" {
+		name, err := s.name()
+		if err != nil {
+			return nil, err
+		}
 		t, schemas, err := s.runningTarget()
 		if err != nil {
 			return nil, err
 		}
-		c, err := configure(req.Msg.Config, schemas, t)
+		c, err := configure(name, req.Msg.Config, schemas, t)
 		if err != nil {
 			return nil, err
 		}
@@ -256,6 +260,11 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
+	// The rules and the consumers' rules see the node by the name its node certificate gives.
+	name, err := s.name()
+	if err != nil {
+		return nil, err
+	}
 	// The cluster the config gives, checked before anything changes; nil on an image without
 	// Kubernetes or without new config.
 	var cluster *k8s.Cluster
@@ -278,7 +287,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		if delivered, err = s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret); err != nil {
 			return nil, err
 		}
-		if err := s.checkRules(set, r.next.Documents, prev.Documents, delivered); err != nil {
+		if err := s.checkRules(set, name, r.next.Documents, prev.Documents, delivered); err != nil {
 			return nil, s.elsewhere(err, d.section, nil)
 		}
 	}
@@ -298,7 +307,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, err
 		}
 		if len(mc.changes) > 0 {
-			if err := s.checkStaged(r.schemas, r.next.Documents, d.section, delivered); err != nil {
+			if err := s.checkStaged(r.schemas, name, r.next.Documents, d.section, delivered); err != nil {
 				return nil, err
 			}
 		}
@@ -309,7 +318,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if !keep {
 		next = r.next.Documents
 	}
-	fx, err := s.effectsOf(ctx, next, prev.Documents, r.schemas, m.FallbackSecret)
+	fx, err := s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -580,26 +589,31 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	if m.Config == "" {
 		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, which defines the volume")
 	}
+	name, err := s.name()
+	if err != nil {
+		return nil, err
+	}
 	t, schemas, err := s.runningTarget()
 	if err != nil {
 		return nil, err
 	}
-	c, err := configure(m.Config, schemas, t)
+	c, err := configure(name, m.Config, schemas, t)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.resetVolume(ctx, m.Volume, c, schemas, m.FallbackSecret); err != nil {
+	if err := s.resetVolume(ctx, name, m.Volume, c, schemas, m.FallbackSecret); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil
 }
 
 // resetVolume wipes the volume name and creates it again as next, the config translated for the
-// running image, whose schemas are given, defines it; the caller holds s.mu. The image's storage
-// rules decide what a reset carries out: once deleted, the volume is created again like a new
-// one, so they are checked against the recorded section without it, which they must then accept
-// whole. They check the disk the volume lives on and the fallback secret it is enrolled with too.
-func (s *Server) resetVolume(ctx context.Context, name string, next store.Stored, schemas *schema.Schemas, fallback string) error {
+// node called node on the running image, whose schemas are given, defines it; the caller holds
+// s.mu. The image's storage rules decide what a reset carries out: once deleted, the volume is
+// created again like a new one, so they are checked against the recorded section without it, which
+// they must then accept whole. They check the disk the volume lives on and the fallback secret it
+// is enrolled with too.
+func (s *Server) resetVolume(ctx context.Context, node, name string, next store.Stored, schemas *schema.Schemas, fallback string) error {
 	d, err := parseIdentity(string(next.Identity))
 	if err != nil {
 		return err
@@ -642,12 +656,12 @@ func (s *Server) resetVolume(ctx context.Context, name string, next store.Stored
 		return err
 	}
 	f.Override("recorded", jsonValue(without))
-	failures, err := evaluate(set.Of(config.StorageAPI), next.Documents, running.Documents, f)
+	failures, err := evaluate(set.Of(config.StorageAPI), node, next.Documents, running.Documents, f)
 	if err != nil {
 		return err
 	}
 	if len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, rules.Refusal(failures, nodeOf(next.Documents)))
+		return failed(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, rules.Refusal(failures, node))
 	}
 
 	if err := s.deleteVolume(ctx, name, v, pins); err != nil {

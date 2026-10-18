@@ -16,18 +16,19 @@ import (
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // configure parses text, YAML config documents, and makes them the config slot of the image t
-// describes, as translateSlot does.
-func configure(text string, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
+// describes for the node called name, as translateSlot does.
+func configure(name, text string, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
 		return store.Stored{}, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
 	}
-	c, err := translateSlot(docs, schemas, t)
+	c, err := translateSlot(name, docs, schemas, t)
 	if err != nil {
 		return store.Stored{}, failed(connect.CodeInvalidArgument, "the config: %v", err)
 	}
@@ -35,15 +36,15 @@ func configure(text string, schemas *schema.Schemas, t config.Target) (store.Sto
 }
 
 // translateSlot checks docs, config documents as delivered, as a set against schemas, fills in
-// their defaults and translates them into the identity of a node of the image t describes: what
-// that image's config slot keeps. The set's version is the hash of the documents as delivered,
-// before the defaults, as a client computes it from the files it sends.
-func translateSlot(docs []config.Document, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
+// their defaults and translates them into the identity of the node called name on the image t
+// describes: what that image's config slot keeps. The set's version is the hash of the documents
+// as delivered, before the defaults, as a client computes it from the files it sends.
+func translateSlot(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (store.Stored, error) {
 	version, err := config.Hash(docs)
 	if err != nil {
 		return store.Stored{}, fmt.Errorf("hash the config: %w", err)
 	}
-	set, id, err := translate(docs, schemas, t)
+	set, id, err := translate(name, docs, schemas, t)
 	if err != nil {
 		return store.Stored{}, err
 	}
@@ -54,10 +55,11 @@ func translateSlot(docs []config.Document, schemas *schema.Schemas, t config.Tar
 	return store.Stored{Delivered: docs, Documents: set.Documents(), Version: version, Identity: data}, nil
 }
 
-// translate checks docs as a set against schemas and translates them into the identity of a node
-// of the image t describes: the set rules, each document's schema, the Secrets their secretRefs
-// name and, on an image with Kubernetes, the cluster, registry mirrors and manifests they give.
-func translate(docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, identity.Identity, error) {
+// translate checks docs as a set against schemas and translates them into the identity of the node
+// called name on the image t describes: the set rules, each document's schema, the Secrets their
+// secretRefs name and, on an image with Kubernetes, the cluster, registry mirrors and manifests
+// they give.
+func translate(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (*config.Set, identity.Identity, error) {
 	set, err := config.NewSet(docs, schemas)
 	if err != nil {
 		return nil, identity.Identity{}, err
@@ -65,7 +67,7 @@ func translate(docs []config.Document, schemas *schema.Schemas, t config.Target)
 	if err := store.CheckCredentials(set.Documents(), schemas); err != nil {
 		return nil, identity.Identity{}, err
 	}
-	id, err := set.Identity(t)
+	id, err := set.Identity(name, t)
 	if err != nil {
 		return nil, identity.Identity{}, err
 	}
@@ -107,10 +109,13 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 	if h.Config == "" {
 		return store.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
 	}
+	name, err := headerName(h)
+	if err != nil {
+		return store.Stored{}, err
+	}
 	var (
 		t       config.Target
 		schemas *schema.Schemas
-		err     error
 	)
 	switch {
 	case s.Installer:
@@ -123,7 +128,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 	if err != nil {
 		return store.Stored{}, err
 	}
-	stored, err := configure(h.Config, schemas, t)
+	stored, err := configure(name, h.Config, schemas, t)
 	if err != nil {
 		return store.Stored{}, err
 	}
@@ -136,10 +141,26 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 		return store.Stored{}, err
 	}
 	f.Install = true
-	if err := s.checkRules(set, stored.Documents, nil, f); err != nil {
+	if err := s.checkRules(set, name, stored.Documents, nil, f); err != nil {
 		return store.Stored{}, err
 	}
 	return stored, nil
+}
+
+// headerName is the name of the node an install header installs: the subject of the node
+// certificate it carries, the node certificate followed by the node CA's, which chalkctl issues
+// to the node's name in the inventory. The node has no node certificate of its own yet, so this
+// is the only name an install translates its config for; every header carries the certificate,
+// as the install needs it to write the node's credentials.
+func headerName(h *nodev1.InstallHeader) (string, error) {
+	cert, err := pki.ParseCertificate(h.NodeCertificate)
+	if err != nil {
+		return "", failed(connect.CodeInvalidArgument, "the header's node certificate: %v", err)
+	}
+	if cert.Subject.CommonName == "" {
+		return "", failed(connect.CodeInvalidArgument, "the header's node certificate names no node")
+	}
+	return cert.Subject.CommonName, nil
 }
 
 // headerTarget is the image an install from the installer writes, as its header describes it,

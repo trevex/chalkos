@@ -3,9 +3,16 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
+	"math/big"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -19,6 +26,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -26,10 +34,23 @@ import (
 // installConfig is baseConfig for a node whose system disk has the serial chalk-target.
 var installConfig = strings.Replace(baseConfig, "spec: {disk: {path: /dev/vda}}", "spec: {disk: {serial: chalk-target}}", 1)
 
-func header(target any) *nodev1.InstallHeader {
+// nodeChain is a node certificate for name from a node CA of the test OS CA, followed by the node
+// CA's, as chalkctl issues it into an install header.
+func nodeChain(t *testing.T, name string) []byte {
+	t.Helper()
+	nodeCA := testNodeCA(t)
+	cert, err := pki.IssueNode(nodeCA, pki.NodeNames{CommonName: name, DNSNames: []string{name}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []byte(cert.Certificate)
+}
+
+func header(t *testing.T, target any) *nodev1.InstallHeader {
+	t.Helper()
 	h := &nodev1.InstallHeader{
 		Config:          installConfig,
-		NodeCertificate: []byte("cert"),
+		NodeCertificate: nodeChain(t, "n1"),
 		NodeKey:         []byte("key"),
 		CaCertificate:   []byte("ca"),
 		FallbackSecret:  "recovery",
@@ -70,7 +91,7 @@ func TestInstallInPlace(t *testing.T) {
 	rebooted := make(chan struct{})
 	s.RebootNode = func() { close(rebooted) }
 
-	if err := sendInstall(t, s, header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
+	if err := sendInstall(t, s, header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
 		t.Fatal(err)
 	}
 	if got.Config.Version != hashOf(t, installConfig) || !bytes.Equal(got.RootHash, bytes.Repeat([]byte{0xab}, 32)) || string(got.NodeKey) != "key" || string(got.CA) != "ca" || got.FallbackSecret != "recovery" || string(got.KubernetesShare) != "share" ||
@@ -82,10 +103,76 @@ func TestInstallInPlace(t *testing.T) {
 	case <-time.After(time.Minute):
 		t.Fatal("the node did not reboot after installing")
 	}
-	err := sendInstall(t, s, header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil)
+	err := sendInstall(t, s, header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil)
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("second install: %v", err)
 	}
+}
+
+// TestInstallTakesTheNodesNameFromTheHeadersCertificate translates the config for the node the
+// node certificate in the header names, whatever its Node document is called, and refuses a
+// header whose certificate names no node before it translates the config.
+func TestInstallTakesTheNodesNameFromTheHeadersCertificate(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	var got install.Request
+	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
+	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	h.Config = strings.Replace(installConfig, "metadata: {name: n1}", "metadata: {name: doc}", 1)
+	h.NodeCertificate = nodeChain(t, "w1")
+	if err := sendInstall(t, s, h, nil); err != nil {
+		t.Fatal(err)
+	}
+	var id identity.Identity
+	if err := json.Unmarshal(got.Config.Identity, &id); err != nil {
+		t.Fatal(err)
+	}
+	if id.Hostname != "w1" {
+		t.Errorf("hostname = %q, want w1, the node certificate's name", id.Hostname)
+	}
+
+	for name, cert := range map[string][]byte{
+		"not a certificate": []byte("cert"),
+		"without a name":    unnamedChain(t),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := newTestServer(t, maintenance, vda)
+			s.InPlace = func(context.Context, install.Request) error { t.Error("installed"); return nil }
+			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+			h.NodeCertificate = cert
+			err := sendInstall(t, s, h, nil)
+			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node certificate") {
+				t.Fatalf("err = %v, want a refusal of the node certificate", err)
+			}
+		})
+	}
+}
+
+// unnamedChain is a certificate without a common name from a node CA of the test OS CA, followed
+// by the node CA's, which pki.IssueNode does not issue.
+func unnamedChain(t *testing.T) []byte {
+	t.Helper()
+	nodeCA := testNodeCA(t)
+	caCert, caKey, err := nodeCA.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{Organization: []string{pki.RoleNode}},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nodeCA.Certificate...)
 }
 
 func TestInstallFromParts(t *testing.T) {
@@ -100,7 +187,7 @@ func TestInstallFromParts(t *testing.T) {
 		streamed, err = io.ReadAll(req.Parts)
 		return err
 	}
-	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
+	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Image = &nodev1.ImageHeader{
 		ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1}, Revision: "a1b2c3d4e5f6", Tag: "v1.5.0",
 		Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
@@ -140,7 +227,7 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 		t.Error("installed in place")
 		return nil
 	}
-	in := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	in := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	in.Image = &nodev1.ImageHeader{ImageId: "chalkos"}
 	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("in place with an image: %v", err)
@@ -150,7 +237,7 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 		t.Error("installed onto the disk")
 		return nil
 	}
-	if err := sendInstall(t, s, header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}), nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if err := sendInstall(t, s, header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}), nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("onto a disk without an image: %v", err)
 	}
 }
@@ -167,7 +254,7 @@ func TestInstallTargetMustMatchImage(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
 			s.Installer = c.installer
-			err := sendInstall(t, s, header(c.target), nil)
+			err := sendInstall(t, s, header(t, c.target), nil)
 			if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 				t.Errorf("err = %v", err)
 			}
@@ -187,7 +274,7 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 	}
 	var rebooted atomic.Bool
 	s.RebootNode = func() { rebooted.Store(true) }
-	in := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	in := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("err = %v", err)
 	}
@@ -229,7 +316,7 @@ func TestInstallInPlaceWithConfig(t *testing.T) {
 	writeSchemas(t, s.Loader.Schemas)
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request) error { got = req; return nil }
-	h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
 
 	if err := sendInstall(t, s, h, nil); err != nil {
@@ -254,7 +341,7 @@ func TestInstallInPlaceReadsNoFacts(t *testing.T) {
 	installed := false
 	s.InPlace = func(context.Context, install.Request) error { installed = true; return nil }
 	write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), "{")
-	h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
 	if err := sendInstall(t, s, h, nil); err != nil || !installed {
 		t.Fatalf("installed %v: %v", installed, err)
@@ -270,7 +357,7 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 		_, err := io.ReadAll(req.Parts)
 		return err
 	}
-	h := header(&nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
+	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig
 	h.Schemas = fixtureSchemas(t)
 	h.KubernetesImage = []byte(testImage)
@@ -331,7 +418,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 			writeSchemas(t, s.Loader.Schemas)
 			s.InPlace = func(context.Context, install.Request) error { t.Error("installed in place"); return nil }
 			s.FromParts = func(context.Context, install.PartsRequest) error { t.Error("installed onto the disk"); return nil }
-			h := header(&nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			c.edit(h)
 			if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want %q", err, c.want)

@@ -52,23 +52,23 @@ func compileRules(schemas *schema.Schemas, running bool) (*rules.Set, error) {
 }
 
 // checkRules refuses next, config about to be stored for the image whose rules set holds, when
-// it does not meet them; old is the running slot's config, nil at an install, and f the
-// delivery's facts. Nothing has changed yet when it refuses.
-func (s *Server) checkRules(set *rules.Set, next, old []config.Document, f rules.Facts) error {
-	failures, err := evaluate(set, next, old, f)
+// it does not meet them; name is the node's, old is the running slot's config, nil at an install,
+// and f the delivery's facts. Nothing has changed yet when it refuses.
+func (s *Server) checkRules(set *rules.Set, name string, next, old []config.Document, f rules.Facts) error {
+	failures, err := evaluate(set, name, next, old, f)
 	if err != nil {
 		return err
 	}
 	if len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "%s", rules.Refusal(failures, nodeOf(next)))
+		return failed(connect.CodeFailedPrecondition, "%s", rules.Refusal(failures, name))
 	}
 	return nil
 }
 
-// evaluate returns the rules of set next does not meet, which see the node named as next names
-// it; an error is a rule that could not be checked, which refuses the delivery too.
-func evaluate(set *rules.Set, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
-	failures, err := set.Evaluate(rules.Input{Documents: next, Old: old, Node: nodeOf(next), Facts: f})
+// evaluate returns the rules of set next does not meet, which see the node called name; an error
+// is a rule that could not be checked, which refuses the delivery too.
+func evaluate(set *rules.Set, name string, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
+	failures, err := set.Evaluate(rules.Input{Documents: next, Old: old, Node: name, Facts: f})
 	if err != nil {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
@@ -89,14 +89,4 @@ func jsonValue(v any) any {
 		return nil
 	}
 	return out
-}
-
-// nodeOf is the name of the node the config is for, as its Node document names it.
-func nodeOf(docs []config.Document) string {
-	for _, d := range docs {
-		if d.APIVersion == config.CoreAPI && d.Kind == "Node" {
-			return d.Name
-		}
-	}
-	return "<node>"
 }

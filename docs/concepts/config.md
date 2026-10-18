@@ -189,8 +189,10 @@ spec:
 [maintenance mode](../reference/glossary.md#maintenance-mode) before the node has its config.
 chalkctl never derives it from the node's `Network` documents, so a node that installs with a DHCP
 address and receives a static one names the static one here; `--address` overrides it for one
-command. Each node's `Node` document carries the name the inventory gives the node, and chalkctl
-refuses a set whose `Node` is named otherwise.
+command. The node's name is its name in the inventory, which its node certificate carries; chalkd
+takes the name from the certificate. The hostname defaults to it, the Kubernetes node is called by
+it and the storage seeds derive from it. Each node's `Node` document carries the same name, and
+chalkctl refuses a set whose `Node` is named otherwise.
 
 The inventory names no secrets file. The commands that issue certificates or deliver config read
 the [secrets file](../reference/glossary.md#secrets-file) from `--secrets FILE`, or from standard

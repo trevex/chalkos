@@ -193,11 +193,15 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return err
 	}
+	name, err := s.name()
+	if err != nil {
+		return err
+	}
 	schemas, t, err := imageContract(st, system, platform)
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "%v", err)
 	}
-	next, err := translateSlot(docs, schemas, t)
+	next, err := translateSlot(name, docs, schemas, t)
 	if err != nil {
 		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %v", err)
 	}
@@ -215,7 +219,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 	if err != nil {
 		return err
 	}
-	if err := s.checkRules(set, next.Documents, running.Documents, f); err != nil {
+	if err := s.checkRules(set, name, next.Documents, running.Documents, f); err != nil {
 		return s.elsewhere(err, d.section, rootHash)
 	}
 	mc, err := s.machineChanges(d.section)

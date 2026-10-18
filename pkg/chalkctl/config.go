@@ -137,7 +137,7 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	if err != nil {
 		return delivery{}, err
 	}
-	id, err := set.Identity(config.Target{Platform: c.platform, Image: c.image})
+	id, err := set.Identity(nc.Name, config.Target{Platform: c.platform, Image: c.image})
 	if err != nil {
 		return delivery{}, err
 	}

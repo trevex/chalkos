@@ -78,7 +78,7 @@ func TestParseRejectsNonFiniteFloats(t *testing.T) {
 func TestAHexPortTranslates(t *testing.T) {
 	s := kubernetesSet(t, "{}", "---\napiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: t}\n"+
 		"spec: {servers: [{host: ntp.example.org, port: 0x7b}]}\n")
-	id, err := s.Identity(Target{Image: &testImage})
+	id, err := s.Identity("n1", Target{Image: &testImage})
 	if err != nil {
 		t.Fatal(err)
 	}
