@@ -401,7 +401,7 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 	if id.Hostname != "n1" || id.Kubernetes == nil || id.Kubernetes.NodeName != "n1" {
 		t.Errorf("hostname = %q, kubernetes = %+v, want n1 for both", id.Hostname, id.Kubernetes)
 	}
-	if got, want := id.Storage.Disks["fast"].Seed, uuidOf("chalkos-seed:lab/n1/fast"); got != want {
+	if got, want := id.Storage.Disks["fast"].Seed, uuidOf("chalkos-seed:n1/fast"); got != want {
 		t.Errorf("seed = %s, want %s, the seed of n1", got, want)
 	}
 	// A Host's hostname names the host; the Kubernetes node keeps the node's name.

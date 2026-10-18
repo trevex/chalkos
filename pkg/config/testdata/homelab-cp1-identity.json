@@ -26,7 +26,7 @@
     "disks": {
       "system": {
         "ref": "/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001",
-        "seed": "4ddbee6c-635c-dcb9-bb95-26d82d7c4cff",
+        "seed": "5c680692-7443-6a7f-c3e3-6531102e61a7",
         "repart": {
           "50-var.conf": "[Partition]\nEncrypt=tpm2\nFormat=ext4\nLabel=var\nTPM2PCRs=7\nType=65f335d7-a1f7-f6df-b954-a97d9a5db9e6\n"
         }

@@ -122,7 +122,7 @@ The other UUIDs are set as follows:
 | A written slot | derived from the root hash, with the labels naming its first 16 hex characters |
 | ESP | random, set at install, because systemd-boot reports it as the boot partition and no other disk with the same image may match it |
 | STATE | random, from systemd-repart's `--seed=random`, when an install from the installer lays out the disk or an install recreates STATE for another encryption; otherwise the one systemd-repart gave it at first boot |
-| VAR and volumes | derived by systemd-repart from a seed per cluster, node and disk name |
+| VAR and volumes | derived by systemd-repart from a seed per node and disk name |
 
 The labels name a slot's store by the first 16 hex characters of its root hash, `<hash16>`, so
 `store-verity_<hash16>` fits a GPT label of 36 characters, but nothing boots by label; the boot

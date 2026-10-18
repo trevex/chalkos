@@ -106,9 +106,8 @@ type namedVolume struct {
 
 // storage renders the node's storage section from its SystemDisk and Volume documents: on the
 // system disk VAR comes first and volumes follow by name; a volume with its own disk names that
-// disk. Each disk's seed derives from the cluster's, the node's and the disk's name.
+// disk. Each disk's seed derives from the node's and the disk's name.
 func (s *Set) storage(name string) (storage.Section, error) {
-	cluster, _ := s.One("Cluster")
 	sd, _ := s.One("SystemDisk")
 	var sys systemDiskSpec
 	if err := sd.decodeSpec(&sys); err != nil {
@@ -138,7 +137,7 @@ func (s *Set) storage(name string) (storage.Section, error) {
 	}
 
 	seed := func(disk string) string {
-		return uuidOf("chalkos-seed:" + cluster.Name + "/" + name + "/" + disk)
+		return uuidOf("chalkos-seed:" + name + "/" + disk)
 	}
 	varMode := orMode(sys.Var.Encryption.Mode, sys.Encryption.Mode)
 	sec := storage.Section{

@@ -111,9 +111,10 @@ for the node. Three choices keep repart's matching deterministic:
   partition.
 - Definition files are ordered: VAR first, then the system disk's volumes in name order; a disk of
   its own holds one volume.
-- Partition UUIDs derive from a seed of the cluster's name, the node's name and the disk, so the
-  same definition yields the same partition UUID on every run, and the node opens volumes on other
-  disks by that UUID.
+- Partition UUIDs derive from a seed of the node's name and the disk, so the same definition yields
+  the same partition UUID on every run, and the node opens volumes on other disks by that UUID.
+  Seeds before this release also took the cluster's name; a node installed before keeps the UUIDs
+  of its existing partitions, and only partitions created from now on take the new seed.
 
 A `Volume`'s `repart` field passes further repart.d keys through, for example `Weight`; the keys
 the typed fields set (`Type`, `Label`, `Encrypt`, `Format`, `SizeMinBytes`, `SizeMaxBytes` and
