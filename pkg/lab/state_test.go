@@ -44,3 +44,26 @@ func TestLabRecordsItsName(t *testing.T) {
 		t.Errorf("Node(cp1) = %v", err)
 	}
 }
+
+// TestReadLabOfAnOlderChalklab names a lab recorded before its name was called name by the
+// cluster it was recorded with, so a lab made then can still be stopped and destroyed.
+func TestReadLabOfAnOlderChalklab(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "lab.json"), []byte(`{"cluster": "oldlab", "nodes": [{"name": "cp1"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := ReadLab(dir)
+	if err != nil || l.Name != "oldlab" {
+		t.Fatalf("ReadLab = %+v, %v", l, err)
+	}
+	if err := l.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "lab.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"name": "oldlab"`) || strings.Contains(string(data), "cluster") {
+		t.Errorf("lab.json written again = %s", data)
+	}
+}

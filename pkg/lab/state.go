@@ -91,11 +91,19 @@ func ReadLab(dir string) (*Lab, error) {
 	if err != nil {
 		return nil, err
 	}
-	var l Lab
+	// A chalklab that keyed the state directory by the inventory's cluster recorded the name as
+	// cluster; Write records it as name.
+	var l struct {
+		Lab
+		Cluster string `json:"cluster"`
+	}
 	if err := json.Unmarshal(data, &l); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", filepath.Join(dir, labFile), err)
 	}
-	return &l, nil
+	if l.Name == "" {
+		l.Name = l.Cluster
+	}
+	return &l.Lab, nil
 }
 
 // Write records the lab in its state directory.
