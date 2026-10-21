@@ -35,7 +35,7 @@ func TestStorageRejects(t *testing.T) {
 		"reserved name":        {vol("state", "{}"), "reserved"},
 		"invalid name":         {vol("a.b", "{}"), "must match"},
 		"forbidden mount":      {vol("data", "{mountPoint: /nix/x}"), "mountPoint"},
-		"raw with mount":       {vol("data", "{format: null, mountPoint: /srv}"), "raw volume"},
+		"raw with mount":       {vol("data", "{format: raw, mountPoint: /srv}"), "raw volume"},
 		"swap with mount":      {vol("data", "{format: swap, mountPoint: /srv}"), "swap volume"},
 		"system disk as own":   {vol("data", "{disk: {path: /dev/vda}}"), "system disk"},
 		"shared disk":          {vol("a", "{disk: {path: /dev/vdb}}") + vol("b", "{disk: {path: /dev/vdb}}"), "same disk"},
@@ -83,7 +83,7 @@ func TestStorageErrorsReadLikeNix(t *testing.T) {
 func TestStorageVolumesOnSystemAndOwnDisk(t *testing.T) {
 	s, err := parseSet(t, minimal+
 		"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: data}\nspec: {size: 10G, format: xfs, mountPoint: /srv/data, encryption: {mode: none}, repart: {Weight: \"2000\"}}\n"+
-		"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: fast}\nspec: {disk: {model: \"Samsung*\", type: nvme}, format: null}\n")
+		"---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: fast}\nspec: {disk: {model: \"Samsung*\", type: nvme}, format: raw}\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +98,13 @@ func TestStorageVolumesOnSystemAndOwnDisk(t *testing.T) {
 	if fast.Ref.Selector.Model != "Samsung*" || fast.Ref.Selector.Type != "nvme" || fast.Repart["10-fast.conf"] == "" {
 		t.Errorf("fast = %+v", fast)
 	}
+	// A raw volume is recorded with an empty format, as one recorded when null meant raw, and its
+	// partition gets no file system.
 	if v := sec.Volumes["fast"]; v.Disk != "fast" || v.Format != "" || v.Encryption != "tpm2" {
 		t.Errorf("volume fast = %+v", v)
+	}
+	if got := fast.Repart["10-fast.conf"]; strings.Contains(got, "Format=") {
+		t.Errorf("10-fast.conf =\n%s", got)
 	}
 	if sec.Disks["fast"].Seed != uuidOf("chalkos-seed:n1/fast") {
 		t.Errorf("seed = %s", sec.Disks["fast"].Seed)

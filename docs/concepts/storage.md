@@ -70,7 +70,7 @@ spec:
   mountPoint: /var/lib/longhorn
 ```
 
-A volume is formatted `ext4` by default, or `xfs`, `btrfs` or `swap`; `format: null` leaves a raw
+A volume is formatted `ext4` by default, or `xfs`, `btrfs` or `swap`; `format: raw` leaves a raw
 block device, for software that wants one. A volume without a `disk` goes on the system disk after
 VAR; a volume with a `disk` occupies that disk alone. On each disk at most one partition, VAR
 included, may leave its size unset and fill the space left.

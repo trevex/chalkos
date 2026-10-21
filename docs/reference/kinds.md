@@ -313,7 +313,7 @@ It has 7 [change rules](../concepts/rules.md).
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
 | `spec.encryption` | object | see below |  |
 | `spec.encryption.mode` | one of `tpm2`, `none` or null | `null` | Overrides the node's encryption mode for this volume. |
-| `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap` or null | `"ext4"` | File system of the volume; null leaves a raw block device. |
+| `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap`, `raw` | `"ext4"` | File system of the volume; `raw` leaves a raw block device, which has no mountPoint. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. |
 | `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |
 | `spec.size` | string or null | `null` | Size of the volume, such as `100G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on its disk. |

@@ -40,5 +40,5 @@ metadata: {name: raw}
 spec:
   encryption:
     mode: tpm2
-  format: null
+  format: raw
   size: 128M

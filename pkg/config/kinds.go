@@ -47,7 +47,7 @@ type systemDiskSpec struct {
 type volumeSpec struct {
 	Disk       *storage.DiskRef `json:"disk"`
 	Size       *string          `json:"size"`
-	Format     *string          `json:"format"`
+	Format     string           `json:"format"`
 	MountPoint *string          `json:"mountPoint"`
 	Encryption struct {
 		Mode *string `json:"mode"`

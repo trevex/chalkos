@@ -155,7 +155,8 @@ func (s *Set) storage(name string) (storage.Section, error) {
 	}
 	for _, v := range vols {
 		mode := orMode(v.spec.Encryption.Mode, sys.Encryption.Mode)
-		def := definition(v.name, deref(v.spec.Format), v.spec.Size, mode, v.spec.Repart)
+		format := fileSystem(v.spec.Format)
+		def := definition(v.name, format, v.spec.Size, mode, v.spec.Repart)
 		disk := storage.SystemDisk
 		if v.ref == nil {
 			sec.Disks[storage.SystemDisk].Repart["60-"+v.name+".conf"] = def
@@ -163,7 +164,7 @@ func (s *Set) storage(name string) (storage.Section, error) {
 			disk = v.name
 			sec.Disks[v.name] = storage.Disk{Ref: *v.ref, Seed: seed(v.name), Repart: map[string]string{"10-" + v.name + ".conf": def}}
 		}
-		sec.Volumes[v.name] = storage.Volume{Disk: disk, Label: v.name, Format: deref(v.spec.Format),
+		sec.Volumes[v.name] = storage.Volume{Disk: disk, Label: v.name, Format: format,
 			MountPoint: deref(v.spec.MountPoint), Encryption: mode, Size: deref(v.spec.Size)}
 	}
 	return sec, nil
@@ -193,10 +194,10 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 		if mp != nil && !validMountPoint(*mp) {
 			add("%s: mountPoint must be an absolute path of the characters A-Z, a-z, 0-9, ., _, - and /, other than /, /nix, /state and /var, and not below /nix or /state", at)
 		}
-		if v.spec.Format == nil && mp != nil {
-			add("%s: a raw volume (format = null) cannot have a mountPoint", at)
+		if v.spec.Format == formatRaw && mp != nil {
+			add("%s: a raw volume cannot have a mountPoint", at)
 		}
-		if v.spec.Format != nil && *v.spec.Format == "swap" && mp != nil {
+		if v.spec.Format == "swap" && mp != nil {
 			add("%s: a swap volume cannot have a mountPoint", at)
 		}
 		if v.ref != nil && *v.ref == system {
@@ -246,4 +247,17 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 		return nil
 	}
 	return fmt.Errorf("invalid storage:\n- %s", strings.Join(errs, "\n- "))
+}
+
+// formatRaw is the format of a volume left a raw block device.
+const formatRaw = "raw"
+
+// fileSystem is the file system repart formats a volume of the format with, which the recorded
+// section names: none for a raw volume. It stays empty, as it was when a null format meant raw,
+// so a raw volume recorded then is no change of format.
+func fileSystem(format string) string {
+	if format == formatRaw {
+		return ""
+	}
+	return format
 }

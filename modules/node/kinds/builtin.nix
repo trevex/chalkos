@@ -159,11 +159,13 @@ let
   # The storage kinds' rules compare the delivered documents with the section STATE records,
   # facts.recorded, rather than with the running config: the machine has one storage, which a
   # slot's config may grow but not undo. Null facts.recorded, as at an install, has nothing to
-  # compare with. A recorded value is "" or null where the documents say null.
+  # compare with. A recorded value is "" or null where the documents say null; a raw volume's
+  # format is recorded as "".
   storageAPI = "storage.chalkos.dev/v1alpha1";
   systemDiskSpec = ''config["${storageAPI}"].SystemDisk.map(k, config["${storageAPI}"].SystemDisk[k].spec)[0]'';
   orEmpty = x: ''(${x} == null ? "" : ${x})'';
-  shown = x: ''(${x} == "" ? "null" : ${x})'';
+  # A recorded format as the documents write it: an empty one is a raw volume's.
+  shown = x: ''(${x} == "" ? "raw" : ${x})'';
   # Binds v to volume n's spec, sd to the SystemDisk's and r to the volume's recorded definition,
   # null without one, around expr. The rules read facts.disks only for a volume with a disk of its
   # own, so a node whose volumes all live on the system disk runs no command for it.
@@ -172,7 +174,9 @@ let
     "cel.bind(v, documents[n].spec, cel.bind(sd, ${systemDiskSpec}, cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, ${expr})))";
   # The volume's definition as the recorded section writes it.
   volDisk = ''(v.disk == null ? "system" : n)'';
-  volFormat = orEmpty "v.format";
+  # raw is recorded empty, as it was when null meant raw, so a raw volume's recorded format does
+  # not read as another.
+  volFormat = ''(v.format == "raw" ? "" : v.format)'';
   volEncryption = "(v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode)";
   # What a change of encryption, size or format needs a volume to be recreated for, "" for none.
   # A larger size, and filling the disk instead of a size, only grow the partition; sizes of the
@@ -355,16 +359,15 @@ in
           description = "Size of the volume, such as `100G`, with ${sizeLimit}; null fills the remaining space on its disk.";
         };
         format = mkOption {
-          type = types.nullOr (
-            types.enum [
-              "ext4"
-              "xfs"
-              "btrfs"
-              "swap"
-            ]
-          );
+          type = types.enum [
+            "ext4"
+            "xfs"
+            "btrfs"
+            "swap"
+            "raw"
+          ];
           default = "ext4";
-          description = "File system of the volume; null leaves a raw block device.";
+          description = "File system of the volume; `raw` leaves a raw block device, which has no mountPoint.";
         };
         mountPoint = mkOption {
           type = types.nullOr types.str;

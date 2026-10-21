@@ -175,7 +175,7 @@ leave `disk` out to place a volume there.
 
 ## Choose a format and a mount point
 
-`format` is `ext4` by default, or `xfs`, `btrfs` or `swap`. `null` leaves a raw block device for
+`format` is `ext4` by default, or `xfs`, `btrfs` or `swap`. `raw` leaves a raw block device for
 software that brings its own format, such as Ceph's OSDs:
 
 ```yaml title="nodes/w1.yaml"
@@ -185,7 +185,7 @@ kind: Volume
 metadata: {name: osd}
 spec:
   disk: {serial: S6PUNX0T812345}
-  format: null
+  format: raw
 ```
 
 `mountPoint` mounts the volume; leaving it out leaves the volume unmounted. The rules come from
