@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
+	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -135,63 +138,128 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	return md, nil
 }
 
-// Endpoint returns the URL of the cluster's Kubernetes API server: the endpoint the Cluster
-// documents of the nodes' files name, alike, or with no nodes the one of the shared files'
-// Cluster document. A node whose files hold no Cluster document names none and is skipped; the
-// endpoint is empty when no node names one.
+// clusterKinds are the kinds every node of the cluster holds alike: each node builds the cluster
+// from its own documents, so nodes that differ would each run another one.
+var clusterKinds = []string{"Cluster", "Flannel"}
+
+// Endpoint checks that the nodes describe one cluster and returns the URL of its Kubernetes API
+// server, the endpoint of their Cluster documents. Every node whose files hold a Cluster document
+// holds the same Cluster spec, and the same Flannel spec or, on every one of them, none, whatever
+// the documents are called; a node without a Cluster document runs no Kubernetes and is skipped.
+// The specs compare as written, so a field left to its default differs from one set to it. With
+// no nodes, the endpoint is the one of the shared files' Cluster document, and it is empty when
+// no node holds one.
 func (inv *Inventory) Endpoint() (string, error) {
-	// of is the endpoint of the Cluster document the files hold, and whether they hold one.
-	of := func(files []string) (string, bool, error) {
-		var found []string
+	// specs returns the spec of each cluster kind the files hold, nil for one they lack.
+	specs := func(files []string) (map[string]map[string]any, error) {
+		found := map[string][]map[string]any{}
 		for _, f := range files {
 			docs, err := inv.read(f)
 			if err != nil {
-				return "", false, err
+				return nil, err
 			}
 			for _, d := range docs {
-				if d.APIVersion == config.KubernetesAPI && d.Kind == "Cluster" {
+				if d.APIVersion == config.KubernetesAPI && slices.Contains(clusterKinds, d.Kind) {
 					spec, _ := d.Object["spec"].(map[string]any)
-					e, _ := spec["endpoint"].(string)
-					found = append(found, e)
+					if spec == nil {
+						spec = map[string]any{}
+					}
+					found[d.Kind] = append(found[d.Kind], spec)
 				}
 			}
 		}
-		switch len(found) {
-		case 0:
-			return "", false, nil
-		case 1:
-			return found[0], true, nil
+		out := map[string]map[string]any{}
+		for _, kind := range clusterKinds {
+			switch n := len(found[kind]); {
+			case n == 1:
+				out[kind] = found[kind][0]
+			case n > 1:
+				return nil, fmt.Errorf("its files hold %d %s documents, not one", n, kind)
+			}
 		}
-		return "", false, fmt.Errorf("its files hold %d Cluster documents, not one", len(found))
+		return out, nil
+	}
+	endpointOf := func(spec map[string]any) string {
+		e, _ := spec["endpoint"].(string)
+		return e
 	}
 	if len(inv.Spec.Nodes) == 0 {
 		files, err := inv.expand(inv.Spec.Files)
 		if err != nil {
 			return "", err
 		}
-		e, _, err := of(files)
+		s, err := specs(files)
 		if err != nil {
 			return "", fmt.Errorf("the shared files: %w", err)
 		}
-		return e, nil
+		return endpointOf(s["Cluster"]), nil
 	}
-	var first, firstNode string
+	var nodes []string
+	held := map[string]map[string]map[string]any{}
 	for _, n := range inv.NodeNames() {
 		files, err := inv.Files(n)
 		if err != nil {
 			return "", err
 		}
-		e, ok, err := of(files)
+		s, err := specs(files)
 		if err != nil {
 			return "", fmt.Errorf("node %s: %w", n, err)
 		}
-		switch {
-		case !ok:
-		case firstNode == "":
-			first, firstNode = e, n
-		case e != first:
-			return "", fmt.Errorf("the nodes %s and %s name different endpoints in their Cluster documents: %q and %q", firstNode, n, first, e)
+		if s["Cluster"] != nil {
+			nodes = append(nodes, n)
+			held[n] = s
 		}
 	}
-	return first, nil
+	if len(nodes) == 0 {
+		return "", nil
+	}
+	for _, kind := range clusterKinds {
+		if err := alike(kind, nodes, func(n string) map[string]any { return held[n][kind] }); err != nil {
+			return "", err
+		}
+	}
+	return endpointOf(held[nodes[0]]["Cluster"]), nil
+}
+
+// alike refuses nodes whose specs of the kind, nil for none, differ, naming the nodes of each spec
+// in the order of their first node.
+func alike(kind string, nodes []string, spec func(string) map[string]any) error {
+	type group struct {
+		spec  map[string]any
+		nodes []string
+	}
+	var groups []*group
+	for _, n := range nodes {
+		s := spec(n)
+		i := slices.IndexFunc(groups, func(g *group) bool { return reflect.DeepEqual(g.spec, s) })
+		if i < 0 {
+			groups = append(groups, &group{spec: s})
+			i = len(groups) - 1
+		}
+		groups[i].nodes = append(groups[i].nodes, n)
+	}
+	if len(groups) == 1 {
+		return nil
+	}
+	parts := make([]string, len(groups))
+	seen := false
+	for i, g := range groups {
+		which := "another"
+		switch {
+		case g.spec == nil:
+			which = "none"
+		case !seen:
+			which, seen = "one", true
+		}
+		parts[i] = which + " on " + joinNames(g.nodes)
+	}
+	return fmt.Errorf("the nodes hold different %s specs: %s; every node of the cluster holds the same Cluster and Flannel specs", kind, strings.Join(parts, ", "))
+}
+
+// joinNames lists names as prose: a, b and c.
+func joinNames(names []string) string {
+	if len(names) == 1 {
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

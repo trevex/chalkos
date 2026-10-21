@@ -57,8 +57,9 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 
 The cluster's documents go into the files the [inventory](../reference/glossary.md#inventory) gives
 every node, so all nodes hold the same ones, and a node's `Node` goes into its own file, as
-[Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes. The
-node's config must hold one `Cluster` and one `Node` document on an image with Kubernetes:
+[Config and the inventory](config.md#how-does-the-inventory-assign-files-to-nodes) describes;
+chalkctl refuses an inventory whose nodes hold different `Cluster` or `Flannel` specs. The node's
+config must hold one `Cluster` and one `Node` document on an image with Kubernetes:
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) and chalkd refuse a set without one,
 with `no Cluster: the config of a node whose image runs Kubernetes holds one Cluster document`
 or `no Node: the config of a node whose image runs Kubernetes holds one Node document`. The

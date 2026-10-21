@@ -143,8 +143,8 @@ func TestValidateWarnsOfUnencryptedState(t *testing.T) {
 	}
 }
 
-// TestValidateTheCluster refuses an inventory whose nodes' Cluster documents name different
-// endpoints, as every other command does.
+// TestValidateTheCluster refuses an inventory whose nodes hold different Cluster specs, as every
+// delivery does before it reaches a node.
 func TestValidateTheCluster(t *testing.T) {
 	dir := t.TempDir()
 	path := writeInventory(t, dir)
@@ -155,8 +155,10 @@ func TestValidateTheCluster(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
 	ta := newTestApp(t)
-	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "the nodes n1 and n2 name different endpoints in their Cluster documents") {
-		t.Errorf("validate of nodes of different endpoints = %v", err)
+	for _, args := range [][]string{{"validate", "n1"}, {"apply-config", "n1"}} {
+		if err := ta.run(context.Background(), append(args, "--inventory", path)); err == nil || !strings.Contains(err.Error(), "the nodes hold different Cluster specs: one on n1, another on n2") {
+			t.Errorf("%s of nodes of different Cluster specs = %v", args[0], err)
+		}
 	}
 }
 

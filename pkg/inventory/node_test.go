@@ -203,64 +203,98 @@ func clusterDoc(name, endpoint string) string {
 	return "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: " + name + "}\nspec: {endpoint: \"" + endpoint + "\"}\n"
 }
 
-// TestEndpoint takes the endpoint the Cluster documents of the nodes name alike, skips nodes
-// without one and refuses nodes that disagree or hold two.
+// flannelDoc is a Flannel document called name with the MTU.
+func flannelDoc(name, mtu string) string {
+	return "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: " + name + "}\nspec: {mtu: " + mtu + "}\n"
+}
+
+// TestEndpoint takes the endpoint of the Cluster documents, which every node holding one holds
+// with the same spec, as it holds the same Flannel spec or none, whatever the documents' names;
+// nodes without a Cluster document are skipped. Nodes that differ, and a node holding two, are
+// refused, and the message names the nodes of each spec.
 func TestEndpoint(t *testing.T) {
 	dir := homelabDir(t)
-	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
-	if err != nil {
-		t.Fatal(err)
+	load := func() *Inventory {
+		t.Helper()
+		inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inv
 	}
-	if endpoint, err := inv.Endpoint(); err != nil || endpoint != "https://10.0.0.11:6443" {
+	// files writes the nodes' own files, each with the documents given after its own.
+	files := func(cp1, w1 string) {
+		t.Helper()
+		write(t, filepath.Join(dir, "nodes", "cp1.yaml"), nodeFile("cp1", "controlplane", "10.0.0.11")+cp1)
+		write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21")+w1)
+	}
+	if endpoint, err := load().Endpoint(); err != nil || endpoint != "https://10.0.0.11:6443" {
 		t.Errorf("endpoint = %q, %v", endpoint, err)
 	}
-	// Each node names its own endpoint, and w1 none.
+	// Each node holds its own documents from here on.
 	write(t, filepath.Join(dir, "cluster", "all.yaml"), "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: monitoring}\nspec: {objects: []}\n")
-	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), nodeFile("cp1", "controlplane", "10.0.0.11")+"---\n"+clusterDoc("default", "https://10.0.0.11:6443"))
-	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if endpoint, err := inv.Endpoint(); err != nil || endpoint != "https://10.0.0.11:6443" {
-		t.Errorf("endpoint with w1 naming none = %q, %v", endpoint, err)
-	}
-	write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21")+"---\n"+clusterDoc("default", "https://10.0.0.99:6443"))
-	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := `the nodes cp1 and w1 name different endpoints in their Cluster documents: "https://10.0.0.11:6443" and "https://10.0.0.99:6443"`
-	if _, err := inv.Endpoint(); err == nil || err.Error() != want {
-		t.Errorf("differing endpoints: %v, want %q", err, want)
-	}
-	write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21")+"---\n"+
-		clusterDoc("a", "https://10.0.0.11:6443")+"---\n"+clusterDoc("b", "https://10.0.0.11:6443"))
-	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := inv.Endpoint(); err == nil || !strings.Contains(err.Error(), "node w1: its files hold 2 Cluster documents") {
-		t.Errorf("two Cluster documents of w1: %v", err)
+	for name, tc := range map[string]struct{ cp1, w1, want string }{
+		"the same documents of other names": {
+			"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "1400"),
+			"---\n" + clusterDoc("cluster", "https://10.0.0.11:6443") + "---\n" + flannelDoc("flannel", "1400"), ""},
+		"a node without Kubernetes": {"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "1400"), "", ""},
+		"another endpoint": {"---\n" + clusterDoc("default", "https://10.0.0.11:6443"), "---\n" + clusterDoc("default", "https://10.0.0.99:6443"),
+			"the nodes hold different Cluster specs: one on cp1, another on w1; every node of the cluster holds the same Cluster and Flannel specs"},
+		"another MTU": {
+			"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "1400"),
+			"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "1450"),
+			"the nodes hold different Flannel specs: one on cp1, another on w1; every node of the cluster holds the same Cluster and Flannel specs"},
+		"a Flannel document on one node": {
+			"---\n" + clusterDoc("default", "https://10.0.0.11:6443"),
+			"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "null"),
+			"the nodes hold different Flannel specs: none on cp1, one on w1; every node of the cluster holds the same Cluster and Flannel specs"},
+		"two Cluster documents": {"---\n" + clusterDoc("default", "https://10.0.0.11:6443"),
+			"---\n" + clusterDoc("a", "https://10.0.0.11:6443") + "---\n" + clusterDoc("b", "https://10.0.0.11:6443"),
+			"node w1: its files hold 2 Cluster documents, not one"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			files(tc.cp1, tc.w1)
+			endpoint, err := load().Endpoint()
+			switch {
+			case tc.want == "" && (err != nil || endpoint != "https://10.0.0.11:6443"):
+				t.Errorf("endpoint = %q, %v", endpoint, err)
+			case tc.want != "" && (err == nil || err.Error() != tc.want):
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
 	}
 	// Without a Cluster document no node names an endpoint.
-	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), nodeFile("cp1", "controlplane", "10.0.0.11"))
-	write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21"))
-	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if endpoint, err := inv.Endpoint(); err != nil || endpoint != "" {
+	files("", "")
+	if endpoint, err := load().Endpoint(); err != nil || endpoint != "" {
 		t.Errorf("endpoint without Cluster documents = %q, %v", endpoint, err)
 	}
 	// An inventory without nodes takes its endpoint from the shared files.
 	write(t, filepath.Join(dir, "cluster", "all.yaml"), clusterFiles)
 	write(t, filepath.Join(dir, "chalkos.yaml"), "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: homelab}\nspec:\n  files: [cluster/*.yaml]\n")
-	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
+	if endpoint, err := load().Endpoint(); err != nil || endpoint != "https://10.0.0.11:6443" {
+		t.Errorf("endpoint without nodes = %q, %v", endpoint, err)
+	}
+}
+
+// TestEndpointNamesTheNodesOfEachSpec lists the nodes of each spec in name order, the spec of the
+// first node first.
+func TestEndpointNamesTheNodesOfEachSpec(t *testing.T) {
+	dir := homelabDir(t)
+	write(t, filepath.Join(dir, "cluster", "all.yaml"), "")
+	nodes := map[string]string{"cp1": "10", "cp2": "10", "w1": "20", "w2": "10", "w3": "30"}
+	inventory := strings.Replace(cluster, "    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}\n    w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}\n", "", 1)
+	for name, host := range nodes {
+		inventory += "    " + name + ": {files: [nodes/" + name + ".yaml]}\n"
+		write(t, filepath.Join(dir, "nodes", name+".yaml"), clusterDoc("default", "https://10.0.0."+host+":6443"))
+	}
+	write(t, filepath.Join(dir, "chalkos.yaml"), inventory)
+	inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if endpoint, err := inv.Endpoint(); err != nil || endpoint != "https://10.0.0.11:6443" {
-		t.Errorf("endpoint without nodes = %q, %v", endpoint, err)
+	want := "the nodes hold different Cluster specs: one on cp1, cp2 and w2, another on w1, another on w3; every node of the cluster holds the same Cluster and Flannel specs"
+	if _, err := inv.Endpoint(); err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
 	}
 }
 

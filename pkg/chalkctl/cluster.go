@@ -52,8 +52,8 @@ func loadCluster(f clusterFlags) (*cluster, error) {
 	return &cluster{partial: true}, nil
 }
 
-// loadInventory reads an inventory and the endpoint its nodes' Cluster documents name, which
-// every command refuses to act on when the nodes name different ones.
+// loadInventory reads an inventory and the endpoint its nodes' Cluster documents name; every
+// command refuses to act on an inventory whose nodes hold different Cluster or Flannel specs.
 func loadInventory(path string) (*cluster, error) {
 	inv, err := inventory.Load(path)
 	if err != nil {

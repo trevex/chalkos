@@ -238,10 +238,20 @@ A node's set is valid when:
 
 Beyond the schemas, chalkctl and chalkd translate the set as the node will use it, which checks
 what a schema cannot express: overlapping ranges, a VIP outside the node's networks, a volume that
-does not fit its disk, an extra flag that would override one chalkos sets. Every node of an
-inventory whose set holds a `Cluster` document must name the same `endpoint` in it, because
-each node takes the endpoint from its own `Cluster` document; chalkctl refuses an inventory
-whose nodes name different ones.
+does not fit its disk, an extra flag that would override one chalkos sets.
+
+Every node of an inventory whose set holds a `Cluster` document must hold the same `Cluster` spec
+and the same `Flannel` spec, or no `Flannel` document on any of them, because each node builds the
+cluster from its own documents. The specs compare as written, whatever the documents are called: a
+field left to its default differs from one set to the default value. `chalkctl validate` and every
+chalkctl command that reads the inventory refuse an inventory whose nodes differ, naming the nodes
+of each spec:
+
+```text
+chalkos.yaml: the nodes hold different Flannel specs: one on cp1 and cp2, another on w1; every node of the cluster holds the same Cluster and Flannel specs
+```
+
+The cluster's documents therefore belong in the files every node gets.
 
 ## How does the inventory name images?
 

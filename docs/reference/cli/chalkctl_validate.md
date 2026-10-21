@@ -14,10 +14,12 @@ check it on its image: the files the inventory gives the node form its set, ever
 checked against the schemas of the directory of the node's image in the inventory, and the set is
 translated as the node translates it. The image's change rules that read no facts about a node
 run too, without a running config to compare with: the rules of kinds and the rules of fields
-that do not compare with the running value. It prints a line for each node whose config is valid
-and names each node whose config is not, and warns of a node whose SystemDisk leaves STATE, which
-holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or client
-file.
+that do not compare with the running value. Before any node, it checks that every node whose
+files hold a Kubernetes Cluster document holds the same Cluster spec and the same Flannel spec or
+none, as every command that reads the inventory does. It prints a line for each node whose config
+is valid and names each node whose config is not, and warns of a node whose SystemDisk leaves
+STATE, which holds its keys and secrets, unencrypted. It reaches no node and needs no secrets
+file or client file.
 
 ```
 chalkctl validate [<node>...] [flags]
