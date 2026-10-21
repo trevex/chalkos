@@ -68,11 +68,10 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 			IPv4: dnsIP(k.DNSIPs.IPv4, k.ServiceCIDRs.IPv4),
 			IPv6: dnsIP(k.DNSIPs.IPv6, k.ServiceCIDRs.IPv6),
 		},
-		NodeCIDRMaskSizes:  k.NodeCIDRMaskSizes,
-		NodeIP:             k.NodeIP,
-		VXLANSourceSubnets: k.VXLANSourceSubnets,
-		VIP:                kubernetes.VIP{Addresses: k.VIP.Addresses, Mode: k.VIP.Mode, Interface: deref(k.VIP.Interface)},
-		ExtraArgs:          k.ExtraArgs,
+		NodeCIDRMaskSizes: k.NodeCIDRMaskSizes,
+		NodeIP:            k.NodeIP,
+		VIP:               kubernetes.VIP{Addresses: k.VIP.Addresses, Mode: k.VIP.Mode, Interface: deref(k.VIP.Interface)},
+		ExtraArgs:         k.ExtraArgs,
 	}
 	if _, err := c.EndpointHost(); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
@@ -82,7 +81,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 	}
 	keepFamilies(&c)
 	if img.CNI == kubernetes.CNIFlannel {
-		c.Flannel = &kubernetes.Flannel{}
+		c.Flannel = &kubernetes.Flannel{VXLANSourceSubnets: []string{}}
 		if d, ok := single(docs, KubernetesAPI, "Flannel"); ok {
 			var f flannelSpec
 			if err := d.decodeSpec(&f); err != nil {
@@ -91,8 +90,10 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 			if f.MTU != nil {
 				c.Flannel.MTU = *f.MTU
 			}
+			c.Flannel.VXLANSourceSubnets = f.VXLANSourceSubnets
 			// The cluster without flannel is valid by now, so what fails is the Flannel
-			// document's MTU, checked against the Cluster document's families.
+			// document's MTU or VXLAN sources, checked against the Cluster document's families
+			// and ranges.
 			if err := c.Validate(); err != nil {
 				return kubernetes.Cluster{}, fmt.Errorf("%s: %w", d, err)
 			}

@@ -528,11 +528,6 @@ in
             description = "Seconds a node waits at boot for its address.";
           };
         };
-        vxlanSourceSubnets = mkOption {
-          type = types.listOf types.nonEmptyStr;
-          default = [ ];
-          description = "Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source.";
-        };
         vip = {
           addresses = mkOption {
             type = types.listOf types.nonEmptyStr;
@@ -591,10 +586,17 @@ in
   }
   // lib.optionalAttrs (kubernetes && flannel) {
     Flannel = builtin "kubernetes.chalkos.dev" // {
-      spec.mtu = mkOption {
-        type = types.nullOr types.ints.positive;
-        default = null;
-        description = "MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address.";
+      spec = {
+        mtu = mkOption {
+          type = types.nullOr types.ints.positive;
+          default = null;
+          description = "MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address.";
+        };
+        vxlanSourceSubnets = mkOption {
+          type = types.listOf types.nonEmptyStr;
+          default = [ ];
+          description = "Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source.";
+        };
       };
     };
   };

@@ -13,7 +13,8 @@
     "kubelet": {}
   },
   "flannel": {
-    "mtu": 0
+    "mtu": 0,
+    "vxlanSourceSubnets": []
   },
   "images": {
     "coredns": "registry.k8s.io/coredns/coredns:v1.14.6",
@@ -46,6 +47,5 @@
     "addresses": [],
     "interface": null,
     "mode": "l2"
-  },
-  "vxlanSourceSubnets": []
+  }
 }

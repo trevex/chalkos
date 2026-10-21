@@ -49,11 +49,5 @@
     "addresses": [],
     "interface": null,
     "mode": "l2"
-  },
-  "vxlanSourceSubnets": [
-    "192.168.100.0/24",
-    "fd00:100::/64",
-    "192.168.200.0/24",
-    "fd00:200::/64"
-  ]
+  }
 }

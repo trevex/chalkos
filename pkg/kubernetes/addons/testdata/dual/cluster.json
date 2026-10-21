@@ -14,7 +14,13 @@
     "kubelet": {}
   },
   "flannel": {
-    "mtu": 1430
+    "mtu": 1430,
+    "vxlanSourceSubnets": [
+      "192.168.100.0/24",
+      "fd00:100::/64",
+      "192.168.200.0/24",
+      "fd00:200::/64"
+    ]
   },
   "images": {
     "coredns": "registry.k8s.io/coredns/coredns:v1.14.6",
@@ -51,11 +57,5 @@
     "addresses": [],
     "interface": null,
     "mode": "l2"
-  },
-  "vxlanSourceSubnets": [
-    "192.168.100.0/24",
-    "fd00:100::/64",
-    "192.168.200.0/24",
-    "fd00:200::/64"
-  ]
+  }
 }

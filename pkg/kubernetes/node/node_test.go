@@ -1079,7 +1079,7 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 	}
 	// The ranges VXLAN must come from follow; the node's addresses must be in them.
 	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": {"mtu": 1430}, "vxlanSourceSubnets": ["192.168.100.0/24", "fd00::/64", "10.1.0.0/16"], "kind":`)
+	withCluster(t, p, `"kind":`, `"ipFamilies": ["ipv4", "ipv6"], "flannel": {"mtu": 1430, "vxlanSourceSubnets": ["192.168.100.0/24", "fd00::/64", "10.1.0.0/16"]}, "kind":`)
 	write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.0.0/16", "fd00::/48"]}}`)
 	if err := Prepare(p, now, on(links, "bgp0 192.168.100.11", "bgp0 fd00::11"), nil); err != nil {
 		t.Fatal(err)

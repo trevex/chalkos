@@ -222,6 +222,11 @@ spec:
   # The VIP the control planes hold.
   endpoint: https://10.0.0.10:6443
   vip: {addresses: [10.0.0.10]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Flannel
+metadata: {name: default}
+spec:
   # Nodes accept the pod network's VXLAN traffic only from the nodes' own network.
   vxlanSourceSubnets: [10.0.0.0/24]
 ```
@@ -276,8 +281,9 @@ the `Cluster` document, or `spec.nodeIP.validSubnets` of a node's own
 [`Node`](../reference/kinds.md#node) document, which replaces the cluster's. The inventory names
 such a node by an address that stays, such as a DNS name.
 
-Set `spec.vxlanSourceSubnets` to the ranges your nodes live in, as `cluster/kubernetes.yaml` above
-does. Without it, nodes accept the pod network's VXLAN traffic from any source.
+Set `spec.vxlanSourceSubnets` of the [`Flannel`](../reference/kinds.md#flannel) document to the
+ranges your nodes live in, as `cluster/kubernetes.yaml` above does. Without it, nodes accept the
+pod network's VXLAN traffic from any source.
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses,
 `nodeIP.addresses` of its `Node` or else the first static address of each family of its `Network`
 documents, or whose `nodeIP.validSubnets` lie outside these ranges.

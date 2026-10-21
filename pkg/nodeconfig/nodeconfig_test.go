@@ -330,7 +330,6 @@ spec:
   dnsIPs: {ipv4: null, ipv6: null}
   nodeCIDRMaskSizes: {ipv4: 24, ipv6: 64}
   nodeIP: {validSubnets: [], timeout: 300}
-  vxlanSourceSubnets: []
   vip: {addresses: [], mode: l2, interface: null}
   extraArgs: {etcd: {}, kube-apiserver: {}, kube-controller-manager: {}, kube-scheduler: {}, kubelet: {}}
 ---

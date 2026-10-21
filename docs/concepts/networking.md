@@ -220,25 +220,26 @@ after the firewall started, so a table of chalkos's own, `chalkos-vxlan`, which 
 fills with the addresses it picked, marks such packets, and the firewall accepts packets that
 carry the mark. No VXLAN is accepted while the addresses are being picked or when none are found.
 
-`vxlanSourceSubnets` of the `Cluster` document narrows this to sources in the given ranges, one
-or more per family, which must hold every node's addresses and may not overlap the pod or service
-ranges. With them, the node also drops VXLAN that pods send through it to those ranges. Without
-them, VXLAN is accepted from any source, so pods can reach the other nodes' VXLAN port too. The
-node reads the pod and source ranges from its `Cluster` document; while it cannot, it drops all
-VXLAN it forwards. [`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node
-whose fixed addresses, or the subnets it picks its addresses from, lie outside the ranges, and a
-node that picks its addresses at boot checks the picked ones against the ranges again, refusing
-to prepare Kubernetes when one lies outside.
+`vxlanSourceSubnets` of the [`Flannel`](../reference/kinds.md#flannel) document narrows this to
+sources in the given ranges, one or more per family, which must hold every node's addresses and may
+not overlap the pod or service ranges. With them, the node also drops VXLAN that pods send through
+it to those ranges. Without them, VXLAN is accepted from any source, so pods can reach the other
+nodes' VXLAN port too. The node reads the pod ranges from its `Cluster` document and the source
+ranges from its `Flannel` document; while it cannot, it drops all VXLAN it forwards.
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses,
+or the subnets it picks its addresses from, lie outside the ranges, and a node that picks its
+addresses at boot checks the picked ones against the ranges again, refusing to prepare Kubernetes
+when one lies outside.
 
 flannel's devices get the MTU of the interface holding the node's address, minus 50. `spec.mtu` of
-the [`Flannel`](../reference/kinds.md#flannel) document sets the network's MTU instead, and is
+the `Flannel` document sets the network's MTU instead, and is
 required when the node's address is on a loopback interface. IPv6 VXLAN needs 70 bytes rather than
 50, so with IPv6 in use set it to the network's MTU minus 20:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Flannel
-metadata: {name: flannel}
+metadata: {name: default}
 spec:
   mtu: 1480
 ```

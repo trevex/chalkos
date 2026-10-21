@@ -49,9 +49,6 @@ type Cluster struct {
 	NodeIP NodeIP `json:"nodeIP"`
 	// Flannel is flannel's configuration when it is the pod network; nil otherwise.
 	Flannel *Flannel `json:"flannel"`
-	// VXLANSourceSubnets are the ranges VXLAN must come from, at least one of each family and none
-	// overlapping the pod or service ranges; empty takes it from any source.
-	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
 	VIP VIP `json:"vip"`
 	// ExtraArgs are flags of the components by component name, such as kube-apiserver or
@@ -90,6 +87,9 @@ type Flannel struct {
 	// devices and the pods get 50 less. Zero takes the MTU of the interface holding the node's
 	// address.
 	MTU int `json:"mtu"`
+	// VXLANSourceSubnets are the ranges flannel's VXLAN must come from, at least one of each family
+	// and none overlapping the pod or service ranges; empty takes it from any source.
+	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
 }
 
 // VIP is the cluster's virtual IP.
@@ -421,16 +421,19 @@ func joinPrefixes(prefixes []netip.Prefix) string {
 	return strings.Join(list, ", ")
 }
 
-// VXLANSources returns the ranges VXLAN must come from: networks of the cluster's families, at
-// least one of each, or none.
+// VXLANSources returns the ranges flannel's VXLAN must come from: networks of the cluster's
+// families, at least one of each, or none, as without flannel.
 func (c Cluster) VXLANSources() ([]netip.Prefix, error) {
 	families, err := c.Families()
 	if err != nil {
 		return nil, err
 	}
+	if c.Flannel == nil {
+		return nil, nil
+	}
 	var sources []netip.Prefix
 	have := map[nodeip.Family]bool{}
-	for _, s := range c.VXLANSourceSubnets {
+	for _, s := range c.Flannel.VXLANSourceSubnets {
 		p, err := netip.ParsePrefix(s)
 		if err != nil {
 			return nil, fmt.Errorf("vxlanSourceSubnets: %q is not an address range in CIDR notation", s)

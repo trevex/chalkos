@@ -39,7 +39,7 @@ The firewall opens the NodePort range for TCP only.
 
 flannel's VXLAN carries pod traffic unauthenticated, so a node accepts UDP 8472 only when it is
 sent to one of the addresses the node picked for Kubernetes, and only from the ranges of the
-[`Cluster`](kinds.md#cluster) document's `spec.vxlanSourceSubnets` when that list is set.
+[`Flannel`](kinds.md#flannel) document's `spec.vxlanSourceSubnets` when that list is set.
 The rule has three parts:
 
 | Part | What it does |
@@ -51,10 +51,11 @@ The rule has three parts:
 With source ranges set, a `forward` chain in the same table also drops VXLAN that pods send
 through the node to those ranges: the node masquerades pod traffic behind its own address,
 which is in the ranges, so other nodes would take it for this node's. The chain takes the pod
-range of each family in `ipFamilies` and the source ranges from the node's `Cluster` document
-on every run, and skips ranges of a family the image does not use. While those ranges are
-unknown, because the node's config holds no `Cluster` document or chalkcfg cannot read it, or
-when they are not valid ranges, the chain drops all UDP 8472 the node forwards.
+range of each family in `ipFamilies` from the node's `Cluster` document and the source ranges
+from its `Flannel` document on every run, and skips ranges of a family the image does not use.
+While those ranges are unknown, because the node's config holds no `Cluster` document or
+chalkcfg cannot read it or the `Flannel` document, or when they are not valid ranges, the chain
+drops all UDP 8472 the node forwards.
 
 `chalkos-vxlan-rule` fills the table from `/run/chalkos/kubernetes/vxlan`, which chalkd writes
 once it picked the node's addresses at boot. Without that file, or with one it cannot parse, the

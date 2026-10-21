@@ -88,7 +88,6 @@ It has 4 [change rules](../concepts/rules.md).
 | `spec.vip.addresses` | list of string | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
 | `spec.vip.interface` | string or null | `null` | Interface the addresses are added to; null means the one holding the node's address of their family. |
 | `spec.vip.mode` | `l2` | `"l2"` | How the holder announces the addresses. |
-| `spec.vxlanSourceSubnets` | list of string | `[]` | Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source. |
 
 ## Flannel { #flannel }
 
@@ -99,6 +98,7 @@ A node's config holds at most one.
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.mtu` | integer of at least 1 or null | `null` | MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address. |
+| `spec.vxlanSourceSubnets` | list of string | `[]` | Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source. |
 
 ## Node { #node }
 

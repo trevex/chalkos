@@ -78,13 +78,20 @@ let
   vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
     ipv6 = config.networking.enableIPv6;
     mark = vxlanMark;
-    # Each family's pod range, then the source ranges, from the node's Cluster document.
-    rangesCommand = config.chalkos.kinds.Cluster.get {
-      output = ''
-        go-template={{$s := .spec}}{{range $s.ipFamilies}}pods {{index $s.podCIDRs .}}
-        {{end}}{{range $s.vxlanSourceSubnets}}source {{.}}
-        {{end}}'';
-    };
+    # Each family's pod range from the node's Cluster document, then the source ranges from its
+    # Flannel document, which the node need not have. Either command failing fails the whole.
+    rangesCommand = lib.concatStringsSep " && " [
+      (config.chalkos.kinds.Cluster.get {
+        output = ''
+          go-template={{$s := .spec}}{{range $s.ipFamilies}}pods {{index $s.podCIDRs .}}
+          {{end}}'';
+      })
+      (config.chalkos.kinds.Flannel.get {
+        output = ''
+          go-template={{range .spec.vxlanSourceSubnets}}source {{.}}
+          {{end}}'';
+      })
+    ];
   };
 
   # The reference plugins the image names (chalkos.cni.plugins), and with flannel its own plugin.

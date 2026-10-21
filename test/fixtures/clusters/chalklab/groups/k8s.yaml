@@ -1,4 +1,4 @@
-# Dual stack; the cluster network and w1's routed addresses take VXLAN.
+# Dual stack.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
@@ -34,19 +34,19 @@ spec:
     addresses: []
     interface: null
     mode: l2
+---
+# w1's addresses are on a dummy interface, whose MTU flannel would take: the cluster network's
+# 1500 less IPv6's VXLAN overhead of 70. The cluster network and w1's routed addresses take VXLAN.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Flannel
+metadata: {name: default}
+spec:
+  mtu: 1430
   vxlanSourceSubnets:
     - 192.168.100.0/24
     - fd00:100::/64
     - 192.168.200.0/24
     - fd00:200::/64
----
-# w1's addresses are on a dummy interface, whose MTU flannel would take: the cluster network's
-# 1500 less IPv6's VXLAN overhead of 70.
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Flannel
-metadata: {name: flannel}
-spec:
-  mtu: 1430
 ---
 # The nodes pull every image through the test's registry, which serves plain HTTP.
 apiVersion: kubernetes.chalkos.dev/v1alpha1

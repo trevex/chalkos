@@ -49,10 +49,10 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 
 | Kind | Count | Holds |
 | --- | --- | --- |
-| [`Cluster`](../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), VXLAN source ranges, scheduling on control planes and extra flags of every component |
+| [`Cluster`](../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on control planes and extra flags of every component |
 | [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints and addresses |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | one per registry | The mirrors containerd tries before a registry |
-| [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes |
+| [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes and the ranges its VXLAN must come from |
 | [`Addon`](../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |
 
 The cluster's documents go into the files the [inventory](../reference/glossary.md#inventory) gives

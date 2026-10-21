@@ -28,9 +28,9 @@
     "timeout": 300
   },
   "flannel": {
-    "mtu": 0
+    "mtu": 0,
+    "vxlanSourceSubnets": []
   },
-  "vxlanSourceSubnets": [],
   "vip": {
     "addresses": [],
     "mode": "l2",

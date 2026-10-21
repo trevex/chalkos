@@ -30,13 +30,13 @@ spec:
       - fd00:100::10
     interface: null
     mode: l2
-  vxlanSourceSubnets: []
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Flannel
-metadata: {name: flannel}
+metadata: {name: default}
 spec:
   mtu: null
+  vxlanSourceSubnets: []
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: RegistryMirror

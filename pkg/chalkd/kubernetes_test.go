@@ -692,9 +692,9 @@ func TestCredentialIsShortLived(t *testing.T) {
 // The firewall itself is left alone, so a node whose firewall is disabled takes a new address.
 // TestApplyConfigRestartsKubernetesOnChange: the kubelet and its preparation restart when what
 // they read of the node's config changes, compared with the running slot: the Node's spec, the
-// Host, the static addresses of the Network documents and the cluster the Cluster document
-// gives, its endpoint among it. Other changes, of a Network beside its addresses, of the Node's name or of
-// another kind, restart neither.
+// Host, the static addresses of the Network documents, the cluster the Cluster document gives,
+// its endpoint among it, and the Flannel document. Other changes, of a Network beside its
+// addresses, of the Node's name or of another kind, restart neither.
 func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 	base := workerConfig + networkConfig
 	node := func(spec string) string {
@@ -714,6 +714,7 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 		"a static address":    {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
 		"the cluster":         {strings.Replace(base, `spec: {endpoint: "https://192.168.100.11:6443"}`, `spec: {endpoint: "https://192.168.100.11:6443", domain: lab.local}`, 1), true},
 		"the endpoint":        {strings.Replace(base, "192.168.100.11:6443", "192.168.100.12:6443", 1), true},
+		"a Flannel's sources": {base + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: default}\nspec: {vxlanSourceSubnets: [192.168.100.0/24]}\n", true},
 		"a Network's gateway": {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
 		"a Demo":              {strings.Replace(base, "name: first", "name: second", 1), false},
 	} {

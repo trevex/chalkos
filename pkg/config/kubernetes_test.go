@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,6 +39,11 @@ func kubernetesNodeSet(t *testing.T, spec, node, more string) *Set {
 // nodeDoc is a Kubernetes Node document called name with the spec given as YAML.
 func nodeDoc(name, spec string) string {
 	return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
+}
+
+// flannelDoc is a Flannel document called name with the spec given as YAML.
+func flannelDoc(name, spec string) string {
+	return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
 }
 
 // clusterDoc is a Kubernetes Cluster document called name with the endpoint https://10.0.0.10:6443
@@ -91,17 +97,12 @@ func TestClusterFromDefaults(t *testing.T) {
 
 func TestClusterFromSettings(t *testing.T) {
 	s := kubernetesSet(t, `{ipFamilies: [ipv6, ipv4], serviceCIDRs: {ipv4: 10.100.0.0/16}, vip: {addresses: [10.0.0.10]},
-  extraArgs: {kubelet: {v: "2"}}}`, `---
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Flannel
-metadata: {name: flannel}
-spec: {mtu: 1430}
-`)
+  extraArgs: {kubelet: {v: "2"}}}`, flannelDoc("default", `{mtu: 1430, vxlanSourceSubnets: ["fd00:1::/64", "10.0.0.0/24"]}`))
 	c, err := s.Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Primary() != "ipv6" || c.DNSIPs.IPv4 != "10.100.0.10" || c.Flannel.MTU != 1430 || c.ExtraArgs["kubelet"]["v"] != "2" || len(c.VIP.Addresses) != 1 {
+	if c.Primary() != "ipv6" || c.DNSIPs.IPv4 != "10.100.0.10" || c.Flannel.MTU != 1430 || !slices.Equal(c.Flannel.VXLANSourceSubnets, []string{"fd00:1::/64", "10.0.0.0/24"}) || c.ExtraArgs["kubelet"]["v"] != "2" || len(c.VIP.Addresses) != 1 {
 		t.Errorf("cluster = %+v", c)
 	}
 	none := testImage
@@ -241,9 +242,14 @@ func TestClusterNamesTheDocument(t *testing.T) {
 	if _, err := s.Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Cluster "k": endpoint`) {
 		t.Errorf("endpoint: err = %v", err)
 	}
-	s = kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: flannel}\nspec: {mtu: 600}\n")
+	s = kubernetesSet(t, "{}", flannelDoc("flannel", "{mtu: 600}"))
 	if _, err := s.Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Flannel "flannel": flannel: the MTU 600`) {
 		t.Errorf("mtu: err = %v", err)
+	}
+	// VXLAN sources are flannel's, checked against the Cluster document's families and ranges.
+	s = kubernetesSet(t, "{}", flannelDoc("flannel", "{vxlanSourceSubnets: [10.244.0.0/24]}"))
+	if _, err := s.Cluster(testImage); err == nil || err.Error() != `Flannel "flannel": vxlanSourceSubnets: 10.244.0.0/24 overlaps podCIDRs.ipv4 10.244.0.0/16` {
+		t.Errorf("vxlanSourceSubnets: err = %v", err)
 	}
 }
 
@@ -283,5 +289,13 @@ func TestClusterWithoutEndpointIsInvalid(t *testing.T) {
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\nspec: {}\n")
 	if _, err := NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "endpoint") {
 		t.Fatalf("err = %v, want one naming the endpoint", err)
+	}
+}
+
+// VXLAN source ranges are flannel's, so the Cluster has none of its own.
+func TestClusterWithVXLANSourcesIsInvalid(t *testing.T) {
+	docs := mustParse(t, minimal+nodeDoc("default", "{type: worker}")+clusterDoc("default", "{vxlanSourceSubnets: [10.0.0.0/24]}"))
+	if _, err := NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "vxlanSourceSubnets") {
+		t.Fatalf("err = %v, want one naming vxlanSourceSubnets", err)
 	}
 }

@@ -91,7 +91,6 @@ type clusterSpec struct {
 	DNSIPs                         kubernetes.ByFamily[*string] `json:"dnsIPs"`
 	NodeCIDRMaskSizes              kubernetes.ByFamily[int]     `json:"nodeCIDRMaskSizes"`
 	NodeIP                         kubernetes.NodeIP            `json:"nodeIP"`
-	VXLANSourceSubnets             []string                     `json:"vxlanSourceSubnets"`
 	VIP                            struct {
 		Addresses []string `json:"addresses"`
 		Mode      string   `json:"mode"`
@@ -101,7 +100,8 @@ type clusterSpec struct {
 }
 
 type flannelSpec struct {
-	MTU *int `json:"mtu"`
+	MTU                *int     `json:"mtu"`
+	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
 }
 
 type registryMirrorSpec struct {

@@ -206,7 +206,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	}
 	// The other nodes take VXLAN only from vxlanSourceSubnets, so every address the node has or
 	// may pick must lie in them; the node checks the addresses it picks at boot again. Invalid
-	// sources are the Cluster document's error, reported with the cluster.
+	// sources are the Flannel document's error, reported with the cluster.
 	if sources, err := c.VXLANSources(); err == nil {
 		if err := kubernetes.CheckVXLANSources(sources, addrs); err != nil {
 			add("Node: nodeIP.addresses: %v", err)

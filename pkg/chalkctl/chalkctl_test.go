@@ -242,7 +242,7 @@ func clusterFile(kind string) string {
 	return `{"kind": "` + kind + `", "endpoint": "https://10.0.0.10:6443", "version": "1.37.1",
 	  "ipFamilies": ["ipv4"], "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
-	  "nodeIP": {"validSubnets": [], "timeout": 300}, "vxlanSourceSubnets": [], "vip": {"addresses": [], "mode": "l2"},
+	  "nodeIP": {"validSubnets": [], "timeout": 300}, "vip": {"addresses": [], "mode": "l2"},
 	  "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`
 }
 

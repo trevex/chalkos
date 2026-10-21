@@ -36,6 +36,15 @@
           ],
           "default": null,
           "description": "MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address."
+        },
+        "vxlanSourceSubnets": {
+          "default": [],
+          "description": "Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

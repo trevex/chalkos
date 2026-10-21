@@ -279,15 +279,20 @@ in
         }
         v4='destination 10.0.0.11 interface\n'
         v6='destination fd00::11 interface\n'
-        # The node's Cluster document with the spec given, and one of a dual-stack cluster with
-        # the source ranges given.
+        # The node's Cluster document with the spec given, its Flannel document with the source
+        # ranges given, and both of a dual-stack cluster with the source ranges given.
         cluster=/run/chalkos/config/kubernetes.chalkos.dev/Cluster/default.json
-        mkdir -p "$(dirname "$cluster")"
+        flannel=/run/chalkos/config/kubernetes.chalkos.dev/Flannel/default.json
+        mkdir -p "$(dirname "$cluster")" "$(dirname "$flannel")"
         spec() {
           printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Cluster","metadata":{"name":"default"},"spec":%s}\n' "$1" >"$cluster"
         }
+        sources() {
+          printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Flannel","metadata":{"name":"default"},"spec":{"vxlanSourceSubnets":%s}}\n' "$1" >"$flannel"
+        }
         ranges() {
-          spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"},"vxlanSourceSubnets":'"$1"'}'
+          spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"}}'
+          sources "$1"
         }
         ranges '["10.0.0.0/24","fd00::/64"]'
         rules() {
@@ -355,17 +360,28 @@ in
         closed "without a Cluster document" "ranges are unknown"
         echo '{' >"$cluster"
         closed "with a document chalkcfg cannot read" "ranges are unknown"
-        spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":[]}'
+        spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16"}}'
         closed "with a family without a pod range" "ranges are unknown"
+        sources '[]'
         for s in \
-          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.0.0.0/8 }"},"vxlanSourceSubnets":[]}' \
-          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":["cafe.be/8"]}' \
-          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":null},"vxlanSourceSubnets":[]}' \
-          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16 10.0.0.0/8"},"vxlanSourceSubnets":[]}' \
-          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":["10.0.0.0/24\nflush 10.0.0.0/8"]}'; do
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.0.0.0/8 }"}}' \
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":null}}' \
+          '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16 10.0.0.0/8"}}'; do
           spec "$s"
           closed "with the spec $s" "ranges hold"
         done
+        spec '{"ipFamilies":["ipv4"],"podCIDRs":{"ipv4":"10.244.0.0/16"}}'
+        for s in '["cafe.be/8"]' '["10.0.0.0/24\nflush 10.0.0.0/8"]'; do
+          sources "$s"
+          closed "with the source ranges $s" "ranges hold"
+        done
+        echo '{' >"$flannel"
+        closed "with a Flannel document chalkcfg cannot read" "ranges are unknown"
+        # Without a Flannel document VXLAN may come from anywhere, so nothing is dropped.
+        rm "$flannel"
+        holding "$v4$v6"
+        [ ! -s errors.log ] || fail "warned without a Flannel document: $(cat errors.log)"
+        forwarded 10.0.0.12 8472 || fail "a pod's VXLAN was dropped without a Flannel document"
         ranges '["10.0.0.0/24","fd00::/64"]'
         holding "$v4$v6"
         if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range after the ranges came back"; fi
