@@ -32,21 +32,43 @@
           "description": "Kubernetes labels applied to the node.",
           "type": "object"
         },
-        "nodeIPs": {
-          "anyOf": [
-            {
-              "items": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "type": "array"
+        "nodeIP": {
+          "additionalProperties": false,
+          "properties": {
+            "addresses": {
+              "anyOf": [
+                {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply."
             },
-            {
-              "type": "null"
+            "validSubnets": {
+              "anyOf": [
+                {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's."
             }
-          ],
-          "default": null,
-          "description": "Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply."
+          },
+          "type": "object"
         },
         "taints": {
           "default": [],
@@ -94,22 +116,6 @@
             "controlplane",
             "worker"
           ]
-        },
-        "validSubnets": {
-          "anyOf": [
-            {
-              "items": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Subnets the node picks its address from instead of the cluster's; null uses those."
         }
       },
       "required": [

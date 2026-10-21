@@ -341,8 +341,7 @@ spec:
   type: worker
   labels: {}
   taints: []
-  nodeIPs: null
-  validSubnets: null
+  nodeIP: {addresses: null, validSubnets: null}
 `
 
 const kubernetesImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",

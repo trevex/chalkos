@@ -137,14 +137,13 @@ after.
 ### The node has no address
 
 The Kubernetes line says `preparation failed: no ipv4 node address matches ...`, with the
-selector and the addresses the node has. The node waited `spec.nodeIP.timeout` of the cluster's
-[`Cluster`](../reference/kinds.md#cluster) document, 300 seconds by default, for an address
-that matches its fixed `nodeIPs` or its `validSubnets` in its
-[`Node`](../reference/kinds.md#node) document, or the cluster's `nodeIP.validSubnets`, and
-found none, so it runs neither the kubelet nor static pods. Check the node's `Network` documents
-and DHCP, and that the subnets list the network the node is on. Then deliver the corrected
-documents with `chalkctl apply-config <node> --secrets=secrets.age`, or reboot once the network
-is right.
+selector and the addresses the node has. The node waited `spec.nodeIP.timeout` of the
+[`Cluster`](../reference/kinds.md#cluster) document, 300 seconds by default, for an address that
+matches `nodeIP.addresses` or `nodeIP.validSubnets` of its [`Node`](../reference/kinds.md#node)
+document, or the cluster's `nodeIP.validSubnets`, and found none, so it runs neither the
+kubelet nor static pods. Check the node's `Network` documents and DHCP, and that the subnets list
+the network the node is on. Then deliver the corrected documents with
+`chalkctl apply-config <node> --secrets=secrets.age`, or reboot once the network is right.
 
 A control plane that lost an address it was pinned to says `pinned address ... is not present`
 instead; see [Recover a node](recover-node.md#a-control-plane-cannot-rejoin-etcd).

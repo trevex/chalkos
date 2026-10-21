@@ -157,11 +157,11 @@ func TestKubeletChecks(t *testing.T) {
 		families   []string
 	}{
 		"refused label":            {`labels: {kubernetes.io/role: x}`, "kubernetes.io/role", nil},
-		"bad address":              {`nodeIPs: [nope]`, "not an address", nil},
-		"two of a family":          {`nodeIPs: [10.0.0.1, 10.0.0.2]`, "more than one ipv4", nil},
-		"bad subnet":               {`validSubnets: [nope]`, "nope", nil},
-		"family the cluster lacks": {`nodeIPs: [10.0.0.1]`, "an ipv4 address", []string{"ipv6"}},
-		"family without address":   {`nodeIPs: [], validSubnets: ["10.0.0.0/24"]`, "cannot pick its ipv6", []string{"ipv4", "ipv6"}},
+		"bad address":              {`nodeIP: {addresses: [nope]}`, "not an address", nil},
+		"two of a family":          {`nodeIP: {addresses: [10.0.0.1, 10.0.0.2]}`, "more than one ipv4", nil},
+		"bad subnet":               {`nodeIP: {validSubnets: [nope]}`, `Node: nodeIP: validSubnets: "nope"`, nil},
+		"family the cluster lacks": {`nodeIP: {addresses: [10.0.0.1]}`, "an ipv4 address", []string{"ipv6"}},
+		"family without address":   {`nodeIP: {addresses: [], validSubnets: ["10.0.0.0/24"]}`, "Node: no ipv6 address in nodeIP.addresses, and no ipv6 subnet in the nodeIP.validSubnets that apply, so the node cannot pick its ipv6 address", []string{"ipv4", "ipv6"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			spec := "{}"
@@ -178,12 +178,12 @@ func TestKubeletChecks(t *testing.T) {
 }
 
 func TestNodeErrorsReadLikeNix(t *testing.T) {
-	s := kubernetesNodeSet(t, "{ipFamilies: [ipv6]}", "nodeIPs: [10.0.0.1, 10.0.0.2, 10.0.0.3, nope]", "")
+	s := kubernetesNodeSet(t, "{ipFamilies: [ipv6]}", "nodeIP: {addresses: [10.0.0.1, 10.0.0.2, 10.0.0.3, nope]}", "")
 	_, err := s.Identity("n1", Target{Image: &testImage})
 	want := "invalid Kubernetes settings:\n" +
-		"- Node: nodeIPs: \"nope\" is not an address\n" +
-		"- Node: nodeIPs: more than one ipv4 address; give at most one per family\n" +
-		"- Node: nodeIPs: an ipv4 address, but the cluster's ipFamilies are [ ipv6 ]"
+		"- Node: nodeIP.addresses: \"nope\" is not an address\n" +
+		"- Node: nodeIP.addresses: more than one ipv4 address; give at most one per family\n" +
+		"- Node: nodeIP.addresses: an ipv4 address, but the cluster's ipFamilies are [ ipv6 ]"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err =\n%v\nwant\n%s", err, want)
 	}
@@ -321,17 +321,18 @@ func TestSwapVolumeWithoutKubernetes(t *testing.T) {
 	}
 }
 
-// TestNodeValidSubnets carries a Node's own validSubnets into the identity, leaving every
-// address to be picked at boot, and an empty list takes the node's static addresses in place of
-// the cluster's subnets.
+// TestNodeValidSubnets carries a Node's own nodeIP.validSubnets into the identity, leaving every
+// address to be picked at boot. They replace the Cluster's as a whole: an empty list takes the
+// node's static addresses in place of the cluster's subnets.
 func TestNodeValidSubnets(t *testing.T) {
 	const network = "---\napiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-a}\nspec: {network: {address: [10.0.0.5/24]}}\n"
 	for name, tc := range map[string]struct {
 		cluster, node    string
 		nodeIPs, subnets []string
 	}{
-		"own subnets":          {"{}", `validSubnets: ["192.168.100.0/24"]`, []string{}, []string{"192.168.100.0/24"}},
-		"empty over cluster's": {`{nodeIP: {validSubnets: ["10.0.0.0/8", "!10.0.0.10/32"]}}`, `validSubnets: []`, []string{"10.0.0.5"}, []string{}},
+		"own subnets":          {"{}", `nodeIP: {validSubnets: ["192.168.100.0/24"]}`, []string{}, []string{"192.168.100.0/24"}},
+		"empty over cluster's": {`{nodeIP: {validSubnets: ["10.0.0.0/8", "!10.0.0.10/32"]}}`, `nodeIP: {validSubnets: []}`, []string{"10.0.0.5"}, []string{}},
+		"own over cluster's":   {`{nodeIP: {validSubnets: ["10.0.0.0/8"]}}`, `nodeIP: {validSubnets: ["192.168.100.0/24"]}`, []string{}, []string{"192.168.100.0/24"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			id, err := kubernetesNodeSet(t, tc.cluster, tc.node, network).Identity("n1", Target{Image: &testImage})
@@ -356,13 +357,13 @@ func TestVXLANSourcesHoldTheNodesAddresses(t *testing.T) {
 		refused       string
 	}{
 		"static inside":  {"{ipFamilies: [ipv4, ipv6], " + sources + "}", "", []string{"192.168.100.5", "fd00:100::5"}, ""},
-		"fixed outside":  {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `nodeIPs: [10.0.0.5]`, nil, "10.0.0.5 is outside vxlanSourceSubnets"},
-		"subnets inside": {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `validSubnets: ["192.168.100.0/24", "fd00:100::/64"]`, []string{}, ""},
-		"subnet outside": {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `validSubnets: ["192.168.0.0/15", "fd00:100::/64"]`, nil, "picks its address from 192.168.0.0/15"},
+		"fixed outside":  {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `nodeIP: {addresses: [10.0.0.5]}`, nil, "10.0.0.5 is outside vxlanSourceSubnets"},
+		"subnets inside": {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `nodeIP: {validSubnets: ["192.168.100.0/24", "fd00:100::/64"]}`, []string{}, ""},
+		"subnet outside": {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `nodeIP: {validSubnets: ["192.168.0.0/15", "fd00:100::/64"]}`, nil, "picks its address from 192.168.0.0/15"},
 		// Exclusions need not be inside.
-		"exclusion outside":      {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `validSubnets: ["192.168.100.0/24", "fd00:100::/64", "!10.0.0.0/8"]`, []string{}, ""},
+		"exclusion outside":      {"{ipFamilies: [ipv4, ipv6], " + sources + "}", `nodeIP: {validSubnets: ["192.168.100.0/24", "fd00:100::/64", "!10.0.0.0/8"]}`, []string{}, ""},
 		"cluster subnet outside": {`{ipFamilies: [ipv4, ipv6], nodeIP: {validSubnets: ["10.0.0.0/8"]}, ` + sources + "}", "", nil, "picks its address from 10.0.0.0/8"},
-		"without sources":        {"{}", `nodeIPs: [10.0.0.5]`, []string{"10.0.0.5"}, ""},
+		"without sources":        {"{}", `nodeIP: {addresses: [10.0.0.5]}`, []string{"10.0.0.5"}, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			id, err := kubernetesNodeSet(t, tc.cluster, tc.node, network).Identity("n1", Target{Image: &testImage})

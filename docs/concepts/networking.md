@@ -58,17 +58,16 @@ and the API server advertise the primary family's. Before the kubelet starts, th
 
 A family's address is fixed or picked:
 
-- Fixed: `nodeIPs` of the node's [`Node`](../reference/kinds.md#node) document, at most one
-  address per family. By default it is the first address of each family among the
+- Fixed: `nodeIP.addresses` of the node's [`Node`](../reference/kinds.md#node) document, at
+  most one address per family. By default it is the first address of each family among the
   `network.address` keys of the node's `Network` documents, in the order of their names, unless
-  subnets to pick from apply to the node. The node waits until an
-  interface holds the address.
+  subnets to pick from apply to the node. The node waits until an interface holds the address.
 - Picked: the node takes the first of its global unicast addresses that `nodeIP.validSubnets` of
-  the [`Cluster`](../reference/kinds.md#cluster) document selects, or `validSubnets` of the
-  node's own `Node` document, which replaces the cluster's. A leading `!` excludes a subnet.
-  Addresses are compared IPv4 before IPv6, then by interface name and address, so the choice does
-  not depend on the order the kernel lists them in. With no subnets, every global unicast address
-  qualifies.
+  the [`Cluster`](../reference/kinds.md#cluster) document selects, or `nodeIP.validSubnets` of
+  the node's own `Node` document, which replaces the cluster's list as a whole. A leading `!`
+  excludes a subnet. Addresses are compared IPv4 before IPv6, then by interface name and address,
+  so the choice does not depend on the order the kernel lists them in. With no subnets, every
+  global unicast address qualifies.
 
 The node never picks an address in the pod or service ranges or on an interface of the pod network
 or kube-proxy (`flannel*`, `cni*`, `veth*`, `kube-*`), and takes the endpoint's address or a VIP

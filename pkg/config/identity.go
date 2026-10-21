@@ -166,14 +166,15 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	}
 
 	subnets := c.NodeIP.ValidSubnets
-	if spec.ValidSubnets != nil {
-		subnets = spec.ValidSubnets
+	// The node's own subnets replace the cluster's as a whole.
+	if spec.NodeIP.ValidSubnets != nil {
+		subnets = spec.NodeIP.ValidSubnets
 	}
-	_, subnetErr := nodeip.ParseFilter(spec.ValidSubnets)
+	_, subnetErr := nodeip.ParseFilter(spec.NodeIP.ValidSubnets)
 	if subnetErr != nil {
-		add("Node: %v", subnetErr)
+		add("Node: nodeIP: %v", subnetErr)
 	}
-	nodeIPs := spec.NodeIPs
+	nodeIPs := spec.NodeIP.Addresses
 	if nodeIPs == nil {
 		nodeIPs = defaultNodeIPs(id.StaticAddresses(), families, subnets)
 	}
@@ -184,7 +185,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 			seen = append(seen, nodeip.FamilyOf(ip))
 			addrs = append(addrs, ip)
 		} else {
-			add("Node: nodeIPs: %q is not an address", a)
+			add("Node: nodeIP.addresses: %q is not an address", a)
 		}
 	}
 	var unique []nodeip.Family
@@ -195,12 +196,12 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	}
 	for _, f := range unique {
 		if count(seen, f) > 1 {
-			add("Node: nodeIPs: more than one %s address; give at most one per family", f)
+			add("Node: nodeIP.addresses: more than one %s address; give at most one per family", f)
 		}
 	}
 	for _, f := range unique {
 		if !slices.Contains(families, f) {
-			add("Node: nodeIPs: an %s address, but the cluster's ipFamilies are [ %s ]", f, joinFamilies(families))
+			add("Node: nodeIP.addresses: an %s address, but the cluster's ipFamilies are [ %s ]", f, joinFamilies(families))
 		}
 	}
 	// The other nodes take VXLAN only from vxlanSourceSubnets, so every address the node has or
@@ -208,7 +209,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	// sources are the Cluster document's error, reported with the cluster.
 	if sources, err := c.VXLANSources(); err == nil {
 		if err := kubernetes.CheckVXLANSources(sources, addrs); err != nil {
-			add("Node: nodeIPs: %v", err)
+			add("Node: nodeIP.addresses: %v", err)
 		}
 		for _, s := range subnets {
 			p, err := netip.ParsePrefix(s)
@@ -221,14 +222,14 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	if subnetErr == nil {
 		for _, f := range families {
 			if !slices.Contains(seen, f) && !picks(subnets, f) {
-				add("Node: no %s address in nodeIPs, and no %s subnet in the validSubnets that apply, so the node cannot pick its %s address", f, f, f)
+				add("Node: no %s address in nodeIP.addresses, and no %s subnet in the nodeIP.validSubnets that apply, so the node cannot pick its %s address", f, f, f)
 			}
 		}
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid Kubernetes settings:\n- %s", strings.Join(errs, "\n- "))
 	}
-	id.Kubernetes = &identity.Kubernetes{NodeName: name, NodeIPs: nodeIPs, ValidSubnets: spec.ValidSubnets}
+	id.Kubernetes = &identity.Kubernetes{NodeName: name, NodeIPs: nodeIPs, ValidSubnets: spec.NodeIP.ValidSubnets}
 	return nil
 }
 

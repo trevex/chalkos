@@ -137,7 +137,7 @@ func dig(m map[string]any, path ...string) map[string]any {
 }
 
 // NetworkMap is what Go reads of the node's network besides its units: each Network document's
-// [Network] Address= values, the only addresses that count as static, so a node's default nodeIPs
+// [Network] Address= values, the only addresses that count as static, so a node's default addresses
 // and certificate names stay what they were; and the MAC address its [Match] names, several
 // joined by spaces as networkd writes them.
 func NetworkMap(docs []Document) map[string]any {

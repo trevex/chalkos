@@ -170,7 +170,7 @@
             },
             "validSubnets": {
               "default": [],
-              "description": "Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot; a leading `!` excludes one. Empty takes any global unicast address.",
+              "description": "Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot, unless a Node gives its own; a leading `!` excludes one. Empty takes any global unicast address.",
               "items": {
                 "minLength": 1,
                 "type": "string"

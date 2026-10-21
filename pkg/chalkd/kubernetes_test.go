@@ -698,17 +698,17 @@ func TestCredentialIsShortLived(t *testing.T) {
 func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 	base := workerConfig + networkConfig
 	node := func(spec string) string {
-		return strings.Replace(base, "spec: {type: worker, nodeIPs: [192.168.100.21]}", "spec: "+spec, 1)
+		return strings.Replace(base, "spec: {type: worker, nodeIP: {addresses: [192.168.100.21]}}", "spec: "+spec, 1)
 	}
 	for name, c := range map[string]struct {
 		config   string
 		restarts bool
 	}{
 		"unchanged":           {base, false},
-		"labels":              {node("{type: worker, nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}"), true},
-		"taints":              {node("{type: worker, nodeIPs: [192.168.100.21], taints: [{key: dedicated, effect: NoSchedule}]}"), true},
-		"nodeIPs":             {node("{type: worker, nodeIPs: [192.168.100.22]}"), true},
-		"validSubnets":        {node("{type: worker, nodeIPs: [], validSubnets: [192.168.100.0/24]}"), true},
+		"labels":              {node("{type: worker, nodeIP: {addresses: [192.168.100.21]}, labels: {node.kubernetes.io/storage: ssd}}"), true},
+		"taints":              {node("{type: worker, nodeIP: {addresses: [192.168.100.21]}, taints: [{key: dedicated, effect: NoSchedule}]}"), true},
+		"nodeIP.addresses":    {node("{type: worker, nodeIP: {addresses: [192.168.100.22]}}"), true},
+		"nodeIP.validSubnets": {node("{type: worker, nodeIP: {addresses: [], validSubnets: [192.168.100.0/24]}}"), true},
 		"the Node's name":     {strings.Replace(base, "kind: Node\nmetadata: {name: default}", "kind: Node\nmetadata: {name: node}", 1), false},
 		"a Host":              {base + hostConfig("default", "h1"), true},
 		"a static address":    {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
@@ -1003,8 +1003,8 @@ func TestApplyConfigNodeCAWithConfig(t *testing.T) {
 		name, config string
 		want         []string
 	}{
-		{"the Node's labels", strings.Replace(controlPlane, "nodeIPs: [192.168.100.21]}", "nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", 1), []string{"chalkos-controlplane", "chalkos-kubernetes", "kubelet"}},
-		{"a Demo", strings.NewReplacer("nodeIPs: [192.168.100.21]}", "nodeIPs: [192.168.100.21], labels: {node.kubernetes.io/storage: ssd}}", "name: first", "name: second").Replace(controlPlane), []string{"demo"}},
+		{"the Node's labels", strings.Replace(controlPlane, "nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21]}, labels: {node.kubernetes.io/storage: ssd}}", 1), []string{"chalkos-controlplane", "chalkos-kubernetes", "kubelet"}},
+		{"a Demo", strings.NewReplacer("nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21]}, labels: {node.kubernetes.io/storage: ssd}}", "name: first", "name: second").Replace(controlPlane), []string{"demo"}},
 	} {
 		r.calls, *acted = nil, nil
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, KubernetesShare: withNodeCA()}))

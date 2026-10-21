@@ -77,7 +77,7 @@ It has 4 [change rules](../concepts/rules.md).
 | `spec.nodeCIDRMaskSizes.ipv6` | integer from 1 to 128 | `64` | Prefix length of each node's part of the family's pod range. |
 | `spec.nodeIP` | object | see below |  |
 | `spec.nodeIP.timeout` | integer of at least 1 | `300` | Seconds a node waits at boot for its address. |
-| `spec.nodeIP.validSubnets` | list of string | `[]` | Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot; a leading `!` excludes one. Empty takes any global unicast address. |
+| `spec.nodeIP.validSubnets` | list of string | `[]` | Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot, unless a Node gives its own; a leading `!` excludes one. Empty takes any global unicast address. |
 | `spec.podCIDRs` | object | see below |  |
 | `spec.podCIDRs.ipv4` | string | `"10.244.0.0/16"` | Address range of the family's pods; each node gets a part of it. |
 | `spec.podCIDRs.ipv6` | string | `"fd00:10:244::/56"` | Address range of the family's pods; each node gets a part of it. |
@@ -111,13 +111,14 @@ It has a [change rule](../concepts/rules.md).
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.labels` | map of string | `{}` | Kubernetes labels applied to the node. |
-| `spec.nodeIPs` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
+| `spec.nodeIP` | object | see below |  |
+| `spec.nodeIP.addresses` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
+| `spec.nodeIP.validSubnets` | list of string or null | `null` | Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's. |
 | `spec.taints` | list of object | `[]` | Kubernetes taints applied to the node. |
 | `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | What happens to pods that do not tolerate the taint. |
 | `spec.taints[].key` | string | required | Taint key. |
 | `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |
 | `spec.type` | one of `controlplane`, `worker` | required | What the node is in the cluster; it is fixed once the node holds a Kubernetes share. |
-| `spec.validSubnets` | list of string or null | `null` | Subnets the node picks its address from instead of the cluster's; null uses those. |
 
 ## RegistryMirror { #registrymirror }
 

@@ -73,8 +73,12 @@ type nodeSpec struct {
 		Value  *string `json:"value"`
 		Effect string  `json:"effect"`
 	} `json:"taints"`
-	NodeIPs      []string `json:"nodeIPs"`
-	ValidSubnets []string `json:"validSubnets"`
+	// NodeIP is how the node gets its addresses: nil Addresses take the static ones, nil
+	// ValidSubnets the Cluster's.
+	NodeIP struct {
+		Addresses    []string `json:"addresses"`
+		ValidSubnets []string `json:"validSubnets"`
+	} `json:"nodeIP"`
 }
 
 type clusterSpec struct {

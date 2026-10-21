@@ -272,15 +272,15 @@ inventory. Two things depend on it:
   not read the `Network` documents, so the two must agree.
 
 Workers may take their address from DHCP instead and pick it with `spec.nodeIP.validSubnets` of
-the `Cluster` document, or `spec.validSubnets` of a node's own
-[`Node`](../reference/kinds.md#node) document. The inventory names such a node by an
-address that stays, such as a DNS name.
+the `Cluster` document, or `spec.nodeIP.validSubnets` of a node's own
+[`Node`](../reference/kinds.md#node) document, which replaces the cluster's. The inventory names
+such a node by an address that stays, such as a DNS name.
 
 Set `spec.vxlanSourceSubnets` to the ranges your nodes live in, as `cluster/kubernetes.yaml` above
 does. Without it, nodes accept the pod network's VXLAN traffic from any source.
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node whose fixed addresses,
-the `nodeIPs` of its `Node` or else the first static address of each family of its `Network`
-documents, or whose `validSubnets` lie outside these ranges.
+`nodeIP.addresses` of its `Node` or else the first static address of each family of its `Network`
+documents, or whose `nodeIP.validSubnets` lie outside these ranges.
 
 ## Plan disks, storage and encryption
 

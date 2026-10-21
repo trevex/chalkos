@@ -28,6 +28,7 @@ metadata: {name: default}
 spec:
   type: controlplane
   labels: {}
-  nodeIPs:
-    - fd00:100::13
+  nodeIP:
+    addresses:
+      - fd00:100::13
   taints: []

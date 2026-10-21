@@ -302,7 +302,7 @@ var workerConfig = baseConfig + `---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: default}
-spec: {type: worker, nodeIPs: [192.168.100.21]}
+spec: {type: worker, nodeIP: {addresses: [192.168.100.21]}}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster

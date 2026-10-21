@@ -438,15 +438,17 @@ in
           default = [ ];
           description = "Kubernetes taints applied to the node.";
         };
-        nodeIPs = mkOption {
-          type = types.nullOr (types.listOf types.nonEmptyStr);
-          default = null;
-          description = "Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply.";
-        };
-        validSubnets = mkOption {
-          type = types.nullOr (types.listOf types.nonEmptyStr);
-          default = null;
-          description = "Subnets the node picks its address from instead of the cluster's; null uses those.";
+        nodeIP = {
+          addresses = mkOption {
+            type = types.nullOr (types.listOf types.nonEmptyStr);
+            default = null;
+            description = "Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply.";
+          };
+          validSubnets = mkOption {
+            type = types.nullOr (types.listOf types.nonEmptyStr);
+            default = null;
+            description = "Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's.";
+          };
         };
       };
     };
@@ -518,7 +520,7 @@ in
           validSubnets = mkOption {
             type = types.listOf types.nonEmptyStr;
             default = [ ];
-            description = "Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot; a leading `!` excludes one. Empty takes any global unicast address.";
+            description = "Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot, unless a Node gives its own; a leading `!` excludes one. Empty takes any global unicast address.";
           };
           timeout = mkOption {
             type = types.ints.positive;

@@ -50,8 +50,9 @@ metadata: {name: default}
 spec:
   type: worker
   labels: {}
-  nodeIPs: []
+  nodeIP:
+    addresses: []
+    validSubnets:
+      - 192.168.200.0/24
+      - fd00:200::/64
   taints: []
-  validSubnets:
-    - 192.168.200.0/24
-    - fd00:200::/64
