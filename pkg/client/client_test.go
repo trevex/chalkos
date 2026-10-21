@@ -5,11 +5,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -271,5 +275,46 @@ func TestCloseEndsALateConnection(t *testing.T) {
 	conn := <-dialed
 	if _, err := conn.Write([]byte{0}); !errors.Is(err, net.ErrClosed) {
 		t.Errorf("the connection dialled after Close is still open: %v", err)
+	}
+}
+
+// failing is a transport whose requests fail with err.
+type failing struct{ err error }
+
+func (f failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, f.err }
+
+// A request that failed by a TLS alert or a connection the node closed may hide that the node
+// refused the client's certificate, so the client connects again to read the alert; any other
+// failure keeps its error and connects no second time.
+func TestUntrustedProbesOnlyAlertShapedFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		probes bool
+	}{
+		{"a TLS alert", &net.OpError{Op: "remote error", Err: errors.New("tls: handshake failure")}, true},
+		{"a connection closed", fmt.Errorf("read: %w", io.EOF), true},
+		{"a connection cut short", io.ErrUnexpectedEOF, true},
+		{"a connection reset", &net.OpError{Op: "read", Err: syscall.ECONNRESET}, true},
+		{"a write to a closed connection", &net.OpError{Op: "write", Err: syscall.EPIPE}, true},
+		{"a timeout", &net.OpError{Op: "read", Err: os.ErrDeadlineExceeded}, false},
+		{"a protocol error", errors.New("http2: server sent GOAWAY and closed the connection; LastStreamID=1, ErrCode=PROTOCOL_ERROR"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dials := 0
+			c := &Conn{netDial: func(context.Context, string, string) (net.Conn, error) {
+				dials++
+				return nil, errors.New("connection refused")
+			}}
+			u := &untrusted{RoundTripper: failing{tc.err}, conn: c, endpoint: "n1:50000", tls: &tls.Config{},
+				replace: func(err error, _ bool) error { return fmt.Errorf("replaced: %w", err) }}
+			_, err := u.RoundTrip(httptest.NewRequest("POST", "https://n1:50000/", nil))
+			if !errors.Is(err, tc.err) || strings.HasPrefix(err.Error(), "replaced") {
+				t.Errorf("err = %v, want %v", err, tc.err)
+			}
+			if probed := dials > 0; probed != tc.probes {
+				t.Errorf("probed = %v, want %v", probed, tc.probes)
+			}
+		})
 	}
 }

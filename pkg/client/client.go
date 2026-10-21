@@ -9,10 +9,12 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
@@ -244,31 +246,46 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	// In TLS 1.3 the client's handshake ends before the node checks the client's certificate, so
 	// the node's alert may reach the request only as a broken connection. A connection of its
-	// own, which reads the node's first bytes, receives the alert itself. A request that never
-	// reached the node, or that its caller ended, has nothing to learn from one.
-	var op *net.OpError
-	if req.Context().Err() != nil || errors.As(err, &op) && op.Op == "dial" {
+	// own, which reads the node's first bytes, receives the alert itself. Any other failure, and
+	// a request its caller ended, has nothing to learn from one.
+	if req.Context().Err() != nil || !alertShaped(err) {
 		return nil, err
 	}
-	if failed := u.probe(req.Context()); failed != nil {
+	if failed := readAlert(req.Context(), u.conn.netDial, u.endpoint, u.tls); failed != nil {
 		_, refused := distrusted(failed)
 		return nil, u.replace(failed, refused)
 	}
 	return nil, err
 }
 
-// probe connects to the node with the TLS configuration of the requests and reads its first
+// alertShaped reports whether err may hide the node's TLS alert: an alert of any kind, or a
+// connection the node closed or reset.
+func alertShaped(err error) bool {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "remote error" {
+		return true
+	}
+	for _, closed := range []error{io.EOF, io.ErrUnexpectedEOF, syscall.ECONNRESET, syscall.EPIPE} {
+		if errors.Is(err, closed) {
+			return true
+		}
+	}
+	return false
+}
+
+// readAlert connects to the node at addr with the TLS configuration cfg and reads its first
 // bytes, the HTTP/2 settings of a node that accepts the client; it returns the error when the
-// node refused the client's certificate.
-func (u *untrusted) probe(ctx context.Context) error {
+// node and the client distrust each other, and nil otherwise, also when the node cannot be
+// reached. Nothing is sent over the connection.
+func readAlert(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), addr string, cfg *tls.Config) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	raw, err := u.conn.netDial(ctx, "tcp", u.endpoint)
+	raw, err := dial(ctx, "tcp", addr)
 	if err != nil {
 		return nil
 	}
 	defer raw.Close()
-	cfg := u.tls.Clone()
+	cfg = cfg.Clone()
 	cfg.NextProtos = []string{"h2"}
 	conn := tls.Client(raw, cfg)
 	if err = conn.HandshakeContext(ctx); err == nil {
@@ -284,12 +301,36 @@ func (u *untrusted) probe(ctx context.Context) error {
 	return nil
 }
 
+// RefusesCertificate reports whether the node at addr, host or host:port, refused cert for an
+// issuer it does not know, given err, the error of a call to it. It connects again, without
+// verifying the node, only when err may hide the node's alert.
+func RefusesCertificate(ctx context.Context, err error, addr string, cert *tls.Certificate) bool {
+	if cert == nil || err == nil {
+		return false
+	}
+	if _, refused := distrusted(err); refused {
+		return true
+	}
+	if ctx.Err() != nil || !alertShaped(err) {
+		return false
+	}
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		addr = net.JoinHostPort(addr, Port)
+	}
+	cfg := &tls.Config{InsecureSkipVerify: true, Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS13}
+	_, refused := distrusted(readAlert(ctx, (&net.Dialer{}).DialContext, addr, cfg))
+	return refused
+}
+
 // distrusted reports whether err is a TLS handshake's failure for want of trust, and whether the
 // node refused: an OS CA that does not verify the node's certificate fails on the client's side,
 // and the node's alert that it refused the client's certificate on the node's. A remote alert
 // reaches the client as a net.OpError of an unexported type, so only its text tells which alert
 // it was.
 func distrusted(err error) (bad, refused bool) {
+	if err == nil {
+		return false, false
+	}
 	var unknown x509.UnknownAuthorityError
 	if errors.As(err, &unknown) {
 		return true, false
