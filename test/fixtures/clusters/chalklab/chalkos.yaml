@@ -16,7 +16,7 @@ spec:
   nodes:
     chalklab:
       groups: [test]
-      files: [nodes/chalklab/node.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting.yaml]
+      files: [nodes/chalklab/greeting-token.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting.yaml]
     chalklab-target: {groups: [test], files: [nodes/chalklab-target.yaml]}
     chalklab-storage: {groups: [storage], files: [nodes/chalklab-storage.yaml]}
     cp1: {address: 192.168.100.11, groups: [k8s], files: [nodes/cp1.yaml]}

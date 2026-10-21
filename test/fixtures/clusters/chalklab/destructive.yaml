@@ -11,4 +11,4 @@ spec:
   nodes:
     chalklab:
       groups: [test]
-      files: [nodes/chalklab/node.yaml, nodes/chalklab/var-1g.yaml, nodes/chalklab/greeting.yaml]
+      files: [nodes/chalklab/greeting-token.yaml, nodes/chalklab/var-1g.yaml, nodes/chalklab/greeting.yaml]
