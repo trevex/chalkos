@@ -189,25 +189,26 @@ func parse(path string, data []byte) (*Inventory, error) {
 }
 
 // Image is the name and directory of the image a node runs: its own, else that of its groups,
-// which must not name different ones, else spec.image.
+// else spec.image. Groups that name different images are refused even for a node that names its
+// own, so that the conflict shows before the node leaves the group or drops its image.
 func (inv *Inventory) Image(node string) (name, dir string, err error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {
 		return "", "", inv.noNode(node)
 	}
-	name = n.Image
-	if name == "" {
-		var group string
-		for _, g := range n.Groups {
-			image := inv.Spec.Groups[g].Image
-			switch {
-			case image == "" || image == name:
-			case name != "":
-				return "", "", fmt.Errorf("node %s is in the groups %s and %s, which name different images: %s and %s", node, group, g, name, image)
-			default:
-				name, group = image, g
-			}
+	var group string
+	for _, g := range n.Groups {
+		image := inv.Spec.Groups[g].Image
+		switch {
+		case image == "" || image == name:
+		case name != "":
+			return "", "", fmt.Errorf("node %s is in the groups %s and %s, which name different images: %s and %s", node, group, g, name, image)
+		default:
+			name, group = image, g
 		}
+	}
+	if n.Image != "" {
+		name = n.Image
 	}
 	if name == "" {
 		name = inv.Spec.Image

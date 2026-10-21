@@ -75,13 +75,16 @@ func TestNodeTakesItsImage(t *testing.T) {
 }
 
 // TestLoadRefusesImages refuses a node without an image, one in two groups that name different
-// images, and an image the inventory does not define, wherever it is named.
+// images, even when the node names its own, and an image the inventory does not define, wherever
+// it is named.
 func TestLoadRefusesImages(t *testing.T) {
 	for name, tc := range map[string]struct{ old, new, want string }{
 		"no image": {"  image: node-metal\n", "",
 			"node w3 has no image; name one in spec.image, in a group of the node or on the node"},
 		"two groups of different images": {"gpu-too: {image: node-gpu}", "gpu-too: {image: node-metal}",
 			"node w2 is in the groups gpu and gpu-too, which name different images: node-gpu and node-metal"},
+		"two groups of different images of a node with its own": {"    rack: {}\n  nodes:\n    cp1: {image: node-kvm, groups: [gpu]}", "    rack: {}\n    metal: {image: node-metal}\n  nodes:\n    cp1: {image: node-kvm, groups: [gpu, metal]}",
+			"node cp1 is in the groups gpu and metal, which name different images: node-gpu and node-metal"},
 		"an undefined top-level image": {"image: node-metal\n", "image: node-arm\n",
 			"spec.image names the image node-arm, which the inventory does not define"},
 		"an undefined group image": {"rack: {}", "rack: {image: node-arm}",

@@ -255,12 +255,12 @@ names the image's variant, platform and [root hash](../reference/glossary.md#roo
 A node runs one image, named in one of three places:
 
 - the node's own `image`, which wins;
-- else the `image` of its groups. Two groups of the node that name different images refuse the
-  inventory;
+- else the `image` of its groups;
 - else `spec.image`.
 
-A node that gets no image from any of them is refused, as is an `image` that names no image of
-`spec.images`. This inventory runs every node on `node-metal` and the GPU workers of the group
+Two groups of a node that name different images refuse the inventory, also when the node names its
+own. A node that gets no image from any of them is refused, as is an `image` that names no image
+of `spec.images`. This inventory runs every node on `node-metal` and the GPU workers of the group
 `gpu` on `gpu-metal`:
 
 ```yaml title="chalkos.yaml"
