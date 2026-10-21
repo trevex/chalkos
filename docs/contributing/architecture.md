@@ -35,7 +35,7 @@ YAML that Go reads. They meet in these places:
   [chalkd](../reference/glossary.md#chalkd), which checks them again against its own image's
   schemas, keeps them on [STATE](../reference/glossary.md#state) and translates them the same
   way.
-- The node's Kubernetes cluster, which chalkd builds from the `Kubernetes` and `Flannel`
+- The node's Kubernetes cluster, which chalkd builds from the `Cluster` and `Flannel`
   documents and the image's `image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
   chalkos's add-ons (RBAC, kube-proxy, flannel, CoreDNS) and the kubelet's configuration from it
   in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the

@@ -1723,7 +1723,7 @@ func TestUpgradeDiff(t *testing.T) {
 		t.Errorf("--diff asked %q", got)
 	}
 	out := l.ta.stdout.String()
-	if !strings.Contains(out, "w1: config unchanged\n") || !strings.Contains(out, "w2: config 4 added, 0 removed, 0 changed\n+ Kubernetes \"kubernetes\"\n") {
+	if !strings.Contains(out, "w1: config unchanged\n") || !strings.Contains(out, "w2: config 4 added, 0 removed, 0 changed\n+ Cluster \"default\"\n") {
 		t.Errorf("output:\n%s", out)
 	}
 	l.ta.stdout.Reset()

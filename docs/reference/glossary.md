@@ -96,7 +96,7 @@ only renew its node certificate. See [Security model](../concepts/security.md).
 
 ## Cluster endpoint { #cluster-endpoint }
 
-The URL of the cluster's API server, `spec.endpoint` of the [`Kubernetes`](kinds.md#kubernetes)
+The URL of the cluster's API server, `spec.endpoint` of the [`Cluster`](kinds.md#cluster)
 document, at which kubelets, kubeconfigs and joining control planes reach it. Nodes also renew
 their [node certificates](#node-certificate) at port 50000 of its host, so it points at a control
 plane, a [VIP](#vip) or a load balancer that forwards both ports. See
@@ -105,7 +105,7 @@ plane, a [VIP](#vip) or a load balancer that forwards both ports. See
 ## Config { #config }
 
 A node's configuration at runtime: a set of [config documents](#config-document), each of a
-[kind](#kind) its image accepts, such as `Node`, `Network`, `SystemDisk`, `Kubernetes` or an
+[kind](#kind) its image accepts, such as `Node`, `Network`, `SystemDisk`, `Cluster` or an
 extension's own. The [inventory](#inventory) names the YAML files whose documents form a node's
 set. chalkctl checks the set against the schemas of the node's image and delivers it at install
 and with [`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd checks it again, keeps it

@@ -261,7 +261,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
 | `/etc/chalkos/consumers.json` | The units that read config kinds or that a delivery restarts or reloads, from [`chalkos.consumers`](options.md#chalkosconsumers), with the rules that say when. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
-| `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Kubernetes` and `Flannel` documents and `image.json` at boot and on every apply. |
+| `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |

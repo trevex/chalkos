@@ -42,7 +42,7 @@ func writeLabFiles(t *testing.T, dir, labFile string) string {
 			"  images:\n    node-kvm: {source: {directory: images/node-kvm}}\n    node-metal: {source: {directory: images/node-metal}}\n  image: node-kvm\n" +
 			"  files: [cluster.yaml]\n  nodes:\n" +
 			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {image: node-metal, files: [m1.yaml]}\n",
-		"cluster.yaml":  "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n",
+		"cluster.yaml":  "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: default}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n",
 		"cp1.yaml":      "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: controlplane}\n",
 		"w1.yaml":       "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: worker}\n",
 		"m1.yaml":       "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: worker}\n",

@@ -318,8 +318,8 @@ func TestApplyWritesNoKeyCredentials(t *testing.T) {
 // schema defaults filled in.
 const kubernetesConfig = `
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: "https://10.0.0.10:6443"
   domain: cluster.local

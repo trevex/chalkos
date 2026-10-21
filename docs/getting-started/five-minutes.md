@@ -44,7 +44,7 @@ chalkos version. See [Variants and platforms](../concepts/variants.md) and
 Everything that differs between clusters and nodes is a node's
 [config](../reference/glossary.md#config): [config
 documents](../reference/glossary.md#config-document) in the style of Kubernetes objects, each of a
-[kind](../reference/glossary.md#kind) such as `Node`, `Network`, `SystemDisk`, `Kubernetes` or
+[kind](../reference/glossary.md#kind) such as `Node`, `Network`, `SystemDisk`, `Cluster` or
 an extension's own. The [inventory](../reference/glossary.md#inventory),
 `chalkos.yaml`, names each node, the address chalkctl reaches it at, the image it runs and the files
 of its documents: files every node gets, files of groups and the node's own. Its `images` name the
@@ -99,7 +99,7 @@ encryption](../concepts/storage.md).
 other node joins without a command: further control planes add themselves to etcd, and
 [workers](../reference/glossary.md#worker) register with the kubelet certificate that install
 gave them. The `type` of a node's `Node` document makes it a control plane or a worker. When the
-cluster's `Kubernetes` document declares a [VIP](../reference/glossary.md#vip) for the API server,
+`Cluster` document declares a [VIP](../reference/glossary.md#vip) for the API server,
 chalkd holds it on one healthy control plane. See
 [Kubernetes on chalkos](../concepts/kubernetes.md) and [Networking](../concepts/networking.md).
 

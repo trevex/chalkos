@@ -64,7 +64,7 @@ A family's address is fixed or picked:
   subnets to pick from apply to the node. The node waits until an
   interface holds the address.
 - Picked: the node takes the first of its global unicast addresses that `nodeIP.validSubnets` of
-  the [`Kubernetes`](../reference/kinds.md#kubernetes) document selects, or `validSubnets` of the
+  the [`Cluster`](../reference/kinds.md#cluster) document selects, or `validSubnets` of the
   node's own `Node` document, which replaces the cluster's. A leading `!` excludes a subnet.
   Addresses are compared IPv4 before IPv6, then by interface name and address, so the choice does
   not depend on the order the kernel lists them in. With no subnets, every global unicast address
@@ -77,8 +77,8 @@ flannel and two families, the node's IPv4 and IPv6 addresses must be on one inte
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
   nodeIP:
@@ -88,7 +88,7 @@ spec:
 A subnet that starts with `!` is quoted, because YAML reads an unquoted `!` as a tag.
 
 DHCP leases and addresses that a routing daemon adds can arrive late, so the node waits for its
-addresses up to `nodeIP.timeout` of the `Kubernetes` document, 300 seconds by default. A node that
+addresses up to `nodeIP.timeout` of the `Cluster` document, 300 seconds by default. A node that
 finds none runs neither the kubelet nor static pods, and the Kubernetes line of its status names the
 filter and the addresses the node has:
 
@@ -115,12 +115,12 @@ members.
 
 ## How does dual stack work?
 
-`ipFamilies` of the `Kubernetes` document lists the families of the cluster, the primary one
+`ipFamilies` of the `Cluster` document lists the families of the cluster, the primary one
 first: `[ipv4]` by default, or both in either order. Every node has one address of each family,
 pods get one of each, and services get one of each family they ask for. The families and their
 order are fixed when the cluster is created.
 
-Each family has its own ranges, fields of the `Kubernetes` document keyed by `ipv4` and `ipv6`:
+Each family has its own ranges, fields of the `Cluster` document keyed by `ipv4` and `ipv6`:
 
 | Field | IPv4 default | IPv6 default |
 | --- | --- | --- |
@@ -133,8 +133,8 @@ A cluster with IPv6 as its primary family and IPv4 beside it, on the default ran
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
   ipFamilies: [ipv6, ipv4]
@@ -147,14 +147,14 @@ kubelet gives pods one name server; it still answers A and AAAA queries.
 
 A VIP is an address of the API server that no single machine owns: one healthy control plane holds
 it at a time, so the [cluster endpoint](../reference/glossary.md#cluster-endpoint) stays reachable
-while a control plane reboots or fails. `vip.addresses` of the `Kubernetes` document takes at most
+while a control plane reboots or fails. `vip.addresses` of the `Cluster` document takes at most
 one address per family, and the document's `endpoint` is then one of them or a name that resolves
 to them. The document goes into the files every node gets:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
   vip: {addresses: [10.0.0.10]}
@@ -221,11 +221,11 @@ after the firewall started, so a table of chalkos's own, `chalkos-vxlan`, which 
 fills with the addresses it picked, marks such packets, and the firewall accepts packets that
 carry the mark. No VXLAN is accepted while the addresses are being picked or when none are found.
 
-`vxlanSourceSubnets` of the `Kubernetes` document narrows this to sources in the given ranges, one
+`vxlanSourceSubnets` of the `Cluster` document narrows this to sources in the given ranges, one
 or more per family, which must hold every node's addresses and may not overlap the pod or service
 ranges. With them, the node also drops VXLAN that pods send through it to those ranges. Without
 them, VXLAN is accepted from any source, so pods can reach the other nodes' VXLAN port too. The
-node reads the pod and source ranges from its `Kubernetes` document; while it cannot, it drops all
+node reads the pod and source ranges from its `Cluster` document; while it cannot, it drops all
 VXLAN it forwards. [`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a node
 whose fixed addresses, or the subnets it picks its addresses from, lie outside the ranges, and a
 node that picks its addresses at boot checks the picked ones against the ranges again, refusing
@@ -304,4 +304,4 @@ interface lo, whose MTU flannel would take; set the Flannel document's spec.mtu`
   for VXLAN and MTU problems.
 - [Ports and firewall](../reference/ports-and-firewall.md).
 - [Config kinds](../reference/kinds.md) for every field of `Network`, `NetDev`, `Link`,
-  `Kubernetes`, `Node` and `Flannel`.
+  `Cluster`, `Node` and `Flannel`.

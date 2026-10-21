@@ -486,9 +486,9 @@ lib.runTests {
     expr = lib.sort lib.lessThan (kindNames kubernetesImage);
     expected = [
       "Addon"
+      "Cluster"
       "Flannel"
       "Host"
-      "Kubernetes"
       "Link"
       "NetDev"
       "Network"
@@ -507,8 +507,8 @@ lib.runTests {
   testImageWithoutKubernetesHasNoKubernetesKinds = {
     expr = lib.intersectLists [
       "Addon"
+      "Cluster"
       "Flannel"
-      "Kubernetes"
       "RegistryMirror"
     ] (kindNames plainImage);
     expected = [ ];
@@ -619,7 +619,7 @@ lib.runTests {
     expr = map (kind: builtinSchema kind) [
       "Host"
       "Flannel"
-      "Kubernetes"
+      "Cluster"
       "Addon"
       "Node"
       "RegistryMirror"
@@ -631,7 +631,7 @@ lib.runTests {
     expected = map builtinFixture [
       "chalkos.dev_v1alpha1_Host.json"
       "kubernetes.chalkos.dev_v1alpha1_Flannel.json"
-      "kubernetes.chalkos.dev_v1alpha1_Kubernetes.json"
+      "kubernetes.chalkos.dev_v1alpha1_Cluster.json"
       "kubernetes.chalkos.dev_v1alpha1_Addon.json"
       "kubernetes.chalkos.dev_v1alpha1_Node.json"
       "kubernetes.chalkos.dev_v1alpha1_RegistryMirror.json"

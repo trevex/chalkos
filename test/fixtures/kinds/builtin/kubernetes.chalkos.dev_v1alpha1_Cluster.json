@@ -6,7 +6,7 @@
       "const": "kubernetes.chalkos.dev/v1alpha1"
     },
     "kind": {
-      "const": "Kubernetes"
+      "const": "Cluster"
     },
     "metadata": {
       "additionalProperties": false,
@@ -273,11 +273,11 @@
     "metadata",
     "spec"
   ],
-  "title": "Kubernetes",
+  "title": "Cluster",
   "type": "object",
   "x-chalkos-kind": {
     "group": "kubernetes.chalkos.dev",
-    "kind": "Kubernetes",
+    "kind": "Cluster",
     "multiple": false,
     "rules": [
       {

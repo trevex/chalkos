@@ -382,14 +382,14 @@ func TestCompileErrors(t *testing.T) {
 func TestRefusal(t *testing.T) {
 	reset := Failure{Kind: "Volume", Takes: Reset, Message: "Volume extra: format xfs instead of ext4; reset it"}
 	reinstall := Failure{Kind: "Volume", Takes: Reinstall, Message: "Volume data: removed; only a reinstall removes it"}
-	refuse := Failure{Kind: "Kubernetes", Document: "kubernetes", Path: []string{"spec", "ipFamilies"}, Takes: Refuse, Message: "fixed"}
+	refuse := Failure{Kind: "Cluster", Document: "default", Path: []string{"spec", "ipFamilies"}, Takes: Refuse, Message: "fixed"}
 	for _, tc := range []struct {
 		failures []Failure
 		want     string
 	}{
 		{[]Failure{reset}, "the config takes chalkctl storage reset: Volume extra: format xfs instead of ext4; reset it"},
 		{[]Failure{reset, reinstall}, "the config takes a reinstall of n1: Volume extra: format xfs instead of ext4; reset it; Volume data: removed; only a reinstall removes it"},
-		{[]Failure{reinstall, refuse}, `the config is refused: Volume data: removed; only a reinstall removes it; Kubernetes "kubernetes" spec.ipFamilies: fixed`},
+		{[]Failure{reinstall, refuse}, `the config is refused: Volume data: removed; only a reinstall removes it; Cluster "default" spec.ipFamilies: fixed`},
 	} {
 		if got := Refusal(tc.failures, "n1"); got != tc.want {
 			t.Errorf("Refusal = %q, want %q", got, tc.want)

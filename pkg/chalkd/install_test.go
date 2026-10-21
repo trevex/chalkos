@@ -305,8 +305,8 @@ metadata: {name: default}
 spec: {type: worker, nodeIPs: [192.168.100.21]}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec: {endpoint: "https://192.168.100.11:6443"}
 `
 

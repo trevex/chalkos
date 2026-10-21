@@ -129,15 +129,15 @@ spec:
 }
 
 func TestIdentityRejects(t *testing.T) {
-	noKubernetes := minimal + nodeDoc("default", "{type: worker}")
-	noNode := minimal + kubernetesDoc("kubernetes", "{}")
+	noCluster := minimal + nodeDoc("default", "{type: worker}")
+	noNode := minimal + clusterDoc("default", "{}")
 	for name, tc := range map[string]struct {
 		yaml   string
 		target Target
 		want   string
 	}{
-		"no Kubernetes document": {noKubernetes, Target{Image: &testImage}, "no Kubernetes"},
-		"no Node":                {noNode, Target{Image: &testImage}, "no Node"},
+		"no Cluster": {noCluster, Target{Image: &testImage}, "no Cluster"},
+		"no Node":    {noNode, Target{Image: &testImage}, "no Node"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := NewSet(mustParse(t, tc.yaml), allSchemas(t))
@@ -388,7 +388,7 @@ func TestVXLANSourcesHoldTheNodesAddresses(t *testing.T) {
 func TestIdentityTakesTheNodesName(t *testing.T) {
 	const volume = "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: fast}\nspec: {disk: {path: /dev/vdb}}\n"
 	kube := minimal + nodeDoc("doc", "{type: worker}") +
-		kubernetesDoc("kubernetes", "{}") + volume
+		clusterDoc("default", "{}") + volume
 	s, err := NewSet(mustParse(t, kube), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)

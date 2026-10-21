@@ -1,7 +1,7 @@
 # Dual stack; the cluster network and w1's routed addresses take VXLAN.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   allowSchedulingOnControlPlanes: true
   dnsIPs:

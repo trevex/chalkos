@@ -135,12 +135,12 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	return md, nil
 }
 
-// Endpoint returns the URL of the cluster's Kubernetes API server: the endpoint the Kubernetes
+// Endpoint returns the URL of the cluster's Kubernetes API server: the endpoint the Cluster
 // documents of the nodes' files name, alike, or with no nodes the one of the shared files'
-// Kubernetes document. A node whose files hold no Kubernetes document names none and is skipped;
-// the endpoint is empty when no node names one.
+// Cluster document. A node whose files hold no Cluster document names none and is skipped; the
+// endpoint is empty when no node names one.
 func (inv *Inventory) Endpoint() (string, error) {
-	// of is the endpoint of the Kubernetes document the files hold, and whether they hold one.
+	// of is the endpoint of the Cluster document the files hold, and whether they hold one.
 	of := func(files []string) (string, bool, error) {
 		var found []string
 		for _, f := range files {
@@ -149,7 +149,7 @@ func (inv *Inventory) Endpoint() (string, error) {
 				return "", false, err
 			}
 			for _, d := range docs {
-				if d.APIVersion == config.KubernetesAPI && d.Kind == "Kubernetes" {
+				if d.APIVersion == config.KubernetesAPI && d.Kind == "Cluster" {
 					spec, _ := d.Object["spec"].(map[string]any)
 					e, _ := spec["endpoint"].(string)
 					found = append(found, e)
@@ -162,7 +162,7 @@ func (inv *Inventory) Endpoint() (string, error) {
 		case 1:
 			return found[0], true, nil
 		}
-		return "", false, fmt.Errorf("its files hold %d Kubernetes documents, not one", len(found))
+		return "", false, fmt.Errorf("its files hold %d Cluster documents, not one", len(found))
 	}
 	if len(inv.Spec.Nodes) == 0 {
 		files, err := inv.expand(inv.Spec.Files)
@@ -190,7 +190,7 @@ func (inv *Inventory) Endpoint() (string, error) {
 		case firstNode == "":
 			first, firstNode = e, n
 		case e != first:
-			return "", fmt.Errorf("the nodes %s and %s name different endpoints in their Kubernetes documents: %q and %q", firstNode, n, first, e)
+			return "", fmt.Errorf("the nodes %s and %s name different endpoints in their Cluster documents: %q and %q", firstNode, n, first, e)
 		}
 	}
 	return first, nil

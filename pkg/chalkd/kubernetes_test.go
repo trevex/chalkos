@@ -692,7 +692,7 @@ func TestCredentialIsShortLived(t *testing.T) {
 // The firewall itself is left alone, so a node whose firewall is disabled takes a new address.
 // TestApplyConfigRestartsKubernetesOnChange: the kubelet and its preparation restart when what
 // they read of the node's config changes, compared with the running slot: the Node's spec, the
-// Host, the static addresses of the Network documents and the cluster the Kubernetes document
+// Host, the static addresses of the Network documents and the cluster the Cluster document
 // gives, its endpoint among it. Other changes, of a Network beside its addresses, of the Node's name or of
 // another kind, restart neither.
 func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
@@ -1192,9 +1192,9 @@ func clusterServer(t *testing.T, kind string) (*Server, *fakeRunner) {
 	return s, r
 }
 
-// withKubernetesSpec is workerConfig with the fields the YAML mapping spec gives added to its
-// Kubernetes document's endpoint.
-func withKubernetesSpec(spec string) string {
+// withClusterSpec is workerConfig with the fields the YAML mapping spec gives added to its
+// Cluster document's endpoint.
+func withClusterSpec(spec string) string {
 	return strings.Replace(workerConfig, `spec: {endpoint: "https://192.168.100.11:6443"}`,
 		`spec: {endpoint: "https://192.168.100.11:6443", `+strings.TrimPrefix(spec, "{"), 1)
 }
@@ -1220,7 +1220,7 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 	}
 
 	r.calls = nil
-	if resp, err = sendConfig(s, withKubernetesSpec("{domain: lab.local}")); err != nil {
+	if resp, err = sendConfig(s, withClusterSpec("{domain: lab.local}")); err != nil {
 		t.Fatal(err)
 	}
 	if c, _ := k8s.ReadCluster(s.Kubernetes.Paths.Cluster); c.Domain != "lab.local" {
@@ -1240,7 +1240,7 @@ func TestApplyConfigNamesAFailedClusterRestart(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	next := withKubernetesSpec("{domain: lab.local}")
+	next := withClusterSpec("{domain: lab.local}")
 	r.rules = []rule{{prefix: "systemctl restart chalkos-kubernetes kubelet", err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes kubelet by hand once that is fixed, or deliver it again") {
 		t.Fatalf("err = %v, want the units named", err)
@@ -1377,7 +1377,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheConsumersConfigFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, credentials, "")
-	next := withKubernetesSpec("{domain: lab.local}")
+	next := withClusterSpec("{domain: lab.local}")
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "write the config for its consumers") {
 		t.Fatalf("err = %v, want the consumers' config to fail", err)
 	}
@@ -1412,7 +1412,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	acted := loops(s)
 	send := func() (*nodev1.ApplyConfigResponse, error) {
 		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{
-			Config: withKubernetesSpec("{domain: lab.local}"), NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key),
+			Config: withClusterSpec("{domain: lab.local}"), NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key),
 		}))
 		if err != nil {
 			return nil, err
@@ -1545,7 +1545,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 				t.Fatal(err)
 			}
 			r.calls = nil
-			_, err := sendConfig(s, withKubernetesSpec(spec))
+			_, err := sendConfig(s, withClusterSpec(spec))
 			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cluster's "+field+" from") {
 				t.Fatalf("err = %v", err)
 			}
@@ -1662,11 +1662,11 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 	}
 }
 
-// Without a stored cluster, as on a node whose stored config holds no Kubernetes document, the
+// Without a stored cluster, as on a node whose stored config holds no Cluster document, the
 // fixed settings have nothing to compare with.
 func TestApplyConfigFirstClusterIsNotCompared(t *testing.T) {
 	s, _ := clusterServer(t, k8s.KindWorker)
-	if _, err := sendConfig(s, withKubernetesSpec("{podCIDRs: {ipv4: 10.245.0.0/16}}")); err != nil {
+	if _, err := sendConfig(s, withClusterSpec("{podCIDRs: {ipv4: 10.245.0.0/16}}")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1674,13 +1674,13 @@ func TestApplyConfigFirstClusterIsNotCompared(t *testing.T) {
 // Ranges and addresses compare as what they denote, not as they are spelt.
 func TestApplyConfigComparesRangesCanonically(t *testing.T) {
 	s, _ := clusterServer(t, k8s.KindWorker)
-	if _, err := sendConfig(s, withKubernetesSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:96::/108"}}`)); err != nil {
+	if _, err := sendConfig(s, withClusterSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:96::/108"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sendConfig(s, withKubernetesSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:96:0::/108"}, dnsIPs: {ipv6: "fd00:10:96:0::a"}}`)); err != nil {
+	if _, err := sendConfig(s, withClusterSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:96:0::/108"}, dnsIPs: {ipv6: "fd00:10:96:0::a"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	_, err := sendConfig(s, withKubernetesSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:97::/108"}}`))
+	_, err := sendConfig(s, withClusterSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:97::/108"}}`))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "serviceCIDRs") {
 		t.Errorf("another range: err = %v", err)
 	}

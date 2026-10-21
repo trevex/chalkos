@@ -34,11 +34,11 @@ spec:
     n1: {address: 10.0.0.11, files: [nodes/n1.yaml]}
 `
 
-// testClusterYAML is the cluster's Kubernetes document, of the kind's defaults and the endpoint
+// testClusterYAML is the cluster's Kubernetes Cluster document, of the kind's defaults and the endpoint
 // https://10.0.0.10:6443, which the nodes share.
 const testClusterYAML = `apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
 `
@@ -143,19 +143,19 @@ func TestValidateWarnsOfUnencryptedState(t *testing.T) {
 	}
 }
 
-// TestValidateTheCluster refuses an inventory whose nodes' Kubernetes documents name different
+// TestValidateTheCluster refuses an inventory whose nodes' Cluster documents name different
 // endpoints, as every other command does.
 func TestValidateTheCluster(t *testing.T) {
 	dir := t.TempDir()
 	path := writeInventory(t, dir)
-	// cluster.yaml holds nothing; n1 and n2 each get a Kubernetes document of another endpoint.
+	// cluster.yaml holds nothing; n1 and n2 each get a Cluster document of another endpoint.
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), "")
-	cluster := "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: kubernetes}\nspec: {endpoint: \"https://%s:6443\"}\n"
+	cluster := "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: default}\nspec: {endpoint: \"https://%s:6443\"}\n"
 	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.10")}, "---\n"))
 	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
 	ta := newTestApp(t)
-	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "the nodes n1 and n2 name different endpoints in their Kubernetes documents") {
+	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.Contains(err.Error(), "the nodes n1 and n2 name different endpoints in their Cluster documents") {
 		t.Errorf("validate of nodes of different endpoints = %v", err)
 	}
 }

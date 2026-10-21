@@ -233,13 +233,13 @@ func TestKubeconfigContext(t *testing.T) {
 	}
 }
 
-// TestKubeconfigNeedsAnEndpoint refuses an inventory whose nodes' Kubernetes documents name no
+// TestKubeconfigNeedsAnEndpoint refuses an inventory whose nodes' Cluster documents name no
 // endpoint, as there is none to point clients at.
 func TestKubeconfigNeedsAnEndpoint(t *testing.T) {
 	ta := newTestApp(t)
 	writeFile(t, filepath.Join(ta.dir, "cluster.yaml"), "")
 	err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-"})
-	if err == nil || !strings.Contains(err.Error(), "no Kubernetes document of the cluster lab names an endpoint") {
+	if err == nil || !strings.Contains(err.Error(), "no Cluster document of the cluster lab names an endpoint") {
 		t.Errorf("kubeconfig without an endpoint = %v", err)
 	}
 }

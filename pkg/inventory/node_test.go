@@ -25,8 +25,8 @@ spec:
 `
 
 const clusterFiles = `apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: https://10.0.0.11:6443
 ---
@@ -76,7 +76,7 @@ func TestNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(cp1.Documents); !slices.Equal(got, []string{"Kubernetes/kubernetes", "Addon/monitoring", "Node/default", "Host/default", "Network/10-uplink"}) {
+	if got := kinds(cp1.Documents); !slices.Equal(got, []string{"Cluster/default", "Addon/monitoring", "Node/default", "Host/default", "Network/10-uplink"}) {
 		t.Errorf("documents of cp1 = %q", got)
 	}
 	if cp1.Type != "controlplane" || cp1.Hostname != "cp1.lab" || cp1.ImageName != "node-metal" || cp1.ImageDir != filepath.Join(dir, "images", "node-metal") {
@@ -89,7 +89,7 @@ func TestNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Kubernetes/kubernetes", "Node/default", "Host/default", "Network/10-uplink"}) {
+	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Cluster/default", "Node/default", "Host/default", "Network/10-uplink"}) {
 		t.Errorf("documents of the worker w1 = %q, want no Addon", got)
 	}
 	// A Host whose hostname is null, and no Host, leave the hostname empty for the node's name.
@@ -121,7 +121,7 @@ func TestNodeWithoutAKubernetesNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(cp1.Documents); cp1.Type != "" || !slices.Equal(got, []string{"Kubernetes/kubernetes", "Network/10-uplink"}) {
+	if got := kinds(cp1.Documents); cp1.Type != "" || !slices.Equal(got, []string{"Cluster/default", "Network/10-uplink"}) {
 		t.Errorf("type = %q, documents = %q, want no type and no Addon", cp1.Type, got)
 	}
 	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), strings.Replace(nodeFile("cp1", "controlplane", "10.0.0.11"), "{name: default}", "{name: cp2}", 1))
@@ -138,8 +138,8 @@ func TestNodeRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
 		file, content, want string
 	}{
-		"a document twice": {"nodes/cp1.yaml", nodeFile("cp1", "controlplane", "10.0.0.11") + "---\n" + kubernetesDoc("kubernetes", "https://10.0.0.11:6443"),
-			`cluster/all.yaml and nodes/cp1.yaml both hold Kubernetes "kubernetes"`},
+		"a document twice": {"nodes/cp1.yaml", nodeFile("cp1", "controlplane", "10.0.0.11") + "---\n" + clusterDoc("default", "https://10.0.0.11:6443"),
+			`cluster/all.yaml and nodes/cp1.yaml both hold Cluster "default"`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := homelabDir(t)
@@ -198,12 +198,12 @@ func TestResolve(t *testing.T) {
 	}
 }
 
-// kubernetesDoc is a Kubernetes document called name that names the endpoint.
-func kubernetesDoc(name, endpoint string) string {
-	return "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Kubernetes\nmetadata: {name: " + name + "}\nspec: {endpoint: \"" + endpoint + "\"}\n"
+// clusterDoc is a Kubernetes Cluster document called name that names the endpoint.
+func clusterDoc(name, endpoint string) string {
+	return "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: " + name + "}\nspec: {endpoint: \"" + endpoint + "\"}\n"
 }
 
-// TestEndpoint takes the endpoint the Kubernetes documents of the nodes name alike, skips nodes
+// TestEndpoint takes the endpoint the Cluster documents of the nodes name alike, skips nodes
 // without one and refuses nodes that disagree or hold two.
 func TestEndpoint(t *testing.T) {
 	dir := homelabDir(t)
@@ -216,7 +216,7 @@ func TestEndpoint(t *testing.T) {
 	}
 	// Each node names its own endpoint, and w1 none.
 	write(t, filepath.Join(dir, "cluster", "all.yaml"), "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: monitoring}\nspec: {objects: []}\n")
-	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), nodeFile("cp1", "controlplane", "10.0.0.11")+"---\n"+kubernetesDoc("kubernetes", "https://10.0.0.11:6443"))
+	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), nodeFile("cp1", "controlplane", "10.0.0.11")+"---\n"+clusterDoc("default", "https://10.0.0.11:6443"))
 	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -224,25 +224,25 @@ func TestEndpoint(t *testing.T) {
 	if endpoint, err := inv.Endpoint(); err != nil || endpoint != "https://10.0.0.11:6443" {
 		t.Errorf("endpoint with w1 naming none = %q, %v", endpoint, err)
 	}
-	write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21")+"---\n"+kubernetesDoc("kubernetes", "https://10.0.0.99:6443"))
+	write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21")+"---\n"+clusterDoc("default", "https://10.0.0.99:6443"))
 	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `the nodes cp1 and w1 name different endpoints in their Kubernetes documents: "https://10.0.0.11:6443" and "https://10.0.0.99:6443"`
+	want := `the nodes cp1 and w1 name different endpoints in their Cluster documents: "https://10.0.0.11:6443" and "https://10.0.0.99:6443"`
 	if _, err := inv.Endpoint(); err == nil || err.Error() != want {
 		t.Errorf("differing endpoints: %v, want %q", err, want)
 	}
 	write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21")+"---\n"+
-		kubernetesDoc("a", "https://10.0.0.11:6443")+"---\n"+kubernetesDoc("b", "https://10.0.0.11:6443"))
+		clusterDoc("a", "https://10.0.0.11:6443")+"---\n"+clusterDoc("b", "https://10.0.0.11:6443"))
 	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := inv.Endpoint(); err == nil || !strings.Contains(err.Error(), "node w1: its files hold 2 Kubernetes documents") {
-		t.Errorf("two Kubernetes documents of w1: %v", err)
+	if _, err := inv.Endpoint(); err == nil || !strings.Contains(err.Error(), "node w1: its files hold 2 Cluster documents") {
+		t.Errorf("two Cluster documents of w1: %v", err)
 	}
-	// Without a Kubernetes document no node names an endpoint.
+	// Without a Cluster document no node names an endpoint.
 	write(t, filepath.Join(dir, "nodes", "cp1.yaml"), nodeFile("cp1", "controlplane", "10.0.0.11"))
 	write(t, filepath.Join(dir, "nodes", "w1.yaml"), nodeFile("w1", "worker", "10.0.0.21"))
 	inv, err = Load(filepath.Join(dir, "chalkos.yaml"))
@@ -250,7 +250,7 @@ func TestEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if endpoint, err := inv.Endpoint(); err != nil || endpoint != "" {
-		t.Errorf("endpoint without Kubernetes documents = %q, %v", endpoint, err)
+		t.Errorf("endpoint without Cluster documents = %q, %v", endpoint, err)
 	}
 	// An inventory without nodes takes its endpoint from the shared files.
 	write(t, filepath.Join(dir, "cluster", "all.yaml"), clusterFiles)

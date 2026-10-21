@@ -29,8 +29,8 @@ The lab template's shared file holds the documents every node of the lab gets:
 # Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
 # 10.96.0.0/12.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   # cp1 on the lab network: the API server of the only control plane.
   endpoint: https://192.168.123.11:6443
@@ -79,7 +79,7 @@ schemas.
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
 | [`Network`](../reference/kinds.md#network), [`NetDev`](../reference/kinds.md#netdev), [`Link`](../reference/kinds.md#link) | `networkd.chalkos.dev` | any | systemd-networkd's `.network`, `.netdev` and `.link` files, one document per file |
-| [`Kubernetes`](../reference/kinds.md#kubernetes) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The URL of the cluster's API server, IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the components |
+| [`Cluster`](../reference/kinds.md#cluster) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The URL of the cluster's API server, IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the components |
 | [`Node`](../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints and Kubernetes addresses |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | `kubernetes.chalkos.dev` | any | The mirrors of one container registry |
 | [`Flannel`](../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU |
@@ -91,7 +91,7 @@ volume; without it, a node holds at most one, and chalkctl and chalkd refuse a s
 
 Some kinds depend on the image or the node:
 
-- An image declares only the kinds its modules bring. `Kubernetes`, `Node`, `RegistryMirror` and
+- An image declares only the kinds its modules bring. `Cluster`, `Node`, `RegistryMirror` and
   `Addon` exist on images with Kubernetes, and `Flannel` only on those built with flannel as their
   pod network, so a document of one of them is an unknown kind on any other image. A node without
   Kubernetes has no type.
@@ -226,7 +226,7 @@ Two clusters may share it; their nodes still accept only their own cluster's cer
 
 A node's set is valid when:
 
-- it holds exactly one `SystemDisk`, and on an image with Kubernetes one `Kubernetes`, which
+- it holds exactly one `SystemDisk`, and on an image with Kubernetes one `Cluster`, which
   names the cluster's `endpoint` and whose defaults fill in its other fields, and one `Node`;
 - every other kind appears at most once, unless the kind allows several (`Secret`, `Volume`,
   `RegistryMirror`, `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with
@@ -239,8 +239,8 @@ A node's set is valid when:
 Beyond the schemas, chalkctl and chalkd translate the set as the node will use it, which checks
 what a schema cannot express: overlapping ranges, a VIP outside the node's networks, a volume that
 does not fit its disk, an extra flag that would override one chalkos sets. Every node of an
-inventory whose set holds a `Kubernetes` document must name the same `endpoint` in it, because
-each node takes the endpoint from its own `Kubernetes` document; chalkctl refuses an inventory
+inventory whose set holds a `Cluster` document must name the same `endpoint` in it, because
+each node takes the endpoint from its own `Cluster` document; chalkctl refuses an inventory
 whose nodes name different ones.
 
 ## How does the inventory name images?

@@ -32,7 +32,7 @@ func single(docs []Document, apiVersion, kind string) (Document, bool) {
 }
 
 // ClusterOf builds the Kubernetes cluster a node's documents give on an image with the facts img:
-// its kind from the Kubernetes Node's type, its endpoint and settings from the Kubernetes document
+// its kind from the Kubernetes Node's type, its endpoint and settings from the Cluster document
 // and, on a flannel image, flannel's from the Flannel document, and checks it.
 // It holds the per-family values of the cluster's families alone, and each error names the
 // document whose setting fails. docs carry their schema defaults, as a Set and the stored config
@@ -46,11 +46,11 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 	if err := nodeDoc.decodeSpec(&node); err != nil {
 		return kubernetes.Cluster{}, err
 	}
-	kdoc, ok := single(docs, KubernetesAPI, "Kubernetes")
+	kdoc, ok := single(docs, KubernetesAPI, "Cluster")
 	if !ok {
-		return kubernetes.Cluster{}, errors.New("no Kubernetes: the config of a node whose image runs Kubernetes holds one Kubernetes document")
+		return kubernetes.Cluster{}, errors.New("no Cluster: the config of a node whose image runs Kubernetes holds one Cluster document")
 	}
-	var k kubernetesSpec
+	var k clusterSpec
 	if err := kdoc.decodeSpec(&k); err != nil {
 		return kubernetes.Cluster{}, err
 	}
@@ -92,7 +92,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 				c.Flannel.MTU = *f.MTU
 			}
 			// The cluster without flannel is valid by now, so what fails is the Flannel
-			// document's MTU, checked against the Kubernetes document's families.
+			// document's MTU, checked against the Cluster document's families.
 			if err := c.Validate(); err != nil {
 				return kubernetes.Cluster{}, fmt.Errorf("%s: %w", d, err)
 			}

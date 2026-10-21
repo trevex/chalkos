@@ -30,7 +30,7 @@ member, removing one and replacing a failed machine.
 
 ## Define three control planes and the VIP
 
-Put the VIP in `spec.vip.addresses` of the [`Kubernetes`](../reference/kinds.md#kubernetes)
+Put the VIP in `spec.vip.addresses` of the [`Cluster`](../reference/kinds.md#cluster)
 document every node gets, and make the
 [cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the same
 document, point at it. Every node and client reaches the API server at the endpoint, so the
@@ -38,8 +38,8 @@ endpoint has to follow the VIP from one control plane to the next.
 
 ```yaml title="cluster/kubernetes.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
   vip: {addresses: [10.0.0.10]}
@@ -281,7 +281,7 @@ attempt.
 ### A control plane lost its pinned address
 
 A pinned control plane that boots without one of its addresses, after a cabling or switch
-change for example, waits for it for `spec.nodeIP.timeout` seconds of the `Kubernetes` document
+change for example, waits for it for `spec.nodeIP.timeout` seconds of the `Cluster` document
 and then runs neither etcd nor the kubelet:
 
 ```text

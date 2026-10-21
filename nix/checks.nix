@@ -136,7 +136,7 @@ in
 
   # The worker's VXLAN rule with its firewall, in a network namespace: a peer sends UDP to port
   # 8472 over a veth pair, and the node receives what the firewall accepts. The rule reads the
-  # cluster's ranges from the Kubernetes documents the test writes.
+  # cluster's ranges from the Cluster documents the test writes.
   vxlan-rule =
     let
       rule = lib.getExe worker.system.build.chalkosVxlanRule;
@@ -279,12 +279,12 @@ in
         }
         v4='destination 10.0.0.11 interface\n'
         v6='destination fd00::11 interface\n'
-        # The node's Kubernetes document with the spec given, and one of a dual-stack cluster with
+        # The node's Cluster document with the spec given, and one of a dual-stack cluster with
         # the source ranges given.
-        kubernetes=/run/chalkos/config/kubernetes.chalkos.dev/Kubernetes/kubernetes.json
-        mkdir -p "$(dirname "$kubernetes")"
+        cluster=/run/chalkos/config/kubernetes.chalkos.dev/Cluster/default.json
+        mkdir -p "$(dirname "$cluster")"
         spec() {
-          printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Kubernetes","metadata":{"name":"kubernetes"},"spec":%s}\n' "$1" >"$kubernetes"
+          printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Cluster","metadata":{"name":"default"},"spec":%s}\n' "$1" >"$cluster"
         }
         ranges() {
           spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"},"vxlanSourceSubnets":'"$1"'}'
@@ -351,9 +351,9 @@ in
           forwarded 10.0.2.12 8473 || fail "a pod's datagram to another port was dropped $1"
           arrives 10.0.0.11 || fail "VXLAN to the node was refused $1"
         }
-        rm "$kubernetes"
-        closed "without a Kubernetes document" "ranges are unknown"
-        echo '{' >"$kubernetes"
+        rm "$cluster"
+        closed "without a Cluster document" "ranges are unknown"
+        echo '{' >"$cluster"
         closed "with a document chalkcfg cannot read" "ranges are unknown"
         spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16"},"vxlanSourceSubnets":[]}'
         closed "with a family without a pod range" "ranges are unknown"

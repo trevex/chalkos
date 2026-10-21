@@ -177,7 +177,7 @@ writeShellApplication {
           sources[$family]+="''${sources[$family]:+, }$range"
         fi
       done <<<"$ranges"
-      # Without a Kubernetes document the command prints nothing.
+      # Without a Cluster document the command prints nothing.
       if [ "''${#pods[@]}" -eq 0 ]; then
         echo "chalkos-vxlan-rule: the cluster's ranges are unknown; pods' VXLAN is dropped wherever it goes" >&2
         return

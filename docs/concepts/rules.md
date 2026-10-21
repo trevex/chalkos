@@ -61,7 +61,7 @@ the config takes chalkctl storage reset: Volume data: format xfs instead of ext4
 `refuse` is a change that cannot be made; its message says what to do instead. `reset` is a change
 that [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) carries out, and
 `reinstall` one that only a reinstall of the node carries out. A field's message follows the kind,
-the document and the field, as in `Kubernetes "kubernetes" spec.ipFamilies: ...`; a kind's
+the document and the field, as in `Cluster "default" spec.ipFamilies: ...`; a kind's
 message names what it is about itself.
 
 A rule without `message` says `the config does not meet a rule of Kubernetes spec.ipFamilies`,
@@ -73,7 +73,7 @@ A rule that cannot be evaluated refuses the delivery with an error that names th
 kind, the document and the field, and the kind of error, but no value the rule read:
 
 ```text
-cannot check: Kubernetes "kubernetes" spec.ipFamilies: a rule cannot be evaluated: no such key
+cannot check: Cluster "default" spec.ipFamilies: a rule cannot be evaluated: no such key
 ```
 
 The kind of error is one of `no such key`, `index out of bounds`, `no such overload`,
@@ -298,7 +298,7 @@ its loops read as they are by then. The built-in consumers are these:
 | `systemd-networkd` | Reloads with `networkctl reload` when a `Network`, `NetDev` or `Link` document changes, or a `Secret` one of them references, or when the units chalkd writes differ from those before the delivery. |
 | `chronyd` | Reloads with `chronyc reload sources` when the `TimeSync`'s servers change, or the sources file chalkd writes differs from the one before the delivery. |
 | `chalkos-chrony-dhcp`, `chalkos-controlplane`, `chalkos-registry-mirrors` | Restart when a document of their kinds changes: `TimeSync`, `Node` and `RegistryMirror`. |
-| `chalkos-kubernetes`, `kubelet` | Restart, and start when they do not run, when the `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Kubernetes` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. On images with Kubernetes. |
+| `chalkos-kubernetes`, `kubelet` | Restart, and start when they do not run, when the `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. On images with Kubernetes. |
 | `chalkd` | Restarts its Kubernetes loops when the cluster changes, and reloads the control plane's loop when the share changes beyond its node CA or, on a control plane, the objects of the `Addon` documents. On images with Kubernetes. |
 
 ## How is a rule checked when the image is built?
@@ -316,7 +316,7 @@ stopped at a cost of 1,000,000 on the config it meets.
 | Kind | Rule | Takes |
 | --- | --- | --- |
 | `Node` | The type stays the one the node's Kubernetes share is for, read from `facts.share`. | refuse |
-| `Kubernetes` | `ipFamilies`, and the pod ranges, service ranges and DNS addresses of the families both configs have, stay once the node holds a share. Ranges and addresses compare as what they denote; an unset DNS address is the 10th of its service range. | refuse |
+| `Cluster` | `ipFamilies`, and the pod ranges, service ranges and DNS addresses of the families both configs have, stay once the node holds a share. Ranges and addresses compare as what they denote; an unset DNS address is the 10th of its service range. | refuse |
 | `SystemDisk` | VAR keeps its format, encryption and size; a larger VAR, or one that fills the disk, is accepted. | reinstall |
 | `Volume` | A volume keeps its disk, and a changed disk reference finds the disk it lives on. | reinstall |
 | `Volume` | A volume keeps its format and encryption, also the encryption it inherits from the `SystemDisk`, and does not shrink or take a fixed size where it filled its disk. | reset |

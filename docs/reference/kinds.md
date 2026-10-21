@@ -49,17 +49,7 @@ A node's config may hold several, each with a name of its own.
 | --- | --- | --- | --- |
 | `spec.objects` | list of Kubernetes object | required | Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. chalkctl delivers them to control planes alone, and a worker applies none. |
 
-## Flannel { #flannel }
-
-`apiVersion: kubernetes.chalkos.dev/v1alpha1`
-
-A node's config holds at most one.
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `spec.mtu` | integer of at least 1 or null | `null` | MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address. |
-
-## Kubernetes { #kubernetes }
+## Cluster { #cluster }
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
@@ -99,6 +89,16 @@ It has 4 [change rules](../concepts/rules.md).
 | `spec.vip.interface` | string or null | `null` | Interface the addresses are added to; null means the one holding the node's address of their family. |
 | `spec.vip.mode` | `l2` | `"l2"` | How the holder announces the addresses. |
 | `spec.vxlanSourceSubnets` | list of string | `[]` | Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source. |
+
+## Flannel { #flannel }
+
+`apiVersion: kubernetes.chalkos.dev/v1alpha1`
+
+A node's config holds at most one.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.mtu` | integer of at least 1 or null | `null` | MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address. |
 
 ## Node { #node }
 

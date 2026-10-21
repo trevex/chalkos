@@ -22,6 +22,6 @@ spec:
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec: {endpoint: "https://10.0.0.11:6443"}

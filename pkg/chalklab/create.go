@@ -108,7 +108,7 @@ func (a *app) create(ctx context.Context, f createFlags, pos []string) (err erro
 		return err
 	}
 	// chalkctl, which installs the nodes, refuses an inventory whose nodes name different
-	// endpoints in their Kubernetes documents, or one holding two; such an inventory is refused
+	// endpoints in their Cluster documents, or one holding two; such an inventory is refused
 	// before the lab is made.
 	if _, err := inv.Endpoint(); err != nil {
 		return fmt.Errorf("%s: %w", lf.inventory, err)

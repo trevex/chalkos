@@ -138,10 +138,10 @@ let
 
   # What a cluster was set up with stays once the node holds a Kubernetes share: its
   # certificates, etcd and the ranges its control plane allocated were made for it. The node
-  # holds one Kubernetes document, compared with the running config's whatever its name, in the
+  # holds one Cluster document, compared with the running config's whatever its name, in the
   # families both configs have; ipFamilies, compared as a whole, refuses a change of the families.
   fixed = "they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster";
-  # Binds was and gets to the running and the delivered Kubernetes spec around expr.
+  # Binds was and gets to the running and the delivered Cluster spec around expr.
   bindSpecs =
     expr:
     "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], ${expr}))";
@@ -450,7 +450,7 @@ in
         };
       };
     };
-    Kubernetes = builtin "kubernetes.chalkos.dev" // {
+    Cluster = builtin "kubernetes.chalkos.dev" // {
       rules = [
         (fixedRule "podCIDRs" (s: f: "cidr(${s}.podCIDRs[${f}])") (v: "string(${v})"))
         (fixedRule "serviceCIDRs" (s: f: "cidr(${s}.serviceCIDRs[${f}])") (v: "string(${v})"))

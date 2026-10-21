@@ -52,7 +52,7 @@ func loadCluster(f clusterFlags) (*cluster, error) {
 	return &cluster{partial: true}, nil
 }
 
-// loadInventory reads an inventory and the endpoint its nodes' Kubernetes documents name, which
+// loadInventory reads an inventory and the endpoint its nodes' Cluster documents name, which
 // every command refuses to act on when the nodes name different ones.
 func loadInventory(path string) (*cluster, error) {
 	inv, err := inventory.Load(path)

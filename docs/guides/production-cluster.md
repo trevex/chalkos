@@ -121,7 +121,7 @@ nodes' names, which last: each node's certificate, Kubernetes node, etcd member 
 carry its name, so renaming a node takes a reinstall, as
 [What names a node?](../concepts/config.md#what-names-a-node) describes.
 
-A node's set holds at most one document of most kinds, and exactly one `SystemDisk`, `Kubernetes`
+A node's set holds at most one document of most kinds, and exactly one `SystemDisk`, `Cluster`
 and `Node`, so each document lives in the one place that fits it: what every node shares in
 `cluster/`, what a kind of node shares in a group, the rest in the node's file.
 [The kinds reference](../reference/kinds.md) lists every field.
@@ -159,7 +159,7 @@ time while the API server keeps answering.
 Four voters tolerate one failure, like three, so an even number buys nothing. A single control
 plane is fine for a lab or a cluster whose API may go away during upgrades. Small clusters can
 run workloads on the control planes with `allowSchedulingOnControlPlanes: true` in the
-[`Kubernetes`](../reference/kinds.md#kubernetes) document; otherwise they are tainted.
+[`Cluster`](../reference/kinds.md#cluster) document; otherwise they are tainted.
 
 A node is a control plane when its [`Node`](../reference/kinds.md#node) document says
 `type: controlplane`, and a worker with `type: worker`:
@@ -190,7 +190,7 @@ spec:
 ## Decide how clients reach the API server
 
 The [cluster endpoint](../reference/glossary.md#cluster-endpoint), `spec.endpoint` of the
-[`Kubernetes`](../reference/kinds.md#kubernetes) document, is the URL kubelets, kubeconfigs and
+[`Cluster`](../reference/kinds.md#cluster) document, is the URL kubelets, kubeconfigs and
 workers use to reach the control planes. Workers also renew their
 [node certificates](../reference/glossary.md#node-certificate) through it:
 [chalkd](../reference/glossary.md#chalkd) on a worker connects to the endpoint's host on port
@@ -211,13 +211,13 @@ A VIP failover takes seconds: the holder's lease lives 10 seconds, and the HA en
 requires the VIP to move within 30 seconds of its holder's link going down. Clients with an open
 connection to the old holder notice only when it times out.
 
-The VIP is `spec.vip.addresses` of the `Kubernetes` document every node gets, and the endpoint
+The VIP is `spec.vip.addresses` of the `Cluster` document every node gets, and the endpoint
 points at it:
 
 ```yaml title="cluster/kubernetes.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   # The VIP the control planes hold.
   endpoint: https://10.0.0.10:6443
@@ -230,7 +230,7 @@ spec:
 
 ## Fix the IP families
 
-`spec.ipFamilies` of the `Kubernetes` document lists the cluster's address families, the
+`spec.ipFamilies` of the `Cluster` document lists the cluster's address families, the
 primary one first: `[ipv4]` by default, `[ipv4, ipv6]` for dual stack. The families and their
 order are fixed when the cluster is created. A control plane compares them with the families it
 was pinned with and refuses to prepare Kubernetes when they differ:
@@ -245,8 +245,8 @@ document names both families and one range of each:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
   ipFamilies: [ipv4, ipv6]
@@ -272,7 +272,7 @@ inventory. Two things depend on it:
   not read the `Network` documents, so the two must agree.
 
 Workers may take their address from DHCP instead and pick it with `spec.nodeIP.validSubnets` of
-the `Kubernetes` document, or `spec.validSubnets` of a node's own
+the `Cluster` document, or `spec.validSubnets` of a node's own
 [`Node`](../reference/kinds.md#node) document. The inventory names such a node by an
 address that stays, such as a DNS name.
 
@@ -404,7 +404,7 @@ Issue them per person, with the shortest validity your routine tolerates, so a d
 Kubeconfigs from [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md) are the same
 for the Kubernetes API: one per person with `--name`, all in the group bound to
 `cluster-admin`, revoked only by rotating the Kubernetes CAs. For narrower access, configure an
-authenticator of the API server through `spec.extraArgs.kube-apiserver` of the `Kubernetes`
+authenticator of the API server through `spec.extraArgs.kube-apiserver` of the `Cluster`
 document.
 
 ## Choose time servers

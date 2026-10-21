@@ -34,11 +34,11 @@ let
     "cel.bind(d, ${
       cel.documents c "networkd.chalkos.dev/v1alpha1" "Network"
     }, d.map(n, has(d[n].spec.network) ? ${cel.oneOrMany "d[n].spec.network"}.map(s, type(s) == map && has(s.address) ? s.address : null) : []))";
-  # The cluster the Kubernetes and Flannel documents give, the endpoint among it, or a cluster file
+  # The cluster the Cluster and Flannel documents give, the endpoint among it, or a cluster file
   # that changed, as one a boot whose config loader failed left missing.
   clusterChanged = lib.concatStringsSep " || " [
     "facts.cluster != oldFacts.cluster"
-    (cel.specsChanged kubernetesAPI "Kubernetes")
+    (cel.specsChanged kubernetesAPI "Cluster")
     (cel.specsChanged kubernetesAPI "Flannel")
   ];
   # A share that differs in more than its node CA: the node CA is read from the share whenever a
@@ -78,8 +78,8 @@ let
   vxlanRule = pkgs.callPackage ./vxlan-rule.nix {
     ipv6 = config.networking.enableIPv6;
     mark = vxlanMark;
-    # Each family's pod range, then the source ranges, from the node's Kubernetes document.
-    rangesCommand = config.chalkos.kinds.Kubernetes.get {
+    # Each family's pod range, then the source ranges, from the node's Cluster document.
+    rangesCommand = config.chalkos.kinds.Cluster.get {
       output = ''
         go-template={{$s := .spec}}{{range $s.ipFamilies}}pods {{index $s.podCIDRs .}}
         {{end}}{{range $s.vxlanSourceSubnets}}source {{.}}

@@ -44,7 +44,7 @@ etcd election. It differs where Nix changes the trade-offs:
 
 | Topic | Talos | chalkos |
 | --- | --- | --- |
-| Configuration | One machine configuration per node in Talos's own YAML schema, applied through the API. | YAML documents in the style of Kubernetes objects, one kind per concern, such as `Node`, `Network`, `SystemDisk` and `Kubernetes`, which an inventory assigns to nodes. chalkctl and chalkd check them against the JSON Schemas the image carries, and a NixOS module in the image can declare a kind of its own. |
+| Configuration | One machine configuration per node in Talos's own YAML schema, applied through the API. | YAML documents in the style of Kubernetes objects, one kind per concern, such as `Node`, `Network`, `SystemDisk` and `Cluster`, which an inventory assigns to nodes. chalkctl and chalkd check them against the JSON Schemas the image carries, and a NixOS module in the image can declare a kind of its own. |
 | Images | One image for every node, extended with signed system extensions. | One image per variant and [platform](reference/glossary.md#platform), built from NixOS modules, so a GPU variant carries the GPU drivers and the others do not. The kernel is nixpkgs's, with its modules filtered per image, so the binary cache keeps working. |
 | Node certificates | Control planes hold the root CA's key. | Control planes hold a [node CA](reference/glossary.md#node-ca), an intermediate that may issue only server and client certificates. The [OS CA](reference/glossary.md#os-ca)'s key stays in the [secrets file](reference/glossary.md#secrets-file). |
 | Upgrades | The node pulls an installer image from a registry. | chalkctl streams an image Nix built to chalkd, which writes it into the inactive slot. |

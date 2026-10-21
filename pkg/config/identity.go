@@ -85,7 +85,7 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	}
 	if t.Image != nil {
 		// The node's addresses follow the families and nodeIP.validSubnets of the cluster the
-		// documents give, which needs a Node and a Kubernetes document.
+		// documents give, which needs a Node and a Cluster document.
 		c, err := s.Cluster(*t.Image)
 		if err != nil {
 			return identity.Identity{}, fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
@@ -205,7 +205,7 @@ func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) 
 	}
 	// The other nodes take VXLAN only from vxlanSourceSubnets, so every address the node has or
 	// may pick must lie in them; the node checks the addresses it picks at boot again. Invalid
-	// sources are the Kubernetes document's error, reported with the cluster.
+	// sources are the Cluster document's error, reported with the cluster.
 	if sources, err := c.VXLANSources(); err == nil {
 		if err := kubernetes.CheckVXLANSources(sources, addrs); err != nil {
 			add("Node: nodeIPs: %v", err)

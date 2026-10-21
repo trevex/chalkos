@@ -26,10 +26,10 @@ func TestBuiltinRulesCompile(t *testing.T) {
 		count[p.Kind.APIVersion+" "+p.Kind.Kind]++
 	}
 	for kind, want := range map[string]int{
-		"storage.chalkos.dev/v1alpha1 Volume":        7,
-		"storage.chalkos.dev/v1alpha1 SystemDisk":    1,
-		"kubernetes.chalkos.dev/v1alpha1 Node":       1,
-		"kubernetes.chalkos.dev/v1alpha1 Kubernetes": 4,
+		"storage.chalkos.dev/v1alpha1 Volume":     7,
+		"storage.chalkos.dev/v1alpha1 SystemDisk": 1,
+		"kubernetes.chalkos.dev/v1alpha1 Node":    1,
+		"kubernetes.chalkos.dev/v1alpha1 Cluster": 4,
 	} {
 		if count[kind] != want {
 			t.Errorf("%s has %d rules, want %d", kind, count[kind], want)

@@ -1,7 +1,7 @@
 # The test boots a pinned node without its address; it gives up after nodeIP.timeout.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Kubernetes
-metadata: {name: kubernetes}
+kind: Cluster
+metadata: {name: default}
 spec:
   allowSchedulingOnControlPlanes: true
   dnsIPs:

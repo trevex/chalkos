@@ -138,7 +138,7 @@ after.
 
 The Kubernetes line says `preparation failed: no ipv4 node address matches ...`, with the
 selector and the addresses the node has. The node waited `spec.nodeIP.timeout` of the cluster's
-[`Kubernetes`](../reference/kinds.md#kubernetes) document, 300 seconds by default, for an address
+[`Cluster`](../reference/kinds.md#cluster) document, 300 seconds by default, for an address
 that matches its fixed `nodeIPs` or its `validSubnets` in its
 [`Node`](../reference/kinds.md#node) document, or the cluster's `nodeIP.validSubnets`, and
 found none, so it runs neither the kubelet nor static pods. Check the node's `Network` documents
