@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -18,20 +19,29 @@ import (
 // stay accessible and the unit keeps root's capabilities but CAP_SYS_MODULE, since resolving
 // disks and testing a passphrase read block devices and cryptsetup may set up a temporary
 // device-mapper mapping for a cipher the kernel crypto API lacks; cryptsetup's lock directory
-// stays writable, where it exists, for the passphrase test. RuntimeMaxSec stops the unit itself
-// when chalkd stops waiting.
+// stays writable, where it exists, for the passphrase test.
 type Sandbox struct{}
 
 func (Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
-	return run(ctx, sandboxed(argv), stdin, limit)
+	return RunCommand(ctx, Sandboxed(argv, "--property=ReadWritePaths=-/run/cryptsetup"), stdin, limit)
 }
 
-func sandboxed(argv []string) []string {
-	return append([]string{
-		"systemd-run", "--pipe", "--wait", "--quiet", "--collect",
+// Sandboxed is the command line that runs argv in the sandbox Sandbox describes, with the extra
+// options of systemd-run given.
+func Sandboxed(argv []string, extra ...string) []string {
+	args := append([]string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect"}, SandboxProperties()...)
+	// RuntimeMaxSec stops the unit itself when chalkd stops waiting.
+	args = append(args, fmt.Sprintf("--property=RuntimeMaxSec=%d", int(Timeout.Seconds())))
+	args = append(args, extra...)
+	return append(append(args, "--"), argv...)
+}
+
+// SandboxProperties are the properties of the sandbox Sandbox describes, without cryptsetup's
+// lock directory and the time limit, as options of systemd-run.
+func SandboxProperties() []string {
+	return []string{
 		"--property=ProtectSystem=strict",
 		"--property=ReadOnlyPaths=-/state",
-		"--property=ReadWritePaths=-/run/cryptsetup",
 		"--property=ProtectHome=yes",
 		"--property=PrivateTmp=yes",
 		"--property=ProtectKernelTunables=yes",
@@ -40,15 +50,17 @@ func sandboxed(argv []string) []string {
 		"--property=PrivateNetwork=yes",
 		"--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
 		"--property=NoNewPrivileges=yes",
-		fmt.Sprintf("--property=RuntimeMaxSec=%d", int(Timeout.Seconds())),
-		"--",
-	}, argv...)
+	}
 }
 
-// run runs argv with stdin and returns its standard output, refusing more than limit bytes. A
-// program that fails is a CommandError that holds the start of what it wrote to standard error.
-func run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
+// RunCommand runs argv with stdin and env added to chalkd's environment, and returns its standard
+// output, refusing more than limit bytes. A program that fails is a CommandError that holds the
+// start of what it wrote to standard error.
+func RunCommand(ctx context.Context, argv []string, stdin []byte, limit int, env ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.Stdin = bytes.NewReader(stdin)
 	out := &limited{limit: limit}
 	stderr := &capped{limit: maxStderr}

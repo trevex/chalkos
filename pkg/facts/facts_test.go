@@ -230,13 +230,14 @@ func TestOverride(t *testing.T) {
 func TestSandboxed(t *testing.T) {
 	want := []string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect",
 		"--property=ProtectSystem=strict", "--property=ReadOnlyPaths=-/state",
-		"--property=ReadWritePaths=-/run/cryptsetup", "--property=ProtectHome=yes",
+		"--property=ProtectHome=yes",
 		"--property=PrivateTmp=yes", "--property=ProtectKernelTunables=yes",
 		"--property=ProtectKernelModules=yes", "--property=ProtectControlGroups=yes",
 		"--property=PrivateNetwork=yes", "--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
-		"--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=30", "--",
+		"--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=30",
+		"--property=ReadWritePaths=-/run/cryptsetup", "--",
 		"/nix/store/x/bin/chalkos-storage", "facts", "disks"}
-	if got := sandboxed([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); !slices.Equal(got, want) {
+	if got := Sandboxed([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}, "--property=ReadWritePaths=-/run/cryptsetup"); !slices.Equal(got, want) {
 		t.Errorf("sandboxed = %v", got)
 	}
 }
@@ -280,11 +281,11 @@ func TestCommandFailures(t *testing.T) {
 // wrote to standard error, which its error does not show.
 func TestRun(t *testing.T) {
 	ctx := context.Background()
-	out, err := run(ctx, []string{"sh", "-c", "cat"}, []byte(`{"a": 1}`), 100)
+	out, err := RunCommand(ctx, []string{"sh", "-c", "cat"}, []byte(`{"a": 1}`), 100)
 	if err != nil || !bytes.Equal(out, []byte(`{"a": 1}`)) {
 		t.Errorf("cat = %q, %v", out, err)
 	}
-	if _, err := run(ctx, []string{"sh", "-c", "head -c 200 /dev/zero"}, nil, 100); err == nil || !strings.Contains(err.Error(), "more than 100 bytes") {
+	if _, err := RunCommand(ctx, []string{"sh", "-c", "head -c 200 /dev/zero"}, nil, 100); err == nil || !strings.Contains(err.Error(), "more than 100 bytes") {
 		t.Errorf("long output: err = %v", err)
 	}
 	for name, tc := range map[string]struct {
@@ -295,7 +296,7 @@ func TestRun(t *testing.T) {
 		"long":   {"head -c 10000 /dev/zero | tr '\\0' x >&2; exit 1", "exit 1", strings.Repeat("x", maxStderr)},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := run(ctx, []string{"sh", "-c", tc.script}, []byte(`{"config": "s3cret"}`), 100)
+			_, err := RunCommand(ctx, []string{"sh", "-c", tc.script}, []byte(`{"config": "s3cret"}`), 100)
 			var failed *CommandError
 			if !errors.As(err, &failed) || failed.Status != tc.status || failed.Stderr != tc.stderr {
 				t.Fatalf("err = %#v", err)
