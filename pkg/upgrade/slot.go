@@ -271,9 +271,24 @@ func (w *SlotWriter) setPartition(ctx context.Context, p Partition, uuid, label 
 	return nil
 }
 
+// Skipper is a stream that passes over bytes without reading them, as a pull passes over the
+// layers of parts a slot holds already without fetching them.
+type Skipper interface {
+	Skip(n int64) error
+}
+
 // Skip receives the store and its hash tree that the stream holds for a slot that holds them
-// already, and checks their SHA-256 all the same: every part of an image is checked.
+// already, and checks their SHA-256 all the same: every part of an image is checked. A Skipper
+// passes over them without reading them instead, since its source checks the parts it serves.
 func Skip(h Header, stream io.Reader) error {
+	// A Skipper's parts are those the header's SHA-256 sums name, which its source checks; the
+	// slot was found to hold them.
+	if s, ok := stream.(Skipper); ok {
+		if err := s.Skip(h.StoreSize + h.VeritySize); err != nil {
+			return fmt.Errorf("pass over the store and hash tree: %w", err)
+		}
+		return nil
+	}
 	for _, part := range []struct {
 		what string
 		size int64
