@@ -6,9 +6,9 @@ metadata: {name: chalklab}
 spec:
   images:
     test-metal: {source: {directory: images/test-metal}}
-  files: [cluster/*.yaml]
+  all: {files: [cluster/*.yaml]}
   groups:
-    test: {image: test-metal}
+    test: {imageName: test-metal}
   nodes:
     chalklab:
       groups: [test]

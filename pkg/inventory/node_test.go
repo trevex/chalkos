@@ -19,8 +19,9 @@ metadata: {name: homelab}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all:
+    imageName: node-metal
+    files: [cluster/*.yaml]
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
     w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}
@@ -272,7 +273,7 @@ func TestEndpoint(t *testing.T) {
 	}
 	// An inventory without nodes takes its endpoint from the shared files.
 	write(t, filepath.Join(dir, "cluster", "all.yaml"), clusterFiles)
-	write(t, filepath.Join(dir, "chalkos.yaml"), "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: homelab}\nspec:\n  files: [cluster/*.yaml]\n")
+	write(t, filepath.Join(dir, "chalkos.yaml"), "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: homelab}\nspec:\n  all: {files: [cluster/*.yaml]}\n")
 	if endpoint, err := load().Endpoint(); err != nil || endpoint != "https://10.0.0.11:6443" {
 		t.Errorf("endpoint without nodes = %q, %v", endpoint, err)
 	}

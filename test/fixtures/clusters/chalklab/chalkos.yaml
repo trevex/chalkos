@@ -8,11 +8,11 @@ spec:
     test-metal: {source: {directory: images/test-metal}}
     storage-metal: {source: {directory: images/storage-metal}}
     k8s-kvm: {source: {directory: images/k8s-kvm}}
-  files: [cluster/*.yaml]
+  all: {files: [cluster/*.yaml]}
   groups:
-    test: {image: test-metal}
-    storage: {image: storage-metal}
-    k8s: {image: k8s-kvm, files: [groups/k8s.yaml]}
+    test: {imageName: test-metal}
+    storage: {imageName: storage-metal}
+    k8s: {imageName: k8s-kvm, files: [groups/k8s.yaml]}
   nodes:
     chalklab:
       groups: [test]

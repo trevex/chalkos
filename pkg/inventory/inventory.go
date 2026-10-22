@@ -51,10 +51,9 @@ type Metadata struct {
 type Spec struct {
 	// Images are the images the nodes run, by name.
 	Images map[string]Image `json:"images,omitempty"`
-	// Image is the image of the nodes that name none and whose groups name none.
-	Image string `json:"image,omitempty"`
-	// Files are the config files every node gets, as paths or globs.
-	Files  []string         `json:"files,omitempty"`
+	// All is what every node gets: the image of the nodes whose groups and own entry name none,
+	// and the config files every node gets first.
+	All    Group            `json:"all,omitempty"`
 	Groups map[string]Group `json:"groups,omitempty"`
 	Nodes  map[string]Node  `json:"nodes,omitempty"`
 }
@@ -72,17 +71,17 @@ type ImageSource struct {
 
 // Group is the image and the config files that the nodes in the group get.
 type Group struct {
-	Image string   `json:"image,omitempty"`
-	Files []string `json:"files,omitempty"`
+	ImageName string   `json:"imageName,omitempty"`
+	Files     []string `json:"files,omitempty"`
 }
 
 // Node is a node of the cluster: where chalkctl reaches it, the image it runs, the groups it is
 // in and its own config files.
 type Node struct {
-	Address string   `json:"address,omitempty"`
-	Image   string   `json:"image,omitempty"`
-	Groups  []string `json:"groups,omitempty"`
-	Files   []string `json:"files,omitempty"`
+	Address   string   `json:"address,omitempty"`
+	ImageName string   `json:"imageName,omitempty"`
+	Groups    []string `json:"groups,omitempty"`
+	Files     []string `json:"files,omitempty"`
 }
 
 // Inventory is an inventory as chalkctl reads it: its spec with every path absolute. Its files
@@ -152,17 +151,17 @@ func parse(path string, data []byte) (*Inventory, error) {
 		}
 		return nil
 	}
-	if err := defined(spec.Image, "spec.image"); err != nil {
+	if err := defined(spec.All.ImageName, "spec.all.imageName"); err != nil {
 		return nil, err
 	}
-	spec.Files = absoluteAll(dir, spec.Files)
+	spec.All.Files = absoluteAll(dir, spec.All.Files)
 	groups := map[string]Group{}
 	for _, name := range slices.Sorted(maps.Keys(spec.Groups)) {
 		g := spec.Groups[name]
-		if err := defined(g.Image, "the group "+name); err != nil {
+		if err := defined(g.ImageName, "the group "+name); err != nil {
 			return nil, err
 		}
-		groups[name] = Group{Image: g.Image, Files: absoluteAll(dir, g.Files)}
+		groups[name] = Group{ImageName: g.ImageName, Files: absoluteAll(dir, g.Files)}
 	}
 	nodes := map[string]Node{}
 	for _, name := range slices.Sorted(maps.Keys(spec.Nodes)) {
@@ -172,7 +171,7 @@ func parse(path string, data []byte) (*Inventory, error) {
 				return nil, fmt.Errorf("node %s is in the group %s, which the inventory does not define", name, g)
 			}
 		}
-		if err := defined(n.Image, "node "+name); err != nil {
+		if err := defined(n.ImageName, "node "+name); err != nil {
 			return nil, err
 		}
 		n.Files = absoluteAll(dir, n.Files)
@@ -189,8 +188,8 @@ func parse(path string, data []byte) (*Inventory, error) {
 }
 
 // Image is the name and directory of the image a node runs: its own, else that of its groups,
-// else spec.image. Groups that name different images are refused even for a node that names its
-// own, so that the conflict shows before the node leaves the group or drops its image.
+// else spec.all.imageName. Groups that name different images are refused even for a node that
+// names its own, so that the conflict shows before the node leaves the group or drops its image.
 func (inv *Inventory) Image(node string) (name, dir string, err error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {
@@ -198,7 +197,7 @@ func (inv *Inventory) Image(node string) (name, dir string, err error) {
 	}
 	var group string
 	for _, g := range n.Groups {
-		image := inv.Spec.Groups[g].Image
+		image := inv.Spec.Groups[g].ImageName
 		switch {
 		case image == "" || image == name:
 		case name != "":
@@ -207,14 +206,14 @@ func (inv *Inventory) Image(node string) (name, dir string, err error) {
 			name, group = image, g
 		}
 	}
-	if n.Image != "" {
-		name = n.Image
+	if n.ImageName != "" {
+		name = n.ImageName
 	}
 	if name == "" {
-		name = inv.Spec.Image
+		name = inv.Spec.All.ImageName
 	}
 	if name == "" {
-		return "", "", fmt.Errorf("node %s has no image; name one in spec.image, in a group of the node or on the node", node)
+		return "", "", fmt.Errorf("node %s has no image; name one in spec.all.imageName, in a group of the node or on the node", node)
 	}
 	return name, inv.Spec.Images[name].Source.Directory, nil
 }
@@ -268,7 +267,7 @@ func (inv *Inventory) Files(node string) ([]string, error) {
 	if !ok {
 		return nil, inv.noNode(node)
 	}
-	patterns := slices.Clone(inv.Spec.Files)
+	patterns := slices.Clone(inv.Spec.All.Files)
 	for _, g := range n.Groups {
 		patterns = append(patterns, inv.Spec.Groups[g].Files...)
 	}

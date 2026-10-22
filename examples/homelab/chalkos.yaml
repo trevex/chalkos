@@ -7,8 +7,7 @@ spec:
   images:
     # nix build .#node-metal -o images/node-metal puts the image here.
     node-metal: {source: {directory: images/node-metal}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
     w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}

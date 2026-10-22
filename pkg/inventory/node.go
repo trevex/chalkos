@@ -187,7 +187,7 @@ func (inv *Inventory) Endpoint() (string, error) {
 		return e
 	}
 	if len(inv.Spec.Nodes) == 0 {
-		files, err := inv.expand(inv.Spec.Files)
+		files, err := inv.expand(inv.Spec.All.Files)
 		if err != nil {
 			return "", err
 		}

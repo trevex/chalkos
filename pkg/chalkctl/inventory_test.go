@@ -28,8 +28,7 @@ metadata: {name: lab}
 spec:
   images:
     test-metal: {source: {directory: images/test-metal}}
-  image: test-metal
-  files: [cluster.yaml]
+  all: {imageName: test-metal, files: [cluster.yaml]}
   nodes:
     n1: {address: 10.0.0.11, files: [nodes/n1.yaml]}
 `
@@ -203,7 +202,7 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 			docs = append(docs, nodeDoc(n.kind))
 		}
 		writeFile(t, filepath.Join(dir, "nodes", n.name+".yaml"), strings.Join(docs, "---\n"))
-		listed += fmt.Sprintf("    %s: {address: 10.0.0.%d, image: %s-metal, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.variant, n.name)
+		listed += fmt.Sprintf("    %s: {address: 10.0.0.%d, imageName: %s-metal, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.variant, n.name)
 		if !variants[n.variant] {
 			variants[n.variant] = true
 			image := images[n.variant]
@@ -214,7 +213,7 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 		}
 	}
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), testClusterYAML)
-	writeFile(t, filepath.Join(dir, "chalkos.yaml"), "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n  images:\n"+defined+"  files: [cluster.yaml]\n  nodes:\n"+listed)
+	writeFile(t, filepath.Join(dir, "chalkos.yaml"), "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n  images:\n"+defined+"  all: {files: [cluster.yaml]}\n  nodes:\n"+listed)
 	return filepath.Join(dir, "chalkos.yaml")
 }
 

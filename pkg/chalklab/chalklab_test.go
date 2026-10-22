@@ -39,9 +39,9 @@ func writeLabFiles(t *testing.T, dir, labFile string) string {
 	t.Helper()
 	files := map[string]string{
 		"chalkos.yaml": "apiVersion: chalkctl.chalkos.dev/v1alpha1\nkind: Inventory\nmetadata: {name: lab}\nspec:\n" +
-			"  images:\n    node-kvm: {source: {directory: images/node-kvm}}\n    node-metal: {source: {directory: images/node-metal}}\n  image: node-kvm\n" +
-			"  files: [cluster.yaml]\n  nodes:\n" +
-			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {image: node-metal, files: [m1.yaml]}\n",
+			"  images:\n    node-kvm: {source: {directory: images/node-kvm}}\n    node-metal: {source: {directory: images/node-metal}}\n" +
+			"  all: {imageName: node-kvm, files: [cluster.yaml]}\n  nodes:\n" +
+			"    cp1: {address: 192.168.123.11, files: [cp1.yaml]}\n    w1: {address: 192.168.123.12, files: [w1.yaml]}\n    m1: {imageName: node-metal, files: [m1.yaml]}\n",
 		"cluster.yaml":  "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: default}\nspec: {endpoint: \"https://192.168.123.11:6443\"}\n",
 		"cp1.yaml":      "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: controlplane}\n",
 		"w1.yaml":       "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Node\nmetadata: {name: default}\nspec: {type: worker}\n",
@@ -241,7 +241,7 @@ func TestLabInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.NodeNames(), []string{"cp1"}) || got.Spec.Nodes["cp1"].Address != "127.0.0.1:15001" ||
-		!slices.Equal(got.Spec.Files, []string{filepath.Join(dir, "cluster.yaml")}) {
+		!slices.Equal(got.Spec.All.Files, []string{filepath.Join(dir, "cluster.yaml")}) {
 		t.Errorf("the lab's inventory = %+v", got.Spec)
 	}
 	nc, err := got.Node("cp1")

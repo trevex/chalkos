@@ -9,8 +9,7 @@ spec:
   images:
     # nix build .#node-kvm -o images/node-kvm puts the image here.
     node-kvm: {source: {directory: images/node-kvm}}
-  image: node-kvm
-  files: [cluster/*.yaml]
+  all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
     w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}

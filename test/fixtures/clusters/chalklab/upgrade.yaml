@@ -6,9 +6,9 @@ metadata: {name: chalklab}
 spec:
   images:
     test-upgrade-metal: {source: {directory: images/test-upgrade-metal}}
-  files: [cluster/*.yaml]
+  all: {files: [cluster/*.yaml]}
   groups:
-    test-upgrade: {image: test-upgrade-metal}
+    test-upgrade: {imageName: test-upgrade-metal}
   nodes:
     chalklab:
       groups: [test-upgrade]

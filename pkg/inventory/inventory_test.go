@@ -27,10 +27,11 @@ spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
     node-gpu: {source: {directory: /srv/images/node-gpu}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all:
+    imageName: node-metal
+    files: [cluster/*.yaml]
   groups:
-    gpu: {image: node-gpu, files: [gpu/*.yaml]}
+    gpu: {imageName: node-gpu, files: [gpu/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
     w1: {address: 10.0.0.21, groups: [gpu], files: [nodes/w1.yaml]}
@@ -47,7 +48,7 @@ func TestLoadMakesPathsAbsolute(t *testing.T) {
 	if inv.Name != "homelab" || inv.Dir() != dir {
 		t.Errorf("inventory = %+v", inv)
 	}
-	if got := inv.Spec.Files; !slices.Equal(got, []string{filepath.Join(dir, "cluster", "*.yaml")}) {
+	if got := inv.Spec.All.Files; !slices.Equal(got, []string{filepath.Join(dir, "cluster", "*.yaml")}) {
 		t.Errorf("files = %q", got)
 	}
 	if got := inv.Spec.Images["node-metal"].Source.Directory; got != filepath.Join(dir, "images", "node-metal") {
@@ -76,6 +77,7 @@ func TestLoadRefuses(t *testing.T) {
 		"an unknown group":    {strings.Replace(homelab, "groups: [gpu]", "groups: [gpus]", 1), "the group gpus, which the inventory does not define"},
 		"two documents":       {homelab + "---\n" + homelab, "holds 2 documents"},
 		"a secrets file":      {strings.Replace(homelab, "spec:\n", "spec:\n  secrets: ./secrets.age\n", 1), "secrets"},
+		"a top-level image":   {strings.Replace(homelab, "spec:\n", "spec:\n  image: node-metal\n", 1), "image"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "chalkos.yaml")

@@ -6,8 +6,7 @@ metadata: {name: chalklab-ha}
 spec:
   images:
     k8s-metal: {source: {directory: images/k8s-metal}}
-  image: k8s-metal
-  files: [cluster/*.yaml]
+  all: {imageName: k8s-metal, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 192.168.100.11, files: [nodes/cp1.yaml]}
     cp2: {address: 192.168.100.12, files: [nodes/cp2.yaml]}

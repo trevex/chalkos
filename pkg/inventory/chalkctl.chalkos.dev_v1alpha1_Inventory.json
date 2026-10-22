@@ -49,25 +49,17 @@
             }
           }
         },
-        "image": {
-          "$ref": "#/$defs/image",
-          "description": "The image of every node that names none and whose groups name none."
+        "all": {
+          "$ref": "#/$defs/group",
+          "description": "What every node gets: the image of the nodes that name none and whose groups name none, and the config files every node gets first."
         },
-        "files": { "$ref": "#/$defs/files", "description": "Config files every node gets." },
         "groups": {
           "type": "object",
           "description": "Groups of nodes by name, which a node joins by naming them in its groups.",
           "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
           "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "image": {
-                "$ref": "#/$defs/image",
-                "description": "The image of the group's nodes that name none, over spec.image. A node in groups that name different images is refused."
-              },
-              "files": { "$ref": "#/$defs/files", "description": "Config files the group's nodes get." }
-            }
+            "$ref": "#/$defs/group",
+            "description": "The group's image, over spec.all.imageName, and the config files its nodes get. A node in groups that name different images is refused."
           }
         },
         "nodes": {
@@ -83,9 +75,9 @@
                 "minLength": 1,
                 "description": "Where chalkctl reaches the node's chalkd: a host or host:port."
               },
-              "image": {
-                "$ref": "#/$defs/image",
-                "description": "The image the node runs, over that of its groups and spec.image."
+              "imageName": {
+                "$ref": "#/$defs/imageName",
+                "description": "The image the node runs, over that of its groups and spec.all.imageName."
               },
               "groups": {
                 "type": "array",
@@ -101,7 +93,18 @@
   },
   "$defs": {
     "files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "image": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" }
+    "imageName": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "imageName": {
+          "$ref": "#/$defs/imageName",
+          "description": "The image of the nodes under it that name none of their own."
+        },
+        "files": { "$ref": "#/$defs/files", "description": "Config files the nodes under it get." }
+      }
+    }
   },
   "x-chalkos-kind": {
     "group": "chalkctl.chalkos.dev",
