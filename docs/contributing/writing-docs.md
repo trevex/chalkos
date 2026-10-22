@@ -59,7 +59,7 @@ These pages are generated and never edited by hand:
 
 | Page | Generated from | By |
 | --- | --- | --- |
-| `docs/reference/cli/` | the command trees of chalkctl, [chalklab](../reference/glossary.md#chalklab) and [chalkcfg](../reference/glossary.md#chalkcfg), with their help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go` and `pkg/chalkcfg/help.go` | `docgen cli` |
+| `docs/reference/cli/` | the command trees of chalkctl, [chalklab](../reference/glossary.md#chalklab), [chalkbuild](../reference/glossary.md#chalkbuild) and [chalkcfg](../reference/glossary.md#chalkcfg), with their help in `pkg/chalkctl/help.go`, `pkg/chalklab/help.go`, `pkg/chalkbuild/help.go` and `pkg/chalkcfg/help.go` | `docgen cli` |
 | `docs/reference/kinds.md` | the JSON Schemas of the default variant's kinds, declared in `modules/node/kinds/builtin.nix`, and of the inventory and the lab file, `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json` | `docgen kinds` |
 | `docs/reference/options.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules | nixosOptionsDoc |
 | `docs/reference/api.md` | `api/chalkos/node/v1/node.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
@@ -94,13 +94,13 @@ nix build --no-link -L .#checks.x86_64-linux.docs .#checks.x86_64-linux.docs-gen
 `docgen check` reads every fenced block in `sh`, `bash`, `shell`, `zsh`, `console`,
 `shell-session` or without a language. It strips `$ ` prompts, joins lines ending in `\`,
 follows wrappers such as `sudo`, `env`, `nix run .#chalklab --` and `nix develop -c`, and
-reports a `chalkctl`, `chalklab` or `chalkcfg` command, subcommand or flag that does not exist,
-a single-dash long flag and a flag missing its value. Positional arguments and flag values are
-not checked, so placeholders such as `<node>` pass. For a page whose block runs `chalkctl upgrade`
-with a `--dry-run` flag and `chalkctl status` with `-insecure`, it reports:
+reports a `chalkctl`, `chalklab`, `chalkbuild` or `chalkcfg` command, subcommand or flag that
+does not exist, a single-dash long flag and a flag missing its value. Positional arguments and
+flag values are not checked, so placeholders such as `<node>` pass. For a page whose block runs
+`chalkctl upgrade` with a `--dry-run` flag and `chalkctl status` with `-insecure`, it reports:
 
 ```text
-docgen: commands in the documentation that chalkctl, chalklab and chalkcfg do not have:
+docgen: commands in the documentation that chalkctl, chalklab, chalkbuild and chalkcfg do not have:
 docs/guides/example.md:8: chalkctl upgrade --config lab.json --dry-run: chalkctl upgrade has no flag --dry-run
 docs/guides/example.md:9: chalkctl status cp1 -insecure: chalkctl status has no flag -i
 ```

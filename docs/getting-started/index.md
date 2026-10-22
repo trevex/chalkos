@@ -203,10 +203,10 @@ the lab lab runs cp1, w1; next:
   chalkctl status cp1 --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml
   chalklab status
   chalklab destroy
-The lab's inventory names unsigned images, which the lab's firmware refuses: upgrade with the
-lab's db key, or with --image of an image chalklab sign signed:
-  chalkctl upgrade --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml --allow-downtime \
-    --sign-key /home/alice/.local/state/chalklab/lab/keys/db.key --sign-cert /home/alice/.local/state/chalklab/lab/keys/db.crt
+The lab's inventory names unsigned images, which the lab's firmware refuses: sign a copy of an
+image with the lab's db key and upgrade the nodes of its variant with it:
+  chalklab sign <image dir> --out <signed dir>
+  chalkctl upgrade --image <signed dir> --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
 ```
 
 The output follows the life of a node:
@@ -434,16 +434,22 @@ git commit -am "Add the debug tools"
 nix build .#node-kvm -o images/node-kvm
 ```
 
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) gives each node the image the inventory
-names for it, signs it and rolls it through the cluster, one node at a time. The lab's firmware
-boots only images signed with the lab's Secure Boot key, so pass the key and certificate that
-`chalklab create` printed and `chalklab status` lists:
+The lab's firmware boots only images signed with the lab's Secure Boot key, and the build is
+unsigned. [`chalklab sign`](../reference/cli/chalklab_sign.md) copies the image directory and
+signs the copy with the lab's db key. The copy's directory must not exist yet, so remove the copy
+of an earlier round first:
+
+```sh
+rm -rf images/node-kvm-signed
+chalklab sign images/node-kvm --out images/node-kvm-signed
+```
+
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) with `--image` gives the signed copy to
+the nodes that run its variant and rolls it through the cluster, one node at a time:
 
 ```console
-$ chalkctl upgrade --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
-  --sign-key ~/.local/state/chalklab/lab/keys/db.key \
-  --sign-cert ~/.local/state/chalklab/lab/keys/db.crt \
-  --allow-downtime
+$ chalkctl upgrade --image images/node-kvm-signed \
+  --inventory ~/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
 upgrading node on kvm to 3fa9c1e2b7d0 (a1b2c3d4e5f6): cp1, w1
 cp1: installing 3fa9c1e2b7d0 (a1b2c3d4e5f6)
 cp1: installed 3fa9c1e2b7d0 (a1b2c3d4e5f6), which boots next as chalkos_2+3.efi

@@ -50,10 +50,10 @@ the UKI's command line as `usrhash=`. The UKI is signed, so changing one byte of
 requires a new root hash, which requires a new UKI, which requires the db key. The kernel modules
 live in the store too, so they need no signatures of their own.
 
-Images are built unsigned by Nix and signed afterwards, on the operator's machine, with
-[`chalkctl sign`](../reference/cli/chalkctl_sign.md) or with `--sign-key` and `--sign-cert` on
-[`chalkctl install`](../reference/cli/chalkctl_install.md) and
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md). Keeping the key out of the build
+Images are built unsigned by Nix and signed afterwards, before an install or upgrade, with
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) on the machine that holds the db key. It
+signs a copy of the image directory and checks the copy against the db certificate, as firmware
+with that certificate in db would. Keeping the key out of the build
 keeps it out of the Nix store, which any user of the build machine can read, and out of every
 binary cache the store is pushed to. Nodes never hold the db key and never sign anything.
 
@@ -61,11 +61,10 @@ Before a node writes an image's UKI or boot loader, [chalkd](../reference/glossa
 checks its signature against the firmware's db and dbx as the firmware will at the next boot,
 when Secure Boot is enforced. It refuses a binary that no db certificate signed, one whose digest
 or any certificate of its signature dbx lists, and any binary at all while dbx holds an entry it
-cannot read. A node therefore never reboots into an image its firmware would refuse. chalkctl
-checks earlier, on the operator's machine, when `install` or `upgrade` gets `--sign-cert`: it
-refuses an image whose UKI or boot loader that certificate's key did not sign before it sends
-any part of it. Without `--sign-cert` chalkctl checks no signature and leaves the check to
-the node. The [signing guide](../guides/secure-boot-signing.md) creates the key and enrols it.
+cannot read. A node therefore never reboots into an image its firmware would refuse.
+[chalkctl](../reference/glossary.md#chalkctl) checks no signatures; it sends the image as it is,
+and the node's check is the one that refuses an unsigned or wrongly signed image. The
+[signing guide](../guides/secure-boot-signing.md) creates the key and enrols it.
 
 ## What does Secure Boot do for upgrades?
 

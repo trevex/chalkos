@@ -67,8 +67,9 @@ named. chalkctl prints each node that gets an image of another variant than the 
 chalkctl upgrade --image=<image-dir> --max-unavailable=2
 ```
 
-`<image-dir>` is the directory `nix build` produced. In both cases, `--sign-key` and `--sign-cert`
-sign the UKI before it is sent, so the signing key never enters the Nix store.
+`<image-dir>` is a directory [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signed, a
+copy of the one `nix build` produced. In both cases chalkctl sends the image as the directory
+holds it, so the signing key stays on the machine that ran chalkbuild.
 
 Before it sends anything, chalkctl checks each image against the cluster:
 
@@ -76,9 +77,10 @@ Before it sends anything, chalkctl checks each image against the cluster:
 - the UKI's os-release sets `IMAGE_VERSION` empty, so systemd-boot orders the node's entries by
   generation, and names a variant and platform;
 - the config the inventory gives each node that gets the image suits the `schemas/` and
-  `image.json` in the image's directory, as an install checks the config it delivers;
-- the UKI carries a signature of the certificate `--sign-cert` names, with or without
-  `--sign-key`. Without `--sign-cert`, chalkctl checks no signature.
+  `image.json` in the image's directory, as an install checks the config it delivers.
+
+chalkctl checks no signature. Each node checks the UKI against its firmware's db and dbx before it
+writes anything, when Secure Boot is enforced, and refuses an unsigned or wrongly signed one.
 
 chalkctl checks every node's config before it drains the first node. It needs the inventory for
 that, whatever it authenticates with; without one, the node's own check is all there is.
@@ -342,12 +344,14 @@ The command needs an operator [client file](../reference/glossary.md#client-file
 [secrets file](../reference/glossary.md#secrets-file), and to deliver config an admin client file
 or the secrets file. Without an inventory, `--address NODE=ADDR` names the nodes, and `--image` is
 needed. A [lab](../reference/glossary.md#lab), for example, is
-upgraded with the lab's inventory, its client file and its Secure Boot keys, which
-[`chalklab status`](../reference/cli/chalklab_status.md) names:
+upgraded with the lab's inventory and client file, which
+[`chalklab status`](../reference/cli/chalklab_status.md) names, and a copy of an image that
+[`chalklab sign`](../reference/cli/chalklab_sign.md) signed with the lab's Secure Boot key:
 
 ```sh
-chalkctl upgrade --inventory=<lab-inventory> --config=<client-file> \
-  --sign-key=<db-key> --sign-cert=<db-cert> --allow-downtime
+chalklab sign <image-dir> --out <signed-dir>
+chalkctl upgrade --image=<signed-dir> --inventory=<lab-inventory> --config=<client-file> \
+  --allow-downtime
 ```
 
 ## Can a node go back to an older image?

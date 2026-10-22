@@ -16,6 +16,7 @@ documents](reference/glossary.md#config-document), which an
 partitions sealed to the [TPM](reference/glossary.md#tpm), upgrade between
 [A/B](reference/glossary.md#a-b) slots and fall back to the image before when a new one does not
 boot healthy. [chalkd](reference/glossary.md#chalkd) on each node serves the node API,
+[chalkbuild](reference/glossary.md#chalkbuild) signs the images Nix builds,
 [chalkctl](reference/glossary.md#chalkctl) installs, configures and operates the nodes without
 running Nix, and [chalklab](reference/glossary.md#chalklab) runs a whole cluster as QEMU virtual
 machines on one machine.

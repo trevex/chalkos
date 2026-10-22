@@ -12,8 +12,9 @@ systemd-boot and the [UKI](../reference/glossary.md#uki), and the UKI's signatur
 read-only store through the [root hash](../reference/glossary.md#root-hash) on its command line.
 This guide creates the key and certificate, gets the firmware of your machines to trust the
 certificate, and signs the [installer](../reference/glossary.md#installer) and the node images with
-the key. Nix builds images unsigned; you sign them on your workstation, so the key never enters the
-Nix store or a binary cache, and nodes never hold it.
+the key. Nix builds images unsigned; you sign them with
+[chalkbuild](../reference/glossary.md#chalkbuild) on the machine that holds the key, so the key
+never enters the Nix store or a binary cache, and nodes never hold it.
 
 !!! note "chalkos does not enrol keys"
 
@@ -23,10 +24,11 @@ Nix store or a binary cache, and nodes never hold it.
 
 ## Before you begin
 
-You need openssl, chalkctl, and access to the firmware setup, the BMC or the vendor's tools of
-every machine. Plan the key once for the cluster's lifetime:
-[why the key must not change](#why-the-key-must-not-change-for-an-installed-node) explains what
-changing it costs.
+You need openssl, chalkbuild and access to the firmware setup, the BMC or the vendor's tools of
+every machine. chalkbuild comes from `nix shell github:trevex/chalkos#chalkbuild`, or from
+`chalkos.packages.${system}.chalkbuild` in the cluster flake's dev shell. Plan the key once for
+the cluster's lifetime: [why the key must not change](#why-the-key-must-not-change-for-an-installed-node)
+explains what changing it costs.
 
 ## Create the db key and certificate
 
@@ -50,20 +52,11 @@ The certificate in db may also be a CA that signed the signing certificate: chal
 signer that a db certificate issued. A CA lets you keep its key offline and sign with a
 short-lived one, at the cost of one more key to manage.
 
-`db.crt` is public; commit it to the cluster's repository, from where you pass it to `--sign-cert`.
+`db.crt` is public; commit it to the cluster's repository, from where you pass it to the `--cert`
+flag of `chalkbuild sign`.
 `db.key` lets anyone sign a boot image every machine of the cluster accepts, and any image signed
 with it unlocks the nodes' disks. Keep it out of the repository and out of the Nix store: in a
 secrets manager or on the machine that signs, readable by you alone.
-
-## Check images against the certificate
-
-[`chalkctl install`](../reference/cli/chalkctl_install.md) and
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) check the UKI, and on an install the
-boot loader, against the certificate `--sign-cert` names before they send anything, as firmware
-with that certificate in db would. With `--sign-key`, chalkctl signs the image first; without it,
-`--sign-cert` checks an image signed beforehand. An image signed with another key, or not at
-all, stops with `Secure Boot would refuse the image's UKI: ...` on your workstation instead of
-at a node. Without `--sign-cert`, chalkctl checks no signature.
 
 ## Enrol the certificate in the firmware
 
@@ -93,52 +86,69 @@ Enrol the certificate before the node is installed. Changing db, KEK or dbx chan
 [PCR 7](../reference/glossary.md#pcr-7), so doing it on an installed node makes its next boot
 ask for the recovery key.
 
-## Sign the installer and the images
+## Sign the images
 
 Every binary that firmware or systemd-boot starts must be signed: the installer's, a node
-image's when a machine boots it directly, and each new UKI an upgrade brings. chalkctl signs
-in three places.
+image's when a machine boots it directly, and each new UKI an upgrade brings.
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs a copy of an image directory as
+`nix build` links it: the boot loader (`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`)
+on the [ESP](../reference/glossary.md#esp) of its raw image, and nothing else, so no other file on
+the ESP gains the cluster's signature. The build in the Nix store stays as it is, and the copy
+holds no link into the store.
 
-[`chalkctl sign`](../reference/cli/chalkctl_sign.md) signs a disk image in place: the boot loader
-(`/EFI/BOOT/BOOT*.EFI`) and the UKIs (`/EFI/Linux/*.efi`) on its
-[ESP](../reference/glossary.md#esp), and nothing else, so no other file on the ESP gains the
-cluster's signature. It needs the image's partition description, `repart-output.json`, or
-`<name>.iso.json` for the installer's ISO. A build output in the Nix store is read-only, so sign a
-copy, here of the installer that `nix build .#installer -o installer` links:
-
-```sh
-cp --sparse=always installer/chalkos-installer.iso installer.iso
-chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer.iso.json \
-  --key=db.key --cert=db.crt
-```
-
-Sign the installer this way, and a node image that a VM boots directly. Ctrl+C during the signing
-can leave an image partly signed; sign a fresh copy then.
-
-`chalkctl install` with `--sign-key` and `--sign-cert` signs the image a machine receives
-from the installer, the directory of the node's image in the inventory. chalkctl copies the
-UKI and the boot loader off the image, signs the copies and streams them with the store, so the
-image in the Nix store stays as it is:
+Build each image into a directory of its own, and sign it into the directory the inventory names
+for the image, here `images/node-metal` for `node-metal: {source: {directory: images/node-metal}}`
+in the inventory's `spec.images`. The output directory must not exist, so remove the signed copy
+of the previous build before signing a new one:
 
 ```sh
-chalkctl install <node> --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
-  --sign-key=db.key --sign-cert=db.crt
+nix build .#node-metal -o build/node-metal
+rm -rf images/node-metal
+chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
 ```
 
-`<node>` is the node's name in the inventory, `<address>` the address the installer's
-console shows and `<fingerprint>` the certificate fingerprint next to it.
-
-`chalkctl upgrade` with the same flags signs the UKI of each image it rolls out:
-
-```sh
-chalkctl upgrade --sign-key=db.key --sign-cert=db.crt
-```
+When signing fails, or Ctrl+C stops it, chalkbuild removes the output directory again, so a
+partly signed copy never stays behind.
+[`chalkctl install`](../reference/cli/chalkctl_install.md) and
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) then take the signed directory the
+inventory names, and need no key.
 
 An upgrade replaces the UKI and the store and keeps the boot loader the node was installed with,
-so systemd-boot stays signed by the key it was installed with. A lab's images are signed with the
-lab's own keys: `chalklab sign` signs a copy of an image, and the lab's db key and certificate,
-which `chalklab status` names, work with `--sign-key` and `--sign-cert`.
+so systemd-boot stays signed by the key it was installed with.
+
+## Sign the installer
+
+The installer's directory holds a raw image and an ISO, and `chalkbuild sign` signs both in the
+copy. Write `installer-signed/chalkos-installer.iso` to a USB stick or mount it as virtual media:
+
+```sh
+nix build .#installer -o installer
+chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
+```
+
+## How are the signatures checked?
+
+`chalkbuild sign` checks the UKI and the boot loader of each image it signed against `--cert`, as
+firmware with that certificate in db would, so a wrong key or certificate fails on the machine
+that signs.
+
+chalkctl checks no signature; it sends the image as the directory holds it. Each node checks the
+UKI, and on an install the boot loader, against its firmware's db and dbx before it writes them,
+when Secure Boot is enforced. An unsigned image, or one signed with a key whose certificate is not
+in db, stops with `Secure Boot would refuse the UKI: ...` or `... boot loader: ...`, which
+`chalkctl install` or `chalkctl upgrade` prints as the node's error.
+
+## Sign images for a lab
+
+A [lab](../reference/glossary.md#lab)'s VMs trust the lab's own keys, which chalkbuild never
+holds. [`chalklab sign`](../reference/cli/chalklab_sign.md) signs a copy of an image directory with
+them, and `chalkctl upgrade --image` takes the copy:
+
+```sh
+chalklab sign images/node-kvm --out images/node-kvm-signed
+chalkctl upgrade --image images/node-kvm-signed \
+  --inventory ~/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
+```
 
 ## Why the key must not change for an installed node
 
@@ -186,6 +196,7 @@ and the installed node boots.
 
 - [Security model](../concepts/security.md) explains the chain from the db certificate to every
   block of the store, and what Secure Boot does for upgrades.
-- [Install on bare metal](install-bare-metal.md) uses the key for the installer and the install.
+- [Install on bare metal](install-bare-metal.md) signs the installer and the image and installs
+  a node.
 - [The image](../concepts/image.md) describes what is signed and what the signature covers.
-- [`chalkctl sign`](../reference/cli/chalkctl_sign.md) lists the command's flags.
+- [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) lists the command's flags.

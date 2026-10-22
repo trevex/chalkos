@@ -219,7 +219,7 @@ its disks is lost, so move workloads off first.
 
     ```sh
     chalkctl install <node> --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
-      --sign-key=db.key --sign-cert=db.crt --wipe-disk
+      --wipe-disk
     ```
 
     `<address>` is the address the installer took, which the console shows with

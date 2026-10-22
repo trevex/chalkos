@@ -268,9 +268,11 @@ node goes into each node's `Node` document instead, which chalkctl does not comp
 The inventory's `spec.images` names each image the nodes run and the
 [image directory](../reference/glossary.md#image-directory) of its build in
 `source.directory`, relative to the inventory's directory. The directory is what `nix build` writes
-for one variant on one platform, such as `images/node-kvm` in the lab template. Its `metadata.json`
-names the image's variant, platform and [root hash](../reference/glossary.md#root-hash), and its
-`schemas/` holds the schemas of the kinds the image accepts.
+for one variant on one platform, such as `images/node-kvm` in the lab template. Where nodes enforce
+Secure Boot, it is the copy of the build that
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signed. Its `metadata.json` names the
+image's variant, platform and [root hash](../reference/glossary.md#root-hash), and its `schemas/`
+holds the schemas of the kinds the image accepts.
 
 A node runs one image, named in one of three places:
 

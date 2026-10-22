@@ -8,9 +8,10 @@ description: "How chalkos documentation is written: voice, words, headings, code
 This guide holds the rules every hand-written page of the chalkos documentation follows. Each
 rule has a reason, so a case the guide does not cover can be decided the same way. The
 generated reference pages are written in their sources (command help in `pkg/chalkctl/help.go`,
-`pkg/chalklab/help.go` and `pkg/chalkcfg/help.go`, option and kind descriptions in `modules/`,
-the inventory's and lab file's schemas in `pkg/inventory` and `pkg/chalklab`, comments in
-`api/chalkos/node/v1/node.proto`), and the voice and word rules apply there too.
+`pkg/chalklab/help.go`, `pkg/chalkbuild/help.go` and `pkg/chalkcfg/help.go`, option and kind
+descriptions in `modules/`, the inventory's and lab file's schemas in `pkg/inventory` and
+`pkg/chalklab`, comments in `api/chalkos/node/v1/node.proto`), and the voice and word rules apply
+there too.
 
 ## Who reads these pages?
 

@@ -44,8 +44,8 @@ for bare metal, with two extensions that add config kinds:
       };
     in
     {
-      # nix build .#node-metal -o images/node-metal: the image where the inventory, chalkos.yaml,
-      # points.
+      # nix build .#node-metal -o build/node-metal: the image whose signed copy the inventory,
+      # chalkos.yaml, names.
       packages.x86_64-linux.node-metal = images.images.node-metal;
     };
 }

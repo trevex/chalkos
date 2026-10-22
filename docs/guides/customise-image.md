@@ -164,7 +164,7 @@ metadata: {name: homelab}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
-    # nix build .#gpu-metal -o images/gpu-metal puts the image here.
+    # chalkbuild sign signs a copy of the gpu-metal build into this directory.
     gpu-metal: {source: {directory: images/gpu-metal}}
   all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
@@ -594,12 +594,16 @@ with a release's `tag` passed too, `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`.
 
 ## Build the images and check the config
 
-Build each image where the inventory points, then check every node's config against the schemas
-of its image:
+Build each image, sign a copy of it with [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md)
+where the inventory points, then check every node's config against the schemas of its image. The
+output directory of `chalkbuild sign` must not exist, so remove the copy of an earlier build first:
 
 ```sh
-nix build .#node-metal -o images/node-metal
-nix build .#gpu-metal -o images/gpu-metal
+nix build .#node-metal -o build/node-metal
+nix build .#gpu-metal -o build/gpu-metal
+rm -rf images/node-metal images/gpu-metal
+chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
+chalkbuild sign --key=db.key --cert=db.crt build/gpu-metal images/gpu-metal
 chalkctl validate
 ```
 
@@ -609,12 +613,11 @@ node's files from the inventory and the schemas from the directory of the node's
 
 ## Roll the change out
 
-Upgrade the nodes with [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), which signs
-each image with the cluster's [db](../reference/glossary.md#db-and-dbx) key and gives each node
-the image the inventory names for it, `w1` the new `gpu-metal`:
+Upgrade the nodes with [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), which gives
+each node the signed image the inventory names for it, `w1` the new `gpu-metal`:
 
 ```sh
-chalkctl upgrade --sign-key=db.key --sign-cert=db.crt
+chalkctl upgrade
 ```
 
 Nodes already running their image are skipped. Each node gets its config with the image, the

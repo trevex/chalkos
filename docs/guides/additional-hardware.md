@@ -241,7 +241,7 @@ metadata: {name: homelab}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
-    # nix build .#node-r650 -o images/node-r650 puts the image here.
+    # chalkbuild sign signs a copy of the node-r650 build into this directory.
     node-r650: {source: {directory: images/node-r650}}
   all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:

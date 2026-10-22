@@ -27,8 +27,9 @@ A change needs:
   for what needs a booted node, and extends an existing end-to-end test where it can.
   [Testing](testing.md) explains which to write and the budget the VM tests keep to.
 - Documentation of what the change does for a user: the command help in
-  `pkg/chalkctl/help.go` or `pkg/chalklab/help.go`, an option's description in `modules/`, a
-  comment in `api/chalkos/node/v1/node.proto`, and the hand-written pages it affects.
+  `pkg/chalkctl/help.go`, `pkg/chalklab/help.go` or `pkg/chalkbuild/help.go`, an option's
+  description in `modules/`, a comment in `api/chalkos/node/v1/node.proto`, and the hand-written
+  pages it affects.
   [Writing documentation](writing-docs.md) explains how.
 - Formatting: `nix fmt` formats the Nix files, and `gofmt` the Go code.
 - The flake checks of what it touches, which [Testing](testing.md#flake-checks) maps to the

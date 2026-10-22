@@ -18,7 +18,7 @@ Each item says what chalkos does today and what the plan changes.
 
 Today the firmware's [Secure Boot](../reference/glossary.md#secure-boot) keys are enrolled out of
 band, in the firmware's setup or through a BMC, before a node is installed. chalkos signs images
-with [`chalkctl sign`](../reference/cli/chalkctl_sign.md) and checks signatures against the
+with [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) and checks signatures against the
 firmware's [db and dbx](../reference/glossary.md#db-and-dbx) when Secure Boot is enforced, but it
 writes no Secure Boot variables. Only [chalklab](../reference/glossary.md#chalklab) enrols keys: its
 own [lab](../reference/glossary.md#lab) keys, into its VMs' firmware.

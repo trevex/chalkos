@@ -41,7 +41,7 @@ use the same tools and variables from `nix/testing/env.nix`.
 | Directory | What lives there |
 | --- | --- |
 | `api/` | The node API's protobuf definition, `api/chalkos/node/v1/node.proto`, and the template of its reference page. |
-| `cmd/` | Thin mains: `chalkctl`, `chalkd`, `chalklab`, `chalkos-storage` and `docgen`. |
+| `cmd/` | Thin mains: `chalkctl`, `chalkd`, `chalklab`, `chalkbuild`, `chalkos-storage` and `docgen`. |
 | `pkg/` | The Go packages, including `pkg/api`, the code `buf generate` writes. |
 | `modules/node/` | The NixOS modules every [image](../reference/glossary.md#image) is built from. |
 | `modules/platforms/` | The `metal` and `kvm` [platforms](../reference/glossary.md#platform). |
@@ -65,16 +65,19 @@ The flake's packages build the programs with Nix, as a user gets them:
 ```sh
 nix build .#chalkctl
 nix build .#chalklab
+nix build .#chalkbuild
 nix build .#chalkd
 ```
 
 `chalklab` is wrapped with QEMU, OVMF, swtpm and the other tools a lab runs, and with
-`chalkctl`, so its closure is larger than chalkctl's. During development, run the commands from
-the working tree instead:
+`chalkctl`, so its closure is larger than chalkctl's. `chalkbuild` is wrapped with mtools and
+sbsigntool, which it signs images with. During development, run the commands from the working
+tree instead:
 
 ```sh
 go run ./cmd/chalkctl --help
 go run ./cmd/chalklab --help
+go run ./cmd/chalkbuild --help
 ```
 
 [chalkd](../reference/glossary.md#chalkd) only does useful work on a node; the end-to-end tests and

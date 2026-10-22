@@ -198,8 +198,8 @@ chalkd in installer mode and installs images of every platform.
 
 ## Build and sign the installer
 
-Build the installer and sign a copy of its ISO, as in
-[Install on bare metal](install-bare-metal.md#build-the-installer):
+Build the installer and sign a copy of its directory, as in
+[Install on bare metal](install-bare-metal.md#sign-the-installer):
 
 ```console
 $ nix build .#installer -o installer
@@ -208,11 +208,13 @@ chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metada
 ```
 
 ```sh
-cp --sparse=always installer/chalkos-installer.iso installer.iso
-chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer.iso.json \
-  --key=db.key --cert=db.crt
+rm -rf installer-signed
+chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
 ```
+
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs the copy's raw image and ISO, and
+refuses an output directory that exists, so the first command removes the copy of an earlier
+build. Write `installer-signed/chalkos-installer.iso` to the stick.
 
 Sign it with the key the nodes' images are signed with: the installer seals each node's
 [STATE](../reference/glossary.md#state) to [PCR 7](../reference/glossary.md#pcr-7) as measured

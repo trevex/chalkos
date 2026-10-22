@@ -29,8 +29,9 @@ You need:
   [`osCA`](../reference/options.md#osca) argument of `mkImages` set to `./secrets.pub.json`, as
   in [Install on bare metal](install-bare-metal.md#before-you-begin).
 - A Secure Boot [db](../reference/glossary.md#db-and-dbx) key and certificate, `db.key` and
-  `db.crt`, from [Sign images for Secure Boot](secure-boot-signing.md). On a VM you own the
-  firmware's variable store, so you enrol the certificate yourself, as shown below.
+  `db.crt`, from [Sign images for Secure Boot](secure-boot-signing.md), and
+  [chalkbuild](../reference/glossary.md#chalkbuild), which signs images with them. On a VM you own
+  the firmware's variable store, so you enrol the certificate yourself, as shown below.
 - A KVM host with QEMU, OVMF built with Secure Boot and SMM support, and swtpm. libvirt and
   Proxmox bring all three. `qemu-img` on the machine where you prepare the disk.
 - 2 vCPUs and about 3 GiB of memory per [control plane](../reference/glossary.md#control-plane)
@@ -55,7 +56,7 @@ kind: Inventory
 metadata: {name: prod}
 spec:
   images:
-    # nix build .#node-kvm -o images/node-kvm puts the image here.
+    # chalkbuild sign signs a copy of the build into this directory.
     node-kvm: {source: {directory: images/node-kvm}}
   all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
@@ -93,18 +94,20 @@ reinstall.
 
 ## Build and sign the image
 
-Build the `kvm` image where the inventory points, check the nodes' config against it, and
-sign a writable copy of it with [`chalkctl sign`](../reference/cli/chalkctl_sign.md), so the VM's
-firmware boots it:
+Build the `kvm` image, sign a copy of it with
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) into the directory the inventory names,
+so the VM's firmware boots it, and check the nodes' config against it. A VM writes to its disk,
+so take a writable copy of the signed raw image for the disks:
 
 ```sh
-nix build .#node-kvm -o images/node-kvm
+nix build .#node-kvm -o build/node-kvm
+chalkbuild sign --key=db.key --cert=db.crt build/node-kvm images/node-kvm
 chalkctl validate
 cp --sparse=always images/node-kvm/chalkos.raw node.raw
-chmod u+w node.raw
-chalkctl sign --image=node.raw --repart-json=images/node-kvm/repart-output.json \
-  --key=db.key --cert=db.crt
 ```
+
+The output directory of `chalkbuild sign` must not exist, so remove `images/node-kvm` before
+signing a new build.
 
 The image holds the [ESP](../reference/glossary.md#esp), with its UKI as the first boot entry
 `chalkos_1.efi`, and [slot](../reference/glossary.md#slot) A only, and
@@ -332,9 +335,9 @@ then install the other nodes.
 ## Use the installer instead
 
 The [installer](../reference/glossary.md#installer) works in a VM too: attach the signed
-installer ISO from [Install on bare metal](install-bare-metal.md#build-the-installer) as a CD-ROM
+installer ISO from [Install on bare metal](install-bare-metal.md#sign-the-installer) as a CD-ROM
 next to an empty virtio disk, and install as on a physical machine. chalkctl then sends the
-node's `kvm` image to the installer, signed with `--sign-key` and `--sign-cert`. This takes one
+node's `kvm` image, the signed copy the inventory names, to the installer. This takes one
 image download per node instead of one disk copy, which suits a hypervisor you cannot copy disk
 images to.
 
@@ -357,7 +360,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
 | The firmware reports `Access Denied` and boots nothing | The image is unsigned or signed with a key whose certificate is not in the VM's db. Sign the image, or enrol `db.crt`. |
 | Nothing appears on the console after the firmware | The VM has no serial port, or the console shows the screen; the kvm image writes to `ttyS0` only. |
 | `the config places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | The node's `SystemDisk` names another disk than the one the VM booted from. Fix `spec.disk` in the node's file. |
-| `cp1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from `images/node-kvm` and sign it. |
+| `cp1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from the signed `images/node-kvm`. |
 | The node asks for its recovery key after a hypervisor change | The variable store or the TPM state was reset or replaced. Type the key `chalkctl recovery-key cp1` prints; see [Recover a node](recover-node.md). |
 
 ## What next
@@ -370,5 +373,5 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
   not change for an installed node.
 - [Install on bare metal](install-bare-metal.md) continues with bootstrap, kubeconfigs and
   recovery keys.
-- [Upgrade a cluster](upgrade-cluster.md) rolls new images to the VMs with
-  `chalkctl upgrade --sign-key=db.key --sign-cert=db.crt`.
+- [Upgrade a cluster](upgrade-cluster.md) rolls new images, signed with `chalkbuild sign`, to the
+  VMs with `chalkctl upgrade`.

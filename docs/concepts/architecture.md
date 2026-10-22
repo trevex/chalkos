@@ -9,7 +9,7 @@ chalkos builds signed, read-only images with Nix and configures the machines tha
 YAML documents, through one agent on each node. This page names the parts, says where each one
 runs and follows a node from its first boot to its first upgrade.
 
-The parts fall into three places:
+The parts fall into four groups:
 
 - On the operator's machine, a flake calls `chalkos.lib.mkImages`, which Nix evaluates into the
   images of the cluster's [variants](../reference/glossary.md#variant), one per
@@ -17,9 +17,12 @@ The parts fall into three places:
   [installer](../reference/glossary.md#installer).
 - Also on the operator's machine, [chalkctl](../reference/glossary.md#chalkctl) reads an
   [inventory](../reference/glossary.md#inventory) of the cluster's nodes and their YAML
-  [config](../reference/glossary.md#config) files, signs images and drives the nodes; it never
-  runs Nix. [chalklab](../reference/glossary.md#chalklab) runs a whole cluster as local virtual
-  machines.
+  [config](../reference/glossary.md#config) files and drives the nodes; it never builds or
+  signs images and never runs Nix. [chalklab](../reference/glossary.md#chalklab) runs a whole
+  cluster as local virtual machines.
+- On the machine that holds the Secure Boot db key, the operator's or a build machine,
+  [chalkbuild](../reference/glossary.md#chalkbuild) signs a copy of each image directory Nix
+  builds, so the key never enters the Nix store.
 - On every node, [chalkd](../reference/glossary.md#chalkd) serves the node API, installs and
   upgrades the node, applies its config and runs the Kubernetes control plane.
 
@@ -29,7 +32,8 @@ The diagram shows how they connect.
 flowchart LR
     flake["Flake calling mkImages"] -->|nix build| images["Image directories and installer"]
     inventory["Inventory and YAML config"] --> chalkctl
-    images --> chalkctl
+    images --> chalkbuild
+    chalkbuild -->|signed image directories| chalkctl
     chalklab -->|starts VMs, installs with| chalkctl
     chalkctl -->|node API, mutual TLS, port 50000| chalkd
     subgraph node["Node"]
@@ -82,7 +86,7 @@ removing a volume or moving it to another disk takes a reinstall.
 chalkctl reads the cluster from an inventory, `chalkos.yaml` in the current directory or the file
 `--inventory` names. The inventory names each node, the address chalkctl reaches it at, the YAML
 files of its config and the image it runs, by the image directory of its build, which chalkctl
-reads when a command needs the image. chalkctl never builds images or runs Nix.
+reads when a command needs the image. chalkctl never builds or signs images or runs Nix.
 Without an inventory, a command that only reaches a node works with a client file and
 `--address`. [Config and the inventory](config.md) describes the files.
 

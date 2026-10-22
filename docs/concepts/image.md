@@ -275,20 +275,14 @@ schemas
   validates, installs or upgrades a node whose image in the inventory is the directory.
   [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build) lists them.
 
-The image is unsigned, and the signing key never enters the Nix store. chalkctl signs at the
-last moment:
-
-- [`chalkctl install`](../reference/cli/chalkctl_install.md) and
-  [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) sign the UKI, and for an install the
-  boot loader, with `--sign-key` and `--sign-cert` before they send them.
-- [`chalkctl sign`](../reference/cli/chalkctl_sign.md) signs the boot loader and UKI on a raw
-  image's ESP in place, for an image written with `dd` or used as a VM's disk. An image in the
-  Nix store is read-only, so it signs a copy:
+The image is unsigned, and the signing key never enters the Nix store.
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs a copy of the image directory: the
+boot loader and the UKIs on the raw image's ESP. chalkctl installs and upgrades nodes with the
+signed copy, `dd` writes its raw image to a disk, and a VM's disk is a writable copy of that
+signed raw image.
 
 ```sh
-install -m 644 images/node-kvm/chalkos.raw node.raw
-chalkctl sign --image=node.raw --repart-json=images/node-kvm/repart-output.json \
-  --key=<db-key> --cert=<db-cert>
+chalkbuild sign --key=<db-key> --cert=<db-cert> images/node-kvm node-kvm-signed
 ```
 
 `<db-key>` and `<db-cert>` are the PEM key and certificate of a signer the machines' firmware

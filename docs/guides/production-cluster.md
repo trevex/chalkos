@@ -28,7 +28,7 @@ A cluster lives in one repository with two halves. The flake builds the images w
 `chalkos.lib.mkImages`; the [inventory](../reference/glossary.md#inventory), `chalkos.yaml`,
 names the nodes and the YAML files each one gets. [chalkctl](../reference/glossary.md#chalkctl)
 reads the inventory and the YAML and never runs Nix, so the machine that installs and upgrades
-nodes needs the image directories, not Nix.
+nodes needs the signed image directories, not Nix.
 
 ```text
 prod/
@@ -46,8 +46,10 @@ prod/
 │   ├── cp2.yaml
 │   ├── cp3.yaml
 │   └── w1.yaml
-├── images/              image directories nix build links, outside git
-└── installer/           the installer nix build links, outside git
+├── build/               image directories nix build links, outside git
+├── images/              signed copies of them, which the inventory names, outside git
+├── installer/           the installer nix build links, outside git
+└── installer-signed/    its signed copy, outside git
 ```
 
 The flake builds one image per platform of the variant `node`, which serves control planes and
@@ -69,7 +71,7 @@ as packages:
       };
     in
     {
-      # nix build .#node-metal -o images/node-metal, nix build .#installer -o installer
+      # nix build .#node-metal -o build/node-metal, nix build .#installer -o installer
       packages.x86_64-linux = images.images // {
         inherit (images) installer;
       };
@@ -89,7 +91,7 @@ kind: Inventory
 metadata: {name: prod}
 spec:
   images:
-    # nix build .#node-metal -o images/node-metal puts the image here.
+    # chalkbuild sign signs a copy of the build into this directory.
     node-metal: {source: {directory: images/node-metal}}
   all: {imageName: node-metal, files: [cluster/*.yaml]}
   groups:
@@ -328,13 +330,11 @@ verified the boot, so an image signed with another key boots, if the firmware tr
 then the TPM refuses to unseal STATE: every node asks for its recovery key. A firmware update
 that changes db or dbx has the same effect.
 
-Decide who signs. Whoever runs `chalkctl upgrade --sign-key=<db-key> --sign-cert=<db-cert>`
-holds the key on their machine, and chalkctl checks the signatures it made against the
-certificate before it sends the image. A build machine that signs images with
-[`chalkctl sign`](../reference/cli/chalkctl_sign.md) and hands them out keeps the key in one
-place; the people who install then pass `--sign-cert=<db-cert>` alone, so chalkctl refuses an
-image that key did not sign before any node receives it. The node checks the signatures against
-its firmware's db either way.
+Decide who signs. Whoever holds the db key runs
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) on a build machine and hands out the
+signed image directories, so the key stays in one place. The people who install and upgrade
+nodes need no key: chalkctl sends the signed directories as they are, and each node checks the
+signatures against its firmware's db and dbx and refuses an image the key did not sign.
 
 ## Protect the secrets file
 
@@ -520,12 +520,14 @@ tools that work at the Kubernetes level, and back up these yourself:
 
 ## Check that it worked
 
-Build the image the inventory points at, then check every node's config against it.
+Build the image, sign a copy of it into the directory the inventory names, then check every
+node's config against it.
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) reaches no node and needs no secrets
 file:
 
 ```sh
-nix build .#node-metal -o images/node-metal
+nix build .#node-metal -o build/node-metal
+chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
 chalkctl validate
 ```
 
@@ -534,7 +536,8 @@ prints a line for each valid node, such as
 `cp1: valid for the image node-metal (node on metal, root hash 2ece03b0fa09), config <hash>`,
 names each node whose config is not valid with the reason, and warns of a node whose STATE is
 unencrypted. Run both in CI, so a change to the flake or a YAML file never reaches a node
-unchecked.
+unchecked. CI needs no db key for that: `chalkctl validate` checks no signature, so CI links the
+unsigned build to `images/node-metal` with `nix build .#node-metal -o images/node-metal`.
 
 ## What next
 

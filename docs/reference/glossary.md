@@ -43,6 +43,14 @@ The one-time start of a cluster's etcd on its first [control plane](#control-pla
 or holds etcd data, so a cluster is never initialised twice; further control planes join on
 their own. See [Kubernetes on chalkos](../concepts/kubernetes.md).
 
+## chalkbuild { #chalkbuild }
+
+The command that prepares the images Nix builds for a cluster's nodes. `chalkbuild sign` signs
+a copy of an [image directory](#image-directory) with the Secure Boot [db](#db-and-dbx) key, on
+the machine that holds the key, and checks the copy against the db certificate. It never talks
+to nodes. See [its commands](cli/chalkbuild.md) and
+[Sign images for Secure Boot](../guides/secure-boot-signing.md).
+
 ## chalkcfg { #chalkcfg }
 
 The command on every node that prints the node's [config documents](#config-document) from
@@ -57,7 +65,7 @@ checks a path against the kind's options when the image is evaluated. See
 The command-line client of chalkos. It reads a cluster from an [inventory](#inventory) and the
 [image directories](#image-directory) it names for the nodes, installs, upgrades and operates nodes
 through [chalkd](#chalkd), and issues certificates from the [secrets file](#secrets-file). It never
-builds images or runs Nix. See [its commands](cli/chalkctl.md) and
+builds or signs images or runs Nix. See [its commands](cli/chalkctl.md) and
 [Architecture](../concepts/architecture.md).
 
 ## chalkd { #chalkd }
@@ -247,8 +255,8 @@ raw image, systemd-repart's report of its partitions, the definitions of the sys
 `metadata.json`, which names the image's variant, platform, [root hash](#root-hash),
 [provenance](#provenance) and kinds, the kinds' JSON Schemas in `schemas/` and, on an image with
 Kubernetes, what it fixes about Kubernetes in `image.json`. The [inventory](#inventory) names it in
-an image's `source.directory`, and chalkctl reads it to validate config, sign, install and upgrade.
-See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
+an image's `source.directory`, [chalkbuild](#chalkbuild) signs a copy of it, and chalkctl reads
+it to validate config, install and upgrade. See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
 ## Installer { #installer }
 

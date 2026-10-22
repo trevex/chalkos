@@ -36,6 +36,9 @@ You need:
   `db.crt`, and the certificate enrolled in each machine's firmware.
   [Sign images for Secure Boot](secure-boot-signing.md) creates them and explains the enrolment,
   which chalkos does not do for you.
+- [chalkbuild](../reference/glossary.md#chalkbuild), which signs the images, on the machine that
+  holds `db.key`, from `nix shell github:trevex/chalkos#chalkbuild` or
+  `chalkos.packages.${system}.chalkbuild` in the cluster flake's dev shell.
 - A USB stick larger than the installer ISO, about 450 MiB, or a BMC that mounts an ISO as
   virtual media.
 
@@ -72,30 +75,30 @@ installer where you can.
 
 ## Build the image and check the config
 
-Build the image the nodes run into the directory the inventory names for it, here
-`images/node-metal` for `node-metal: {source: {directory: images/node-metal}}` in the inventory's
-`spec.images`:
+Build the image the nodes run, and sign a copy of it into the directory the inventory names for
+it, here `images/node-metal` for `node-metal: {source: {directory: images/node-metal}}` in the
+inventory's `spec.images`:
 
 ```sh
-nix build .#node-metal -o images/node-metal
+nix build .#node-metal -o build/node-metal
+chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
 chalkctl validate
 ```
+
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs the copy's boot loader and
+[UKI](../reference/glossary.md#uki) and checks them against `db.crt`. The output directory must not
+exist, so remove `images/node-metal` before signing a new build.
 
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) checks every node's config against
 that image without reaching a node, so a mistake in the YAML shows before any machine boots.
 
 ## Sign the installer
 
-The firmware boots the installer only when its boot loader and
-[UKI](../reference/glossary.md#uki) are signed by a certificate in db. The build output is
-read-only, so sign a copy, with the [`chalkctl sign`](../reference/cli/chalkctl_sign.md) command
-and the `.iso.json` that describes the ISO's partitions:
+The firmware boots the installer only when its boot loader and UKI are signed by a certificate in
+db. `chalkbuild sign` signs a copy of the installer's directory, its raw image and its ISO:
 
 ```sh
-cp --sparse=always installer/chalkos-installer.iso installer.iso
-chmod u+w installer.iso
-chalkctl sign --image=installer.iso --repart-json=installer/chalkos-installer.iso.json \
-  --key=db.key --cert=db.crt
+chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
 ```
 
 Sign the installer with the same key as the images. The installer seals the node's
@@ -109,11 +112,12 @@ boots, but its first boot finds PCR 7 changed and asks for the
 Write the signed ISO to the whole stick, not to a partition of it:
 
 ```sh
-sudo dd if=installer.iso of=/dev/<usb-disk> bs=4M conv=fsync status=progress
+sudo dd if=installer-signed/chalkos-installer.iso of=/dev/<usb-disk> bs=4M conv=fsync status=progress
 ```
 
 `<usb-disk>` is the stick's device, for example `sdb`; `lsblk` lists the candidates. Everything
-on the stick is lost. With a BMC, mount `installer.iso` as virtual media instead.
+on the stick is lost. With a BMC, mount `installer-signed/chalkos-installer.iso` as virtual media
+instead.
 
 ## Boot the installer
 
@@ -181,13 +185,13 @@ chalkctl reads the file as it is when a command runs; check it again with `chalk
 Run `chalkctl install` with the node's name, the installer's address and the fingerprint:
 
 ```sh
-chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
-  --sign-key=db.key --sign-cert=db.crt
+chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
-chalkctl takes the image from the directory of the node's image in the inventory, refuses it unless
-it is the build whose root hash that directory's `metadata.json` names, signs the image's UKI and
-boot loader with the db key, and checks them against the certificate `--sign-cert` names. It then
+chalkctl takes the image from the directory of the node's image in the inventory, the signed copy,
+and refuses it unless it is the build whose root hash that directory's `metadata.json` names. It
+checks no signature: the installer checks the UKI and the boot loader against the machine's db and
+dbx when Secure Boot is enforced, and refuses an unsigned or wrongly signed image. chalkctl then
 sends the node its [config](../reference/glossary.md#config), the documents of the files the
 inventory gives it, checked against the image's schemas, a
 [node certificate](../reference/glossary.md#node-certificate), the OS CA, the secret of the
@@ -352,8 +356,7 @@ chalkctl reports the installer's refusal as its error. The common ones:
 | Message | Cause and fix |
 | --- | --- |
 | `the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate` | The installer or the image the machine runs was built before the OS CA was rotated, or from another cluster's `secrets.pub.json`. Build and sign both again from the current one. |
-| `Secure Boot would refuse the UKI: ...` | The installer checked the UKI against the machine's db and dbx: the image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign with the enrolled key, or enrol its certificate. |
-| `Secure Boot would refuse the image's UKI: ...` or `... boot loader: ...` | chalkctl checked the UKI and the boot loader against the certificate `--sign-cert` names before sending anything: `--sign-key` was left out, so the image is unsigned, or the image is signed with another key. |
+| `Secure Boot would refuse the UKI: ...` or `... boot loader: ...` | The installer checked the UKI and the boot loader against the machine's db and dbx, and `chalkctl install` fails with its error: the image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign the build again with `chalkbuild sign` and the enrolled key, or enrol the key's certificate. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
 | The first boot asks for a recovery key | The installer and the image were signed with different keys, or Secure Boot changed between install and boot. Type the key `chalkctl recovery-key <node>` prints. The prompt returns at every boot until the change is undone, for example by booting an image signed with the original key, or the node is reinstalled, as [Recover a node](recover-node.md#the-console-asks-for-a-passphrase-at-boot) describes. |
 

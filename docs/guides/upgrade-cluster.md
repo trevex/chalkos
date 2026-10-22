@@ -25,8 +25,8 @@ PodDisruptionBudgets.
   or an admin [client file](../reference/glossary.md#client-file). An operator client file upgrades
   too, but delivers no config: each node carries its own over.
 - The [Secure Boot](../reference/glossary.md#secure-boot) [db](../reference/glossary.md#db-and-dbx)
-  key and certificate, when your nodes enforce Secure Boot and you sign the images during the
-  upgrade. [Sign images for Secure Boot](secure-boot-signing.md) explains the keys.
+  key and certificate and [chalkbuild](../reference/glossary.md#chalkbuild), when your nodes
+  enforce Secure Boot. [Sign images for Secure Boot](secure-boot-signing.md) explains the keys.
 - Three control planes, for an upgrade without API downtime. A cluster with one or two needs
   `--allow-downtime`, described below.
 - [Upgrades](../concepts/upgrades.md) explains the mechanism this guide drives.
@@ -85,13 +85,17 @@ as `tag = "v1.5.0";`. Both are for display only. Make the change itself:
 
 Without `--image`, `chalkctl upgrade` gives each node the image the inventory names for it, the
 [image directory](../reference/glossary.md#image-directory) of a build. Build the images first,
-where the inventory's images point, and check the nodes' config against them with
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md). The homelab example's inventory names
-the image `node-metal` at `images/node-metal`, relative to `chalkos.yaml`, and makes it every
-node's with `spec.all.imageName`:
+sign a copy of each with [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) where the
+inventory's images point, and check the nodes' config against them with
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md). The output directory of
+`chalkbuild sign` must not exist, so remove the copy of the previous build first. The homelab
+example's inventory names the image `node-metal` at `images/node-metal`, relative to
+`chalkos.yaml`, and makes it every node's with `spec.all.imageName`:
 
 ```sh
-nix build .#node-metal -o images/node-metal
+nix build .#node-metal -o build/node-metal
+rm -rf images/node-metal
+chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
 chalkctl validate
 ```
 
@@ -112,11 +116,9 @@ chalkctl upgrade --image=images/node-metal
 ```
 
 On nodes that enforce Secure Boot, each image's UKI must be signed by a key in the firmware's db,
-and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before the node can boot it.
-`--sign-key` and `--sign-cert` make chalkctl sign the UKIs it sends; an upgrade leaves the boot
-loader as it is. An image you sign beforehand with
-[`chalkctl sign`](../reference/cli/chalkctl_sign.md) needs no `--sign-key`. `--sign-cert` alone
-makes chalkctl check every image against the certificate before sending anything.
+and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before it writes anything.
+Sign each build with `chalkbuild sign` before the upgrade; chalkctl sends the image as the
+directory holds it and checks no signature. An upgrade leaves the node's boot loader as it is.
 
 ## Run the upgrade
 
@@ -124,7 +126,7 @@ Run the command in the inventory's directory, or name the inventory with `--inve
 authenticates with the secrets file `--secrets` names, or with a client file:
 
 ```console
-$ chalkctl upgrade --secrets=secrets.age --sign-key=<db-key> --sign-cert=<db-cert>
+$ chalkctl upgrade --secrets=secrets.age
 upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3, w1, w2, w3
 cp1: config unchanged
 cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
@@ -151,8 +153,7 @@ chalkctl names an image by the first 12 hex characters of its root hash, followe
 the revision's first 12 characters when the build named them. `chalkos_2+3.efi` is the node's
 next boot entry: one generation above the entry it booted, with three tries.
 
-`<db-key>` and `<db-cert>` are the PEM files of the Secure Boot db key and its certificate. The
-lines follow each node through its steps:
+The lines follow each node through its steps:
 
 1. Before a control plane is touched, chalkctl checks that etcd keeps its quorum without it:
    the other voters must be healthy and enough for a quorum. After the previous control plane
@@ -363,7 +364,7 @@ such as etcd's data after a Kubernetes upgrade, is for you to check.
   runs an image that is still being checked, and installing another would remove the image it
   falls back to. Wait for the check, at most `healthTimeout` per try.
 - `Secure Boot would refuse the UKI`: the image is unsigned or signed with a key the firmware's db
-  does not hold. Sign it with the db key.
+  does not hold. Sign the build with `chalkbuild sign` and the db key.
 - `w1 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
   platform is a reinstall`: the inventory names a build of another platform for the node.
   Changing a node's platform is a reinstall, not an upgrade.
