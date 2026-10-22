@@ -183,11 +183,12 @@ against the schemas of the image it installs, a node certificate, the OS CA, the
 encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
 Kubernetes share. A node that runs its image already installs in place. A node that runs the
 installer gets the image as well: --image, or the directory of the node's image in the inventory,
-signed with chalkbuild sign when the machine enforces Secure Boot. An image the inventory names in
-a registry is refused: install sends only an image from a directory. With Secure Boot on, the
-installer checks the UKI and the boot loader against the firmware's db and dbx. It writes the
-image to the disk the node's SystemDisk names: a disk on which blkid finds no signature, or one
-holding an unfinished install of the node, which it continues; any other disk only with
+signed with chalkbuild sign when the machine enforces Secure Boot. Such a node is refused when
+the inventory names its image in a registry, since install sends the installer only an image
+from a directory; a node that runs its image installs in place from either. With Secure Boot on,
+the installer checks the UKI and the boot loader against the firmware's db and dbx. It writes
+the image to the disk the node's SystemDisk names: a disk on which blkid finds no signature,
+or one holding an unfinished install of the node, which it continues; any other disk only with
 --wipe-disk. The node reboots into the installed image. The node certificate carries the node's
 name in the inventory, which stays the node's name until it is reinstalled. The command needs the
 secrets file.`
@@ -300,12 +301,12 @@ const upgradeLong = `Installs on each node a new image: control planes one at a 
 quorum without it, then workers and nodes without Kubernetes in batches of --max-unavailable.
 Without --image each node (every node of the inventory, or those --nodes names) gets the image the
 inventory names for it, which must be the build whose root hash its directory's metadata.json
-names, as status compares nodes with it: rebuild the image or link its directory again
-otherwise. An image the inventory names in a registry is refused before any node is drained:
-upgrade sends only an image from a directory. A node that runs on another platform than its image
-stops the run before any node is sent anything. With --image the nodes that run the image's variant get it, or those --nodes
-names whatever they run, and nodes on another platform are skipped and named. A node may get an
-image of another variant than the one it runs, which chalkctl prints.
+names, as status compares nodes with it: rebuild the image or link its directory again otherwise.
+An image the inventory names in a registry is refused before any node is drained: upgrade sends
+only an image from a directory. A node that runs on another platform than its image stops the run
+before any node is sent anything. With --image the nodes that run the image's variant get it, or
+those --nodes names whatever they run, and nodes on another platform are skipped and named.
+A node may get an image of another variant than the one it runs, which chalkctl prints.
 
 Each node gets its config with the image: the documents of the files the inventory gives it,
 checked against the image before any node is drained. The node checks them against the image
@@ -356,16 +357,16 @@ the secrets file.`
 
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the files the inventory gives the node form its set, every document is
-checked against the schemas of the node's image in the inventory, its directory's or those of the
-contract layer of its image in a registry, whose tag chalkctl resolves to a digest once per
-command, and the set is translated as the node translates it. The image's change rules that read no facts about a node
-run too, without a running config to compare with: the rules of kinds and the rules of fields
-that do not compare with the running value. Before any node, it checks that every node whose
-files hold a Kubernetes Cluster document holds the same Cluster spec and the same Flannel spec or
-none, as every command that reads the inventory does. It prints a line for each node whose config
-is valid and names each node whose config is not, and warns of a node whose SystemDisk leaves
-STATE, which holds its keys and secrets, unencrypted. It reaches no node and needs no secrets
-file or client file.`
+checked against the schemas of the node's image in the inventory, its directory's or those of
+the contract layer of its image in a registry, whose tag chalkctl resolves to a digest once per
+command, and the set is translated as the node translates it. The image's change rules that read
+no facts about a node run too, without a running config to compare with: the rules of kinds and
+the rules of fields that do not compare with the running value. Before any node, it checks that
+every node whose files hold a Kubernetes Cluster document holds the same Cluster spec and the same
+Flannel spec or none, as every command that reads the inventory does. It prints a line for each
+node whose config is valid, with the digest of an image in a registry, and names each node whose
+config is not, and warns of a node whose SystemDisk leaves STATE, which holds its keys and secrets,
+unencrypted. It reaches no node and needs no secrets file or client file.`
 
 const validateExample = `  # Check every node of chalkos.yaml.
   chalkctl validate

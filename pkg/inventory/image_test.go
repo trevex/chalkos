@@ -1,9 +1,12 @@
 package inventory
 
 import (
+	"context"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
@@ -98,7 +101,7 @@ func TestLoadRefusesImages(t *testing.T) {
 		"an image without a directory": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {}}",
 			"directory"},
 		"an image of two sources": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {directory: images/node-metal, oci: registry.example/lab/node-metal:v1}}",
-			"oneOf"},
+			"the image node-metal names both directory and oci as its source; name exactly one"},
 		"an OCI reference without a tag": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {oci: registry.example/lab/node-metal}}",
 			"is no image reference with a registry and a tag or digest"},
 		"an OCI reference without a registry": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {oci: \"lab/node-metal:v1\"}}",
@@ -154,5 +157,104 @@ func TestOCIImageReadOnce(t *testing.T) {
 	}
 	if n := manifests.Load(); n != 1 {
 		t.Errorf("the registry answered %d manifest requests, want 1", n)
+	}
+}
+
+// TestOCIImageReadFailsOnce reads a reference the registry does not have once for all the nodes
+// that run it, and gives each the error.
+func TestOCIImageReadFailsOnce(t *testing.T) {
+	host, manifests := ocitest.CountingRegistry(t)
+	ref := host + "/lab/node-metal:v1"
+	dir := t.TempDir()
+	inv := strings.Replace(images, "node-metal: {source: {directory: images/node-metal}}", `node-metal: {source: {oci: "`+ref+`"}}`, 1)
+	inv = strings.Replace(inv, "    w3: {groups: [rack]}\n", "    w3: {groups: [rack]}\n    w4: {}\n", 1)
+	write(t, filepath.Join(dir, "chalkos.yaml"), inv)
+	loaded, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range []string{"w3", "w4"} {
+		nc, err := loaded.Node(node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := nc.Resolve(); err == nil || !strings.Contains(err.Error(), "the image node-metal of node "+node+": ") {
+			t.Errorf("Resolve(%s) = %v", node, err)
+		}
+	}
+	if n := manifests.Load(); n != 1 {
+		t.Errorf("the registry answered %d manifest requests, want 1", n)
+	}
+}
+
+// stalledRegistry accepts connections and never answers them, until the test ends, and returns
+// its host.
+func stalledRegistry(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conns := make(chan net.Conn, 16)
+	t.Cleanup(func() {
+		l.Close()
+		for {
+			select {
+			case c := <-conns:
+				c.Close()
+			default:
+				return
+			}
+		}
+	})
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			select {
+			case conns <- c:
+			default:
+				c.Close()
+			}
+		}
+	}()
+	return l.Addr().String()
+}
+
+// TestOCIImageReadEnds ends a read of a registry that never answers when the command's context
+// ends, and else after the read timeout.
+func TestOCIImageReadEnds(t *testing.T) {
+	for name, cancelled := range map[string]bool{"cancelled": true, "timed out": false} {
+		t.Run(name, func(t *testing.T) {
+			ref := stalledRegistry(t) + "/lab/node-metal:v1"
+			inv := &Inventory{}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			inv.SetContext(ctx)
+			if cancelled {
+				time.AfterFunc(100*time.Millisecond, cancel)
+			} else {
+				defer func(d time.Duration) { readTimeout = d }(readTimeout)
+				readTimeout = 100 * time.Millisecond
+			}
+			done := make(chan error, 1)
+			go func() {
+				_, err := inv.Artifact(ref)
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Fatal("Artifact read an image from a registry that never answers")
+				}
+				if !cancelled && !strings.Contains(err.Error(), "did not answer within 100ms") {
+					t.Errorf("Artifact = %v", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("Artifact still waits for a registry that never answers")
+			}
+		})
 	}
 }

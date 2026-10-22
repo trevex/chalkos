@@ -65,7 +65,7 @@ type target struct {
 
 // target addresses a node with the secrets file.
 func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, error) {
-	c, err := n.loadCluster()
+	c, err := n.loadCluster(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (a *app) target(ctx context.Context, n nodeCommand, name string) (*target, 
 
 // clientTarget addresses a node with the secrets file or a client file.
 func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*target, error) {
-	c, err := n.loadCluster()
+	c, err := n.loadCluster(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +91,8 @@ func (a *app) clientTarget(ctx context.Context, n nodeCommand, name string) (*ta
 
 // loadCluster loads the cluster the command's flags name, and refuses a partial one when the
 // command needs the nodes' config.
-func (n nodeCommand) loadCluster() (*cluster, error) {
-	c, err := loadCluster(n.cluster)
+func (n nodeCommand) loadCluster(ctx context.Context) (*cluster, error) {
+	c, err := loadCluster(ctx, n.cluster)
 	if err != nil {
 		return nil, err
 	}

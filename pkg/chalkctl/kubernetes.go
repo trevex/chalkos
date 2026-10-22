@@ -117,7 +117,7 @@ func (a *app) kubeconfig(ctx context.Context, f kubeconfigFlags, pos []string) e
 	if len(pos) != 0 {
 		return errors.New("usage: chalkctl kubeconfig [--ttl 8760h] [--out FILE] [--server URL] [--context NAME]")
 	}
-	c, err := loadCluster(cf)
+	c, err := loadCluster(ctx, cf)
 	if err != nil {
 		return err
 	}

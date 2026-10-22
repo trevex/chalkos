@@ -90,7 +90,7 @@ func (a *app) nodeCARotate(ctx context.Context, n nodeCommand, change changeFlag
 	if len(pos) != 0 {
 		return errors.New("usage: chalkctl node-ca rotate [--out FILE] [--public-out FILE] [--recipient R...]")
 	}
-	c, err := loadCluster(n.cluster)
+	c, err := loadCluster(ctx, n.cluster)
 	if err != nil {
 		return err
 	}

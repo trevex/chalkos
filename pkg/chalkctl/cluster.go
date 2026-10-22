@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -38,14 +39,15 @@ type cluster struct {
 }
 
 // loadCluster reads the inventory --inventory names, or else chalkos.yaml in the current
-// directory; without either, the cluster is partial.
-func loadCluster(f clusterFlags) (*cluster, error) {
+// directory, whose images in registries are read under ctx; without either, the cluster is
+// partial.
+func loadCluster(ctx context.Context, f clusterFlags) (*cluster, error) {
 	if f.inventory != "" {
-		return loadInventory(f.inventory)
+		return loadInventory(ctx, f.inventory)
 	}
 	switch _, err := os.Stat(inventory.DefaultFile); {
 	case err == nil:
-		return loadInventory(inventory.DefaultFile)
+		return loadInventory(ctx, inventory.DefaultFile)
 	case !errors.Is(err, fs.ErrNotExist):
 		return nil, err
 	}
@@ -53,12 +55,14 @@ func loadCluster(f clusterFlags) (*cluster, error) {
 }
 
 // loadInventory reads an inventory and the endpoint its nodes' Cluster documents name; every
-// command refuses to act on an inventory whose nodes hold different Cluster or Flannel specs.
-func loadInventory(path string) (*cluster, error) {
+// command refuses to act on an inventory whose nodes hold different Cluster or Flannel specs. The
+// inventory reads its images in registries under ctx, the command's context.
+func loadInventory(ctx context.Context, path string) (*cluster, error) {
 	inv, err := inventory.Load(path)
 	if err != nil {
 		return nil, err
 	}
+	inv.SetContext(ctx)
 	endpoint, err := inv.Endpoint()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

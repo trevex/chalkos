@@ -114,7 +114,7 @@ func (ta *testApp) configVersion(t *testing.T) string {
 // identity is n1's identity as its config translates on its image in the inventory.
 func (ta *testApp) identity(t *testing.T) identity.Identity {
 	t.Helper()
-	c, err := loadInventory(ta.inventory)
+	c, err := loadInventory(context.Background(), ta.inventory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1246,7 +1246,7 @@ func TestStatusWithABrokenConfig(t *testing.T) {
 func TestAddressWithABrokenConfig(t *testing.T) {
 	ta := newTestApp(t)
 	ta.writeNode(t, n1SystemDisk, n1SystemDisk, n1Network)
-	c, err := loadInventory(ta.inventory)
+	c, err := loadInventory(context.Background(), ta.inventory)
 	if err != nil {
 		t.Fatal(err)
 	}

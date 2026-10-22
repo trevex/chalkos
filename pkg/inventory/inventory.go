@@ -8,6 +8,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/ociimage"
@@ -99,11 +101,23 @@ type Inventory struct {
 	Spec Spec
 	// parsed holds the documents of each config file read so far, by path.
 	parsed map[string][]config.Document
+	// ctx is the context of the command that reads the inventory, which ends its reads of
+	// registries; nil reads under context.Background.
+	ctx context.Context
 	// mu guards artifacts, which holds each OCI image read so far, or why it could not be read, by
 	// reference.
 	mu        sync.Mutex
 	artifacts map[string]artifactRead
 }
+
+// readTimeout bounds each read of an image in a registry, so that a registry that accepts a
+// connection and never answers stops the command instead of hanging it.
+var readTimeout = 2 * time.Minute
+
+// SetContext makes the inventory read images in registries under ctx, the context of the command
+// that reads it, so that cancelling the command ends a read. The readers of a node's config take
+// no context of their own, which is why the inventory holds it.
+func (inv *Inventory) SetContext(ctx context.Context) { inv.ctx = ctx }
 
 // artifactRead is an OCI image as Inventory.Artifact read it, or why it could not.
 type artifactRead struct {
@@ -141,6 +155,10 @@ func parse(path string, data []byte) (*Inventory, error) {
 	}
 	s, err := schema.LoadFiles(map[string][]byte{schemaFile: schemaJSON})
 	if err != nil {
+		return nil, err
+	}
+	// The schema's oneOf would refuse an image of two sources too, but in its own words.
+	if err := oneSource(docs[0].Object); err != nil {
 		return nil, err
 	}
 	if err := s.Validate(docs[0].Object); err != nil {
@@ -242,15 +260,26 @@ func (inv *Inventory) Image(node string) (name string, source ImageSource, err e
 
 // Artifact reads the OCI image ref names once per inventory, and so once per command: the first
 // call resolves the reference to its manifest's digest and reads the image's header and contract
-// layer, and later calls return what it read, or why it could not read it. It takes no context,
-// as the readers of a node's config take none; a request ends with its connection's timeouts.
+// layer, and later calls return what it read, or why it could not read it. A read runs under the
+// context SetContext gave, and ends after readTimeout, 2 minutes, at the latest.
 func (inv *Inventory) Artifact(ref string) (*ociimage.Artifact, error) {
+	// The lock is held across the read, so reads of different references wait for each other;
+	// the nodes of an inventory name few images, and every node waits for its image anyway.
 	inv.mu.Lock()
 	defer inv.mu.Unlock()
 	if r, ok := inv.artifacts[ref]; ok {
 		return r.artifact, r.err
 	}
-	a, err := ociimage.Read(context.Background(), ref)
+	parent := inv.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, readTimeout)
+	defer cancel()
+	a, err := ociimage.Read(ctx, ref)
+	if err != nil && parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		err = fmt.Errorf("the registry of %s did not answer within %s: %w", ref, readTimeout, err)
+	}
 	if inv.artifacts == nil {
 		inv.artifacts = map[string]artifactRead{}
 	}
@@ -391,4 +420,21 @@ func (inv *Inventory) rel(p string) string {
 		}
 	}
 	return p
+}
+
+// oneSource refuses an image of the inventory doc that names both a directory and an OCI
+// reference as its source.
+func oneSource(doc map[string]any) error {
+	spec, _ := doc["spec"].(map[string]any)
+	images, _ := spec["images"].(map[string]any)
+	for _, name := range slices.Sorted(maps.Keys(images)) {
+		im, _ := images[name].(map[string]any)
+		src, _ := im["source"].(map[string]any)
+		_, dir := src["directory"]
+		_, oci := src["oci"]
+		if dir && oci {
+			return fmt.Errorf("the image %s names both directory and oci as its source; name exactly one", name)
+		}
+	}
+	return nil
 }

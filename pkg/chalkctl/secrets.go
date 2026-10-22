@@ -209,7 +209,7 @@ func (a *app) recoveryKey(ctx context.Context, cf clusterFlags, sf secretFlags, 
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl recovery-key <node>")
 	}
-	c, err := loadCluster(cf)
+	c, err := loadCluster(ctx, cf)
 	if err != nil {
 		return err
 	}

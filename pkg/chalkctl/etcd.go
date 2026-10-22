@@ -18,7 +18,7 @@ import (
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
 func (a *app) throughControlPlane(ctx context.Context, n nodeCommand, via, skip string, call func(conn *client.Conn) error) error {
-	c, err := loadCluster(n.cluster)
+	c, err := loadCluster(ctx, n.cluster)
 	if err != nil {
 		return err
 	}

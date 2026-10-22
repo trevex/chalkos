@@ -225,7 +225,7 @@ func nodeDoc(nodeType string) string {
 // inventoryVersion is the version of n1's config as the inventory at path gives it.
 func inventoryVersion(t *testing.T, path string) string {
 	t.Helper()
-	c, err := loadInventory(path)
+	c, err := loadInventory(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 
 // TestImageLine names a store other than the one of the image the node's config names.
 func TestImageLine(t *testing.T) {
-	c, err := loadInventory(writeInventory(t, t.TempDir()))
+	c, err := loadInventory(context.Background(), writeInventory(t, t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestImageLine(t *testing.T) {
 func TestAddressFromTheInventory(t *testing.T) {
 	dir := t.TempDir()
 	path := writeInventory(t, dir)
-	c, err := loadInventory(path)
+	c, err := loadInventory(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestAddressFromTheInventory(t *testing.T) {
 		t.Errorf("address with --address = %q, %q, %v", addr, source, err)
 	}
 	writeFile(t, path, strings.Replace(testInventoryYAML, "address: 10.0.0.11, ", "", 1))
-	if c, err = loadInventory(path); err != nil {
+	if c, err = loadInventory(context.Background(), path); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := c.address("", "n1"); err == nil || !strings.Contains(err.Error(), "names no address of n1; pass --address") {
@@ -412,7 +412,7 @@ func TestSecretsOnlyFromTheFlag(t *testing.T) {
 
 // TestNodesOfTheInventory lists nodes by the type their Node documents give them.
 func TestNodesOfTheInventory(t *testing.T) {
-	c, err := loadInventory(writeNodes(t, t.TempDir(), []testNode{
+	c, err := loadInventory(context.Background(), writeNodes(t, t.TempDir(), []testNode{
 		{"cp3", identity.KindControlPlane, "k8s"}, {"cp1", identity.KindControlPlane, "k8s"},
 		{"w1", identity.KindWorker, "k8s"}, {"n1", "", "plain"},
 	}, nil))
@@ -476,7 +476,7 @@ func TestCommandsThatNeedAnInventory(t *testing.T) {
 // not compared when the image's directory cannot be read.
 func TestImageLineOfAStagedImage(t *testing.T) {
 	dir := t.TempDir()
-	c, err := loadInventory(writeInventory(t, dir))
+	c, err := loadInventory(context.Background(), writeInventory(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +493,7 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "images", "test-metal", "metadata.json")); err != nil {
 		t.Fatal(err)
 	}
-	if c, err = loadInventory(filepath.Join(dir, "chalkos.yaml")); err != nil {
+	if c, err = loadInventory(context.Background(), filepath.Join(dir, "chalkos.yaml")); err != nil {
 		t.Fatal(err)
 	}
 	if got := c.imageLine("n1", &nodev1.BootStatus{Running: running}); !strings.Contains(got, "its store is not compared with its image in the inventory: ") || !strings.Contains(got, "has no metadata.json") {

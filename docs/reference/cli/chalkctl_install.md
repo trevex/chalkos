@@ -21,11 +21,12 @@ against the schemas of the image it installs, a node certificate, the OS CA, the
 encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
 Kubernetes share. A node that runs its image already installs in place. A node that runs the
 installer gets the image as well: --image, or the directory of the node's image in the inventory,
-signed with chalkbuild sign when the machine enforces Secure Boot. An image the inventory names in
-a registry is refused: install sends only an image from a directory. With Secure Boot on, the
-installer checks the UKI and the boot loader against the firmware's db and dbx. It writes the
-image to the disk the node's SystemDisk names: a disk on which blkid finds no signature, or one
-holding an unfinished install of the node, which it continues; any other disk only with
+signed with chalkbuild sign when the machine enforces Secure Boot. Such a node is refused when
+the inventory names its image in a registry, since install sends the installer only an image
+from a directory; a node that runs its image installs in place from either. With Secure Boot on,
+the installer checks the UKI and the boot loader against the firmware's db and dbx. It writes
+the image to the disk the node's SystemDisk names: a disk on which blkid finds no signature,
+or one holding an unfinished install of the node, which it continues; any other disk only with
 --wipe-disk. The node reboots into the installed image. The node certificate carries the node's
 name in the inventory, which stays the node's name until it is reinstalled. The command needs the
 secrets file.

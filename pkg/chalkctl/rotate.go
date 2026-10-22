@@ -79,7 +79,7 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	if !slices.Contains(pki.RotationKinds, kind) {
 		return fmt.Errorf("rotate: unknown kind %q; rotate one of %s", kind, strings.Join(pki.RotationKinds, ", "))
 	}
-	c, err := loadCluster(cf)
+	c, err := loadCluster(ctx, cf)
 	if err != nil {
 		return err
 	}

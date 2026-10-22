@@ -20,7 +20,7 @@ func (a *app) validateCommand() *cobra.Command {
 		Short:   "Check nodes' config against the schemas of their images",
 		Long:    validateLong,
 		Example: validateExample,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(path, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, path, pos) })
 	cmd.Flags().StringVar(&path, "inventory", "", "inventory naming the nodes and their config files (default "+inventory.DefaultFile+" in the current directory)")
 	return cmd
 }
@@ -29,7 +29,7 @@ func (a *app) validateCommand() *cobra.Command {
 // every node whose config is invalid. The nodes' Cluster and Flannel specs are checked first, as
 // every other command checks them when it loads the inventory. A valid config that
 // leaves the node's secrets unencrypted draws a warning.
-func (a *app) validate(path string, names []string) error {
+func (a *app) validate(ctx context.Context, path string, names []string) error {
 	if path == "" {
 		path = inventory.DefaultFile
 	}
@@ -37,6 +37,7 @@ func (a *app) validate(path string, names []string) error {
 	if err != nil {
 		return err
 	}
+	inv.SetContext(ctx)
 	// A node named twice is checked once; a node the inventory does not have is a usage error,
 	// before any node is checked.
 	var nodes []string
@@ -100,6 +101,15 @@ func validateNode(inv *inventory.Inventory, name string) (string, []string, erro
 	if d.identity.Storage.Encryption == storage.EncryptionNone {
 		warnings = append(warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))
 	}
-	line := fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config %s", name, nc.ImageName, md.Variant, md.Platform, md.RootHash, d.Version)
+	image := nc.ImageName
+	if nc.ImageOCI != "" {
+		// The tag may move; the line names the manifest the config was checked against.
+		a, err := nc.Artifact()
+		if err != nil {
+			return "", nil, err
+		}
+		image += " at " + a.Reference
+	}
+	line := fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config %s", name, image, md.Variant, md.Platform, md.RootHash, d.Version)
 	return line, warnings, nil
 }

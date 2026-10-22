@@ -125,7 +125,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	if len(pos) != 0 || f.maxUnavailable < 1 {
 		return errors.New("usage: chalkctl upgrade [--image PATH] [--nodes N,...] [--max-unavailable N] [--allow-downtime] [--no-reboot] [--retry-failed] [--delete-emptydir-data] [--password-file FILE] [--diff]")
 	}
-	c, err := loadCluster(cf)
+	c, err := loadCluster(ctx, cf)
 	if err != nil {
 		return err
 	}

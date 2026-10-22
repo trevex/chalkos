@@ -17,9 +17,10 @@ the registry. This guide builds the artifact with `mkImages`, signs it, pushes i
 
 !!! note "Install and upgrade take a directory"
 
-    `chalkctl install` and `chalkctl upgrade` send an image from its directory, and refuse a node
-    whose image the inventory names in a registry. Keep a directory source for the image, or pass
-    `--image` with its directory, for those commands.
+    `chalkctl upgrade` and an install from the installer send an image from its directory, so they
+    refuse a node whose image the inventory names in a registry. A node that runs its image
+    already installs in place either way. Keep a directory source for the image, or pass `--image`
+    with its directory, for those commands.
 
 ## Before you begin
 
@@ -107,8 +108,10 @@ against them:
 chalkctl validate
 ```
 
-It prints a line such as `cp1: valid for the image node-metal (node on metal, root hash
-2ece03b0fa09), config <hash>` for each node whose config is valid.
+It prints a line such as `cp1: valid for the image node-metal at
+ghcr.io/example/node-metal@sha256:<digest> (node on metal, root hash 2ece03b0fa09), config <hash>`
+for each node whose config is valid. The digest is that of the manifest chalkctl read, so it names
+the image that was checked even when the inventory names a tag.
 
 ## What next
 

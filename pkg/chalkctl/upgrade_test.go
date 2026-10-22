@@ -1367,7 +1367,7 @@ func versionOf(text string) string {
 // inventoryConfig is the config the inventory gives the node, as chalkctl delivers it.
 func (l *upgradeLab) inventoryConfig(name string) string {
 	l.t.Helper()
-	c, err := loadInventory(l.inventory)
+	c, err := loadInventory(context.Background(), l.inventory)
 	if err != nil {
 		l.t.Fatal(err)
 	}

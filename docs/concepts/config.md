@@ -278,8 +278,8 @@ An image published to a registry is named by its reference in `source.oci` inste
 [`chalkbuild push`](../reference/cli/chalkbuild_push.md) prints it. Each image sets exactly one of
 `directory` and `oci`. A reference by tag is resolved to a digest once per command, so one command
 reads one image. `chalkctl validate`, `apply-config` and `status` read the image's header and
-contract from the registry. Install and upgrade send only an image from a directory, so they refuse
-a node whose image has an `oci` source.
+contract from the registry. Upgrade, and install on a node that runs the installer, send only an
+image from a directory, so they refuse a node whose image has an `oci` source.
 
 ```yaml
 node-metal: {source: {oci: ghcr.io/example/node-metal@sha256:<digest>}}
