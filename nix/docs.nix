@@ -57,13 +57,16 @@ let
     }).optionsCommonMark;
 
   # The images the documentation is generated and checked against: the default variant, whose
-  # options the reference lists, and one with the homelab's Rack extension, whose documents the
-  # pages show as an extension's.
+  # options the reference lists, and one with the homelab's extensions, whose documents the pages
+  # show as an extension's.
   docsImages = self.lib.mkImages {
     platforms = [ "metal" ];
     variants = {
       docs = { };
-      rack.modules = [ ../examples/homelab/extensions/rack.nix ];
+      rack.modules = [
+        ../examples/homelab/extensions/rack.nix
+        ../examples/homelab/extensions/hardware.nix
+      ];
     };
   };
   # An image's own options, those the node modules declare.
@@ -72,7 +75,7 @@ let
   inventorySchema = ../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
   labSchema = ../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
   # The schemas the pages' config documents are checked against: the kinds of the image with the
-  # Rack extension, the inventory and the lab file.
+  # Rack and Hardware extensions, the inventory and the lab file.
   snippetSchemas = pkgs.runCommand "chalkos-docs-schemas" { } ''
     mkdir $out
     ln -s ${docsImages.nixos.rack-metal.config.system.build.chalkosSchemas}/*.json $out/

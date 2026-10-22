@@ -1038,9 +1038,9 @@ in
       touch $out
     '';
 
-  # The homelab example: its flake builds the nodes' metal image with the Rack extension, and
-  # chalkctl validate accepts its nodes' YAML, Rack documents included, with that image where
-  # their Image points.
+  # The homelab example: its flake builds the nodes' metal image with the Rack and Hardware
+  # extensions, and chalkctl validate accepts its nodes' YAML, Rack and Hardware documents
+  # included, with that image where their Image points.
   example-homelab =
     let
       homelab = (import ../examples/homelab/flake.nix).outputs {
@@ -1059,17 +1059,20 @@ in
     '';
 
   # An image builds only when its rules compile and read the facts it declares, and its effects
-  # act on units it defines. The test image's Greeting and the homelab example's Rack bring
-  # extension kinds with their own rules, facts and effects; a rule that does not compile, one
-  # that reads a fact no module declares, an effect's rule that does not compile, an effect on a
-  # unit the image lacks and an output whose check refuses an example fail the check of their
-  # image.
+  # act on units it defines. The test image's Greeting and the homelab example's Rack and Hardware
+  # bring extension kinds with their own rules, facts, effects and outputs; a rule that does not
+  # compile, one that reads a fact no module declares, an effect's rule that does not compile, an
+  # effect on a unit the image lacks and an output whose check refuses an example fail the check
+  # of their image. The homelab's Hardware output renders hardware-examples/server.yaml.
   rules =
     let
       build =
         modules:
         (self.lib.mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config.system.build;
-      homelab = build [ ../examples/homelab/extensions/rack.nix ];
+      homelab = build [
+        ../examples/homelab/extensions/rack.nix
+        ../examples/homelab/extensions/hardware.nix
+      ];
       demo = rule: {
         chalkos.kinds.Demo = {
           group = "demo.example.org";

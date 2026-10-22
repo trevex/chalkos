@@ -22,3 +22,8 @@ kind: Rack
 metadata: {name: rack}
 spec:
   location: rack-a/u12
+---
+apiVersion: hardware.example.org/v1alpha1
+kind: Hardware
+metadata: {name: hardware}
+spec: {vendor: Supermicro, model: SYS-E300-9D, assetTag: HL-0001}

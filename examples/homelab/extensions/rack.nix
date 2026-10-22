@@ -26,13 +26,8 @@
   };
   # What the rack survey found, {"location": "rack-a/u12"}; null on a node not surveyed yet.
   chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";
-  # The node's Rack as a file, an output that changes when the Rack does, which restarts the
-  # unit.
-  chalkos.outputs.rack = {
-    inputs = [ "Rack" ];
-    render = lib.chalkos.render.documents [ "Rack" ];
-  };
-  chalkos.effects.rack-location = lib.chalkos.restartOn { outputs = [ "rack" ]; } [
+  # The unit reads the Rack when it starts, so a changed Rack restarts it.
+  chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
     "rack-location.service"
   ];
   systemd.services.rack-location = {
