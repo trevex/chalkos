@@ -391,6 +391,19 @@ message StatusResponse {
   // The version of the config kept for the image staged to boot next, as config_version gives
   // the running one's; empty without a staged image or config for it.
   string staged_config_version = 12;
+  // The image's outputs, by name.
+  repeated OutputStatus outputs = 13;
+}
+
+message OutputStatus {
+  // The output's name, as the image declares it.
+  string name = 1;
+  // The SHA-256 of the names and contents of the files the node serves, in lower-case hex; empty
+  // while it serves none, as after a render that failed at boot.
+  string hash = 2;
+  // Why the output's last render or check failed, at a delivery or at boot; empty once one passed.
+  // What the program wrote to standard error is in the node's journal alone.
+  string error = 3;
 }
 
 message BootStatus {

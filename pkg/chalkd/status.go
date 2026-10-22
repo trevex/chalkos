@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/store"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -74,6 +76,9 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 		if resp.Kubernetes, err = s.Kubernetes.status(ctx); err != nil {
 			return nil, failed(connect.CodeInternal, "kubernetes: %v", err)
 		}
+	}
+	if resp.Outputs, err = s.outputStatus(); err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	resp.Certificates = s.certificates(time.Now())
 	resp.Trust = s.trust()
@@ -158,4 +163,22 @@ func (p *process) Close() error {
 func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootRequest]) (*connect.Response[nodev1.RebootResponse], error) {
 	s.rebootSoon()
 	return connect.NewResponse(&nodev1.RebootResponse{}), nil
+}
+
+// outputStatus is each output of the running image with the hash of the files the node serves
+// and why its last render or check failed, as the renders recorded them.
+func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
+	defs, err := outputs.Read(s.Loader.Outputs)
+	if err != nil {
+		return nil, fmt.Errorf("the image's outputs: %w", err)
+	}
+	recorded, err := outputs.ReadStatus(s.Loader.Render.Root)
+	if err != nil {
+		return nil, fmt.Errorf("the outputs' status: %w", err)
+	}
+	var list []*nodev1.OutputStatus
+	for _, name := range sortedNames(defs) {
+		list = append(list, &nodev1.OutputStatus{Name: name, Hash: recorded[name].Hash, Error: recorded[name].Error})
+	}
+	return list, nil
 }

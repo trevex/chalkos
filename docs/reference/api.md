@@ -566,6 +566,16 @@ No fields.
 | ----- | ---- | ----------- |
 | `line` | `string` |  |
 
+### OutputStatus { #message-outputstatus }
+
+
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | `string` | The output's name, as the image declares it. |
+| `hash` | `string` | The SHA-256 of the names and contents of the files the node serves, in lower-case hex; empty while it serves none, as after a render that failed at boot. |
+| `error` | `string` | Why the output's last render or check failed, at a delivery or at boot; empty once one passed. What the program wrote to standard error is in the node's journal alone. |
+
 ### Partition { #message-partition }
 
 
@@ -667,6 +677,7 @@ No fields.
 | `platform` | `string` | The platform the running image was built for. |
 | `config_version` | `string` | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config, as one installed by an earlier chalkos. |
 | `staged_config_version` | `string` | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
+| `outputs` | repeated [`OutputStatus`](#message-outputstatus) | The image's outputs, by name. |
 
 ### StorageChange { #message-storagechange }
 

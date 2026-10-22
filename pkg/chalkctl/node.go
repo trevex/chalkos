@@ -808,6 +808,16 @@ func (a *app) status(ctx context.Context, n nodeCommand, pos []string) error {
 			fmt.Fprintf(a.stdout, "disk %s: %s\n", d.Name, d.Error)
 		}
 	}
+	if len(s.Outputs) > 0 {
+		w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "OUTPUT\tHASH\tSTATE")
+		for _, o := range s.Outputs {
+			fmt.Fprintln(w, outputLine(o))
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	}
 	if k := s.Kubernetes; k != nil {
 		fmt.Fprintln(a.stdout, kubernetesLine(k))
 	}
@@ -1029,4 +1039,18 @@ func imageFiles(path string) (raw, definitions string, err error) {
 		raw = raws[0]
 	}
 	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
+}
+
+// outputLine is an output's line of the status: the start of the hash of the files the node
+// serves, and whether its last render passed, or why it failed.
+func outputLine(o *nodev1.OutputStatus) string {
+	hash := "none"
+	if len(o.Hash) >= 12 {
+		hash = o.Hash[:12]
+	}
+	state := "rendered"
+	if o.Error != "" {
+		state = "failed: " + o.Error
+	}
+	return o.Name + "\t" + hash + "\t" + state
 }

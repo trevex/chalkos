@@ -982,3 +982,27 @@ func TestApplyConfigRefusesEffectsThatDoNotCompile(t *testing.T) {
 		t.Errorf("stored %s, ran %v", v, r.calls)
 	}
 }
+
+// TestStatusReportsOutputs names each output with the hash of the files the node serves and why
+// its last render failed, until one passes.
+func TestStatusReportsOutputs(t *testing.T) {
+	s, _ := configServer(t)
+	first := status(t, s).Outputs
+	if len(first) != 1 || first[0].Name != "demo" || len(first[0].Hash) != 64 || first[0].Error != "" {
+		t.Fatalf("outputs = %v", first)
+	}
+	writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, `grep -q first "$OUT/demo.json"`)})
+	if _, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1)); err == nil {
+		t.Fatal("the check passed")
+	}
+	got := status(t, s).Outputs
+	if len(got) != 1 || got[0].Hash != first[0].Hash || got[0].Error != "its check refused the rendered files (exit 1); see the node's journal" {
+		t.Errorf("outputs after a refused delivery = %v", got)
+	}
+	if _, err := sendConfig(s, strings.Replace(baseConfig, "token: s3cret", "token: n3w", 1)); err != nil {
+		t.Fatal(err)
+	}
+	if got := status(t, s).Outputs; len(got) != 1 || got[0].Hash != first[0].Hash || got[0].Error != "" {
+		t.Errorf("outputs after a delivery = %v", got)
+	}
+}
