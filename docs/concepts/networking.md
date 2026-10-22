@@ -232,9 +232,9 @@ addresses at boot checks the picked ones against the ranges again, refusing to p
 when one lies outside.
 
 flannel's devices get the MTU of the interface holding the node's address, minus 50. `spec.mtu` of
-the `Flannel` document sets the network's MTU instead, and is
-required when the node's address is on a loopback interface. IPv6 VXLAN needs 70 bytes rather than
-50, so with IPv6 in use set it to the network's MTU minus 20:
+the `Flannel` document sets the network's MTU instead, and is required when the node's address is on
+a loopback interface. IPv6 VXLAN needs 70 bytes rather than 50, so with IPv6 in use set it to the
+network's MTU minus 20:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1

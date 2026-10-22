@@ -94,14 +94,14 @@ encryption](../concepts/storage.md).
 
 ## One bootstrap, then nodes join on their own
 
-`chalkctl bootstrap` starts etcd and the API server on the first
-[control plane](../reference/glossary.md#control-plane), once in the life of a cluster. Every
-other node joins without a command: further control planes add themselves to etcd, and
-[workers](../reference/glossary.md#worker) register with the kubelet certificate that install
-gave them. The `type` of a node's `Node` document makes it a control plane or a worker. When the
-`Cluster` document declares a [VIP](../reference/glossary.md#vip) for the API server,
-chalkd holds it on one healthy control plane. See
-[Kubernetes on chalkos](../concepts/kubernetes.md) and [Networking](../concepts/networking.md).
+`chalkctl bootstrap` starts etcd and the API server on the first [control
+plane](../reference/glossary.md#control-plane), once in the life of a cluster. Every other node
+joins without a command: further control planes add themselves to etcd, and
+[workers](../reference/glossary.md#worker) register with the kubelet certificate that install gave
+them. The `type` of a node's `Node` document makes it a control plane or a worker. When the
+`Cluster` document declares a [VIP](../reference/glossary.md#vip) for the API server, chalkd holds
+it on one healthy control plane. See [Kubernetes on chalkos](../concepts/kubernetes.md) and
+[Networking](../concepts/networking.md).
 
 ## chalkd is the only way in
 
