@@ -208,17 +208,6 @@ func AddonObjectsOf(docs []Document) ([]map[string]any, error) {
 // AddonObjects returns the objects of the set's Addon documents in the order they apply.
 func (s *Set) AddonObjects() ([]map[string]any, error) { return AddonObjectsOf(s.docs) }
 
-// TimeDHCP tells whether the node also takes the time servers DHCP announces.
-func (s *Set) TimeDHCP() (bool, error) {
-	d, ok := s.One("TimeSync")
-	if !ok {
-		return false, nil
-	}
-	var spec timeSyncSpec
-	err := d.decodeSpec(&spec)
-	return spec.DHCP, err
-}
-
 // CheckKubernetes refuses a set whose Node, Cluster, Flannel, RegistryMirror and Addon documents
 // a node of an image with the facts img could not run on: a cluster the Node, Cluster and Flannel
 // documents do not build, registry mirrors that conflict or are plain HTTP without leave, and

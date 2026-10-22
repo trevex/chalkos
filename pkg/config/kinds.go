@@ -55,10 +55,6 @@ type volumeSpec struct {
 	Repart map[string]string `json:"repart"`
 }
 
-type timeSyncSpec struct {
-	DHCP bool `json:"dhcp"`
-}
-
 // nodeSpec is the Kubernetes Node's.
 type nodeSpec struct {
 	Type   string            `json:"type"`

@@ -188,16 +188,6 @@ func TestAddonObjectsInNameOrder(t *testing.T) {
 	}
 }
 
-func TestTimeDHCP(t *testing.T) {
-	if dhcp, err := kubernetesSet(t, "{}", "").TimeDHCP(); err != nil || dhcp {
-		t.Errorf("without TimeSync: %v, %v", dhcp, err)
-	}
-	s := kubernetesSet(t, "{}", "---\napiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: t}\nspec: {dhcp: true}\n")
-	if dhcp, err := s.TimeDHCP(); err != nil || !dhcp {
-		t.Errorf("with dhcp: %v, %v", dhcp, err)
-	}
-}
-
 // The identity's address families come from the Cluster document.
 func TestIdentityTakesTheDocumentsFamilies(t *testing.T) {
 	s := kubernetesNodeSet(t, "{ipFamilies: [ipv6]}", "nodeIP: {addresses: [10.0.0.1]}", "")
