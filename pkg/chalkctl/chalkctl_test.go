@@ -574,7 +574,6 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 		RebootNode: func() {},
 	}
 	s.Loader.RunDir = filepath.Join(root, "run")
-	s.Loader.NetworkDir = filepath.Join(root, "network")
 	// The effects of the default image, which the node carries out.
 	s.Loader.Effects = filepath.Join(root, "effects.json")
 	effects, err := os.ReadFile("../../test/fixtures/kinds/effects.json")
@@ -644,8 +643,8 @@ func TestApplyConfigAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The node's slot held no documents, so the config's Network is new: the units of the default
-	// image that read the node's static addresses restart. The node declares no facts, so the
-	// effect on networkd's units, whose hash is one, does not fire.
+	// image that read the node's static addresses restart. The node declares no outputs, so the
+	// effect on networkd's output does not fire.
 	if !reflect.DeepEqual(r.calls, []string{
 		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
 		"systemctl show --property=ActiveState --value chalkos-kubernetes.service",

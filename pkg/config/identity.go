@@ -46,19 +46,14 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	for _, kind := range []string{"Link", "NetDev", "Network"} {
 		networkDocs = append(networkDocs, s.Of(NetworkdAPI, kind)...)
 	}
-	units, err := renderNetworkUnits(networkDocs, s.schemas)
-	if err != nil {
-		return identity.Identity{}, err
-	}
 	id := identity.Identity{
-		Hostname:     name,
-		Platform:     t.Platform,
-		Network:      NetworkMap(networkDocs),
-		NetworkUnits: units,
-		Labels:       map[string]string{},
-		Taints:       []identity.Taint{},
-		Storage:      sec,
-		Time:         identity.Time{Servers: slices.Clone(defaultTimeServers)},
+		Hostname: name,
+		Platform: t.Platform,
+		Network:  NetworkMap(networkDocs),
+		Labels:   map[string]string{},
+		Taints:   []identity.Taint{},
+		Storage:  sec,
+		Time:     identity.Time{Servers: slices.Clone(defaultTimeServers)},
 	}
 	if hostDoc, ok := s.One("Host"); ok {
 		var host hostSpec

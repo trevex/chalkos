@@ -900,6 +900,8 @@ lib.runTests {
     in
     {
       expr = {
+        systemd = accepted { a = "/run/systemd/resolved.conf.d"; };
+        # The built-in output networkd's.
         networkd = accepted { a = "/run/systemd/network"; };
         own = accepted { a = "/run/chalkos/outputs/a/sub"; };
         etc = accepted { a = "/etc/bird"; };
@@ -922,7 +924,8 @@ lib.runTests {
         };
       };
       expected = {
-        networkd = true;
+        systemd = true;
+        networkd = false;
         own = true;
         etc = false;
         run = false;
@@ -935,40 +938,76 @@ lib.runTests {
         siblings = true;
       };
     };
-  # An image with outputs has the unprivileged user its renderers run as; one without has none.
-  testRenderUser = {
-    expr = {
-      outputs =
-        (withBird {
-          chalkos.outputs.bird-conf.render = "/nix/store/x-render/bin/render";
-        }).users.users.chalkos-render.isSystemUser;
-      none = withDemo.users.users ? chalkos-render;
-    };
+  # networkd's units are a built-in output in networkd's runtime directory, rendered by
+  # chalkos-render with the image's networkd schemas and examples, which networkd reloads.
+  testBuiltinNetworkd = {
+    expr =
+      let
+        output = (outputsOf withDemo).networkd;
+      in
+      {
+        inherit (output) inputs dir check;
+        render = builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render networkd /nix/store/[^ ]+-chalkos-networkd-schemas" output.render != null;
+        examples = lib.attrNames (builtins.readDir withDemo.chalkos.outputs.networkd.examples);
+        effect = (effectsOf withDemo).networkd;
+      };
     expected = {
-      outputs = true;
-      none = false;
+      inputs = [
+        "Link"
+        "NetDev"
+        "Network"
+      ];
+      dir = "/run/systemd/network";
+      check = "";
+      render = true;
+      examples = [
+        "none.yaml"
+        "static.yaml"
+        "vlan.yaml"
+      ];
+      effect = {
+        on = [ "networkd" ];
+        reload = [ "systemd-networkd.service" ];
+        restart = [ ];
+        run = "";
+        start = false;
+        when = "";
+        chalkd = "";
+      };
     };
   };
+  # Every image has the unprivileged user its renderers run as, since it renders the built-in
+  # outputs.
+  testRenderUser = {
+    expr = withDemo.users.users.chalkos-render.isSystemUser;
+    expected = true;
+  };
   # The outputs' files are on a tmpfs of their own, with room for each output's files twice and
-  # one more; an image without outputs mounts none.
+  # one more: the built-in networkd output's, and those of an extension.
   testOutputsTmpfs = {
     expr = {
-      outputs =
+      builtin = withDemo.fileSystems."/run/chalkos/outputs".options;
+      extension =
         (withBird {
           chalkos.outputs.bird-conf.render = "/nix/store/x-render/bin/render";
           chalkos.outputs.bird-peers.render = "/nix/store/x-render/bin/render";
         }).fileSystems."/run/chalkos/outputs".options;
-      none = withDemo.fileSystems ? "/run/chalkos/outputs";
     };
     expected = {
-      outputs = [
+      builtin = [
         "mode=0755"
         "nosuid"
         "nodev"
-        "size=80M"
-        "nr_inodes=81920"
+        "size=48M"
+        "nr_inodes=49152"
       ];
-      none = false;
+      extension = [
+        "mode=0755"
+        "nosuid"
+        "nodev"
+        "size=112M"
+        "nr_inodes=114688"
+      ];
     };
   };
   # The image's rules check reads the effects, the outputs and the units.
@@ -1365,8 +1404,7 @@ lib.runTests {
   # Every image declares the facts of the storage kinds' rules, and an image with Kubernetes
   # the share, of which it keeps the kind and the hashes of the other keys, and the cluster file
   # the kubelet's restart rules read; the fallback secret reaches the command that checks it alone.
-  # Every image hashes the networkd units and the time sources chalkd writes, which networkd's
-  # and chrony's reload rules compare.
+  # Every image hashes the time sources chalkd writes, which chrony's reload rule compares.
   testBuiltinFacts = {
     expr =
       let
@@ -1382,7 +1420,6 @@ lib.runTests {
         fallback =
           lib.hasSuffix " fallback" defined.fallback.command
           && defined.fallback.inputs == [ "fallbackSecret" ];
-        networkUnits = lib.hasSuffix "-chalkos-hash-files /run/systemd/network" defined.networkUnits.command;
         timeSources = lib.hasSuffix "-chalkos-hash-files /run/chalkos/chrony/identity.sources" defined.timeSources.command;
       };
     expected = {
@@ -1390,7 +1427,6 @@ lib.runTests {
         "cluster"
         "disks"
         "fallback"
-        "networkUnits"
         "recorded"
         "share"
         "timeSources"
@@ -1398,7 +1434,6 @@ lib.runTests {
       plain = [
         "disks"
         "fallback"
-        "networkUnits"
         "recorded"
         "timeSources"
       ];
@@ -1411,7 +1446,6 @@ lib.runTests {
       cluster.file = "/run/chalkos/kubernetes/cluster.json";
       disks = true;
       fallback = true;
-      networkUnits = true;
       timeSources = true;
     };
   };

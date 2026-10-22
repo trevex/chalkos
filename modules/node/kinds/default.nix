@@ -16,7 +16,7 @@ let
   getLib = import ./get.nix { inherit lib; };
   chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
   chalkos-rules = pkgs.callPackage ../../../nix/chalkos-rules.nix { };
-  hashFiles = pkgs.callPackage ../../../nix/chalkos-hash-files.nix { };
+  chalkos-render = pkgs.callPackage ../../../nix/chalkos-render.nix { };
   cfg = config.chalkos.kinds;
 
   # networkd's Network, NetDev and Link, generated from the tables of the systemd the image runs,
@@ -391,16 +391,26 @@ in
     environment.etc."chalkos/schemas".source = schemas;
     environment.etc."chalkos/facts.json".source = factsFile;
 
-    # The config loader writes the networkd units of the node's networkd documents, with the
-    # values their secretRefs name, so networkd reads them again when the units differ from those
-    # before the delivery: a document or a Secret one of them references changed, a boot whose
-    # config loader failed left others, or a slot written before the documents were kept holds
-    # the units alone. networkd reloads on systemctl reload as on networkctl reload.
+    # The node's networkd documents as networkd units, in /run/systemd/network, where they take
+    # precedence over the image's own. The renderer reads each key's networkd name from the
+    # schemas, which are the image's, so the units follow from the documents alone. chalkos-config
+    # renders them before networkd starts, and nothing else writes the directory. networkd has no
+    # offline validator, so the output has no check: the schemas accept exactly the sections and
+    # keys the image's networkd does, and the examples render when the image is built.
+    chalkos.outputs.networkd = {
+      inputs = [
+        "Link"
+        "NetDev"
+        "Network"
+      ];
+      render = "${lib.getExe chalkos-render} networkd ${networkdSchemas}";
+      dir = "/run/systemd/network";
+      examples = ../examples/networkd;
+    };
+    # networkd reloads on systemctl reload as on networkctl reload.
     chalkos.effects.networkd = {
-      when = "facts.networkUnits != oldFacts.networkUnits";
+      on = [ "networkd" ];
       reload = [ "systemd-networkd.service" ];
     };
-    # The hash of the units the config loader writes, which hold secret values.
-    chalkos.facts.networkUnits.command = "${hashFiles} /run/systemd/network";
   };
 }

@@ -1,0 +1,21 @@
+# DHCP on a VLAN of the uplink.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-vlan10}
+spec:
+  netDev: {name: vlan10, kind: vlan}
+  vlan: {id: 10}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: enp1s0}
+  network: {vlan: vlan10, linkLocalAddressing: "no"}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-vlan10}
+spec:
+  match: {name: vlan10}
+  network: {dhcp: "yes"}

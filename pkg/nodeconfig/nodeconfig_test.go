@@ -20,7 +20,6 @@ import (
 const nodeIdentity = `{
   "hostname": "w1",
   "network": {},
-  "networkUnits": {"10-uplink.network": "[Match]\nName=enp1s0\n"},
   "labels": {"zone": "a"},
   "taints": [],
   "storage": {}
@@ -32,7 +31,6 @@ func newTestLoader(t *testing.T) (Loader, *string) {
 	hostname := ""
 	l := Loader{
 		RunDir:      filepath.Join(root, "run", "chalkos"),
-		NetworkDir:  filepath.Join(root, "run", "systemd", "network"),
 		Services:    filepath.Join(root, "etc", "services.json"),
 		Effects:     filepath.Join(root, "etc", "effects.json"),
 		Slots:       filepath.Join(root, "state", "config"),
@@ -83,24 +81,11 @@ func read(t *testing.T, path string) string {
 func TestLoad(t *testing.T) {
 	l, hostname := newTestLoader(t)
 	writeSlot(t, l, running, nodeIdentity, "")
-	// A unit from an earlier identity, and one an administrator placed there.
-	write(t, filepath.Join(l.NetworkDir, "05-old.network"), Header+"[Match]\nName=eth9\n")
-	write(t, filepath.Join(l.NetworkDir, "90-manual.network"), "[Match]\nName=eth8\n")
-
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(l.RunDir, "node.json")); got != nodeIdentity {
 		t.Errorf("node.json = %s", got)
-	}
-	if got := read(t, filepath.Join(l.NetworkDir, "10-uplink.network")); got != Header+"[Match]\nName=enp1s0\n" {
-		t.Errorf("uplink unit = %q", got)
-	}
-	if _, err := os.Stat(filepath.Join(l.NetworkDir, "05-old.network")); !os.IsNotExist(err) {
-		t.Error("kept a unit of an earlier identity")
-	}
-	if _, err := os.Stat(filepath.Join(l.NetworkDir, "90-manual.network")); err != nil {
-		t.Error("removed a unit the loader did not write")
 	}
 	if *hostname != "w1" {
 		t.Errorf("hostname = %q", *hostname)
@@ -150,16 +135,6 @@ func TestLoadWithoutTheRunningImagesSlot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(l.RunDir, "node.json")); !os.IsNotExist(err) || *hostname != "" {
 		t.Error("applied another image's identity")
-	}
-}
-
-func TestApplyRejectsUnitNames(t *testing.T) {
-	l, _ := newTestLoader(t)
-	for _, name := range []string{"../escape.network", "10-uplink.service"} {
-		err := l.Apply([]byte(`{"networkUnits": {"` + name + `": ""}}`))
-		if err == nil || !strings.Contains(err.Error(), "invalid networkd unit name") {
-			t.Errorf("%s: err = %v", name, err)
-		}
 	}
 }
 

@@ -179,7 +179,6 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 		Host: h,
 		Loader: nodeconfig.Loader{
 			RunDir:          filepath.Join(root, "run", "chalkos"),
-			NetworkDir:      filepath.Join(root, "run", "network"),
 			ChronySources:   filepath.Join(root, "run", "chalkos", "chrony", "identity.sources"),
 			Services:        filepath.Join(root, "services.json"),
 			Effects:         filepath.Join(root, "effects.json"),
@@ -298,12 +297,11 @@ func hashFiles(path string) ([]byte, error) {
 func writeFacts(t *testing.T, s *Server) {
 	t.Helper()
 	defined := map[string]facts.Definition{
-		"share":        {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
-		"recorded":     {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
-		"disks":        {Command: "chalkos-storage facts disks"},
-		"fallback":     {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
-		"networkUnits": {Command: "chalkos-hash-files " + s.Loader.NetworkDir},
-		"timeSources":  {Command: "chalkos-hash-files " + s.Loader.ChronySources},
+		"share":       {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
+		"recorded":    {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
+		"disks":       {Command: "chalkos-storage facts disks"},
+		"fallback":    {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
+		"timeSources": {Command: "chalkos-hash-files " + s.Loader.ChronySources},
 	}
 	if s.Loader.ClusterFile != "" {
 		defined["cluster"] = facts.Definition{File: s.Loader.ClusterFile}

@@ -62,14 +62,16 @@
   },
   "networkd": {
     "chalkd": "",
-    "on": [],
+    "on": [
+      "networkd"
+    ],
     "reload": [
       "systemd-networkd.service"
     ],
     "restart": [],
     "run": "",
     "start": false,
-    "when": "facts.networkUnits != oldFacts.networkUnits"
+    "when": ""
   },
   "registry-mirrors": {
     "chalkd": "",

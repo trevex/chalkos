@@ -45,7 +45,7 @@ func section(varSize, extraFormat string) string {
 }
 
 func identityWith(storageSection string) string {
-	return `{"hostname": "n1", "platform": "metal", "networkUnits": {}, "storage": ` + storageSection + `}`
+	return `{"hostname": "n1", "platform": "metal", "storage": ` + storageSection + `}`
 }
 
 // documentsOf is the config of node n1 whose storage section an identity renders: the SystemDisk
@@ -925,7 +925,7 @@ func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 // A time server that is no host is refused, as the config loader would refuse it at every boot.
 func TestApplyConfigRefusesATimeServerThatIsNoHost(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
-	id := `{"hostname": "n1", "platform": "metal", "networkUnits": {}, "storage": ` + section("", "") + `, "time": {"servers": [{"host": "a b", "nts": true}]}}`
+	id := `{"hostname": "n1", "platform": "metal", "storage": ` + section("", "") + `, "time": {"servers": [{"host": "a b", "nts": true}]}}`
 	if _, err := apply(s, id, ""); connect.CodeOf(err) != connect.CodeInvalidArgument || len(r.calls) != 0 {
 		t.Errorf("a time server that is no host: %v, ran %v", err, r.calls)
 	}

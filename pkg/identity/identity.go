@@ -26,12 +26,10 @@ const (
 type Identity struct {
 	Hostname string `json:"hostname"`
 	// Platform is the platform the node's image is built for, which its config is translated for.
-	Platform string         `json:"platform"`
-	Network  map[string]any `json:"network"`
-	// NetworkUnits are the systemd-networkd unit files rendered from Network, by file name.
-	NetworkUnits map[string]string `json:"networkUnits"`
-	Labels       map[string]string `json:"labels"`
-	Taints       []Taint           `json:"taints"`
+	Platform string            `json:"platform"`
+	Network  map[string]any    `json:"network"`
+	Labels   map[string]string `json:"labels"`
+	Taints   []Taint           `json:"taints"`
 	// Storage is how the node partitions, encrypts and mounts its disks.
 	Storage    storage.Section `json:"storage"`
 	Kubernetes *Kubernetes     `json:"kubernetes"`

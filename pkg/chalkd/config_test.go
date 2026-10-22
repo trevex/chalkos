@@ -123,7 +123,10 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	withNodeCertificate(t, s)
 	writeSchemas(t, s.Loader.Schemas)
 	writeServices(t, s, `{"demo": {"kinds": ["Demo"]}}`)
-	writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, "")})
+	writeOutputs(t, s, map[string]outputs.Definition{
+		"demo":     demoOutput(t, s, `cat > "$OUT/demo.json"`, ""),
+		"networkd": networkdOutput(t, s),
+	})
 	writeEffects(t, s, `{"demo": {"on": ["demo"], "restart": ["demo.service"]}}`)
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
@@ -353,7 +356,7 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	}
 }
 
-// networkConfig is a networkd Network document, which the config loader renders as a unit.
+// networkConfig is a networkd Network document, which the networkd output renders as a unit.
 const networkConfig = `---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -361,7 +364,7 @@ metadata: {name: 10-uplink}
 spec: {match: {name: enp1s0}, network: {address: [10.0.0.11/24]}}
 `
 
-// TestApplyConfigReloadsNetworkd: networkd reloads the units the config loader renders when the
+// TestApplyConfigReloadsNetworkd: networkd reloads the units its output renders when the
 // networkd documents change, and not for another change.
 func TestApplyConfigReloadsNetworkd(t *testing.T) {
 	s, r := configServer(t)
@@ -747,16 +750,17 @@ func TestApplyConfigComparesWithTheConfigBeforeAFailure(t *testing.T) {
 	}
 }
 
-// TestApplyConfigReloadsNetworkdForUnitsThatDiffer: networkd reloads when the units the config
-// loader writes differ from those it found, as after a boot whose config loader failed, although
-// the networkd documents are the same.
+// TestApplyConfigReloadsNetworkdForUnitsThatDiffer: networkd reloads when the units it reads
+// differ from those the delivery renders, as after a boot whose render of the output failed,
+// although the networkd documents are the same.
 func TestApplyConfigReloadsNetworkdForUnitsThatDiffer(t *testing.T) {
 	s, r := configServer(t)
 	next := baseConfig + networkConfig
 	if _, err := sendConfig(s, next); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.RemoveAll(s.Loader.NetworkDir); err != nil {
+	dir := networkdOutput(t, s).Dir
+	if err := os.Remove(dir); err != nil {
 		t.Fatal(err)
 	}
 	r.calls = nil
@@ -764,43 +768,10 @@ func TestApplyConfigReloadsNetworkdForUnitsThatDiffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Contains(r.calls, "systemctl reload systemd-networkd.service") {
-		t.Errorf("ran %v, want networkd reloaded for the units written again", r.calls)
+		t.Errorf("ran %v, want networkd reloaded for the units rendered again", r.calls)
 	}
-	if _, err := os.Stat(filepath.Join(s.Loader.NetworkDir, "10-uplink.network")); err != nil {
-		t.Errorf("the unit is not written again: %v", err)
-	}
-}
-
-// TestApplyConfigOverALegacySlot: a slot written before the documents were kept holds the
-// identity alone, whose networkd units and time servers the node runs. Config that gives neither
-// changes no networkd or TimeSync document, but the units and the sources file it writes differ,
-// so networkd and chrony reload.
-func TestApplyConfigOverALegacySlot(t *testing.T) {
-	s, r := configServer(t)
-	var id map[string]any
-	if err := json.Unmarshal([]byte(identityOf(t, s)), &id); err != nil {
-		t.Fatal(err)
-	}
-	id["networkUnits"] = map[string]any{"10-legacy.network": "[Match]\nName=enp1s0\n"}
-	id["time"] = map[string]any{"servers": []any{map[string]any{"host": "legacy.ntp"}}}
-	legacy, _ := json.Marshal(id)
-	if err := store.Write(slotOf(t, s), store.Stored{Identity: legacy}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Loader.Apply(legacy); err != nil {
-		t.Fatal(err)
-	}
-	r.calls = nil
-	if _, err := sendConfig(s, baseConfig); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"systemctl reload systemd-networkd.service", "chalkos-chrony-reload-sources"} {
-		if !slices.Contains(r.calls, want) {
-			t.Errorf("ran %v, want %s", r.calls, want)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(s.Loader.NetworkDir, "10-legacy.network")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("the legacy unit stays: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "units.json")); err != nil {
+		t.Errorf("the units are not rendered again: %v", err)
 	}
 }
 
@@ -819,6 +790,16 @@ func demoOutput(t *testing.T, s *Server, render, check string) outputs.Definitio
 	if check != "" {
 		d.Check = shellScript(t, check)
 	}
+	return d
+}
+
+// networkdOutput stands in for the image's networkd output, whose renderer chalkos-render's tests
+// cover: its files change exactly when the Network, NetDev and Link documents do.
+func networkdOutput(t *testing.T, s *Server) outputs.Definition {
+	t.Helper()
+	d := demoOutput(t, s, `cat > "$OUT/units.json"`, "")
+	d.Inputs = []string{"Link", "NetDev", "Network"}
+	d.Dir = filepath.Join(filepath.Dir(filepath.Dir(s.Loader.Render.Root)), "systemd", "network")
 	return d
 }
 
@@ -1012,6 +993,7 @@ func TestApplyConfigRefusesEffectsThatDoNotCompile(t *testing.T) {
 // its last render failed, until one passes.
 func TestStatusReportsOutputs(t *testing.T) {
 	s, _ := configServer(t)
+	writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, "")})
 	first := status(t, s).Outputs
 	if len(first) != 1 || first[0].Name != "demo" || len(first[0].Hash) != 64 || first[0].Error != "" {
 		t.Fatalf("outputs = %v", first)
@@ -1036,6 +1018,7 @@ func TestStatusReportsOutputs(t *testing.T) {
 // output as not rendered yet, as the next render replaces the file.
 func TestStatusToleratesACorruptOutputStatus(t *testing.T) {
 	s, _ := configServer(t)
+	writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, "")})
 	write(t, filepath.Join(s.Loader.Render.Root, ".status.json"), "{")
 	if got := status(t, s).Outputs; len(got) != 1 || got[0].Name != "demo" || got[0].Hash != "" || got[0].Error != "" {
 		t.Errorf("outputs = %v", got)

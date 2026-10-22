@@ -1153,9 +1153,9 @@ in
         refused ${brokenEffect.chalkosRulesImage} 'effect bird: rule "config ==": ERROR: <input>:1:10: Syntax error'
         refused ${undefinedUnit.chalkosRulesImage} 'effect bird: the image defines no unit bird.service'
         refused ${refusedExample.chalkosRulesImage} 'output demo: example second.yaml: its check refused the rendered files (exit 1)'
-        # The command of the networkd units' fact prints null for a path that is missing, and a
+        # The command of the time sources' fact prints null for a path that is missing, and a
         # hash that follows the names and contents of a directory's files, or a file's content.
-        hash=${lib.head (lib.splitString " " testing.nixos.test-metal.config.chalkos.facts.networkUnits.command)}
+        hash=${lib.head (lib.splitString " " testing.nixos.test-metal.config.chalkos.facts.timeSources.command)}
         expect() {
           if [ "$1" != "$2" ]; then
             echo "error: chalkos-hash-files $3: $1, want $2" >&2

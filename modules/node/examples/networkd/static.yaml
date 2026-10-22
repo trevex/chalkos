@@ -1,0 +1,17 @@
+# A static uplink with a second route, and its interface named by its MAC address.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-uplink}
+spec:
+  match: {macAddress: "52:54:00:12:34:56"}
+  link: {name: uplink}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: uplink}
+  network: {address: [10.0.0.11/24, "fd00::11/64"], gateway: 10.0.0.1, dns: [10.0.0.1], ipv6AcceptRA: false}
+  route:
+    - {destination: 10.1.0.0/16, gateway: 10.0.0.254}
+    - {destination: 10.2.0.0/16, gateway: 10.0.0.253, metric: 100}

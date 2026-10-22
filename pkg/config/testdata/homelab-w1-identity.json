@@ -2,7 +2,6 @@
   "hostname": "w1",
   "platform": "metal",
   "network": {},
-  "networkUnits": {},
   "labels": {
     "node.kubernetes.io/storage": "ssd"
   },

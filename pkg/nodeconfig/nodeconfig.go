@@ -1,10 +1,9 @@
 // Package nodeconfig applies the running image's config slot on the node, at boot in
 // chalkos-config.service and after every ApplyConfig: it writes the identity the config
-// translates to, as
-// /run/chalkos/node.json, which the node's Kubernetes side reads, the networkd units and chrony's
-// time servers, and sets the hostname. It writes the config's documents for the units granted
-// config kinds, and the Kubernetes cluster it describes for chalkd, and at boot renders the
-// image's outputs.
+// translates to, as /run/chalkos/node.json, which the node's Kubernetes side reads, chrony's time
+// servers, and sets the hostname. It writes the config's documents for the units granted config
+// kinds, and the Kubernetes cluster it describes for chalkd, and at boot renders the image's
+// outputs, the networkd units among them.
 package nodeconfig
 
 import (
@@ -31,9 +30,6 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 )
-
-// Header marks the networkd units the loader writes, so it removes only its own.
-const Header = "# Written by chalkd from the node identity.\n"
 
 // Service is a unit granted config kinds, as /etc/chalkos/services.json records it: chalkd
 // writes the documents of its kinds below /run/chalkos/config and the values their secretRefs
@@ -69,8 +65,6 @@ type Loader struct {
 	Slots, Cmdline string
 	// RunDir receives node.json, config/ and credentials/.
 	RunDir string
-	// NetworkDir receives networkd units; units there take precedence over the image's.
-	NetworkDir string
 	// Services is the image's map of units to the config kinds they are granted, and Effects
 	// what its deliveries do to them.
 	Services, Effects string
@@ -95,7 +89,6 @@ type Loader struct {
 func Default() Loader {
 	return Loader{
 		RunDir:          "/run/chalkos",
-		NetworkDir:      "/run/systemd/network",
 		Services:        "/etc/chalkos/services.json",
 		Effects:         "/etc/chalkos/effects.json",
 		ChronySources:   "/run/chalkos/chrony/identity.sources",
@@ -113,9 +106,8 @@ func Default() Loader {
 
 // identityFields holds the fields of the identity the loader needs.
 type identityFields struct {
-	Hostname     string            `json:"hostname"`
-	NetworkUnits map[string]string `json:"networkUnits"`
-	Time         identity.Time     `json:"time"`
+	Hostname string        `json:"hostname"`
+	Time     identity.Time `json:"time"`
 }
 
 // Slot is the running image's config slot: the one below Slots named by the root hash of the store
@@ -281,9 +273,6 @@ func (l Loader) Apply(data []byte) error {
 	if err := writeFile(filepath.Join(l.RunDir, "node.json"), data, 0o644); err != nil {
 		return err
 	}
-	if err := l.writeNetworkUnits(id.NetworkUnits); err != nil {
-		return err
-	}
 	if l.ChronySources != "" {
 		sources, err := id.Time.ChronySources()
 		if err != nil {
@@ -296,37 +285,6 @@ func (l Loader) Apply(data []byte) error {
 	if id.Hostname != "" {
 		if err := l.SetHostname(id.Hostname); err != nil {
 			return fmt.Errorf("set the hostname: %w", err)
-		}
-	}
-	return nil
-}
-
-// writeNetworkUnits replaces the units written from an earlier identity.
-func (l Loader) writeNetworkUnits(units map[string]string) error {
-	if err := os.MkdirAll(l.NetworkDir, 0o755); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(l.NetworkDir)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		path := filepath.Join(l.NetworkDir, e.Name())
-		if _, keep := units[e.Name()]; keep {
-			continue
-		}
-		if data, err := os.ReadFile(path); err == nil && bytes.HasPrefix(data, []byte(Header)) {
-			if err := os.Remove(path); err != nil {
-				return err
-			}
-		}
-	}
-	for name, text := range units {
-		if strings.ContainsRune(name, '/') || !(strings.HasSuffix(name, ".network") || strings.HasSuffix(name, ".netdev") || strings.HasSuffix(name, ".link")) {
-			return fmt.Errorf("invalid networkd unit name %q", name)
-		}
-		if err := writeFile(filepath.Join(l.NetworkDir, name), []byte(Header+text), 0o644); err != nil {
-			return err
 		}
 	}
 	return nil

@@ -1,0 +1,5 @@
+# No networkd document: the output holds no unit, and the image's own DHCP unit applies.
+apiVersion: chalkos.dev/v1alpha1
+kind: Host
+metadata: {name: host}
+spec: {hostname: n1}
