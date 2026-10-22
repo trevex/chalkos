@@ -234,7 +234,7 @@ func TestIdentityWithAnEmptyNodeUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.Hostname != "n1" || id.Kubernetes.NodeName != "n1" || len(id.Time.Servers) != 3 || id.Labels == nil || id.Taints == nil {
+	if id.Hostname != "n1" || id.Kubernetes.NodeName != "n1" || id.Labels == nil || id.Taints == nil {
 		t.Errorf("identity = %+v", id)
 	}
 }

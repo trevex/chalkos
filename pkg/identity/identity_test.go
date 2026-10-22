@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -16,24 +15,6 @@ func TestStaticAddresses(t *testing.T) {
 	want := []string{"10.0.0.1", "fd00::1", "10.0.1.1"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("StaticAddresses() = %v, want %v", got, want)
-	}
-}
-
-// A server without "nts" is authenticated, as the Nix option's default says.
-func TestTimeServerNTSDefault(t *testing.T) {
-	var time Time
-	if err := json.Unmarshal([]byte(`{"servers": [{"host": "a"}, {"host": "b", "nts": false}, {"host": "c", "nts": true}]}`), &time); err != nil {
-		t.Fatal(err)
-	}
-	sources, err := time.ChronySources()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "server a iburst nts\nserver b iburst\nserver c iburst nts\n"; sources != want {
-		t.Errorf("sources = %q, want %q", sources, want)
-	}
-	if err := json.Unmarshal([]byte(`{"servers": [{"host": "a", "secure": true}]}`), &time); err == nil {
-		t.Error("accepted an unknown field of a time server")
 	}
 }
 

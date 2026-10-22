@@ -21,13 +21,6 @@ type Target struct {
 	Image *kubernetes.Image
 }
 
-// defaultTimeServers are the servers of a set without a TimeSync, the TimeSync kind's default.
-var defaultTimeServers = []identity.TimeServer{
-	{Host: "ptbtime1.ptb.de", NTS: true},
-	{Host: "ptbtime2.ptb.de", NTS: true},
-	{Host: "ptbtime3.ptb.de", NTS: true},
-}
-
 // Identity translates the set into the identity of the node called name for the image t describes,
 // as the cluster definition rendered it, so every reader of the identity on the node keeps
 // working. Extension kinds stay in the set. The name is the node's name in the inventory, which
@@ -53,7 +46,6 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 		Labels:   map[string]string{},
 		Taints:   []identity.Taint{},
 		Storage:  sec,
-		Time:     identity.Time{Servers: slices.Clone(defaultTimeServers)},
 	}
 	if hostDoc, ok := s.One("Host"); ok {
 		var host hostSpec
@@ -62,20 +54,6 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 		}
 		if host.Hostname != nil {
 			id.Hostname = *host.Hostname
-		}
-	}
-	if ts, ok := s.One("TimeSync"); ok {
-		var spec timeSyncSpec
-		if err := ts.decodeSpec(&spec); err != nil {
-			return identity.Identity{}, err
-		}
-		id.Time.Servers = []identity.TimeServer{}
-		for _, srv := range spec.Servers {
-			server := identity.TimeServer{Host: srv.Host, NTS: srv.NTS}
-			if srv.Port != nil {
-				server.Port = *srv.Port
-			}
-			id.Time.Servers = append(id.Time.Servers, server)
 		}
 	}
 	if t.Image != nil {

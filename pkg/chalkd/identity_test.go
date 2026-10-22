@@ -125,7 +125,7 @@ func installedServer(t *testing.T, recorded string, extraPinned bool, more ...te
 	if err := store.Write(slotOf(t, s), store.Stored{Documents: documentsOf(identityWith(recorded)), Identity: []byte(identityWith(recorded))}); err != nil {
 		t.Fatal(err)
 	}
-	// As at boot: the networkd units and the time sources the identity gives are in place.
+	// As at boot: the identity is in place.
 	if err := s.Loader.Apply([]byte(identityWith(recorded))); err != nil {
 		t.Fatal(err)
 	}
@@ -919,14 +919,5 @@ func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 	}
 	if got, _ := readIdentity(s); string(got) != string(recorded) || len(r.calls) != 0 {
 		t.Errorf("delivering a certificate alone changed the identity or ran %v", r.calls)
-	}
-}
-
-// A time server that is no host is refused, as the config loader would refuse it at every boot.
-func TestApplyConfigRefusesATimeServerThatIsNoHost(t *testing.T) {
-	s, r := installedServer(t, section("", ""), false)
-	id := `{"hostname": "n1", "platform": "metal", "storage": ` + section("", "") + `, "time": {"servers": [{"host": "a b", "nts": true}]}}`
-	if _, err := apply(s, id, ""); connect.CodeOf(err) != connect.CodeInvalidArgument || len(r.calls) != 0 {
-		t.Errorf("a time server that is no host: %v, ran %v", err, r.calls)
 	}
 }

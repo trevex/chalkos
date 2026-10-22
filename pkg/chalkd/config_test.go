@@ -126,6 +126,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	writeOutputs(t, s, map[string]outputs.Definition{
 		"demo":     demoOutput(t, s, `cat > "$OUT/demo.json"`, ""),
 		"networkd": networkdOutput(t, s),
+		"chrony":   chronyOutput(t, s),
 	})
 	writeEffects(t, s, `{"demo": {"on": ["demo"], "restart": ["demo.service"]}}`)
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
@@ -150,8 +151,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 	if err := store.Write(slotOf(t, s), c); err != nil {
 		t.Fatal(err)
 	}
-	// As at boot: the networkd units, the time sources the identity gives and the outputs are in
-	// place.
+	// As at boot: the outputs, networkd's and chrony's among them, are in place.
 	if err := s.Loader.Load(); err != nil {
 		t.Fatal(err)
 	}
@@ -800,6 +800,16 @@ func networkdOutput(t *testing.T, s *Server) outputs.Definition {
 	d := demoOutput(t, s, `cat > "$OUT/units.json"`, "")
 	d.Inputs = []string{"Link", "NetDev", "Network"}
 	d.Dir = filepath.Join(filepath.Dir(filepath.Dir(s.Loader.Render.Root)), "systemd", "network")
+	return d
+}
+
+// chronyOutput stands in for the image's chrony output, whose template the image's examples
+// cover: its file changes exactly when the TimeSync's servers do, and not for spec.dhcp alone.
+func chronyOutput(t *testing.T, s *Server) outputs.Definition {
+	t.Helper()
+	d := demoOutput(t, s, `grep -o '"servers":\[[^]]*\]' > "$OUT/servers.sources" || true`, "")
+	d.Inputs = []string{"TimeSync"}
+	d.Dir = filepath.Join(s.Loader.Render.Root, "chrony")
 	return d
 }
 

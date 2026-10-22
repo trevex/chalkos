@@ -56,11 +56,6 @@ type volumeSpec struct {
 }
 
 type timeSyncSpec struct {
-	Servers []struct {
-		Host string `json:"host"`
-		NTS  bool   `json:"nts"`
-		Port *int   `json:"port"`
-	} `json:"servers"`
 	DHCP bool `json:"dhcp"`
 }
 

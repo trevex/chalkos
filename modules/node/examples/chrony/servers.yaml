@@ -1,0 +1,9 @@
+# Servers by name and address, with and without NTS, one on a port of its own.
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec:
+  servers:
+    - {host: time.cloudflare.com}
+    - {host: 10.0.0.1, nts: false}
+    - {host: "fd00::1", nts: false, port: 12300}

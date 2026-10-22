@@ -1,0 +1,5 @@
+# A TimeSync without servers, as for a node that takes those DHCP announces alone.
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec: {servers: [], dhcp: true}

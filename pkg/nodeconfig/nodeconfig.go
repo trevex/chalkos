@@ -1,9 +1,9 @@
 // Package nodeconfig applies the running image's config slot on the node, at boot in
 // chalkos-config.service and after every ApplyConfig: it writes the identity the config
-// translates to, as /run/chalkos/node.json, which the node's Kubernetes side reads, chrony's time
-// servers, and sets the hostname. It writes the config's documents for the units granted config
-// kinds, and the Kubernetes cluster it describes for chalkd, and at boot renders the image's
-// outputs, the networkd units among them.
+// translates to, as /run/chalkos/node.json, which the node's Kubernetes side reads, and sets the
+// hostname. It writes the config's documents for the units granted config kinds, and the
+// Kubernetes cluster it describes for chalkd, and at boot renders the image's outputs, networkd's
+// units and chrony's time servers among them.
 package nodeconfig
 
 import (
@@ -24,7 +24,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -68,8 +67,6 @@ type Loader struct {
 	// Services is the image's map of units to the config kinds they are granted, and Effects
 	// what its deliveries do to them.
 	Services, Effects string
-	// ChronySources receives the time servers as chrony's sources file; empty writes none.
-	ChronySources string
 	// Schemas are the image's schemas, which tell the secretRef fields of its documents.
 	Schemas string
 	// KubernetesImage is the image's Kubernetes facts, absent on an image without Kubernetes;
@@ -91,7 +88,6 @@ func Default() Loader {
 		RunDir:          "/run/chalkos",
 		Services:        "/etc/chalkos/services.json",
 		Effects:         "/etc/chalkos/effects.json",
-		ChronySources:   "/run/chalkos/chrony/identity.sources",
 		Slots:           "/state/config",
 		Cmdline:         "/proc/cmdline",
 		Schemas:         "/etc/chalkos/schemas",
@@ -106,8 +102,7 @@ func Default() Loader {
 
 // identityFields holds the fields of the identity the loader needs.
 type identityFields struct {
-	Hostname string        `json:"hostname"`
-	Time     identity.Time `json:"time"`
+	Hostname string `json:"hostname"`
 }
 
 // Slot is the running image's config slot: the one below Slots named by the root hash of the store
@@ -272,15 +267,6 @@ func (l Loader) Apply(data []byte) error {
 	}
 	if err := writeFile(filepath.Join(l.RunDir, "node.json"), data, 0o644); err != nil {
 		return err
-	}
-	if l.ChronySources != "" {
-		sources, err := id.Time.ChronySources()
-		if err != nil {
-			return err
-		}
-		if err := writeFile(l.ChronySources, []byte(sources), 0o644); err != nil {
-			return err
-		}
 	}
 	if id.Hostname != "" {
 		if err := l.SetHostname(id.Hostname); err != nil {

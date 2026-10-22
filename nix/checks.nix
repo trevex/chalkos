@@ -1128,7 +1128,10 @@ in
     in
     pkgs.runCommand "chalkos-rules"
       {
-        nativeBuildInputs = [ (pkgs.callPackage ./chalkos-rules.nix { }) ];
+        nativeBuildInputs = [
+          (pkgs.callPackage ./chalkos-rules.nix { })
+          pkgs.jq
+        ];
         checked = [
           testing.nixos.test-metal.config.system.build.chalkosRulesCheck
           homelab.chalkosRulesCheck
@@ -1153,44 +1156,19 @@ in
         refused ${brokenEffect.chalkosRulesImage} 'effect bird: rule "config ==": ERROR: <input>:1:10: Syntax error'
         refused ${undefinedUnit.chalkosRulesImage} 'effect bird: the image defines no unit bird.service'
         refused ${refusedExample.chalkosRulesImage} 'output demo: example second.yaml: its check refused the rendered files (exit 1)'
-        # The command of the time sources' fact prints null for a path that is missing, and a
-        # hash that follows the names and contents of a directory's files, or a file's content.
-        hash=${lib.head (lib.splitString " " testing.nixos.test-metal.config.chalkos.facts.timeSources.command)}
-        expect() {
-          if [ "$1" != "$2" ]; then
-            echo "error: chalkos-hash-files $3: $1, want $2" >&2
+        # The check of chrony's output passes the servers its template renders, and refuses a
+        # line chronyd does not parse or a sourcedir file does not take.
+        check=$(jq -r .chrony.check ${testing.nixos.test-metal.config.system.build.chalkosOutputs})
+        mkdir chrony
+        printf 'server a.example iburst nts\nserver 10.0.0.1 iburst port 12300\n' >chrony/servers.sources
+        OUT=$PWD/chrony $check </dev/null
+        for bad in 'server a.example iburst bogus' 'pool a.example iburst' 'server a.example iburst nts maxpoll'; do
+          printf '%s\n' "$bad" >chrony/servers.sources
+          if OUT=$PWD/chrony $check </dev/null 2>err; then
+            echo "error: chrony's check accepted $bad" >&2
             exit 1
           fi
-        }
-        expect "$(echo '{}' | $hash units)" null "of a missing directory"
-        mkdir units
-        empty=$(echo '{}' | $hash units)
-        printf '[Match]\nName=eth0\n' >units/10-a.network
-        one=$(echo '{}' | $hash units)
-        expect "$(echo '{}' | $hash units)" "$one" "again"
-        mv units/10-a.network units/10-b.network
-        renamed=$(echo '{}' | $hash units)
-        echo '# more' >>units/10-b.network
-        changed=$(echo '{}' | $hash units)
-        file=$(echo '{}' | $hash units/10-b.network)
-        expect "$(printf '%s\n' "$empty" "$one" "$renamed" "$changed" "$file" | sort -u | wc -l)" 5 "of different files"
-        expect "$(echo "$one" | grep -cxE '"[0-9a-f]{64}"')" 1 "of one unit"
-        # A file or directory it cannot read fails it.
-        unreadable() {
-          if echo '{}' | $hash "$1" >hashed 2>err; then
-            echo "error: chalkos-hash-files hashed $2 as $(cat hashed)" >&2
-            exit 1
-          fi
-        }
-        chmod 000 units/10-b.network
-        unreadable units "a directory with a file it cannot read"
-        unreadable units/10-b.network "a file it cannot read"
-        chmod 644 units/10-b.network
-        chmod 100 units
-        unreadable units "a directory it cannot list"
-        chmod 000 units
-        unreadable units "a directory it cannot enter"
-        chmod 755 units
+        done
         touch $out
       '';
 

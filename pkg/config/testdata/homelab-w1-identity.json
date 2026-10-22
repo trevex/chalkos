@@ -57,24 +57,5 @@
     "nodeName": "w1",
     "nodeIPs": [],
     "validSubnets": null
-  },
-  "time": {
-    "servers": [
-      {
-        "host": "ptbtime1.ptb.de",
-        "nts": true,
-        "port": null
-      },
-      {
-        "host": "ptbtime2.ptb.de",
-        "nts": true,
-        "port": null
-      },
-      {
-        "host": "ptbtime3.ptb.de",
-        "nts": true,
-        "port": null
-      }
-    ]
   }
 }

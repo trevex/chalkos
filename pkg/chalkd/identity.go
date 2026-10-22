@@ -53,10 +53,6 @@ func parseIdentity(data string) (delivered, error) {
 	if err := id.Storage.Validate(); err != nil {
 		return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
 	}
-	// The config loader would refuse it at every boot.
-	if err := id.Time.Check(); err != nil {
-		return delivered{}, failed(connect.CodeInvalidArgument, "the identity's %v", err)
-	}
 	// A node that cannot read how to pick its address would run no kubelet.
 	if k := id.Kubernetes; k != nil {
 		if err := k.CheckNodeIPs(); err != nil {

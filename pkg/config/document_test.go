@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -75,14 +76,16 @@ func TestParseRejectsNonFiniteFloats(t *testing.T) {
 	}
 }
 
+// A hex port is the number it denotes in the document chrony's output renders from.
 func TestAHexPortTranslates(t *testing.T) {
 	s := kubernetesSet(t, "{}", "---\napiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: t}\n"+
 		"spec: {servers: [{host: ntp.example.org, port: 0x7b}]}\n")
-	id, err := s.Identity("n1", Target{Image: &testImage})
-	if err != nil {
-		t.Fatal(err)
+	d, ok := s.One("TimeSync")
+	if !ok {
+		t.Fatal("no TimeSync")
 	}
-	if len(id.Time.Servers) != 1 || id.Time.Servers[0].Port != 123 {
-		t.Errorf("servers = %+v", id.Time.Servers)
+	servers := d.Object["spec"].(map[string]any)["servers"].([]any)
+	if port := servers[0].(map[string]any)["port"]; fmt.Sprint(port) != "123" {
+		t.Errorf("port = %#v, want 123", port)
 	}
 }

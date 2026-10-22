@@ -983,7 +983,7 @@ lib.runTests {
     expected = true;
   };
   # The outputs' files are on a tmpfs of their own, with room for each output's files twice and
-  # one more: the built-in networkd output's, and those of an extension.
+  # one more: the built-in outputs', and those of an extension.
   testOutputsTmpfs = {
     expr = {
       builtin = withDemo.fileSystems."/run/chalkos/outputs".options;
@@ -998,15 +998,15 @@ lib.runTests {
         "mode=0755"
         "nosuid"
         "nodev"
-        "size=48M"
-        "nr_inodes=49152"
+        "size=80M"
+        "nr_inodes=81920"
       ];
       extension = [
         "mode=0755"
         "nosuid"
         "nodev"
-        "size=112M"
-        "nr_inodes=114688"
+        "size=144M"
+        "nr_inodes=147456"
       ];
     };
   };
@@ -1404,7 +1404,6 @@ lib.runTests {
   # Every image declares the facts of the storage kinds' rules, and an image with Kubernetes
   # the share, of which it keeps the kind and the hashes of the other keys, and the cluster file
   # the kubelet's restart rules read; the fallback secret reaches the command that checks it alone.
-  # Every image hashes the time sources chalkd writes, which chrony's reload rule compares.
   testBuiltinFacts = {
     expr =
       let
@@ -1420,7 +1419,6 @@ lib.runTests {
         fallback =
           lib.hasSuffix " fallback" defined.fallback.command
           && defined.fallback.inputs == [ "fallbackSecret" ];
-        timeSources = lib.hasSuffix "-chalkos-hash-files /run/chalkos/chrony/identity.sources" defined.timeSources.command;
       };
     expected = {
       names = [
@@ -1429,13 +1427,11 @@ lib.runTests {
         "fallback"
         "recorded"
         "share"
-        "timeSources"
       ];
       plain = [
         "disks"
         "fallback"
         "recorded"
-        "timeSources"
       ];
       recorded.file = "/state/storage/storage.json";
       share = {
@@ -1446,7 +1442,6 @@ lib.runTests {
       cluster.file = "/run/chalkos/kubernetes/cluster.json";
       disks = true;
       fallback = true;
-      timeSources = true;
     };
   };
   # The test image's Greeting refuses a message too long for one log line, and a new one while

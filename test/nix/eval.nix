@@ -367,10 +367,31 @@ lib.runTests {
             && c.systemd.paths.chalkos-chrony-dhcp.pathConfig.Unit == "chalkos-chrony-dhcp-links.service"
             && lib.hasSuffix "systemctl restart chalkos-chrony-dhcp.service" c.systemd.services.chalkos-chrony-dhcp-links.serviceConfig.ExecStart;
           chalkdHasChronyc = lib.elem c.services.chrony.package c.systemd.services.chalkd.path;
-          # chrony's effect runs a script of chalkd's PATH, which leaves a chronyd that does not run.
+          # chrony's effect, on its output, runs a script of chalkd's PATH, which leaves a chronyd
+          # that does not run.
           reloadSources =
-            (builtins.fromJSON c.environment.etc."chalkos/effects.json".text).chrony.run == "chalkos-chrony-reload-sources"
+            (builtins.fromJSON c.environment.etc."chalkos/effects.json".text).chrony == {
+              on = [ "chrony" ];
+              run = "chalkos-chrony-reload-sources";
+              reload = [ ];
+              restart = [ ];
+              start = false;
+              when = "";
+              chalkd = "";
+            }
             && lib.any (p: lib.getName p == "chalkos-chrony-reload-sources") c.systemd.services.chalkd.path;
+          # The TimeSync's servers are an output, which a template renders, chronyd checks, and
+          # the examples exercise when the image is built.
+          output =
+            let
+              o = c.chalkos.outputs.chrony;
+            in
+            {
+              inherit (o) inputs dir;
+              template = lib.hasInfix "chalkos-render template " o.render && lib.hasSuffix " servers.sources" o.render;
+              check = lib.hasInfix "/bin/chronyd -p -f" o.check;
+              examples = lib.attrNames (builtins.readDir o.examples);
+            };
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
         };
       in
@@ -386,7 +407,7 @@ lib.runTests {
         3
       ];
       sourcedirs = [
-        "sourcedir /run/chalkos/chrony"
+        "sourcedir /run/chalkos/outputs/chrony"
         "sourcedir /run/chalkos/chrony-dhcp"
       ];
       certTimeCheck = true;
@@ -399,6 +420,17 @@ lib.runTests {
       dhcpRerunsOnChange = true;
       chalkdHasChronyc = true;
       reloadSources = true;
+      output = {
+        inputs = [ "TimeSync" ];
+        dir = "/run/chalkos/outputs/chrony";
+        template = true;
+        check = true;
+        examples = [
+          "empty.yaml"
+          "none.yaml"
+          "servers.yaml"
+        ];
+      };
       chalkdProtectsClock = true;
     };
   };
