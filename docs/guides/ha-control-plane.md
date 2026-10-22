@@ -79,8 +79,7 @@ metadata: {name: prod}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
     cp2: {address: 10.0.0.12, files: [nodes/cp2.yaml]}

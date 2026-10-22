@@ -137,8 +137,7 @@ spec:
   images:
     # nix build .#node-kvm -o images/node-kvm puts the image here.
     node-kvm: {source: {directory: images/node-kvm}}
-  image: node-kvm
-  files: [cluster/*.yaml]
+  all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
     w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}
@@ -148,19 +147,20 @@ spec:
 
 - `metadata.name` is a label: it names the cluster in chalkctl's messages and the kubeconfig
   `chalkctl kubeconfig` writes, as [What names a node?](#what-names-a-node) describes.
-- `spec.images` are the images the nodes run, by name, and `spec.image` the image of every node
-  that names none, as [How does the inventory name images?](#how-does-the-inventory-name-images)
-  describes.
-- `spec.files` are the files every node gets.
+- `spec.images` are the images the nodes run, by name, as
+  [How does the inventory name images?](#how-does-the-inventory-name-images) describes.
+- `spec.all` is what every node gets: its `imageName`, the image of every node that names none
+  itself or through a group, and its `files`, which come first in every node's set.
 - `spec.groups.<group>` is a group, which a node joins by naming the group in its `groups`: its
-  `files` and its `image`.
-- `spec.nodes.<node>` is each node by its name, with its `address`, its `image`, its `groups` and
-  its own `files`.
+  `files` and its `imageName`.
+- `spec.nodes.<node>` is each node by its name, with its `address`, its `imageName`, its `groups`
+  and its own `files`.
 
-A node's set is the documents of the shared files, then of its groups' files in the order the node
-names the groups, then of its own files. Paths are relative to the inventory's directory, and a
-glob such as `cluster/*.yaml` takes its files in name order. Every path or glob must name at least
-one file, so a typo fails instead of leaving documents out. A file named twice counts once.
+A node's set is the documents of the files of `spec.all`, then of its groups' files in the order
+the node names the groups, then of its own files. Paths are relative to the inventory's
+directory, and a glob such as `cluster/*.yaml` takes its files in name order. Every path or glob
+must name at least one file, so a typo fails instead of leaving documents out. A file named twice
+counts once.
 
 The order decides nothing about values, because documents never merge: two documents of the same
 kind and name in one node's set are an error that names both files. A group is the place for what
@@ -174,8 +174,7 @@ metadata: {name: homelab}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   groups:
     gpu: {files: [groups/gpu.yaml]}
   nodes:
@@ -275,14 +274,14 @@ names the image's variant, platform and [root hash](../reference/glossary.md#roo
 
 A node runs one image, named in one of three places:
 
-- the node's own `image`, which wins;
-- else the `image` of its groups;
-- else `spec.image`.
+- the node's own `imageName`, which wins;
+- else the `imageName` of its groups;
+- else `spec.all.imageName`.
 
 Two groups of a node that name different images refuse the inventory, also when the node names its
-own. A node that gets no image from any of them is refused, as is an `image` that names no image
-of `spec.images`. This inventory runs every node on `node-metal` and the GPU workers of the group
-`gpu` on `gpu-metal`:
+own. A node that gets no image from any of them is refused, as is an `imageName` that names no
+image of `spec.images`. This inventory runs every node on `node-metal` and the GPU workers of the
+group `gpu` on `gpu-metal`:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -292,10 +291,9 @@ spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
     gpu-metal: {source: {directory: images/gpu-metal}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   groups:
-    gpu: {image: gpu-metal, files: [groups/gpu.yaml]}
+    gpu: {imageName: gpu-metal, files: [groups/gpu.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
     w2: {address: 10.0.0.22, groups: [gpu], files: [nodes/w2.yaml]}

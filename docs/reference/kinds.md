@@ -342,11 +342,12 @@ The nodes of a cluster, where chalkctl reaches each, the image each runs and the
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.files` | list of string | none | Config files every node gets. |
+| `spec.all` | object | see below | What every node gets: the image of the nodes that name none and whose groups name none, and the config files every node gets first. |
+| `spec.all.files` | list of string | none | Config files the nodes under it get. |
+| `spec.all.imageName` | string | none | The image of the nodes under it that name none of their own. |
 | `spec.groups` | map of object | none | Groups of nodes by name, which a node joins by naming them in its groups. |
-| `spec.groups.<name>.files` | list of string | none | Config files the group's nodes get. |
-| `spec.groups.<name>.image` | string | none | The image of the group's nodes that name none, over spec.image. A node in groups that name different images is refused. |
-| `spec.image` | string | none | The image of every node that names none and whose groups name none. |
+| `spec.groups.<name>.files` | list of string | none | Config files the nodes under it get. |
+| `spec.groups.<name>.imageName` | string | none | The image of the nodes under it that name none of their own. |
 | `spec.images` | map of object | none | The images the nodes run, by name. |
 | `spec.images.<name>.source` | object | required | Where the image comes from. |
 | `spec.images.<name>.source.directory` | string | required | Directory of an image build as nix build makes it, holding its metadata.json; a relative directory is relative to the inventory's directory. |
@@ -354,7 +355,7 @@ The nodes of a cluster, where chalkctl reaches each, the image each runs and the
 | `spec.nodes.<name>.address` | string | none | Where chalkctl reaches the node's chalkd: a host or host:port. |
 | `spec.nodes.<name>.files` | list of string | none | The node's own config files. |
 | `spec.nodes.<name>.groups` | list of string | none | Groups whose files the node gets, in this order; the node runs their image unless it names its own. |
-| `spec.nodes.<name>.image` | string | none | The image the node runs, over that of its groups and spec.image. |
+| `spec.nodes.<name>.imageName` | string | none | The image the node runs, over that of its groups and spec.all.imageName. |
 
 ## Lab { #lab }
 

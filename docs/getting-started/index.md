@@ -50,8 +50,9 @@ Nix builds the [image](../reference/glossary.md#image); YAML files describe the 
 gives a development shell. `chalkos.yaml` is the inventory: it names the two nodes, the address
 chalkctl reaches each at, the image both run, and the files each gets, every file of `cluster/` and
 its own file of `nodes/`. The image `node-kvm` is the directory `images/node-kvm`, relative to the
-inventory, and `image` makes it the image of every node. `chalklab.yaml` is the lab file, which
-names the nodes chalklab runs as virtual machines.
+inventory. `all` holds what every node gets: `node-kvm` as its image, and the files of `cluster/`
+before its own. `chalklab.yaml` is the lab file, which names the nodes chalklab runs as virtual
+machines.
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -61,8 +62,7 @@ spec:
   images:
     # nix build .#node-kvm -o images/node-kvm puts the image here.
     node-kvm: {source: {directory: images/node-kvm}}
-  image: node-kvm
-  files: [cluster/*.yaml]
+  all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
     w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}

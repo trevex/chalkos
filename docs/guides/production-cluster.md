@@ -77,11 +77,11 @@ as packages:
 }
 ```
 
-The inventory gives every node the files of `cluster/`, the nodes of a group the group's files,
-and each node its own file, in that order. Each node's `address` is where chalkctl reaches it.
-`spec.images` names the image directories, relative to the inventory's directory, here the
-`images/` directory `nix build` links, and `spec.image` the image every node runs unless it or
-one of its groups names another:
+The inventory gives every node the files of `cluster/` through `spec.all`, the nodes of a group
+the group's files, and each node its own file, in that order. Each node's `address` is where
+chalkctl reaches it. `spec.images` names the image directories, relative to the inventory's
+directory, here the `images/` directory `nix build` links. `spec.all.imageName` names the image
+every node runs unless the node or one of its groups names another:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -91,8 +91,7 @@ spec:
   images:
     # nix build .#node-metal -o images/node-metal puts the image here.
     node-metal: {source: {directory: images/node-metal}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   groups:
     storage: {files: [groups/storage.yaml]}
   nodes:
@@ -138,8 +137,8 @@ image, such as GPU drivers or an extension's service, and name every variant the
 `variants` replaces the default `node` variant, so `variants.gpu.modules` alone builds no `node`
 images. With `node = { };` beside `gpu`, the flake builds `node-<platform>` and `gpu-<platform>`
 images, and the nodes that run the GPU images name theirs in the inventory, on the node or on a
-group: a node's own `image` wins over its groups', which win over `spec.image`, and a node in two
-groups that name different images is refused.
+group: a node's own `imageName` wins over its groups', which win over `spec.all.imageName`, and a
+node in two groups that name different images is refused.
 Every variant is built for every platform the flake names, so name only the platforms you run.
 [Customise an image](customise-image.md) adds modules to a variant.
 

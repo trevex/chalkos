@@ -89,7 +89,7 @@ apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}
 spec:
-  files: [cluster/*.yaml]
+  all: {files: [cluster/*.yaml]}
   groups:
     longhorn: {files: [groups/longhorn.yaml]}
   nodes:

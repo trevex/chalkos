@@ -88,7 +88,7 @@ Without `--image`, `chalkctl upgrade` gives each node the image the inventory na
 where the inventory's images point, and check the nodes' config against them with
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md). The homelab example's inventory names
 the image `node-metal` at `images/node-metal`, relative to `chalkos.yaml`, and makes it every
-node's with `spec.image`:
+node's with `spec.all.imageName`:
 
 ```sh
 nix build .#node-metal -o images/node-metal

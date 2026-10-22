@@ -46,8 +46,8 @@ port alone and runs the QEMU guest agent, which the `metal` image lacks. Build t
 the flake, `platforms = [ "kvm" ];` or `[ "metal" "kvm" ]` for a cluster of both, expose its image
 as a package, `packages.x86_64-linux.node-kvm = images.images.node-kvm;` as the lab template's flake
 does, and name its image directory in the [inventory](../reference/kinds.md#inventory)'s
-`spec.images`. `spec.image` gives it to every node that names no image of its own or through a
-group:
+`spec.images`. `spec.all.imageName` gives it to every node that names no image of its own or
+through a group:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -57,8 +57,7 @@ spec:
   images:
     # nix build .#node-kvm -o images/node-kvm puts the image here.
     node-kvm: {source: {directory: images/node-kvm}}
-  image: node-kvm
-  files: [cluster/*.yaml]
+  all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
 ```

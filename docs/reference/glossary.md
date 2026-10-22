@@ -263,11 +263,11 @@ The file that tells chalkctl about a cluster: each node by name, the address cha
 the [image](#image) it runs, and the YAML files whose documents form its [config](#config), as files
 every node gets, files of named groups and each node's own. The inventory names each image by its
 [image directory](#image-directory), relative to the inventory's directory; a node runs its own
-`image`, else that of its groups, else the inventory's `spec.image`. Every node that holds a
-`Cluster` document holds the same `Cluster` and `Flannel` specs. chalkctl reads `chalkos.yaml` in
-the current directory, or the file `--inventory` names. It stays on the operator's machine and
-names no secrets. Its keys of `spec.nodes` are the [node names](#node-name); its `metadata.name` is
-a label for messages and the default kubeconfig context. See
+`imageName`, else that of its groups, else the inventory's `spec.all.imageName`. Every node that
+holds a `Cluster` document holds the same `Cluster` and `Flannel` specs. chalkctl reads
+`chalkos.yaml` in the current directory, or the file `--inventory` names. It stays on the
+operator's machine and names no secrets. Its keys of `spec.nodes` are the [node names](#node-name);
+its `metadata.name` is a label for messages and the default kubeconfig context. See
 [Config and the inventory](../concepts/config.md#how-does-the-inventory-assign-files-to-nodes) and
 its fields in [Config kinds](kinds.md#inventory).
 

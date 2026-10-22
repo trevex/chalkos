@@ -231,8 +231,8 @@ digit, becomes `CHALKOS_PLATFORM` in the image's os-release.
 
 A node runs the image the [inventory](../reference/kinds.md#inventory) names for it. Expose the
 image in `flake.nix` as `packages.x86_64-linux.node-r650 = images.images.node-r650;`, add it to
-the inventory's `spec.images`, and name it on the node, whose own `image` wins over the one
-`spec.image` gives every other node:
+the inventory's `spec.images`, and name it on the node, whose own `imageName` wins over the
+one `spec.all.imageName` gives every other node:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -243,12 +243,11 @@ spec:
     node-metal: {source: {directory: images/node-metal}}
     # nix build .#node-r650 -o images/node-r650 puts the image here.
     node-r650: {source: {directory: images/node-r650}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
     w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}
-    w3: {address: 10.0.0.23, image: node-r650, files: [nodes/w3.yaml]}
+    w3: {address: 10.0.0.23, imageName: node-r650, files: [nodes/w3.yaml]}
 ```
 
 The node's own file holds its config as on any other platform:

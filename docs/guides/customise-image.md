@@ -166,17 +166,17 @@ spec:
     node-metal: {source: {directory: images/node-metal}}
     # nix build .#gpu-metal -o images/gpu-metal puts the image here.
     gpu-metal: {source: {directory: images/gpu-metal}}
-  image: node-metal
-  files: [cluster/*.yaml]
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
-    w1: {address: 10.0.0.21, image: gpu-metal, files: [nodes/w1.yaml]}
+    w1: {address: 10.0.0.21, imageName: gpu-metal, files: [nodes/w1.yaml]}
 ```
 
-A relative directory is relative to the inventory's directory. A node's own `image` wins, then
-the `image` of its groups, then `spec.image`; a node in two groups that name different images, or
-one that ends up with no image, makes chalkctl refuse the inventory. Several GPU nodes can share a
-group with `image: gpu-metal` instead. The node's config files stay as they are.
+A relative directory is relative to the inventory's directory. A node's own `imageName` wins,
+then the `imageName` of its groups, then `spec.all.imageName`; a node in two groups that name
+different images, or one that ends up with no image, makes chalkctl refuse the inventory. Several
+GPU nodes can share a group with `imageName: gpu-metal` instead. The node's config files stay as
+they are.
 
 ## Add a config kind of your own
 
