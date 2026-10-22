@@ -1730,7 +1730,8 @@ func TestUpgradeDiff(t *testing.T) {
 	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
 		t.Fatal(err)
 	}
-	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: config unchanged\nw1: installed ") {
+	// The image renders its outputs at its first boot, which the run says.
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: config unchanged\nw1: installed ") || !strings.Contains(out, " renders and checks its outputs when it first boots; if one fails, the node falls back to the image it runs\n") {
 		t.Errorf("output:\n%s", out)
 	}
 }
