@@ -1,0 +1,4 @@
+{{- range .documents.Greeting -}}
+{{ .spec.message }}
+secret_{{ .spec.token.secretRef.name }}.{{ .spec.token.secretRef.key }}
+{{ end -}}

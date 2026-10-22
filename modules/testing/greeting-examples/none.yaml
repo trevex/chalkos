@@ -1,0 +1,6 @@
+# A node without a Greeting, whose output is empty.
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: unused}
+spec:
+  data: {token: s3cret}
