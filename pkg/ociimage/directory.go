@@ -94,7 +94,7 @@ func describes(md schema.Metadata, h Header) error {
 	case md.RootHash != h.RootHash:
 		return fmt.Errorf("metadata.json names the root hash %q, but the image's store has %s", md.RootHash, h.RootHash)
 	case md.Platform != h.Platform:
-		return fmt.Errorf("metadata.json names the platform %q, but the image's UKI %q", md.Platform, h.Platform)
+		return fmt.Errorf("metadata.json names the platform %q, but the image's UKI names %q", md.Platform, h.Platform)
 	}
 	return nil
 }

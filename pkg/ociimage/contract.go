@@ -116,9 +116,11 @@ func (c Contract) Tar() ([]byte, error) {
 }
 
 // ParseContract reads a contract layer. It skips directories and files outside the contract, so
-// that a later chalkos may add some, and refuses links and other special files.
+// that a later chalkos may add some, and refuses links, other special files and a name it has
+// already read.
 func ParseContract(r io.Reader) (Contract, error) {
 	c := Contract{Schemas: map[string][]byte{}, Definitions: map[string][]byte{}}
+	var haveMetadata, haveImageJSON bool
 	tr := tar.NewReader(r)
 	for {
 		h, err := tr.Next()
@@ -142,12 +144,26 @@ func ParseContract(r io.Reader) (Contract, error) {
 		dir, base := path.Split(path.Clean(h.Name))
 		switch {
 		case dir == "" && base == "metadata.json":
+			if haveMetadata {
+				return Contract{}, fmt.Errorf("the contract layer holds %s twice", base)
+			}
+			haveMetadata = true
 			c.Metadata = data
 		case dir == "" && base == "image.json":
+			if haveImageJSON {
+				return Contract{}, fmt.Errorf("the contract layer holds %s twice", base)
+			}
+			haveImageJSON = true
 			c.ImageJSON = data
 		case dir == "schemas/" && path.Ext(base) == ".json":
+			if _, dup := c.Schemas[base]; dup {
+				return Contract{}, fmt.Errorf("the contract layer holds %s twice", dir+base)
+			}
 			c.Schemas[base] = data
 		case dir == "repart.d/" && path.Ext(base) == ".conf":
+			if _, dup := c.Definitions[base]; dup {
+				return Contract{}, fmt.Errorf("the contract layer holds %s twice", dir+base)
+			}
 			c.Definitions[base] = data
 		}
 	}
@@ -157,8 +173,12 @@ func ParseContract(r io.Reader) (Contract, error) {
 	return c, nil
 }
 
-// ReadContract reads the contract layer of a chalkos image, refusing one larger than a contract
-// may be before reading it.
+// ReadContract reads the contract layer of a chalkos image: a layer larger than a contract may be
+// is refused by its descriptor's size alone, before it is read, and a smaller one is read to its
+// end before it is parsed. go-containerregistry verifies a remote blob's digest only once a
+// reader of it reaches end of stream; archive/tar's reader does not reach that on its own, since
+// it stops at the end-of-archive marker, so parsing a layer straight from its reader would accept
+// one that was tampered with in transit.
 func ReadContract(img v1.Image) (Contract, error) {
 	m, err := img.Manifest()
 	if err != nil {
@@ -179,6 +199,15 @@ func ReadContract(img v1.Image) (Contract, error) {
 	if err != nil {
 		return Contract{}, err
 	}
-	defer rc.Close()
-	return ParseContract(io.LimitReader(rc, maxContract))
+	data, err := io.ReadAll(io.LimitReader(rc, maxContract+1))
+	if cerr := rc.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return Contract{}, fmt.Errorf("its contract layer: %w", err)
+	}
+	if int64(len(data)) > maxContract {
+		return Contract{}, fmt.Errorf("its contract layer is more than the %d bytes a contract may be", maxContract)
+	}
+	return ParseContract(bytes.NewReader(data))
 }

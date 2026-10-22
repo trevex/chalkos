@@ -122,10 +122,18 @@ func Build(h Header, store, hashTree, uki, bootLoader, contract Blob) (v1.Image,
 }
 
 // Replace is img with the blobs in place of its layers of their media types; its config and its
-// other layers stay as they are.
+// other layers stay as they are. It refuses an img whose manifest holds a layer besides the five
+// known ones, rather than silently dropping it.
 func Replace(img v1.Image, blobs ...Blob) (v1.Image, error) {
 	if _, err := ReadHeader(img); err != nil {
 		return nil, err
+	}
+	m, err := img.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	if len(m.Layers) != len(layerTypes) {
+		return nil, fmt.Errorf("it has %d layers, not the %d of a chalkos image", len(m.Layers), len(layerTypes))
 	}
 	config, err := img.RawConfigFile()
 	if err != nil {
@@ -170,6 +178,9 @@ func build(config []byte, layers []Blob) (v1.Image, error) {
 	for i, b := range layers {
 		if b.MediaType != layerTypes[i] {
 			return nil, fmt.Errorf("layer %d is of the media type %s, not %s", i, b.MediaType, layerTypes[i])
+		}
+		if _, dup := a.blobs[b.Digest]; dup {
+			return nil, fmt.Errorf("two layers share the digest %s", b.Digest)
 		}
 		m.Layers = append(m.Layers, v1.Descriptor{MediaType: b.MediaType, Size: b.Size, Digest: b.Digest})
 		a.blobs[b.Digest] = b

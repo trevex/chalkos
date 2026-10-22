@@ -5,7 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,7 +18,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/trevex/chalkos/pkg/image"
@@ -48,20 +58,33 @@ func writeLayout(t *testing.T, in, out string) v1.Hash {
 	return d
 }
 
-// smallImage is a chalkos image of a few bytes per layer, for tests that need no disk image.
-func smallImage(t *testing.T) v1.Image {
+// smallHeader is the header of a small test image, built fresh so a test may change a field of
+// its own copy.
+func smallHeader() ociimage.Header {
+	return ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+}
+
+// smallBlobs are the five blobs of a small test image's layers, a few bytes each, built fresh so
+// a test may replace one before calling ociimage.Build.
+func smallBlobs(t *testing.T) (store, hashTree, uki, bootLoader, contract ociimage.Blob) {
 	t.Helper()
 	c := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
-	contract, err := c.Tar()
+	tar, err := c.Tar()
 	if err != nil {
 		t.Fatal(err)
 	}
-	img, err := ociimage.Build(ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"},
-		ociimage.BytesBlob(ociimage.StoreType, []byte("store")),
+	return ociimage.BytesBlob(ociimage.StoreType, []byte("store")),
 		ociimage.BytesBlob(ociimage.HashTreeType, []byte("hash tree")),
 		ociimage.BytesBlob(ociimage.UKIType, []byte("uki")),
 		ociimage.BytesBlob(ociimage.BootLoaderType, []byte("boot loader")),
-		ociimage.BytesBlob(ociimage.ContractType, contract))
+		ociimage.BytesBlob(ociimage.ContractType, tar)
+}
+
+// smallImage is a chalkos image of a few bytes per layer, for tests that need no disk image.
+func smallImage(t *testing.T) v1.Image {
+	t.Helper()
+	store, hashTree, uki, bootLoader, contract := smallBlobs(t)
+	img, err := ociimage.Build(smallHeader(), store, hashTree, uki, bootLoader, contract)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,5 +265,177 @@ func TestParseContract(t *testing.T) {
 		if _, err := ociimage.ParseContract(bytes.NewReader(tarOf(entries...))); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("ParseContract = %v, want %q", err, name)
 		}
+	}
+}
+
+// TestFromDirectoryRefusesMetadataOfAnotherPlatform refuses an image directory whose metadata.json
+// names another platform than the image's UKI boots.
+func TestFromDirectoryRefusesMetadataOfAnotherPlatform(t *testing.T) {
+	in := t.TempDir()
+	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
+	root := imagetest.Write(t, in, img)
+	imagetest.WriteContract(t, in, imagetest.Image{Variant: img.Variant, Platform: "kvm"}, root)
+	if _, _, err := ociimage.FromDirectory(context.Background(), in); err == nil || !strings.Contains(err.Error(), `metadata.json names the platform "kvm", but the image's UKI names "metal"`) {
+		t.Errorf("FromDirectory = %v", err)
+	}
+}
+
+// TestFromDirectoryRefusesNoVariant refuses an image directory whose UKI names no variant, such
+// as the installer's.
+func TestFromDirectoryRefusesNoVariant(t *testing.T) {
+	in := t.TempDir()
+	img := imagetest.Image{Platform: "metal", Seed: "1"}
+	root := imagetest.Write(t, in, img)
+	imagetest.WriteContract(t, in, img, root)
+	if _, _, err := ociimage.FromDirectory(context.Background(), in); err == nil || !strings.Contains(err.Error(), "names no variant") {
+		t.Errorf("FromDirectory = %v", err)
+	}
+}
+
+// TestWriteLayoutStopsOnCtxCancellation refuses to write a layout once ctx has already ended, and
+// leaves nothing behind.
+func TestWriteLayoutStopsOnCtxCancellation(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ociimage.WriteLayout(ctx, smallImage(t), out); err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("WriteLayout = %v, want context.Canceled", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("the directory holds %v, want nothing left behind", entries)
+	}
+}
+
+// TestWriteLayoutRefusesALayerWhoseContentDoesNotMatchItsDigest fails, and leaves nothing behind,
+// when a blob's Open does not return what its Digest and Size were computed from.
+func TestWriteLayoutRefusesALayerWhoseContentDoesNotMatchItsDigest(t *testing.T) {
+	store, hashTree, uki, bootLoader, contract := smallBlobs(t)
+	store.Open = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader([]byte("STORE"))), nil }
+	img, err := ociimage.Build(smallHeader(), store, hashTree, uki, bootLoader, contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	if _, err := ociimage.WriteLayout(context.Background(), img, out); err == nil {
+		t.Error("WriteLayout = nil error, want a digest mismatch")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("the directory holds %v, want nothing left behind", entries)
+	}
+}
+
+// TestReadContractRefusesATamperedBlob serves a chalkos image from an in-memory registry through
+// a proxy that flips the contract layer's last byte, and checks that ReadContract notices:
+// go-containerregistry verifies a remote blob's digest only once a reader of it reaches end of
+// stream, which archive/tar's reader does not reach on its own.
+func TestReadContractRefusesATamperedBlob(t *testing.T) {
+	img := smallImage(t)
+	l, err := ociimage.Layer(img, ociimage.ContractType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractDigest, err := l.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/blobs/"+contractDigest.String()) {
+			reg.ServeHTTP(w, r)
+			return
+		}
+		rec := httptest.NewRecorder()
+		reg.ServeHTTP(rec, r)
+		body := rec.Body.Bytes()
+		body[len(body)-1] ^= 1
+		for k, v := range rec.Header() {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(rec.Code)
+		w.Write(body)
+	}))
+	defer srv.Close()
+	ref, err := name.ParseReference(strings.TrimPrefix(srv.URL, "http://") + "/x:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(ref, img); err != nil {
+		t.Fatal(err)
+	}
+	ri, err := remote.Image(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ociimage.ReadContract(ri); err == nil {
+		t.Error("ReadContract over a tampered blob = nil error, want a digest mismatch")
+	}
+}
+
+// TestReadContractRefusesAnOversizedLayer refuses a contract layer larger than a contract may be,
+// by its descriptor's size alone, before reading it.
+func TestReadContractRefusesAnOversizedLayer(t *testing.T) {
+	store, hashTree, uki, bootLoader, _ := smallBlobs(t)
+	big := ociimage.BytesBlob(ociimage.ContractType, bytes.Repeat([]byte("x"), 16<<20+1))
+	img, err := ociimage.Build(smallHeader(), store, hashTree, uki, bootLoader, big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ociimage.ReadContract(img); err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Errorf("ReadContract = %v", err)
+	}
+}
+
+// TestReadHeaderRefusesANonChalkosImage refuses a manifest of another artifact type.
+func TestReadHeaderRefusesANonChalkosImage(t *testing.T) {
+	img, err := random.Image(1024, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ociimage.ReadHeader(img); err == nil || !strings.Contains(err.Error(), "it is no chalkos image") {
+		t.Errorf("ReadHeader = %v", err)
+	}
+}
+
+// TestReplaceRefusesExtraLayers refuses a manifest with a layer besides the five known ones,
+// rather than silently dropping it.
+func TestReplaceRefusesExtraLayers(t *testing.T) {
+	img, err := mutate.AppendLayers(smallImage(t), static.NewLayer([]byte("extra"), "application/vnd.chalkos.image.extra.v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ociimage.Replace(img); err == nil || !strings.Contains(err.Error(), "layers") {
+		t.Errorf("Replace = %v", err)
+	}
+}
+
+// TestBuildRefusesDuplicateLayerDigests refuses two layers of the same digest, even of different
+// media types.
+func TestBuildRefusesDuplicateLayerDigests(t *testing.T) {
+	store, _, uki, bootLoader, contract := smallBlobs(t)
+	dup := ociimage.BytesBlob(ociimage.HashTreeType, []byte("store"))
+	if _, err := ociimage.Build(smallHeader(), store, dup, uki, bootLoader, contract); err == nil || !strings.Contains(err.Error(), "digest") {
+		t.Errorf("Build = %v", err)
+	}
+}
+
+// TestParseContractRefusesDuplicateNames refuses a contract layer that holds the same file twice.
+func TestParseContractRefusesDuplicateNames(t *testing.T) {
+	var buf bytes.Buffer
+	w := tar.NewWriter(&buf)
+	for _, entry := range []string{"metadata.json", "schemas/a.json", "repart.d/00-esp.conf", "metadata.json"} {
+		if err := w.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: entry, Mode: 0o644, Size: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ociimage.ParseContract(bytes.NewReader(buf.Bytes())); err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("ParseContract = %v", err)
 	}
 }
