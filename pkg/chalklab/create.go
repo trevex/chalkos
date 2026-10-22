@@ -430,7 +430,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 // printNext prints the commands that use the lab: the kubeconfig when a control plane was
 // bootstrapped, and the client file as $CHALKOSCONFIG, which chalkctl reads when no --config or
 // --secrets is given, so the commands after it name neither. The lab's inventory names the
-// unsigned builds, of which the lab signed copies, so an upgrade signs the images again.
+// unsigned builds, of which the lab signed copies, so an upgrade takes a copy chalklab sign signs.
 func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 	inventory := filepath.Join(dir, inventoryFile)
 	fmt.Fprintf(a.stdout, "\nthe lab %s runs %s; next:\n", l.Name, strings.Join(nodeNames(l), ", "))
@@ -442,7 +442,6 @@ func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 		fmt.Fprintln(a.stdout, "  kubectl get nodes")
 	}
 	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, inventory)
-	keys := filepath.Join(dir, "keys")
 	// One or two control planes lose etcd's quorum while one reboots, which an upgrade accepts
 	// only with --allow-downtime.
 	controlPlanes := 0
@@ -455,8 +454,8 @@ func (a *app) printNext(dir string, l *lab.Lab, kubernetes bool) {
 	if controlPlanes == 1 || controlPlanes == 2 {
 		downtime = " --allow-downtime"
 	}
-	fmt.Fprintf(a.stdout, "The lab's inventory names unsigned images, which the lab's firmware refuses: upgrade with the\nlab's db key, or with --image of an image chalklab sign signed:\n  chalkctl upgrade --inventory %s%s \\\n    --sign-key %s --sign-cert %s\n",
-		inventory, downtime, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
+	fmt.Fprintf(a.stdout, "The lab's inventory names unsigned images, which the lab's firmware refuses: sign a copy of an\nimage with the lab's db key and upgrade the nodes of its variant with it:\n  chalklab sign <image dir> --out <signed dir>\n  chalkctl upgrade --image <signed dir> --inventory %s%s\n",
+		inventory, downtime)
 }
 
 // maintenanceFingerprint waits for a node's chalkd to come up in maintenance mode, and returns

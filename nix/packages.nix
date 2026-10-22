@@ -58,6 +58,7 @@ in
           pkgs.socat
           pkgs.mtools
           pkgs.sbsigntool
+          pkgs.coreutils
           pkgs.python3Packages.virt-firmware
           self.packages.${pkgs.stdenv.hostPlatform.system}.chalkctl
         ]

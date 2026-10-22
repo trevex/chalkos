@@ -539,8 +539,9 @@ func TestCreateNeedsKVM(t *testing.T) {
 	}
 }
 
-// TestSignIntoAnExistingDirectory copies an image into a directory that exists, again and again.
-func TestSignIntoAnExistingDirectory(t *testing.T) {
+// TestSignOut makes the signed copy in a new directory alone: --out naming one that exists is
+// refused before anything is copied, and a copy that cannot be signed is removed again.
+func TestSignOut(t *testing.T) {
 	writeLab(t)
 	img := t.TempDir()
 	for name, data := range map[string]string{"chalkos.raw": "raw", "repart-output.json": "[]", "repart.d/10-esp.conf": "[Partition]\n"} {
@@ -551,19 +552,21 @@ func TestSignIntoAnExistingDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	out := t.TempDir()
 	a, _ := testApp()
-	for range 2 {
-		// The test's image has no ESP to sign.
-		err := a.run(context.Background(), []string{"sign", img, "--out", out})
-		if err == nil || strings.Contains(err.Error(), "exists") {
-			t.Errorf("sign into %s = %v, want only the ESP missing", out, err)
-		}
-		for _, name := range []string{"chalkos.raw", "repart-output.json", "repart.d/10-esp.conf"} {
-			if _, err := os.Stat(filepath.Join(out, name)); err != nil {
-				t.Errorf("the copy: %v", err)
-			}
-		}
+	existing := t.TempDir()
+	if err := a.run(context.Background(), []string{"sign", img, "--out", existing}); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("sign into a directory that exists = %v", err)
+	}
+	if entries, _ := os.ReadDir(existing); len(entries) != 0 {
+		t.Errorf("sign copied %v into a directory that exists", entries)
+	}
+	out := filepath.Join(t.TempDir(), "signed")
+	// The lab has no keys and the image no ESP.
+	if err := a.run(context.Background(), []string{"sign", img, "--out", out}); err == nil {
+		t.Error("sign of an image without an ESP succeeded")
+	}
+	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a failed sign left %s: %v", out, err)
 	}
 }
 
@@ -706,10 +709,10 @@ the lab lab runs cp1, w1; next:
   chalkctl status cp1 --inventory /state/lab/chalkos.yaml
   chalklab status
   chalklab destroy
-The lab's inventory names unsigned images, which the lab's firmware refuses: upgrade with the
-lab's db key, or with --image of an image chalklab sign signed:
-  chalkctl upgrade --inventory /state/lab/chalkos.yaml --allow-downtime \
-    --sign-key /state/lab/keys/db.key --sign-cert /state/lab/keys/db.crt
+The lab's inventory names unsigned images, which the lab's firmware refuses: sign a copy of an
+image with the lab's db key and upgrade the nodes of its variant with it:
+  chalklab sign <image dir> --out <signed dir>
+  chalkctl upgrade --image <signed dir> --inventory /state/lab/chalkos.yaml --allow-downtime
 `
 	if out.String() != want {
 		t.Errorf("output:\n%s\nwant:\n%s", out, want)

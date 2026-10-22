@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
@@ -186,8 +187,8 @@ func (a *app) console(ctx context.Context, name string, follow bool, pos []strin
 	}
 }
 
-// sign signs an image with the lab's db key, in place or as a copy, so the lab's firmware boots
-// it, as an upgrade's image.
+// sign signs an image with the lab's db key, in place or in a copy of its directory, so the lab's
+// firmware boots it, as an upgrade's image.
 func (a *app) signCommand() *cobra.Command {
 	var name, out string
 	cmd := a.command(&cobra.Command{
@@ -197,7 +198,7 @@ func (a *app) signCommand() *cobra.Command {
 		Example: signExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.sign(ctx, name, out, pos) })
 	registerName(cmd, &name, "lab whose keys to sign with (default the only lab)")
-	cmd.Flags().StringVar(&out, "out", "", "directory to copy the image to (made when missing) and sign there; needed for an image in the Nix store, which cannot be signed in place")
+	cmd.Flags().StringVar(&out, "out", "", "new directory to copy the image directory to, with its schemas and metadata, and sign there; needed for an image in the Nix store, which cannot be signed in place")
 	return cmd
 }
 
@@ -212,62 +213,35 @@ func (a *app) sign(ctx context.Context, name, out string, pos []string) error {
 	if l == nil {
 		return fmt.Errorf("%s holds no lab", dir)
 	}
+	keys := filepath.Join(dir, "keys")
+	if out != "" {
+		// SignDirectory refuses when out's parent does not exist; chalklab makes it, as it does the
+		// lab's own state directory, so --out need not already exist.
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			return err
+		}
+		signed, err := imagesign.SignDirectory(ctx, pos[0], out, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
+		if err != nil {
+			return err
+		}
+		for _, s := range signed {
+			fmt.Fprintf(a.stdout, "signed %s with the db key of the lab %s\n", filepath.Join(out, s), l.Name)
+		}
+		return nil
+	}
 	raw, partitions, err := imageFiles(pos[0])
 	if err != nil {
 		return err
 	}
-	if out != "" {
-		if err := os.MkdirAll(out, 0o755); err != nil {
-			return err
-		}
-		copied := filepath.Join(out, filepath.Base(raw))
-		if err := lab.CopySparse(ctx, raw, copied); err != nil {
-			return err
-		}
-		data, err := os.ReadFile(partitions)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(out, filepath.Base(partitions)), data, 0o644); err != nil {
-			return err
-		}
-		if err := copyDir(filepath.Join(filepath.Dir(raw), "repart.d"), filepath.Join(out, "repart.d")); err != nil {
-			return err
-		}
-		raw, partitions = copied, filepath.Join(out, filepath.Base(partitions))
-	} else if f, err := os.OpenFile(raw, os.O_WRONLY, 0); err != nil {
+	f, err := os.OpenFile(raw, os.O_WRONLY, 0)
+	if err != nil {
 		return fmt.Errorf("%w; sign a copy with --out DIR", err)
-	} else {
-		f.Close()
 	}
-	if err := signImage(ctx, raw, partitions, filepath.Join(dir, "keys")); err != nil {
+	f.Close()
+	if err := signImage(ctx, raw, partitions, keys); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "signed %s with the db key of the lab %s\n", raw, l.Name)
-	return nil
-}
-
-// copyDir copies the files of a directory, as an image's repart.d, when it exists.
-func copyDir(src, dst string) error {
-	entries, err := os.ReadDir(src)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return err
-	}
-	for _, e := range entries {
-		data, err := os.ReadFile(filepath.Join(src, e.Name()))
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), data, 0o644); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
