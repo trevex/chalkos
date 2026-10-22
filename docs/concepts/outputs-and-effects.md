@@ -80,9 +80,9 @@ output's `user` and `group` with its `mode`, `root:root 0644` by default.
 The first swap removes a directory it finds at `dir`, so `dir` is a clean path below `/run`, a
 tmpfs, whose components start with no dot. It stays out of `/run/chalkos`, which holds the node's
 config and credentials, except for `/run/chalkos/outputs/<name>` and the paths below it, and it
-is neither another output's `dir` nor inside one. A path such as `/run/systemd/network` is a valid
-`dir`; the image's evaluation refuses any other, and chalkd refuses an `outputs.json` that holds
-one.
+is neither another output's `dir` nor inside one. `/run/systemd/network` is a valid `dir`, for
+example. The image's evaluation refuses a `dir` that breaks these rules, and chalkd refuses an
+`outputs.json` that holds one.
 
 ### Why are renderers pure?
 
@@ -140,11 +140,12 @@ chalkd takes the effects that fire together, in this order:
    and applies the control plane's objects, and `restart` every Kubernetes loop, which read the
    cluster when they start.
 
-A `when` that cannot be evaluated counts as true, so a unit restarts once more than it needed to
-rather than run on config it has not read; its error goes to the journal and back to the client
-as a warning. [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) prints the
-restarted units and the warnings. A reload, command or restart that fails fails the delivery, and
-the error names what to do by hand.
+A `when` that cannot be evaluated counts as true, so its units restart and read the new config
+even when the delivery left what they read unchanged; its error goes to the journal and back to
+the client as a warning.
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) prints the restarted units
+and the warnings. A reload, command or restart that fails fails the delivery, and the error names
+what to do by hand.
 
 ## What happens on a delivery?
 

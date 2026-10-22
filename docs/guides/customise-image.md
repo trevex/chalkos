@@ -288,7 +288,8 @@ chalkos.outputs.bird-conf = {
 - `check` runs in the renderer's sandbox against the rendered files. `bird -p` parses the config
   and exits with status 1 on an error, which refuses the delivery.
 - `examples` is a directory of config files that the image build renders and checks, so a template
-  that does not render, or renders a config bird rejects, fails the build instead of a delivery.
+  that does not render, or renders a config bird rejects, fails the build before any node gets
+  it.
 - `user`, `group` and `mode` are the owner and mode of the files, `root:root 0644` by default.
 
 Each file of `examples` is one node's documents. Add one with two neighbours,
