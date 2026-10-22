@@ -324,8 +324,9 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 		return nil, err
 	}
 	// Every output renders from the delivered documents and passes its check before anything
-	// changes, so a delivery a service would reject is refused whole.
-	staged, err := s.renderOutputs(ctx, name, next, r.schemas)
+	// changes, so a delivery a service would reject is refused whole. A delivery without config
+	// changes no document, so an output that fails does not refuse it.
+	staged, err := s.renderOutputs(ctx, name, next, r.schemas, !keep)
 	if err != nil {
 		s.refused(fx)
 		return nil, err

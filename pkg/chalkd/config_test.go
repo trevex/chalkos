@@ -909,6 +909,31 @@ func TestApplyConfigRefusesAnOutputThatFails(t *testing.T) {
 	}
 }
 
+// TestApplyConfigWithoutConfigKeepsAFailingOutput: a delivery without config, such as the node's
+// trust, renders the documents the node keeps, which it does not change, so an output that fails
+// is recorded in the status and the journal and does not refuse the delivery.
+func TestApplyConfigWithoutConfigKeepsAFailingOutput(t *testing.T) {
+	s, _ := configServer(t)
+	writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `echo "rendering first" >&2; exit 4`, "")})
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	before := readFile(t, filepath.Join(s.Loader.Render.Root, "demo", "demo.json"))
+	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logged.String(), "output demo: its renderer failed (exit 4)") {
+		t.Errorf("the journal lacks the failure: %s", logged.String())
+	}
+	if got := readFile(t, filepath.Join(s.Loader.Render.Root, "demo", "demo.json")); got != before {
+		t.Errorf("the output the node serves changed to %s", got)
+	}
+	st, err := outputs.ReadStatus(s.Loader.Render.Root)
+	if err != nil || st["demo"].Error != "its renderer failed (exit 4); see the node's journal" || st["demo"].Hash == "" {
+		t.Errorf("status = %+v, %v", st, err)
+	}
+}
+
 // TestApplyConfigSwapsOutputsAfterTheSlot: the outputs follow the stored slot, so a delivery that
 // fails before its slot is written leaves the files the node serves, and a retry, which compares
 // with the baseline, renders, swaps and restarts all the same.

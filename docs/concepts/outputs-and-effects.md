@@ -183,8 +183,9 @@ alone, with `Secret` values as their hashes. A retry, or another delivery, rende
 every effect of the failed delivery again, the reloads and restarts that succeeded included,
 because what it compares with predates them. The delivery that succeeds removes the file; one
 refused before it changed anything leaves it as it was. A delivery without config, such as a
-share, renders from the running slot's documents and is refused in the same way when an output
-fails.
+share, the OS CAs or a node certificate, renders from the running slot's documents, which it does
+not change. An output that fails then goes to the status and the journal, the delivery goes
+ahead, and the output keeps the files it served.
 
 An install in place renders and checks the outputs with the running image's renderers before it
 installs anything, and the boot that follows renders them again. An install from the installer

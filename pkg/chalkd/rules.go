@@ -96,24 +96,30 @@ func jsonValue(v any) any {
 
 // renderOutputs renders and checks the running image's outputs from docs, the config a delivery
 // makes, for the node called name, and stages them; schemas tell the secretRef fields of docs,
-// the running image's when nil. The delivery has changed nothing yet, so a failure refuses it
-// whole and leaves the outputs the node serves; the status records it. What the renderers and
-// checks wrote to standard error goes to the journal alone.
-func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas) (*outputs.Staged, error) {
+// the running image's when nil. The delivery has changed nothing yet, so with refuse set a
+// failure refuses it whole and leaves the outputs the node serves; without, as for a delivery
+// that keeps the node's documents, the outputs that passed are staged and the failures logged.
+// The status records them either way. What the renderers and checks wrote to standard error goes
+// to the journal alone.
+func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, refuse bool) (*outputs.Staged, error) {
 	staged, failures, err := s.Loader.RenderOutputs(ctx, name, docs, schemas)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "the running image's outputs: %v", err)
 	}
-	if len(failures) > 0 {
-		staged.Discard()
-		if err := outputs.RecordFailures(s.Loader.Render.Root, failures); err != nil {
-			log.Printf("record the outputs' failures: %v", err)
-		}
-		msgs := make([]string, len(failures))
-		for i, f := range failures {
-			msgs[i] = f.Error()
-		}
-		return nil, failed(connect.CodeFailedPrecondition, "%s", strings.Join(msgs, "; "))
+	if len(failures) == 0 {
+		return staged, nil
 	}
-	return staged, nil
+	if err := outputs.RecordFailures(s.Loader.Render.Root, failures); err != nil {
+		log.Printf("record the outputs' failures: %v", err)
+	}
+	msgs := make([]string, len(failures))
+	for i, f := range failures {
+		msgs[i] = f.Error()
+	}
+	if !refuse {
+		log.Printf("%s; the delivery keeps the node's documents, so it goes ahead", strings.Join(msgs, "; "))
+		return staged, nil
+	}
+	staged.Discard()
+	return nil, failed(connect.CodeFailedPrecondition, "%s", strings.Join(msgs, "; "))
 }

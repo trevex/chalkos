@@ -148,7 +148,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 	// anything; the node renders them again at the boot that follows. The installer cannot run the
 	// installed image's, so that image renders its outputs at its first boot alone.
 	if !s.Installer {
-		staged, err := s.renderOutputs(ctx, name, stored.Documents, schemas)
+		staged, err := s.renderOutputs(ctx, name, stored.Documents, schemas, true)
 		if err != nil {
 			return store.Stored{}, err
 		}
