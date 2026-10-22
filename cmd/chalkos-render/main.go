@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"text/template/parse"
 )
 
 const usage = `usage: chalkos-render template TEMPLATE FILE
@@ -83,6 +84,13 @@ var funcs = template.FuncMap{
 		b, err := json.Marshal(v)
 		return string(b), err
 	},
+	// nilEmpty is v, or nothing to print when v is nil; every action that prints ends with it.
+	"nilEmpty": func(v any) any {
+		if v == nil {
+			return ""
+		}
+		return v
+	},
 	// default is v, or d when v is missing, null, empty or false.
 	"default": func(d, v any) any {
 		if empty(v) {
@@ -107,7 +115,8 @@ func empty(v any) bool {
 }
 
 // renderTemplate writes the template at path, executed on in, to out/file. A key the documents
-// lack reads as missing, which default replaces.
+// lack, or that holds null, is nil, which default replaces and which prints as nothing; a key
+// below one the documents lack fails the template.
 func renderTemplate(path, file string, in map[string]any, out string) error {
 	text, err := os.ReadFile(path)
 	if err != nil {
@@ -117,11 +126,48 @@ func renderTemplate(path, file string, in map[string]any, out string) error {
 	if err != nil {
 		return err
 	}
+	for _, t := range tmpl.Templates() {
+		if t.Tree != nil {
+			printNilEmpty(t.Tree.Root)
+		}
+	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, in); err != nil {
 		return err
 	}
 	return writeFile(out, file, buf.Bytes())
+}
+
+// printNilEmpty ends the pipeline of every action below n that prints with nilEmpty, since
+// text/template prints a nil value as "<no value>".
+func printNilEmpty(n parse.Node) {
+	switch n := n.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return
+		}
+		for _, c := range n.Nodes {
+			printNilEmpty(c)
+		}
+	case *parse.ActionNode:
+		// An action that declares a variable prints nothing.
+		if len(n.Pipe.Decl) == 0 {
+			n.Pipe.Cmds = append(n.Pipe.Cmds, &parse.CommandNode{
+				NodeType: parse.NodeCommand,
+				Pos:      n.Pos,
+				Args:     []parse.Node{parse.NewIdentifier("nilEmpty").SetPos(n.Pos)},
+			})
+		}
+	case *parse.IfNode:
+		printNilEmpty(n.List)
+		printNilEmpty(n.ElseList)
+	case *parse.RangeNode:
+		printNilEmpty(n.List)
+		printNilEmpty(n.ElseList)
+	case *parse.WithNode:
+		printNilEmpty(n.List)
+		printNilEmpty(n.ElseList)
+	}
 }
 
 // writeDocuments writes each document of kinds in in as out/<Kind>/<name>.json.

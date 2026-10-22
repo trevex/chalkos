@@ -99,7 +99,7 @@ Extensions call the helpers of the module argument `chalkosLib`:
 
 | Helper | Renders |
 | --- | --- |
-| `chalkosLib.render.template ./bird.conf.tmpl` | A Go `text/template`, executed on the input, into one file named as the template less `.tmpl`. Besides Go's own functions it has `join`, `quote`, `json` and `default`, and a key a document lacks reads as missing, which `default` replaces. |
+| `chalkosLib.render.template ./bird.conf.tmpl` | A Go `text/template`, executed on the input, into one file named as the template less `.tmpl`. Besides Go's own functions it has `join`, `quote`, `json` and `default`, and a key a document lacks, or that holds null, prints as nothing and is replaced by `default`; a key below a missing one fails the render. |
 | `chalkosLib.render.jq ./peers.jq` | A jq program, whose output becomes one file named as the program less `.jq`; a string is written raw. |
 | `chalkosLib.render.documents [ "Rack" ]` | The documents of the kinds as they are, each as `<Kind>/<name>.json`, for a service that reads its config at runtime and needs an effect when it changes. |
 

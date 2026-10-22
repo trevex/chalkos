@@ -1888,6 +1888,8 @@ devices or network, on a read-only system without STATE, ` /var `, or the config
 credentials and Kubernetes keys chalkd writes below ` /run/chalkos `, and must finish
 within 30 seconds; the files may take 16 MiB, and hold no links\. The same documents
 must give the same files: chalkd renders every output again at boot\.
+` chalkosLib.render.template ` renders a Go template, in which a key a document lacks, or
+that holds null, prints as nothing\.
 
 
 

@@ -72,3 +72,26 @@ func TestUsage(t *testing.T) {
 		t.Errorf("without $OUT: %v", err)
 	}
 }
+
+// A key a document lacks, or that holds null, prints as nothing, in every template the file
+// defines, and an action that declares a variable prints nothing as before; reading a key below
+// a missing one fails.
+func TestTemplateMissingKeys(t *testing.T) {
+	tmpl := filepath.Join(t.TempDir(), "peers.tmpl")
+	os.WriteFile(tmpl, []byte(`{{ define "peer" }}<{{ .spec.description }}>{{ end }}{{ range .documents.Peer }}{{ $d := .spec.description }}[{{ .spec.description }}|{{ $d }}|{{ template "peer" . }}|{{ if .spec.tags }}{{ .spec.missing }}{{ else }}{{ .spec.null }}{{ end }}]
+{{ end }}`), 0o644)
+	input := strings.Replace(peers, `"asn": 4200000000,`, `"asn": 4200000000, "null": null,`, 1)
+	out, err := render(t, []string{"template", tmpl, "peers"}, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(out, "peers"))
+	want := "[||<>|]\n[the \"other\" one|the \"other\" one|<the \"other\" one>|]\n"
+	if string(got) != want {
+		t.Errorf("rendered:\n%s\nwant:\n%s", got, want)
+	}
+	os.WriteFile(tmpl, []byte(`{{ range .documents.Peer }}{{ .spec.missing.deeper }}{{ end }}`), 0o644)
+	if _, err := render(t, []string{"template", tmpl, "peers"}, peers); err == nil {
+		t.Error("a key below a missing one rendered")
+	}
+}

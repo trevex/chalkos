@@ -15,7 +15,8 @@ let
 in
 {
   render = {
-    # A Go text/template, which writes the file named as the template less .tmpl.
+    # A Go text/template, which writes the file named as the template less .tmpl; a missing or
+    # null key prints as nothing.
     template = path: "${lib.getExe chalkos-render} template ${path} ${fileName ".tmpl" path}";
     # A jq program, whose output, raw for a string, writes the file named as the program less .jq.
     jq =

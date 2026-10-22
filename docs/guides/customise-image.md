@@ -265,7 +265,9 @@ protocol bgp peer{{ $i }} {
 
 The template reads the node's name as `.node.name` and the documents of each input kind, sorted by
 name and with their schema defaults, as `.documents.<Kind>`. Besides Go's own functions it has
-`join`, `quote`, `json` and `default`. Declare the output in the module:
+`join`, `quote`, `json` and `default`. A key a document lacks, or that holds null, prints as
+nothing, and `default "none" .spec.description` replaces it; reading a key below a missing one,
+such as `.spec.missing.name`, fails the render. Declare the output in the module:
 
 ```nix
 chalkos.outputs.bird-conf = {
