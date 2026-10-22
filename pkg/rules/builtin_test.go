@@ -190,6 +190,12 @@ func TestStorageRules(t *testing.T) {
 			r["volumes"].(map[string]any)["var"].(map[string]any)["format"] = "xfs"
 			return r
 		}(), takes: Reinstall, want: []string{"VAR: format ext4 instead of xfs; only a reinstall of n1 carries it out"}},
+		// VAR is never raw, so a recorded VAR without a format has none.
+		{name: "VAR recorded without a format", volumes: map[string]string{"data": dataVolume}, recorded: func() map[string]any {
+			r := recordedOf(map[string]map[string]any{"data": data})
+			r["volumes"].(map[string]any)["var"].(map[string]any)["format"] = nil
+			return r
+		}(), takes: Reinstall, want: []string{"VAR: format ext4 instead of none; only a reinstall of n1 carries it out"}},
 		// The volume follows the node's encryption, and VAR too.
 		{name: "the node's encryption", systemDisk: edit(systemDisk, "encryption", `{"mode": "none", "fallback": "recovery-key"}`), volumes: map[string]string{"data": dataVolume}, takes: Reinstall,
 			want: []string{"VAR: encryption none instead of tpm2; only a reinstall of n1 carries it out", "Volume data: encryption none instead of tpm2; reset it with chalkctl storage reset n1 data"}},

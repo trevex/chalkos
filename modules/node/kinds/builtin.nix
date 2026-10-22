@@ -164,7 +164,7 @@ let
   storageAPI = "storage.chalkos.dev/v1alpha1";
   systemDiskSpec = ''config["${storageAPI}"].SystemDisk.map(k, config["${storageAPI}"].SystemDisk[k].spec)[0]'';
   orEmpty = x: ''(${x} == null ? "" : ${x})'';
-  # A recorded format as the documents write it: an empty one is a raw volume's.
+  # A recorded volume's format as the documents write it: an empty one is a raw volume's.
   shown = x: ''(${x} == "" ? "raw" : ${x})'';
   # Binds v to volume n's spec, sd to the SystemDisk's and r to the volume's recorded definition,
   # null without one, around expr. The rules read facts.disks only for a volume with a disk of its
@@ -245,14 +245,15 @@ in
     };
     SystemDisk = builtin "storage.chalkos.dev" // {
       # VAR holds the running node's data, so a change it would be recreated for takes a
-      # reinstall; a larger VAR, or one that fills the disk, only grows.
+      # reinstall; a larger VAR, or one that fills the disk, only grows. VAR is never raw, so a
+      # recorded VAR without a format shows as none.
       rules =
         let
           bindVar =
             expr:
             ''cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes["var"], ${expr}))'';
           reasons = ''
-            [${orEmpty "r.format"} != "ext4" ? "format ext4 instead of " + ${shown (orEmpty "r.format")} : "",
+            [${orEmpty "r.format"} != "ext4" ? "format ext4 instead of " + (${orEmpty "r.format"} == "" ? "none" : r.format) : "",
              ${encryptionReason "(sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode)" "r.encryption"},
              ${sizeReason (orEmpty "sd.var.size") (orEmpty "r.size")}].filter(x, x != "")'';
         in
