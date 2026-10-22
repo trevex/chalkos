@@ -274,6 +274,19 @@ Secure Boot, it is the copy of the build that
 image's variant, platform and [root hash](../reference/glossary.md#root-hash), and its `schemas/`
 holds the schemas of the kinds the image accepts.
 
+An image published to a registry is named by its reference in `source.oci` instead, as
+[`chalkbuild push`](../reference/cli/chalkbuild_push.md) prints it. Each image sets exactly one of
+`directory` and `oci`. A reference by tag is resolved to a digest once per command, so one command
+reads one image. `chalkctl validate`, `apply-config` and `status` read the image's header and
+contract from the registry. Install and upgrade send only an image from a directory, so they refuse
+a node whose image has an `oci` source.
+
+```yaml
+node-metal: {source: {oci: ghcr.io/example/node-metal@sha256:<digest>}}
+```
+
+[Publish images to a registry](../guides/publish-images.md) builds, signs and pushes such an image.
+
 A node runs one image, named in one of three places:
 
 - the node's own `imageName`, which wins;

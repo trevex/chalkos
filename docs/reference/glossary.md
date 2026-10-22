@@ -356,6 +356,12 @@ The mode chalkd runs in on an installed node: it serves its node certificate and
 clients with a certificate from the [OS CA](#os-ca). See
 [Architecture](../concepts/architecture.md).
 
+## OCI image { #oci-image }
+
+A chalkos image published to a registry as one OCI artifact, whose header and contract chalkctl
+reads from the registry when the [inventory](#inventory) names the image by reference. See
+[Publish images to a registry](../guides/publish-images.md).
+
 ## Operator { #operator }
 
 The [client role](#client-role) that may do what a [reader](#reader) may, and also reboot,

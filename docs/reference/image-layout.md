@@ -238,6 +238,49 @@ ISO `chalkos-installer.iso`, `chalkos-installer.iso.json`, which describes the I
 as `repart-output.json` does, and a `metadata.json` of the same fields, with the ID
 `chalkos-installer`, no variant or platform, and the installer's root hash, revision and tag.
 
+## OCI artifact { #oci-artifact }
+
+An OCI artifact holds an image for publishing to a registry. `mkImages` builds it as
+`oci.<variant>-<platform>`, and [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it from an image
+directory. Both write an OCI image layout: the file `oci-layout`, an `index.json` that names one
+manifest, and the blobs below `blobs/sha256/`. The manifest has the artifact type
+`application/vnd.chalkos.image.v1`, and no index wraps it.
+
+| Part | Media type | Content |
+| --- | --- | --- |
+| config | `application/vnd.chalkos.image.header.v1+json` | The header: image ID, root hash, architecture, platform, revision and tag. |
+| layer | `application/vnd.chalkos.image.store.v1` | The store's erofs data. |
+| layer | `application/vnd.chalkos.image.hash-tree.v1` | The store's dm-verity hash tree. |
+| layer | `application/vnd.chalkos.image.uki.v1` | The UKI. |
+| layer | `application/vnd.chalkos.image.boot-loader.v1` | systemd-boot. |
+| layer | `application/vnd.chalkos.image.contract.v1.tar` | The contract: `metadata.json`, `schemas/`, `repart.d/` and `image.json`. |
+
+The header of the image `node-metal` reads:
+
+```json
+{
+  "imageId": "chalkos",
+  "rootHash": "2ece03b0fa094b775ee5bf2e1f6f9eb66d6f0dc06f30f49f2f978f00e1173942",
+  "architecture": "x86-64",
+  "platform": "metal",
+  "revision": "28aac64fc0de68df53a376208012ddc5631b2aeb",
+  "tag": "v1.5.0"
+}
+```
+
+`architecture` is `x86-64` or `arm64`, as systemd names it. `revision` and `tag` are those of
+`metadata.json`, empty when the build named none.
+
+The layers are uncompressed, and chalkos finds each one by its media type, not its position. The
+store layer holds exactly the store data the root hash covers, and the hash tree layer exactly the
+hash tree's size, so each layer's digest is the hash of the image part an install or upgrade sends.
+
+The contract layer is a tar of `metadata.json`, `schemas/*.json`, `repart.d/*.conf` and
+`image.json`, which an image without Kubernetes lacks. Its entries are in name order, with the
+modification time 0 and owner 0:0, so the same image directory always makes the same layer and
+the same manifest. [`chalkbuild sign`](cli/chalkbuild_sign.md) replaces the UKI and boot-loader
+layers and the manifest, and keeps the other layers.
+
 ## Device links
 
 udev rules in the image name the disk systemd-boot was loaded from, so the node never mistakes

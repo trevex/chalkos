@@ -46,6 +46,7 @@ nav = [
     "guides/upgrade-cluster.md",
     "guides/rotate-certificates.md",
     "guides/secure-boot-signing.md",
+    "guides/publish-images.md",
     "guides/recover-node.md",
     "guides/troubleshooting.md",
   ] },

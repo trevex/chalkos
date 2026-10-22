@@ -113,6 +113,19 @@ partly signed copy never stays behind.
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) then take the signed directory the
 inventory names, and need no key.
 
+`chalkbuild sign` takes an OCI image layout as well, as `mkImages` builds it for publishing to a
+registry. It signs copies of the layout's UKI and boot-loader layers and writes a new layout with
+them, under the same rule that the output directory must not exist:
+
+```sh
+nix build .#node-metal-oci -o build/node-metal-oci
+rm -rf oci/node-metal
+chalkbuild sign --key=db.key --cert=db.crt build/node-metal-oci oci/node-metal
+```
+
+[Publish images to a registry](publish-images.md) pushes the signed layout and names it in the
+inventory.
+
 An upgrade replaces the UKI and the store and keeps the boot loader the node was installed with,
 so systemd-boot stays signed by the key it was installed with.
 

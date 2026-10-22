@@ -33,6 +33,8 @@ assume a flake that builds the cluster's images with `mkImages`, an
   base images do not carry.
 - [Sign images for Secure Boot](secure-boot-signing.md): create a db key, get firmware to trust
   it and sign images and the installer with it.
+- [Publish images to a registry](publish-images.md): build an image as an OCI artifact, sign it,
+  push it and name it in the inventory.
 
 ## Operate a cluster
 

@@ -290,6 +290,12 @@ chalkbuild sign --key=<db-key> --cert=<db-cert> build/node-kvm images/node-kvm
 trusts in [db](../reference/glossary.md#db-and-dbx).
 [Sign images for Secure Boot](../guides/secure-boot-signing.md) covers the keys.
 
+`mkImages` also builds each image as an OCI artifact, `oci.<variant>-<platform>`: an OCI image
+layout that holds the store, the hash tree, the UKI, the boot loader and the contract as layers.
+[`chalkbuild push`](../reference/cli/chalkbuild_push.md) pushes it to a registry, and an inventory
+names the pushed reference in place of a directory.
+[Publish images to a registry](../guides/publish-images.md) covers the steps.
+
 chalkos does not wrap image conversion. `qemu-img convert -f raw -O qcow2` makes a qcow2 disk for
 KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it on a disk.
 
@@ -302,8 +308,7 @@ KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it o
   installed on them.
 - The image carries no firmware unless a variant or platform adds it with NixOS's
   `hardware.firmware`.
-- Images are built and signed on the operator's or a build machine and sent by chalkctl; chalkos
-  publishes no images and pulls none from a registry.
+- Nodes do not pull images from a registry; chalkctl sends an image from its directory.
 
 ## Related pages
 
