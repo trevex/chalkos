@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,7 +58,7 @@ const (
 func TestCheck(t *testing.T) {
 	restarts := effect(`node.name == \"n1\"`, `facts.share != oldFacts.share`)
 	var out bytes.Buffer
-	if err := check(image(t, files(greeting(fieldRule, kindRule), lock, restarts)), &out); err != nil || out.String() != "2 rules and 2 effect rules compile, reading the facts lock, share\n" {
+	if err := check(image(t, files(greeting(fieldRule, kindRule), lock, restarts)), &out); err != nil || out.String() != "2 rules and 2 effect rules compile, reading the facts lock, share; 0 outputs render 0 examples\n" {
 		t.Errorf("check = %q, %v", out.String(), err)
 	}
 	for name, tc := range map[string]struct{ schema, facts, effects, want string }{
@@ -80,6 +81,87 @@ func TestCheck(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := check(image(t, files(tc.schema, tc.facts, tc.effects)), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// storeShell is the shell of the image's store that runs the test's scripts, as the renderer of
+// an image runs from its store.
+func storeShell(t *testing.T) string {
+	t.Helper()
+	sh, err := exec.LookPath("sh")
+	if err == nil {
+		sh, err = filepath.EvalSymlinks(sh)
+	}
+	if err != nil || !strings.HasPrefix(sh, "/nix/store/") {
+		t.Skipf("no shell of the store: %s, %v", sh, err)
+	}
+	return sh
+}
+
+// withOutput adds to files the output greeting, which renders the Greeting's message by the shell
+// commands given and checks it by check, with the examples given, and the effect greeter on it.
+func withOutput(t *testing.T, files map[string]string, render, check string, examples map[string]string) map[string]string {
+	t.Helper()
+	sh := storeShell(t)
+	scripts := t.TempDir()
+	os.WriteFile(filepath.Join(scripts, "render"), []byte("set -e\n"+render+"\n"), 0o644)
+	os.WriteFile(filepath.Join(scripts, "check"), []byte("set -e\n"+check+"\n"), 0o644)
+	files["outputs.json"] = `{"greeting": {"inputs": ["Greeting"], "render": "` + sh + " " + filepath.Join(scripts, "render") + `",
+	  "check": "` + sh + " " + filepath.Join(scripts, "check") + `", "dir": "/run/chalkos/outputs/greeting", "user": "nobody", "group": "nobody", "mode": "0644"}}`
+	files["effects.json"] = `{"greeter": {"on": ["greeting"], "restart": ["greeter.service"]}}`
+	files["examples.json"] = `{"greeting": "` + filepath.Join(scripts, "examples") + `"}`
+	for name, text := range examples {
+		path := filepath.Join(scripts, "examples", name)
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		os.WriteFile(path, []byte(text), 0o644)
+	}
+	return files
+}
+
+const hello = "apiVersion: greeting.example.org/v1alpha1\nkind: Greeting\nmetadata: {name: g}\nspec: {message: hello}\n"
+
+// The image's build renders each example of each output and runs its check, and refuses an
+// output it could not run on a node and an effect on an output the image lacks.
+func TestCheckOutputs(t *testing.T) {
+	render := `sed -n 's/.*"message":"\([^"]*\)".*/\1/p' > "$OUT/message"`
+	accepts := `grep -qx hello "$OUT/message"`
+	base := func() map[string]string { return files(greeting(fieldRule, kindRule), lock, "{}") }
+	var out bytes.Buffer
+	if err := check(image(t, withOutput(t, base(), render, accepts, map[string]string{"hello.yaml": hello})), &out); err != nil || !strings.HasSuffix(out.String(), "; 1 outputs render 1 examples\n") {
+		t.Fatalf("check = %q, %v", out.String(), err)
+	}
+	for name, tc := range map[string]struct {
+		files map[string]string
+		want  string
+	}{
+		"an example its check refuses":  {withOutput(t, base(), render, accepts, map[string]string{"hello.yaml": hello, "other.yaml": strings.Replace(hello, "hello", "other", 1)}), "output greeting: example other.yaml: its check refused the rendered files (exit 1)"},
+		"an example its renderer fails": {withOutput(t, base(), "exit 4", accepts, map[string]string{"hello.yaml": hello}), "output greeting: example hello.yaml: its renderer failed (exit 4)"},
+		"an invalid example":            {withOutput(t, base(), render, accepts, map[string]string{"bad.yaml": strings.Replace(hello, "kind: Greeting", "kind: Greting", 1)}), "output greeting: example bad.yaml: "},
+		"no examples":                   {withOutput(t, base(), render, accepts, map[string]string{"README": "none"}), "output greeting: its examples: "},
+		"an undeclared kind": {func() map[string]string {
+			f := withOutput(t, base(), render, accepts, nil)
+			f["outputs.json"] = strings.Replace(f["outputs.json"], `["Greeting"]`, `["Peer"]`, 1)
+			delete(f, "examples.json")
+			return f
+		}(), "output greeting: the image declares no kind Peer"},
+		"a renderer outside the store": {func() map[string]string {
+			f := withOutput(t, base(), render, accepts, nil)
+			f["outputs.json"] = strings.Replace(f["outputs.json"], storeShell(t), "/bin/sh", 1)
+			delete(f, "examples.json")
+			return f
+		}(), `output greeting: the renderer "/bin/sh `},
+		"an effect on no output": {func() map[string]string {
+			f := withOutput(t, base(), render, accepts, nil)
+			f["effects.json"] = `{"greeter": {"on": ["greting"], "restart": ["greeter.service"]}}`
+			delete(f, "examples.json")
+			return f
+		}(), "effect greeter: on names greting, which is no output of the image; its outputs are greeting"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := check(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})

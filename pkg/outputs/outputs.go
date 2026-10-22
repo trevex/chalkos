@@ -323,6 +323,9 @@ type Renderer struct {
 	Run  Runner
 	// Timeout bounds each program; zero is facts.Timeout.
 	Timeout time.Duration
+	// KeepOwner leaves the files the renderer's, as the image's build does, which has none of the
+	// image's users.
+	KeepOwner bool
 }
 
 // Default renders on the node, in the sandbox.
@@ -392,7 +395,7 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 	if err := checkFiles(dir); err != nil {
 		return dir, State{}, err
 	}
-	if err := own(dir, d); err != nil {
+	if err := own(dir, d, r.KeepOwner); err != nil {
 		return dir, State{}, err
 	}
 	if d.Check != "" {
@@ -461,38 +464,42 @@ func checkFiles(dir string) error {
 	})
 }
 
-// own gives the output's files its owner and mode, and its directories the owner and 0755.
-func own(dir string, d Definition) error {
-	uid, err := lookup(d.User, func(n string) (string, error) {
-		u, err := user.Lookup(n)
-		if err != nil {
-			return "", err
-		}
-		return u.Uid, nil
-	})
-	if err != nil {
-		return fmt.Errorf("its user %s: %w", d.User, err)
-	}
-	gid, err := lookup(d.Group, func(n string) (string, error) {
-		g, err := user.LookupGroup(n)
-		if err != nil {
-			return "", err
-		}
-		return g.Gid, nil
-	})
-	if err != nil {
-		return fmt.Errorf("its group %s: %w", d.Group, err)
-	}
+// own gives the output's files its owner and mode, and its directories the owner and 0755; with
+// keep set, the modes alone.
+func own(dir string, d Definition, keep bool) error {
 	mode, err := d.mode()
 	if err != nil {
 		return err
+	}
+	uid, gid := -1, -1
+	if !keep {
+		if uid, err = lookup(d.User, func(n string) (string, error) {
+			u, err := user.Lookup(n)
+			if err != nil {
+				return "", err
+			}
+			return u.Uid, nil
+		}); err != nil {
+			return fmt.Errorf("its user %s: %w", d.User, err)
+		}
+		if gid, err = lookup(d.Group, func(n string) (string, error) {
+			g, err := user.LookupGroup(n)
+			if err != nil {
+				return "", err
+			}
+			return g.Gid, nil
+		}); err != nil {
+			return fmt.Errorf("its group %s: %w", d.Group, err)
+		}
 	}
 	return filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if err := os.Lchown(path, uid, gid); err != nil {
-			return err
+		if !keep {
+			if err := os.Lchown(path, uid, gid); err != nil {
+				return err
+			}
 		}
 		if e.IsDir() {
 			return os.Chmod(path, 0o755)

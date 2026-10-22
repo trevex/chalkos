@@ -1045,8 +1045,9 @@ in
   # An image builds only when its rules compile and read the facts it declares, and its effects
   # act on units it defines. The test image's Greeting and the homelab example's Rack bring
   # extension kinds with their own rules, facts and effects; a rule that does not compile, one
-  # that reads a fact no module declares, an effect's rule that does not compile and an effect on
-  # a unit the image lacks fail the check of their image.
+  # that reads a fact no module declares, an effect's rule that does not compile, an effect on a
+  # unit the image lacks and an output whose check refuses an example fail the check of their
+  # image.
   rules =
     let
       build =
@@ -1084,6 +1085,32 @@ in
           };
         }
       ];
+      # An output whose check refuses the file one of its examples renders.
+      refusedExample = build [
+        (
+          { pkgs, ... }:
+          {
+            chalkos.kinds.Demo = {
+              group = "demo.example.org";
+              version = "v1alpha1";
+              spec.name = lib.mkOption { type = lib.types.str; };
+            };
+            chalkos.outputs.demo = {
+              inputs = [ "Demo" ];
+              render = pkgs.writeShellScript "render-demo" ''
+                ${pkgs.jq}/bin/jq -r '.documents.Demo[].spec.name' > "$OUT/name"
+              '';
+              check = ''grep -qx first "$OUT/name"'';
+              examples = pkgs.writeTextDir "second.yaml" ''
+                apiVersion: demo.example.org/v1alpha1
+                kind: Demo
+                metadata: {name: demo}
+                spec: {name: second}
+              '';
+            };
+          }
+        )
+      ];
     in
     pkgs.runCommand "chalkos-rules"
       {
@@ -1111,6 +1138,7 @@ in
         refused ${undeclared.chalkosRulesImage} 'Demo: rule "facts.missing == null" reads facts.missing, which the image does not declare'
         refused ${brokenEffect.chalkosRulesImage} 'effect bird: rule "config ==": ERROR: <input>:1:10: Syntax error'
         refused ${undefinedUnit.chalkosRulesImage} 'effect bird: the image defines no unit bird.service'
+        refused ${refusedExample.chalkosRulesImage} 'output demo: example second.yaml: its check refused the rendered files (exit 1)'
         # The command of the networkd units' fact prints null for a path that is missing, and a
         # hash that follows the names and contents of a directory's files, or a file's content.
         hash=${lib.head (lib.splitString " " testing.nixos.test-metal.config.chalkos.facts.networkUnits.command)}

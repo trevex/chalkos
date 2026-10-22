@@ -1,20 +1,25 @@
 // Command chalkos-rules checks an image when it is built: every change rule its schemas declare
 // and every rule of its effects compiles, within the cost limit, and reads only facts the image
-// declares, each a file or a program of the image's store; and every effect acts on units the
-// image defines.
+// declares, each a file or a program of the image's store; every effect acts on units the image
+// defines and outputs it declares; and every output renders its examples and passes its check.
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -22,9 +27,12 @@ import (
 const usage = `usage: chalkos-rules check IMAGE
 
 Checks the files of the directory IMAGE, as an image's build lays them out: schemas/, the
-directory of its schemas; facts.json, effects.json, the image's own; and units/, its systemd
-units. Every rule of the schemas and of the effects compiles and reads only facts facts.json
-declares, and every unit an effect restarts or reloads is one of units/.`
+directory of its schemas; facts.json, effects.json and outputs.json, the image's own;
+examples.json, the examples directory of each output by name; and units/, its systemd units.
+Every rule of the schemas and of the effects compiles and reads only facts facts.json declares,
+every unit an effect restarts or reloads is one of units/, every output on names exists and
+reads kinds the schemas declare, and each output renders each of its examples and passes its
+check.`
 
 func main() {
 	if len(os.Args) != 3 || os.Args[1] != "check" {
@@ -48,6 +56,14 @@ func check(image string, out io.Writer) error {
 	}
 	effects, err := nodeconfig.ReadEffects(filepath.Join(image, "effects.json"))
 	if err != nil {
+		return err
+	}
+	outs, err := outputs.Read(filepath.Join(image, "outputs.json"))
+	if err != nil {
+		return err
+	}
+	examples := map[string]string{}
+	if err := readJSON(filepath.Join(image, "examples.json"), &examples); err != nil {
 		return err
 	}
 	var errs []error
@@ -93,10 +109,16 @@ func check(image string, out io.Writer) error {
 		reads(p.Where(), p.When, p.Facts)
 		compiled++
 	}
+	errs = append(errs, checkOutputs(s, outs, effects)...)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s\n", len(set.Programs), compiled, declared(read))
+	// The examples render once the outputs they render are sound.
+	rendered, exampleErrs := checkExamples(s, outs, examples)
+	if len(exampleErrs) > 0 {
+		return errors.Join(exampleErrs...)
+	}
+	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s; %d outputs render %d examples\n", len(set.Programs), compiled, declared(read), len(outs), rendered)
 	return nil
 }
 
@@ -149,4 +171,134 @@ func sortedNames[V any](m map[string]V) []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// checkOutputs refuses an output whose programs are not of the image's store or whose inputs are
+// kinds the image does not declare, or that a unit cannot read, and an effect whose on names no
+// output.
+func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effects map[string]nodeconfig.Effect) []error {
+	kinds := map[string]bool{}
+	for _, k := range s.Kinds() {
+		kinds[k.Kind] = true
+	}
+	var errs []error
+	for _, name := range sortedNames(defs) {
+		d := defs[name]
+		for _, p := range []struct{ what, command string }{{"renderer", d.Render}, {"check", d.Check}} {
+			if p.command != "" && !strings.HasPrefix(p.command, "/nix/store/") {
+				errs = append(errs, fmt.Errorf("output %s: the %s %q is no program of the image's store", name, p.what, p.command))
+			}
+		}
+		for _, kind := range d.Inputs {
+			switch {
+			case !kinds[kind]:
+				errs = append(errs, fmt.Errorf("output %s: the image declares no kind %s", name, kind))
+			case kind == "Secret" || kind == "Addon":
+				errs = append(errs, fmt.Errorf("output %s: a renderer does not read %s documents", name, kind))
+			}
+		}
+	}
+	for _, name := range sortedNames(effects) {
+		for _, o := range effects[name].On {
+			if _, ok := defs[o]; !ok {
+				errs = append(errs, fmt.Errorf("effect %s: on names %s, which is no output of the image; its outputs are %s", name, o, declared(defs)))
+			}
+		}
+	}
+	return errs
+}
+
+// checkExamples renders each output from each file of its examples directory, a config set of
+// its own, as the node example, and runs its check, as a node would; it returns the number of
+// examples rendered. The build runs the programs as they are, and leaves the files' owner.
+func checkExamples(s *schema.Schemas, defs map[string]outputs.Definition, examples map[string]string) (int, []error) {
+	var errs []error
+	n := 0
+	for _, name := range sortedNames(examples) {
+		d, ok := defs[name]
+		if !ok {
+			errs = append(errs, fmt.Errorf("output %s: it has examples but is no output", name))
+			continue
+		}
+		files, err := exampleFiles(examples[name])
+		if err != nil {
+			errs = append(errs, fmt.Errorf("output %s: its examples: %w", name, err))
+			continue
+		}
+		for _, file := range files {
+			if err := renderExample(s, name, d, file); err != nil {
+				errs = append(errs, fmt.Errorf("output %s: example %s: %w", name, filepath.Base(file), err))
+			}
+			n++
+		}
+	}
+	return n, errs
+}
+
+// exampleFiles are the YAML and JSON files of dir, sorted; a directory without any is refused.
+func exampleFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, e := range entries {
+		switch filepath.Ext(e.Name()) {
+		case ".yaml", ".yml", ".json":
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("%s holds no YAML or JSON file", dir)
+	}
+	return files, nil
+}
+
+func renderExample(s *schema.Schemas, name string, d outputs.Definition, file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	docs, err := config.Parse(f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	for i, doc := range docs {
+		if err := s.Validate(doc.Object); err != nil {
+			return err
+		}
+		filled, err := s.Default(doc.Object)
+		if err != nil {
+			return err
+		}
+		docs[i].Object = filled.(map[string]any)
+	}
+	root, err := os.MkdirTemp("", "chalkos-example-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(root)
+	r := outputs.Renderer{Root: root, Run: outputs.Direct{}, KeepOwner: true}
+	_, failures := r.Render(context.Background(), map[string]outputs.Definition{name: d}, outputs.Input{Node: "example", Documents: docs, Schemas: s})
+	if len(failures) > 0 {
+		// What the program wrote to standard error is in the build's log, above.
+		return errors.New(strings.TrimSuffix(failures[0].Problem, "; see the node's journal"))
+	}
+	return nil
+}
+
+// readJSON decodes the JSON file at path into v; a missing file leaves v as it is.
+func readJSON(path string, v any) error {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
 }

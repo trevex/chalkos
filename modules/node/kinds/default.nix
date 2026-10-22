@@ -184,10 +184,13 @@ let
     schemas = schemas;
     "facts.json" = factsFile;
     "effects.json" = config.system.build.chalkosEffects;
+    "outputs.json" = config.system.build.chalkosOutputs;
+    "examples.json" = config.system.build.chalkosOutputExamples;
     units = config.environment.etc."systemd/system".source;
   };
   # The image builds only when every rule of its schemas and of its effects compiles, within the
-  # cost limit, and reads facts the image declares, and its effects act on units it defines.
+  # cost limit, and reads facts the image declares, its effects act on units and outputs it
+  # defines, and each output renders its examples and passes its check.
   rulesCheck = pkgs.runCommand "chalkos-rules-check" { nativeBuildInputs = [ chalkos-rules ]; } ''
     chalkos-rules check ${rulesImage}
     touch $out
