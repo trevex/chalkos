@@ -206,9 +206,10 @@ func (s *Set) TimeDHCP() (bool, error) {
 	return spec.DHCP, err
 }
 
-// CheckKubernetes refuses a set whose Kubernetes documents a node of an image with the facts img
-// could not run on: a cluster that does not build, registry mirrors that conflict or are plain
-// HTTP without leave, and Addon documents that do not decode.
+// CheckKubernetes refuses a set whose Node, Cluster, Flannel, RegistryMirror and Addon documents
+// a node of an image with the facts img could not run on: a cluster the Node, Cluster and Flannel
+// documents do not build, registry mirrors that conflict or are plain HTTP without leave, and
+// Addon documents that do not decode.
 func (s *Set) CheckKubernetes(img kubernetes.Image) error {
 	if _, err := s.Cluster(img); err != nil {
 		return err
