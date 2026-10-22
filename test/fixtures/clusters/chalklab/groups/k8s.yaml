@@ -31,7 +31,6 @@ spec:
     ipv6: fd00:10:96::/112
   vip:
     addresses: []
-    interface: null
     mode: l2
 ---
 # w1's addresses are on a dummy interface, whose MTU flannel would take: the cluster network's

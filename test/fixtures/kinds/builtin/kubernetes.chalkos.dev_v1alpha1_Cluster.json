@@ -220,19 +220,6 @@
               },
               "type": "array"
             },
-            "interface": {
-              "anyOf": [
-                {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Interface the addresses are added to; null means the one holding the node's address of their family."
-            },
             "mode": {
               "default": "l2",
               "description": "How the holder announces the addresses.",

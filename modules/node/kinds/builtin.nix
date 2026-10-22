@@ -452,6 +452,11 @@ in
             description = "Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's.";
           };
         };
+        vip.interface = mkOption {
+          type = types.nullOr types.nonEmptyStr;
+          default = null;
+          description = "Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null.";
+        };
       };
     };
     Cluster = builtin "kubernetes.chalkos.dev" // {
@@ -540,11 +545,6 @@ in
             type = types.enum [ "l2" ];
             default = "l2";
             description = "How the holder announces the addresses.";
-          };
-          interface = mkOption {
-            type = types.nullOr types.nonEmptyStr;
-            default = null;
-            description = "Interface the addresses are added to; null means the one holding the node's address of their family.";
           };
         };
         extraArgs = {

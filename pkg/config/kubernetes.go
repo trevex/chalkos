@@ -33,12 +33,11 @@ func single(docs []Document, apiVersion, kind string) (Document, bool) {
 }
 
 // ClusterOf builds the Kubernetes cluster a node's documents give on an image with the facts img:
-// its kind and the kubelet's extra flags from the Kubernetes Node, its endpoint and other settings
-// from the Cluster document and, on a flannel image, flannel's from the Flannel document, and
-// checks it.
-// It holds the per-family values of the cluster's families alone, and each error names the
-// document whose setting fails. docs carry their schema defaults, as a Set and the stored config
-// do.
+// its kind, the kubelet's extra flags and the VIP's interface from the Kubernetes Node, its
+// endpoint and other settings from the Cluster document and, on a flannel image, flannel's from
+// the Flannel document, and checks it. It holds the per-family values of the cluster's families
+// alone, and each error names the document whose setting fails. docs carry their schema
+// defaults, as a Set and the stored config do.
 func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error) {
 	nodeDoc, ok := single(docs, KubernetesAPI, "Node")
 	if !ok {
@@ -72,7 +71,7 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 		},
 		NodeCIDRMaskSizes: k.NodeCIDRMaskSizes,
 		NodeIP:            k.NodeIP,
-		VIP:               kubernetes.VIP{Addresses: k.VIP.Addresses, Mode: k.VIP.Mode, Interface: deref(k.VIP.Interface)},
+		VIP:               kubernetes.VIP{Addresses: k.VIP.Addresses, Mode: k.VIP.Mode, Interface: deref(node.VIP.Interface)},
 		ExtraArgs:         maps.Clone(k.ExtraArgs),
 	}
 	// The kubelet's flags are the node's own, which the Node document names.
@@ -83,6 +82,10 @@ func ClusterOf(docs []Document, img kubernetes.Image) (kubernetes.Cluster, error
 		c.ExtraArgs = map[string]map[string]string{}
 	}
 	c.ExtraArgs["kubelet"] = node.KubeletExtraArgs
+	// Only control planes hold the VIP, so an interface for it on a worker is a mistake.
+	if node.Type == kubernetes.KindWorker && node.VIP.Interface != nil {
+		return kubernetes.Cluster{}, fmt.Errorf("%s: vip.interface: only control planes hold the VIP; leave it null on a worker", nodeDoc)
+	}
 	if _, err := c.EndpointHost(); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
 	}

@@ -124,6 +124,25 @@
             "controlplane",
             "worker"
           ]
+        },
+        "vip": {
+          "additionalProperties": false,
+          "properties": {
+            "interface": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null."
+            }
+          },
+          "type": "object"
         }
       },
       "required": [

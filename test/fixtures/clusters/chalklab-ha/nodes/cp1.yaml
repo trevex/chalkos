@@ -33,3 +33,5 @@ spec:
     addresses:
       - fd00:100::11
   taints: []
+  vip:
+    interface: null

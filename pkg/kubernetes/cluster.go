@@ -100,8 +100,8 @@ type VIP struct {
 	// Mode is how the holder announces them: l2 adds them to an interface and announces them
 	// with gratuitous ARP and unsolicited neighbour advertisements.
 	Mode string `json:"mode"`
-	// Interface is the interface that carries them; empty means the one with the node's address
-	// of their family.
+	// Interface is the interface that carries them on this node, from its Node document; empty
+	// means the one with the node's address of their family.
 	Interface string `json:"interface"`
 }
 

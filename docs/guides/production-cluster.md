@@ -231,6 +231,10 @@ spec:
   vxlanSourceSubnets: [10.0.0.0/24]
 ```
 
+A control plane adds the VIP to the interface holding its address of the VIP's family. One that
+should carry it on another interface names that one in `spec.vip.interface` of its own `Node`
+document, since interface names differ from machine to machine.
+
 [Networking](../concepts/networking.md) explains the election and the address selection.
 
 ## Fix the IP families

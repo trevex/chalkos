@@ -50,7 +50,7 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 | Kind | Count | Holds |
 | --- | --- | --- |
 | [`Cluster`](../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on control planes and extra flags of the control plane's components |
-| [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints, addresses and extra flags of its kubelet |
+| [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints, addresses, extra flags of its kubelet and the interface it holds the VIP on |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | one per registry | The mirrors containerd tries before a registry |
 | [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes and the ranges its VXLAN must come from |
 | [`Addon`](../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |

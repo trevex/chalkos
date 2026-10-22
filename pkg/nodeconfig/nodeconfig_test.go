@@ -330,7 +330,7 @@ spec:
   dnsIPs: {ipv4: null, ipv6: null}
   nodeCIDRMaskSizes: {ipv4: 24, ipv6: 64}
   nodeIP: {validSubnets: [], timeout: 300}
-  vip: {addresses: [], mode: l2, interface: null}
+  vip: {addresses: [], mode: l2}
   extraArgs: {etcd: {}, kube-apiserver: {}, kube-controller-manager: {}, kube-scheduler: {}}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -342,6 +342,7 @@ spec:
   taints: []
   kubeletExtraArgs: {}
   nodeIP: {addresses: null, validSubnets: null}
+  vip: {interface: null}
 `
 
 const kubernetesImage = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",

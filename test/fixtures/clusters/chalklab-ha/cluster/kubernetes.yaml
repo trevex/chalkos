@@ -27,7 +27,6 @@ spec:
   vip:
     addresses:
       - fd00:100::10
-    interface: null
     mode: l2
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1

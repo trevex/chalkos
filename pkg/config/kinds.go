@@ -80,6 +80,11 @@ type nodeSpec struct {
 		Addresses    []string `json:"addresses"`
 		ValidSubnets []string `json:"validSubnets"`
 	} `json:"nodeIP"`
+	// VIP.Interface is the interface a control plane adds the Cluster's VIP to; nil takes the one
+	// holding the node's address of the VIP's family.
+	VIP struct {
+		Interface *string `json:"interface"`
+	} `json:"vip"`
 }
 
 type clusterSpec struct {
@@ -95,7 +100,6 @@ type clusterSpec struct {
 	VIP                            struct {
 		Addresses []string `json:"addresses"`
 		Mode      string   `json:"mode"`
-		Interface *string  `json:"interface"`
 	} `json:"vip"`
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
 }

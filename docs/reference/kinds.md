@@ -85,7 +85,6 @@ It has 4 [change rules](../concepts/rules.md).
 | `spec.serviceCIDRs.ipv6` | string | `"fd00:10:96::/112"` | Address range of the family's services, at most 2^20 addresses. |
 | `spec.vip` | object | see below |  |
 | `spec.vip.addresses` | list of string | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
-| `spec.vip.interface` | string or null | `null` | Interface the addresses are added to; null means the one holding the node's address of their family. |
 | `spec.vip.mode` | `l2` | `"l2"` | How the holder announces the addresses. |
 
 ## Flannel { #flannel }
@@ -119,6 +118,8 @@ It has a [change rule](../concepts/rules.md).
 | `spec.taints[].key` | string | required | Taint key. |
 | `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |
 | `spec.type` | one of `controlplane`, `worker` | required | What the node is in the cluster; it is fixed once the node holds a Kubernetes share. |
+| `spec.vip` | object | see below |  |
+| `spec.vip.interface` | string or null | `null` | Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null. |
 
 ## RegistryMirror { #registrymirror }
 

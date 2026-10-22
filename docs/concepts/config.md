@@ -80,7 +80,7 @@ schemas.
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
 | [`Network`](../reference/kinds.md#network), [`NetDev`](../reference/kinds.md#netdev), [`Link`](../reference/kinds.md#link) | `networkd.chalkos.dev` | any | systemd-networkd's `.network`, `.netdev` and `.link` files, one document per file |
 | [`Cluster`](../reference/kinds.md#cluster) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The URL of the cluster's API server, IP families, pod and service ranges, DNS addresses, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on [control planes](../reference/glossary.md#control-plane) and extra flags of the control plane's components |
-| [`Node`](../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints, Kubernetes addresses and extra flags of its kubelet |
+| [`Node`](../reference/kinds.md#node) | `kubernetes.chalkos.dev` | exactly one on an image with Kubernetes | The node's type, `controlplane` or `worker`, and its labels, taints, Kubernetes addresses, extra flags of its kubelet and the interface it holds the [VIP](../reference/glossary.md#vip) on |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | `kubernetes.chalkos.dev` | any | The mirrors of one container registry |
 | [`Flannel`](../reference/kinds.md#flannel) | `kubernetes.chalkos.dev` | at most one, on images with flannel | flannel's MTU and the ranges its VXLAN must come from |
 | [`Addon`](../reference/kinds.md#addon) | `kubernetes.chalkos.dev` | any | Kubernetes objects the control planes apply |
@@ -254,7 +254,15 @@ chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1400 on cp1 an
 
 A node without the `Flannel` document is named as holding none, as in `none on w1`.
 
-The cluster's documents therefore belong in the files every node gets.
+The cluster's documents therefore belong in the files every node gets. What differs from node to
+node goes into each node's `Node` document instead, which chalkctl does not compare:
+
+- `type`, `controlplane` or `worker`;
+- `labels` and `taints`;
+- `nodeIP.addresses` and `nodeIP.validSubnets`, the node's own addresses or the subnets it picks
+  them from;
+- `kubeletExtraArgs`, the extra flags of the node's kubelet;
+- `vip.interface`, the interface a control plane adds the VIP to, which a worker leaves null.
 
 ## How does the inventory name images?
 

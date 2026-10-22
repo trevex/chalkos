@@ -221,13 +221,24 @@ func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 	}
 }
 
+// The VIP's interface is the Node's, which a worker, holding no VIP, leaves null.
 func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
-	c, err := kubernetesSet(t, `{dnsIPs: {ipv4: 10.96.0.53}, vip: {addresses: [10.0.0.10], interface: lan0}}`, "").Cluster(testImage)
+	s, err := NewSet(mustParse(t, minimal+
+		clusterDoc("k", `{dnsIPs: {ipv4: 10.96.0.53}, vip: {addresses: [10.0.0.10]}}`)+
+		nodeDoc("cp", "{type: controlplane, vip: {interface: lan0}}")), allSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.DNSIPs.IPv4 != "10.96.0.53" || c.VIP.Interface != "lan0" || c.VIP.Mode != "l2" {
 		t.Errorf("cluster = %+v", c)
+	}
+	want := `Node "default": vip.interface: only control planes hold the VIP; leave it null on a worker`
+	if _, err := kubernetesNodeSet(t, `{vip: {addresses: [10.0.0.10]}}`, "vip: {interface: lan0}", "").Cluster(testImage); err == nil || err.Error() != want {
+		t.Errorf("a worker's VIP interface: err = %v, want %q", err, want)
 	}
 }
 

@@ -161,10 +161,13 @@ spec:
 
 chalkd on every bootstrapped control plane takes part in an election held in etcd under
 `/chalkos/vip`. It campaigns only while its local API server answers `/readyz`. The winner adds
-every VIP to an interface as a /32 or /128 host address, on the interface `vip.interface` names or
-else the one holding the node's address of that family, and announces it with gratuitous ARP and
-unsolicited neighbour advertisements, so switches and neighbours send its traffic to the new holder
-at once.
+every VIP to an interface as a /32 or /128 host address, on the interface that `vip.interface` of
+its `Node` document names, or else the one holding the node's address of that family, and announces
+it with gratuitous ARP and unsolicited neighbour advertisements, so switches and neighbours send its
+traffic to the new holder at once.
+
+The interface is the node's own, so it goes into the node's `Node` document, and only on a control
+plane: chalkctl and chalkd refuse `vip.interface` on a worker, which never holds the VIP.
 
 The election runs on an etcd lease of 10 seconds, and the holder checks its API server every 2
 seconds:

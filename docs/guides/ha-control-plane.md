@@ -87,11 +87,11 @@ spec:
     cp3: {address: 10.0.0.13, files: [nodes/cp3.yaml]}
 ```
 
-A cluster takes at most one VIP per family, and an endpoint that is an IP address must be one of
-the VIPs. [chalkd](../reference/glossary.md#chalkd) adds
-the VIP to the interface that holds the node's address of the VIP's family, unless
-`spec.vip.interface` names another. Check the files with
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md) once the image is built.
+A cluster takes at most one VIP per family, and an endpoint that is an IP address must be one of the
+VIPs. [chalkd](../reference/glossary.md#chalkd) adds the VIP to the interface that holds the node's
+address of the VIP's family, unless `spec.vip.interface` of the node's `Node` document names
+another, while the VIP's addresses come from the `Cluster` document. Check the files with [`chalkctl
+validate`](../reference/cli/chalkctl_validate.md) once the image is built.
 
 ## Install every control plane
 
