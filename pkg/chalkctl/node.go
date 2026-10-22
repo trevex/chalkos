@@ -280,10 +280,10 @@ func nodeError(err error, name string) error {
 }
 
 type installFlags struct {
-	node                                   nodeCommand
-	pin                                    pinning
-	image, signKey, signCert, passwordFile string
-	wipeDisk                               bool
+	node                nodeCommand
+	pin                 pinning
+	image, passwordFile string
+	wipeDisk            bool
 }
 
 func (a *app) installCommand() *cobra.Command {
@@ -298,8 +298,6 @@ func (a *app) installCommand() *cobra.Command {
 	f.node.register(fs)
 	f.pin.register(fs)
 	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory (default the directory of the node's image in the inventory)")
-	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader")
-	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer, to check the image's signatures against before it is sent")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	fs.StringVar(&f.passwordFile, "password-file", "", "file holding the password of a node whose fallback is a password")
 	return cmd
@@ -360,7 +358,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 				return err
 			}
 		}
-		if img, err = openImage(ctx, path, f.signKey, f.signCert, true, a.stderr); err != nil {
+		if img, err = openImage(ctx, path, true, a.stderr); err != nil {
 			return err
 		}
 		defer img.Close()
@@ -372,7 +370,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if header.SystemDefinitions, err = readDefinitions(img.definitions); err != nil {
 			return err
 		}
-		if err := checkInstallImage(t, img, f.signCert); err != nil {
+		if err := checkInstallImage(t, img); err != nil {
 			return err
 		}
 		// The installer runs another image than the one it installs, so it gets that image's

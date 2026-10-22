@@ -1,24 +1,25 @@
 ---
 title: "chalkctl"
-description: "Sign, install and operate chalkos clusters"
+description: "Install and operate chalkos clusters"
 ---
 
 # chalkctl
 
-Sign, install and operate chalkos clusters
+Install and operate chalkos clusters
 
 ## Synopsis
 
-chalkctl signs, installs and operates the nodes of a chalkos cluster. It reads the cluster from
-an inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
+chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
+inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
 address chalkctl reaches it at, the image it runs and the config files it gets, and talks to chalkd
-on each node over mutual TLS. chalkctl never builds images: the inventory names the directory of
-each image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
-or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
-reader role. Each command's help says which of the two it needs. The secrets file is read only where
---secrets names it, as a path or as - for standard input, encrypted with age or not; the inventory
-names none. Commands that accept both take --config or --secrets, not both, else the client file
-$CHALKOSCONFIG names, else ~/.config/chalkos/config.
+on each node over mutual TLS. chalkctl never builds or signs images: the inventory names the
+directory of each image, which chalkbuild sign signs for Secure Boot. Commands authenticate with
+the cluster's secrets file, which holds every CA key, or with a client file (chalkctl config new),
+which holds a certificate of the admin, operator or reader role. Each command's help says which of
+the two it needs. The secrets file is read only where --secrets names it, as a path or as - for
+standard input, encrypted with age or not; the inventory names none. Commands that accept both take
+--config or --secrets, not both, else the client file $CHALKOSCONFIG names, else
+~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.
@@ -57,7 +58,6 @@ argument after it is read as a positional argument.
 * [chalkctl reboot](chalkctl_reboot.md)	 - Reboot a node
 * [chalkctl recovery-key](chalkctl_recovery-key.md)	 - Print a node's recovery key
 * [chalkctl rotate](chalkctl_rotate.md)	 - Rotate os-ca, kubernetes-ca, service-account-key or encryption-key
-* [chalkctl sign](chalkctl_sign.md)	 - Sign the boot loader and UKIs of a disk image
 * [chalkctl status](chalkctl_status.md)	 - Show an installed node's status
 * [chalkctl storage](chalkctl_storage.md)	 - Manage a node's volumes
 * [chalkctl upgrade](chalkctl_upgrade.md)	 - Install new images on the cluster's nodes, one control plane at a time

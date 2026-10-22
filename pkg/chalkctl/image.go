@@ -11,14 +11,11 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/image"
-	"github.com/trevex/chalkos/pkg/imagesign"
-	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // diskImage is what install and upgrade send of a disk image: its parts, the UKI and the boot
-// loader signed when chalkctl was given the key, and the header that describes them to the nodes.
+// loader, and the header that describes them to the nodes.
 type diskImage struct {
 	*image.Parts
 	// header describes the image to the nodes.
@@ -31,13 +28,8 @@ type diskImage struct {
 }
 
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
-// repart-output.json next to it, or the directory nix build makes. The copies of its UKI and boot
-// loader are signed with key and cert when a key is given; a certificate alone checks an image
-// signed before. Warnings go to stderr.
-func openImage(ctx context.Context, path, key, cert string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
-	if key != "" && cert == "" {
-		return nil, errors.New("signing with --sign-key needs --sign-cert")
-	}
+// repart-output.json next to it, or the directory nix build makes. Warnings go to stderr.
+func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
 	raw, definitions, err := imageFiles(path)
 	if err != nil {
 		return nil, err
@@ -56,16 +48,6 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool, std
 			img.Close()
 		}
 	}()
-	if key != "" {
-		for _, b := range []string{img.UKI, img.BootLoader} {
-			if b == "" {
-				continue
-			}
-			if err := imagesign.SignFile(ctx, b, key, cert); err != nil {
-				return nil, err
-			}
-		}
-	}
 	// The node would refuse the UKI only once it received the image.
 	if err := upgrade.CheckImageVersion(img.Info); err != nil {
 		return nil, fmt.Errorf("the image's UKI: %w", err)
@@ -120,8 +102,8 @@ func sumFile(path string) (*nodev1.ImagePart, error) {
 // openUpgradeImage opens an upgrade's image with the contract its directory holds, which chalkctl
 // checks the inventory's config against before any node is drained. The node checks the config it
 // gets, or without one its own, against the schemas in the image itself.
-func openUpgradeImage(ctx context.Context, path, key, cert string, stderr io.Writer) (*diskImage, error) {
-	img, err := openImage(ctx, path, key, cert, false, stderr)
+func openUpgradeImage(ctx context.Context, path string, stderr io.Writer) (*diskImage, error) {
+	img, err := openImage(ctx, path, false, stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -133,36 +115,6 @@ func openUpgradeImage(ctx context.Context, path, key, cert string, stderr io.Wri
 	c.platform = img.Info.Platform()
 	img.contract = &c
 	return img, nil
-}
-
-// checkSignature checks the UKI and the boot loader against a db certificate, as firmware with
-// it in db would.
-func (img *diskImage) checkSignature(certPEM string) error {
-	certs, err := pki.ParseBundle(certPEM)
-	if err != nil {
-		return fmt.Errorf("the db certificate: %w", err)
-	}
-	for _, b := range []struct {
-		what, file string
-		part       *nodev1.ImagePart
-	}{
-		{"UKI", img.UKI, img.header.Uki},
-		{"boot loader", img.BootLoader, img.header.BootLoader},
-	} {
-		if b.file == "" {
-			continue
-		}
-		f, err := os.Open(b.file)
-		if err != nil {
-			return err
-		}
-		err = uki.VerifySignature(f, int64(b.part.Size), uki.Database{Certificates: certs}, uki.Database{})
-		f.Close()
-		if err != nil {
-			return fmt.Errorf("Secure Boot would refuse the image's %s: %w", b.what, err)
-		}
-	}
-	return nil
 }
 
 // size is how many bytes of the image follow its header.
@@ -196,10 +148,9 @@ func (img *diskImage) stream() (io.Reader, func(), error) {
 	}, nil
 }
 
-// checkInstallImage checks the image against the node it installs: built for the platform of the
-// node's config's image, and its signatures checked as an upgrade's image is. Its variant may be
-// any: the installer checks the config against the image's schemas.
-func checkInstallImage(t *target, img *diskImage, signCert string) error {
+// checkInstallImage checks that the image is built for the platform of the node's config's image.
+// Its variant may be any: the installer checks the config against the image's schemas.
+func checkInstallImage(t *target, img *diskImage) error {
 	want, err := t.cluster.platform(t.name)
 	if err != nil {
 		return err
@@ -207,7 +158,7 @@ func checkInstallImage(t *target, img *diskImage, signCert string) error {
 	if got := img.Info.Platform(); got != want {
 		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, want, got)
 	}
-	return checkImage(img, signCert)
+	return nil
 }
 
 // sendChunks sends what r holds in chunks. A send that finds the stream closed ends it: the node

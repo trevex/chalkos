@@ -3,16 +3,17 @@ package chalkctl
 // The long descriptions and examples of chalkctl's commands, which its help and the generated
 // reference pages show. They are kept together so they read as one text.
 
-const rootLong = `chalkctl signs, installs and operates the nodes of a chalkos cluster. It reads the cluster from
-an inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
+const rootLong = `chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
+inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
 address chalkctl reaches it at, the image it runs and the config files it gets, and talks to chalkd
-on each node over mutual TLS. chalkctl never builds images: the inventory names the directory of
-each image build. Commands authenticate with the cluster's secrets file, which holds every CA key,
-or with a client file (chalkctl config new), which holds a certificate of the admin, operator or
-reader role. Each command's help says which of the two it needs. The secrets file is read only where
---secrets names it, as a path or as - for standard input, encrypted with age or not; the inventory
-names none. Commands that accept both take --config or --secrets, not both, else the client file
-$CHALKOSCONFIG names, else ~/.config/chalkos/config.
+on each node over mutual TLS. chalkctl never builds or signs images: the inventory names the
+directory of each image, which chalkbuild sign signs for Secure Boot. Commands authenticate with
+the cluster's secrets file, which holds every CA key, or with a client file (chalkctl config new),
+which holds a certificate of the admin, operator or reader role. Each command's help says which of
+the two it needs. The secrets file is read only where --secrets names it, as a path or as - for
+standard input, encrypted with age or not; the inventory names none. Commands that accept both take
+--config or --secrets, not both, else the client file $CHALKOSCONFIG names, else
+~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.`
@@ -167,16 +168,8 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
 const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
 
-  # Upgrade the nodes that run an image's variant, two at a time, with a prebuilt image, which
-  # chalkctl signs.
-  chalkctl upgrade --image ./worker-image --max-unavailable 2 --sign-key db.key --sign-cert db.crt`
-
-const signLong = `Signs the boot loader and the UKIs on the EFI system partition of a raw disk image, in place,
-with a Secure Boot db key, so firmware that trusts its certificate boots the image.
---repart-json is the repart-output.json that describes the image's partitions. Ctrl-C stops the
-signing and can leave the image partly signed. The command needs no secrets file or client file.`
-
-const signExample = `  chalkctl sign --image chalkos.raw --repart-json repart-output.json --key db.key --cert db.crt`
+  # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
+  chalkctl upgrade --image ./worker-image --max-unavailable 2`
 
 const installLong = `Installs a node that waits in maintenance mode: a machine that booted the installer, or a
 node's image booted for the first time. The node serves a self-signed certificate in maintenance
@@ -190,8 +183,9 @@ against the schemas of the image it installs, a node certificate, the OS CA, the
 encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
 Kubernetes share. A node that runs its image already installs in place. A node that runs the
 installer gets the image as well: --image, or the directory of the node's image in the inventory,
-signed for Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the
-disk the node's SystemDisk names: a disk on which blkid finds no signature, or one holding an
+signed with chalkbuild sign when the machine enforces Secure Boot. The installer checks the UKI
+and the boot loader against the firmware's db and dbx and writes the image to the disk the node's
+SystemDisk names: a disk on which blkid finds no signature, or one holding an
 unfinished install of the node, which it continues; any other disk only with --wipe-disk. The node
 reboots into the installed image. The node certificate carries the node's name in the inventory,
 which stays the node's name until it is reinstalled. The command needs the secrets file.`
@@ -200,10 +194,9 @@ const installExample = `  # Install cp1, comparing the certificate with the fing
   chalkctl install cp1 --secrets secrets.age \
     --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
-  # Install w1 at an address of the network it booted into, with a prebuilt image, which
-  # chalkctl signs.
+  # Install w1 at an address of the network it booted into, with an image chalkbuild signed.
   chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --insecure \
-    --image ./worker-image --sign-key db.key --sign-cert db.crt`
+    --image ./worker-image`
 
 const disksLong = `Lists a node's disks with their use, the partitions on them, and the properties a storage
 definition selects disks by: size, type, model, serial number and WWN. An installed node is

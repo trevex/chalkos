@@ -26,6 +26,6 @@ secrets file.
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
 * [chalkctl storage reset](chalkctl_storage_reset.md)	 - Wipe and recreate one volume
 

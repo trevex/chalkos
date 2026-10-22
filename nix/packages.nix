@@ -31,7 +31,6 @@ in
       wrapProgram $out/bin/chalkctl --prefix PATH : ${
         lib.makeBinPath [
           pkgs.mtools
-          pkgs.sbsigntool
         ]
       }
     '';

@@ -28,11 +28,11 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 }
 
 // TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
-// next to a blank disk, installs a node onto that disk from its image's parts, which chalkctl
-// signs and sends from the host, cancels that install while slot A is written and runs it again
-// without --wipe-disk, and checks the node boots from the disk installed: slot A holding the image
-// under labels of its root hash, its UKI as chalkos_1.efi, slot B empty, VAR mounted, STATE and
-// VAR with two keyslots, chalkd over mTLS.
+// next to a blank disk, installs a node onto that disk from the parts of its image, signed
+// beforehand as chalkbuild signs it, which chalkctl sends from the host, cancels that install
+// while slot A is written and runs it again without --wipe-disk, and checks the node boots from
+// the disk installed: slot A holding the image under labels of its root hash, its UKI as
+// chalkos_1.efi, slot B empty, VAR mounted, STATE and VAR with two keyslots, chalkd over mTLS.
 func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	root := rootHash(t, "CHALKLAB_IMAGE_DIR")
@@ -52,9 +52,7 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	if info := waitForChalkd(t, n, 5*time.Minute); !info.Installer || info.ImageId != "chalkos-installer" {
 		t.Fatalf("info = %+v, want the installer", info)
 	}
-	keys := os.Getenv("CHALKLAB_SB_KEYS")
-	install := []string{"install", "chalklab-target", "--fingerprint", fingerprint, "--image", os.Getenv("CHALKLAB_IMAGE_DIR"),
-		"--sign-key", filepath.Join(keys, "db.key"), "--sign-cert", filepath.Join(keys, "db.crt")}
+	install := []string{"install", "chalklab-target", "--fingerprint", fingerprint, "--image", signedImage(t, dir, "CHALKLAB_IMAGE_DIR")}
 	// An install cancelled while chalkd writes slot A of the laid-out target continues without
 	// --wipe-disk.
 	interrupted := cancelledInstall(t, n, install)
@@ -138,25 +136,16 @@ func cancelledInstall(t *testing.T, n *node, args []string) string {
 	return r.out
 }
 
-// TestInstallerISOBoots signs the generic installer ISO as chalkctl sign signs disk images,
-// boots it as a CD-ROM with Secure Boot on, and checks chalkd serves any client in maintenance
-// mode: chalkctl lists the disks of the machine.
+// TestInstallerISOBoots signs a copy of the generic installer as chalkbuild sign does, boots its
+// ISO as a CD-ROM with Secure Boot on, and checks chalkd serves any client in maintenance mode:
+// chalkctl lists the disks of the machine.
 func TestInstallerISOBoots(t *testing.T) {
 	requireEnv(t, "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_GENERIC_INSTALLER_DIR", "CHALKLAB_CHALKCTL")
-	isos, err := filepath.Glob(filepath.Join(os.Getenv("CHALKLAB_GENERIC_INSTALLER_DIR"), "*.iso"))
+	dir := vmDir(t)
+	installer := signedImage(t, dir, "CHALKLAB_GENERIC_INSTALLER_DIR")
+	isos, err := filepath.Glob(filepath.Join(installer, "*.iso"))
 	if err != nil || len(isos) != 1 {
 		t.Fatalf("want one ISO, found %v (%v)", isos, err)
-	}
-	dir := vmDir(t)
-	iso := filepath.Join(dir, "installer.iso")
-	if err := lab.CopySparse(context.Background(), isos[0], iso); err != nil {
-		t.Fatal(err)
-	}
-	keys := os.Getenv("CHALKLAB_SB_KEYS")
-	sign := exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "sign", "--image", iso, "--repart-json", isos[0]+".json",
-		"--key", filepath.Join(keys, "db.key"), "--cert", filepath.Join(keys, "db.crt"))
-	if out, err := sign.CombinedOutput(); err != nil {
-		t.Fatalf("sign the ISO: %v\n%s", err, out)
 	}
 	blank := filepath.Join(dir, "blank.qcow2")
 	if err := lab.CreateDisk(context.Background(), blank, "4G"); err != nil {
@@ -165,7 +154,7 @@ func TestInstallerISOBoots(t *testing.T) {
 	n := startNode(t, lab.VMConfig{
 		Dir:          dir,
 		FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"),
-		CDROM:        iso,
+		CDROM:        isos[0],
 		Disks:        []lab.Disk{{Path: blank, Serial: "chalk-blank"}},
 	})
 

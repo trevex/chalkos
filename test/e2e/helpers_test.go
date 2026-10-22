@@ -292,6 +292,18 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.Disk {
 	return lab.Disk{Path: disk}
 }
 
+// signedImage signs a copy of the image directory the variable names in dir with the test's db
+// key, as chalkbuild sign does, and returns the copy's path.
+func signedImage(t *testing.T, dir, env string) string {
+	t.Helper()
+	keys := os.Getenv("CHALKLAB_SB_KEYS")
+	out := filepath.Join(dir, strings.ToLower(env))
+	if _, err := imagesign.SignDirectory(context.Background(), os.Getenv(env), out, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt")); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 // prepareDataDisk creates the empty second disk the storage image selects by its serial.
 func prepareDataDisk(t *testing.T, dir string) lab.Disk {
 	t.Helper()

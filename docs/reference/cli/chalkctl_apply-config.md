@@ -71,5 +71,5 @@ chalkctl apply-config <node> [flags]
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
 

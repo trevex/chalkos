@@ -7,26 +7,17 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// TestOpenImageForInstall reads an image with its boot loader, as an install sends it, signs
-// both binaries, and checks both signatures; an upgrade's image brings no boot loader.
+// TestOpenImageForInstall reads an image with its boot loader, as an install sends it; an
+// upgrade's image brings no boot loader.
 func TestOpenImageForInstall(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
-	dir := t.TempDir()
-	key, cert := testSigner(t, dir, "db")
-	_, otherCert := testSigner(t, dir, "other")
-	certPEM, _ := os.ReadFile(cert)
-	otherPEM, _ := os.ReadFile(otherCert)
 	path := testUpgradeImage(t, "w", "0.2.0")
 
-	img, err := openImage(context.Background(), path, key, cert, true, io.Discard)
+	img, err := openImage(context.Background(), path, true, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,12 +33,6 @@ func TestOpenImageForInstall(t *testing.T) {
 	if img.header.Architecture != "x86-64" {
 		t.Errorf("the header names the architecture %q, want x86-64", img.header.Architecture)
 	}
-	if err := img.checkSignature(string(certPEM)); err != nil {
-		t.Errorf("the signed image: %v", err)
-	}
-	if err := img.checkSignature(string(otherPEM)); err == nil || !strings.Contains(err.Error(), "UKI") {
-		t.Errorf("another db certificate: %v", err)
-	}
 	parts, done, err := img.stream()
 	if err != nil {
 		t.Fatal(err)
@@ -61,22 +46,7 @@ func TestOpenImageForInstall(t *testing.T) {
 		t.Errorf("sent %d bytes, want %d ending in the boot loader", sent.Len(), img.size())
 	}
 
-	// A boot loader that is not signed is refused like an unsigned UKI.
-	unsigned, err := openImage(context.Background(), path, "", "", true, io.Discard)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unsigned.Close()
-	ukiData, _ := os.ReadFile(img.UKI)
-	if err := os.WriteFile(unsigned.UKI, ukiData, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	unsigned.header.Uki = img.header.Uki
-	if err := unsigned.checkSignature(string(certPEM)); err == nil || !strings.Contains(err.Error(), "refuse the image's boot loader") {
-		t.Errorf("an unsigned boot loader: %v", err)
-	}
-
-	upgrade, err := openImage(context.Background(), path, key, cert, false, io.Discard)
+	upgrade, err := openImage(context.Background(), path, false, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +77,7 @@ func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			writeFile(t, filepath.Join(path, "metadata.json"), tc.metadata)
 			var stderr bytes.Buffer
-			img, err := openImage(context.Background(), path, "", "", false, &stderr)
+			img, err := openImage(context.Background(), path, false, &stderr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,7 +94,7 @@ func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	img, err := openImage(context.Background(), path, "", "", false, &stderr)
+	img, err := openImage(context.Background(), path, false, &stderr)
 	if err != nil {
 		t.Fatal(err)
 	}

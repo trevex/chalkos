@@ -95,7 +95,6 @@ nav = [
         { "reboot" = "reference/cli/chalkctl_reboot.md" },
         { "recovery-key" = "reference/cli/chalkctl_recovery-key.md" },
         { "rotate" = "reference/cli/chalkctl_rotate.md" },
-        { "sign" = "reference/cli/chalkctl_sign.md" },
         { "status" = "reference/cli/chalkctl_status.md" },
         { "storage" = [
           { "Overview" = "reference/cli/chalkctl_storage.md" },

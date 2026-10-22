@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -31,16 +30,8 @@ import (
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
-
-func TestRunSignRequiresAllFlags(t *testing.T) {
-	err := runSign(context.Background(), signFlags{image: "disk.raw"})
-	if err == nil || !strings.Contains(err.Error(), "--repart-json") {
-		t.Fatalf("err = %v, want a missing --repart-json error", err)
-	}
-}
 
 // testApp is chalkctl with the test cluster's inventory and a plaintext secrets file in a
 // temporary directory.
@@ -455,75 +446,27 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	}
 }
 
-// TestInstallChecksTheImage refuses images of another platform, and images whose UKI or
-// boot loader the cluster's db certificate did not sign, before the installer is sent anything;
-// --sign-key signs both.
-func TestInstallChecksTheImage(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
+// TestInstallChecksThePlatform refuses an image of another platform than the node's image in
+// the inventory before the installer is sent anything.
+func TestInstallChecksThePlatform(t *testing.T) {
 	ta := newTestApp(t)
-	keys := t.TempDir()
-	dbKey, dbCert := testSigner(t, keys, "db")
-	otherKey, otherCert := testSigner(t, keys, "other")
-	certPEM, _ := os.ReadFile(dbCert)
-	image := func(variant string) string {
-		dir := testUpgradeImage(t, variant, "0.1.0")
-		writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
-		copySchemas(t, filepath.Join(dir, "schemas"))
-		return dir
-	}
 	s := maintenanceNode()
 	s.Installer = true
-	var parts []byte
-	var header upgrade.Header
-	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
-		var err error
-		header = req.Image
-		parts, err = io.ReadAll(req.Parts)
-		return err
+	sent := false
+	s.FromParts = func(context.Context, install.PartsRequest) error {
+		sent = true
+		return nil
 	}
 	addr := ta.startNode(t, s)
-	img := image("test")
-	signedByOther := image("test")
-	signTestImage(t, signedByOther, otherKey, otherCert)
-	for _, tc := range []struct {
-		name string
-		img  string
-		args []string
-		want string
-	}{
-		{"another platform", func() string {
-			dir := testUpgradeImageOfBlocks(t, "test", "kvm", "0.1.0", 512)
-			writeFile(t, filepath.Join(dir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
-			copySchemas(t, filepath.Join(dir, "schemas"))
-			return dir
-		}(), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "n1 runs on metal; the image is built for kvm"},
-		{"an unsigned image", img, []string{"--sign-cert", dbCert}, "Secure Boot would refuse the image's UKI"},
-		{"an image signed by another key", signedByOther, []string{"--sign-cert", dbCert}, "not in db"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			parts = nil
-			args := append([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", tc.img}, tc.args...)
-			err := ta.run(context.Background(), ta.args(args, addr))
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("install = %v, want %q", err, tc.want)
-			}
-			if parts != nil {
-				t.Error("the installer was sent the image")
-			}
-		})
+	img := testUpgradeImageOfBlocks(t, "test", "kvm", "0.1.0", 512)
+	writeFile(t, filepath.Join(img, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+	copySchemas(t, filepath.Join(img, "schemas"))
+	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", img}, addr))
+	if err == nil || !strings.Contains(err.Error(), "n1 runs on metal; the image is built for kvm") {
+		t.Errorf("install = %v, want the platform refused", err)
 	}
-	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", img, "--sign-key", dbKey, "--sign-cert", dbCert}, addr)); err != nil {
-		t.Fatal(err)
-	}
-	certs, err := pki.ParseBundle(string(certPEM))
-	if err != nil {
-		t.Fatal(err)
-	}
-	loader := parts[len(parts)-int(header.BootLoaderSize):]
-	if err := uki.VerifySignature(bytes.NewReader(loader), header.BootLoaderSize, uki.Database{Certificates: certs}, uki.Database{}); err != nil {
-		t.Errorf("the boot loader sent: %v", err)
+	if sent {
+		t.Error("the installer was sent the image")
 	}
 }
 

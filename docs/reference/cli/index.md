@@ -7,7 +7,7 @@ description: "The commands of chalkctl, chalklab, chalkbuild and chalkcfg"
 
 chalkos has four command line tools: chalkctl, chalklab and chalkbuild run on an operator's machine, chalkcfg on a node. Their pages are generated from their help.
 
-- [chalkctl](chalkctl.md): Sign, install and operate chalkos clusters
+- [chalkctl](chalkctl.md): Install and operate chalkos clusters
 - [chalklab](chalklab.md): Run a chalkos cluster's nodes as QEMU virtual machines on this machine
 - [chalkbuild](chalkbuild.md): Prepare the images Nix builds for a chalkos cluster's nodes
 - [chalkcfg](chalkcfg.md): Print the config documents of the node chalkcfg runs on

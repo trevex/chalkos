@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -83,16 +82,16 @@ type upgradeGroup struct {
 }
 
 type upgradeFlags struct {
-	cluster                                 clusterFlags
-	secrets                                 secretFlags
-	config, image, signKey, signCert, nodes string
-	passwordFile                            string
-	addresses                               addressList
-	maxUnavailable                          int
-	allowDowntime, noReboot, retryFailed    bool
-	diff                                    bool
-	deleteEmptyDir                          bool
-	timeout                                 time.Duration
+	cluster                              clusterFlags
+	secrets                              secretFlags
+	config, image, nodes                 string
+	passwordFile                         string
+	addresses                            addressList
+	maxUnavailable                       int
+	allowDowntime, noReboot, retryFailed bool
+	diff                                 bool
+	deleteEmptyDir                       bool
+	timeout                              time.Duration
 }
 
 func (a *app) upgradeCommand() *cobra.Command {
@@ -109,8 +108,6 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs.StringVar(&f.config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
 	fs.Var(f.addresses, "address", "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
-	fs.StringVar(&f.signKey, "sign-key", "", "PEM key of the Secure Boot db signer, to sign the images' UKIs")
-	fs.StringVar(&f.signCert, "sign-cert", "", "PEM certificate of the Secure Boot db signer, to check the images' signatures against before they are sent")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
 	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many workers and nodes without Kubernetes upgrade at once")
 	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
@@ -147,13 +144,10 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	}
 	var img *diskImage
 	if f.image != "" {
-		if img, err = openUpgradeImage(ctx, f.image, f.signKey, f.signCert, a.stderr); err != nil {
+		if img, err = openUpgradeImage(ctx, f.image, a.stderr); err != nil {
 			return err
 		}
 		defer img.Close()
-		if err := checkImage(img, f.signCert); err != nil {
-			return err
-		}
 	} else if c.inv == nil {
 		return errors.New("without --image each node gets the image the inventory names for it, which needs an inventory; pass --image, or --inventory")
 	}
@@ -172,13 +166,10 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, pos []string) error {
 	}
 	for _, g := range r.groups {
 		if g.image == nil {
-			if g.image, err = openUpgradeImage(ctx, g.dir, f.signKey, f.signCert, a.stderr); err != nil {
+			if g.image, err = openUpgradeImage(ctx, g.dir, a.stderr); err != nil {
 				return err
 			}
 			defer g.image.Close()
-			if err := checkImage(g.image, f.signCert); err != nil {
-				return err
-			}
 			if err := c.sameBuild(g.nodes[0], g.image); err != nil {
 				return err
 			}
@@ -379,19 +370,6 @@ func (r *upgradeRun) checkConfig() error {
 		r.nodes[name].delivery = &d
 	}
 	return nil
-}
-
-// checkImage checks the signatures of the image's UKI and boot loader against the db certificate
-// --sign-cert names, when it names one.
-func checkImage(img *diskImage, signCert string) error {
-	if signCert == "" {
-		return nil
-	}
-	certPEM, err := os.ReadFile(signCert)
-	if err != nil {
-		return err
-	}
-	return img.checkSignature(string(certPEM))
 }
 
 // say prints a line of the run's progress, from any node's goroutine.

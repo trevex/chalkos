@@ -1,4 +1,4 @@
-// Command chalkctl builds, signs, installs and operates chalkos clusters.
+// Command chalkctl installs and operates chalkos clusters.
 package main
 
 import (

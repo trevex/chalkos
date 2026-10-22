@@ -3,20 +3,13 @@ package chalkctl
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"maps"
-	"math/big"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1033,31 +1026,6 @@ func TestUpgradeAsksForPasswordsBeforeDraining(t *testing.T) {
 	}
 }
 
-func testSigner(t *testing.T, dir, name string) (key, cert string) {
-	t.Helper()
-	k, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &k.PublicKey, k)
-	if err != nil {
-		t.Fatal(err)
-	}
-	key, cert = filepath.Join(dir, name+".key"), filepath.Join(dir, name+".crt")
-	writeFile(t, key, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})))
-	writeFile(t, cert, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
-	return key, cert
-}
-
-// signTestImage signs the boot loader and UKI of a test image in place, as chalklab sign does.
-func signTestImage(t *testing.T, dir, key, cert string) {
-	t.Helper()
-	if err := signImage(context.Background(), filepath.Join(dir, "chalkos.raw"), filepath.Join(dir, "repart-output.json"), key, cert); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestUpgradeNeedsTheImageContract refuses an image directory without schemas, which the
 // inventory's config is checked against.
 func TestUpgradeNeedsTheImageContract(t *testing.T) {
@@ -1127,33 +1095,21 @@ func TestImageContractRefusesAnOlderImageDirectory(t *testing.T) {
 }
 
 // TestUpgradeChecksTheImage refuses images that name no variant, whose UKI names an image
-// version or none, by which systemd-boot would order the entry, or whose UKI the cluster's db
-// certificate did not sign, before any node is asked to change.
+// version or none, by which systemd-boot would order the entry, before any node is asked to
+// change.
 func TestUpgradeChecksTheImage(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
 	l := newUpgradeLab(t, 3)
-	dir := t.TempDir()
-	dbKey, dbCert := testSigner(t, dir, "db")
-	otherKey, otherCert := testSigner(t, dir, "other")
-	img := testUpgradeImage(t, "w", "0.2.0")
-	signedByOther := testUpgradeImage(t, "w", "0.2.0")
-	signTestImage(t, signedByOther, otherKey, otherCert)
 	for _, tc := range []struct {
 		name string
 		img  string
-		args []string
 		want string
 	}{
-		{"an unsigned UKI", img, []string{"--sign-cert", dbCert}, "Secure Boot would refuse the image's UKI: the image is not signed"},
-		{"a UKI signed by another key", signedByOther, []string{"--sign-cert", dbCert}, "not in db"},
-		{"an image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { o["IMAGE_VERSION"] = "0.2.0" }), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image's UKI: the UKI's os-release sets IMAGE_VERSION to \"0.2.0\""},
-		{"no image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { delete(o, "IMAGE_VERSION") }), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image's UKI: the UKI's os-release has no IMAGE_VERSION"},
-		{"an image without a variant", testUpgradeImage(t, "", "0.2.0"), []string{"--sign-key", dbKey, "--sign-cert", dbCert}, "the image names no variant or platform in its os-release"},
+		{"an image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { o["IMAGE_VERSION"] = "0.2.0" }), "the image's UKI: the UKI's os-release sets IMAGE_VERSION to \"0.2.0\""},
+		{"no image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { delete(o, "IMAGE_VERSION") }), "the image's UKI: the UKI's os-release has no IMAGE_VERSION"},
+		{"an image without a variant", testUpgradeImage(t, "", "0.2.0"), "the image names no variant or platform in its os-release"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := l.upgrade(tc.img, tc.args...)
+			err := l.upgrade(tc.img)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("upgrade = %v, want %q", err, tc.want)
 			}
@@ -1162,7 +1118,7 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 			}
 		})
 	}
-	if err := l.upgrade(img, "--sign-key", dbKey, "--sign-cert", dbCert); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -1,4 +1,4 @@
-// Package chalkctl is the chalkctl command, which signs, installs and operates chalkos clusters.
+// Package chalkctl is the chalkctl command, which installs and operates chalkos clusters.
 // NewCommand returns its command tree, which programs can run or add to their own.
 package chalkctl
 
@@ -11,9 +11,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"github.com/trevex/chalkos/pkg/image"
-	"github.com/trevex/chalkos/pkg/imagesign"
 )
 
 // app is chalkctl's environment, which every command shares. Its streams are those of the
@@ -48,7 +45,7 @@ func (a *app) with(cmd *cobra.Command) *app {
 func newCommand(a *app) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "chalkctl",
-		Short:         "Sign, install and operate chalkos clusters",
+		Short:         "Install and operate chalkos clusters",
 		Long:          rootLong,
 		Example:       rootExample,
 		SilenceErrors: true,
@@ -92,7 +89,6 @@ func newCommand(a *app) *cobra.Command {
 		a.kubeconfigCommand(),
 		a.upgradeCommand(),
 		a.validateCommand(),
-		signCommand(),
 	)
 	return root
 }
@@ -161,52 +157,6 @@ func exitStatus(err error) int {
 		return 130
 	}
 	return 1
-}
-
-type signFlags struct {
-	image, repartJSON, key, cert string
-}
-
-func signCommand() *cobra.Command {
-	var f signFlags
-	cmd := &cobra.Command{
-		Use:     "sign",
-		Short:   "Sign the boot loader and UKIs of a disk image",
-		Long:    signLong,
-		Example: signExample,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSign(cmd.Context(), f)
-		},
-	}
-	fs := cmd.Flags()
-	fs.StringVar(&f.image, "image", "", "raw disk image to sign in place")
-	fs.StringVar(&f.repartJSON, "repart-json", "", "repart-output.json describing the image's partitions")
-	fs.StringVar(&f.key, "key", "", "PEM private key of the Secure Boot db signer")
-	fs.StringVar(&f.cert, "cert", "", "PEM certificate of the Secure Boot db signer")
-	return cmd
-}
-
-func runSign(ctx context.Context, f signFlags) error {
-	for _, required := range []struct{ name, value string }{
-		{"--image", f.image}, {"--repart-json", f.repartJSON}, {"--key", f.key}, {"--cert", f.cert},
-	} {
-		if required.value == "" {
-			return errors.New("sign: " + required.name + " is required")
-		}
-	}
-	return signImage(ctx, f.image, f.repartJSON, f.key, f.cert)
-}
-
-func signImage(ctx context.Context, imagePath, repartJSON, key, cert string) error {
-	parts, err := image.ReadPartitions(repartJSON)
-	if err != nil {
-		return err
-	}
-	esp, err := image.FindPartition(parts, "esp")
-	if err != nil {
-		return err
-	}
-	return imagesign.SignImage(ctx, imagePath, esp.Offset, key, cert)
 }
 
 // count is n and the noun, in the plural unless n is one.

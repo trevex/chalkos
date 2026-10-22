@@ -376,10 +376,9 @@ var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprin
 
 // setUp writes an admin client file, installs each node in place, bootstraps the first control
 // plane, and writes a kubeconfig that reaches the lab through its forwarded ports. chalkctl reads
-// the lab's inventory, which names the nodes at their forwarded ports, and the secrets file, and
-// checks images against the lab's db certificate, which signs them. The wait for the bootstrap
-// polls with the client file, so an encrypted secrets file is decrypted once per command rather
-// than once per poll.
+// the lab's inventory, which names the nodes at their forwarded ports, and the secrets file. The
+// wait for the bootstrap polls with the client file, so an encrypted secrets file is decrypted
+// once per command rather than once per poll.
 func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) error {
 	inventory := filepath.Join(dir, inventoryFile)
 	cluster := []string{"--inventory", inventory, "--secrets", f.secrets}
@@ -398,7 +397,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, dir string, l *lab.Lab) 
 			return fmt.Errorf("%s: %w", n.Name, err)
 		}
 		fmt.Fprintf(a.stdout, "%s runs in maintenance mode with the certificate fingerprint %s\n", n.Name, fp)
-		if err := a.chalkctl(ctx, a.stdout, append([]string{"install", n.Name, "--fingerprint", fp, "--sign-cert", filepath.Join(dir, "keys", "db.crt")}, cluster...)...); err != nil {
+		if err := a.chalkctl(ctx, a.stdout, append([]string{"install", n.Name, "--fingerprint", fp}, cluster...)...); err != nil {
 			return fmt.Errorf("install %s: %w", n.Name, err)
 		}
 	}

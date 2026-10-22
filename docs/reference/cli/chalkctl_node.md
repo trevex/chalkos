@@ -25,6 +25,6 @@ Manages the node certificate of an installed node. Its command needs the secrets
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
 * [chalkctl node renew](chalkctl_node_renew.md)	 - Issue a node a new node certificate, also once its own expired
 

@@ -21,8 +21,9 @@ against the schemas of the image it installs, a node certificate, the OS CA, the
 encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
 Kubernetes share. A node that runs its image already installs in place. A node that runs the
 installer gets the image as well: --image, or the directory of the node's image in the inventory,
-signed for Secure Boot with --sign-key and --sign-cert when given. The installer writes it to the
-disk the node's SystemDisk names: a disk on which blkid finds no signature, or one holding an
+signed with chalkbuild sign when the machine enforces Secure Boot. The installer checks the UKI
+and the boot loader against the firmware's db and dbx and writes the image to the disk the node's
+SystemDisk names: a disk on which blkid finds no signature, or one holding an
 unfinished install of the node, which it continues; any other disk only with --wipe-disk. The node
 reboots into the installed image. The node certificate carries the node's name in the inventory,
 which stays the node's name until it is reinstalled. The command needs the secrets file.
@@ -38,10 +39,9 @@ chalkctl install <node> [flags]
   chalkctl install cp1 --secrets secrets.age \
     --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
-  # Install w1 at an address of the network it booted into, with a prebuilt image, which
-  # chalkctl signs.
+  # Install w1 at an address of the network it booted into, with an image chalkbuild signed.
   chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --insecure \
-    --image ./worker-image --sign-key db.key --sign-cert db.crt
+    --image ./worker-image
 ```
 
 ## Options
@@ -56,12 +56,10 @@ chalkctl install <node> [flags]
       --inventory string       inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --password-file string   file holding the password of a node whose fallback is a password
       --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
-      --sign-cert string       PEM certificate of the Secure Boot db signer, to check the image's signatures against before it is sent
-      --sign-key string        PEM key of the Secure Boot db signer, to sign the image's UKI and boot loader
       --wipe-disk              let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data
 ```
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
 

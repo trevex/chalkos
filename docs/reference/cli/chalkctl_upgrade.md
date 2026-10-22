@@ -58,9 +58,8 @@ chalkctl upgrade [flags]
   # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
 
-  # Upgrade the nodes that run an image's variant, two at a time, with a prebuilt image, which
-  # chalkctl signs.
-  chalkctl upgrade --image ./worker-image --max-unavailable 2 --sign-key db.key --sign-cert db.crt
+  # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
+  chalkctl upgrade --image ./worker-image --max-unavailable 2
 ```
 
 ## Options
@@ -81,12 +80,10 @@ chalkctl upgrade [flags]
       --password-file string   file holding the password of a node whose fallback is a password
       --retry-failed           install an image again, once, on nodes that fell back from it
       --secrets string         secrets file, encrypted with age or not, or - to read it from standard input
-      --sign-cert string       PEM certificate of the Secure Boot db signer, to check the images' signatures against before they are sent
-      --sign-key string        PEM key of the Secure Boot db signer, to sign the images' UKIs
       --timeout duration       how long to wait for each node to come back healthy and for its drain (default 30m0s)
 ```
 
 ## SEE ALSO
 
-* [chalkctl](chalkctl.md)	 - Sign, install and operate chalkos clusters
+* [chalkctl](chalkctl.md)	 - Install and operate chalkos clusters
 
