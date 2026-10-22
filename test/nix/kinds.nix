@@ -797,16 +797,20 @@ lib.runTests {
   # naming the file it writes after the template or program.
   testRenderers =
     let
-      config = withBird {
-        chalkos.outputs = {
-          t.render = libChalkos.render.template ../../modules/testing/greeting.tmpl;
-          d.render = libChalkos.render.documents [
-            "Peer"
-            "Link"
-          ];
-          j.render = libChalkos.render.jq (builtins.toFile "bird.conf.jq" ".");
-        };
-      };
+      config = withBird (
+        { pkgs, ... }:
+        {
+          chalkos.outputs = {
+            t.render = libChalkos.render.template ../../modules/testing/greeting.tmpl;
+            d.render = libChalkos.render.documents [
+              "Peer"
+              "Link"
+            ];
+            j.render = libChalkos.render.jq (builtins.toFile "bird.conf.jq" ".");
+            p.render = pkgs.writeShellScript "r" "true";
+          };
+        }
+      );
       render = name: (outputsOf config).${name}.render;
     in
     {
@@ -817,24 +821,40 @@ lib.runTests {
         );
         documents = builtins.match ".*/bin/chalkos-render (documents Peer Link)" (render "d");
         jq = lib.hasSuffix "-chalkos-render-jq-bird.conf" (render "j");
+        package = lib.hasPrefix "/nix/store/" (render "p");
       };
       expected = {
         value.documents = [ "Peer" ];
         template = [ "greeting" ];
         documents = [ "documents Peer Link" ];
         jq = true;
+        package = true;
       };
     };
-  # An attribute set that is none of lib.chalkos's renderers fails the evaluation.
+  # An attribute set that is none of lib.chalkos's renderers, or a mix of more than one, fails the
+  # evaluation.
   testUnknownRendererFails = {
-    expr = fails (
-      outputsOf (withBird {
-        chalkos.outputs.t.render = {
-          python = "x.py";
-        };
-      })
-    );
-    expected = true;
+    expr = {
+      unknownKey = fails (
+        outputsOf (withBird {
+          chalkos.outputs.t.render = {
+            python = "x.py";
+          };
+        })
+      );
+      twoKeys = fails (
+        outputsOf (withBird {
+          chalkos.outputs.t.render = {
+            jq = "a.jq";
+            template = "a.tmpl";
+          };
+        })
+      );
+    };
+    expected = {
+      unknownKey = true;
+      twoKeys = true;
+    };
   };
   # lib.chalkos's effects act on units when outputs or the documents of kinds change.
   testEffectHelpers = {

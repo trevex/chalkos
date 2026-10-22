@@ -42,7 +42,12 @@ let
     else if lib.attrNames r == [ "documents" ] then
       "${lib.getExe chalkos-render} documents ${lib.concatStringsSep " " r.documents}"
     else
-      throw "${where}: a renderer is a command or one of lib.chalkos.render.template, .jq and .documents, not an attribute set of ${lib.concatStringsSep ", " (lib.attrNames r)}";
+      throw "${where}: a renderer is a command or one of lib.chalkos.render.template, .jq and .documents, not ${
+        if lib.attrNames r == [ ] then
+          "an empty attribute set"
+        else
+          "an attribute set of ${lib.concatStringsSep ", " (lib.attrNames r)}"
+      }";
 
   # Every kind of chalkos.kinds, and networkd's, whose names chalkos.kinds may not take.
   declaredKinds = lib.attrNames config.chalkos.kinds ++ [
@@ -133,9 +138,13 @@ let
           description = "Config kinds, by name as for a grant, whose documents the renderer reads.";
         };
         render = lib.mkOption {
-          type = lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
-            lib.types.attrsOf lib.types.raw
-          );
+          type =
+            lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
+              lib.types.attrsOf lib.types.raw
+            )
+            // {
+              description = "command, package or lib.chalkos.render value";
+            };
           example = lib.literalExpression "lib.chalkos.render.template ./bird.conf.tmpl";
           description = ''
             Program of the image's store, with its arguments, that renders the output. It reads

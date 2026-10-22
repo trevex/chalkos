@@ -1932,7 +1932,7 @@ or that holds null, prints as nothing\.
 
 
 *Type:*
-(non-empty string or package convertible to it) or attribute set of raw value
+command, package or lib\.chalkos\.render value
 
 
 
