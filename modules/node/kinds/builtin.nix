@@ -1,7 +1,7 @@
-# The kinds every image accepts: the node's host name, secrets, storage, time and, on images with
-# Kubernetes, the cluster's Kubernetes settings with its API server's endpoint, registry mirrors
-# and manifests and the node's type and its kubelet's settings. chalkd translates them into the
-# node's identity and its Kubernetes cluster.
+# The kinds every image accepts: the node's host name, secrets, registry credentials, storage,
+# time and, on images with Kubernetes, the cluster's Kubernetes settings with its API server's
+# endpoint, registry mirrors and manifests and the node's type and its kubelet's settings. chalkd
+# translates them into the node's identity and its Kubernetes cluster.
 {
   config,
   lib,
@@ -241,6 +241,38 @@ in
       spec.data = mkOption {
         type = types.attrsOf types.str;
         description = "Secret values by key, which secretRef fields of other documents name.";
+      };
+    };
+    Registry = builtin "chalkos.dev" // {
+      multiple = true;
+      # chalkd authenticates a pull with the Registry of the image's host, so a host has one; it
+      # sends a user and a password together, so a Registry gives both or neither.
+      rules = [
+        {
+          rule = "documents.all(n, documents.all(m, n == m || documents[n].spec.host != documents[m].spec.host))";
+          messageExpression = ''"the Registry documents " + documents.filter(n, documents.exists(m, m != n && documents[m].spec.host == documents[n].spec.host)).join(", ") + " name the same host; give one Registry per host"'';
+        }
+        {
+          rule = "documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))";
+          messageExpression = ''documents.filter(n, (documents[n].spec.username == null) != (documents[n].spec.password == null)).map(n, "Registry " + n).join(", ") + ": give username and password together, or neither to pull anonymously"'';
+        }
+      ];
+      spec = {
+        host = mkOption {
+          type = types.strMatching "${host}(:[0-9]+)?";
+          example = "ghcr.io";
+          description = "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls the images of this host with the Registry's credentials.";
+        };
+        username = mkOption {
+          type = types.nullOr types.nonEmptyStr;
+          default = null;
+          description = "User chalkd authenticates to the registry as, with the password; null pulls anonymously.";
+        };
+        password = mkOption {
+          type = types.nullOr lib.chalkos.types.secretRef;
+          default = null;
+          description = "Password or token of the user, from a Secret; null pulls anonymously.";
+        };
       };
     };
     SystemDisk = builtin "storage.chalkos.dev" // {

@@ -29,6 +29,20 @@ A node's config holds at most one.
 | --- | --- | --- | --- |
 | `spec.hostname` | string or null | `null` | Host name set at boot; null takes the node's name in the inventory. |
 
+## Registry { #registry }
+
+`apiVersion: chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own.
+
+It has 2 [change rules](../concepts/rules.md).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.host` | string | required | Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls the images of this host with the Registry's credentials. |
+| `spec.password` | secret reference or null | `null` | Password or token of the user, from a Secret; null pulls anonymously. |
+| `spec.username` | string or null | `null` | User chalkd authenticates to the registry as, with the password; null pulls anonymously. |
+
 ## Secret { #secret }
 
 `apiVersion: chalkos.dev/v1alpha1`

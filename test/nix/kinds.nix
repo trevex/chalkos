@@ -513,6 +513,7 @@ lib.runTests {
       "NetDev"
       "Network"
       "Node"
+      "Registry"
       "RegistryMirror"
       "Secret"
       "SystemDisk"
@@ -532,6 +533,10 @@ lib.runTests {
       "RegistryMirror"
     ] (kindNames plainImage);
     expected = [ ];
+  };
+  testImageWithoutKubernetesHasRegistry = {
+    expr = lib.elem "Registry" (kindNames plainImage);
+    expected = true;
   };
   # Flannel is a kind only where flannel is the pod network.
   # Registries and mirrors as containerd takes them: IPv6 hosts in brackets, and mirrors without a
@@ -642,6 +647,7 @@ lib.runTests {
       "Cluster"
       "Addon"
       "Node"
+      "Registry"
       "RegistryMirror"
       "Secret"
       "SystemDisk"
@@ -654,6 +660,7 @@ lib.runTests {
       "kubernetes.chalkos.dev_v1alpha1_Cluster.json"
       "kubernetes.chalkos.dev_v1alpha1_Addon.json"
       "kubernetes.chalkos.dev_v1alpha1_Node.json"
+      "chalkos.dev_v1alpha1_Registry.json"
       "kubernetes.chalkos.dev_v1alpha1_RegistryMirror.json"
       "chalkos.dev_v1alpha1_Secret.json"
       "storage.chalkos.dev_v1alpha1_SystemDisk.json"

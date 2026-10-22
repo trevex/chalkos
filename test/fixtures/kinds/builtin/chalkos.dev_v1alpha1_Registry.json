@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Registry"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "Host of the registry as image references name it, with its port unless it is 443; an IPv6 address in brackets. chalkd pulls the images of this host with the Registry's credentials.",
+          "examples": [
+            "ghcr.io"
+          ],
+          "pattern": "^(?:([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:.]+])(:[0-9]+)?)$",
+          "type": "string"
+        },
+        "password": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "secretRef": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "secretRef"
+              ],
+              "type": "object",
+              "x-chalkos-secret-ref": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Password or token of the user, from a Secret; null pulls anonymously."
+        },
+        "username": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "User chalkd authenticates to the registry as, with the password; null pulls anonymously."
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Registry",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "chalkos.dev",
+    "kind": "Registry",
+    "multiple": true,
+    "rules": [
+      {
+        "messageExpression": "\"the Registry documents \" + documents.filter(n, documents.exists(m, m != n && documents[m].spec.host == documents[n].spec.host)).join(\", \") + \" name the same host; give one Registry per host\"",
+        "rule": "documents.all(n, documents.all(m, n == m || documents[n].spec.host != documents[m].spec.host))",
+        "takes": "refuse"
+      },
+      {
+        "messageExpression": "documents.filter(n, (documents[n].spec.username == null) != (documents[n].spec.password == null)).map(n, \"Registry \" + n).join(\", \") + \": give username and password together, or neither to pull anonymously\"",
+        "rule": "documents.all(n, (documents[n].spec.username == null) == (documents[n].spec.password == null))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

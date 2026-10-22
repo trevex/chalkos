@@ -109,3 +109,11 @@ type registryMirrorSpec struct {
 type addonSpec struct {
 	Objects []map[string]any `json:"objects"`
 }
+
+type registrySpec struct {
+	Host     string  `json:"host"`
+	Username *string `json:"username"`
+	Password *struct {
+		SecretRef SecretRef `json:"secretRef"`
+	} `json:"password"`
+}
