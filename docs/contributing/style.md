@@ -301,7 +301,8 @@ Commands, options and API methods link to their generated page on first use per 
   | --- | --- |
   | `osCA` | `options.md#osca` |
   | `variants.<name>.modules` | `options.md#variantsmodules` |
-  | `chalkos.consumers.<name>.restart.when` | `options.md#chalkosconsumersrestartwhen` |
+  | `chalkos.effects.<name>.when` | `options.md#chalkoseffectswhen` |
+  | `systemd.services.<name>.chalkos.kinds` | `options.md#systemdserviceschalkoskinds` |
   | `chalkos.kubernetes.images.etcd` | `options.md#chalkoskubernetesimagesetcd` |
 
 - An API anchor is a prefix and the name in lower case, with dots removed: `method-` for

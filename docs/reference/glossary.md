@@ -122,14 +122,6 @@ kinds. On the node, chalkd writes each document except `Secret`s and `Addon`s to
 `/run/chalkos/config/<group>/<Kind>/<name>.json`. See
 [Config and the inventory](../concepts/config.md#what-is-a-config-document).
 
-## Consumer { #consumer }
-
-A unit that reads [config](#config) kinds, or that a delivery restarts or reloads, as
-[`chalkos.consumers`](options.md#chalkosconsumers) declares it. Its restart and reload rules,
-CEL expressions like a [change rule](#change-rule), say which changes act on it; by default a
-unit restarts when a document of its kinds changes. See
-[Change rules and facts](../concepts/rules.md#which-units-does-a-change-restart-or-reload).
-
 ## Contract { #contract }
 
 What an image accepts as [config](#config): the variant and platform it was built for, the JSON
@@ -160,6 +152,14 @@ The kernel's block-level integrity check: each block of the [store](#store) is h
 hash tree whose top is the [root hash](#root-hash), and a block that does not match fails to
 read. See [The image](../concepts/image.md).
 
+## Effect { #effect }
+
+What a delivery does to the node's services once it is applied: restart or reload units, run a
+command or act on chalkd's loops, as [`chalkos.effects`](options.md#chalkoseffects) declares it.
+An effect fires when one of its [outputs](#output) changed, or when its CEL rule, like a
+[change rule](#change-rule), holds. See
+[Outputs and effects](../concepts/outputs-and-effects.md#what-is-an-effect).
+
 ## ESP { #esp }
 
 The EFI system partition, a FAT file system at the start of the system disk. It holds
@@ -178,9 +178,9 @@ chalkos](../concepts/kubernetes.md).
 
 NixOS modules outside chalkos, in a [variant](#variant)'s modules, that add services to its images
 and may declare config [kinds](#kind) under [`chalkos.kinds`](options.md#chalkoskinds), whose
-documents a node's YAML files then carry. The services read those documents with
-[chalkcfg](#chalkcfg) and restart when they change. chalkos's own Kubernetes support declares its
-kinds and consumers the same way. See
+documents a node's YAML files then carry. The services read those documents through a
+[grant](#grant) or as [outputs](#output) rendered from them, and [effects](#effect) restart them
+when they change. chalkos's own Kubernetes support declares its kinds and effects the same way. See
 [Variants and platforms](../concepts/variants.md#how-does-an-extension-add-a-kind).
 
 ## Fact { #fact }
@@ -204,6 +204,14 @@ node counts itself. The image and an install write generation 1; each [upgrade](
 the one above the highest on the ESP, so systemd-boot, which orders a node's UKIs by file name,
 boots the image installed last first, older or newer. See
 [Boot, health and rollback](../concepts/boot-and-rollback.md#how-does-systemd-boot-choose-an-entry).
+
+## Grant { #grant }
+
+The [config](#config) kinds a unit reads at runtime, as
+[`systemd.services.<unit>.chalkos.kinds`](options.md#systemdserviceschalkoskinds) declares them:
+chalkd writes their documents below `/run/chalkos/config` and the values their `secretRef` fields
+name into the unit's credentials. A grant restarts nothing; an [effect](#effect) does. See
+[Outputs and effects](../concepts/outputs-and-effects.md#what-does-a-grant-give-a-unit).
 
 ## Health check { #health-check }
 
@@ -269,8 +277,7 @@ The type of a [config document](#config-document), named by its `kind` and the g
 of its `apiVersion`. chalkos declares its own kinds in `chalkos.dev` and its subdomains; an
 [extension](#extension) declares more under [`chalkos.kinds`](options.md#chalkoskinds) in a
 variant's NixOS modules, with a group of its own. An image accepts the kinds its modules declare
-and refuses any other. A unit reads the documents of the kinds it names under
-[`chalkos.consumers`](options.md#chalkosconsumers). See
+and refuses any other. A unit reads the documents of the kinds it is [granted](#grant). See
 [Config and the inventory](../concepts/config.md#which-kinds-are-there) and
 [Config kinds](kinds.md).
 
@@ -352,6 +359,13 @@ The root certificate authority of a cluster's node API: chalkd and chalkctl trus
 certificates that chain to it. It lives in the [secrets file](#secrets-file), is valid for ten
 years and signs the [node CA](#node-ca) and client certificates. See
 [Certificates](../concepts/certificates.md).
+
+## Output { #output }
+
+A set of config files for a service, rendered from documents by a program of the image's store
+and checked before a delivery changes the node, as [`chalkos.outputs`](options.md#chalkosoutputs)
+declares it. chalkd renders every output again at boot. See
+[Outputs and effects](../concepts/outputs-and-effects.md#what-is-an-output).
 
 ## PCR 7 { #pcr-7 }
 

@@ -202,6 +202,7 @@ and hands the value to a unit on that node:
   config,
   lib,
   pkgs,
+  chalkosLib,
   ...
 }:
 {
@@ -214,9 +215,16 @@ and hands the value to a unit on that node:
       description = "Rack and height unit the node is mounted in.";
     };
   };
-  # chalkd writes the node's Rack below /run/chalkos/config and restarts the unit when it changes.
-  chalkos.consumers.rack-location.kinds = [ "Rack" ];
+  # The node's Rack as a file, an output that changes when the Rack does, which restarts the
+  # unit.
+  chalkos.outputs.rack = {
+    inputs = [ "Rack" ];
+    render = chalkosLib.render.documents [ "Rack" ];
+  };
+  chalkos.effects.rack-location = chalkosLib.restartOn [ "rack" ] [ "rack-location.service" ];
   systemd.services.rack-location = {
+    # chalkd writes the node's Rack below /run/chalkos/config for it.
+    chalkos.kinds = [ "Rack" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";
@@ -233,7 +241,7 @@ and hands the value to a unit on that node:
 }
 ```
 
-The module does three things:
+The module does four things:
 
 - [`chalkos.kinds.Rack`](../reference/options.md#chalkoskinds) declares the kind: its group,
   version and the options of its `spec`. The image turns the options into a JSON Schema, which
@@ -241,9 +249,11 @@ The module does three things:
   chalkd accept `Rack` documents and refuse a misspelled field. A kind's group is a DNS name
   outside `chalkos.dev`, which chalkos keeps for its own kinds, and only option types the schema
   converter knows are allowed; another type fails the build, naming the option.
-- [`chalkos.consumers`](../reference/options.md#chalkosconsumers) names the unit that reads the
-  kind, so chalkd restarts it when a `Rack` document changes, unless the consumer's
-  [`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) rule says otherwise.
+- [`systemd.services.<unit>.chalkos.kinds`](../reference/options.md#systemdserviceschalkoskinds)
+  grants the unit the kind, so chalkd writes its documents for the unit to read.
+- [`chalkos.outputs`](../reference/options.md#chalkosoutputs) renders the `Rack` documents into
+  an output and [`chalkos.effects`](../reference/options.md#chalkoseffects) restarts the unit
+  when that output changes, as [Outputs and effects](outputs-and-effects.md) describes.
 - [`chalkos.kinds.<Kind>.get`](../reference/options.md#chalkoskindsget) builds the
   [chalkcfg](../reference/glossary.md#chalkcfg) command that prints the value. The evaluation
   checks the path `spec.location` against the kind's options, so a typo fails the build instead of
@@ -256,9 +266,9 @@ reference a `Secret`. Only images of a variant that carries the module accept `R
 so a node of another variant refuses a config that holds one.
 
 An extension's own image options live under a namespace of its own, such as `rack.*` or
-`chalkos.rack.*`. Under `chalkos`, the names chalkos declares are taken: `cni`, `consumers`,
-`debug`, `disk`, `kernel`, `kinds`, `kubernetes`, `maintenance`, `platform`, `upgrade` and
-`variant`.
+`chalkos.rack.*`. Under `chalkos`, the names chalkos declares are taken: `cni`, `debug`,
+`disk`, `effects`, `facts`, `kernel`, `kinds`, `kubernetes`, `maintenance`, `outputs`,
+`platform`, `upgrade` and `variant`.
 
 ## Where does the OS CA come from?
 

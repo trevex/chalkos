@@ -212,7 +212,7 @@ The name feeds:
 - the seed of the node's partition UUIDs, as [Storage and encryption](storage.md) describes;
 - the node's [recovery key](../reference/glossary.md#recovery-key), derived from the secrets file
   and the name;
-- the `node.name` of the [change rules](rules.md) and the consumers' rules.
+- the `node.name` of the [change rules](rules.md), the effects and the renderers of outputs.
 
 A node keeps its name for its whole life. Renaming one takes a reinstall, because its etcd member,
 its certificates and its recovery key carry the old name.
@@ -464,16 +464,18 @@ starts, and chalkd applies a new set the same way after every `apply-config` to 
 - it writes the Kubernetes configuration chalkd and the kubelet read;
 - it writes each document to `/run/chalkos/config/<group>/<Kind>/<name>.json`, except `Secret`
   and `Addon` documents;
-- it writes, for each service that reads config, the values that the `secretRef` fields of its
-  kinds name into the service's credentials.
+- it writes, for each unit granted kinds, the values that the `secretRef` fields of those kinds
+  name into the unit's credentials;
+- it renders the image's outputs, which a delivery checks before it changes anything, as
+  [Outputs and effects](outputs-and-effects.md#what-happens-on-a-delivery) describes.
 
 The storage section is machine state: only chalkd writes `storage.json`, when a config that
 changes the storage is delivered, and every boot sets up the volumes it records.
 
-A service declares the kinds it reads under
-[`chalkos.consumers`](../reference/options.md#chalkosconsumers) in its image's modules. It reads
-their documents as files below `/run/chalkos/config`, or with
-[chalkcfg](../reference/glossary.md#chalkcfg), whose commands
+A service reads the node's config in one of two ways. A grant,
+[`systemd.services.<unit>.chalkos.kinds`](../reference/options.md#systemdserviceschalkoskinds) in
+its image's modules, gives the unit the documents of the kinds it names, as files below
+`/run/chalkos/config` or through [chalkcfg](../reference/glossary.md#chalkcfg), whose commands
 [`chalkos.kinds.<Kind>.get`](../reference/options.md#chalkoskindsget) builds with a path the
 image's evaluation checks:
 
@@ -482,23 +484,17 @@ $ chalkcfg get Rack rack -o jsonpath='{.spec.location}'
 rack-a/u12
 ```
 
-chalkcfg runs on the node, from a consumer's unit or a privileged pod. It prints no `Secret` and no
+chalkcfg runs on the node, from a granted unit or a privileged pod. It prints no `Secret` and no
 `Addon` document: `Addon` documents stay in the stored set, readable by root alone, and only a
 control plane's chalkd applies their objects.
 
-When `apply-config` changes a document of a service's kinds, or a `Secret` one of them references,
-chalkd restarts the service, as its
-[`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) rule says by default;
-another rule restarts it on other changes, `restart.when = "false"` keeps it running, and
-`reload` reloads it instead, as
-[Change rules and facts](rules.md#which-units-does-a-change-restart-or-reload) describes. It
-restarts a service that runs or stays active after it ran, and starts a failed one again, since
-the new config may be what it lacked; a service that never started or was stopped stays so.
-`apply-config` prints the units it restarted.
-chalkos's own renderings have consumers too: networkd reloads when a `Network`, `NetDev` or `Link`
-document changes, or a `Secret` one of them references, chrony reloads its sources when the
-`TimeSync`'s servers change, and chalkd restarts the kubelet when the node's Kubernetes settings
-change.
+An output, [`chalkos.outputs`](../reference/options.md#chalkosoutputs), renders the service's
+config files from the documents instead, and chalkd checks them before a delivery changes
+anything, so a document the service would reject is refused with the delivery. An effect,
+[`chalkos.effects`](../reference/options.md#chalkoseffects), restarts or reloads the service
+when its outputs change, or when a CEL rule holds; a grant restarts nothing.
+[Outputs and effects](outputs-and-effects.md) describes both, the effects chalkos declares for
+networkd, chrony and the kubelet among them. `apply-config` prints the units it restarted.
 
 ## How do secrets reach a service?
 
@@ -519,9 +515,11 @@ its keys instead of holding the value, written as
 reference names a `Secret` or key the set lacks.
 
 On the node, chalkd keeps `Secret` documents in a directory of STATE readable by root alone and
-never writes them below `/run/chalkos/config`. A service that reads a kind with a reference gets
-the value as its systemd credential `secret_<secret>.<key>`, here `secret_bgp.password`, and no
-other service sees it. Status, chalkcfg and the config's hash never show a secret value.
+never writes them below `/run/chalkos/config`. A unit granted a kind with a reference gets the
+value as its systemd credential `secret_<secret>.<key>`, here `secret_bgp.password`, and no
+other service sees it. An output's renderer sees the reference alone, so a rendered file that
+needs the value names the credential. Status, chalkcfg and the config's hash never show a secret
+value.
 
 ## How does status compare a node with its config?
 

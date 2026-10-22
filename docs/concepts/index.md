@@ -20,6 +20,9 @@ each other in this order:
   inventory gives them out, and how chalkctl and chalkd check and apply them.
 - [Change rules and facts](rules.md): the CEL rules with which an image decides which config
   changes a node accepts, and the node state they read.
+- [Outputs and effects](outputs-and-effects.md): how a node renders and checks its services'
+  config files before a delivery changes anything, and which deliveries restart or reload a
+  service.
 - [The image](image.md): the erofs store on dm-verity, the signed UKI and the A/B slots.
 - [Boot, health and rollback](boot-and-rollback.md): how a node boots, decides whether a boot is
   healthy, and falls back from an image that is not.

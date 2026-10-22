@@ -13,8 +13,8 @@ reinstall instead, and says so in its message. The image's own kinds and the kin
 modules, so what a node accepts is part of the image and changes with an upgrade. A rule that
 needs the node's state, such as what its disks hold, reads it from a
 [fact](../reference/glossary.md#fact): the JSON of a file, or of a program of the image's store.
-The units that read the config, chalkos's own among them, declare in rules of the same kind
-which changes restart or reload them.
+The effects that restart or reload the node's services, chalkos's own among them, declare in
+rules of the same kind which changes fire them.
 
 ## Where are rules declared?
 
@@ -212,101 +212,42 @@ extensions of cel-go, and chalkos's address and size functions:
 | `bytes(s)` | A size such as `1G` or `512M` in bytes, an int, with the suffixes powers of 1024 as in repart. It takes the place of CEL's conversion of a string to bytes. |
 | `isSize(s)` | Whether `bytes(s)` reads `s`: digits with an optional K, M, G, T or P suffix, below 8 EiB. A recorded section an older image wrote can hold a size that `bytes` does not read. |
 
-## Which units does a change restart or reload?
+## Which changes restart or reload a unit?
 
-A unit under [`chalkos.consumers`](../reference/options.md#chalkosconsumers), one that reads
-config kinds or that a delivery acts on, has a restart rule and a reload rule: CEL expressions
-that are true when a delivery restarts or reloads the unit. bird reads its peers again on
-`birdc configure`, which keeps the sessions a restart would drop:
+A delivery restarts or reloads a unit by an [effect](outputs-and-effects.md#what-is-an-effect),
+which fires when an output it names changed or when its `when` rule holds. A `when` rule is CEL
+like a change rule and serves a trigger that no output renders, here the node's Kubernetes share:
 
 ```nix
-chalkos.consumers.bird = {
-  kinds = [ "Peer" ];
-  restart.when = "false";
-  reload = {
-    when = ''"Peer" in changedKinds'';
-    command = "${pkgs.bird2}/bin/birdc configure";
-  };
+chalkos.effects.cert-agent = {
+  when = "facts.share != oldFacts.share";
+  restart = [ "cert-agent.service" ];
 };
 ```
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| [`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) | `"<kind>" in changedKinds \|\| …` for each of the unit's kinds; `false` without kinds | When a delivery restarts the unit. |
-| [`restart.start`](../reference/options.md#chalkosconsumersrestartstart) | `false` | Whether a restart starts the unit too when it does not run. |
-| [`reload.when`](../reference/options.md#chalkosconsumersreloadwhen) | `false` | When a delivery reloads the unit. |
-| [`reload.command`](../reference/options.md#chalkosconsumersreloadcommand) | `systemctl reload <unit>` | The command that reloads it. |
-
-They see `config` and `oldConfig`, the config the node runs once the delivery is applied and the
+It sees `config` and `oldConfig`, the config the node runs once the delivery is applied and the
 running slot's config before it, in the shape change rules see them, `node.name` as change rules
 see it, and these:
 
 | Variable | Value |
 | --- | --- |
-| `changedKinds` | The names of the kinds whose documents differ between the two configs, or a `Secret` that one of their `secretRef` fields names. |
 | `facts.<name>` | The fact once the delivery is applied. |
 | `oldFacts.<name>` | The fact before the delivery changed anything. |
 
-`changedKinds` tells what `config` and `oldConfig` alone do not: which `Secret`s a kind's
-documents reference is in the kind's schema, and a unit reads their values as its credentials.
 chalkd loads the facts the rules read before a delivery changes anything, and again once it is
 applied, so a rule compares a file that the delivery writes, such as the node's Kubernetes share.
-
-Delivery is idempotent: a delivery that changes nothing the rules compare takes no effect. The
-same config delivered again restarts no unit, and the same share delivered again restarts neither
-the kubelet nor chalkd's loops, since the share fact before and after it is the same.
-
-chalkd evaluates every consumer's rules once it has applied a delivery, after it stored the config
-in the running slot, also for a delivery without config, as of a share:
-
-1. It reloads each unit whose reload rule is true and that runs, with its command. A unit that
-   does not run reads its config when it starts, and a unit whose restart rule is true too is
-   restarted instead.
-2. It restarts each unit whose restart rule is true: in one `systemctl try-restart` the units that
-   run, or ran and stay active, so a unit that never started or was stopped stays so; in one
-   `systemctl restart` those with `restart.start` set; and with `systemctl reset-failed` and
-   `restart` those that failed, since the new config may be what they lacked.
-
-A rule that cannot be evaluated counts as true: a unit restarts once more than it needed to rather
-than run on config it has not read. Its error, which shows none of the values the rule read, goes
-to the node's journal and back to the client as a warning.
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) prints the restarted units and
-the warnings. A reload or restart that fails fails the delivery, and the error names the units to
-reload or restart by hand.
-
-Until a delivery is applied whole, the rules compare with the state from before the first delivery
-that failed part way, not with what that delivery wrote: chalkd records that state's config and
-the facts its rules read in `/run/chalkd/effects-baseline.json`, readable by root alone, with
-`Secret` values as their hashes and facts as their definitions keep them. A retry, or another
-delivery, takes every effect of the failed delivery again, the reloads and restarts that succeeded
-included, and acts on chalkd's loops again. It writes the running slot's config for its consumers
-first, also when it delivers no config of its own, such as a share. The delivery that succeeds
-removes the file, and one refused before it changed anything leaves it as it was. chalkd refuses a
-delivery whose file it cannot write, before the delivery changes anything, and logs a file it
-cannot read and replaces it with the running slot's state. A reboot clears the file, since every
-unit starts at boot.
-
-A consumer named `chalkd` is chalkd itself, which acts on its rules in-process: a reload starts
-the control plane's loop again, which reads the share and applies the control plane's objects, and
-a restart every Kubernetes loop, which read the cluster when they start. It acts on them also
-when a delivery fails part way, as when it cannot write the cluster file, the node certificate,
-the share, the slot or the consumers' config: the rules compare the cluster file and the share
-its loops read as they are by then. The built-in consumers are these:
-
-| Unit | Rules |
-| --- | --- |
-| `systemd-networkd` | Reloads with `networkctl reload` when a `Network`, `NetDev` or `Link` document changes, or a `Secret` one of them references, or when the units chalkd writes differ from those before the delivery. |
-| `chronyd` | Reloads with `chronyc reload sources` when the `TimeSync`'s servers change, or the sources file chalkd writes differs from the one before the delivery. |
-| `chalkos-chrony-dhcp`, `chalkos-controlplane`, `chalkos-registry-mirrors` | Restart when a document of their kinds changes: `TimeSync`, `Node` and `RegistryMirror`. |
-| `chalkos-kubernetes`, `kubelet` | Restart, and start when they do not run, when the `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. On images with Kubernetes. |
-| `chalkd` | Restarts its Kubernetes loops when the cluster changes, and reloads the control plane's loop when the share changes beyond its node CA or, on a control plane, the objects of the `Addon` documents. On images with Kubernetes. |
+Delivery is idempotent: a delivery that changes nothing the rules compare takes no effect, so the
+same share delivered again restarts neither the kubelet nor chalkd's loops.
+[Outputs and effects](outputs-and-effects.md) describes when chalkd takes the effects, how it
+restarts and reloads units, and the effects chalkos declares itself.
 
 ## How is a rule checked when the image is built?
 
-The image build runs `chalkos-rules check` over the image's schemas, facts and consumers, and
-fails on any rule that does not parse or type-check, a consumer's rules among them, on a rule
-that reads a fact the image does not declare and on a command fact that is no program of the
-store. It also refuses a rule whose estimated cost
+The image build runs `chalkos-rules check` over the image's schemas, facts, effects and outputs,
+and fails on any rule that does not parse or type-check, the effects' `when` rules among them, on
+a rule that reads a fact the image does not declare and on a command fact that is no program of
+the store; [Outputs and effects](outputs-and-effects.md#how-is-an-image-checked-when-it-is-built)
+lists what it checks of the outputs. It also refuses a rule whose estimated cost
 exceeds 10,000,000, estimated with 256 elements in every list, map and string, which a loop over
 a kind's documents inside another loop over them fits and a third nested loop does not. A rule is
 stopped at a cost of 1,000,000 on the config it meets.
@@ -324,7 +265,7 @@ stopped at a cost of 1,000,000 on the config it meets.
 | `Volume` | No volume the machine records is left out. | reinstall |
 | `Volume` | A new encrypted volume comes with the fallback secret, which opens the node's fallback keyslot. | refuse |
 
-They, and the rules of the built-in consumers, read these facts:
+They, and the rules of the built-in effects, read these facts:
 
 | Fact | Source | Value |
 | --- | --- | --- |
@@ -341,7 +282,7 @@ They, and the rules of the built-in consumers, read these facts:
 - A rule binds `self` to a path through the properties of objects, so it cannot be declared on the
   items of a list or the values of a map; it is declared on the list or the map, which a kind's
   rule or a field's rule compares whole. Lists are not matched item by item by a key.
-- A consumer's rule compares documents as written, so a change that makes no difference to the
+- An effect's rule compares documents as written, so a change that makes no difference to the
   unit still counts: an `Address=` value whose prefix length alone changes restarts the kubelet,
   and adding a `TimeSync` that names chalkos's own servers reloads chrony's sources.
 - Rules compare the config with the running image's config alone. The one check that reads another
@@ -368,6 +309,7 @@ They, and the rules of the built-in consumers, read these facts:
 - [Storage and encryption](storage.md) for what the storage rules protect.
 - [Customise the image](../guides/customise-image.md#add-a-rule-and-a-fact-to-a-kind) for a rule and
   a fact on an extension's kind.
+- [Outputs and effects](outputs-and-effects.md) for what a delivery restarts or reloads.
 - [`chalkos.kinds`](../reference/options.md#chalkoskinds),
   [`chalkos.facts`](../reference/options.md#chalkosfacts) and
-  [`chalkos.consumers`](../reference/options.md#chalkosconsumers) for the options.
+  [`chalkos.effects`](../reference/options.md#chalkoseffects) for the options.

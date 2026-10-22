@@ -83,7 +83,8 @@ chalkctl delivers the documents at install and with
 cluster from its `Node`, `Cluster` and `Flannel` documents and `image.json` into
 `/run/chalkos/kubernetes/cluster.json`, at boot and on every apply.
 
-A changed cluster restarts `chalkos-kubernetes` and the kubelet, as their consumers' rules say,
+A changed cluster restarts `chalkos-kubernetes` and the kubelet, as their
+[effect](outputs-and-effects.md#which-effects-does-chalkos-declare) says,
 and chalkd on a control plane starts its Kubernetes work again, so the static pods and add-ons
 follow the new settings. Some settings are fixed once the cluster exists: `ipFamilies`, the pod
 ranges of `podCIDRs`, the service ranges of `serviceCIDRs` and the addresses of `dnsIPs`, because

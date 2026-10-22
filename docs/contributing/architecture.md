@@ -23,8 +23,9 @@ YAML that Go reads. They meet in these places:
   [config kinds](../reference/glossary.md#kind) the image accepts. chalkctl and chalklab read
   them from there, or from a running node through the Contract method.
 - Files the image carries in `/etc/chalkos`, written by the node modules: the same
-  `kubernetes/image.json` and `schemas`, the units that read each kind or that a delivery
-  restarts or reloads in `consumers.json`, the system region's repart definitions in `repart.d`
+  `kubernetes/image.json` and `schemas`, the units granted each kind in `services.json`, the
+  outputs a node renders in `outputs.json`, what a delivery restarts or reloads in
+  `effects.json`, the system region's repart definitions in `repart.d`
   and the [OS CA](../reference/glossary.md#os-ca) certificate in `os-ca.crt` when `mkImages` has
   an `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
 - A node's [config](../reference/glossary.md#config): the YAML
@@ -64,7 +65,8 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
 | `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
-| `cmd/chalkos-rules` | Checks an image's rules and facts when the image is built: every rule compiles within the cost limit and reads facts the image declares. |
+| `cmd/chalkos-render` | Renders the outputs of the `chalkosLib.render.template` and `.documents` helpers on a node, in an output's sandbox. |
+| `cmd/chalkos-rules` | Checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units and outputs the image has, and every output renders its examples and passes its check. |
 | `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, runs as a systemd generator for the other volumes, and prints the storage facts the storage kinds' rules read. |
 | `cmd/docgen` | Writes the command reference and checks the commands the documentation shows. |
 
@@ -79,7 +81,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalklab` | The chalklab command tree. |
 | `client` | Connections to chalkd: by fingerprint in [maintenance mode](../reference/glossary.md#maintenance-mode), by the OS CA otherwise. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
-| `config/store` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets their consumers load as credentials. |
+| `config/store` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `facts` | Loads the [facts](../reference/glossary.md#fact) change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads, and the kinds of Kubernetes nodes. |
 | `image` | Reads the partitions of a raw image from `repart-output.json`. |
@@ -95,7 +97,8 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/vip` | Adds a VIP to an interface and announces it. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the [lab](../reference/glossary.md#lab)'s supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
-| `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the units that read them, and tells which units to restart. |
+| `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, renders the outputs at boot, and reads the image's grants and effects. |
+| `outputs` | Renders and checks the image's [outputs](../reference/glossary.md#output) in the facts' sandbox, swaps them in by a symlink rename, and records their hashes and failures. |
 | `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
 | `rules` | Compiles the [change rules](../reference/glossary.md#change-rule) of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
@@ -138,10 +141,10 @@ it has no `completion` command.
 
 | Directory | What it holds |
 | --- | --- |
-| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds` and the chalkcfg commands of their `get`), `runtime/` (`chalkos.consumers` and chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade, the VXLAN rule. |
+| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds` and the chalkcfg commands of their `get`), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, the helpers of `chalkosLib` and chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade, the VXLAN rule. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
-| `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its consumer. |
+| `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
 | `lib/` | `mkImages` (`images.nix`) and its arguments as module options (`images-arguments.nix`). |
 
 ## Layout rules
@@ -149,7 +152,7 @@ it has no `completion` command.
 The layout follows these rules, so each change has one place to go:
 
 - An [extension](../reference/glossary.md#extension) is a NixOS module in a variant's
-  `modules`: its kinds, its units and their consumers, together.
+  `modules`: its kinds, its units, their outputs and their effects, together.
 - The node modules declare the image options; `lib/images-arguments.nix` declares the
   arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.
 - Go code reads a node's config documents and the image's files alone.

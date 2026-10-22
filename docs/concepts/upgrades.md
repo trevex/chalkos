@@ -253,6 +253,7 @@ controller, `default/debug`, stays where it is:
 upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3
 cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
+cp1: 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) renders and checks its outputs when it first boots; if one fails, the node falls back to the image it runs
 cp1: cordoned, evicted 2 pods, kept 7
 cp1: keeps pods without a controller: default/debug; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow
 cp1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)

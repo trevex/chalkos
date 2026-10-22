@@ -259,11 +259,17 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/schemas` | The schemas of the config kinds the image accepts; [chalkcfg](glossary.md#chalkcfg) reads their names to know the kinds. |
 | `/etc/chalkos/os-ca.crt` | The OS CA certificate the image carries, when the image is built with [`osCA`](options.md#osca). |
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
-| `/etc/chalkos/consumers.json` | The units that read config kinds or that a delivery restarts or reloads, from [`chalkos.consumers`](options.md#chalkosconsumers), with the rules that say when. |
+| `/etc/chalkos/services.json` | The units granted config kinds, from [`systemd.services.<unit>.chalkos.kinds`](options.md#systemdserviceschalkoskinds). |
+| `/etc/chalkos/outputs.json` | The image's outputs, from [`chalkos.outputs`](options.md#chalkosoutputs): each one's input kinds, renderer, check, directory, owner and mode. |
+| `/etc/chalkos/effects.json` | What a delivery does to the node's services, from [`chalkos.effects`](options.md#chalkoseffects), with the outputs and the rules that fire each effect. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
+| `/run/chalkos/outputs/<name>` | An output's files, a link to the directory below `/run/chalkos/outputs/.rendered` that holds the last render; an output with another `dir` links from there. |
+| `/run/chalkos/outputs/.staging` | The outputs a delivery renders and checks before it swaps them in. |
+| `/run/chalkos/outputs/.status.json` | Each output's hash and last render or check failure, which status reports. |
+| `/run/chalkd/effects-baseline.json` | The config, facts and output hashes the effects compare with while a delivery that failed part way is not applied whole. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
 | `/run/chalkos/chrony/identity.sources` | The time servers of the config, for chrony. |
 | `/run/chalkos/chrony-dhcp/dhcp.sources` | The time servers DHCP announced, for chrony, when the node's `TimeSync` takes them with `spec.dhcp`; empty otherwise. |

@@ -118,7 +118,7 @@ These units do chalkos's work at every boot:
 | --- | --- | --- |
 | `chalkos-state.service` | initrd | Unlocks and mounts STATE, with the TPM or with the second key the console asks for |
 | `chalkos-storage.service` | initrd | Creates the volumes recorded on STATE and mounts VAR |
-| `chalkos-config.service` | before networkd | Applies the config on STATE: hostname, network units, time servers, the documents in `/run/chalkos/config` and the secrets their consumers read |
+| `chalkos-config.service` | before networkd | Applies the config on STATE: hostname, network units, time servers, the documents in `/run/chalkos/config`, the secrets the granted units read and the outputs |
 | `chalkd.service` | after the network | Serves the node API and carries out its requests |
 | `chalkos-kubernetes.service` | on images with Kubernetes, once the network is online | Waits for the node's addresses and prepares its Kubernetes certificates, kubeconfigs and kubelet flags |
 | `chalkos-health.service` | only on a boot that systemd-boot counts | Decides whether a new image is healthy |
