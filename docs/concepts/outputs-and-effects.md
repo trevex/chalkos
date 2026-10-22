@@ -213,7 +213,7 @@ image on:
 
 ```text
 cp1: installed 3fa9c1e2b7d0 (a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
-cp1: 3fa9c1e2b7d0 (a1b2c3d4e5f6) renders and checks its outputs when it first boots; if one fails, the node falls back to the image it runs
+cp1: 3fa9c1e2b7d0 (a1b2c3d4e5f6) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
 ```
 
 The build renders each output's examples, so a failure at first boot comes from documents the

@@ -126,7 +126,7 @@ upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3, w
 cp1: config unchanged
 cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
-cp1: 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) renders and checks its outputs when it first boots; if one fails, the node falls back to the image it runs
+cp1: 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
 cp1: cordoned, evicted 2 pods, kept 6
 cp1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
@@ -136,7 +136,7 @@ w1: cordoned, evicted 14 pods, kept 3
 w1: config unchanged
 w1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 w1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
-w1: 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) renders and checks its outputs when it first boots; if one fails, the node falls back to the image it runs
+w1: 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs
 w1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 w1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
 w1: uncordoned

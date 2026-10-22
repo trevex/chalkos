@@ -798,8 +798,9 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		r.say("%s: %s is staged already, as %s", name, img.name(), resp.Entry)
 	default:
 		r.say("%s: installed %s, which boots next as %s", name, img.name(), resp.Entry)
-		// The image's renderers live in its own store, which runs once it boots.
-		r.say("%s: %s renders and checks its outputs when it first boots; if one fails, the node falls back to the image it runs", name, img.name())
+		// The image's renderers and the list of its outputs are in its own store, which runs once it
+		// boots; chalkctl reads neither.
+		r.say("%s: %s renders and checks any outputs it declares when it first boots; if one fails, the node falls back to the image it runs", name, img.name())
 	}
 	return nil
 }
