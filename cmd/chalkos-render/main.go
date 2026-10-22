@@ -1,7 +1,7 @@
-// Command chalkos-render is the renderer of the outputs the helpers of chalkosLib.render build.
-// chalkd runs it in the sandbox of an output: it reads the output's input as JSON on standard
-// input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes files into
-// $OUT, the only path it may write.
+// Command chalkos-render is the renderer of the outputs the helpers of chalkosLib.render build,
+// and of the built-in output networkd. chalkd runs it in the sandbox of an output: it reads the
+// output's input as JSON on standard input, {"node": {"name": …}, "documents": {"<Kind>":
+// [<document>, …]}}, and writes files into $OUT, the only path it may write.
 package main
 
 import (
@@ -21,10 +21,13 @@ import (
 
 const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render documents KIND...
+       chalkos-render networkd SCHEMAS
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
 the template has the functions join, quote, json and default. documents writes each document of
-the kinds KIND as $OUT/<Kind>/<name>.json.`
+the kinds KIND as $OUT/<Kind>/<name>.json. networkd writes each Network, NetDev and Link document
+as the networkd unit $OUT/<name>.network, .netdev or .link, with the section and key names of the
+kinds' schemas in the directory SCHEMAS.`
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
@@ -52,6 +55,8 @@ func run(args []string, stdin io.Reader, out string) error {
 		return renderTemplate(args[1], args[2], in, out)
 	case args[0] == "documents" && len(args) > 1:
 		return writeDocuments(args[1:], in, out)
+	case args[0] == "networkd" && len(args) == 2:
+		return renderNetworkd(args[1], in, out)
 	}
 	return errUsage
 }
@@ -180,10 +185,9 @@ func writeDocuments(kinds []string, in map[string]any, out string) error {
 		}
 		for _, d := range docs {
 			obj, _ := d.(map[string]any)
-			meta, _ := obj["metadata"].(map[string]any)
-			name, _ := meta["name"].(string)
-			if name == "" || strings.ContainsAny(name, "/\x00") || name == "." || name == ".." {
-				return fmt.Errorf("a %s document has no name to name its file by", kind)
+			name, err := documentName(kind, obj)
+			if err != nil {
+				return err
 			}
 			b, err := json.MarshalIndent(obj, "", "  ")
 			if err != nil {
@@ -195,6 +199,16 @@ func writeDocuments(kinds []string, in map[string]any, out string) error {
 		}
 	}
 	return nil
+}
+
+// documentName is the name of doc, a document of kind, which names a file of its own.
+func documentName(kind string, doc map[string]any) (string, error) {
+	meta, _ := doc["metadata"].(map[string]any)
+	name, _ := meta["name"].(string)
+	if name == "" || strings.ContainsAny(name, "/\x00") || name == "." || name == ".." {
+		return "", fmt.Errorf("a %s document has no name to name its file by", kind)
+	}
+	return name, nil
 }
 
 // writeFile writes data to out/rel, which must stay below out.

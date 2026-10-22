@@ -1,6 +1,6 @@
-# chalkos-render, the renderer of the outputs chalkosLib.render.template and .documents build.
-# An image carries it once an output uses it, so it is stripped and takes the standard library
-# alone.
+# chalkos-render, the renderer of the outputs chalkosLib.render.template and .documents build, and
+# of the built-in output networkd. Every image carries it, so it is stripped and takes the standard
+# library alone.
 { callPackage }:
 callPackage ./go-module.nix { } {
   pname = "chalkos-render";
