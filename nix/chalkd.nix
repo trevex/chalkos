@@ -11,10 +11,12 @@ callPackage ./go-module.nix { } {
     ../pkg/config
     ../pkg/facts
     ../pkg/identity
+    ../pkg/image
     ../pkg/install
     ../pkg/kubernetes
     ../pkg/networkdschema
     ../pkg/nodeconfig
+    ../pkg/ociimage
     ../pkg/outputs
     ../pkg/pki
     ../pkg/rules

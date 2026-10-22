@@ -134,6 +134,7 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 	}{
 		{&nodev1.UpgradeHeader{Reboot: true}, "the header names no image"},
 		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", BootLoader: &nodev1.ImagePart{Size: 1, Sha256: []byte{1}}}}, "an upgrade carries no boot loader"},
+		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos"}, Source: &nodev1.ImageSource{}}, "the header's source names no image in a registry"},
 	} {
 		stream := conn.Upgrade(context.Background())
 		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: tc.header}})

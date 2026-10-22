@@ -35,6 +35,9 @@ import (
 // needs: config names the node's Addons, networks and volumes, and what an operator may not
 // deliver to the running image it must not deliver to the next one either. Without config the
 // node carries the running image's over.
+//
+// An image the header names in a registry is pulled by the digest it names, with the credentials
+// of the config's Registry of its host, and checked against the header as a streamed one.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	if !s.upgrading.TryLock() {
 		return nil, failed(connect.CodeAborted, "an upgrade or a config delivery is running")
@@ -61,13 +64,36 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	}
 	header := imageHeader(img)
-	log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
-	res, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
+	var parts io.Reader = &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
 		if !stream.Receive() {
 			return nil, false
 		}
 		return stream.Msg().GetChunk(), true
-	}, err: stream.Err})
+	}, err: stream.Err}
+	if src := h.GetSource(); src != nil {
+		ref := src.GetOci().GetReference()
+		if ref == "" {
+			return nil, failed(connect.CodeInvalidArgument, "the header's source names no image in a registry")
+		}
+		// The parts come from the registry: the client sends nothing after the header, and Receive
+		// returns once it closed its side.
+		if stream.Receive() {
+			return nil, failed(connect.CodeInvalidArgument, "an upgrade that pulls its image carries no chunks")
+		}
+		if err := stream.Err(); err != nil {
+			return nil, err
+		}
+		pull, err := s.pullParts(ctx, ref, header, h.GetConfig())
+		if err != nil {
+			return nil, failed(connect.CodeInvalidArgument, "upgrade: %v", err)
+		}
+		defer pull.Close()
+		parts = pull
+		log.Printf("upgrading to %q with the root hash %x, pulled from %s", img.GetImageId(), img.GetRootHash(), ref)
+	} else {
+		log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
+	}
+	res, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), parts)
 	if err != nil {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// A refusal retired the image, so its config slot goes too.

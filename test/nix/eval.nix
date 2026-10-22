@@ -349,6 +349,12 @@ lib.runTests {
       setting = false;
     };
   };
+  # chalkd pulls images over HTTPS with Go's crypto/x509, which reads the system trust store at
+  # /etc/ssl/certs/ca-certificates.crt.
+  testImageHasTheCABundle = {
+    expr = (worker [ ]).environment.etc ? "ssl/certs/ca-certificates.crt";
+    expected = true;
+  };
   testChrony = {
     expr =
       let
