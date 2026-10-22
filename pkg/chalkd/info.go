@@ -18,13 +18,14 @@ const globalVariable = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
 func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest]) (*connect.Response[nodev1.InfoResponse], error) {
 	release := readOSRelease(s.Paths.OSRelease)
 	resp := &nodev1.InfoResponse{
-		Mode:        s.Mode,
-		ImageId:     release["IMAGE_ID"],
-		Installer:   s.Installer,
-		SecureBoot:  s.secureBoot(),
-		Fingerprint: s.CurrentFingerprint(),
-		Variant:     release["CHALKOS_VARIANT"],
-		Platform:    release["CHALKOS_PLATFORM"],
+		Mode:               s.Mode,
+		ImageId:            release["IMAGE_ID"],
+		Installer:          s.Installer,
+		SecureBoot:         s.secureBoot(),
+		Fingerprint:        s.CurrentFingerprint(),
+		Variant:            release["CHALKOS_VARIANT"],
+		Platform:           release["CHALKOS_PLATFORM"],
+		PullsUpgradeImages: true,
 	}
 	// An image is its store's root hash; the record of installed images gives its provenance.
 	if cmdline, err := os.ReadFile(s.Paths.Cmdline); err == nil {

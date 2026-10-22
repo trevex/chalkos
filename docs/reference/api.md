@@ -127,14 +127,15 @@ out; chalkctl rotate calls it. Available to admins.
 
 Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
 the image's boot tries until a boot is found healthy, and reboots the node when asked to.
-The first message carries the header; the store, its hash tree and the UKI follow as
-chunks. Available to operators, but delivering config or a fallback secret with the upgrade
-needs the admin role, as ApplyConfig does; without them the node carries the running image's
-config over. The node checks that the image is of its platform, and, once the store is
-written and before the image becomes the next boot, that the schemas in the image accept the
-config it keeps for the image. It does not check that the image is one to trust: without
-Secure Boot, an operator can run any image as root, with STATE and VAR unsealed, as their
-keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades to images signed for db.
+The first message carries the header; the store, its hash tree and the UKI follow as chunks,
+unless the header's source names an image in a registry, which the node pulls. Available to
+operators, but delivering config or a fallback secret with the upgrade needs the admin role,
+as ApplyConfig does; without them the node carries the running image's config over. The node
+checks that the image is of its platform, and, once the store is written and before the
+image becomes the next boot, that the schemas in the image accept the config it keeps for the
+image. It does not check that the image is one to trust: without Secure Boot, an operator can
+run any image as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone.
+Secure Boot is what limits upgrades to images signed for db.
 
 ### DrainNode { #method-drainnode }
 
@@ -428,7 +429,8 @@ No fields.
 ### ImageHeader { #message-imageheader }
 
 An image as install and upgrade send it. Its parts follow the header as chunks, in this order:
-the store data, the hash tree, the UKI and, when the header names one, the boot loader.
+the store data, the hash tree, the UKI and, when the header names one, the boot loader, unless
+the request's source names where the node pulls them from.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
@@ -451,6 +453,14 @@ The size and SHA-256 of a part of an image.
 | ----- | ---- | ----------- |
 | `size` | `uint64` |  |
 | `sha256` | `bytes` |  |
+
+### ImageSource { #message-imagesource }
+
+Where a node takes an image's parts from when they do not follow the header as chunks.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `oci` | [`RegistryImage`](#message-registryimage) | A chalkos image in an OCI registry, which the node pulls. |
 
 ### InPlace { #message-inplace }
 
@@ -483,6 +493,7 @@ No fields.
 | `root_hash` | `bytes` | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which identifies the running image; empty when it could not be read. |
 | `revision` | `string` | The git revision and tag the running image was built from, as the node's record of the images it installed names them; empty when it does not know them. |
 | `tag` | `string` |  |
+| `pulls_upgrade_images` | `bool` | Whether chalkd pulls an upgrade's image from a registry when UpgradeHeader.source names one; a node without it takes an upgrade's image only as chunks. |
 
 ### InstallHeader { #message-installheader }
 
@@ -601,6 +612,14 @@ No fields.
 
 
 No fields.
+
+### RegistryImage { #message-registryimage }
+
+A chalkos image in an OCI registry.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `reference` | `string` | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree and UKI layers have the header's sizes and SHA-256 sums. It authenticates with the Registry document of the reference's host in the config the request delivers, or without one in the running config, and pulls anonymously without a Registry of the host. |
 
 ### RenewNodeCertificateRequest { #message-renewnodecertificaterequest }
 
@@ -736,6 +755,7 @@ No fields.
 | `reboot` | `bool` | Reboot the node into the image once it is installed. |
 | `config` | `string` | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and change rules as ApplyConfig does: it refuses what the rules refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and keeps the config in the image's config slot. Empty carries the running image's config over, checked against the image the same way. Only the admin role may set it. |
 | `fallback_secret` | `string` | Enrolled on encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is not none. Only the admin role may set it. |
+| `source` | [`ImageSource`](#message-imagesource) | Where the node takes the image's parts from. Absent, they follow the header as chunks; for an image in a registry, the node pulls them and the request carries nothing after the header. |
 
 ### UpgradeRequest { #message-upgraderequest }
 
