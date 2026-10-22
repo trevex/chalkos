@@ -282,7 +282,7 @@ They, and the rules of the built-in effects, read these facts:
   rule or a field's rule compares whole. Lists are not matched item by item by a key.
 - An effect's rule compares documents as written, so a change that makes no difference to the
   unit still counts: an `Address=` value whose prefix length alone changes restarts the kubelet.
-  An effect on an [output](outputs-and-effects.md) fires on the rendered files instead.
+  An effect on an [output](outputs-and-effects.md) fires when the output's rendered files change.
 - Rules compare the config with the running image's config alone. The one check that reads another
   slot's config is that of a storage change of the running image's config, which evaluates the
   storage rules against the staged image's slot as it would be written again.
