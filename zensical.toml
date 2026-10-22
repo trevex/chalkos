@@ -128,6 +128,8 @@ nav = [
           { "powershell" = "reference/cli/chalkbuild_completion_powershell.md" },
           { "zsh" = "reference/cli/chalkbuild_completion_zsh.md" },
         ] },
+        { "oci" = "reference/cli/chalkbuild_oci.md" },
+        { "push" = "reference/cli/chalkbuild_push.md" },
         { "sign" = "reference/cli/chalkbuild_sign.md" },
       ] },
       { "chalkcfg" = [

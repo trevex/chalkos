@@ -1,11 +1,11 @@
 ---
 title: "chalkbuild sign"
-description: "Sign a copy of an image directory for Secure Boot"
+description: "Sign a copy of an image directory or an OCI image layout for Secure Boot"
 ---
 
 # chalkbuild sign
 
-Sign a copy of an image directory for Secure Boot
+Sign a copy of an image directory or an OCI image layout for Secure Boot
 
 ## Synopsis
 
@@ -19,8 +19,13 @@ firmware with that certificate in db would. The output directory must not exist;
 fails, or Ctrl-C stops the command, it is removed again. The command needs no secrets file or
 client file.
 
+Given an OCI image layout, as chalkbuild oci writes it, it signs copies of the UKI and boot-loader
+layers, checks them against --cert, and writes a new layout with them in place of the old layers
+and a new manifest; the store, hash tree and contract layers are copied as they are. It prints the
+new manifest's digest.
+
 ```
-chalkbuild sign <image dir> <out dir> [flags]
+chalkbuild sign <image dir or layout> <out dir> [flags]
 ```
 
 ## Examples
@@ -31,6 +36,9 @@ chalkbuild sign <image dir> <out dir> [flags]
 
   # Sign the installer, raw image and ISO.
   chalkbuild sign --key db.key --cert db.crt installer installer-signed
+
+  # Sign an OCI image layout.
+  chalkbuild sign --key db.key --cert db.crt build/node-metal-oci oci/node-metal
 ```
 
 ## Options

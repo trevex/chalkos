@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
 
 // run runs chalkbuild with the arguments and returns its exit status and output.
@@ -85,6 +87,51 @@ func TestSignNeedsKeyCertAndTwoDirectories(t *testing.T) {
 		{[]string{"sign", "--key", "db.key", "in", "out"}, "needs --key and --cert"},
 		{[]string{"sign", "--cert", "db.crt", "in", "out"}, "needs --key and --cert"},
 		{[]string{"sign", "--key", "db.key", "--cert", "db.crt", "in"}, "usage: chalkbuild sign"},
+	} {
+		if status, _, stderr := run(tc.args...); status != 1 || !strings.Contains(stderr, tc.want) {
+			t.Errorf("%v = %d, %q; want %q", tc.args, status, stderr, tc.want)
+		}
+	}
+}
+
+// TestOCISignAndPush writes an image directory's layout, signs it into a new layout and pushes
+// that, printing the pushed manifest by digest.
+func TestOCISignAndPush(t *testing.T) {
+	if _, err := exec.LookPath("sbsign"); err != nil {
+		t.Skip("sbsign not in PATH")
+	}
+	dir := t.TempDir()
+	key, cert := imagetest.Signer(t, dir, "db")
+	in := filepath.Join(dir, "in")
+	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
+	imagetest.WriteContract(t, in, img, imagetest.Write(t, in, img))
+	layout := filepath.Join(dir, "oci", "node-metal")
+	if status, stdout, stderr := run("oci", in, layout); status != 0 || !strings.HasPrefix(stdout, "wrote "+layout+", manifest sha256:") {
+		t.Fatalf("oci = %d, stdout %q, stderr %q", status, stdout, stderr)
+	}
+	signed := filepath.Join(dir, "signed", "node-metal")
+	if status, stdout, stderr := run("sign", "--key", key, "--cert", cert, layout, signed); status != 0 || !strings.HasPrefix(stdout, "signed "+signed+", manifest sha256:") {
+		t.Fatalf("sign = %d, stdout %q, stderr %q", status, stdout, stderr)
+	}
+	signedImg, err := ociimage.ReadLayout(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := signedImg.Digest()
+	host := ocitest.Registry(t)
+	if status, stdout, stderr := run("push", signed, host+"/chalkos/node-metal:v1"); status != 0 || stdout != host+"/chalkos/node-metal@"+d.String()+"\n" {
+		t.Errorf("push = %d, stdout %q, stderr %q", status, stdout, stderr)
+	}
+}
+
+// TestOCIAndPushNeedTwoArguments refuses oci and push without both of their arguments.
+func TestOCIAndPushNeedTwoArguments(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"oci", "in"}, "usage: chalkbuild oci"},
+		{[]string{"push", "layout"}, "usage: chalkbuild push"},
 	} {
 		if status, _, stderr := run(tc.args...); status != 1 || !strings.Contains(stderr, tc.want) {
 			t.Errorf("%v = %d, %q; want %q", tc.args, status, stderr, tc.want)

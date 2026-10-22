@@ -55,13 +55,9 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 	if _, err := os.Stat(key); err != nil {
 		return nil, err
 	}
-	certPEM, err := os.ReadFile(cert)
+	certs, err := readCerts(cert)
 	if err != nil {
 		return nil, err
-	}
-	certs, err := pki.ParseBundle(string(certPEM))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", cert, err)
 	}
 	tmp, err := os.MkdirTemp(parent, "."+filepath.Base(out)+"-")
 	if err != nil {
@@ -245,4 +241,17 @@ func verifyFile(path string, db uki.Database) error {
 		return err
 	}
 	return uki.VerifySignature(f, info.Size(), db, uki.Database{})
+}
+
+// readCerts reads the PEM certificates of a db signer.
+func readCerts(cert string) ([]*x509.Certificate, error) {
+	certPEM, err := os.ReadFile(cert)
+	if err != nil {
+		return nil, err
+	}
+	certs, err := pki.ParseBundle(string(certPEM))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", cert, err)
+	}
+	return certs, nil
 }

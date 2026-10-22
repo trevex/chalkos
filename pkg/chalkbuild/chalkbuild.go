@@ -1,6 +1,6 @@
 // Package chalkbuild is the chalkbuild command, which prepares the images Nix builds for a
-// chalkos cluster's nodes: it signs copies of them for Secure Boot. NewCommand returns its command
-// tree.
+// chalkos cluster's nodes: it writes them as OCI image layouts, signs copies of them for Secure
+// Boot and pushes layouts to registries. NewCommand returns its command tree.
 package chalkbuild
 
 import (
@@ -37,7 +37,7 @@ func NewCommand() *cobra.Command {
 		}
 		return fmt.Errorf("%w; %s --help lists its flags", err, cmd.CommandPath())
 	})
-	root.AddCommand(signCommand())
+	root.AddCommand(ociCommand(), pushCommand(), signCommand())
 	return root
 }
 
