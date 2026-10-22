@@ -1346,8 +1346,9 @@ lib.runTests {
       let
         props =
           (specOf {
-            x = mkOption { type = types.str; } // {
-              "x-chalkos-rules" = [
+            x = libChalkos.mkOption {
+              type = types.str;
+              rules = [
                 {
                   rule = "self == oldSelf";
                   message = "x is fixed";
@@ -1357,8 +1358,9 @@ lib.runTests {
             };
             group = mkOption {
               type = types.submodule {
-                options.y = mkOption { type = types.int; } // {
-                  "x-chalkos-rules" = [
+                options.y = libChalkos.mkOption {
+                  type = types.int;
+                  rules = [
                     {
                       rule = "self >= oldSelf";
                       takes = "reset";
@@ -1388,6 +1390,11 @@ lib.runTests {
         }
       ]
     ];
+  };
+  # An option without rules is lib.mkOption's.
+  testMkOptionWithoutRules = {
+    expr = libChalkos.mkOption { type = types.str; } == mkOption { type = types.str; };
+    expected = true;
   };
   # A kind's rules reach x-chalkos-kind; a kind without rules has none there.
   testKindRulesReachTheSchema = {

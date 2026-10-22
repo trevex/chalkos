@@ -12,20 +12,17 @@
   chalkos.kinds.Rack = {
     group = "rack.example.org";
     version = "v1alpha1";
-    spec.location =
-      lib.mkOption {
-        type = lib.types.nonEmptyStr;
-        example = "rack-a/u12";
-        description = "Rack and height unit the node is mounted in.";
-      }
-      // {
-        "x-chalkos-rules" = [
-          {
-            rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
-            messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
-          }
-        ];
-      };
+    spec.location = lib.chalkos.mkOption {
+      type = lib.types.nonEmptyStr;
+      example = "rack-a/u12";
+      description = "Rack and height unit the node is mounted in.";
+      rules = [
+        {
+          rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
+          messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
+        }
+      ];
+    };
   };
   # What the rack survey found, {"location": "rack-a/u12"}; null on a node not surveyed yet.
   chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";

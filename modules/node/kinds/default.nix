@@ -233,7 +233,7 @@ let
             Option declarations of the document's `spec`, as under a module's `options`. They are
             converted into the kind's JSON Schema: an option without a default is required, and
             `description`, `default` and `example` carry over. A field declares change rules with
-            `mkOption { … } // { "x-chalkos-rules" = [ { rule = "self == oldSelf"; message = "…"; } ]; }`,
+            `lib.chalkos.mkOption { …; rules = [ { rule = "self == oldSelf"; message = "…"; } ]; }`,
             in the shape of `rules`, where `self` is the field's new value and `oldSelf` its value in
             the running config.
           '';

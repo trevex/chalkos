@@ -480,25 +480,22 @@ in
           default = false;
           description = "Let workloads run on control-plane nodes, which are otherwise tainted.";
         };
-        ipFamilies =
-          mkOption {
-            type = types.nonEmptyListOf (
-              types.enum [
-                "ipv4"
-                "ipv6"
-              ]
-            );
-            default = [ "ipv4" ];
-            description = "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.";
-          }
-          // {
-            "x-chalkos-rules" = [
-              {
-                rule = "facts.share == null || self == oldSelf";
-                messageExpression = ''"the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; ${fixed}"'';
-              }
-            ];
-          };
+        ipFamilies = lib.chalkos.mkOption {
+          type = types.nonEmptyListOf (
+            types.enum [
+              "ipv4"
+              "ipv6"
+            ]
+          );
+          default = [ "ipv4" ];
+          description = "Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created.";
+          rules = [
+            {
+              rule = "facts.share == null || self == oldSelf";
+              messageExpression = ''"the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; ${fixed}"'';
+            }
+          ];
+        };
         podCIDRs = perFamily {
           type = types.nonEmptyStr;
           description = "Address range of the family's pods; each node gets a part of it.";

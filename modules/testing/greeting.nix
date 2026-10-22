@@ -24,19 +24,16 @@
       }
     ];
     spec = {
-      message =
-        lib.mkOption {
-          type = lib.types.nonEmptyStr;
-          description = "What the unit logs.";
-        }
-        // {
-          "x-chalkos-rules" = [
-            {
-              rule = "facts.greetingLock == null || self == oldSelf";
-              messageExpression = ''"the message is locked to " + facts.greetingLock.message + " while /run/chalktest-greeting-lock.json exists"'';
-            }
-          ];
-        };
+      message = lib.chalkos.mkOption {
+        type = lib.types.nonEmptyStr;
+        description = "What the unit logs.";
+        rules = [
+          {
+            rule = "facts.greetingLock == null || self == oldSelf";
+            messageExpression = ''"the message is locked to " + facts.greetingLock.message + " while /run/chalktest-greeting-lock.json exists"'';
+          }
+        ];
+      };
       token = lib.mkOption {
         type = lib.chalkos.types.secretRef;
         description = "A secret the unit reads as a credential.";

@@ -195,7 +195,7 @@ let
     // lib.optionalAttrs (opt ? example && isPlain opt.example && !leaksNamePlaceholder opt.example) {
       examples = [ opt.example ];
     }
-    # A field's change rules, declared as mkOption { … } // { "x-chalkos-rules" = [ … ]; }.
+    # A field's change rules, which lib.chalkos.mkOption puts under x-chalkos-rules.
     // lib.optionalAttrs (opt ? "x-chalkos-rules") {
       "x-chalkos-rules" = map ruleSchema opt."x-chalkos-rules";
     };

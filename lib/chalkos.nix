@@ -20,6 +20,16 @@ in
 {
   types = { inherit (schema.types) secretRef; };
 
+  # lib.mkOption, for a field of a kind, with the field's change rules: each { rule; message or
+  # messageExpression; takes ? "refuse"; }, as a kind's rules are.
+  mkOption =
+    {
+      rules ? [ ],
+      ...
+    }@args:
+    lib.mkOption (removeAttrs args [ "rules" ])
+    // lib.optionalAttrs (rules != [ ]) { "x-chalkos-rules" = rules; };
+
   render = {
     # A Go text/template, which writes the file named as the template less .tmpl; a missing or
     # null key prints as nothing.
