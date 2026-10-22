@@ -488,3 +488,18 @@ func TestLoadFailsForAFailingOutput(t *testing.T) {
 		t.Errorf("status = %+v", st)
 	}
 }
+
+// An image with outputs renders them for the node its certificate names, so a boot whose
+// certificate cannot be read fails the load and renders nothing for a node without a name.
+func TestLoadFailsWithoutTheNodesName(t *testing.T) {
+	l := outputLoader(t, `cat > "$OUT/demo.json"`)
+	if err := os.Remove(l.NodeCertificate); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Load(); err == nil || !strings.Contains(err.Error(), "the node's name for its outputs") {
+		t.Fatalf("err = %v, want the node's name to fail", err)
+	}
+	if _, err := os.Stat(filepath.Join(l.RunDir, "outputs", "demo")); !os.IsNotExist(err) {
+		t.Errorf("rendered without the node's name: %v", err)
+	}
+}

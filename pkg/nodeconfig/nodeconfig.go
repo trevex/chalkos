@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -475,12 +474,21 @@ func (l Loader) outputs(docs []config.Document, schemas *schema.Schemas) (map[st
 // renderAtBoot renders the outputs of the slot's documents and swaps in every one that passes,
 // since /run starts empty: the renderers are pure, so the files are those the delivery checked.
 // An output that fails fails the boot's config, which fails its health check; the status names
-// it.
+// it. On an image with outputs, a node certificate that cannot be read fails it too, since the
+// outputs render for the node it names.
 func (l Loader) renderAtBoot(docs []config.Document) error {
 	if l.Outputs == "" {
 		return nil
 	}
-	staged, failures, err := l.RenderOutputs(context.Background(), l.nodeName(), docs, nil)
+	defs, err := outputs.Read(l.Outputs, l.Render.Root)
+	if err != nil || len(defs) == 0 {
+		return err
+	}
+	name, err := l.nodeName()
+	if err != nil {
+		return fmt.Errorf("the node's name for its outputs: %w", err)
+	}
+	staged, failures, err := l.RenderOutputs(context.Background(), name, docs, nil)
 	if err != nil {
 		return err
 	}
@@ -492,28 +500,27 @@ func (l Loader) renderAtBoot(docs []config.Document) error {
 	return errors.Join(errs...)
 }
 
-// nodeName is the subject of the node certificate, the name chalkd renders outputs for; empty,
-// and logged, when the certificate cannot be read.
-func (l Loader) nodeName() string {
+// nodeName is the subject of the node certificate, the name chalkd renders outputs for.
+func (l Loader) nodeName() (string, error) {
 	data, err := os.ReadFile(l.NodeCertificate)
 	if err != nil {
-		log.Printf("the node's name for its outputs: %v", err)
-		return ""
+		return "", err
 	}
 	for {
 		var block *pem.Block
 		if block, data = pem.Decode(data); block == nil {
-			log.Printf("the node's name for its outputs: %s holds no certificate", l.NodeCertificate)
-			return ""
+			return "", fmt.Errorf("%s holds no certificate", l.NodeCertificate)
 		}
 		if block.Type != "CERTIFICATE" {
 			continue
 		}
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
-			log.Printf("the node's name for its outputs: %v", err)
-			return ""
+			return "", fmt.Errorf("%s: %w", l.NodeCertificate, err)
 		}
-		return cert.Subject.CommonName
+		if cert.Subject.CommonName == "" {
+			return "", fmt.Errorf("%s names no node", l.NodeCertificate)
+		}
+		return cert.Subject.CommonName, nil
 	}
 }

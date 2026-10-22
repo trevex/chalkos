@@ -200,6 +200,10 @@ fails `chalkos-config.service` once the rest of the config is applied, and so fa
 previous image and its config. A boot that was blessed already comes up degraded: the output
 holds no files, its services read none, and `chalkctl status` names the output.
 
+The outputs render for the node's name, the subject of its node certificate on STATE. A node
+certificate that cannot be read fails `chalkos-config.service` in the same way, before any output
+renders.
+
 ## What happens after an upgrade?
 
 A staged image's renderers live in its own store, which cannot run before that image boots, so its
