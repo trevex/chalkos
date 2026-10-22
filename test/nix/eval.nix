@@ -12,7 +12,8 @@ let
 in
 lib.runTests {
   # mkImages builds each variant on each platform, metal and kvm unless the arguments name
-  # others, as <variant>-<platform>, and one installer; without variants it builds node.
+  # others, as <variant>-<platform>, each with its OCI layout as oci.<variant>-<platform>, and
+  # one installer; without variants it builds node.
   testMkImagesNamesImagesByVariantAndPlatform = {
     expr =
       let
@@ -30,6 +31,8 @@ lib.runTests {
         installer = lib.isDerivation i.installer && lib.hasInfix "chalkos-installer" i.installer.name;
         default = lib.attrNames (mkImages { }).images;
         onePlatform = lib.attrNames (mkImages { platforms = [ "kvm" ]; }).images;
+        oci = lib.attrNames i.oci;
+        ociBuild = lib.all (d: lib.isDerivation d && lib.hasSuffix "-oci" d.name) (lib.attrValues i.oci);
       };
     expected = {
       images = [
@@ -52,6 +55,13 @@ lib.runTests {
         "node-metal"
       ];
       onePlatform = [ "node-kvm" ];
+      oci = [
+        "node-kvm"
+        "node-metal"
+        "storage-kvm"
+        "storage-metal"
+      ];
+      ociBuild = true;
     };
   };
   # Each image names its variant and platform, runs Kubernetes as its variant says and carries the

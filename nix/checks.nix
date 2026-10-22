@@ -1307,6 +1307,33 @@ in
         touch $out
       '';
 
+  # The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the
+  # image directory's root hash and platform, whose layers are the image's parts and contract in
+  # order, and whose contract holds the directory's metadata.json.
+  image-oci = pkgs.runCommand "chalkos-image-oci" { nativeBuildInputs = [ pkgs.jq ]; } ''
+    l=${chalkPkgs.test-image-oci}
+    dir=${chalkPkgs.test-image}
+    blob() { echo "$l/blobs/sha256/''${1#sha256:}"; }
+    jq -e '.manifests | length == 1' $l/index.json
+    m=$(blob "$(jq -r '.manifests[0].digest' $l/index.json)")
+    jq -e '
+      .artifactType == "application/vnd.chalkos.image.v1"
+      and .config.mediaType == "application/vnd.chalkos.image.header.v1+json"
+      and [.layers[].mediaType] == [
+        "application/vnd.chalkos.image.store.v1",
+        "application/vnd.chalkos.image.hash-tree.v1",
+        "application/vnd.chalkos.image.uki.v1",
+        "application/vnd.chalkos.image.boot-loader.v1",
+        "application/vnd.chalkos.image.contract.v1.tar"
+      ]' $m
+    jq -e --slurpfile md $dir/metadata.json '
+      .imageId == "chalkos" and .architecture == "x86-64"
+      and .rootHash == $md[0].rootHash and .platform == $md[0].platform
+    ' "$(blob "$(jq -r '.config.digest' $m)")"
+    tar -xOf "$(blob "$(jq -r '.layers[4].digest' $m)")" metadata.json | cmp - $dir/metadata.json
+    touch $out
+  '';
+
   # Every node of the e2e fixtures has config its image accepts, as chalkctl validate checks it
   # against the directory of its image in the inventory.
   fixtures = pkgs.runCommand "chalkos-fixtures" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''

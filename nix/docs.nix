@@ -146,6 +146,9 @@ let
 
     - `images.<variant>-<platform>`: the image directory of a variant on a platform, such as
       `images.node-metal`, each built only when asked for.
+    - `oci.<variant>-<platform>`: the image directory as an OCI image layout, as
+      [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it, each built only when asked for;
+      [Publish images to a registry](../guides/publish-images.md) signs and pushes it.
     - `installer`: the installer, a raw image and a hybrid ISO in one directory, which installs
       images of every platform.
     - `nixos.<variant>-<platform>` and `nixos.installer`: the evaluated NixOS systems, to read an

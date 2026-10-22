@@ -67,25 +67,8 @@ in
     '';
   };
 
-  # chalkbuild, with the tools that sign images.
-  chalkbuild = goModule {
-    pname = "chalkbuild";
-    paths = goPaths;
-    subPackages = [ "cmd/chalkbuild" ];
-    # The go-unit check runs its tests.
-    doCheck = false;
-    meta.mainProgram = "chalkbuild";
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    postFixup = ''
-      wrapProgram $out/bin/chalkbuild --prefix PATH : ${
-        lib.makeBinPath [
-          pkgs.mtools
-          pkgs.sbsigntool
-          pkgs.coreutils
-        ]
-      }
-    '';
-  };
+  # chalkbuild, with the tools that read and sign images.
+  chalkbuild = pkgs.callPackage ./chalkbuild.nix { };
 
   # The documentation site.
   docs = docs.site;
@@ -95,6 +78,8 @@ in
   chalkcfg = pkgs.callPackage ./chalkcfg.nix { };
 
   test-image = testing.images.test-metal;
+  # The test image's OCI image layout, as mkImages's oci output writes it.
+  test-image-oci = testing.oci.test-metal;
   # The repart definitions of the test image's system region, which it ships.
   test-repart-definitions = testing.nixos.test-metal.config.environment.etc."chalkos/repart.d".source;
   test-storage-image = testing.images.storage-metal;

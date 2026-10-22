@@ -78,14 +78,27 @@ let
       throw "mkImages: two variants on their platforms are both named ${collision}; rename a variant or a platform"
     else
       lib.listToAttrs systems // { inherit installer; };
+  # The image directories, <variant>-<platform>.
+  images = lib.mapAttrs (_: n: n.config.system.build.chalkosImage) (
+    removeAttrs nixos [ "installer" ]
+  );
 in
 {
   # The evaluated NixOS systems: <variant>-<platform> and installer.
   inherit nixos;
   # The image directories, <variant>-<platform>, each built only when asked for.
-  images = lib.mapAttrs (_: n: n.config.system.build.chalkosImage) (
-    removeAttrs nixos [ "installer" ]
-  );
+  inherit images;
+  # The OCI image layouts of the image directories, <variant>-<platform>, each built only when
+  # asked for by chalkbuild oci, which the image's own nixpkgs builds as it builds chalkd.
+  oci = lib.mapAttrs (
+    name: image:
+    let
+      inherit (nixos.${name}) pkgs;
+    in
+    pkgs.runCommand "chalkos-${name}-oci" {
+      nativeBuildInputs = [ (pkgs.callPackage ../nix/chalkbuild.nix { }) ];
+    } "chalkbuild oci ${image} $out"
+  ) images;
   # The installer: a raw image and a hybrid ISO that boot chalkd in maintenance mode.
   installer = installer.config.system.build.chalkosInstaller;
 }
