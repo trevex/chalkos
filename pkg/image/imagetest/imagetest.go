@@ -120,6 +120,17 @@ func Signer(t testing.TB, dir, name string) (key, cert string) {
 	return key, cert
 }
 
+// WriteContract writes the contract files of an image directory into dir: metadata.json of the
+// image's variant and platform and the root hash, built from the revision abc123 and the tag v1,
+// one schema and one repart definition.
+func WriteContract(t testing.TB, dir string, img Image, root []byte) {
+	t.Helper()
+	md := fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "revision": "abc123", "tag": "v1", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": null, "kinds": []}`, img.Variant, img.Platform, hex.EncodeToString(root))
+	write(t, filepath.Join(dir, "metadata.json"), []byte(md))
+	write(t, filepath.Join(dir, "schemas", "test.example.org_v1alpha1_Test.json"), []byte(`{"x-chalkos-kind": {"group": "test.example.org", "version": "v1alpha1", "kind": "Test", "multiple": false}}`))
+	write(t, filepath.Join(dir, "repart.d", "00-esp.conf"), []byte("[Partition]\nType=esp\n"))
+}
+
 // write writes a file, making its directory.
 func write(t testing.TB, path string, data []byte) {
 	t.Helper()

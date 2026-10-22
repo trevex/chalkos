@@ -47,6 +47,15 @@ func TestLoadRejectsUnknownMetadataVersion(t *testing.T) {
 	}
 }
 
+func TestParseMetadata(t *testing.T) {
+	if _, err := ParseMetadata([]byte(`{"schemaVersion": 7}`)); err == nil || !strings.Contains(err.Error(), "schemaVersion 7") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := ParseMetadata([]byte("{")); err == nil || !strings.Contains(err.Error(), "parse metadata.json") {
+		t.Errorf("err = %v", err)
+	}
+}
+
 func TestLoadFailsOnMissingSchema(t *testing.T) {
 	dir := t.TempDir()
 	md := `{"schemaVersion": 0, "kinds": [{"apiVersion": "a.example.org/v1", "kind": "Gone"}]}`

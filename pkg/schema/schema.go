@@ -196,12 +196,21 @@ func ReadMetadata(dir string) (Metadata, error) {
 	if err != nil {
 		return Metadata{}, err
 	}
+	md, err := ParseMetadata(b)
+	if err != nil {
+		return Metadata{}, fmt.Errorf("%s: %w", dir, err)
+	}
+	return md, nil
+}
+
+// ParseMetadata parses an image's metadata.json, refusing a version this package does not read.
+func ParseMetadata(data []byte) (Metadata, error) {
 	var md Metadata
-	if err := json.Unmarshal(b, &md); err != nil {
-		return Metadata{}, fmt.Errorf("parse %s: %w", filepath.Join(dir, "metadata.json"), err)
+	if err := json.Unmarshal(data, &md); err != nil {
+		return Metadata{}, fmt.Errorf("parse metadata.json: %w", err)
 	}
 	if md.SchemaVersion != metadataVersion {
-		return Metadata{}, fmt.Errorf("%s: metadata schemaVersion %d is not supported; this chalkos reads version %d", dir, md.SchemaVersion, metadataVersion)
+		return Metadata{}, fmt.Errorf("metadata schemaVersion %d is not supported; this chalkos reads version %d", md.SchemaVersion, metadataVersion)
 	}
 	return md, nil
 }
