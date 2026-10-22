@@ -1,37 +1,26 @@
 package chalkctl
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// diskImage is what install and upgrade send of a disk image: its store, the store's hash tree,
-// its UKI and, for an install, its boot loader, both signed when chalkctl was given the key, with
-// what the UKI says of the image.
+// diskImage is what install and upgrade send of a disk image: its parts, the UKI and the boot
+// loader signed when chalkctl was given the key, and the header that describes them to the nodes.
 type diskImage struct {
-	raw   *os.File
-	store image.Store
-	// uki and bootLoader are the files of the UKI and the boot loader, "" for an upgrade, and info
-	// what the UKI says.
-	uki, bootLoader string
-	info            uki.Image
+	*image.Parts
 	// header describes the image to the nodes.
 	header *nodev1.ImageHeader
 	// contract is what an upgrade's image directory says the image accepts as config, which
@@ -39,15 +28,12 @@ type diskImage struct {
 	contract *contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
-	// cleanup removes the copies of the UKI and the boot loader.
-	cleanup func()
 }
 
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
-// repart-output.json next to it, or the directory nix build makes. The UKI and the boot loader
-// of the UKI's architecture are copied off its ESP into a temporary directory and signed there
-// with key and cert when a key is given; a certificate alone checks an image signed
-// before. Warnings go to stderr.
+// repart-output.json next to it, or the directory nix build makes. The copies of its UKI and boot
+// loader are signed with key and cert when a key is given; a certificate alone checks an image
+// signed before. Warnings go to stderr.
 func openImage(ctx context.Context, path, key, cert string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
 	if key != "" && cert == "" {
 		return nil, errors.New("signing with --sign-key needs --sign-cert")
@@ -60,97 +46,51 @@ func openImage(ctx context.Context, path, key, cert string, bootLoader bool, std
 	if err != nil {
 		return nil, err
 	}
-	esp, err := image.FindPartition(parts, "esp")
+	p, err := image.OpenParts(ctx, raw, parts, bootLoader)
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(raw)
-	if err != nil {
-		return nil, err
-	}
-	img := &diskImage{raw: f, definitions: definitions, cleanup: func() {}}
+	img := &diskImage{Parts: p, definitions: definitions}
 	defer func() {
 		if err != nil {
 			img.Close()
 		}
 	}()
-	if img.store, err = image.ReadStore(f, parts); err != nil {
-		return nil, fmt.Errorf("%s: %w", raw, err)
-	}
-	dir, err := os.MkdirTemp("", "chalkctl-image-")
-	if err != nil {
-		return nil, err
-	}
-	img.cleanup = func() { os.RemoveAll(dir) }
-	if img.uki, err = imagesign.ExtractUKI(ctx, raw, esp.Offset, dir); err != nil {
-		return nil, err
-	}
-	arch, err := fileArchitecture(img.uki)
-	if err != nil {
-		return nil, fmt.Errorf("the image's UKI: %w", err)
-	}
-	binaries := []string{img.uki}
-	if bootLoader {
-		if img.bootLoader, err = imagesign.ExtractBootLoader(ctx, raw, esp.Offset, dir, arch); err != nil {
-			return nil, err
-		}
-		loaderArch, err := fileArchitecture(img.bootLoader)
-		if err != nil {
-			return nil, fmt.Errorf("the image's boot loader: %w", err)
-		}
-		if loaderArch != arch {
-			return nil, fmt.Errorf("the image's boot loader is built for %s, its UKI for %s", loaderArch, arch)
-		}
-		binaries = append(binaries, img.bootLoader)
-	}
 	if key != "" {
-		for _, b := range binaries {
+		for _, b := range []string{img.UKI, img.BootLoader} {
+			if b == "" {
+				continue
+			}
 			if err := imagesign.SignFile(ctx, b, key, cert); err != nil {
 				return nil, err
 			}
 		}
 	}
-	u, err := os.Open(img.uki)
-	if err != nil {
-		return nil, err
-	}
-	defer u.Close()
-	if img.info, err = uki.Read(u); err != nil {
-		return nil, fmt.Errorf("the image's UKI: %w", err)
-	}
-	if hash, err := img.info.UsrHash(); err != nil || !bytes.Equal(hash, img.store.RootHash) {
-		return nil, errors.New("the image's UKI boots another store than the image holds")
-	}
 	// The node would refuse the UKI only once it received the image.
-	if err := upgrade.CheckImageVersion(img.info); err != nil {
+	if err := upgrade.CheckImageVersion(img.Info); err != nil {
 		return nil, fmt.Errorf("the image's UKI: %w", err)
 	}
-	if img.info.Variant() == "" || img.info.Platform() == "" {
+	if img.Info.Variant() == "" || img.Info.Platform() == "" {
 		return nil, errors.New("the image names no variant or platform in its os-release; it is no node image")
 	}
 	h := &nodev1.ImageHeader{
-		ImageId:      img.info.ID(),
-		Platform:     img.info.Platform(),
-		RootHash:     img.store.RootHash,
-		Architecture: arch,
+		ImageId:      img.Info.ID(),
+		Platform:     img.Info.Platform(),
+		RootHash:     img.Store.RootHash,
+		Architecture: img.Architecture,
 	}
-	h.Revision, h.Tag = provenance(filepath.Dir(raw), img.store.RootHash, stderr)
-	if h.Store, err = sum(img.store.Data); err != nil {
+	h.Revision, h.Tag = provenance(filepath.Dir(raw), img.Store.RootHash, stderr)
+	if h.Store, err = sum(img.Store.Data); err != nil {
 		return nil, err
 	}
-	if h.HashTree, err = sum(img.store.HashTree); err != nil {
+	if h.HashTree, err = sum(img.Store.HashTree); err != nil {
 		return nil, err
 	}
-	if h.Uki, err = sum(u); err != nil {
+	if h.Uki, err = sumFile(img.UKI); err != nil {
 		return nil, err
 	}
 	if bootLoader {
-		b, err := os.Open(img.bootLoader)
-		if err != nil {
-			return nil, err
-		}
-		defer b.Close()
-		if h.BootLoader, err = sum(b); err != nil {
+		if h.BootLoader, err = sumFile(img.BootLoader); err != nil {
 			return nil, err
 		}
 	}
@@ -167,6 +107,16 @@ func sum(r io.Reader) (*nodev1.ImagePart, error) {
 	return &nodev1.ImagePart{Size: uint64(n), Sha256: h.Sum(nil)}, nil
 }
 
+// sumFile is the size and SHA-256 of a file.
+func sumFile(path string) (*nodev1.ImagePart, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return sum(f)
+}
+
 // openUpgradeImage opens an upgrade's image with the contract its directory holds, which chalkctl
 // checks the inventory's config against before any node is drained. The node checks the config it
 // gets, or without one its own, against the schemas in the image itself.
@@ -180,7 +130,7 @@ func openUpgradeImage(ctx context.Context, path, key, cert string, stderr io.Wri
 		img.Close()
 		return nil, err
 	}
-	c.platform = img.info.Platform()
+	c.platform = img.Info.Platform()
 	img.contract = &c
 	return img, nil
 }
@@ -196,8 +146,8 @@ func (img *diskImage) checkSignature(certPEM string) error {
 		what, file string
 		part       *nodev1.ImagePart
 	}{
-		{"UKI", img.uki, img.header.Uki},
-		{"boot loader", img.bootLoader, img.header.BootLoader},
+		{"UKI", img.UKI, img.header.Uki},
+		{"boot loader", img.BootLoader, img.header.BootLoader},
 	} {
 		if b.file == "" {
 			continue
@@ -221,17 +171,17 @@ func (img *diskImage) size() uint64 {
 	return h.Store.GetSize() + h.HashTree.GetSize() + h.Uki.GetSize() + h.BootLoader.GetSize()
 }
 
-// parts are the image's store, hash tree, UKI and boot loader as install and upgrade stream them.
-func (img *diskImage) parts() (io.Reader, func(), error) {
-	u, err := os.Open(img.uki)
+// stream is the image's store, hash tree, UKI and boot loader as install and upgrade send them.
+func (img *diskImage) stream() (io.Reader, func(), error) {
+	u, err := os.Open(img.UKI)
 	if err != nil {
 		return nil, nil, err
 	}
-	data, tree := img.store.Data, img.store.HashTree
+	data, tree := img.Store.Data, img.Store.HashTree
 	readers := []io.Reader{io.NewSectionReader(data, 0, data.Size()), io.NewSectionReader(tree, 0, tree.Size()), u}
 	closers := []io.Closer{u}
-	if img.bootLoader != "" {
-		b, err := os.Open(img.bootLoader)
+	if img.BootLoader != "" {
+		b, err := os.Open(img.BootLoader)
 		if err != nil {
 			u.Close()
 			return nil, nil, err
@@ -246,11 +196,6 @@ func (img *diskImage) parts() (io.Reader, func(), error) {
 	}, nil
 }
 
-func (img *diskImage) Close() {
-	img.raw.Close()
-	img.cleanup()
-}
-
 // checkInstallImage checks the image against the node it installs: built for the platform of the
 // node's config's image, and its signatures checked as an upgrade's image is. Its variant may be
 // any: the installer checks the config against the image's schemas.
@@ -259,7 +204,7 @@ func checkInstallImage(t *target, img *diskImage, signCert string) error {
 	if err != nil {
 		return err
 	}
-	if got := img.info.Platform(); got != want {
+	if got := img.Info.Platform(); got != want {
 		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, want, got)
 	}
 	return checkImage(img, signCert)
@@ -287,37 +232,13 @@ func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error) error {
 	}
 }
 
-// fileArchitecture is the architecture an EFI binary is built for.
-func fileArchitecture(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	return uki.Architecture(f)
-}
-
-// provenance is the revision and tag the metadata.json in dir names, when the image directory
-// describes the image of the root hash. A raw image may lie next to the metadata of another,
-// such as one copied into an older build's directory; the node would record that provenance as
-// its own, so metadata of another root hash, or one chalkctl cannot read, names none. Ignoring
-// metadata that is there draws a warning on stderr, as the operator likely meant it to count; an
-// image without metadata, as one built by hand, draws none.
+// provenance is the revision and tag the metadata.json in dir names for the image of the root
+// hash. Ignoring metadata that is there draws a warning on stderr, as the operator likely meant
+// it to count; an image without metadata draws none.
 func provenance(dir string, rootHash []byte, stderr io.Writer) (revision, tag string) {
-	path := filepath.Join(dir, "metadata.json")
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", ""
+	revision, tag, err := image.Provenance(dir, rootHash)
+	if err != nil {
+		fmt.Fprintf(stderr, "chalkctl: warning: ignoring %s, so the image is sent without a revision and tag: %v\n", filepath.Join(dir, "metadata.json"), err)
 	}
-	if err == nil {
-		var md schema.Metadata
-		if err = json.Unmarshal(data, &md); err == nil {
-			if strings.EqualFold(md.RootHash, hex.EncodeToString(rootHash)) {
-				return md.Revision, md.Tag
-			}
-			err = fmt.Errorf("it names the root hash %q, not the image's", md.RootHash)
-		}
-	}
-	fmt.Fprintf(stderr, "chalkctl: warning: ignoring %s, so the image is sent without a revision and tag: %v\n", path, err)
-	return "", ""
+	return revision, tag
 }

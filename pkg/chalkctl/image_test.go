@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
 // TestOpenImageForInstall reads an image with its boot loader, as an install sends it, signs
@@ -33,7 +31,7 @@ func TestOpenImageForInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer img.Close()
-	loader, err := os.ReadFile(img.bootLoader)
+	loader, err := os.ReadFile(img.BootLoader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +48,7 @@ func TestOpenImageForInstall(t *testing.T) {
 	if err := img.checkSignature(string(otherPEM)); err == nil || !strings.Contains(err.Error(), "UKI") {
 		t.Errorf("another db certificate: %v", err)
 	}
-	parts, done, err := img.parts()
+	parts, done, err := img.stream()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +67,8 @@ func TestOpenImageForInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unsigned.Close()
-	ukiData, _ := os.ReadFile(img.uki)
-	if err := os.WriteFile(unsigned.uki, ukiData, 0o644); err != nil {
+	ukiData, _ := os.ReadFile(img.UKI)
+	if err := os.WriteFile(unsigned.UKI, ukiData, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	unsigned.header.Uki = img.header.Uki
@@ -83,31 +81,9 @@ func TestOpenImageForInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgrade.Close()
-	if upgrade.header.BootLoader != nil || upgrade.bootLoader != "" {
+	if upgrade.header.BootLoader != nil || upgrade.BootLoader != "" {
 		t.Error("an upgrade's image brings a boot loader")
 	}
-}
-
-// TestOpenImageRefusesABootLoaderOfAnotherArchitecture refuses an image whose boot loader is
-// built for another architecture than its UKI.
-func TestOpenImageRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
-	path := testUpgradeImage(t, "w", "0.2.0")
-	raws, _ := filepath.Glob(filepath.Join(path, "*.raw"))
-	arm := filepath.Join(t.TempDir(), "BOOTX64.EFI")
-	writeFile(t, arm, string(ukitest.WithMachine(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")}), 0xaa64)))
-	cmd := exec.Command("mcopy", "-o", "-i", raws[0]+"@@0", arm, "::/EFI/BOOT/BOOTX64.EFI")
-	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("mcopy: %v: %s", err, out)
-	}
-	if _, err := openImage(context.Background(), path, "", "", true, io.Discard); err == nil || !strings.Contains(err.Error(), "the image's boot loader is built for arm64, its UKI for x86-64") {
-		t.Fatalf("openImage = %v, want the boot loader refused", err)
-	}
-	img, err := openImage(context.Background(), path, "", "", false, io.Discard)
-	if err != nil {
-		t.Fatal(err)
-	}
-	img.Close()
 }
 
 // TestOpenImageTrustsOnlyItsOwnMetadata names the revision and tag of the metadata.json next to

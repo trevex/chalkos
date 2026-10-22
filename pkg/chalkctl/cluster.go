@@ -176,7 +176,7 @@ func (c *cluster) sameBuild(name string, img *diskImage) error {
 	if err != nil {
 		return err
 	}
-	if got := hex.EncodeToString(img.store.RootHash); got != md.RootHash {
+	if got := hex.EncodeToString(img.Store.RootHash); got != md.RootHash {
 		return fmt.Errorf("%s: metadata.json names the root hash %s, but the image's store has %s; rebuild the image or link its directory again", nc.ImageDir, md.RootHash, got)
 	}
 	return nil

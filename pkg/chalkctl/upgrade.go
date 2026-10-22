@@ -460,7 +460,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	var skipped []string
 	skip := func(name, platform string) error {
 		if len(named) > 0 {
-			return fmt.Errorf("%s runs on %s; the image is built for %s", name, platform, img.info.Platform())
+			return fmt.Errorf("%s runs on %s; the image is built for %s", name, platform, img.Info.Platform())
 		}
 		skipped = append(skipped, fmt.Sprintf("%s (%s)", name, platform))
 		return nil
@@ -487,10 +487,10 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			n.kind, n.inCluster = k.Kind, inCluster(k)
 		}
 		probedCPs[name] = n.kind == identity.KindControlPlane
-		if img != nil && len(named) == 0 && info.Variant != img.info.Variant() {
+		if img != nil && len(named) == 0 && info.Variant != img.Info.Variant() {
 			continue
 		}
-		if img != nil && info.Platform != img.info.Platform() {
+		if img != nil && info.Platform != img.Info.Platform() {
 			if err := skip(name, info.Platform); err != nil {
 				return err
 			}
@@ -511,11 +511,11 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		g.nodes = append(g.nodes, name)
 	}
 	if len(skipped) > 0 {
-		r.say("skipping %s: the image is built for %s", strings.Join(skipped, ", "), img.info.Platform())
+		r.say("skipping %s: the image is built for %s", strings.Join(skipped, ", "), img.Info.Platform())
 	}
 	if len(r.nodes) == 0 {
 		if img != nil {
-			return fmt.Errorf("the cluster has no node of the variant %s on %s to upgrade", img.info.Variant(), img.info.Platform())
+			return fmt.Errorf("the cluster has no node of the variant %s on %s to upgrade", img.Info.Variant(), img.Info.Platform())
 		}
 		return errors.New("the cluster has no node to upgrade")
 	}
@@ -565,7 +565,7 @@ func (r *upgradeRun) nodeNames() []string {
 // names for it.
 func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error) {
 	if img != nil {
-		return &upgradeGroup{variant: img.info.Variant(), platform: img.info.Platform(), image: img}, nil
+		return &upgradeGroup{variant: img.Info.Variant(), platform: img.Info.Platform(), image: img}, nil
 	}
 	nc, err := r.cluster.config(name)
 	if err != nil {
@@ -759,7 +759,7 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	name, img := n.name, n.image
 	r.say("%s: installing %s", name, img.name())
-	parts, done, err := img.parts()
+	parts, done, err := img.stream()
 	if err != nil {
 		return err
 	}

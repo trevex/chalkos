@@ -32,11 +32,9 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
-	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/uki/ukitest"
-	"github.com/trevex/chalkos/pkg/verity"
 )
 
 // testUpgradeImage builds a metal disk image of the variant as chalkos images are laid out: an
@@ -82,59 +80,9 @@ func testUpgradeImageOfBlocks(t *testing.T, variant, platform, name string, bloc
 // chalkos's images name, with an empty IMAGE_VERSION.
 func testImageOf(t *testing.T, variant, platform, name string, blockSize int, edit func(osRelease map[string]string)) string {
 	t.Helper()
-	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not in PATH", tool)
-		}
-	}
-	dir := t.TempDir()
-	store := bytes.Repeat([]byte(name+variant+platform), 300*blockSize)[:300*blockSize]
-	tree, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: uint32(blockSize), HashBlockSize: uint32(blockSize), DataBlocks: 300, Salt: []byte(name)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	imgDir := filepath.Join(t.TempDir(), "image")
+	root := imagetest.Write(t, imgDir, imagetest.Image{Variant: variant, Platform: platform, Seed: name, BlockSize: blockSize, Edit: edit})
 	testImageNames.Store(string(root), name)
-	esp := filepath.Join(dir, "esp.img")
-	uki := filepath.Join(dir, "uki.efi")
-	loader := filepath.Join(dir, "systemd-boot.efi")
-	writeFile(t, loader, string(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")})))
-	osRelease := map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": variant, "CHALKOS_PLATFORM": platform, "CHALKOS_BOOT_TRIES": "3",
-	}
-	if edit != nil {
-		edit(osRelease)
-	}
-	writeFile(t, uki, string(ukitest.UKI(osRelease, fmt.Sprintf("init=/x usrhash=%x", root))))
-	for _, args := range [][]string{
-		{"mkfs.vfat", "-C", esp, "4096"},
-		{"mmd", "-i", esp, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux"},
-		{"mcopy", "-i", esp, uki, "::/EFI/Linux/chalkos_1.efi"},
-		{"mcopy", "-i", esp, loader, "::/EFI/BOOT/BOOTX64.EFI"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v: %v: %s", args, err, out)
-		}
-	}
-	espData, err := os.ReadFile(esp)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const espSize, treeSize, storeSize = 4 << 20, 64 << 10, 2 << 20
-	raw := make([]byte, espSize+treeSize+storeSize)
-	copy(raw, espData)
-	copy(raw[espSize:], tree)
-	copy(raw[espSize+treeSize:], store)
-	imgDir := filepath.Join(dir, "image")
-	writeFile(t, filepath.Join(imgDir, "chalkos.raw"), string(raw))
-	id := hex.EncodeToString(root)[:16]
-	parts, _ := json.Marshal([]image.Partition{
-		{Type: "esp", Label: "esp", Offset: 0, RawSize: espSize},
-		{Type: "usr-x86-64-verity", Label: "store-verity_" + id, Offset: espSize, RawSize: treeSize, RootHash: hex.EncodeToString(root)},
-		{Type: "usr-x86-64", Label: "store_" + id, Offset: espSize + treeSize, RawSize: storeSize, RootHash: hex.EncodeToString(root)},
-	})
-	writeFile(t, filepath.Join(imgDir, "repart-output.json"), string(parts))
 	// The contract chalkctl checks a node's config against, and the metadata it reads the image's
 	// root hash from: the upgrade lab's variants cp, w and k8s run Kubernetes.
 	copySchemas(t, filepath.Join(imgDir, "schemas"))

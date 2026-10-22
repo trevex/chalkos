@@ -1,4 +1,5 @@
-// Package image reads the layout of chalkos disk images.
+// Package image reads chalkos disk images: their partitions, their store and hash tree, the UKI
+// and boot loader on their ESP, and the provenance their metadata.json names.
 package image
 
 import (

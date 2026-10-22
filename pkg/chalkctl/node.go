@@ -380,7 +380,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if c, err = imageContract(filepath.Dir(img.definitions)); err != nil {
 			return err
 		}
-		c.platform = img.info.Platform()
+		c.platform = img.Info.Platform()
 		header.Image, header.Schemas, header.KubernetesImage = img.header, c.files, c.kubernetesImage
 	}
 	d, err := t.cluster.deliveryFor(t.name, c)
@@ -412,7 +412,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
 			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
 		}}
-		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, path, img.info.ID(), img.name(), img.size())
+		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, path, img.Info.ID(), img.name(), img.size())
 	}
 
 	stream := conn.Install(ctx)
@@ -420,7 +420,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return err
 	}
 	if img != nil {
-		parts, done, err := img.parts()
+		parts, done, err := img.stream()
 		if err != nil {
 			return err
 		}
