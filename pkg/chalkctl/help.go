@@ -7,7 +7,7 @@ const rootLong = `chalkctl installs and operates the nodes of a chalkos cluster.
 inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
 address chalkctl reaches it at, the image it runs and the config files it gets, and talks to chalkd
 on each node over mutual TLS. chalkctl never builds or signs images: the inventory names the
-directory of each image, which chalkbuild sign signs for Secure Boot. Commands authenticate with
+directory of each image, for Secure Boot a copy chalkbuild sign signed. Commands authenticate with
 the cluster's secrets file, which holds every CA key, or with a client file (chalkctl config new),
 which holds a certificate of the admin, operator or reader role. Each command's help says which of
 the two it needs. The secrets file is read only where --secrets names it, as a path or as - for
@@ -183,12 +183,13 @@ against the schemas of the image it installs, a node certificate, the OS CA, the
 encrypted volumes' second keyslot (its recovery key, or a password) and, on a Kubernetes node, its
 Kubernetes share. A node that runs its image already installs in place. A node that runs the
 installer gets the image as well: --image, or the directory of the node's image in the inventory,
-signed with chalkbuild sign when the machine enforces Secure Boot. The installer checks the UKI
-and the boot loader against the firmware's db and dbx and writes the image to the disk the node's
-SystemDisk names: a disk on which blkid finds no signature, or one holding an
-unfinished install of the node, which it continues; any other disk only with --wipe-disk. The node
-reboots into the installed image. The node certificate carries the node's name in the inventory,
-which stays the node's name until it is reinstalled. The command needs the secrets file.`
+signed with chalkbuild sign when the machine enforces Secure Boot. With Secure Boot on, the
+installer checks the UKI and the boot loader against the firmware's db and dbx. It writes the
+image to the disk the node's SystemDisk names: a disk on which blkid finds no signature, or one
+holding an unfinished install of the node, which it continues; any other disk only with
+--wipe-disk. The node reboots into the installed image. The node certificate carries the node's
+name in the inventory, which stays the node's name until it is reinstalled. The command needs the
+secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --secrets secrets.age \
