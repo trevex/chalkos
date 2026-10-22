@@ -58,7 +58,7 @@ func check(image string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	outs, err := outputs.Read(filepath.Join(image, "outputs.json"))
+	outs, err := outputs.Read(filepath.Join(image, "outputs.json"), outputs.DefaultRoot)
 	if err != nil {
 		return err
 	}

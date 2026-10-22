@@ -56,8 +56,9 @@ type Definition struct {
 	Mode  string `json:"mode"`
 }
 
-// Read reads the outputs an image declares; a missing file declares none.
-func Read(path string) (map[string]Definition, error) {
+// Read reads the outputs an image declares for a node that renders them below root, DefaultRoot
+// on a node; a missing file declares none.
+func Read(path, root string) (map[string]Definition, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return map[string]Definition{}, nil
@@ -70,9 +71,19 @@ func Read(path string) (map[string]Definition, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(defs)) {
-		if err := defs[name].check(); err != nil {
+	names := slices.Sorted(maps.Keys(defs))
+	for _, name := range names {
+		if err := defs[name].check(name, root); err != nil {
 			errs = append(errs, fmt.Errorf("%s: output %s: %w", path, name, err))
+		}
+		for _, other := range names {
+			dir, in := defs[name].Dir, defs[other].Dir
+			switch {
+			case other < name && dir == in:
+				errs = append(errs, fmt.Errorf("%s: output %s: the dir %q is the dir of the output %s", path, name, dir, other))
+			case strings.HasPrefix(dir, in+"/"):
+				errs = append(errs, fmt.Errorf("%s: output %s: the dir %q is inside the dir of the output %s", path, name, dir, other))
+			}
 		}
 	}
 	if len(errs) > 0 {
@@ -81,10 +92,10 @@ func Read(path string) (map[string]Definition, error) {
 	return defs, nil
 }
 
-// check refuses a definition chalkd could not carry out: a program that is no absolute path, a
-// relative dir or a mode that is no octal number. The image's build checks that the programs are
-// of its store.
-func (d Definition) check() error {
+// check refuses a definition of the output name chalkd could not carry out: a program that is no
+// absolute path, a dir it must not replace or a mode that is no octal number. The image's build
+// checks that the programs are of its store.
+func (d Definition) check(name, root string) error {
 	for _, p := range []struct{ what, command string }{{"renderer", d.Render}, {"check", d.Check}} {
 		if p.what == "check" && p.command == "" {
 			continue
@@ -93,11 +104,30 @@ func (d Definition) check() error {
 			return fmt.Errorf("the %s %q names no program by its absolute path", p.what, p.command)
 		}
 	}
-	if !filepath.IsAbs(d.Dir) || filepath.Clean(d.Dir) != d.Dir {
-		return fmt.Errorf("the dir %q is no absolute, clean path", d.Dir)
+	if err := checkDir(name, d.Dir, root); err != nil {
+		return err
 	}
 	if _, err := d.mode(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkDir refuses a dir of the output name that a swap could not safely replace by a link, root
+// being /run/chalkos/outputs: one outside /run, a tmpfs, or not clean, one with a component that
+// starts with a dot, as the links and directories chalkd keeps beside the outputs' do, and one in
+// /run/chalkos, where chalkd keeps the node's config and credentials, other than
+// /run/chalkos/outputs/<name> or a path below it.
+func checkDir(name, dir, root string) error {
+	chalkos := filepath.Dir(root)
+	run := filepath.Dir(chalkos)
+	rest, ok := strings.CutPrefix(dir, run+"/")
+	if !ok || filepath.Clean(dir) != dir || slices.ContainsFunc(strings.Split(rest, "/"), func(c string) bool { return strings.HasPrefix(c, ".") }) {
+		return fmt.Errorf("the dir %q is no clean path below %s whose components start with no dot", dir, run)
+	}
+	own := filepath.Join(root, name)
+	if (dir == chalkos || strings.HasPrefix(dir, chalkos+"/")) && dir != own && !strings.HasPrefix(dir, own+"/") {
+		return fmt.Errorf("the dir %q is in %s, of which an output takes %s alone", dir, chalkos, own)
 	}
 	return nil
 }

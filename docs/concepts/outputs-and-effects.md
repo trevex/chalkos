@@ -72,6 +72,13 @@ evaluation. `dir` is a link to the rendered directory, and chalkd replaces the l
 so a service reads the files of one render and never a mix of two. The files belong to the
 output's `user` and `group` with its `mode`, `root:root 0644` by default.
 
+The first swap removes a directory it finds at `dir`, so `dir` is a clean path below `/run`, a
+tmpfs, whose components start with no dot. It stays out of `/run/chalkos`, which holds the node's
+config and credentials, except for `/run/chalkos/outputs/<name>` and the paths below it, and it
+is neither another output's `dir` nor inside one. A path such as `/run/systemd/network` is a valid
+`dir`; the image's evaluation refuses any other, and chalkd refuses an `outputs.json` that holds
+one.
+
 ### Why are renderers pure?
 
 A renderer is pure: the same documents always give the same files. `/run` is a tmpfs, so a node

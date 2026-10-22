@@ -278,25 +278,36 @@ func TestLive(t *testing.T) {
 	}
 }
 
-// Read refuses programs that are no absolute paths, a relative dir and a mode that is no octal number.
+// Read refuses programs that are no absolute paths, a dir outside /run, in chalkos's own
+// directories or in another output's, and a mode that is no octal number.
 func TestRead(t *testing.T) {
 	for name, tc := range map[string]struct{ json, want string }{
 		"fine":     {`{"a": {"inputs": [], "render": "/nix/store/x/bin/r a", "dir": "/run/a", "user": "root", "group": "root", "mode": "0644"}}`, ""},
 		"renderer": {`{"a": {"render": "r", "dir": "/run/a", "mode": "0644"}}`, `output a: the renderer "r" names no program by its absolute path`},
 		"check":    {`{"a": {"render": "/nix/store/x", "check": "true", "dir": "/run/a", "mode": "0644"}}`, `output a: the check "true" names no program`},
-		"dir":      {`{"a": {"render": "/nix/store/x", "dir": "run/a", "mode": "0644"}}`, `the dir "run/a" is no absolute, clean path`},
+		"dir":      {`{"a": {"render": "/nix/store/x", "dir": "run/a", "mode": "0644"}}`, `the dir "run/a" is no clean path below /run`},
 		"mode":     {`{"a": {"render": "/nix/store/x", "dir": "/run/a", "mode": "rw"}}`, `the mode "rw" is no octal file mode`},
+		"networkd": {`{"a": {"render": "/nix/store/x", "dir": "/run/systemd/network", "mode": "0644"}}`, ""},
+		"own":      {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/outputs/a/sub", "mode": "0644"}}`, ""},
+		"etc":      {`{"a": {"render": "/nix/store/x", "dir": "/etc/a", "mode": "0644"}}`, `the dir "/etc/a" is no clean path below /run`},
+		"run":      {`{"a": {"render": "/nix/store/x", "dir": "/run", "mode": "0644"}}`, `the dir "/run" is no clean path below /run`},
+		"unclean":  {`{"a": {"render": "/nix/store/x", "dir": "/run/a/", "mode": "0644"}}`, `the dir "/run/a/" is no clean path below /run`},
+		"dot":      {`{"a": {"render": "/nix/store/x", "dir": "/run/a/.b", "mode": "0644"}}`, `the dir "/run/a/.b" is no clean path below /run`},
+		"chalkos":  {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/config", "mode": "0644"}}`, `the dir "/run/chalkos/config" is in /run/chalkos, of which an output takes /run/chalkos/outputs/a alone`},
+		"other":    {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/outputs/b", "mode": "0644"}}`, `of which an output takes /run/chalkos/outputs/a alone`},
+		"same":     {`{"a": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}, "b": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}}`, `output b: the dir "/run/x" is the dir of the output a`},
+		"nested":   {`{"a": {"render": "/nix/store/x", "dir": "/run/x/y", "mode": "0644"}, "b": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}}`, `output a: the dir "/run/x/y" is inside the dir of the output b`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "outputs.json")
 			os.WriteFile(path, []byte(tc.json), 0o644)
-			_, err := Read(path)
+			_, err := Read(path, DefaultRoot)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
 				t.Errorf("Read = %v, want %q", err, tc.want)
 			}
 		})
 	}
-	if defs, err := Read(filepath.Join(t.TempDir(), "missing.json")); err != nil || len(defs) != 0 {
+	if defs, err := Read(filepath.Join(t.TempDir(), "missing.json"), DefaultRoot); err != nil || len(defs) != 0 {
 		t.Errorf("a missing file: %v, %v", defs, err)
 	}
 }

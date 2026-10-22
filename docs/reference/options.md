@@ -1734,7 +1734,11 @@ null
 
 Where services read the output’s files: a link that chalkd replaces in one rename, so
 a service reads the files of one render, never a mix of two\. Refer to it as
-` config.chalkos.outputs.<name>.dir `, so a misspelled name fails the evaluation\.
+` config.chalkos.outputs.<name>.dir `, so a misspelled name fails the evaluation\. A
+directory at the path is removed when the link first replaces it, so the path is a
+clean path below ` /run ` whose components start with no dot, outside ` /run/chalkos `
+but for ` /run/chalkos/outputs/<name> ` and the paths below it, and neither another
+output’s dir nor inside one\.
 
 
 

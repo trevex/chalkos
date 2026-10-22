@@ -460,7 +460,7 @@ func (l Loader) OutputStates(docs []config.Document, schemas *schema.Schemas) (m
 // outputs reads the image's outputs, and the image's schemas in place of nil ones when there are
 // outputs and documents to render them from.
 func (l Loader) outputs(docs []config.Document, schemas *schema.Schemas) (map[string]outputs.Definition, *schema.Schemas, error) {
-	defs, err := outputs.Read(l.Outputs)
+	defs, err := outputs.Read(l.Outputs, l.Render.Root)
 	if err != nil {
 		return nil, nil, err
 	}

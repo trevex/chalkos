@@ -884,6 +884,57 @@ lib.runTests {
     );
     expected = true;
   };
+  # An output's dir is a clean path below /run, out of chalkos's own directories but its own and
+  # out of every other output's dir, since chalkd replaces whatever it holds with a link.
+  testOutputDirs =
+    let
+      dirs =
+        outputs:
+        outputsOf (withBird {
+          chalkos.outputs = lib.mapAttrs (_: dir: {
+            render = "/nix/store/x-render/bin/render";
+            inherit dir;
+          }) outputs;
+        });
+      accepted = outputs: !fails (dirs outputs);
+    in
+    {
+      expr = {
+        networkd = accepted { a = "/run/systemd/network"; };
+        own = accepted { a = "/run/chalkos/outputs/a/sub"; };
+        etc = accepted { a = "/etc/bird"; };
+        run = accepted { a = "/run"; };
+        unclean = accepted { a = "/run/bird/"; };
+        dot = accepted { a = "/run/bird/.x"; };
+        chalkos = accepted { a = "/run/chalkos/config"; };
+        other = accepted { a = "/run/chalkos/outputs/b"; };
+        same = accepted {
+          a = "/run/bird";
+          b = "/run/bird";
+        };
+        nested = accepted {
+          a = "/run/bird/sub";
+          b = "/run/bird";
+        };
+        siblings = accepted {
+          a = "/run/bird";
+          b = "/run/bird2";
+        };
+      };
+      expected = {
+        networkd = true;
+        own = true;
+        etc = false;
+        run = false;
+        unclean = false;
+        dot = false;
+        chalkos = false;
+        other = false;
+        same = false;
+        nested = false;
+        siblings = true;
+      };
+    };
   # The image's rules check reads the effects, the outputs and the units.
   testRulesCheckReadsTheImage = {
     expr = lib.hasInfix "chalkos-rules-image" withGrant.system.build.chalkosRulesCheck.buildCommand;

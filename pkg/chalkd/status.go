@@ -168,7 +168,7 @@ func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootReq
 // outputStatus is each output of the running image with the hash of the files the node serves
 // and why its last render or check failed, as the renders recorded them.
 func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
-	defs, err := outputs.Read(s.Loader.Outputs)
+	defs, err := outputs.Read(s.Loader.Outputs, s.Loader.Render.Root)
 	if err != nil {
 		return nil, fmt.Errorf("the image's outputs: %w", err)
 	}

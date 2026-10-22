@@ -133,7 +133,11 @@ let
           description = ''
             Where services read the output's files: a link that chalkd replaces in one rename, so
             a service reads the files of one render, never a mix of two. Refer to it as
-            `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation.
+            `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation. A
+            directory at the path is removed when the link first replaces it, so the path is a
+            clean path below `/run` whose components start with no dot, outside `/run/chalkos`
+            but for `/run/chalkos/outputs/<name>` and the paths below it, and neither another
+            output's dir nor inside one.
           '';
         };
         user = lib.mkOption {
@@ -155,12 +159,48 @@ let
     };
 
   outputs = config.chalkos.outputs;
+  # Why chalkd may not replace dir, the dir of the output name, with a link, or null: dir must be a
+  # clean path below /run, a tmpfs, whose components start with no dot, as the links and
+  # directories chalkd keeps beside the outputs' do, and stay out of /run/chalkos, which holds the
+  # node's config and credentials, but for /run/chalkos/outputs/<name> and the paths below it.
+  dirProblem =
+    name: dir:
+    let
+      own = "/run/chalkos/outputs/${name}";
+    in
+    if builtins.match "/run(/[^/.][^/]*)+" dir == null then
+      "is no clean path below /run whose components start with no dot"
+    else if
+      (dir == "/run/chalkos" || lib.hasPrefix "/run/chalkos/" dir)
+      && !(dir == own || lib.hasPrefix "${own}/" dir)
+    then
+      "is in /run/chalkos, of which an output takes ${own} alone"
+    else
+      null;
+  # An output's dir that is another's, or inside another's, whose link a swap of the other would
+  # replace or leave dangling.
+  clashes = lib.concatLists (
+    lib.mapAttrsToList (
+      name: o:
+      map (problem: "chalkos.outputs.${name}.dir: ${o.dir} ${problem}") (
+        lib.concatLists (
+          lib.mapAttrsToList (
+            other: p:
+            lib.optional (other < name && o.dir == p.dir) "is the dir of the output ${other}"
+            ++ lib.optional (lib.hasPrefix "${p.dir}/" o.dir) "is inside the dir of the output ${other}"
+          ) outputs
+        )
+      )
+    ) outputs
+  );
   # An output as chalkd reads it; its name names its directories on the node, so it is a plain
   # name.
   outputJSON =
     name: o:
     if builtins.match "[a-z0-9]([-a-z0-9]*[a-z0-9])?" name == null then
       throw "chalkos.outputs.${name}: an output's name is lower-case letters, digits and dashes"
+    else if dirProblem name o.dir != null then
+      throw "chalkos.outputs.${name}.dir: ${o.dir} ${dirProblem name o.dir}"
     else
       {
         inputs = checkKinds "chalkos.outputs.${name}.inputs" o.inputs o.inputs;
@@ -189,7 +229,11 @@ let
               ''
             );
       };
-  outputsJSON = builtins.toJSON (lib.mapAttrs outputJSON outputs);
+  outputsJSON =
+    if clashes != [ ] then
+      throw (lib.head clashes)
+    else
+      builtins.toJSON (lib.mapAttrs outputJSON outputs);
   # The examples of each output that has them, which the image's build renders.
   examplesJSON = builtins.toJSON (
     lib.mapAttrs (_: o: o.examples) (lib.filterAttrs (_: o: o.examples != null) outputs)
