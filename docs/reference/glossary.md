@@ -256,7 +256,8 @@ raw image, systemd-repart's report of its partitions, the definitions of the sys
 [provenance](#provenance) and kinds, the kinds' JSON Schemas in `schemas/` and, on an image with
 Kubernetes, what it fixes about Kubernetes in `image.json`. The [inventory](#inventory) names it in
 an image's `source.directory`, [chalkbuild](#chalkbuild) signs a copy of it, and chalkctl reads
-it to validate config, install and upgrade. See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
+it to validate config, install and upgrade.
+See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
 ## Installer { #installer }
 

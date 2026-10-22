@@ -101,13 +101,14 @@ so take a writable copy of the signed raw image for the disks:
 
 ```sh
 nix build .#node-kvm -o build/node-kvm
+rm -rf images/node-kvm
 chalkbuild sign --key=db.key --cert=db.crt build/node-kvm images/node-kvm
 chalkctl validate
 cp --sparse=always images/node-kvm/chalkos.raw node.raw
 ```
 
-The output directory of `chalkbuild sign` must not exist, so remove `images/node-kvm` before
-signing a new build.
+The output directory of `chalkbuild sign` must not exist, so `rm -rf` removes the signed copy
+of an earlier build first.
 
 The image holds the [ESP](../reference/glossary.md#esp), with its UKI as the first boot entry
 `chalkos_1.efi`, and [slot](../reference/glossary.md#slot) A only, and

@@ -216,9 +216,9 @@ chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
 refuses an output directory that exists, so the first command removes the copy of an earlier
 build. Write `installer-signed/chalkos-installer.iso` to the stick.
 
-Sign it with the key the nodes' images are signed with: the installer seals each node's
-[STATE](../reference/glossary.md#state) to [PCR 7](../reference/glossary.md#pcr-7) as measured
-under the installer, and an image signed with another key asks for the
+Sign the installer with the key the nodes' images are signed with: the installer seals each
+node's [STATE](../reference/glossary.md#state) to [PCR 7](../reference/glossary.md#pcr-7) as
+measured under the installer, and an image signed with another key asks for the
 [recovery key](../reference/glossary.md#recovery-key) on its first boot.
 
 The installer also carries the [OS CA](../reference/glossary.md#os-ca) of the

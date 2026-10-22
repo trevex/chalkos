@@ -279,10 +279,11 @@ The image is unsigned, and the signing key never enters the Nix store.
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs a copy of the image directory: the
 boot loader and the UKIs on the raw image's ESP. chalkctl installs and upgrades nodes with the
 signed copy, `dd` writes its raw image to a disk, and a VM's disk is a writable copy of that
-signed raw image.
+signed raw image. A cluster whose nodes enforce Secure Boot builds into `build/` and signs into
+the directory its inventory names:
 
 ```sh
-chalkbuild sign --key=<db-key> --cert=<db-cert> images/node-kvm node-kvm-signed
+chalkbuild sign --key=<db-key> --cert=<db-cert> build/node-kvm images/node-kvm
 ```
 
 `<db-key>` and `<db-cert>` are the PEM key and certificate of a signer the machines' firmware
@@ -301,8 +302,8 @@ KVM, `zstd` compresses an image for transport and `dd` or a USB writer puts it o
   installed on them.
 - The image carries no firmware unless a variant or platform adds it with NixOS's
   `hardware.firmware`.
-- Images are built and signed on the operator's machine and sent by chalkctl; chalkos publishes no
-  images and pulls none from a registry.
+- Images are built and signed on the operator's or a build machine and sent by chalkctl; chalkos
+  publishes no images and pulls none from a registry.
 
 ## Related pages
 

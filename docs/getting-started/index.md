@@ -437,7 +437,7 @@ nix build .#node-kvm -o images/node-kvm
 The lab's firmware boots only images signed with the lab's Secure Boot key, and the build is
 unsigned. [`chalklab sign`](../reference/cli/chalklab_sign.md) copies the image directory and
 signs the copy with the lab's db key. The copy's directory must not exist yet, so remove the copy
-of an earlier round first:
+from an earlier upgrade first:
 
 ```sh
 rm -rf images/node-kvm-signed

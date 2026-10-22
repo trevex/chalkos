@@ -73,7 +73,7 @@ chalkos also builds a generic installer without an OS CA,
 anyone on its network who reads the fingerprint can install on the machine. Use the cluster's own
 installer where you can.
 
-## Build the image and check the config
+## Build and sign the image and check the config
 
 Build the image the nodes run, and sign a copy of it into the directory the inventory names for
 it, here `images/node-metal` for `node-metal: {source: {directory: images/node-metal}}` in the
@@ -81,13 +81,14 @@ inventory's `spec.images`:
 
 ```sh
 nix build .#node-metal -o build/node-metal
+rm -rf images/node-metal
 chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
 chalkctl validate
 ```
 
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs the copy's boot loader and
 [UKI](../reference/glossary.md#uki) and checks them against `db.crt`. The output directory must not
-exist, so remove `images/node-metal` before signing a new build.
+exist, so `rm -rf` removes the signed copy of an earlier build first.
 
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md) checks every node's config against
 that image without reaching a node, so a mistake in the YAML shows before any machine boots.
@@ -98,6 +99,7 @@ The firmware boots the installer only when its boot loader and UKI are signed by
 db. `chalkbuild sign` signs a copy of the installer's directory, its raw image and its ISO:
 
 ```sh
+rm -rf installer-signed
 chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
 ```
 
@@ -112,7 +114,8 @@ boots, but its first boot finds PCR 7 changed and asks for the
 Write the signed ISO to the whole stick, not to a partition of it:
 
 ```sh
-sudo dd if=installer-signed/chalkos-installer.iso of=/dev/<usb-disk> bs=4M conv=fsync status=progress
+sudo dd if=installer-signed/chalkos-installer.iso of=/dev/<usb-disk> \
+  bs=4M conv=fsync status=progress
 ```
 
 `<usb-disk>` is the stick's device, for example `sdb`; `lsblk` lists the candidates. Everything
@@ -188,8 +191,8 @@ Run `chalkctl install` with the node's name, the installer's address and the fin
 chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
-chalkctl takes the image from the directory of the node's image in the inventory, the signed copy,
-and refuses it unless it is the build whose root hash that directory's `metadata.json` names. It
+chalkctl takes the image from the signed copy the inventory names for the node's image, and
+refuses it unless it is the build whose root hash that directory's `metadata.json` names. It
 checks no signature: the installer checks the UKI and the boot loader against the machine's db and
 dbx when Secure Boot is enforced, and refuses an unsigned or wrongly signed image. chalkctl then
 sends the node its [config](../reference/glossary.md#config), the documents of the files the

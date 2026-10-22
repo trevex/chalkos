@@ -123,6 +123,7 @@ copy. Write `installer-signed/chalkos-installer.iso` to a USB stick or mount it 
 
 ```sh
 nix build .#installer -o installer
+rm -rf installer-signed
 chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
 ```
 
@@ -145,6 +146,7 @@ holds. [`chalklab sign`](../reference/cli/chalklab_sign.md) signs a copy of an i
 them, and `chalkctl upgrade --image` takes the copy:
 
 ```sh
+rm -rf images/node-kvm-signed
 chalklab sign images/node-kvm --out images/node-kvm-signed
 chalkctl upgrade --image images/node-kvm-signed \
   --inventory ~/.local/state/chalklab/lab/chalkos.yaml --allow-downtime

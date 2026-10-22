@@ -82,8 +82,8 @@ as packages:
 The inventory gives every node the files of `cluster/` through `spec.all`, the nodes of a group
 the group's files, and each node its own file, in that order. Each node's `address` is where
 chalkctl reaches it. `spec.images` names the image directories, relative to the inventory's
-directory, here the `images/` directory `nix build` links. `spec.all.imageName` names the image
-every node runs unless the node or one of its groups names another:
+directory, here `images/`, where `chalkbuild sign` writes the signed copies. `spec.all.imageName`
+names the image every node runs unless the node or one of its groups names another:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -482,9 +482,10 @@ Each node numbers the boot entries it installs and boots the one installed last 
 to an earlier image is therefore an upgrade like any other, which boots first as the highest
 generation; it is allowed, at your own risk, and nothing warns of it.
 
-A routine that works: change the flake, build the images into `images/` again, run
-`chalkctl validate`, upgrade a lab of the same variants with them, then run `chalkctl upgrade`
-on the cluster, which gives each node the image the inventory names for it. Kubernetes moves one
+A routine that works: change the flake, build the images into `build/` again, sign copies of them
+into `images/` with `chalkbuild sign`, run `chalkctl validate`, upgrade a lab of the same variants
+with copies `chalklab sign` signed, then run `chalkctl upgrade` on the cluster, which gives each
+node the image the inventory names for it. Kubernetes moves one
 minor release at a time, as upstream requires. [Upgrade a cluster](upgrade-cluster.md) describes
 a run.
 
@@ -527,6 +528,7 @@ file:
 
 ```sh
 nix build .#node-metal -o build/node-metal
+rm -rf images/node-metal
 chalkbuild sign --key=db.key --cert=db.crt build/node-metal images/node-metal
 chalkctl validate
 ```
