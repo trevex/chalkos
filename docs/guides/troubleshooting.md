@@ -196,10 +196,10 @@ Pod traffic between nodes travels in flannel's VXLAN, on UDP port 8472.
 - A node whose address lies outside `vxlanSourceSubnets` of the
   [`Flannel`](../reference/kinds.md#flannel) document refuses to prepare and says
   `the node's address ... is outside vxlanSourceSubnets`; the other nodes would drop its VXLAN.
-  Widen the ranges in the `Flannel` document every node gets.
+  Widen the ranges in the `Flannel` document. chalkctl refuses an inventory whose nodes hold
+  different `Flannel` specs, so every node gets the same ranges.
 - Small packets pass and large ones hang, as with TLS handshakes or large responses: the VXLAN
-  MTU is too big for the network. Set
-  `chalkos.cni.flannel.mtu` to the network's MTU,
+  MTU is too big for the network. Set `spec.mtu` of the `Flannel` document to the network's MTU,
   minus 20 when IPv6 is in use.
 - A firewall between the nodes drops UDP 8472.
 
