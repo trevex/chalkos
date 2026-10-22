@@ -326,6 +326,44 @@ func TestWriteLayoutRefusesALayerWhoseContentDoesNotMatchItsDigest(t *testing.T)
 	}
 }
 
+// TestReadLayoutRefusesACorruptManifestOrConfig refuses a layout whose manifest or config blob,
+// opened by the digest its index.json or its manifest names, does not hash to that digest: a
+// layout's blob store does not check a blob's content against the digest its file name is.
+func TestReadLayoutRefusesACorruptManifestOrConfig(t *testing.T) {
+	for _, which := range []string{"manifest", "config"} {
+		t.Run(which, func(t *testing.T) {
+			dir := t.TempDir()
+			in := filepath.Join(dir, "in")
+			writeImage(t, in)
+			out := filepath.Join(dir, "out")
+			target := writeLayout(t, in, out)
+			if which == "config" {
+				img, err := ociimage.ReadLayout(out)
+				if err != nil {
+					t.Fatal(err)
+				}
+				m, err := img.Manifest()
+				if err != nil {
+					t.Fatal(err)
+				}
+				target = m.Config.Digest
+			}
+			path := filepath.Join(out, "blobs", target.Algorithm, target.Hex)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data[len(data)-1] ^= 1
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ociimage.ReadLayout(out); err == nil {
+				t.Errorf("ReadLayout with a corrupt %s = nil error", which)
+			}
+		})
+	}
+}
+
 // TestReadContractRefusesATamperedBlob serves a chalkos image from an in-memory registry through
 // a proxy that flips the contract layer's last byte, and checks that ReadContract notices:
 // go-containerregistry verifies a remote blob's digest only once a reader of it reaches end of

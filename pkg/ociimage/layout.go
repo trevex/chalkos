@@ -74,19 +74,14 @@ func WriteLayout(ctx context.Context, img v1.Image, out string) (_ v1.Hash, err 
 		if err != nil {
 			return v1.Hash{}, err
 		}
-		size, err := l.Size()
+		vr, err := NewVerifiedReader(l)
 		if err != nil {
 			return v1.Hash{}, err
 		}
-		rc, err := l.Compressed()
-		if err != nil {
+		if err := p.WriteBlob(d, ctxReader{ctx, vr}); err != nil {
 			return v1.Hash{}, err
 		}
-		tee := newTeeDigest(ctxReader{ctx, rc})
-		if err := p.WriteBlob(d, tee); err != nil {
-			return v1.Hash{}, err
-		}
-		if err := tee.verify(d, size); err != nil {
+		if err := vr.Verify(); err != nil {
 			return v1.Hash{}, fmt.Errorf("the layer %s: %w", d, err)
 		}
 	}
@@ -149,41 +144,64 @@ func (r ctxReader) Read(p []byte) (int, error) {
 	return r.ReadCloser.Read(p)
 }
 
-// teeDigest hashes every byte read through it, so verify can check after the fact that a copy
-// read exactly the bytes its layer's own Digest and Size say it is. layout.Path.WriteBlob trusts
-// the digest it is given for the blob's file name; it does not check that the reader's content
-// matches it.
-type teeDigest struct {
+// VerifiedReader reads a layer's content and hashes every byte read through it, so Verify can
+// check after the fact that it read exactly the bytes the layer's own Digest and Size say it is.
+// A layout's own blob store does not check a blob's content against the digest its file name
+// is, so a reader of a local layer, as much as a reader of a remote one, must be checked once it
+// has been read: WriteBlob and io.Copy close their reader without checking the error Close
+// returns, so a caller calls Verify once its own copy, and any error from closing the copy's
+// destination, have both been checked.
+type VerifiedReader struct {
 	io.ReadCloser
 	hash hash.Hash
 	n    int64
+	want v1.Hash
+	size int64
 }
 
-func newTeeDigest(r io.ReadCloser) *teeDigest {
-	return &teeDigest{ReadCloser: r, hash: sha256.New()}
+// NewVerifiedReader is a VerifiedReader of the layer l's content.
+func NewVerifiedReader(l v1.Layer) (*VerifiedReader, error) {
+	want, err := l.Digest()
+	if err != nil {
+		return nil, err
+	}
+	size, err := l.Size()
+	if err != nil {
+		return nil, err
+	}
+	rc, err := l.Compressed()
+	if err != nil {
+		return nil, err
+	}
+	return &VerifiedReader{ReadCloser: rc, hash: sha256.New(), want: want, size: size}, nil
 }
 
-func (t *teeDigest) Read(p []byte) (int, error) {
-	n, err := t.ReadCloser.Read(p)
-	t.hash.Write(p[:n])
-	t.n += int64(n)
+func (v *VerifiedReader) Read(p []byte) (int, error) {
+	n, err := v.ReadCloser.Read(p)
+	v.hash.Write(p[:n])
+	v.n += int64(n)
 	return n, err
 }
 
-// verify fails unless exactly size bytes were read through t and their digest is want.
-func (t *teeDigest) verify(want v1.Hash, size int64) error {
-	if t.n != size {
-		return fmt.Errorf("copied %d bytes, not the %d its descriptor names", t.n, size)
+// Verify fails unless the VerifiedReader read exactly the bytes its layer's own Digest and Size
+// say it is.
+func (v *VerifiedReader) Verify() error {
+	if v.n != v.size {
+		return fmt.Errorf("read %d bytes, not the %d its descriptor names", v.n, v.size)
 	}
-	got := v1.Hash{Algorithm: want.Algorithm, Hex: hex.EncodeToString(t.hash.Sum(nil))}
-	if got != want {
-		return fmt.Errorf("copied a blob of digest %s, not %s", got, want)
+	got := v1.Hash{Algorithm: v.want.Algorithm, Hex: hex.EncodeToString(v.hash.Sum(nil))}
+	if got != v.want {
+		return fmt.Errorf("read a blob of digest %s, not %s", got, v.want)
 	}
 	return nil
 }
 
 // ReadLayout reads the chalkos image of an OCI image layout, whose index.json names one
-// manifest.
+// manifest. A layout's blob store does not check a blob's content against the digest its file
+// name is, so ReadLayout checks the manifest bytes against index.json's descriptor and the
+// config bytes against the manifest's, before trusting either: a layout corrupted since
+// WriteLayout wrote it is refused here, rather than carried into a sign or a push. Its layers are
+// checked the same way as they are read, by NewVerifiedReader.
 func ReadLayout(dir string) (v1.Image, error) {
 	p, err := layout.FromPath(dir)
 	if err != nil {
@@ -193,19 +211,53 @@ func ReadLayout(dir string) (v1.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := index.IndexManifest()
+	im, err := index.IndexManifest()
 	if err != nil {
 		return nil, err
 	}
-	if len(m.Manifests) != 1 {
-		return nil, fmt.Errorf("%s names %d manifests in its index.json; a chalkos image's layout names one", dir, len(m.Manifests))
+	if len(im.Manifests) != 1 {
+		return nil, fmt.Errorf("%s names %d manifests in its index.json; a chalkos image's layout names one", dir, len(im.Manifests))
 	}
-	img, err := index.Image(m.Manifests[0].Digest)
+	desc := im.Manifests[0]
+	img, err := index.Image(desc.Digest)
 	if err != nil {
 		return nil, err
+	}
+	rawManifest, err := img.RawManifest()
+	if err != nil {
+		return nil, err
+	}
+	if err := checkBlobDigest(rawManifest, desc.Digest, desc.Size); err != nil {
+		return nil, fmt.Errorf("%s: its manifest %w", dir, err)
+	}
+	m, err := img.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	config, err := img.RawConfigFile()
+	if err != nil {
+		return nil, err
+	}
+	if err := checkBlobDigest(config, m.Config.Digest, m.Config.Size); err != nil {
+		return nil, fmt.Errorf("%s: its config %w", dir, err)
 	}
 	if _, err := ReadHeader(img); err != nil {
 		return nil, fmt.Errorf("%s: %w", dir, err)
 	}
 	return img, nil
+}
+
+// checkBlobDigest fails unless data is exactly size bytes whose digest is want.
+func checkBlobDigest(data []byte, want v1.Hash, size int64) error {
+	got, n, err := v1.SHA256(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	if n != size {
+		return fmt.Errorf("is %d bytes, not the %d its descriptor names", n, size)
+	}
+	if got != want {
+		return fmt.Errorf("hashes to %s, not %s", got, want)
+	}
+	return nil
 }

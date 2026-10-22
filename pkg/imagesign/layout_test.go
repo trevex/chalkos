@@ -98,6 +98,44 @@ func TestSignLayout(t *testing.T) {
 	}
 }
 
+// TestSignLayoutRefusesACorruptUKI fails, and leaves out unwritten, when the UKI blob of the
+// layout it signs does not hash to the digest its manifest names: a layout's blob store does not
+// check a blob's content against the digest its file name is, so a corrupted UKI would otherwise
+// come out of SignFile validly signed and validly addressed.
+func TestSignLayoutRefusesACorruptUKI(t *testing.T) {
+	dir := t.TempDir()
+	key, cert := imagetest.Signer(t, dir, "db")
+	in, _ := unsignedLayout(t, dir)
+	img, err := ociimage.ReadLayout(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := ociimage.Layer(img, ociimage.UKIType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := l.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(in, "blobs", d.Algorithm, d.Hex)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[len(data)-1] ^= 1
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "signed")
+	if _, err := SignLayout(context.Background(), in, out, key, cert); err == nil {
+		t.Error("SignLayout over a corrupt UKI = nil error")
+	}
+	if _, err := os.Stat(out); err == nil || !os.IsNotExist(err) {
+		t.Errorf("out = %v, want it to stay absent", err)
+	}
+}
+
 // TestSignLayoutNeedsANewDirectory refuses an output that exists before it signs anything.
 func TestSignLayoutNeedsANewDirectory(t *testing.T) {
 	needSigningTools(t)

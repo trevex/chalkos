@@ -23,8 +23,9 @@ func ParseReference(ref string) (name.Reference, error) {
 }
 
 // options are a registry request's options: ctx, and the credentials of the default keychain,
-// docker's config and its credential helpers. go-containerregistry reaches a registry at a
-// loopback or private address over plain HTTP.
+// docker's config and its credential helpers. go-containerregistry reaches a registry over plain
+// HTTP at localhost with a port, at a name ending in .localhost, at 127.0.0.1, at ::1, or at a
+// private (RFC 1918) address, and any other registry over HTTPS.
 func options(ctx context.Context) []remote.Option {
 	return []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain)}
 }

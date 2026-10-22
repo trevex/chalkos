@@ -36,7 +36,7 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 	if err != nil {
 		return v1.Hash{}, err
 	}
-	dir, err := os.MkdirTemp("", "imagesign-")
+	dir, err := os.MkdirTemp(filepath.Dir(out), ".imagesign-")
 	if err != nil {
 		return v1.Hash{}, err
 	}
@@ -73,24 +73,31 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 	return ociimage.WriteLayout(ctx, signedImg, out)
 }
 
-// extractLayer writes the layer of img of the media type to a new file at path.
+// extractLayer writes the layer of img of the media type to a new file at path, and fails unless
+// what it wrote hashes to the layer's own digest: ReadLayout already checked the layout's
+// manifest and config, but go-containerregistry's layout reader does not check a layer's blob
+// against the digest its file name is, and a corrupted UKI or boot loader would otherwise come
+// out of SignFile validly signed and validly addressed.
 func extractLayer(img v1.Image, mediaType types.MediaType, path string) error {
 	l, err := ociimage.Layer(img, mediaType)
 	if err != nil {
 		return err
 	}
-	rc, err := l.Compressed()
+	vr, err := ociimage.NewVerifiedReader(l)
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer vr.Close()
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, rc); err != nil {
+	if _, err := io.Copy(f, vr); err != nil {
 		f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return vr.Verify()
 }

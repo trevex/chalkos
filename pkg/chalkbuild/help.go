@@ -33,11 +33,11 @@ const pushLong = `Pushes the chalkos image of an OCI image layout, as chalkbuild
 it, to a registry, and prints the reference of its manifest by digest,
 <repository>@sha256:<digest>, which an inventory names as the image's oci source. The reference to
 push to names its registry and a tag or a digest. chalkbuild authenticates with the credentials
-docker login stores in docker's config, or with its credential helpers. It reaches a registry at
-a loopback or private (RFC 1918) address over plain HTTP, any other over HTTPS. Some registries,
-Quay among them, reject a manifest of an artifact type they do not recognize unless an operator
-allow-lists it; the registry's own documentation names the setting. The command needs no secrets
-file or client file.`
+docker login stores in docker's config, or with its credential helpers. It reaches a registry over
+plain HTTP at localhost with a port, at a name ending in .localhost, at 127.0.0.1, at ::1, or at a
+private (RFC 1918) address, and any other registry over HTTPS. Some registries, Quay among them,
+reject a manifest of an artifact type they do not recognize unless an operator allow-lists it; the
+registry's own documentation names the setting. The command needs no secrets file or client file.`
 
 const pushExample = `  chalkbuild push oci/node-metal ghcr.io/example/node-metal:v1.5.0`
 
