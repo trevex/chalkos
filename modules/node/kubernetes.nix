@@ -50,7 +50,8 @@ let
   # when it had no Kubernetes part, and restarted the kubelet for any other change of it, such as
   # of the storage or the time servers. That was a mistake, corrected here.
   kubernetesChanged = lib.concatStringsSep " || " [
-    # The node's type, which is the cluster's kind, its labels, taints and addresses.
+    # The node's type, which is the cluster's kind, its labels, taints, addresses and its
+    # kubelet's extra flags.
     (cel.specsChanged kubernetesAPI "Node")
     # The Host's host name, which the identity's Kubernetes node carries beside its name.
     (cel.specsChanged core "Host")

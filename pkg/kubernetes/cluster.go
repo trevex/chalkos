@@ -52,8 +52,9 @@ type Cluster struct {
 	// VIP is the virtual IP one healthy control-plane node holds at a time.
 	VIP VIP `json:"vip"`
 	// ExtraArgs are flags of the components by component name, such as kube-apiserver or
-	// kubelet. Their names are letters, digits, _, . and -, starting with a letter or digit, without
-	// the leading dashes; the protected flags are refused.
+	// kubelet: the kubelet's from the node's Node document, the others' from the Cluster document.
+	// Their names are letters, digits, _, . and -, starting with a letter or digit, without the
+	// leading dashes; the protected flags are refused.
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
 	Images    Images                       `json:"images"`
 }
@@ -165,24 +166,42 @@ func flagName(name string) string { return strings.ReplaceAll(name, "_", "-") }
 // a name holding = or whitespace, or starting with -, would set another flag than it names.
 var flagNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
-// validateExtraArgs refuses flag names other than flagNamePattern allows, and the protected
-// flags, in any spelling the components accept.
+// validateExtraArgs refuses the flags ValidateFlags refuses, naming their component.
 func (c Cluster) validateExtraArgs() error {
-	protected := map[string][]string{"kube-apiserver": ProtectedAPIServerFlags, "kubelet": ProtectedKubeletFlags}
 	for _, component := range slices.Sorted(maps.Keys(c.ExtraArgs)) {
-		flags := c.ExtraArgs[component]
-		for _, name := range slices.Sorted(maps.Keys(flags)) {
-			if !flagNamePattern.MatchString(name) {
-				return fmt.Errorf("extraArgs: %s flag %q: a flag's name is letters, digits, _, . and -, without the leading dashes", component, name)
-			}
-			if !slices.Contains(protected[component], flagName(name)) {
-				continue
-			}
-			err := fmt.Errorf("extraArgs: %s --%s is set by chalkos and cannot be overridden", component, name)
+		if err := ValidateFlags(component, c.ExtraArgs[component]); err != nil {
+			return fmt.Errorf("extraArgs: %s %w", component, err)
+		}
+	}
+	return nil
+}
+
+// ValidateFlags refuses extra flags of a component, such as kube-apiserver or kubelet, whose
+// names flagNamePattern does not allow, the component's protected flags in any spelling it
+// accepts, and kubelet flags holding whitespace or backslashes: they reach the kubelet through
+// KUBELET_ARGS, which systemd reads from an environment file, dropping backslashes, and
+// ExecStart splits at whitespace where it expands the unbraced variable. Its errors start with
+// the flag.
+func ValidateFlags(component string, flags map[string]string) error {
+	protected := map[string][]string{"kube-apiserver": ProtectedAPIServerFlags, "kubelet": ProtectedKubeletFlags}
+	for _, name := range slices.Sorted(maps.Keys(flags)) {
+		if !flagNamePattern.MatchString(name) {
+			return fmt.Errorf("flag %q: a flag's name is letters, digits, _, . and -, without the leading dashes", name)
+		}
+		if slices.Contains(protected[component], flagName(name)) {
+			err := fmt.Errorf("--%s is set by chalkos and cannot be overridden", name)
 			if component == "kubelet" && (flagName(name) == "node-labels" || flagName(name) == "register-with-taints") {
-				err = fmt.Errorf("%w; give the node's labels and taints in its Node document", err)
+				err = fmt.Errorf("%w; give the node's labels and taints in the Node document's labels and taints", err)
 			}
 			return err
+		}
+	}
+	if component != "kubelet" {
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(flags)) {
+		if strings.ContainsAny(name+flags[name], " \t\r\n\\") {
+			return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace or backslashes", name, flags[name])
 		}
 	}
 	return nil
@@ -208,9 +227,6 @@ func (c Cluster) Validate() error {
 	}
 	if c.NodeIP.Timeout < 0 {
 		return fmt.Errorf("nodeIP: the timeout %d is negative", c.NodeIP.Timeout)
-	}
-	if err := c.validateKubeletFlags(); err != nil {
-		return err
 	}
 	families, err := c.Families()
 	if err != nil {
@@ -253,19 +269,6 @@ func (c Cluster) Validate() error {
 	host, _ := c.EndpointHost()
 	if ip, err := netip.ParseAddr(host); err == nil && !slices.Contains(vips, ip.Unmap()) {
 		return fmt.Errorf("vip: the endpoint %s is none of the virtual addresses", c.Endpoint)
-	}
-	return nil
-}
-
-// validateKubeletFlags refuses kubelet flags holding whitespace or backslashes: they reach the
-// kubelet through KUBELET_ARGS, which systemd reads from an environment file, dropping
-// backslashes, and ExecStart splits at whitespace where it expands the unbraced variable.
-func (c Cluster) validateKubeletFlags() error {
-	flags := c.ExtraArgs["kubelet"]
-	for _, name := range slices.Sorted(maps.Keys(flags)) {
-		if name == "" || strings.ContainsAny(name+flags[name], " \t\r\n\\") {
-			return fmt.Errorf("extraArgs: kubelet --%s=%q: the kubelet's flags cannot hold whitespace or backslashes", name, flags[name])
-		}
 	}
 	return nil
 }

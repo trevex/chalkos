@@ -49,6 +49,7 @@ kind: Node
 metadata: {name: default}
 spec:
   type: worker
+  kubeletExtraArgs: {}
   labels: {}
   nodeIP:
     addresses: []

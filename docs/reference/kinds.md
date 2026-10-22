@@ -70,7 +70,6 @@ It has 4 [change rules](../concepts/rules.md).
 | `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-controller-manager` | map of string | `{}` | Extra flags of the controller-manager, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-scheduler` | map of string | `{}` | Extra flags of the scheduler, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
-| `spec.extraArgs.kubelet` | map of string | `{}` | Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.ipFamilies` | list of one of `ipv4`, `ipv6` | `["ipv4"]` | Address families of the cluster, the primary one first, each once. They are fixed when the cluster is created. |
 | `spec.nodeCIDRMaskSizes` | object | see below |  |
 | `spec.nodeCIDRMaskSizes.ipv4` | integer from 1 to 128 | `24` | Prefix length of each node's part of the family's pod range. |
@@ -110,6 +109,7 @@ It has a [change rule](../concepts/rules.md).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
+| `spec.kubeletExtraArgs` | map of string | `{}` | Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.labels` | map of string | `{}` | Kubernetes labels applied to the node. |
 | `spec.nodeIP` | object | see below |  |
 | `spec.nodeIP.addresses` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |

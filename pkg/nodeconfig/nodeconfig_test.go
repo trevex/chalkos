@@ -331,7 +331,7 @@ spec:
   nodeCIDRMaskSizes: {ipv4: 24, ipv6: 64}
   nodeIP: {validSubnets: [], timeout: 300}
   vip: {addresses: [], mode: l2, interface: null}
-  extraArgs: {etcd: {}, kube-apiserver: {}, kube-controller-manager: {}, kube-scheduler: {}, kubelet: {}}
+  extraArgs: {etcd: {}, kube-apiserver: {}, kube-controller-manager: {}, kube-scheduler: {}}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
@@ -340,6 +340,7 @@ spec:
   type: worker
   labels: {}
   taints: []
+  kubeletExtraArgs: {}
   nodeIP: {addresses: null, validSubnets: null}
 `
 

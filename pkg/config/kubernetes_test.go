@@ -96,8 +96,8 @@ func TestClusterFromDefaults(t *testing.T) {
 }
 
 func TestClusterFromSettings(t *testing.T) {
-	s := kubernetesSet(t, `{ipFamilies: [ipv6, ipv4], serviceCIDRs: {ipv4: 10.100.0.0/16}, vip: {addresses: [10.0.0.10]},
-  extraArgs: {kubelet: {v: "2"}}}`, flannelDoc("default", `{mtu: 1430, vxlanSourceSubnets: ["fd00:1::/64", "10.0.0.0/24"]}`))
+	s := kubernetesNodeSet(t, `{ipFamilies: [ipv6, ipv4], serviceCIDRs: {ipv4: 10.100.0.0/16}, vip: {addresses: [10.0.0.10]}}`,
+		`kubeletExtraArgs: {v: "2"}`, flannelDoc("default", `{mtu: 1430, vxlanSourceSubnets: ["fd00:1::/64", "10.0.0.0/24"]}`))
 	c, err := s.Cluster(testImage)
 	if err != nil {
 		t.Fatal(err)
@@ -124,9 +124,9 @@ func TestClusterRejects(t *testing.T) {
 		"overlapping ranges": {minimal + worker +
 			clusterDoc("k", "{podCIDRs: {ipv4: 10.96.0.0/16}}"),
 			`Cluster "k": podCIDRs.ipv4 10.96.0.0/16 and serviceCIDRs.ipv4 10.96.0.0/12 overlap`},
-		"protected kubelet flag": {minimal + worker +
-			clusterDoc("k", `{extraArgs: {kubelet: {anonymous-auth: "true"}}}`),
-			`Cluster "k": extraArgs: kubelet --anonymous-auth is set by chalkos and cannot be overridden`},
+		"protected kubelet flag": {minimal + clusterDoc("k", "{}") +
+			nodeDoc("w", `{type: worker, kubeletExtraArgs: {anonymous-auth: "true"}}`),
+			`Node "w": kubeletExtraArgs: --anonymous-auth is set by chalkos and cannot be overridden`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := NewSet(mustParse(t, tc.yaml), allSchemas(t))

@@ -13,7 +13,6 @@ spec:
     kube-apiserver: {}
     kube-controller-manager: {}
     kube-scheduler: {}
-    kubelet: {}
   ipFamilies:
     - ipv6
   nodeCIDRMaskSizes:

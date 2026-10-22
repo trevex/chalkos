@@ -27,6 +27,7 @@ kind: Node
 metadata: {name: default}
 spec:
   type: controlplane
+  kubeletExtraArgs: {}
   labels: {}
   nodeIP:
     addresses:

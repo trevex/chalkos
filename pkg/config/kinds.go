@@ -73,6 +73,7 @@ type nodeSpec struct {
 		Value  *string `json:"value"`
 		Effect string  `json:"effect"`
 	} `json:"taints"`
+	KubeletExtraArgs map[string]string `json:"kubeletExtraArgs"`
 	// NodeIP is how the node gets its addresses: nil Addresses take the static ones, nil
 	// ValidSubnets the Cluster's.
 	NodeIP struct {

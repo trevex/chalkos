@@ -49,8 +49,8 @@ network, recorded in `/etc/chalkos/kubernetes/image.json`. Everything else is
 
 | Kind | Count | Holds |
 | --- | --- | --- |
-| [`Cluster`](../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on control planes and extra flags of every component |
-| [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints and addresses |
+| [`Cluster`](../reference/kinds.md#cluster) | one, required | The URL of the cluster's API server, its address families and ranges, DNS domain and address, how nodes pick their addresses, the [VIP](../reference/glossary.md#vip), scheduling on control planes and extra flags of the control plane's components |
+| [`Node`](../reference/kinds.md#node) | one, required | The node's type and its own labels, taints, addresses and extra flags of its kubelet |
 | [`RegistryMirror`](../reference/kinds.md#registrymirror) | one per registry | The mirrors containerd tries before a registry |
 | [`Flannel`](../reference/kinds.md#flannel) | at most one, on images with flannel | The MTU flannel assumes and the ranges its VXLAN must come from |
 | [`Addon`](../reference/kinds.md#addon) | any | Kubernetes objects the control planes apply |
@@ -106,9 +106,9 @@ chalkd renders the kubelet's configuration from the node's cluster into
 authentication and authorisation, no anonymous access and no read-only port, the systemd cgroup
 driver, the cluster's DNS address and domain, and `rotateCertificates` with `serverTLSBootstrap`.
 What differs per node the kubelet gets as flags in `$KUBELET_ARGS`: the node name, which is the
-node's [name in the inventory](config.md#what-names-a-node), and the addresses, labels and taints
-of its `Node` document. The homelab example's worker carries fast storage and keeps other
-workloads off:
+node's [name in the inventory](config.md#what-names-a-node), and the addresses, labels, taints and
+extra flags of its `Node` document in `kubeletExtraArgs`. The homelab example's worker carries fast
+storage and keeps other workloads off:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -120,9 +120,9 @@ spec:
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
 ```
 
-A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule` unless the
-`Cluster` document sets `allowSchedulingOnControlPlanes: true`. `extraArgs.kubelet` of the
-`Cluster` document adds flags to every kubelet.
+A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule` unless the `Cluster`
+document sets `allowSchedulingOnControlPlanes: true`. `kubeletExtraArgs` of a node's `Node` document
+adds flags to its kubelet.
 
 containerd pulls through the mirrors of the `RegistryMirror` documents, tried in order before the
 registry itself. Each document names one registry as image references name it, in
@@ -163,10 +163,11 @@ bootstrap-token authentication off, and encrypts Secrets in etcd with the cluste
 The controller-manager runs without the bootstrap-signer and token-cleaner controllers, since
 nothing uses bootstrap tokens.
 
-`extraArgs` of the `Cluster` document adds or overrides flags per component, `etcd`,
-`kube-apiserver`, `kube-controller-manager`, `kube-scheduler` and `kubelet`, each a map of flags
-named without their leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter
-or digit. A kubelet flag's name and value may hold no whitespace or backslash:
+`extraArgs` of the `Cluster` document adds or overrides flags per component of the control plane,
+`etcd`, `kube-apiserver`, `kube-controller-manager` and `kube-scheduler`, and `kubeletExtraArgs` of
+a node's `Node` document those of its kubelet. Each is a map of flags named without their leading
+dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit. A kubelet flag's
+name and value may hold no whitespace or backslash:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -176,6 +177,13 @@ spec:
   endpoint: https://10.0.0.10:6443
   extraArgs:
     kube-apiserver: {audit-log-maxage: "30"}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: worker
+  kubeletExtraArgs: {max-pods: "200"}
 ```
 
 Some flags are refused, also spelt with `_` for `-`, which the components accept: the API

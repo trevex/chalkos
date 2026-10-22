@@ -24,6 +24,14 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
+        "kubeletExtraArgs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.",
+          "type": "object"
+        },
         "labels": {
           "additionalProperties": {
             "type": "string"

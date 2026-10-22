@@ -439,6 +439,7 @@ in
           default = [ ];
           description = "Kubernetes taints applied to the node.";
         };
+        kubeletExtraArgs = flags "the kubelet";
         nodeIP = {
           addresses = mkOption {
             type = types.nullOr (types.listOf types.nonEmptyStr);
@@ -551,7 +552,6 @@ in
           kube-apiserver = flags "the API server";
           kube-controller-manager = flags "the controller-manager";
           kube-scheduler = flags "the scheduler";
-          kubelet = flags "the kubelet";
         };
       };
     };
