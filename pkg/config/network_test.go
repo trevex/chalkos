@@ -80,6 +80,15 @@ func TestRenderRejectsNewlines(t *testing.T) {
 	}
 }
 
+// A networkd value that spans lines would end its key and start another in the unit, so the
+// schema refuses it, and chalkctl with it, before the node renders anything.
+func TestNetworkValueSpansNoLines(t *testing.T) {
+	docs := networkDocs(t, minimal+"---\napiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: a}\nspec:\n  match: {name: \"a\\nb\"}\n")
+	if _, err := NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "/spec/match") {
+		t.Fatalf("err = %v, want the value refused", err)
+	}
+}
+
 func TestRenderUnannotatedSectionFails(t *testing.T) {
 	// A hand-built document bypasses the schema's additionalProperties: false, which otherwise
 	// rejects a spec property the schema never annotated with x-chalkos-networkd-section.

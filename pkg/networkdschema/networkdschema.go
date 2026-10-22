@@ -112,10 +112,11 @@ func lowerLeading(word string) string {
 }
 
 // scalarSchema is a key's value: networkd parses every value from text, and a key given as a
-// list is written once per element. It returns a fresh map each call, since callers embed it in
+// list is written once per element. A string spans no lines, because a line break would end the
+// key and start another in the unit. It returns a fresh map each call, since callers embed it in
 // their own schema and must not share one map between keys.
 func scalarSchema() map[string]any {
-	return map[string]any{"type": []any{"string", "integer", "boolean"}}
+	return map[string]any{"type": []any{"string", "integer", "boolean"}, "pattern": "^[^\r\n]*$"}
 }
 
 func oneOrMany(item map[string]any) map[string]any {

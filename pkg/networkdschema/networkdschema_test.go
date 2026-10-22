@@ -132,7 +132,7 @@ func TestSpecSchema(t *testing.T) {
 		t.Errorf("ipv6AcceptRA = %v", ra)
 	}
 	raAnyOf := ra["anyOf"].([]any)
-	wantScalar := map[string]any{"type": []any{"string", "integer", "boolean"}}
+	wantScalar := map[string]any{"type": []any{"string", "integer", "boolean"}, "pattern": "^[^\r\n]*$"}
 	if !reflect.DeepEqual(raAnyOf[0], wantScalar) {
 		t.Errorf("ipv6AcceptRA's scalar branch = %v, want %v", raAnyOf[0], wantScalar)
 	}
