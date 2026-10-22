@@ -935,6 +935,20 @@ lib.runTests {
         siblings = true;
       };
     };
+  # An image with outputs has the unprivileged user its renderers run as; one without has none.
+  testRenderUser = {
+    expr = {
+      outputs =
+        (withBird {
+          chalkos.outputs.bird-conf.render = "/nix/store/x-render/bin/render";
+        }).users.users.chalkos-render.isSystemUser;
+      none = withDemo.users.users ? chalkos-render;
+    };
+    expected = {
+      outputs = true;
+      none = false;
+    };
+  };
   # The image's rules check reads the effects, the outputs and the units.
   testRulesCheckReadsTheImage = {
     expr = lib.hasInfix "chalkos-rules-image" withGrant.system.build.chalkosRulesCheck.buildCommand;

@@ -54,17 +54,20 @@ files into `$OUT`:
 with their schema defaults. A `secretRef` field holds the reference alone, never the value. The
 node's name is the subject of its node certificate, as [change rules](rules.md) see it.
 
-The renderer runs in the sandbox of command [facts](../reference/glossary.md#fact): the system is
-read-only, there is no network, and `$OUT`, an empty directory, is the only path it may write
-besides a private `/tmp`. It must finish within 30 seconds, and its files may take 16 MiB and hold
-no links, because chalkd sets their owner afterwards and must not follow a link to a file the
-output does not own.
+The renderer runs in a sandbox, as a transient unit of the unprivileged system user
+`chalkos-render`, without capabilities, devices or network. The system is read-only, and STATE,
+`/var`, and the config, credentials and Kubernetes keys chalkd writes below `/run/chalkos` are
+hidden, so a renderer cannot read a secret value even by path. `$OUT`, an empty directory the user
+owns, is the only path it may write besides a private `/tmp`. It must finish within 30 seconds,
+and its files may take 16 MiB and hold no links, because chalkd sets their owner afterwards and
+must not follow a link to a file the output does not own.
 
 An output's `check` runs in the same sandbox against the rendered files, as a script of bash with
-`set -e`. A check that fails refuses the files, so a service's own validator, such as
-`bird -p`, runs before the service ever reads them. `examples`, a directory of config files, is
-rendered and checked when the image is built, so a template that does not render, or renders a
-file the check refuses, fails the build.
+`set -e`. It reads the files as the renderer wrote them, before chalkd gives them the output's
+owner and mode, and may not change them. A check that fails refuses the files, so a service's own
+validator, such as `bird -p`, runs before the service ever reads them. `examples`, a directory of
+config files, is rendered and checked when the image is built, so a template that does not
+render, or renders a file the check refuses, fails the build.
 
 Services read the files at the output's `dir`, `/run/chalkos/outputs/<name>` by default, which a
 module refers to as `config.chalkos.outputs.<name>.dir`, so a misspelled output fails the image's

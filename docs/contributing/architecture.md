@@ -98,7 +98,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the [lab](../reference/glossary.md#lab)'s supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, renders the outputs at boot, and reads the image's grants and effects. |
-| `outputs` | Renders and checks the image's [outputs](../reference/glossary.md#output) in the facts' sandbox, swaps them in by a symlink rename, and records their hashes and failures. |
+| `outputs` | Renders and checks the image's [outputs](../reference/glossary.md#output) in a sandbox of their own, as an unprivileged user, swaps them in by a symlink rename, and records their hashes and failures. |
 | `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
 | `rules` | Compiles the [change rules](../reference/glossary.md#change-rule) of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |

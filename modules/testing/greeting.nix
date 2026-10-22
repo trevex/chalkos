@@ -5,7 +5,8 @@
 # chalkd restarts the unit when the output changes, the token's Secret among it. The Greeting's
 # rules, which the image's rules check compiles, refuse a message too long for one log line, and
 # a new message while the fact greetingLock, a file no test writes, holds one; the output's check
-# refuses a message of more than one line, and the build renders its examples.
+# refuses a message of more than one line and fails outside an unprivileged sandbox, and the build
+# renders its examples.
 {
   config,
   lib,
@@ -52,6 +53,10 @@
     check = ''
       lines=$(wc -l < "$OUT/greeting")
       [ "$lines" -eq 0 ] || [ "$lines" -eq 2 ]
+      # The sandbox: no root, no capabilities and no STATE.
+      [ "$(id -u)" -ne 0 ]
+      grep -q '^CapEff:[[:space:]]*0*$' /proc/self/status
+      [ ! -e /state/chalkd ]
     '';
     examples = ./greeting-examples;
   };

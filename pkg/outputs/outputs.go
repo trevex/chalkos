@@ -140,10 +140,21 @@ func (d Definition) mode() (fs.FileMode, error) {
 	return fs.FileMode(m), nil
 }
 
-// Runner runs a renderer or a check: argv with stdin, and $OUT naming out, the only path it may
-// write. A program that fails is a ProgramError.
+// A Program is a renderer or a check to run: its argv, the input it reads on standard input, and
+// $OUT, the directory of the output's files, which a renderer may write and a check may only read.
+// Timeout bounds it.
+type Program struct {
+	Argv    []string
+	Stdin   []byte
+	Out     string
+	Write   bool
+	Timeout time.Duration
+}
+
+// Runner runs renderers and checks. A program that fails is a ProgramError, and one that does not
+// finish within its timeout an error that wraps context.DeadlineExceeded.
 type Runner interface {
-	Run(ctx context.Context, argv []string, stdin []byte, out string) error
+	Run(ctx context.Context, p Program) error
 }
 
 // A ProgramError is a renderer or a check that failed. Status is "exit N", or why systemd
@@ -155,45 +166,91 @@ type ProgramError struct {
 
 func (e *ProgramError) Error() string { return "the program failed (" + e.Status + ")" }
 
-// Sandbox runs programs in the facts' sandbox, with out writable as well, as oneshot transient
-// units that write standard error to the journal. chalkos-config renders before sysinit.target,
-// where the system bus does not run yet, so systemd-run reaches the manager on its private
-// socket, on which it cannot follow a unit as --wait and --pipe do: the start job of a oneshot
-// unit finishes when the program exits, the program reads standard input from a file, and its
-// exit status is the unit's. The units have no default dependencies, which would wait for
-// sysinit.target.
+// RenderUser is the unprivileged system user renderers and checks run as on a node, which owns
+// $OUT while the renderer writes it.
+const RenderUser = "chalkos-render"
+
+// Sandbox runs programs as oneshot transient units that write standard error to the journal, in a
+// sandbox of their own: as RenderUser without capabilities, devices or network, on a read-only
+// system without STATE, /var, or the config, credentials and Kubernetes keys chalkd writes below
+// /run/chalkos, so a program reads no Secret's value; a renderer may write $OUT alone.
+// chalkos-config renders before sysinit.target, where the system bus does not run yet, so
+// systemd-run reaches the manager on its private socket, on which it cannot follow a unit as
+// --wait and --pipe do: the start job of a oneshot unit finishes when the program exits, the
+// program reads standard input from a file, and its exit status is the unit's. The units have no
+// default dependencies, which would wait for sysinit.target.
 type Sandbox struct{}
 
 // manager reaches systemd's manager without the system bus.
 const manager = "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/systemd/private"
 
-func (Sandbox) Run(ctx context.Context, argv []string, stdin []byte, out string) error {
-	input := out + ".input"
-	if err := os.WriteFile(input, stdin, 0o600); err != nil {
-		return err
-	}
-	defer os.Remove(input)
-	unit := "chalkos-render-" + filepath.Ext(out)[1:] + ".service"
-	args := append([]string{"systemd-run", "--quiet", "--service-type=oneshot", "--unit=" + unit}, facts.SandboxProperties()...)
+// sandbox holds the properties of the units Sandbox runs.
+var sandbox = []string{
+	"--property=User=" + RenderUser,
+	"--property=CapabilityBoundingSet=",
+	"--property=AmbientCapabilities=",
+	"--property=NoNewPrivileges=yes",
+	"--property=ProtectSystem=strict",
+	"--property=ProtectHome=yes",
+	"--property=ProtectProc=invisible",
+	"--property=PrivateTmp=yes",
+	"--property=PrivateDevices=yes",
+	"--property=PrivateNetwork=yes",
+	"--property=ProtectKernelTunables=yes",
+	"--property=ProtectKernelModules=yes",
+	"--property=ProtectKernelLogs=yes",
+	"--property=ProtectControlGroups=yes",
+	"--property=RestrictAddressFamilies=AF_UNIX",
+	"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
+	"--property=DefaultDependencies=no",
+}
+
+// sandboxArgs is the systemd-run command line that runs p as unit, reading input.
+func sandboxArgs(unit string, p Program, input string) []string {
+	args := append([]string{"systemd-run", "--quiet", "--service-type=oneshot", "--unit=" + unit}, sandbox...)
 	args = append(args,
-		"--property=DefaultDependencies=no",
 		// The start of a oneshot unit lasts until its program exits.
-		fmt.Sprintf("--property=TimeoutStartSec=%d", int(facts.Timeout.Seconds())),
-		"--property=ReadWritePaths="+out,
-		"--setenv=OUT="+out,
+		fmt.Sprintf("--property=TimeoutStartSec=%dms", p.Timeout.Milliseconds()),
+		"--setenv=OUT="+p.Out,
 		"--property=StandardInput=file:"+input,
 		"--property=StandardOutput=null",
 		"--property=StandardError=journal",
-		"--",
 	)
-	_, err := facts.RunCommand(ctx, append(args, argv...), nil, facts.MaxOutput, manager)
+	if p.Write {
+		args = append(args, "--property=ReadWritePaths="+p.Out)
+	}
+	return append(append(args, "--"), p.Argv...)
+}
+
+func (Sandbox) Run(ctx context.Context, p Program) error {
+	input := p.Out + ".input"
+	if err := os.WriteFile(input, p.Stdin, 0o600); err != nil {
+		return err
+	}
+	defer os.Remove(input)
+	if p.Write {
+		u, err := user.Lookup(RenderUser)
+		if err != nil {
+			return fmt.Errorf("the renderers' user: %w", err)
+		}
+		uid, _ := strconv.Atoi(u.Uid)
+		gid, _ := strconv.Atoi(u.Gid)
+		if err := os.Chown(p.Out, uid, gid); err != nil {
+			return err
+		}
+	}
+	unit := "chalkos-render-" + filepath.Ext(p.Out)[1:] + ".service"
+	_, err := facts.RunCommand(ctx, sandboxArgs(unit, p, input), nil, facts.MaxOutput, manager)
+	systemctl := func(args ...string) ([]byte, error) {
+		return facts.RunCommand(context.Background(), append([]string{"systemctl"}, args...), nil, facts.MaxOutput, manager)
+	}
 	var exit *facts.CommandError
 	if !errors.As(err, &exit) {
 		return err
 	}
 	// A unit that failed stays loaded, with its result, until it is reset.
-	show, serr := facts.RunCommand(context.Background(), []string{"systemctl", "show", "--property=Result", "--property=ExecMainStatus", unit}, nil, facts.MaxOutput, manager)
-	facts.RunCommand(context.Background(), []string{"systemctl", "reset-failed", unit}, nil, facts.MaxOutput, manager)
+	show, serr := systemctl("show", "--property=Result", "--property=ExecMainStatus", unit)
+	systemctl("reset-failed", unit)
 	if serr != nil {
 		return &ProgramError{Status: exit.Status, Unit: unit}
 	}
@@ -210,11 +267,16 @@ func (Sandbox) Run(ctx context.Context, argv []string, stdin []byte, out string)
 	return &ProgramError{Status: status, Unit: unit}
 }
 
-// Direct runs programs as they are, as the image's build and tests do.
+// Direct runs programs as they are, as the image's build and tests do; a check may write $OUT.
 type Direct struct{}
 
-func (Direct) Run(ctx context.Context, argv []string, stdin []byte, out string) error {
-	_, err := facts.RunCommand(ctx, argv, stdin, facts.MaxOutput, "OUT="+out)
+func (Direct) Run(ctx context.Context, p Program) error {
+	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
+	defer cancel()
+	_, err := facts.RunCommand(ctx, p.Argv, p.Stdin, facts.MaxOutput, "OUT="+p.Out)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	var failed *facts.CommandError
 	if errors.As(err, &failed) {
 		return &ProgramError{Status: failed.Status, Stderr: failed.Stderr}
@@ -425,9 +487,8 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 	if err := checkFiles(dir); err != nil {
 		return dir, State{}, err
 	}
-	if err := own(dir, d, r.KeepOwner); err != nil {
-		return dir, State{}, err
-	}
+	// The check reads the files as the renderer wrote them, which the output's owner and mode may
+	// keep from the sandbox's user.
 	if d.Check != "" {
 		if err := r.run(ctx, name, "check", d.Check, stdin, dir); err != nil {
 			return dir, State{}, err
@@ -437,17 +498,20 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 	if err != nil {
 		return dir, State{}, err
 	}
+	if err := own(dir, d, r.KeepOwner); err != nil {
+		return dir, State{}, err
+	}
 	return dir, State{Files: files, Secrets: d.secrets(in)}, nil
 }
 
-// run runs a renderer or a check of the output name, logging what a failed program wrote to
-// standard error, or the unit whose journal holds it.
+// run runs a renderer or a check of the output name, the renderer with out writable, logging what
+// a failed program wrote to standard error, or the unit whose journal holds it.
 func (r Renderer) run(ctx context.Context, name, what, command string, stdin []byte, out string) error {
 	timeout := cmp.Or(r.Timeout, facts.Timeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	argv := strings.Fields(command)
-	err := r.Run.Run(ctx, argv, stdin, out)
+	err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == "renderer", Timeout: timeout})
 	var failed *ProgramError
 	switch {
 	case err == nil:

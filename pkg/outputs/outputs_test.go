@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -309,5 +310,63 @@ func TestRead(t *testing.T) {
 	}
 	if defs, err := Read(filepath.Join(t.TempDir(), "missing.json"), DefaultRoot); err != nil || len(defs) != 0 {
 		t.Errorf("a missing file: %v, %v", defs, err)
+	}
+}
+
+// A check reads the files as the renderer wrote them, before they get the output's owner and
+// mode, which may leave the sandbox's user unable to read them.
+func TestCheckReadsTheRenderersFiles(t *testing.T) {
+	r := renderer(t)
+	d := def(t, r.Root, script(t, `echo hi > "$OUT/file"`), script(t, `grep -q hi "$OUT/file"`))
+	d.Mode = "0200"
+	s, failures := r.Render(context.Background(), map[string]Definition{"demo": d}, input(t, demos))
+	if len(failures) > 0 {
+		t.Fatal(failures)
+	}
+	if err := s.Swap(); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(filepath.Join(d.Dir, "file")); err != nil || info.Mode().Perm() != 0o200 {
+		t.Errorf("the file: %v, %v", info, err)
+	}
+}
+
+// A program that does not finish within the renderer's timeout fails its output.
+func TestRenderTimeout(t *testing.T) {
+	r := renderer(t)
+	r.Timeout = 100 * time.Millisecond
+	d := def(t, r.Root, script(t, `exec sleep 5`), "")
+	_, failures := r.Render(context.Background(), map[string]Definition{"demo": d}, input(t, demos))
+	if len(failures) != 1 || failures[0].Problem != "its renderer did not finish within 100ms" {
+		t.Errorf("failures = %v", failures)
+	}
+}
+
+// A renderer runs as the unprivileged user, without capabilities or devices and with STATE, /var,
+// and chalkd's config, credentials and Kubernetes keys hidden; it may write $OUT alone, and a
+// check may write nothing. systemd stops it at its timeout.
+func TestSandboxArgs(t *testing.T) {
+	p := Program{Argv: []string{"/nix/store/x/bin/r", "a"}, Out: "/run/chalkos/outputs/.staging/demo.1", Write: true, Timeout: 30 * time.Second}
+	args := strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in"), "\n")
+	for _, want := range []string{
+		"--property=User=chalkos-render",
+		"--property=CapabilityBoundingSet=",
+		"--property=NoNewPrivileges=yes",
+		"--property=PrivateDevices=yes",
+		"--property=ProtectHome=yes",
+		"--property=ProtectSystem=strict",
+		"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
+		"--property=TimeoutStartSec=30000ms",
+		"--property=ReadWritePaths=/run/chalkos/outputs/.staging/demo.1",
+		"--property=StandardInput=file:/in",
+		"--\n/nix/store/x/bin/r\na",
+	} {
+		if !strings.Contains(args+"\n", want+"\n") {
+			t.Errorf("the arguments lack %q:\n%s", want, args)
+		}
+	}
+	p.Write = false
+	if args := strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in"), "\n"); strings.Contains(args, "ReadWritePaths") {
+		t.Errorf("a check may write:\n%s", args)
 	}
 }

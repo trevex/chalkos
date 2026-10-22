@@ -100,9 +100,11 @@ let
             `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}` on standard input,
             the documents of each kind of `inputs` sorted by name, with their schema defaults and
             without any Secret's values, and writes the output's files into `$OUT`, the only path
-            it may write. It runs in the sandbox of command facts and must finish within 30
-            seconds; the files may take 16 MiB, and hold no links. The same documents must give the
-            same files: chalkd renders every output again at boot.
+            it may write. It runs as the unprivileged user `chalkos-render`, without capabilities,
+            devices or network, on a read-only system without STATE, `/var`, or the config,
+            credentials and Kubernetes keys chalkd writes below `/run/chalkos`, and must finish
+            within 30 seconds; the files may take 16 MiB, and hold no links. The same documents
+            must give the same files: chalkd renders every output again at boot.
           '';
         };
         check = lib.mkOption {
@@ -112,8 +114,9 @@ let
           description = ''
             Shell commands, run by bash with `set -e` in the renderer's sandbox, with coreutils, grep
             and sed on the `PATH`, that check the rendered files in `$OUT`; they read the renderer's
-            input on standard input. A failure refuses the delivery before it changes anything,
-            and at boot fails `chalkos-config.service`.
+            input on standard input and may not write `$OUT`. The files are as the renderer wrote
+            them, before they get the output's owner and mode. A failure refuses the delivery
+            before it changes anything, and at boot fails `chalkos-config.service`.
           '';
         };
         examples = lib.mkOption {
@@ -386,5 +389,16 @@ in
     environment.etc."chalkos/services.json".text = servicesJSON;
     environment.etc."chalkos/effects.json".text = effectsJSON;
     environment.etc."chalkos/outputs.json".text = outputsJSON;
+
+    # The unprivileged user chalkd runs renderers and checks as. Users are fixed when the image is
+    # built, so it exists when chalkos-config renders at boot.
+    users = lib.mkIf (outputs != { }) {
+      users.chalkos-render = {
+        isSystemUser = true;
+        group = "chalkos-render";
+        description = "chalkos output renderers";
+      };
+      groups.chalkos-render = { };
+    };
   };
 }
