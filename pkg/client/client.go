@@ -303,12 +303,14 @@ func readAlert(ctx context.Context, dial func(context.Context, string, string) (
 
 // RefusesCertificate reports whether the node at addr, host or host:port, refused cert for an
 // issuer it does not know, given err, the error of a call to it. It connects again, without
-// verifying the node, only when err may hide the node's alert.
+// verifying the node, only when err may hide the node's alert. Only the unknown certificate
+// authority alert counts: the node sends a bad certificate alert for a certificate it cannot use
+// for other reasons, such as one that expired.
 func RefusesCertificate(ctx context.Context, err error, addr string, cert *tls.Certificate) bool {
 	if cert == nil || err == nil {
 		return false
 	}
-	if _, refused := distrusted(err); refused {
+	if unknownAuthority(err) {
 		return true
 	}
 	if ctx.Err() != nil || !alertShaped(err) {
@@ -318,8 +320,13 @@ func RefusesCertificate(ctx context.Context, err error, addr string, cert *tls.C
 		addr = net.JoinHostPort(addr, Port)
 	}
 	cfg := &tls.Config{InsecureSkipVerify: true, Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS13}
-	_, refused := distrusted(readAlert(ctx, (&net.Dialer{}).DialContext, addr, cfg))
-	return refused
+	return unknownAuthority(readAlert(ctx, (&net.Dialer{}).DialContext, addr, cfg))
+}
+
+// unknownAuthority reports whether err is the node's alert that it does not know the issuer of
+// the client's certificate.
+func unknownAuthority(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "remote error: tls: unknown certificate authority")
 }
 
 // distrusted reports whether err is a TLS handshake's failure for want of trust, and whether the

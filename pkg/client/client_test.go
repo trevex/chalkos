@@ -318,3 +318,17 @@ func TestUntrustedProbesOnlyAlertShapedFailures(t *testing.T) {
 		})
 	}
 }
+
+// RefusesCertificate counts the node's unknown certificate authority alert alone: a bad
+// certificate alert refuses a certificate of an issuer the node knows.
+func TestRefusesCertificateForAnUnknownIssuerAlone(t *testing.T) {
+	cert := &tls.Certificate{}
+	alert := func(msg string) error { return &net.OpError{Op: "remote error", Err: errors.New(msg)} }
+	// Nothing listens on port 1, so the second connection finds no alert to read.
+	if !RefusesCertificate(context.Background(), alert("tls: unknown certificate authority"), "127.0.0.1:1", cert) {
+		t.Error("an unknown certificate authority alert is not a refusal")
+	}
+	if RefusesCertificate(context.Background(), alert("tls: bad certificate"), "127.0.0.1:1", cert) {
+		t.Error("a bad certificate alert is a refusal for an unknown issuer")
+	}
+}
