@@ -1,6 +1,6 @@
 ---
 title: "Customise an image"
-description: "Add packages, services, kernel modules, variants and config kinds of your own to a cluster's images"
+description: "Add packages, services, kernel modules, variants, config kinds and checked service config of your own to a cluster's images"
 ---
 
 # Customise an image
@@ -17,9 +17,13 @@ differs between nodes travels in the node's YAML [config](../reference/glossary.
 the image. A change to the modules reaches running nodes as an
 [upgrade](../reference/glossary.md#upgrade) to the new image, which a new
 [root hash](../reference/glossary.md#root-hash) identifies. Kubernetes objects for the cluster are
-`Addon`
-documents in the YAML and need no image change; [Kubernetes on chalkos](../concepts/kubernetes.md)
-describes them.
+`Addon` documents in the YAML and need no image change;
+[Kubernetes on chalkos](../concepts/kubernetes.md) describes them.
+
+From [Add a config kind of your own](#add-a-config-kind-of-your-own) on, the guide builds one
+extension: bird, a BGP daemon, whose neighbours are `Peer` documents, whose config file the node
+renders from them and checks before it accepts a change, and which reloads when that file
+changes.
 
 ## Before you begin
 
@@ -122,10 +126,11 @@ Then declare the variant next to `node` in `flake.nix` and expose its image:
     let
       images = chalkos.lib.mkImages {
         platforms = [ "metal" ];
-        # Every variant carries these, so nodes of both accept Rack documents.
+        # Every variant carries these, so nodes of both accept Rack and Peer documents.
         modules = [
           ./modules/disk-report.nix
           ./extensions/rack.nix
+          ./extensions/bird
         ];
         variants = {
           node = { };
@@ -173,36 +178,251 @@ the `image` of its groups, then `spec.image`; a node in two groups that name dif
 one that ends up with no image, makes chalkctl refuse the inventory. Several GPU nodes can share a
 group with `image: gpu-metal` instead. The node's config files stay as they are.
 
-## Read a node's config in a unit
+## Add a config kind of your own
 
-A unit that needs one of the node's values reads its config documents. It names the kinds it
-reads under [`chalkos.consumers`](../reference/options.md#chalkosconsumers):
-[chalkd](../reference/glossary.md#chalkd) writes their documents to
-`/run/chalkos/config/<group>/<Kind>/<name>.json` and restarts the unit when one of them changes.
-The node's `Node` document gives its type, for example:
+A value of your own per node needs a config kind of its own: an
+[extension](../reference/glossary.md#extension) declares the kind in a module of the images, and
+each node's YAML holds documents of it. This guide builds one extension from here on: bird, a
+BGP daemon, with its neighbours in a `Peer` kind, its config file rendered from the `Peer`
+documents, and a reload when that file changes. Create `extensions/bird/default.nix` with the
+kind first:
+
+```nix
+chalkos.kinds.Peer = {
+  group = "bgp.example.org";
+  version = "v1alpha1";
+  multiple = true;
+  spec = {
+    address = lib.mkOption {
+      type = lib.types.nonEmptyStr;
+      example = "10.0.0.1";
+      description = "Address of the neighbour.";
+    };
+    asn = lib.mkOption {
+      type = lib.types.ints.between 1 4294967295;
+      example = 64513;
+      description = "AS number of the neighbour.";
+    };
+  };
+};
+```
+
+[`chalkos.kinds`](../reference/options.md#chalkoskinds) declares the kind's group, version and
+`spec` as NixOS options, from which the image build writes the kind's JSON Schema, so chalkctl
+and the node refuse a misspelled field or an AS number out of range. The group is a DNS name of
+your own, since chalkos keeps `chalkos.dev` and its subdomains for its own kinds. `multiple`
+lets a node hold several `Peer` documents, each with a name of its own; without it, a node holds
+at most one document of the kind. The whole module follows below.
+
+Give each node its documents in its own file, here `nodes/cp1.yaml`:
+
+```yaml
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: upstream-a}
+spec: {address: 10.0.0.1, asn: 64513}
+---
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: upstream-b}
+spec: {address: 10.0.0.2, asn: 64514}
+```
+
+Put the module where the nodes that carry the kind's documents get it: in `modules` when every
+variant accepts it, or in one variant's `modules`. A node whose image lacks the kind refuses a
+config that holds a document of it.
+[Variants and platforms](../concepts/variants.md#how-does-an-extension-add-a-kind) explains how
+an extension's kind reaches the image and the node.
+
+## Render the service's config from the documents
+
+bird reads one config file, which an output renders from the node's `Peer` documents. An
+[output](../reference/glossary.md#output) is a set of files that a program of the image renders
+and checks before a delivery changes the node, so a `Peer` that would give bird a config it
+rejects is refused, and the node keeps the config bird runs.
+[Outputs and effects](../concepts/outputs-and-effects.md) describes the mechanism.
+
+Write the config as a Go template, `extensions/bird/bird.conf.tmpl`:
+
+```text title="extensions/bird/bird.conf.tmpl"
+# bird's config for {{ .node.name }}, rendered by chalkos from its Peer documents.
+router id from "*";
+
+protocol device {
+}
+{{ range $i, $peer := .documents.Peer }}
+protocol bgp peer{{ $i }} {
+  description {{ quote $peer.metadata.name }};
+  local as 64512;
+  neighbor {{ $peer.spec.address }} as {{ $peer.spec.asn }};
+  ipv4 {
+    import all;
+    export none;
+  };
+}
+{{ end -}}
+```
+
+The template reads the node's name as `.node.name` and the documents of each input kind, sorted by
+name and with their schema defaults, as `.documents.<Kind>`. Besides Go's own functions it has
+`join`, `quote`, `json` and `default`. Declare the output in the module:
+
+```nix
+chalkos.outputs.bird-conf = {
+  inputs = [ "Peer" ];
+  render = chalkosLib.render.template ./bird.conf.tmpl;
+  check = "${pkgs.bird2}/bin/bird -p -c $OUT/bird.conf";
+  examples = ./examples;
+  user = "bird";
+  group = "bird";
+  mode = "0640";
+};
+```
+
+- `inputs` names the kinds the renderer reads.
+- `render` is the program that writes the files into `$OUT`.
+  [`chalkosLib.render.template`](../concepts/outputs-and-effects.md#which-renderers-does-chalkoslib-offer)
+  renders a template into a file named as the template less `.tmpl`, here `bird.conf`.
+- `check` runs in the renderer's sandbox against the rendered files. `bird -p` parses the config
+  and exits with status 1 on an error, which refuses the delivery.
+- `examples` is a directory of config files that the image build renders and checks, so a template
+  that does not render, or renders a config bird rejects, fails the build instead of a delivery.
+- `user`, `group` and `mode` are the owner and mode of the files, `root:root 0644` by default.
+
+Each file of `examples` is one node's documents. Add one with two neighbours,
+`extensions/bird/examples/two-peers.yaml`, holding the two `Peer` documents above, and one with
+none, `extensions/bird/examples/no-peers.yaml`, for a node without neighbours:
+
+```yaml title="extensions/bird/examples/no-peers.yaml"
+apiVersion: chalkos.dev/v1alpha1
+kind: Host
+metadata: {name: default}
+spec: {}
+```
+
+A renderer never sees a `Secret`'s value, so an output's files hold no secret. A config that
+needs a password names the credential the service reads instead, as
+[Read documents and secrets at runtime](#read-documents-and-secrets-at-runtime) describes.
+
+## Run the service and reload it on a change
+
+The service reads its config at the output's `dir`, `/run/chalkos/outputs/bird-conf` by default,
+which the module names as `config.chalkos.outputs.bird-conf.dir`, so a misspelled output fails
+the evaluation. An [effect](../reference/glossary.md#effect) reloads bird when the output changes.
+The whole module:
+
+```nix title="extensions/bird/default.nix"
+# BGP sessions with bird: the Peer kind holds a node's neighbours, the output bird-conf renders
+# bird's config from them, and bird reloads when that config changes.
+{
+  config,
+  lib,
+  pkgs,
+  chalkosLib,
+  ...
+}:
+let
+  socket = "/run/bird/bird.ctl";
+in
+{
+  chalkos.kinds.Peer = {
+    group = "bgp.example.org";
+    version = "v1alpha1";
+    multiple = true;
+    spec = {
+      address = lib.mkOption {
+        type = lib.types.nonEmptyStr;
+        example = "10.0.0.1";
+        description = "Address of the neighbour.";
+      };
+      asn = lib.mkOption {
+        type = lib.types.ints.between 1 4294967295;
+        example = 64513;
+        description = "AS number of the neighbour.";
+      };
+    };
+  };
+
+  chalkos.outputs.bird-conf = {
+    inputs = [ "Peer" ];
+    render = chalkosLib.render.template ./bird.conf.tmpl;
+    check = "${pkgs.bird2}/bin/bird -p -c $OUT/bird.conf";
+    examples = ./examples;
+    user = "bird";
+    group = "bird";
+    mode = "0640";
+  };
+  # bird reads its config again on birdc configure, which keeps the sessions a restart would drop.
+  chalkos.effects.bird = chalkosLib.reloadOn [ "bird-conf" ] [ "bird.service" ];
+
+  users.users.bird = {
+    isSystemUser = true;
+    group = "bird";
+  };
+  users.groups.bird = { };
+  systemd.services.bird = {
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.bird2}/bin/bird -f -u bird -g bird -s ${socket} -c ${config.chalkos.outputs.bird-conf.dir}/bird.conf";
+      ExecReload = "${pkgs.bird2}/bin/birdc -s ${socket} configure";
+      RuntimeDirectory = "bird";
+    };
+  };
+}
+```
+
+`chalkosLib.reloadOn [ "bird-conf" ] [ "bird.service" ]` is the effect
+`{ on = [ "bird-conf" ]; reload = [ "bird.service" ]; }`: once a delivery is applied, chalkd
+reloads `bird.service` when the files of `bird-conf` changed, and `chalkosLib.restartOn` restarts
+units the same way. Name units by their full names, as `bird.service`; the image build fails on an
+effect whose unit the image does not define, and the evaluation on an `on` that names no output.
+
+A change of a node's neighbours needs no new image:
+[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers the new `Peer`
+documents, chalkd renders and checks `bird.conf` before it changes anything, swaps the new file
+in, and reloads bird. A `Peer` that gives bird a config `bird -p` rejects refuses the whole
+delivery:
+
+```text
+output bird-conf: its check refused the rendered files (exit 1); see the node's journal
+```
+
+What `bird -p` printed is in the journal of the transient unit the check ran as, which the
+journal of `chalkd.service` names, and [`chalkctl logs`](../reference/cli/chalkctl_logs.md)
+shows both. The message itself leaves it out, as a program may echo the documents it read.
+
+## Read documents and secrets at runtime
+
+A unit that reads documents while it runs, or a secret, is granted their kinds. A grant,
+[`systemd.services.<unit>.chalkos.kinds`](../reference/options.md#systemdserviceschalkoskinds),
+makes [chalkd](../reference/glossary.md#chalkd) write the documents of the kinds to
+`/run/chalkos/config/<group>/<Kind>/<name>.json`, put
+[chalkcfg](../reference/glossary.md#chalkcfg) on the unit's `PATH`, and load the values the
+documents' `secretRef` fields name as the unit's credentials. A grant restarts nothing; an effect
+does. The node's `Node` document gives its type, for example:
 
 ```nix
 { config, pkgs, ... }:
 {
   systemd.services.node-type = {
     wantedBy = [ "multi-user.target" ];
+    chalkos.kinds = [ "Node" ];
     serviceConfig = {
       Type = "oneshot";
-      # Active after it ran, so the restart on a change runs it again.
       RemainAfterExit = true;
       ExecStart = pkgs.writeShellScript "node-type" ''
         echo "this node is a $(${config.chalkos.kinds.Node.get { path = "spec.type"; }})"
       '';
     };
   };
-  chalkos.consumers.node-type.kinds = [ "Node" ];
 }
 ```
 
-[`chalkos.kinds.<Kind>.get`](../reference/options.md#chalkoskindsget) returns a
-[chalkcfg](../reference/glossary.md#chalkcfg) command, here
-`/nix/store/…/bin/chalkcfg get Node -o 'jsonpath={.spec.type}'`, which prints the field for each
-document of the kind, one per line. `name` picks one document, and `output` asks for `json`,
+[`chalkos.kinds.<Kind>.get`](../reference/options.md#chalkoskindsget) returns a chalkcfg command,
+here `/nix/store/…/bin/chalkcfg get Node -o 'jsonpath={.spec.type}'`, which prints the field for
+each document of the kind, one per line. `name` picks one document, and `output` asks for `json`,
 `yaml`, `jsonpath=<expression>` or `go-template=<template>` in place of a `path`. A path follows
 the kind's options: fields separated by dots, `*` or an index for the elements of a list, and a
 key or `*` for the values of an attribute set. Evaluating the image fails on a path the kind
@@ -223,138 +443,23 @@ Run the command from a shell script, as `pkgs.writeShellScript` makes one, becau
 expands `$` and `%` in `ExecStart=` itself. Without `name`, a kind the image declares but the
 node has no document of gives empty output and exit status 0, so the unit also runs on nodes
 without one; with `name`, a missing document makes the command exit with status 1;
-[`chalkcfg get`](../reference/cli/chalkcfg_get.md) lists the exit statuses. The documents are
-also files, one per document below the kind's
-[`dir`](../reference/options.md#chalkoskindsdir).
+[`chalkcfg get`](../reference/cli/chalkcfg_get.md) lists the exit statuses. networkd's `Network`,
+`NetDev` and `Link` have no `get`, because their schemas come from systemd's tables at build time
+and a path through them cannot be checked when the image is evaluated; a granted unit runs
+`chalkcfg get Network -o json` directly.
 
-networkd's `Network`, `NetDev` and `Link` have no `get`. A section of theirs may be an object or
-a list, and their schemas come from systemd's tables at build time, so a path through them
-cannot be checked when the image is evaluated. chalkcfg is on the `PATH` of every unit under
-`chalkos.consumers`, so such a unit runs it directly:
-
-```sh
-chalkcfg get Network -o json
-```
-
-Evaluating the image fails when a unit names a kind the image does not declare. A `secretRef`
-field of a kind the unit reads names a key of a `Secret` document; the unit reads its value as
-the systemd credential `secret_<secret>.<key>`, in `$CREDENTIALS_DIRECTORY` or `%d`. chalkcfg
-never prints `Secret`s, and their values never appear below `/run/chalkos/config`. Set
-[`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) to `"false"` for a unit
-that rereads its documents itself.
-
-## Add a config kind of your own
-
-A value of your own per node, such as where a machine is mounted, needs a kind of its own: an
-[extension](../reference/glossary.md#extension) declares it in a module of the images, and each
-node's YAML holds a document of it. The homelab's `Rack` kind records a node's rack position and
-hands it to a unit:
-
-```nix title="extensions/rack.nix"
-# The Rack kind, which records a node's rack position, and a unit that reads it on the node. A
-# variant that carries this module accepts Rack documents. A node that was surveyed, whose
-# rack-survey tool wrote where it found the node, takes no other location than that once it runs;
-# an install reads no facts and takes any.
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
-{
-  chalkos.kinds.Rack = {
-    group = "rack.example.org";
-    version = "v1alpha1";
-    spec.location =
-      lib.mkOption {
-        type = lib.types.nonEmptyStr;
-        example = "rack-a/u12";
-        description = "Rack and height unit the node is mounted in.";
-      }
-      // {
-        "x-chalkos-rules" = [
-          {
-            rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
-            messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
-          }
-        ];
-      };
-  };
-  # What the rack survey found, {"location": "rack-a/u12"}; null on a node not surveyed yet.
-  chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";
-  # chalkd writes the node's Rack below /run/chalkos/config and restarts the unit when it changes.
-  chalkos.consumers.rack-location.kinds = [ "Rack" ];
-  systemd.services.rack-location = {
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      # A path the kind lacks fails the image's evaluation.
-      ExecStart = pkgs.writeShellScript "rack-location" (
-        config.chalkos.kinds.Rack.get {
-          name = "rack";
-          path = "spec.location";
-        }
-      );
-    };
-  };
-}
-```
-
-[`chalkos.kinds`](../reference/options.md#chalkoskinds) declares the kind's group, version and
-`spec` as NixOS options, from which the image build writes the kind's JSON Schema. The group is
-a DNS name of your own, since chalkos keeps `chalkos.dev` and its subdomains for its own kinds.
-Put the module where the nodes that carry the kind's documents get it: in `modules` when every
-variant accepts it, as in the flake above, or in one variant's `modules`. A node whose image lacks
-the kind refuses a config that holds a document of it.
-
-A node's config holds at most one document of a kind like `Rack`. A kind of which a node holds
-several, each with a name of its own, sets `multiple`, here one document per BGP neighbour:
-
-```nix
-chalkos.kinds.Peer = {
-  group = "bgp.example.org";
-  version = "v1alpha1";
-  multiple = true;
-  spec.address = lib.mkOption {
-    type = lib.types.nonEmptyStr;
-    description = "Address of the neighbour.";
-  };
-};
-```
-
-Without `name`, `config.chalkos.kinds.Peer.get { path = "spec.address"; }` builds a command that
-prints the field of every `Peer` document, one line each.
-
-Give each node its document in its own file, here `nodes/cp1.yaml`:
-
-```yaml
-apiVersion: rack.example.org/v1alpha1
-kind: Rack
-metadata: {name: rack}
-spec:
-  location: rack-a/u12
-```
-
-A change of a node's position needs no new image:
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers the new `Rack`
-document, and chalkd restarts `rack-location.service`.
-[Variants and platforms](../concepts/variants.md#how-does-an-extension-add-a-kind) explains how
-an extension's kind reaches the image and the node.
+A `secretRef` field of a granted kind names a key of a `Secret` document; the unit reads its value
+as the systemd credential `secret_<secret>.<key>`, in `$CREDENTIALS_DIRECTORY` or `%d`. chalkcfg
+never prints `Secret`s, and their values never appear below `/run/chalkos/config` or in an
+output, so a rendered config that needs one names the credential's path. Evaluating the image fails
+when a unit is granted a kind the image does not declare.
 
 ## Add a rule and a fact to a kind
 
-A rule decides which changes of your kind's documents a node accepts, and a fact gives it what
-the node knows. `rack.nix` above declares both: the `x-chalkos-rules` of `spec.location` refuse a
-location that differs from the one a rack survey wrote to the node, and
-[`chalkos.facts`](../reference/options.md#chalkosfacts) declares that file as the fact
-`rackSurvey`. The rule is CEL: `self` is the delivered location and `facts.rackSurvey` the file's
-JSON, null while the file is missing. The rule does not read `oldSelf`, the location the node runs
-with, so it checks every `Rack` a node is delivered, its first one too. An install reads every
-fact as null, so it takes any location.
-
-A rule over all of a kind's documents goes into `chalkos.kinds.<name>.rules`, where `documents`
-maps the names of the delivered documents to them, here allowing two `Peer` documents at most:
+A rule decides which changes of your kind's documents a node accepts, and a fact gives it what the
+node knows. A rule over all of a kind's documents goes into
+[`chalkos.kinds.<name>.rules`](../reference/options.md#chalkoskindsrules), where `documents` maps
+the names of the delivered documents to them, here allowing two neighbours at most:
 
 ```nix
 chalkos.kinds.Peer.rules = [
@@ -365,11 +470,39 @@ chalkos.kinds.Peer.rules = [
 ];
 ```
 
-A fact can also be a command of the image's store, which reads the config as JSON on standard
-input and prints the fact as JSON. The image build compiles every rule and fails on one that
-does not compile or reads a fact no module declares. Say the survey file on `cp1` holds
-`{"location": "rack-b/u3"}`, because the node was moved to another rack, while `nodes/cp1.yaml`
-above still says `rack-a/u12`. `chalkctl apply-config cp1` then refuses the config:
+A rule on one field goes into the field's `x-chalkos-rules`. The homelab's `Rack` kind, in
+[`extensions/rack.nix`](https://github.com/trevex/chalkos/blob/main/examples/homelab/extensions/rack.nix),
+refuses a rack location that differs from the one a rack survey wrote to the node, which
+[`chalkos.facts`](../reference/options.md#chalkosfacts) declares as the fact `rackSurvey`:
+
+```nix
+chalkos.kinds.Rack.spec.location =
+  lib.mkOption {
+    type = lib.types.nonEmptyStr;
+    example = "rack-a/u12";
+    description = "Rack and height unit the node is mounted in.";
+  }
+  // {
+    "x-chalkos-rules" = [
+      {
+        rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
+        messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
+      }
+    ];
+  };
+chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";
+```
+
+The rule is CEL: `self` is the delivered location and `facts.rackSurvey` the file's JSON, null
+while the file is missing. The rule does not read `oldSelf`, the location the node runs with, so it
+checks every `Rack` a node is delivered, its first one too. An install reads every fact as null,
+so it takes any location. A fact can also be a command of the image's store, which reads the
+config as JSON on standard input and prints the fact as JSON. The image build compiles every rule
+and fails on one that does not compile or reads a fact no module declares.
+
+Say the survey file on `cp1` holds `{"location": "rack-b/u3"}`, because the node was moved to
+another rack, while `nodes/cp1.yaml` still says `rack-a/u12`. `chalkctl apply-config cp1` then
+refuses the config:
 
 ```text
 the config is refused: Rack "rack" spec.location: the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again
@@ -383,41 +516,25 @@ where the document is.
 runs on the node. [Change rules and facts](../concepts/rules.md) explains the variables, the
 functions and where rules run.
 
-## Choose what a change restarts
+## Act on a change that no output renders
 
-chalkd restarts a unit under `chalkos.consumers` when a document of its kinds changes, or a
-`Secret` one of them references.
-[`restart.when`](../reference/options.md#chalkosconsumersrestartwhen) replaces that rule with a CEL
-expression of your own, and [`reload`](../reference/options.md#chalkosconsumersreloadwhen) reloads
-the unit instead. A BGP daemon reads its `Peer` documents again on a reload, which keeps the
-sessions a restart would drop:
+An effect's `when` fires it on a CEL condition, for a trigger that no output renders, here when
+the node gets a new Kubernetes share:
 
 ```nix
-chalkos.consumers.bird = {
-  kinds = [ "Peer" ];
-  restart.when = "false";
-  reload = {
-    when = ''"Peer" in changedKinds'';
-    command = "${pkgs.bird2}/bin/birdc configure";
-  };
+chalkos.effects.cert-agent = {
+  when = "facts.share != oldFacts.share";
+  restart = [ "cert-agent.service" ];
 };
 ```
 
-A rule reads the config before and after the delivery as `oldConfig` and `config`, the names of
-the kinds that changed as `changedKinds`, the node's name as `node.name`, and the facts before and
-after it as `oldFacts.<name>` and `facts.<name>`. A unit that reads no kind restarts on a fact
-alone, here when the node gets a new Kubernetes share:
-
-```nix
-chalkos.consumers.cert-agent.restart.when = "facts.share != oldFacts.share";
-```
-
+A rule reads the config before and after the delivery as `oldConfig` and `config`, the node's
+name as `node.name`, and the facts before and after it as `oldFacts.<name>` and `facts.<name>`.
 Only images with Kubernetes declare the `share` fact, so on an image without Kubernetes the build
-refuses this rule as one that reads an undeclared fact.
-
-The image build compiles these rules with the kinds' rules.
-[Change rules and facts](../concepts/rules.md#which-units-does-a-change-restart-or-reload)
-explains when chalkd evaluates them and how it restarts and reloads units.
+refuses this rule as one that reads an undeclared fact. Besides `restart` and `reload`, an effect
+takes `run`, a command such as `chronyc reload sources`, and `start`, which starts the units of
+`restart` that do not run. [Outputs and effects](../concepts/outputs-and-effects.md#what-is-an-effect)
+lists the options and the order chalkd takes effects in.
 
 ## Know what an image may not change
 
@@ -505,20 +622,24 @@ boots with. A node may move to an image of another variant the same way.
 
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows the image each node booted,
 whether that boot was found healthy, whether it runs the image and the config the inventory gives
-it, and names failed units. The unit's journal shows what it read:
+it, the hash of each output it serves with its last render or check failure, and names failed
+units. The units' journals show what they read:
 
 ```sh
-chalkctl status w1
-chalkctl logs cp1 --unit=rack-location.service
+chalkctl status cp1
+chalkctl logs cp1 --unit=bird.service
 chalkctl logs w1 --unit=disk-report.service
 ```
 
-`rack-location.service` prints `rack-a/u12` on `cp1`.
+The status of `cp1` lists the output `bird-conf` as `rendered`, and the journal of
+`bird.service` shows it running with the rendered config.
 
 ## What next
 
 - [Variants and platforms](../concepts/variants.md) explains how `mkImages` builds variants and
   how an extension adds a kind.
 - [Config and the inventory](../concepts/config.md) explains how the YAML reaches the nodes.
+- [Outputs and effects](../concepts/outputs-and-effects.md) explains how outputs are rendered,
+  checked and swapped in, and when effects fire.
 - [Support additional hardware](additional-hardware.md) adds drivers, firmware and platforms.
 - [Upgrade a cluster](upgrade-cluster.md) rolls the new images out.
