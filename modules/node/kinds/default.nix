@@ -373,10 +373,6 @@ in
   };
 
   config = {
-    _module.args.chalkosLib = import ../runtime/lib.nix { inherit lib pkgs; } // {
-      types = { inherit (schema.types) secretRef; };
-    };
-
     system.build.chalkosSchemas = schemas;
     system.build.chalkosKindSchemas = kindSchemas;
     system.build.chalkosFacts = factsFile;

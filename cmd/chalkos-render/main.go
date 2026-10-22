@@ -1,4 +1,4 @@
-// Command chalkos-render is the renderer of the outputs the helpers of chalkosLib.render build,
+// Command chalkos-render is the renderer of the outputs the helpers of lib.chalkos.render build,
 // and of the built-in output networkd. chalkd runs it in the sandbox of an output: it reads the
 // output's input as JSON on standard input, {"node": {"name": …}, "documents": {"<Kind>":
 // [<document>, …]}}, and writes files into $OUT, the only path it may write.

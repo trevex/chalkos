@@ -25,10 +25,10 @@ var (
 // bindings extensions: address ranges and addresses, which compare by what they denote rather
 // than how they are spelt, and sizes as the storage kinds write them.
 func library() cel.EnvOption {
-	return cel.Lib(chalkosLib{})
+	return cel.Lib(celLib{})
 }
 
-type chalkosLib struct{}
+type celLib struct{}
 
 // The errors of chalkos's functions. They hold no value, so a refusal shows them whole.
 const (
@@ -39,7 +39,7 @@ const (
 	errPastRange     = "<cidr>.ip: the index is past the range"
 )
 
-func (chalkosLib) CompileOptions() []cel.EnvOption {
+func (celLib) CompileOptions() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Function("cidr",
 			cel.Overload("chalkos_string_to_cidr", []*cel.Type{cel.StringType}, cidrType,
@@ -115,7 +115,7 @@ func size(s string) (int64, bool) {
 	return int64(n), true
 }
 
-func (chalkosLib) ProgramOptions() []cel.ProgramOption { return nil }
+func (celLib) ProgramOptions() []cel.ProgramOption { return nil }
 
 // cidr is an address range, its address masked, so that spellings of one range, such as
 // fd00:0::/108 and fd00::/108, or 10.244.1.0/16 and 10.244.0.0/16, are equal.

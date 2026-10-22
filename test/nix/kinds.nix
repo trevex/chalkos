@@ -8,20 +8,21 @@ let
   inherit (lib) mkOption types;
   schema = import ../../modules/node/kinds/schema.nix { inherit lib; };
   getLib = import ../../modules/node/kinds/get.nix { inherit lib; };
+  libChalkos = import ../../lib/chalkos.nix { inherit lib; };
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 
   # The metal image of a variant worker with Kubernetes and the given NixOS modules.
   image = modules: (mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config;
 
   demoModule =
-    { chalkosLib, ... }:
+    { lib, ... }:
     {
       chalkos.kinds.Demo = {
         group = "demo.example.org";
         version = "v1alpha1";
         multiple = true;
         spec.token = lib.mkOption {
-          type = lib.types.nullOr chalkosLib.types.secretRef;
+          type = lib.types.nullOr lib.chalkos.types.secretRef;
           default = null;
         };
       };
@@ -113,13 +114,13 @@ let
   };
   withPeering = image [
     (
-      { chalkosLib, ... }:
+      { lib, ... }:
       {
         chalkos.kinds.Peering = {
           group = "bgp.example.org";
           version = "v1alpha1";
           multiple = true;
-          spec = peeringSpec chalkosLib.types.secretRef;
+          spec = peeringSpec lib.chalkos.types.secretRef;
         };
       }
     )
@@ -622,12 +623,12 @@ lib.runTests {
     expr =
       (image [
         (
-          { chalkosLib, ... }:
+          { lib, ... }:
           {
             chalkos.kinds.Demo = {
               group = "demo.example.org";
               version = "v1alpha1";
-              spec.x = mkOption { type = chalkosLib.types.kubernetesObject or null; };
+              spec.x = mkOption { type = lib.chalkos.types.kubernetesObject or null; };
             };
           }
         )
@@ -792,43 +793,68 @@ lib.runTests {
         dirOption = "/run/chalkos/outputs/bird-conf";
       };
     };
-  # The helpers name the file a renderer writes after its program, and build the common effects.
-  testHelpers =
+  # lib.chalkos's renderers are data, which an output's render turns into the program's command,
+  # naming the file it writes after the template or program.
+  testRenderers =
     let
-      h = (mkImages { variants.worker.modules = [ ]; }).nixos.worker-metal._module.args.chalkosLib;
-      template = h.render.template ../../modules/testing/greeting.tmpl;
+      config = withBird {
+        chalkos.outputs = {
+          t.render = libChalkos.render.template ../../modules/testing/greeting.tmpl;
+          d.render = libChalkos.render.documents [
+            "Peer"
+            "Link"
+          ];
+          j.render = libChalkos.render.jq (builtins.toFile "bird.conf.jq" ".");
+        };
+      };
+      render = name: (outputsOf config).${name}.render;
     in
     {
       expr = {
-        template = builtins.match ".*/bin/chalkos-render template /nix/store/[^ ]*-greeting.tmpl (.*)" template;
-        documents = builtins.match ".*/bin/chalkos-render (documents Peer Link)" (
-          h.render.documents [
-            "Peer"
-            "Link"
-          ]
+        value = libChalkos.render.documents [ "Peer" ];
+        template = builtins.match ".*/bin/chalkos-render template /nix/store/[^ ]*-greeting.tmpl (.*)" (
+          render "t"
         );
-        jq = lib.hasSuffix "-chalkos-render-jq-bird.conf" (
-          h.render.jq (builtins.toFile "bird.conf.jq" ".")
-        );
-        restart = h.restartOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
-        reload = h.reloadOn { kinds = [ "Demo" ]; } [ "bird.service" ];
+        documents = builtins.match ".*/bin/chalkos-render (documents Peer Link)" (render "d");
+        jq = lib.hasSuffix "-chalkos-render-jq-bird.conf" (render "j");
       };
       expected = {
+        value.documents = [ "Peer" ];
         template = [ "greeting" ];
         documents = [ "documents Peer Link" ];
         jq = true;
-        restart = {
-          outputs = [ "bird-conf" ];
-          kinds = [ ];
-          restart = [ "bird.service" ];
-        };
-        reload = {
-          outputs = [ ];
-          kinds = [ "Demo" ];
-          reload = [ "bird.service" ];
-        };
       };
     };
+  # An attribute set that is none of lib.chalkos's renderers fails the evaluation.
+  testUnknownRendererFails = {
+    expr = fails (
+      outputsOf (withBird {
+        chalkos.outputs.t.render = {
+          python = "x.py";
+        };
+      })
+    );
+    expected = true;
+  };
+  # lib.chalkos's effects act on units when outputs or the documents of kinds change.
+  testEffectHelpers = {
+    expr = {
+      restart = libChalkos.restartOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
+      reload = libChalkos.reloadOn { kinds = [ "Demo" ]; } [ "bird.service" ];
+    };
+    expected = {
+      restart = {
+        outputs = [ "bird-conf" ];
+        kinds = [ ];
+        restart = [ "bird.service" ];
+      };
+      reload = {
+        outputs = [ ];
+        kinds = [ "Demo" ];
+        reload = [ "bird.service" ];
+      };
+    };
+  };
   # An effect's outputs name outputs alone, so a misspelled one fails the evaluation.
   testOutputsRefusesANameThatIsNoOutput = {
     expr = fails (

@@ -203,15 +203,18 @@ lib.runTests {
       false
     ];
   };
-  # mkImages evaluates the images with the nixpkgs and the module arguments given.
+  # mkImages evaluates the images with the nixpkgs and the module arguments given, and gives
+  # their modules a lib that holds lib.chalkos.
   testMkImagesUsesItsNixpkgs = {
     expr =
       let
         n =
           (mkImages {
-            nixpkgs.lib.nixosSystem = args: {
-              marker = "custom";
-              inherit (args) specialArgs;
+            nixpkgs.lib = lib // {
+              nixosSystem = args: {
+                marker = "custom";
+                inherit (args) specialArgs lib;
+              };
             };
             specialArgs.answer = 42;
           }).nixos.node-metal;
@@ -219,10 +222,12 @@ lib.runTests {
       {
         inherit (n) marker;
         inherit (n.specialArgs) answer;
+        chalkos = n.lib ? chalkos;
       };
     expected = {
       marker = "custom";
       answer = 42;
+      chalkos = true;
     };
   };
   # A variant's modules set the image's Kubernetes release and pod network, which its image.json
@@ -386,11 +391,16 @@ lib.runTests {
           output =
             let
               o = c.chalkos.outputs.chrony;
+              # The command chalkd runs, which outputs.json holds.
+              render =
+                (builtins.fromJSON (
+                  builtins.unsafeDiscardStringContext c.environment.etc."chalkos/outputs.json".text
+                )).chrony.render;
             in
             {
               inherit (o) inputs dir;
               template =
-                lib.hasInfix "chalkos-render template " o.render && lib.hasSuffix " servers.sources" o.render;
+                lib.hasInfix "chalkos-render template " render && lib.hasSuffix " servers.sources" render;
               check = lib.hasInfix "/bin/chronyd -p -f" o.check;
               examples = lib.attrNames (builtins.readDir o.examples);
             };

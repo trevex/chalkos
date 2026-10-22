@@ -171,7 +171,7 @@ let
       throw ''
         ${at}: the option type ${t.description} has no JSON Schema mapping. Kinds accept str,
         nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-        submodule and chalkosLib.types.secretRef.
+        submodule and lib.chalkos.types.secretRef.
       '';
 
   # attrsOf and lazyAttrsOf read a submodule's options by instantiating it once, before any
@@ -251,7 +251,7 @@ rec {
     };
 
   # A Kubernetes object, which the control planes apply as it is. Built-in kinds alone use it:
-  # chalkosLib.types does not offer it, as extensions get no raw schemas.
+  # lib.chalkos.types does not offer it, as extensions get no raw schemas.
   types.kubernetesObject = lib.types.attrsOf lib.types.anything // {
     name = "chalkosKubernetesObject";
     description = "Kubernetes object";

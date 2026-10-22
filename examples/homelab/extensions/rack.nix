@@ -6,7 +6,6 @@
   config,
   lib,
   pkgs,
-  chalkosLib,
   ...
 }:
 {
@@ -34,9 +33,9 @@
   # unit.
   chalkos.outputs.rack = {
     inputs = [ "Rack" ];
-    render = chalkosLib.render.documents [ "Rack" ];
+    render = lib.chalkos.render.documents [ "Rack" ];
   };
-  chalkos.effects.rack-location = chalkosLib.restartOn { outputs = [ "rack" ]; } [
+  chalkos.effects.rack-location = lib.chalkos.restartOn { outputs = [ "rack" ]; } [
     "rack-location.service"
   ];
   systemd.services.rack-location = {

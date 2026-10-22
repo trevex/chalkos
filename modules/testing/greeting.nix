@@ -11,7 +11,6 @@
   config,
   lib,
   pkgs,
-  chalkosLib,
   ...
 }:
 {
@@ -39,7 +38,7 @@
           ];
         };
       token = lib.mkOption {
-        type = chalkosLib.types.secretRef;
+        type = lib.chalkos.types.secretRef;
         description = "A secret the unit reads as a credential.";
       };
     };
@@ -49,7 +48,7 @@
   # line each, and nothing without one.
   chalkos.outputs.greeting = {
     inputs = [ "Greeting" ];
-    render = chalkosLib.render.template ./greeting.tmpl;
+    render = lib.chalkos.render.template ./greeting.tmpl;
     check = ''
       lines=$(wc -l < "$OUT/greeting")
       [ "$lines" -eq 0 ] || [ "$lines" -eq 2 ]
@@ -60,7 +59,7 @@
     '';
     examples = ./greeting-examples;
   };
-  chalkos.effects.chalktest-greeting = chalkosLib.restartOn { outputs = [ "greeting" ]; } [
+  chalkos.effects.chalktest-greeting = lib.chalkos.restartOn { outputs = [ "greeting" ]; } [
     "chalktest-greeting.service"
   ];
   systemd.services.chalktest-greeting = {

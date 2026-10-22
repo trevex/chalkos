@@ -151,7 +151,7 @@ func checkSecretRefs(docs []Document, s *schema.Schemas, secrets map[string]map[
 
 // walkSchemaRefs walks sch, a raw schema node, alongside the value it describes, and calls f for
 // every node whose raw form carries "x-chalkos-secret-ref": true, the way the converter marks a
-// chalkosLib.types.secretRef field. It follows $ref into defs, properties into object fields,
+// lib.chalkos.types.secretRef field. It follows $ref into defs, properties into object fields,
 // items into array elements, additionalProperties into a map's values, and anyOf into the branch
 // whose declared type matches the value's own: null, object or array. A key or index the schema
 // says nothing about is left alone, however it is shaped.

@@ -14,6 +14,35 @@
 }:
 let
   chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
+  chalkos-render = pkgs.callPackage ../../../nix/chalkos-render.nix { };
+
+  # The name of the file a renderer of path writes: the path's own, less suffix, and less the hash
+  # a file the store holds by itself starts with.
+  fileName =
+    suffix: path:
+    let
+      name = baseNameOf (toString path);
+      hashed = builtins.match "[0-9a-df-np-sv-z]{32}-(.+)" name;
+    in
+    lib.removeSuffix suffix (if hashed == null then name else lib.head hashed);
+  # The command of an output's render: a command as it is, or that of a renderer of
+  # lib.chalkos.render.
+  renderCommand =
+    where: r:
+    if lib.isString r then
+      r
+    else if lib.attrNames r == [ "template" ] then
+      "${lib.getExe chalkos-render} template ${r.template} ${fileName ".tmpl" r.template}"
+    else if lib.attrNames r == [ "jq" ] then
+      toString (
+        pkgs.writeShellScript "chalkos-render-jq-${fileName ".jq" r.jq}" ''
+          exec ${lib.getExe pkgs.jq} -r -f ${r.jq} > "$OUT/${fileName ".jq" r.jq}"
+        ''
+      )
+    else if lib.attrNames r == [ "documents" ] then
+      "${lib.getExe chalkos-render} documents ${lib.concatStringsSep " " r.documents}"
+    else
+      throw "${where}: a renderer is a command or one of lib.chalkos.render.template, .jq and .documents, not an attribute set of ${lib.concatStringsSep ", " (lib.attrNames r)}";
 
   # Every kind of chalkos.kinds, and networkd's, whose names chalkos.kinds may not take.
   declaredKinds = lib.attrNames config.chalkos.kinds ++ [
@@ -104,8 +133,10 @@ let
           description = "Config kinds, by name as for a grant, whose documents the renderer reads.";
         };
         render = lib.mkOption {
-          type = lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr;
-          example = lib.literalExpression "chalkosLib.render.template ./bird.conf.tmpl";
+          type = lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
+            lib.types.attrsOf lib.types.raw
+          );
+          example = lib.literalExpression "lib.chalkos.render.template ./bird.conf.tmpl";
           description = ''
             Program of the image's store, with its arguments, that renders the output. It reads
             `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}` on standard input,
@@ -116,8 +147,9 @@ let
             credentials and Kubernetes keys chalkd writes below `/run/chalkos`, and must finish
             within 30 seconds; the files may take 16 MiB, and hold no links. The same documents
             must give the same files: chalkd renders every output again at boot.
-            `chalkosLib.render.template` renders a Go template, in which a key a document lacks, or
-            that holds null, prints as nothing.
+            `lib.chalkos.render.template`, `.jq` and `.documents` build the common renderers;
+            `lib.chalkos.render.template` renders a Go template, in which a key a document lacks,
+            or that holds null, prints as nothing.
           '';
         };
         check = lib.mkOption {
@@ -222,8 +254,8 @@ let
     else
       {
         inputs = checkKinds "chalkos.outputs.${name}.inputs" o.inputs o.inputs;
+        render = renderCommand "chalkos.outputs.${name}.render" o.render;
         inherit (o)
-          render
           dir
           user
           group

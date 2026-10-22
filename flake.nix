@@ -8,10 +8,10 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
-      chalkosLib = import ./lib { inherit nixpkgs; };
+      chalkos = import ./lib { inherit nixpkgs; };
     in
     {
-      lib = { inherit (chalkosLib) mkImages; };
+      lib = { inherit (chalkos) mkImages; };
       templates.lab = {
         path = ./templates/lab;
         description = "A cluster of a control plane and a worker that chalklab runs as QEMU virtual machines";

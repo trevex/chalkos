@@ -7,7 +7,6 @@
   config,
   lib,
   pkgs,
-  chalkosLib,
   ...
 }:
 let
@@ -130,7 +129,7 @@ in
   # line too. The examples run the check when the image is built.
   chalkos.outputs.chrony = {
     inputs = [ "TimeSync" ];
-    render = chalkosLib.render.template template;
+    render = lib.chalkos.render.template template;
     check = ''
       conf=$(mktemp)
       echo "include $OUT/servers.sources" >"$conf"

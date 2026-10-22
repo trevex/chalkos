@@ -1,4 +1,4 @@
-# chalkos-render, the renderer of the outputs chalkosLib.render.template and .documents build, and
+# chalkos-render, the renderer of the outputs lib.chalkos.render.template and .documents build, and
 # of the built-in output networkd. Every image carries it, so it is stripped and takes the standard
 # library alone.
 { callPackage }:

@@ -1104,7 +1104,7 @@ in
       # An output whose check refuses the file one of its examples renders.
       refusedExample = build [
         (
-          { pkgs, chalkosLib, ... }:
+          { pkgs, lib, ... }:
           {
             chalkos.kinds.Demo = {
               group = "demo.example.org";
@@ -1113,7 +1113,7 @@ in
             };
             chalkos.outputs.demo = {
               inputs = [ "Demo" ];
-              render = chalkosLib.render.jq (pkgs.writeText "name.jq" ".documents.Demo[].spec.name");
+              render = lib.chalkos.render.jq (pkgs.writeText "name.jq" ".documents.Demo[].spec.name");
               check = ''grep -qx first "$OUT/name"'';
               examples = pkgs.writeTextDir "second.yaml" ''
                 apiVersion: demo.example.org/v1alpha1
