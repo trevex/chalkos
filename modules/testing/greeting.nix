@@ -60,12 +60,9 @@
     '';
     examples = ./greeting-examples;
   };
-  chalkos.effects.chalktest-greeting =
-    chalkosLib.restartOn
-      [ "greeting" ]
-      [
-        "chalktest-greeting.service"
-      ];
+  chalkos.effects.chalktest-greeting = chalkosLib.restartOn { outputs = [ "greeting" ]; } [
+    "chalktest-greeting.service"
+  ];
   systemd.services.chalktest-greeting = {
     description = "Log the node's Greeting for chalklab tests";
     wantedBy = [ "multi-user.target" ];

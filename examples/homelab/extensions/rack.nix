@@ -36,7 +36,9 @@
     inputs = [ "Rack" ];
     render = chalkosLib.render.documents [ "Rack" ];
   };
-  chalkos.effects.rack-location = chalkosLib.restartOn [ "rack" ] [ "rack-location.service" ];
+  chalkos.effects.rack-location = chalkosLib.restartOn { outputs = [ "rack" ]; } [
+    "rack-location.service"
+  ];
   systemd.services.rack-location = {
     # chalkd writes the node's Rack below /run/chalkos/config for it.
     chalkos.kinds = [ "Rack" ];

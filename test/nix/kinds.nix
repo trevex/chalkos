@@ -739,7 +739,8 @@ lib.runTests {
         };
       })).bird;
     expected = {
-      on = [ ];
+      outputs = [ ];
+      kinds = [ ];
       when = "facts.share != oldFacts.share";
       restart = [ "bird.service" ];
       reload = [ ];
@@ -759,7 +760,7 @@ lib.runTests {
           user = "bird";
         };
         chalkos.effects.bird = {
-          on = [ "bird-conf" ];
+          outputs = [ "bird-conf" ];
           reload = [ "bird.service" ];
         };
       };
@@ -776,7 +777,7 @@ lib.runTests {
           mode
           ;
         check = lib.hasSuffix "-chalkos-output-bird-conf-check" output.check;
-        on = (effectsOf config).bird.on;
+        outputs = (effectsOf config).bird.outputs;
         dirOption = config.chalkos.outputs.bird-conf.dir;
       };
       expected = {
@@ -787,7 +788,7 @@ lib.runTests {
         group = "root";
         mode = "0644";
         check = true;
-        on = [ "bird-conf" ];
+        outputs = [ "bird-conf" ];
         dirOption = "/run/chalkos/outputs/bird-conf";
       };
     };
@@ -809,34 +810,72 @@ lib.runTests {
         jq = lib.hasSuffix "-chalkos-render-jq-bird.conf" (
           h.render.jq (builtins.toFile "bird.conf.jq" ".")
         );
-        restart = h.restartOn [ "bird-conf" ] [ "bird.service" ];
-        reload = h.reloadOn [ "bird-conf" ] [ "bird.service" ];
+        restart = h.restartOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
+        reload = h.reloadOn { kinds = [ "Demo" ]; } [ "bird.service" ];
       };
       expected = {
         template = [ "greeting" ];
         documents = [ "documents Peer Link" ];
         jq = true;
         restart = {
-          on = [ "bird-conf" ];
+          outputs = [ "bird-conf" ];
+          kinds = [ ];
           restart = [ "bird.service" ];
         };
         reload = {
-          on = [ "bird-conf" ];
+          outputs = [ ];
+          kinds = [ "Demo" ];
           reload = [ "bird.service" ];
         };
       };
     };
-  # An effect's on names outputs alone, so a misspelled one fails the evaluation.
-  testOnRefusesANameThatIsNoOutput = {
+  # An effect's outputs name outputs alone, so a misspelled one fails the evaluation.
+  testOutputsRefusesANameThatIsNoOutput = {
     expr = fails (
       effectsOf (withBird {
         chalkos.effects.bird = {
-          on = [ "bird-cnf" ];
+          outputs = [ "bird-cnf" ];
           reload = [ "bird.service" ];
         };
       })
     );
     expected = true;
+  };
+  # An effect on a kind reaches chalkd; a kind the image lacks, Secret and Addon fail.
+  testEffectOnAKindReachesChalkd = {
+    expr =
+      (effectsOf (withBird {
+        chalkos.effects.bird = {
+          kinds = [ "Demo" ];
+          restart = [ "bird.service" ];
+        };
+      })).bird.kinds;
+    expected = [ "Demo" ];
+  };
+  testEffectOnAnUnknownKindFails = {
+    expr =
+      map
+        (
+          kind:
+          fails (
+            effectsOf (withBird {
+              chalkos.effects.bird = {
+                kinds = [ kind ];
+                restart = [ "bird.service" ];
+              };
+            })
+          )
+        )
+        [
+          "Nope"
+          "Secret"
+          "Addon"
+        ];
+    expected = [
+      true
+      true
+      true
+    ];
   };
   testEffectWithoutTriggerFails = {
     expr = fails (
@@ -947,7 +986,9 @@ lib.runTests {
       in
       {
         inherit (output) inputs dir check;
-        render = builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render networkd /nix/store/[^ ]+-chalkos-networkd-schemas" output.render != null;
+        render =
+          builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render networkd /nix/store/[^ ]+-chalkos-networkd-schemas" output.render
+          != null;
         examples = lib.attrNames (builtins.readDir withDemo.chalkos.outputs.networkd.examples);
         effect = (effectsOf withDemo).networkd;
       };
@@ -966,7 +1007,8 @@ lib.runTests {
         "vlan.yaml"
       ];
       effect = {
-        on = [ "networkd" ];
+        outputs = [ "networkd" ];
+        kinds = [ ];
         reload = [ "systemd-networkd.service" ];
         restart = [ ];
         run = "";

@@ -642,8 +642,8 @@ null or string
 
 
 What a delivery does to the node’s services, by a name of the effect’s own\. Once a
-delivery is applied, chalkd takes every effect one of whose outputs ` on ` changed, or
-whose ` when ` holds: it reloads the units
+delivery is applied, chalkd takes every effect one of whose ` outputs ` changed, the
+documents of one of whose ` kinds ` did, or whose ` when ` holds: it reloads the units
 of their ` reload `, runs their ` run `, restarts the units of their ` restart `, and acts on
 its own loops as their ` chalkd ` says\. An effect exists only when it is declared\.
 
@@ -692,7 +692,44 @@ null
 
 
 
-### chalkos\.effects\.\<name>\.on
+### chalkos\.effects\.\<name>\.kinds
+
+
+
+Config kinds, by name as for a grant\. The effect fires when the documents of one of them
+changed: one was added, removed or changed, or a value of a Secret one of them
+references changed\. A service that reads its kinds’ documents when it starts needs no
+output in between\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "Peer"
+]
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.outputs
 
 
 
@@ -860,8 +897,8 @@ false
 
 
 CEL expression that is true when a delivery takes the effect, for a trigger that no
-output renders; the effect fires when ` when ` holds or one of ` on ` changed\. It reads
-` config ` and
+output renders; the effect fires when ` when ` holds, one of ` outputs ` changed or the
+documents of one of ` kinds ` did\. It reads ` config ` and
 ` oldConfig `, the node’s config after and before the delivery, each by apiVersion, kind
 and name with every Secret value replaced by its SHA-256, the node’s name as
 ` node.name `, and ` facts.<name> ` after the delivery and ` oldFacts.<name> ` before it\.

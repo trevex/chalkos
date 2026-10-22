@@ -371,7 +371,8 @@ lib.runTests {
           # that does not run.
           reloadSources =
             (builtins.fromJSON c.environment.etc."chalkos/effects.json".text).chrony == {
-              on = [ "chrony" ];
+              outputs = [ "chrony" ];
+              kinds = [ ];
               run = "chalkos-chrony-reload-sources";
               reload = [ ];
               restart = [ ];
@@ -388,7 +389,8 @@ lib.runTests {
             in
             {
               inherit (o) inputs dir;
-              template = lib.hasInfix "chalkos-render template " o.render && lib.hasSuffix " servers.sources" o.render;
+              template =
+                lib.hasInfix "chalkos-render template " o.render && lib.hasSuffix " servers.sources" o.render;
               check = lib.hasInfix "/bin/chronyd -p -f" o.check;
               examples = lib.attrNames (builtins.readDir o.examples);
             };

@@ -145,7 +145,7 @@ in
   # chrony reads the sources again when they change; whether the servers DHCP announces count is
   # chalkos-chrony-dhcp's. The effect tells the chronyd every node runs, while it runs.
   chalkos.effects.chrony = {
-    on = [ "chrony" ];
+    outputs = [ "chrony" ];
     run = "chalkos-chrony-reload-sources";
   };
 

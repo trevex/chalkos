@@ -4,8 +4,8 @@
 # credentials, and chalkcfg is on its PATH. An output of chalkos.outputs is a set of files a
 # program renders from documents, which chalkd checks before a delivery changes anything. A grant
 # never restarts the unit; an effect of chalkos.effects does, once a delivery is applied, when one
-# of its outputs changed or its CEL rule holds. chalkcfg prints the documents, on the system path
-# of every image.
+# of its outputs changed, the documents of one of its kinds did, or its CEL rule holds. chalkcfg
+# prints the documents, on the system path of every image.
 {
   config,
   lib,
@@ -36,6 +36,17 @@ let
       throw "${where}: a unit does not read Addon documents; they stay in the node's stored config, and chalkd applies their objects on control planes"
     else
       value;
+
+  # kinds once an effect may fire on each: Secret values count for the kinds whose secretRef
+  # fields name them, and Addon documents stay in the node's stored config.
+  effectKinds =
+    where: kinds:
+    if lib.elem "Secret" kinds then
+      throw "${where}: an effect does not fire on Secret documents; it fires on the kinds whose secretRef fields name them"
+    else if lib.elem "Addon" kinds then
+      throw "${where}: an effect does not fire on Addon documents; chalkd applies them, and a when rule reads them"
+    else
+      checkKinds where kinds kinds;
 
   grant =
     { name, config, ... }:
@@ -249,7 +260,7 @@ let
   units = lib.types.listOf lib.types.str;
   effect = lib.types.submodule {
     options = {
-      on = lib.mkOption {
+      outputs = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
         example = [ "bird-conf" ];
@@ -260,14 +271,25 @@ let
           though the rendered files stay the same.
         '';
       };
+      kinds = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "Peer" ];
+        description = ''
+          Config kinds, by name as for a grant. The effect fires when the documents of one of them
+          changed: one was added, removed or changed, or a value of a Secret one of them
+          references changed. A service that reads its kinds' documents when it starts needs no
+          output in between.
+        '';
+      };
       when = lib.mkOption {
         type = lib.types.nullOr lib.types.nonEmptyStr;
         default = null;
         example = "facts.share != oldFacts.share";
         description = ''
           CEL expression that is true when a delivery takes the effect, for a trigger that no
-          output renders; the effect fires when `when` holds or one of `on` changed. It reads
-          `config` and
+          output renders; the effect fires when `when` holds, one of `outputs` changed or the
+          documents of one of `kinds` did. It reads `config` and
           `oldConfig`, the node's config after and before the delivery, each by apiVersion, kind
           and name with every Secret value replaced by its SHA-256, the node's name as
           `node.name`, and `facts.<name>` after the delivery and `oldFacts.<name>` before it.
@@ -323,24 +345,25 @@ let
     name: e:
     let
       where = "chalkos.effects.${name}";
-      unknown = lib.filter (o: !(outputs ? ${o})) e.on;
+      unknown = lib.filter (o: !(outputs ? ${o})) e.outputs;
     in
     if unknown != [ ] then
-      throw "${where}.on: the image has no output ${lib.head unknown}; its outputs are ${
+      throw "${where}.outputs: the image has no output ${lib.head unknown}; its outputs are ${
         if outputs == { } then "none" else lib.concatStringsSep ", " (lib.attrNames outputs)
       }"
-    else if e.on == [ ] && e.when == null then
-      throw "${where}: it has neither on nor when, so nothing triggers it"
+    else if e.outputs == [ ] && e.kinds == [ ] && e.when == null then
+      throw "${where}: it has none of outputs, kinds and when, so nothing triggers it"
     else if e.restart == [ ] && e.reload == [ ] && e.run == null && e.chalkd == null then
       throw "${where}: it restarts, reloads and runs nothing"
     else
       {
         inherit (e)
-          on
+          outputs
           restart
           reload
           start
           ;
+        kinds = effectKinds "${where}.kinds" e.kinds;
         when = if e.when == null then "" else e.when;
         run = if e.run == null then "" else e.run;
         chalkd = if e.chalkd == null then "" else e.chalkd;
@@ -371,8 +394,8 @@ in
         default = { };
         description = ''
           What a delivery does to the node's services, by a name of the effect's own. Once a
-          delivery is applied, chalkd takes every effect one of whose outputs `on` changed, or
-          whose `when` holds: it reloads the units
+          delivery is applied, chalkd takes every effect one of whose `outputs` changed, the
+          documents of one of whose `kinds` did, or whose `when` holds: it reloads the units
           of their `reload`, runs their `run`, restarts the units of their `restart`, and acts on
           its own loops as their `chalkd` says. An effect exists only when it is declared.
         '';

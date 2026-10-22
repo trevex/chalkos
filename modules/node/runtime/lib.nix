@@ -1,5 +1,5 @@
 # The helpers chalkosLib offers extensions for outputs and effects: renderers of chalkos.outputs,
-# and the effects that restart or reload units when outputs change.
+# and the effects that restart or reload units when outputs or kinds change.
 { lib, pkgs }:
 let
   chalkos-render = pkgs.callPackage ../../../nix/chalkos-render.nix { };
@@ -29,12 +29,22 @@ in
     # The documents of kinds as they are, each as <Kind>/<name>.json.
     documents = kinds: "${lib.getExe chalkos-render} documents ${lib.concatStringsSep " " kinds}";
   };
-  restartOn = outputs: units: {
-    on = outputs;
-    restart = units;
-  };
-  reloadOn = outputs: units: {
-    on = outputs;
-    reload = units;
-  };
+  restartOn =
+    {
+      outputs ? [ ],
+      kinds ? [ ],
+    }:
+    units: {
+      inherit outputs kinds;
+      restart = units;
+    };
+  reloadOn =
+    {
+      outputs ? [ ],
+      kinds ? [ ],
+    }:
+    units: {
+      inherit outputs kinds;
+      reload = units;
+    };
 }

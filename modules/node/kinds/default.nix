@@ -409,7 +409,7 @@ in
     };
     # networkd reloads on systemctl reload as on networkctl reload.
     chalkos.effects.networkd = {
-      on = [ "networkd" ];
+      outputs = [ "networkd" ];
       reload = [ "systemd-networkd.service" ];
     };
   };
