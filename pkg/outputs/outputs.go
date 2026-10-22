@@ -701,6 +701,22 @@ func (s *Staged) swap(name, rendered string) error {
 	return nil
 }
 
+// ClearFailures removes the failures the status records for the staged outputs, which passed,
+// for a render that swaps none in, as an install in place's; the hash each output serves stays.
+func (s *Staged) ClearFailures() error {
+	if len(s.states) == 0 {
+		return nil
+	}
+	return updateStatus(s.root, func(st map[string]Status) {
+		for name := range s.states {
+			if e, ok := st[name]; ok {
+				e.Error = ""
+				st[name] = e
+			}
+		}
+	})
+}
+
 // Discard removes the staged outputs that were not swapped in.
 func (s *Staged) Discard() {
 	for name, dir := range s.staging {

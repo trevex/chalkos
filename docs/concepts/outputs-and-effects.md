@@ -261,7 +261,9 @@ bird-conf  5c2e81f09ab3  failed: its check refused the rendered files (exit 1); 
 ```
 
 A refused delivery leaves the hash of the files the node still serves. After a boot whose render
-failed, the hash is `none`.
+failed, the hash is `none`. A render that passes clears the failure, the check of an install in
+place's config included, and an output no render has passed since the node booted shows `none`
+and `not rendered yet`.
 
 ## Which effects does chalkos declare?
 

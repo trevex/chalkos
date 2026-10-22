@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"strings"
 
@@ -151,6 +152,9 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader) (st
 		staged, err := s.renderOutputs(ctx, name, stored.Documents, schemas, true)
 		if err != nil {
 			return store.Stored{}, err
+		}
+		if err := staged.ClearFailures(); err != nil {
+			log.Printf("clear the outputs' failures: %v", err)
 		}
 		staged.Discard()
 	}

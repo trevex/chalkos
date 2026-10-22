@@ -430,7 +430,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 
 // TestInstallInPlaceChecksTheOutputs: an install in place renders and checks the running image's
 // outputs before it installs anything, and leaves no output in place, which the boot that
-// follows renders.
+// follows renders; a render that passes clears the failure the status recorded.
 func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 	for name, tc := range map[string]struct{ check, want string }{
 		"a check that passes": {`grep -q first "$OUT/demo.json"`, ""},
@@ -441,6 +441,9 @@ func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 			writeSchemas(t, s.Loader.Schemas)
 			writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, tc.check)})
 			installed := false
+			if err := outputs.RecordFailures(s.Loader.Render.Root, []outputs.Failure{{Output: "demo", Problem: "an earlier failure"}}); err != nil {
+				t.Fatal(err)
+			}
 			s.InPlace = func(context.Context, install.Request) error { installed = true; return nil }
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			h.Config = baseConfig
@@ -450,6 +453,10 @@ func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 			}
 			if _, err := os.Lstat(filepath.Join(s.Loader.Render.Root, "demo")); !os.IsNotExist(err) {
 				t.Errorf("the install swapped the output in: %v", err)
+			}
+			// A render that passes clears the failure an earlier one recorded.
+			if st, _ := outputs.ReadStatus(s.Loader.Render.Root); (st["demo"].Error == "") != (tc.want == "") {
+				t.Errorf("status = %+v", st)
 			}
 		})
 	}

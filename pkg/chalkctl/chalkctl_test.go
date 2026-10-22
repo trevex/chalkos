@@ -1320,7 +1320,8 @@ func kubernetesImage(t *testing.T, s *chalkd.Server) {
 	writeFile(t, s.Loader.KubernetesImage, testImageJSON)
 }
 
-// status names each output with the start of its hash and why its last render failed.
+// status names each output with the start of its hash and why its last render failed, or that
+// none rendered it yet.
 func TestOutputLine(t *testing.T) {
 	for _, tc := range []struct {
 		o    *nodev1.OutputStatus
@@ -1329,6 +1330,7 @@ func TestOutputLine(t *testing.T) {
 		{&nodev1.OutputStatus{Name: "bird-conf", Hash: strings.Repeat("ab", 32)}, "bird-conf\tabababababab\trendered"},
 		{&nodev1.OutputStatus{Name: "bird-conf", Hash: strings.Repeat("ab", 32), Error: "its check refused the rendered files (exit 1); see the node's journal"}, "bird-conf\tabababababab\tfailed: its check refused the rendered files (exit 1); see the node's journal"},
 		{&nodev1.OutputStatus{Name: "bird-conf", Error: "its renderer failed (exit 2); see the node's journal"}, "bird-conf\tnone\tfailed: its renderer failed (exit 2); see the node's journal"},
+		{&nodev1.OutputStatus{Name: "bird-conf"}, "bird-conf\tnone\tnot rendered yet"},
 	} {
 		if got := outputLine(tc.o); got != tc.want {
 			t.Errorf("outputLine(%v) = %q, want %q", tc.o, got, tc.want)

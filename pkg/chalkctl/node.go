@@ -1042,15 +1042,18 @@ func imageFiles(path string) (raw, definitions string, err error) {
 }
 
 // outputLine is an output's line of the status: the start of the hash of the files the node
-// serves, and whether its last render passed, or why it failed.
+// serves, and whether its last render passed, why it failed, or that none rendered it yet.
 func outputLine(o *nodev1.OutputStatus) string {
 	hash := "none"
 	if len(o.Hash) >= 12 {
 		hash = o.Hash[:12]
 	}
 	state := "rendered"
-	if o.Error != "" {
+	switch {
+	case o.Error != "":
 		state = "failed: " + o.Error
+	case o.Hash == "":
+		state = "not rendered yet"
 	}
 	return o.Name + "\t" + hash + "\t" + state
 }

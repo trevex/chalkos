@@ -1031,3 +1031,13 @@ func TestStatusReportsOutputs(t *testing.T) {
 		t.Errorf("outputs after a delivery = %v", got)
 	}
 }
+
+// TestStatusToleratesACorruptOutputStatus: a status file that cannot be read reports every
+// output as not rendered yet, as the next render replaces the file.
+func TestStatusToleratesACorruptOutputStatus(t *testing.T) {
+	s, _ := configServer(t)
+	write(t, filepath.Join(s.Loader.Render.Root, ".status.json"), "{")
+	if got := status(t, s).Outputs; len(got) != 1 || got[0].Name != "demo" || got[0].Hash != "" || got[0].Error != "" {
+		t.Errorf("outputs = %v", got)
+	}
+}

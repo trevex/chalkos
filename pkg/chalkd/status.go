@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -174,7 +175,8 @@ func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
 	}
 	recorded, err := outputs.ReadStatus(s.Loader.Render.Root)
 	if err != nil {
-		return nil, fmt.Errorf("the outputs' status: %w", err)
+		// The next render replaces it.
+		log.Printf("the outputs' status: %v", err)
 	}
 	var list []*nodev1.OutputStatus
 	for _, name := range sortedNames(defs) {
