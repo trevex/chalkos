@@ -18,6 +18,13 @@ let
   cel = import ./runtime/cel.nix { inherit lib; };
   servers = c: "${cel.specs c "time.chalkos.dev/v1alpha1" "TimeSync"}.map(s, s.servers)";
   hashFiles = pkgs.callPackage ../../nix/chalkos-hash-files.nix { };
+  # What chrony's effect runs: chronyd reads its sources when it starts, so one that does not run
+  # needs no reload, and a reload it cannot take must not fail the delivery. systemctl and chronyc
+  # come from chalkd's PATH.
+  reloadSources = pkgs.writeShellScriptBin "chalkos-chrony-reload-sources" ''
+    systemctl is-active --quiet chronyd.service || exit 0
+    exec chronyc reload sources
+  '';
 in
 {
   services.chrony = {
@@ -110,14 +117,17 @@ in
   # The sources file holds the TimeSync's servers, or chalkos's own without a TimeSync, so chrony
   # reads it again when they change, or when the file differs from the one before the delivery,
   # as one a slot written before the documents were kept gave from its identity alone; whether
-  # the servers DHCP announces count is chalkos-chrony-dhcp's. chronyc, on chalkd's PATH, tells the
-  # chronyd every node runs.
+  # the servers DHCP announces count is chalkos-chrony-dhcp's. The effect tells the chronyd
+  # every node runs, while it runs.
   chalkos.effects.chrony = {
     when = "${servers "config"} != ${servers "oldConfig"} || facts.timeSources != oldFacts.timeSources";
-    run = "chronyc reload sources";
+    run = "chalkos-chrony-reload-sources";
   };
   chalkos.facts.timeSources.command = "${hashFiles} ${sources}/identity.sources";
 
-  # chalkd reads chrony's tracking state for the node's status.
-  systemd.services.chalkd.path = [ package ];
+  # chalkd reads chrony's tracking state for the node's status, and runs chrony's effect.
+  systemd.services.chalkd.path = [
+    package
+    reloadSources
+  ];
 }

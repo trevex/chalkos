@@ -394,12 +394,12 @@ func TestApplyConfigReloadsTimeServers(t *testing.T) {
 		name, config string
 		want         []string
 	}{
-		{"a TimeSync added", baseConfig + timeSyncConfig, []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
+		{"a TimeSync added", baseConfig + timeSyncConfig, []string{"chalkos-chrony-reload-sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
 		{"the same", baseConfig + timeSyncConfig, nil},
 		{"DHCP's servers", baseConfig + strings.Replace(timeSyncConfig, "spec: {servers", "spec: {dhcp: true, servers", 1), []string{"systemctl try-restart chalkos-chrony-dhcp.service"}},
-		{"another server", baseConfig + strings.Replace(timeSyncConfig, "ntp.lan", "ntp2.lan", 1), []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
-		{"another port", baseConfig + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460}", 1), []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
-		{"NTS off", baseConfig + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460, nts: false}", 1), []string{"chronyc reload sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
+		{"another server", baseConfig + strings.Replace(timeSyncConfig, "ntp.lan", "ntp2.lan", 1), []string{"chalkos-chrony-reload-sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
+		{"another port", baseConfig + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460}", 1), []string{"chalkos-chrony-reload-sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
+		{"NTS off", baseConfig + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460, nts: false}", 1), []string{"chalkos-chrony-reload-sources", "systemctl try-restart chalkos-chrony-dhcp.service"}},
 		{"the same servers with another Demo", strings.Replace(baseConfig, "name: first", "name: second", 1) + strings.Replace(timeSyncConfig, "{host: ntp.lan}", "{host: ntp2.lan, port: 4460, nts: false}", 1), []string{"systemctl try-restart demo.service"}},
 	} {
 		r.calls = nil
@@ -794,7 +794,7 @@ func TestApplyConfigOverALegacySlot(t *testing.T) {
 	if _, err := sendConfig(s, baseConfig); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"systemctl reload systemd-networkd.service", "chronyc reload sources"} {
+	for _, want := range []string{"systemctl reload systemd-networkd.service", "chalkos-chrony-reload-sources"} {
 		if !slices.Contains(r.calls, want) {
 			t.Errorf("ran %v, want %s", r.calls, want)
 		}

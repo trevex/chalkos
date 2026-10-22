@@ -803,7 +803,7 @@ list of string
 
 
 
-Command, with its arguments, the effect runs after the reloads and before the restarts\. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd’s PATH, or an absolute path in the image’s store\.
+Command, with its arguments, the effect runs after the reloads and before the restarts\. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd’s PATH, or an absolute path in the image’s store\. chalkd runs it whether or not any unit runs, and a command that fails fails the delivery, so one that talks to a service that may be stopped checks first that the service runs\.
 
 
 

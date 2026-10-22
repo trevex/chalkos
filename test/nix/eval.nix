@@ -367,6 +367,10 @@ lib.runTests {
             && c.systemd.paths.chalkos-chrony-dhcp.pathConfig.Unit == "chalkos-chrony-dhcp-links.service"
             && lib.hasSuffix "systemctl restart chalkos-chrony-dhcp.service" c.systemd.services.chalkos-chrony-dhcp-links.serviceConfig.ExecStart;
           chalkdHasChronyc = lib.elem c.services.chrony.package c.systemd.services.chalkd.path;
+          # chrony's effect runs a script of chalkd's PATH, which leaves a chronyd that does not run.
+          reloadSources =
+            (builtins.fromJSON c.environment.etc."chalkos/effects.json".text).chrony.run == "chalkos-chrony-reload-sources"
+            && lib.any (p: lib.getName p == "chalkos-chrony-reload-sources") c.systemd.services.chalkd.path;
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
         };
       in
@@ -394,6 +398,7 @@ lib.runTests {
       dhcpReadsConfig = true;
       dhcpRerunsOnChange = true;
       chalkdHasChronyc = true;
+      reloadSources = true;
       chalkdProtectsClock = true;
     };
   };
@@ -1599,6 +1604,7 @@ lib.runTests {
       dbus = true;
       chalkd = [
         "btrfs-progs"
+        "chalkos-chrony-reload-sources"
         "chrony"
         "coreutils"
         "cryptsetup"

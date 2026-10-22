@@ -678,11 +678,18 @@ in
       '';
 
   # The chrony-dhcp unit's script with the links networkd announced time servers on: the servers
-  # are chrony's when the node's TimeSync takes them, and none are otherwise.
+  # are chrony's when the node's TimeSync takes them, and none are otherwise. chrony's effect
+  # reloads the sources of a chronyd that runs alone.
   chrony-dhcp =
     let
       script = worker.systemd.services.chalkos-chrony-dhcp.serviceConfig.ExecStart;
       path = lib.makeBinPath worker.systemd.services.chalkos-chrony-dhcp.path;
+      # The script chrony's effect runs from chalkd's PATH.
+      reloadSources = lib.getExe (
+        lib.findFirst (
+          p: lib.getName p == "chalkos-chrony-reload-sources"
+        ) null worker.systemd.services.chalkd.path
+      );
     in
     pkgs.runCommand "chalkos-chrony-dhcp" { nativeBuildInputs = [ pkgs.bubblewrap ]; } ''
       cat >test.sh <<'TEST'
@@ -725,6 +732,15 @@ in
       [ ! -s "$sources" ] || fail "servers with an unreadable TimeSync: $(cat "$sources")"
       grep -q timesync errors.log || fail "no error for an unreadable TimeSync"
       [ "$(ls -A /run/chalkos/chrony-dhcp)" = dhcp.sources ] || fail "left behind: $(ls -A /run/chalkos/chrony-dhcp)"
+      # chrony's effect reloads the sources of a chronyd that runs, and leaves one that does not
+      # run, which reads them when it starts.
+      printf '#!/bin/sh\nexit "$ACTIVE"\n' >stub/systemctl
+      chmod +x stub/systemctl
+      : >chronyc.log
+      ACTIVE=3 ${reloadSources} || fail "the effect failed for a chronyd that does not run"
+      [ ! -s chronyc.log ] || fail "reloaded the sources of a chronyd that does not run"
+      ACTIVE=0 ${reloadSources}
+      grep -qx "reload sources" chronyc.log || fail "did not reload the sources of a running chronyd"
       TEST
       ${onNode}
       touch $out

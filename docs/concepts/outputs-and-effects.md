@@ -116,7 +116,7 @@ An effect is an action a delivery takes once it is applied. It fires when one of
 | `when` | A CEL expression over `config` and `oldConfig`, `facts.<name>` and `oldFacts.<name>`, and `node.name`, for a trigger that no output renders, such as the node's Kubernetes share. |
 | `restart` | Units to restart, by their full names. |
 | `reload` | Units to reload with `systemctl reload`. |
-| `run` | A command to run, such as `chronyc reload sources`: a bare program name of chalkd's `PATH` or a program of the image's store, with its arguments split on spaces. |
+| `run` | A command to run, such as `chronyc reload sources`: a bare program name of chalkd's `PATH` or a program of the image's store, with its arguments split on spaces. chalkd runs it whether or not a unit runs, and a command that fails fails the delivery, so a command that talks to a service that may be stopped checks first that it runs, as chrony's effect does. |
 | `start` | Whether the units of `restart` start when they do not run, as for a unit whose condition only the delivery meets. |
 | `chalkd` | `restart` or `reload`, for chalkd's control-plane loops, which run inside chalkd and have no unit of their own. |
 
@@ -265,7 +265,7 @@ chalkos's own units take effects of their own, which `when` rules express:
 | Effect | Fires when | Does |
 | --- | --- | --- |
 | `networkd` | The networkd units chalkd writes differ from those before the delivery: a `Network`, `NetDev` or `Link` document changed, a `Secret` one of them references, or a boot left other units. | Reloads `systemd-networkd.service`. |
-| `chrony` | The `TimeSync`'s servers change, or the sources file chalkd writes differs from the one before the delivery. | Runs `chronyc reload sources`. |
+| `chrony` | The `TimeSync`'s servers change, or the sources file chalkd writes differs from the one before the delivery. | Runs `chronyc reload sources` while `chronyd.service` is active. |
 | `chrony-dhcp` | The `TimeSync`'s spec changes. | Restarts `chalkos-chrony-dhcp.service`. |
 | `registry-mirrors`, `controlplane-ports` | A `RegistryMirror` or a `Node` changes. | Restart `chalkos-registry-mirrors.service` or `chalkos-controlplane.service`. |
 | `kubernetes` | The `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. | Restarts and starts `chalkos-kubernetes.service` and `kubelet.service`. |
