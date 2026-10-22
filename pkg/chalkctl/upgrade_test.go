@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
@@ -26,6 +28,8 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -117,6 +121,10 @@ type upgradeFake struct {
 	// alreadyStaged makes the node answer an upgrade as one that found the image staged already,
 	// though its status did not say so, as when another run staged it in between.
 	alreadyStaged bool
+	// noPull makes the node's chalkd report that it cannot pull an image from a registry.
+	noPull bool
+	// header is the header the last upgrade sent.
+	header *nodev1.UpgradeHeader
 }
 
 // upgradeLab is a cluster of fake nodes.
@@ -189,7 +197,7 @@ func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Variant: n.variant, Platform: n.platform}), nil
+	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Variant: n.variant, Platform: n.platform, PullsUpgradeImages: !n.noPull}), nil
 }
 
 func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
@@ -248,6 +256,13 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	for stream.Receive() {
 		received += uint64(len(stream.Msg().GetChunk().GetData()))
 	}
+	if ref := header.GetSource().GetOci().GetReference(); ref != "" {
+		if received != 0 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("an upgrade that pulls its image carries no chunks"))
+		}
+		n.lab.record("%s pull %s", n.name, ref)
+		received = h.Store.Size + h.HashTree.Size + h.Uki.Size
+	}
 	n.lab.record("%s upgrade", n.name)
 	n.lab.mu.Lock()
 	refuse := n.lab.refuseUpgrade == n.name
@@ -273,6 +288,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
 	n.stagedConfig, n.secret = header.GetConfig(), header.GetFallbackSecret()
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
+	n.header = header
 	if n.alreadyStaged {
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyStaged: true, Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)}), nil
 	}
@@ -502,6 +518,56 @@ func (l *upgradeLab) images() map[string]string {
 		n.mu.Unlock()
 	}
 	return images
+}
+
+// TestUpgradeFromARegistry upgrades a node whose image the inventory names in a registry by tag:
+// the node is told to pull the image by the digest chalkctl resolved, with the header a directory
+// of the same build gives and no chunks. A node whose chalkd cannot pull stops the run before any
+// node is drained or sent anything.
+func TestUpgradeFromARegistry(t *testing.T) {
+	ctx := context.Background()
+	dir := testUpgradeImage(t, "plain", "0.2.0")
+	writeFile(t, filepath.Join(dir, "repart.d", "00-esp.conf"), "[Partition]\nType=esp\n")
+	img, closeImage, err := ociimage.FromDirectory(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := ocitest.Registry(t) + "/lab/plain-metal:v2"
+	pinned := ocitest.Push(t, img, ref)
+	closeImage()
+
+	l := newUpgradeLab(t, 1)
+	l.useInventory(t, map[string]string{"plain": "oci:" + ref})
+	if err := l.run("upgrade", "--nodes", "n1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if !slices.Contains(l.takeEvents(), "n1 pull "+pinned) {
+		t.Errorf("n1 was not told to pull %s", pinned)
+	}
+	if v := l.images()["n1"]; v != "0.2.0" {
+		t.Errorf("n1 runs %s", v)
+	}
+	if want := "n1: installing " + shortOf(t, dir) + ", which it pulls from " + pinned; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, l.ta.stdout)
+	}
+	streamed, err := openUpgradeImage(ctx, dir, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer streamed.Close()
+	if got := l.nodes["n1"].header.GetImage(); !proto.Equal(got, streamed.header) {
+		t.Errorf("header %v, want the directory's %v", got, streamed.header)
+	}
+
+	old := newUpgradeLab(t, 1)
+	old.nodes["n1"].noPull = true
+	old.useInventory(t, map[string]string{"plain": "oci:" + ref})
+	if err := old.run("upgrade", "--nodes", "n1"); err == nil || !strings.Contains(err.Error(), "n1 runs a chalkd that cannot pull an image from a registry") {
+		t.Errorf("a node that cannot pull = %v", err)
+	}
+	if events := old.takeEvents(); slices.ContainsFunc(events, func(e string) bool { return strings.HasSuffix(e, " upgrade") || strings.HasSuffix(e, " drain") }) {
+		t.Errorf("events %q: a node was sent something", events)
+	}
 }
 
 // TestUpgradeControlPlanesInTurn upgrades the control planes one at a time: each only while the

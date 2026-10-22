@@ -14,9 +14,10 @@ quorum without it, then workers and nodes without Kubernetes in batches of --max
 Without --image each node (every node of the inventory, or those --nodes names) gets the image the
 inventory names for it, which must be the build whose root hash its directory's metadata.json
 names, as status compares nodes with it: rebuild the image or link its directory again otherwise.
-An image the inventory names in a registry is refused before any node is drained: upgrade sends
-only an image from a directory. A node that runs on another platform than its image stops the run
-before any node is sent anything. With --image the nodes that run the image's variant get it, or
+Each node pulls an image the inventory names in a registry itself, by the digest chalkctl resolved
+its reference to, with the credentials of the node's Registry of the registry's host; a node whose
+chalkd cannot pull stops the run before any node is drained. A node that runs on another platform
+than its image stops the run before any node is sent anything. With --image the nodes that run the image's variant get it, or
 those --nodes names whatever they run, and nodes on another platform are skipped and named.
 A node may get an image of another variant than the one it runs, which chalkctl prints.
 

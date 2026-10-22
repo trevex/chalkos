@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,22 +58,18 @@ func TestValidateOCIImage(t *testing.T) {
 	}
 }
 
-// TestOCIImageIsNotSent refuses to install or upgrade a node from its image in a registry, which
-// chalkctl cannot send, before it reaches the node or the registry.
-func TestOCIImageIsNotSent(t *testing.T) {
+// TestOCIImageIsNotInstalled refuses to install a node from its image in a registry, which
+// install cannot send, before it reaches the node or the registry.
+func TestOCIImageIsNotInstalled(t *testing.T) {
 	ta := newTestApp(t)
 	useOCIImage(t, ta, "registry.example/lab/test-metal:v1")
 	c, err := loadInventory(context.Background(), ta.inventory)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "the image test-metal of n1 comes from the registry, registry.example/lab/test-metal:v1, but chalkctl %s sends only an image from a directory"
-	if _, err := c.imageDir("n1"); err == nil || !strings.Contains(err.Error(), fmt.Sprintf(want, "install")) {
+	want := "the image test-metal of n1 comes from the registry, registry.example/lab/test-metal:v1, but chalkctl install sends only an image from a directory"
+	if _, err := c.imageDir("n1"); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("imageDir = %v", err)
-	}
-	r := &upgradeRun{cluster: c}
-	if _, err := r.groupOf("n1", nil); err == nil || !strings.Contains(err.Error(), fmt.Sprintf(want, "upgrade")) {
-		t.Errorf("groupOf = %v", err)
 	}
 }
 

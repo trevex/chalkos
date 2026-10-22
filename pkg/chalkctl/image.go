@@ -3,14 +3,19 @@ package chalkctl
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/google/go-containerregistry/pkg/v1/types"
+
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/inventory"
+	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -25,6 +30,9 @@ type diskImage struct {
 	contract *contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
+	// source is where the node takes the image's parts from: nil when chalkctl streams them,
+	// an image in a registry when the node pulls them.
+	source *nodev1.ImageSource
 }
 
 // openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
@@ -115,6 +123,53 @@ func openUpgradeImage(ctx context.Context, path string, stderr io.Writer) (*disk
 	c.platform = img.Info.Platform()
 	img.contract = &c
 	return img, nil
+}
+
+// Close closes the image's parts; an image in a registry has none open.
+func (img *diskImage) Close() error {
+	if img.Parts == nil {
+		return nil
+	}
+	return img.Parts.Close()
+}
+
+// ociUpgradeImage is an upgrade's image in a registry, which each node pulls: the header that its
+// artifact's config and its store, hash-tree and UKI layers give, as openImage gives it of a
+// directory, and the contract of its contract layer, which chalkctl checks the inventory's config
+// against.
+func ociUpgradeImage(nc *inventory.NodeConfig) (*diskImage, error) {
+	a, err := nc.Artifact()
+	if err != nil {
+		return nil, err
+	}
+	root, err := hex.DecodeString(a.Header.RootHash)
+	if err != nil {
+		return nil, fmt.Errorf("%s: the root hash: %w", a.Reference, err)
+	}
+	h := &nodev1.ImageHeader{
+		ImageId: a.Header.ImageID, Platform: a.Header.Platform, Architecture: a.Header.Architecture,
+		RootHash: root, Revision: a.Header.Revision, Tag: a.Header.Tag,
+	}
+	for _, p := range []struct {
+		mediaType types.MediaType
+		part      **nodev1.ImagePart
+	}{{ociimage.StoreType, &h.Store}, {ociimage.HashTreeType, &h.HashTree}, {ociimage.UKIType, &h.Uki}} {
+		d, err := a.Descriptor(p.mediaType)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", a.Reference, err)
+		}
+		sum, err := hex.DecodeString(d.Digest.Hex)
+		if d.Digest.Algorithm != "sha256" || err != nil || len(sum) != sha256.Size {
+			return nil, fmt.Errorf("%s: the %s layer's digest %s is no SHA-256", a.Reference, p.mediaType, d.Digest)
+		}
+		*p.part = &nodev1.ImagePart{Size: uint64(d.Size), Sha256: sum}
+	}
+	c, err := inventoryContract(nc)
+	if err != nil {
+		return nil, err
+	}
+	c.platform = a.Header.Platform
+	return &diskImage{header: h, contract: &c, source: &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: a.Reference}}}}, nil
 }
 
 // size is how many bytes of the image follow its header.

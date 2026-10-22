@@ -167,19 +167,19 @@ func (c *cluster) imageDir(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := fromDirectory(nc, "install"); err != nil {
+	if err := fromDirectory(nc); err != nil {
 		return "", err
 	}
 	return nc.ImageDir, nil
 }
 
-// fromDirectory refuses a node whose image in the inventory comes from a registry, for a command
-// that sends the image to the node itself, which it reads from a directory.
-func fromDirectory(nc *inventory.NodeConfig, command string) error {
+// fromDirectory refuses a node whose image in the inventory comes from a registry, for install,
+// which sends the image to the node itself, read from a directory.
+func fromDirectory(nc *inventory.NodeConfig) error {
 	if nc.ImageOCI == "" {
 		return nil
 	}
-	return fmt.Errorf("the image %s of %s comes from the registry, %s, but chalkctl %s sends only an image from a directory; name the image's directory in the inventory, or pass --image", nc.ImageName, nc.Name, nc.ImageOCI, command)
+	return fmt.Errorf("the image %s of %s comes from the registry, %s, but chalkctl install sends only an image from a directory; name the image's directory in the inventory, or pass --image", nc.ImageName, nc.Name, nc.ImageOCI)
 }
 
 // sameBuild refuses an image taken from the directory of a node's image whose store has another

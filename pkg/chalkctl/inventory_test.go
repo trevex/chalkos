@@ -189,8 +189,9 @@ type testNode struct{ name, kind, variant string }
 
 // writeNodes writes an inventory of the cluster lab with the nodes, the i-th at 10.0.0.<11+i> on
 // metal with the image <variant>-metal, whose directory images gives by variant, else
-// images/<variant>-metal below dir. A node of a kind gets a Kubernetes Node, and the nodes share
-// testClusterYAML. It returns the inventory's path.
+// images/<variant>-metal below dir; an image given as oci:<reference> is named by its reference
+// in a registry. A node of a kind gets a Kubernetes Node, and the nodes share testClusterYAML. It
+// returns the inventory's path.
 func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]string) string {
 	t.Helper()
 	variants := map[string]bool{}
@@ -209,7 +210,11 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 			if image == "" {
 				image = filepath.Join(dir, "images", n.variant+"-metal")
 			}
-			defined += fmt.Sprintf("    %s-metal: {source: {directory: %q}}\n", n.variant, image)
+			if ref, ok := strings.CutPrefix(image, "oci:"); ok {
+				defined += fmt.Sprintf("    %s-metal: {source: {oci: %q}}\n", n.variant, ref)
+			} else {
+				defined += fmt.Sprintf("    %s-metal: {source: {directory: %q}}\n", n.variant, image)
+			}
 		}
 	}
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), testClusterYAML)

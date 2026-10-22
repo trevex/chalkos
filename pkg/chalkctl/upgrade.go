@@ -74,7 +74,8 @@ type upgradeNode struct {
 // upgradeGroup is the nodes that get one image: the image given, or the one an image directory of
 // the inventory holds.
 type upgradeGroup struct {
-	// key tells groups apart: the image directory, or empty for the image given.
+	// key tells groups apart: the image directory, the reference by digest of an image in a
+	// registry, or empty for the image given.
 	key, dir          string
 	variant, platform string
 	nodes             []string
@@ -482,6 +483,9 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			groups[g.key] = g
 		}
 		g = groups[g.key]
+		if g.image != nil && g.image.source != nil && !info.GetPullsUpgradeImages() {
+			return fmt.Errorf("%s runs a chalkd that cannot pull an image from a registry, so it cannot take %s from %s; upgrade it once to an image from a directory, with --image or a directory source in the inventory", name, g.image.name(), g.image.source.GetOci().GetReference())
+		}
 		r.nodes[name] = n
 		if info.Variant != "" && info.Variant != g.variant {
 			r.say("%s runs the variant %s; it gets the image of %s", name, info.Variant, g.variant)
@@ -539,8 +543,8 @@ func (r *upgradeRun) nodeNames() []string {
 	return r.cluster.nodeNames()
 }
 
-// groupOf is the group of the image a node gets: the image given, or the one the inventory
-// names for it.
+// groupOf is the group of the image a node gets: the image given, or the one the inventory names
+// for it: from its directory, or from a registry, which the node pulls.
 func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error) {
 	if img != nil {
 		return &upgradeGroup{variant: img.Info.Variant(), platform: img.Info.Platform(), image: img}, nil
@@ -549,12 +553,16 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 	if err != nil {
 		return nil, err
 	}
-	if err := fromDirectory(nc, "upgrade"); err != nil {
-		return nil, err
-	}
 	md, err := nc.Resolve()
 	if err != nil {
 		return nil, err
+	}
+	if nc.ImageOCI != "" {
+		img, err := ociUpgradeImage(nc)
+		if err != nil {
+			return nil, err
+		}
+		return &upgradeGroup{key: img.source.GetOci().GetReference(), variant: md.Variant, platform: md.Platform, image: img}, nil
 	}
 	return &upgradeGroup{key: nc.ImageDir, dir: nc.ImageDir, variant: md.Variant, platform: md.Platform}, nil
 }
@@ -739,18 +747,24 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 // an encrypted volume, which the node creates before the image boots.
 func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	name, img := n.name, n.image
-	r.say("%s: installing %s", name, img.name())
-	parts, done, err := img.stream()
-	if err != nil {
-		return err
+	parts := io.MultiReader()
+	if ref := img.source.GetOci().GetReference(); ref != "" {
+		r.say("%s: installing %s, which it pulls from %s", name, img.name(), ref)
+	} else {
+		r.say("%s: installing %s", name, img.name())
+		stream, done, err := img.stream()
+		if err != nil {
+			return err
+		}
+		defer done()
+		parts = stream
 	}
-	defer done()
 	var resp *nodev1.UpgradeResponse
-	err = r.call(name, func(conn *client.Conn) error {
+	err := r.call(name, func(conn *client.Conn) error {
 		if _, err := r.configChanges(ctx, conn, n); err != nil {
 			return err
 		}
-		header := &nodev1.UpgradeHeader{Image: img.header}
+		header := &nodev1.UpgradeHeader{Image: img.header, Source: img.source}
 		if d := r.deliveryOf(n); d != nil {
 			header.Config, header.FallbackSecret = d.Text, n.secret
 		}
