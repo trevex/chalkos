@@ -43,6 +43,7 @@ func TestCheck(t *testing.T) {
 		`testdata/docs/guides/bad.md:41: chalkctl staus cp1: chalkctl has no command "staus"`,
 		`testdata/docs/guides/bad.md:42: chalkctl recovery-ky w2: chalkctl has no command "recovery-ky"`,
 		`testdata/docs/guides/bad.md:46: chalkctl install cp1 --fingerprnt 00ff: chalkctl install has no flag --fingerprnt`,
+		`testdata/docs/guides/bad.md:47: chalkbuild sign --keys db.key in out: chalkbuild sign has no flag --keys`,
 	}
 	got := strings.Split(err.Error(), "\n")[1:]
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {

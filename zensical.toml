@@ -120,6 +120,17 @@ nav = [
         { "start" = "reference/cli/chalklab_start.md" },
         { "status" = "reference/cli/chalklab_status.md" },
       ] },
+      { "chalkbuild" = [
+        { "Overview" = "reference/cli/chalkbuild.md" },
+        { "completion" = [
+          { "Overview" = "reference/cli/chalkbuild_completion.md" },
+          { "bash" = "reference/cli/chalkbuild_completion_bash.md" },
+          { "fish" = "reference/cli/chalkbuild_completion_fish.md" },
+          { "powershell" = "reference/cli/chalkbuild_completion_powershell.md" },
+          { "zsh" = "reference/cli/chalkbuild_completion_zsh.md" },
+        ] },
+        { "sign" = "reference/cli/chalkbuild_sign.md" },
+      ] },
       { "chalkcfg" = [
         { "Overview" = "reference/cli/chalkcfg.md" },
         { "get" = "reference/cli/chalkcfg_get.md" },

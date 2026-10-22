@@ -108,7 +108,7 @@ func TestProgramsHaveCompletion(t *testing.T) {
 			t.Errorf("%s: completion command %v, disabled %v", root.Name(), has, root.CompletionOptions.DisableDefaultCmd)
 		}
 	}
-	if got := strings.Join(names, " "); got != "chalkctl chalklab chalkcfg" {
+	if got := strings.Join(names, " "); got != "chalkctl chalklab chalkbuild chalkcfg" {
 		t.Errorf("programs = %s", got)
 	}
 }

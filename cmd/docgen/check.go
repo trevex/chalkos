@@ -18,10 +18,10 @@ import (
 // also one with attributes alone, counts as shell, as cobra's pages write them.
 var shellLanguages = []string{"", "sh", "bash", "shell", "zsh", "console", "shell-session"}
 
-// check finds the chalkctl, chalklab and chalkcfg commands in the shell code blocks of the Markdown
-// files under dir, but not under dir/superpowers, and returns an error naming each one that runs a
-// command or passes a flag the programs do not have. newRoots returns fresh command trees, as
-// parsing changes a tree's flags.
+// check finds the chalkctl, chalklab, chalkbuild and chalkcfg commands in the shell code blocks of
+// the Markdown files under dir, but not under dir/superpowers, and returns an error naming each
+// one that runs a command or passes a flag the programs do not have. newRoots returns fresh
+// command trees, as parsing changes a tree's flags.
 func check(newRoots func() []*cobra.Command, dir string) error {
 	var problems []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -51,7 +51,7 @@ func check(newRoots func() []*cobra.Command, dir string) error {
 		return err
 	}
 	if len(problems) > 0 {
-		return errors.New("commands in the documentation that chalkctl, chalklab and chalkcfg do not have:\n" + strings.Join(problems, "\n"))
+		return errors.New("commands in the documentation that chalkctl, chalklab, chalkbuild and chalkcfg do not have:\n" + strings.Join(problems, "\n"))
 	}
 	return nil
 }
@@ -159,19 +159,19 @@ func shellBlocks(path string) ([]block, error) {
 	return blocks, nil
 }
 
-// invocation is a command line that runs chalkctl, chalklab or chalkcfg: the program and its
-// arguments.
+// invocation is a command line that runs chalkctl, chalklab, chalkbuild or chalkcfg: the program
+// and its arguments.
 type invocation struct {
 	line int
 	args []string
 }
 
 // programNames are the programs whose commands are checked.
-var programNames = []string{"chalkctl", "chalklab", "chalkcfg"}
+var programNames = []string{"chalkctl", "chalklab", "chalkbuild", "chalkcfg"}
 
-// invocations returns the chalkctl, chalklab and chalkcfg command lines of a block. Lines continued
-// with a backslash are joined, and a $ prompt is dropped; in a console block, only lines with a $
-// prompt are commands, and the lines they continue on may start with a > prompt.
+// invocations returns the chalkctl, chalklab, chalkbuild and chalkcfg command lines of a block.
+// Lines continued with a backslash are joined, and a $ prompt is dropped; in a console block, only
+// lines with a $ prompt are commands, and the lines they continue on may start with a > prompt.
 func invocations(b block) []invocation {
 	var invs []invocation
 	for i := 0; i < len(b.lines); i++ {

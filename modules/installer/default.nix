@@ -68,7 +68,7 @@ let
           sfdisk --part-label $iso "$n" "$label"
         done < partitions.tsv
 
-        # The ISO's partitions in the format of repart-output.json, for chalkctl sign.
+        # The ISO's partitions in the format of repart-output.json, for chalkbuild sign.
         sfdisk --json $iso | jq --argjson types '${builtins.toJSON gptTypes}' '
           ($types | to_entries | map({key: .value, value: .key}) | from_entries) as $names
           | [.partitiontable.partitions[] | select($names[.type])

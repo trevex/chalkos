@@ -68,6 +68,26 @@ in
     '';
   };
 
+  # chalkbuild, with the tools that sign images.
+  chalkbuild = goModule {
+    pname = "chalkbuild";
+    paths = goPaths;
+    subPackages = [ "cmd/chalkbuild" ];
+    # The go-unit check runs its tests.
+    doCheck = false;
+    meta.mainProgram = "chalkbuild";
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postFixup = ''
+      wrapProgram $out/bin/chalkbuild --prefix PATH : ${
+        lib.makeBinPath [
+          pkgs.mtools
+          pkgs.sbsigntool
+          pkgs.coreutils
+        ]
+      }
+    '';
+  };
+
   # The documentation site.
   docs = docs.site;
 

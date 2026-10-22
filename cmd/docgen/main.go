@@ -4,8 +4,9 @@
 //
 //	docgen cli DIR ZENSICAL_TOML
 //
-// writes a page per command of chalkctl, chalklab and chalkcfg to DIR and their navigation to the
-// region of ZENSICAL_TOML between the lines "# BEGIN docgen cli" and "# END docgen cli".
+// writes a page per command of chalkctl, chalklab, chalkbuild and chalkcfg to DIR and their
+// navigation to the region of ZENSICAL_TOML between the lines "# BEGIN docgen cli" and
+// "# END docgen cli".
 //
 //	docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...]
 //
@@ -15,8 +16,8 @@
 //	docgen check DOCS_DIR
 //
 // fails when a shell code block of the Markdown files under DOCS_DIR, but not under
-// DOCS_DIR/superpowers, runs a chalkctl, chalklab or chalkcfg command or passes a flag they do not
-// have.
+// DOCS_DIR/superpowers, runs a chalkctl, chalklab, chalkbuild or chalkcfg command or passes a flag
+// they do not have.
 //
 //	docgen yaml DOCS_DIR SCHEMAS_DIR
 //
@@ -36,6 +37,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/chalkbuild"
 	"github.com/trevex/chalkos/pkg/chalkcfg"
 	"github.com/trevex/chalkos/pkg/chalkctl"
 	"github.com/trevex/chalkos/pkg/chalklab"
@@ -64,13 +66,13 @@ func run(args []string) error {
 	return errors.New("usage: docgen cli DIR ZENSICAL_TOML | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR")
 }
 
-// programs are the command trees of chalkctl, chalklab and chalkcfg, with the help and completion
-// commands cobra adds when a program runs. The completion command's page gets a description of
-// docgen's: cobra creates the command as the program runs, bound to its output, so the programs
-// cannot describe it themselves. chalkcfg disables its completion command, as nodes have no
-// logins.
+// programs are the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with the help and
+// completion commands cobra adds when a program runs. The completion command's page gets a
+// description of docgen's: cobra creates the command as the program runs, bound to its output, so
+// the programs cannot describe it themselves. chalkcfg disables its completion command, as nodes
+// have no logins.
 func programs() []*cobra.Command {
-	roots := []*cobra.Command{chalkctl.NewCommand(), chalklab.NewCommand(), chalkcfg.NewCommand()}
+	roots := []*cobra.Command{chalkctl.NewCommand(), chalklab.NewCommand(), chalkbuild.NewCommand(), chalkcfg.NewCommand()}
 	for _, root := range roots {
 		root.InitDefaultHelpCmd()
 		if root.CompletionOptions.DisableDefaultCmd {

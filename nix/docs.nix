@@ -186,8 +186,8 @@ rec {
       '';
 
   # The generated pages of docs/reference and zensical.toml with their navigation, laid out as
-  # in the repository: a page per command of chalkctl and chalklab, the config kinds, the
-  # arguments of mkImages and the image options, and the node API.
+  # in the repository: a page per command of chalkctl, chalklab and chalkbuild, the config kinds,
+  # the arguments of mkImages and the image options, and the node API.
   reference =
     pkgs.runCommand "chalkos-docs-reference"
       {
@@ -225,9 +225,9 @@ rec {
         cp proto/docs/reference/api.md $out/docs/reference/api.md
       '';
 
-  # The site builds strictly; the chalkctl, chalklab and chalkcfg commands its pages show exist;
-  # the config documents they show are valid against an image's, the inventory's and the lab
-  # file's schemas; and the Nix files they show parse.
+  # The site builds strictly; the chalkctl, chalklab, chalkbuild and chalkcfg commands its pages
+  # show exist; the config documents they show are valid against an image's, the inventory's and
+  # the lab file's schemas; and the Nix files they show parse.
   check =
     pkgs.runCommand "chalkos-docs-check"
       {
