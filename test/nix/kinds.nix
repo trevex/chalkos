@@ -43,7 +43,9 @@ let
   ];
   etcJSON =
     file: config:
-    builtins.fromJSON (builtins.unsafeDiscardStringContext config.environment.etc."chalkos/${file}".text);
+    builtins.fromJSON (
+      builtins.unsafeDiscardStringContext config.environment.etc."chalkos/${file}".text
+    );
   servicesOf = etcJSON "services.json";
   effectsOf = etcJSON "effects.json";
   outputsOf = etcJSON "outputs.json";
@@ -789,6 +791,41 @@ lib.runTests {
         dirOption = "/run/chalkos/outputs/bird-conf";
       };
     };
+  # The helpers name the file a renderer writes after its program, and build the common effects.
+  testHelpers =
+    let
+      h = (mkImages { variants.worker.modules = [ ]; }).nixos.worker-metal._module.args.chalkosLib;
+      template = h.render.template ../../modules/testing/greeting.tmpl;
+    in
+    {
+      expr = {
+        template = builtins.match ".*/bin/chalkos-render template /nix/store/[^ ]*-greeting.tmpl (.*)" template;
+        documents = builtins.match ".*/bin/chalkos-render (documents Peer Link)" (
+          h.render.documents [
+            "Peer"
+            "Link"
+          ]
+        );
+        jq = lib.hasSuffix "-chalkos-render-jq-bird.conf" (
+          h.render.jq (builtins.toFile "bird.conf.jq" ".")
+        );
+        restart = h.restartOn [ "bird-conf" ] [ "bird.service" ];
+        reload = h.reloadOn [ "bird-conf" ] [ "bird.service" ];
+      };
+      expected = {
+        template = [ "greeting" ];
+        documents = [ "documents Peer Link" ];
+        jq = true;
+        restart = {
+          on = [ "bird-conf" ];
+          restart = [ "bird.service" ];
+        };
+        reload = {
+          on = [ "bird-conf" ];
+          reload = [ "bird.service" ];
+        };
+      };
+    };
   # An effect's on names outputs alone, so a misspelled one fails the evaluation.
   testOnRefusesANameThatIsNoOutput = {
     expr = fails (
@@ -802,11 +839,19 @@ lib.runTests {
     expected = true;
   };
   testEffectWithoutTriggerFails = {
-    expr = fails (effectsOf (withBird { chalkos.effects.bird.restart = [ "bird.service" ]; }));
+    expr = fails (
+      effectsOf (withBird {
+        chalkos.effects.bird.restart = [ "bird.service" ];
+      })
+    );
     expected = true;
   };
   testEffectWithoutActionFails = {
-    expr = fails (effectsOf (withBird { chalkos.effects.bird.when = "true"; }));
+    expr = fails (
+      effectsOf (withBird {
+        chalkos.effects.bird.when = "true";
+      })
+    );
     expected = true;
   };
   testOutputOfUnknownKindFails = {
@@ -845,7 +890,11 @@ lib.runTests {
     expected = true;
   };
   testConsumersAreGone = {
-    expr = fails (servicesOf (withBird { chalkos.consumers.bird.kinds = [ "Demo" ]; }));
+    expr = fails (
+      servicesOf (withBird {
+        chalkos.consumers.bird.kinds = [ "Demo" ];
+      })
+    );
     expected = true;
   };
   testGrantWithServiceDoesNotWarn = {

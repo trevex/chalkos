@@ -1697,8 +1697,9 @@ attribute set of (submodule)
 
 
 
-Shell commands, run by bash with ` set -e ` in the renderer’s sandbox, that check the
-rendered files in ` $OUT `\. A failure refuses the delivery before it changes anything,
+Shell commands, run by bash with ` set -e ` in the renderer’s sandbox, with coreutils, grep
+and sed on the ` PATH `, that check the rendered files in ` $OUT `; they read the renderer’s
+input on standard input\. A failure refuses the delivery before it changes anything,
 and at boot fails ` chalkos-config.service `\.
 
 

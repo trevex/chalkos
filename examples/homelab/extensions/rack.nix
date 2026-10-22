@@ -6,6 +6,7 @@
   config,
   lib,
   pkgs,
+  chalkosLib,
   ...
 }:
 {
@@ -29,11 +30,13 @@
   };
   # What the rack survey found, {"location": "rack-a/u12"}; null on a node not surveyed yet.
   chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";
-  # chalkd restarts the unit when the node's Rack changes.
-  chalkos.effects.rack-location = {
-    when = ''("rack.example.org/v1alpha1" in config ? config["rack.example.org/v1alpha1"] : {}) != ("rack.example.org/v1alpha1" in oldConfig ? oldConfig["rack.example.org/v1alpha1"] : {})'';
-    restart = [ "rack-location.service" ];
+  # The node's Rack as a file, an output that changes when the Rack does, which restarts the
+  # unit.
+  chalkos.outputs.rack = {
+    inputs = [ "Rack" ];
+    render = chalkosLib.render.documents [ "Rack" ];
   };
+  chalkos.effects.rack-location = chalkosLib.restartOn [ "rack" ] [ "rack-location.service" ];
   systemd.services.rack-location = {
     # chalkd writes the node's Rack below /run/chalkos/config for it.
     chalkos.kinds = [ "Rack" ];
