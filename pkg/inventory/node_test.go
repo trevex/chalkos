@@ -1,6 +1,8 @@
 package inventory
 
 import (
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -239,11 +241,11 @@ func TestEndpoint(t *testing.T) {
 			"---\n" + clusterDoc("cluster", "https://10.0.0.11:6443") + "---\n" + flannelDoc("flannel", "1400"), ""},
 		"a node without Kubernetes": {"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "1400"), "", ""},
 		"another endpoint": {"---\n" + clusterDoc("default", "https://10.0.0.11:6443"), "---\n" + clusterDoc("default", "https://10.0.0.99:6443"),
-			"the nodes hold different Cluster specs: one on cp1, another on w1; every node of the cluster holds the same Cluster and Flannel specs"},
+			`the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.11:6443" on cp1, "https://10.0.0.99:6443" on w1; every node of the cluster holds the same Cluster and Flannel specs`},
 		"another MTU": {
 			"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "1400"),
 			"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "1450"),
-			"the nodes hold different Flannel specs: one on cp1, another on w1; every node of the cluster holds the same Cluster and Flannel specs"},
+			"the nodes hold different Flannel specs: spec.mtu is 1400 on cp1, 1450 on w1; every node of the cluster holds the same Cluster and Flannel specs"},
 		"a Flannel document on one node": {
 			"---\n" + clusterDoc("default", "https://10.0.0.11:6443"),
 			"---\n" + clusterDoc("default", "https://10.0.0.11:6443") + "---\n" + flannelDoc("default", "null"),
@@ -292,7 +294,7 @@ func TestEndpointNamesTheNodesOfEachSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "the nodes hold different Cluster specs: one on cp1, cp2 and w2, another on w1, another on w3; every node of the cluster holds the same Cluster and Flannel specs"
+	want := `the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.10:6443" on cp1, cp2 and w2, "https://10.0.0.20:6443" on w1, "https://10.0.0.30:6443" on w3; every node of the cluster holds the same Cluster and Flannel specs`
 	if _, err := inv.Endpoint(); err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %q", err, want)
 	}
@@ -341,6 +343,55 @@ func TestResolveRefusesMetadata(t *testing.T) {
 			}
 			if _, err := cp1.Resolve(); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("Resolve = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestAlikeNamesTheFirstDifference names the first field that differs in a walk of the fields in
+// name order, below objects and into lists of one length, with each value and its nodes; a field
+// a spec lacks is unset. Flannel's vxlanSourceSubnets compare as a set.
+func TestAlikeNamesTheFirstDifference(t *testing.T) {
+	parse := func(s string) map[string]any {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	nodes := []string{"cp1", "cp2", "w1"}
+	for name, tc := range map[string]struct {
+		kind  string
+		specs [3]string
+		want  string
+	}{
+		"equal": {"Cluster", [3]string{`{"domain": "a"}`, `{"domain": "a"}`, `{"domain": "a"}`}, ""},
+		"a field": {"Cluster", [3]string{`{"domain": "a"}`, `{"domain": "a"}`, `{"domain": "b"}`},
+			`spec.domain is "a" on cp1 and cp2, "b" on w1`},
+		"the first field by name": {"Cluster", [3]string{`{"domain": "a", "endpoint": "x"}`, `{"domain": "a", "endpoint": "x"}`, `{"domain": "b", "endpoint": "y"}`},
+			`spec.domain is "a" on cp1 and cp2, "b" on w1`},
+		"a nested field": {"Cluster", [3]string{`{"vip": {"addresses": ["10.0.0.10"], "mode": "l2"}}`, `{"vip": {"addresses": ["10.0.0.10"], "mode": "l2"}}`, `{"vip": {"addresses": ["10.0.0.20"], "mode": "l2"}}`},
+			`spec.vip.addresses[0] is "10.0.0.10" on cp1 and cp2, "10.0.0.20" on w1`},
+		"lists of other lengths": {"Cluster", [3]string{`{"ipFamilies": ["ipv4"]}`, `{"ipFamilies": ["ipv4", "ipv6"]}`, `{"ipFamilies": ["ipv4"]}`},
+			`spec.ipFamilies is ["ipv4"] on cp1 and w1, ["ipv4","ipv6"] on cp2`},
+		"a field one spec lacks": {"Cluster", [3]string{`{"domain": "cluster.local"}`, `{}`, `{}`},
+			`spec.domain is "cluster.local" on cp1, unset on cp2 and w1`},
+		"VXLAN sources in another order": {"Flannel", [3]string{`{"vxlanSourceSubnets": ["10.0.0.0/24", "fd00::/64"]}`, `{"vxlanSourceSubnets": ["fd00::/64", "10.0.0.0/24"]}`, `{"vxlanSourceSubnets": ["10.0.0.0/24", "fd00::/64"]}`}, ""},
+		"other VXLAN sources": {"Flannel", [3]string{`{"vxlanSourceSubnets": ["10.0.0.0/24", "fd00::/64"]}`, `{"vxlanSourceSubnets": ["fd00::/64", "10.0.0.0/24"]}`, `{"vxlanSourceSubnets": ["10.0.1.0/24", "fd00::/64"]}`},
+			`spec.vxlanSourceSubnets[0] is "10.0.0.0/24" on cp1 and cp2, "10.0.1.0/24" on w1`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			specs := map[string]map[string]any{}
+			for i, n := range nodes {
+				specs[n] = parse(tc.specs[i])
+			}
+			err := alike(tc.kind, nodes, func(n string) map[string]any { return specs[n] })
+			want := ""
+			if tc.want != "" {
+				want = "the nodes hold different " + tc.kind + " specs: " + tc.want + "; every node of the cluster holds the same Cluster and Flannel specs"
+			}
+			if got := fmt.Sprint(err); (err == nil) != (want == "") || err != nil && got != want {
+				t.Errorf("err = %v, want %q", err, want)
 			}
 		})
 	}

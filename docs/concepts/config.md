@@ -243,13 +243,16 @@ does not fit its disk, an extra flag that would override one chalkos sets.
 Every node of an inventory whose set holds a `Cluster` document must hold the same `Cluster` spec
 and the same `Flannel` spec, or no `Flannel` document on any of them, because each node builds the
 cluster from its own documents. The specs compare as written, whatever the documents are called: a
-field left to its default differs from one set to the default value. `chalkctl validate` and every
-chalkctl command that reads the inventory refuse an inventory whose nodes differ, naming the nodes
-of each spec:
+field left to its default differs from one set to the default value. Only the order of the
+`Flannel` document's `vxlanSourceSubnets` makes no difference. `chalkctl validate` and every
+chalkctl command that reads the inventory refuse an inventory whose nodes differ, naming the first
+field that differs, in the order of the fields' names, and the nodes of each of its values:
 
 ```text
-chalkos.yaml: the nodes hold different Flannel specs: one on cp1 and cp2, another on w1; every node of the cluster holds the same Cluster and Flannel specs
+chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1400 on cp1 and cp2, 1450 on w1; every node of the cluster holds the same Cluster and Flannel specs
 ```
+
+A node without the `Flannel` document is named as holding none, as in `none on w1`.
 
 The cluster's documents therefore belong in the files every node gets.
 

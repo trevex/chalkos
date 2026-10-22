@@ -156,7 +156,7 @@ func TestValidateTheCluster(t *testing.T) {
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
 	ta := newTestApp(t)
 	for _, args := range [][]string{{"validate", "n1"}, {"apply-config", "n1"}} {
-		if err := ta.run(context.Background(), append(args, "--inventory", path)); err == nil || !strings.Contains(err.Error(), "the nodes hold different Cluster specs: one on n1, another on n2") {
+		if err := ta.run(context.Background(), append(args, "--inventory", path)); err == nil || !strings.Contains(err.Error(), `the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.10:6443" on n1, "https://10.0.0.20:6443" on n2`) {
 			t.Errorf("%s of nodes of different Cluster specs = %v", args[0], err)
 		}
 	}

@@ -1,9 +1,11 @@
 package inventory
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -146,9 +148,10 @@ var clusterKinds = []string{"Cluster", "Flannel"}
 // server, the endpoint of their Cluster documents. Every node whose files hold a Cluster document
 // holds the same Cluster spec, and the same Flannel spec or, on every one of them, none, whatever
 // the documents are called; a node without a Cluster document runs no Kubernetes and is skipped.
-// The specs compare as written, so a field left to its default differs from one set to it. With
-// no nodes, the endpoint is the one of the shared files' Cluster document, and it is empty when
-// no node holds one.
+// The specs compare as written, so a field left to its default differs from one set to it, and
+// only the order of Flannel's vxlanSourceSubnets makes no difference. With no nodes, the
+// endpoint is the one of the shared files' Cluster document, and it is empty when no node holds
+// one.
 func (inv *Inventory) Endpoint() (string, error) {
 	// specs returns the spec of each cluster kind the files hold, nil for one they lack.
 	specs := func(files []string) (map[string]map[string]any, error) {
@@ -221,39 +224,195 @@ func (inv *Inventory) Endpoint() (string, error) {
 	return endpointOf(held[nodes[0]]["Cluster"]), nil
 }
 
-// alike refuses nodes whose specs of the kind, nil for none, differ, naming the nodes of each spec
-// in the order of their first node.
+// alike refuses nodes whose specs of the kind, nil for none, differ. When some nodes hold none,
+// the message names the nodes of each spec in the order of their first node; otherwise it names
+// the first field whose values differ, walking the fields in name order, and the nodes of each of
+// its values. Flannel's vxlanSourceSubnets compare as a set.
 func alike(kind string, nodes []string, spec func(string) map[string]any) error {
-	type group struct {
-		spec  map[string]any
-		nodes []string
-	}
-	var groups []*group
-	for _, n := range nodes {
-		s := spec(n)
-		i := slices.IndexFunc(groups, func(g *group) bool { return reflect.DeepEqual(g.spec, s) })
-		if i < 0 {
-			groups = append(groups, &group{spec: s})
-			i = len(groups) - 1
+	specs := make([]any, len(nodes))
+	missing := false
+	for i, n := range nodes {
+		if s := spec(n); s != nil {
+			specs[i] = normalized(kind, s)
+		} else {
+			missing = true
 		}
-		groups[i].nodes = append(groups[i].nodes, n)
 	}
-	if len(groups) == 1 {
-		return nil
-	}
-	parts := make([]string, len(groups))
-	seen := false
-	for i, g := range groups {
-		which := "another"
-		switch {
-		case g.spec == nil:
-			which = "none"
-		case !seen:
-			which, seen = "one", true
+	var parts []string
+	if missing {
+		groups := groupNodes(nodes, specs)
+		if len(groups) == 1 {
+			return nil
 		}
-		parts[i] = which + " on " + joinNames(g.nodes)
+		seen := false
+		for _, g := range groups {
+			which := "another"
+			switch {
+			case g.value == nil:
+				which = "none"
+			case !seen:
+				which, seen = "one", true
+			}
+			parts = append(parts, which+" on "+joinNames(g.nodes))
+		}
+	} else {
+		path, ok := firstDifference(specs, nil)
+		if !ok {
+			return nil
+		}
+		values := make([]any, len(specs))
+		for i, s := range specs {
+			values[i] = at(s, path)
+		}
+		for i, g := range groupNodes(nodes, values) {
+			part := show(g.value) + " on " + joinNames(g.nodes)
+			if i == 0 {
+				part = showPath(path) + " is " + part
+			}
+			parts = append(parts, part)
+		}
 	}
 	return fmt.Errorf("the nodes hold different %s specs: %s; every node of the cluster holds the same Cluster and Flannel specs", kind, strings.Join(parts, ", "))
+}
+
+// normalized is a spec of the kind as alike compares it: Flannel's vxlanSourceSubnets sorted, as
+// their order makes no difference to the ranges flannel takes VXLAN from.
+func normalized(kind string, spec map[string]any) map[string]any {
+	subnets, ok := spec["vxlanSourceSubnets"].([]any)
+	if kind != "Flannel" || !ok {
+		return spec
+	}
+	sorted := slices.Clone(subnets)
+	slices.SortStableFunc(sorted, func(a, b any) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
+	out := maps.Clone(spec)
+	out["vxlanSourceSubnets"] = sorted
+	return out
+}
+
+// unset stands for a field a spec lacks.
+type unset struct{}
+
+// firstDifference returns the path, below path, of the first field whose values differ: a
+// field's name or a list item's index for each step. It walks the fields of objects in name order
+// and the items of lists of one length in their order, and returns false when the values are
+// equal.
+func firstDifference(values []any, path []any) ([]any, bool) {
+	if !slices.ContainsFunc(values, func(v any) bool { return !reflect.DeepEqual(v, values[0]) }) {
+		return nil, false
+	}
+	if objects, ok := every[map[string]any](values); ok {
+		var keys []string
+		for _, o := range objects {
+			keys = append(keys, slices.Collect(maps.Keys(o))...)
+		}
+		slices.Sort(keys)
+		for _, k := range slices.Compact(keys) {
+			field := make([]any, len(objects))
+			for i, o := range objects {
+				field[i] = at(o, []any{k})
+			}
+			if p, ok := firstDifference(field, append(slices.Clip(path), k)); ok {
+				return p, true
+			}
+		}
+	}
+	lists, ok := every[[]any](values)
+	if ok && !slices.ContainsFunc(lists, func(l []any) bool { return len(l) != len(lists[0]) }) {
+		for i := range lists[0] {
+			item := make([]any, len(lists))
+			for j, l := range lists {
+				item[j] = l[i]
+			}
+			if p, ok := firstDifference(item, append(slices.Clip(path), i)); ok {
+				return p, true
+			}
+		}
+	}
+	return path, true
+}
+
+// every returns values as Ts when each is one.
+func every[T any](values []any) ([]T, bool) {
+	out := make([]T, len(values))
+	for i, v := range values {
+		t, ok := v.(T)
+		if !ok {
+			return nil, false
+		}
+		out[i] = t
+	}
+	return out, true
+}
+
+// at returns the value at path below v, unset when v lacks it.
+func at(v any, path []any) any {
+	for _, step := range path {
+		switch s := step.(type) {
+		case string:
+			o, ok := v.(map[string]any)
+			if !ok {
+				return unset{}
+			}
+			if v, ok = o[s]; !ok {
+				return unset{}
+			}
+		case int:
+			l, ok := v.([]any)
+			if !ok || s >= len(l) {
+				return unset{}
+			}
+			v = l[s]
+		}
+	}
+	return v
+}
+
+// showPath writes a path below a document's spec as spec.vip.addresses[0].
+func showPath(path []any) string {
+	var b strings.Builder
+	b.WriteString("spec")
+	for _, step := range path {
+		if i, ok := step.(int); ok {
+			fmt.Fprintf(&b, "[%d]", i)
+		} else {
+			fmt.Fprintf(&b, ".%s", step)
+		}
+	}
+	return b.String()
+}
+
+// valueGroup is the nodes of one value, in their order.
+type valueGroup struct {
+	value any
+	nodes []string
+}
+
+// groupNodes groups the nodes by their values, the group of the first node first.
+func groupNodes(nodes []string, values []any) []*valueGroup {
+	var groups []*valueGroup
+	for i, n := range nodes {
+		j := slices.IndexFunc(groups, func(g *valueGroup) bool { return reflect.DeepEqual(g.value, values[i]) })
+		if j < 0 {
+			groups = append(groups, &valueGroup{value: values[i]})
+			j = len(groups) - 1
+		}
+		groups[j].nodes = append(groups[j].nodes, n)
+	}
+	return groups
+}
+
+// show writes a value as JSON, and a field a spec lacks as unset.
+func show(v any) string {
+	if _, ok := v.(unset); ok {
+		return "unset"
+	}
+	var b strings.Builder
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	if err := e.Encode(v); err != nil {
+		return fmt.Sprint(v)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // joinNames lists names as prose: a, b and c.
