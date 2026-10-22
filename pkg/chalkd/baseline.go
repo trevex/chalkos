@@ -16,7 +16,7 @@ import (
 )
 
 // baseline is what the effects compare a delivery with while an earlier one is not applied
-// whole: the running slot's config, the facts the rules read and the states of the outputs and
+// whole: the running slot's config, the facts the rules read, the states of the outputs and
 // the hashes of the kinds, as they were before the first delivery that failed part way. What that
 // delivery applied, such as a share or a slot, is then no reason for a retry to find nothing
 // changed. It holds what the rules see alone: the documents with their secret values hashed, as

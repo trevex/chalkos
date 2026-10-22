@@ -249,6 +249,63 @@ func TestApplyConfigTakesEffectsOnKinds(t *testing.T) {
 	}
 }
 
+// TestApplyConfigRetriesEffectsOnKinds: a delivery that renames a Demo, whose kind effect is due,
+// and fails part way leaves the baseline, so a retry of the same config still restarts the kind
+// effect's unit, and the same config again, once it is applied whole, finds nothing changed.
+func TestApplyConfigRetriesEffectsOnKinds(t *testing.T) {
+	s, r := configServer(t)
+	writeEffects(t, s, `{"demo-kind": {"kinds": ["Demo"], "restart": ["kind.service"]}}`)
+	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	r.rules = []rule{{prefix: "systemctl try-restart", err: errors.New("exit status 1")}}
+	if _, err := sendConfig(s, renamed); err == nil || !strings.Contains(err.Error(), "kind.service") {
+		t.Fatalf("err = %v, want kind.service named among the units to restart by hand", err)
+	}
+	r.rules, r.calls = nil, nil
+	resp, err := sendConfig(s, renamed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(resp.RestartedUnits, "kind.service") {
+		t.Errorf("the retry restarted %v, want kind.service among them", resp.RestartedUnits)
+	}
+	if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("baseline after a delivery applied whole: %v", err)
+	}
+	r.calls = nil
+	resp, err = sendConfig(s, renamed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(resp.RestartedUnits, "kind.service") {
+		t.Errorf("the same config again restarted %v", resp.RestartedUnits)
+	}
+}
+
+// TestApplyConfigComparesKindsWithTheBaselineOnAKeptDelivery: a delivery without config checks no
+// document against schemas, so it compares a kind's hash, here and in the baseline an earlier
+// failed delivery left, with the running image's own schemas; without them a Secret a kind's
+// documents reference would make the kind look changed, and its effect would wrongly fire.
+func TestApplyConfigComparesKindsWithTheBaselineOnAKeptDelivery(t *testing.T) {
+	s, r := configServer(t)
+	writeEffects(t, s, `{"demo-kind": {"kinds": ["Demo"], "restart": ["kind.service"]}}`)
+	next := baseConfig + networkConfig
+	r.rules = []rule{{prefix: "systemctl reload systemd-networkd.service", err: errors.New("exit status 1")}}
+	if _, err := sendConfig(s, next); err == nil {
+		t.Fatal("the failed reload went unreported")
+	}
+	if _, err := os.Stat(s.Paths.EffectsBaseline); err != nil {
+		t.Fatalf("baseline: %v, want one left by the failed reload", err)
+	}
+	r.rules, r.calls = nil, nil
+	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(resp.Msg.RestartedUnits, "kind.service") {
+		t.Errorf("restarted %v, want kind.service left alone: Demo's kind did not change", resp.Msg.RestartedUnits)
+	}
+}
+
 // TestApplyConfigTakesTheNodesNameFromItsCertificate translates the config, whose documents name
 // no node, for the node its node certificate names, names that node in a refusal, and translates
 // no config on a node without a node certificate.
@@ -744,7 +801,7 @@ func TestApplyConfigRefusesWithoutABaseline(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	_, err := sendConfig(s, renamed)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "record the config, facts and outputs the effects compare with") {
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "record the config, facts, outputs and kinds the effects compare with") {
 		t.Fatalf("err = %v, want the baseline's failure", err)
 	}
 	if v, err := store.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {

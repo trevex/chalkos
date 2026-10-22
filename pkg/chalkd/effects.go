@@ -55,10 +55,19 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
+	// A delivery without config checks no document against schemas, so schemas is nil; the kinds'
+	// hashes, here and in due, need the running image's own then, the way its outputs already load
+	// them for a nil schemas when there are outputs and documents to render. A delivery of neither
+	// config nor documents, such as a node's first certificate, hashes no kind and needs none.
+	if schemas == nil && (len(old) > 0 || len(next) > 0) {
+		if schemas, err = schema.LoadSchemas(s.Loader.Schemas); err != nil {
+			return nil, failed(connect.CodeInternal, "the running image's schemas: %v", err)
+		}
+	}
 	e := &effects{defs: defs, node: name, next: next, old: old, schemas: schemas}
 	var errs []error
 	for _, effect := range slices.Sorted(maps.Keys(defs)) {
-		// An effect without a rule fires on its outputs alone.
+		// An effect without a rule fires on its outputs or kinds alone.
 		if defs[effect].When == "" {
 			continue
 		}
@@ -95,7 +104,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 	// Every fact the rules read loads now, before anything changes. One that cannot be loaded keeps
 	// its error, which makes the rules that read it due.
 	if err := newBaseline(old, e.factNames(), before, e.outputs, e.kinds).write(s.Paths.EffectsBaseline); err != nil {
-		return nil, failed(connect.CodeInternal, "record the config, facts and outputs the effects compare with: %v", err)
+		return nil, failed(connect.CodeInternal, "record the config, facts, outputs and kinds the effects compare with: %v", err)
 	}
 	e.recorded = true
 	return e, nil

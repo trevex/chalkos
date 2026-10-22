@@ -171,6 +171,12 @@ func TestCheckOutputs(t *testing.T) {
 			delete(f, "examples.json")
 			return f
 		}(), "effect greeter: an effect does not fire on Secret documents"},
+		"an effect on Addon documents": {func() map[string]string {
+			f := withOutput(t, base(), render, accepts, nil)
+			f["effects.json"] = `{"greeter": {"kinds": ["Addon"], "restart": ["greeter.service"]}}`
+			delete(f, "examples.json")
+			return f
+		}(), "effect greeter: an effect does not fire on Addon documents"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := check(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
