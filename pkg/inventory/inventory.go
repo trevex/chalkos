@@ -5,6 +5,7 @@ package inventory
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -13,8 +14,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -63,10 +66,12 @@ type Image struct {
 	Source ImageSource `json:"source"`
 }
 
-// ImageSource is where an image comes from: the directory of an image build, as nix build makes
-// it.
+// ImageSource is where an image comes from, exactly one of: the directory of an image build, as
+// nix build makes it, or the image's reference in an OCI registry.
 type ImageSource struct {
-	Directory string `json:"directory"`
+	Directory string `json:"directory,omitempty"`
+	// OCI names the image's registry and a tag or a digest, such as ghcr.io/example/node-metal:v1.
+	OCI string `json:"oci,omitempty"`
 }
 
 // Group is the image and the config files that the nodes in the group get.
@@ -94,6 +99,16 @@ type Inventory struct {
 	Spec Spec
 	// parsed holds the documents of each config file read so far, by path.
 	parsed map[string][]config.Document
+	// mu guards artifacts, which holds each OCI image read so far, or why it could not be read, by
+	// reference.
+	mu        sync.Mutex
+	artifacts map[string]artifactRead
+}
+
+// artifactRead is an OCI image as Inventory.Artifact read it, or why it could not.
+type artifactRead struct {
+	artifact *ociimage.Artifact
+	err      error
 }
 
 // Load reads an inventory and checks it against its schema and its own references: every group a
@@ -142,8 +157,15 @@ func parse(path string, data []byte) (*Inventory, error) {
 	dir := filepath.Dir(path)
 	spec := d.Spec
 	images := map[string]Image{}
-	for name, im := range spec.Images {
-		images[name] = Image{Source: ImageSource{Directory: absolute(dir, im.Source.Directory)}}
+	// Sorted, so that of several bad references the first error is always the same.
+	for _, name := range slices.Sorted(maps.Keys(spec.Images)) {
+		src := spec.Images[name].Source
+		if src.OCI != "" {
+			if _, err := ociimage.ParseReference(src.OCI); err != nil {
+				return nil, fmt.Errorf("the image %s: %w", name, err)
+			}
+		}
+		images[name] = Image{Source: ImageSource{Directory: absolute(dir, src.Directory), OCI: src.OCI}}
 	}
 	defined := func(image, where string) error {
 		if _, ok := images[image]; image != "" && !ok {
@@ -187,13 +209,13 @@ func parse(path string, data []byte) (*Inventory, error) {
 	return inv, nil
 }
 
-// Image is the name and directory of the image a node runs: its own, else that of its groups,
-// else spec.all.imageName. Groups that name different images are refused even for a node that
-// names its own, so that the conflict shows before the node leaves the group or drops its image.
-func (inv *Inventory) Image(node string) (name, dir string, err error) {
+// Image is the name and source of the image a node runs: its own, else that of its groups, else
+// spec.all.imageName. Groups that name different images are refused even for a node that names
+// its own, so that the conflict shows before the node leaves the group or drops its image.
+func (inv *Inventory) Image(node string) (name string, source ImageSource, err error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {
-		return "", "", inv.noNode(node)
+		return "", ImageSource{}, inv.noNode(node)
 	}
 	var group string
 	for _, g := range n.Groups {
@@ -201,7 +223,7 @@ func (inv *Inventory) Image(node string) (name, dir string, err error) {
 		switch {
 		case image == "" || image == name:
 		case name != "":
-			return "", "", fmt.Errorf("node %s is in the groups %s and %s, which name different images: %s and %s", node, group, g, name, image)
+			return "", ImageSource{}, fmt.Errorf("node %s is in the groups %s and %s, which name different images: %s and %s", node, group, g, name, image)
 		default:
 			name, group = image, g
 		}
@@ -213,9 +235,27 @@ func (inv *Inventory) Image(node string) (name, dir string, err error) {
 		name = inv.Spec.All.ImageName
 	}
 	if name == "" {
-		return "", "", fmt.Errorf("node %s has no image; name one in spec.all.imageName, in a group of the node or on the node", node)
+		return "", ImageSource{}, fmt.Errorf("node %s has no image; name one in spec.all.imageName, in a group of the node or on the node", node)
 	}
-	return name, inv.Spec.Images[name].Source.Directory, nil
+	return name, inv.Spec.Images[name].Source, nil
+}
+
+// Artifact reads the OCI image ref names once per inventory, and so once per command: the first
+// call resolves the reference to its manifest's digest and reads the image's header and contract
+// layer, and later calls return what it read, or why it could not read it. It takes no context,
+// as the readers of a node's config take none; a request ends with its connection's timeouts.
+func (inv *Inventory) Artifact(ref string) (*ociimage.Artifact, error) {
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	if r, ok := inv.artifacts[ref]; ok {
+		return r.artifact, r.err
+	}
+	a, err := ociimage.Read(context.Background(), ref)
+	if inv.artifacts == nil {
+		inv.artifacts = map[string]artifactRead{}
+	}
+	inv.artifacts[ref] = artifactRead{a, err}
+	return a, err
 }
 
 // absolute resolves a path of the inventory against its directory; empty stays empty.

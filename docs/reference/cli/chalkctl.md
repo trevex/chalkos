@@ -13,13 +13,13 @@ chalkctl installs and operates the nodes of a chalkos cluster. It reads the clus
 inventory (chalkos.yaml in the current directory, or --inventory), which names each node, the
 address chalkctl reaches it at, the image it runs and the config files it gets, and talks to chalkd
 on each node over mutual TLS. chalkctl never builds or signs images: the inventory names the
-directory of each image, for Secure Boot a copy chalkbuild sign signed. Commands authenticate with
-the cluster's secrets file, which holds every CA key, or with a client file (chalkctl config new),
-which holds a certificate of the admin, operator or reader role. Each command's help says which of
-the two it needs. The secrets file is read only where --secrets names it, as a path or as - for
-standard input, encrypted with age or not; the inventory names none. Commands that accept both take
---config or --secrets, not both, else the client file $CHALKOSCONFIG names, else
-~/.config/chalkos/config.
+directory of each image, for Secure Boot a copy chalkbuild sign signed, or its reference in a
+registry, which chalkbuild push prints. Commands authenticate with the cluster's secrets file,
+which holds every CA key, or with a client file (chalkctl config new), which holds a certificate
+of the admin, operator or reader role. Each command's help says which of the two it needs. The
+secrets file is read only where --secrets names it, as a path or as - for standard input,
+encrypted with age or not; the inventory names none. Commands that accept both take --config or
+--secrets, not both, else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
 argument after it is read as a positional argument.

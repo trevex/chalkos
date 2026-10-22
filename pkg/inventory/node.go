@@ -14,6 +14,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -29,12 +30,16 @@ type NodeConfig struct {
 	// Kubernetes, and Hostname the Host document's spec.hostname, empty without a Host or for a
 	// null one, which take the node's name.
 	Type, Hostname string
-	// ImageName is the name of the image the inventory gives the node, and ImageDir that image's
-	// directory, absolute.
-	ImageName, ImageDir string
-	// Image is ImageDir's metadata.json, once Resolve read it. It stays on the operator's machine:
-	// the documents chalkctl delivers carry no root hash.
+	// ImageName is the name of the image the inventory gives the node; ImageDir is that image's
+	// directory, absolute, or ImageOCI its reference in a registry, as its source names one of
+	// them.
+	ImageName, ImageDir, ImageOCI string
+	// Image is the image's metadata.json, of its directory or its contract layer, once Resolve
+	// read it. It stays on the operator's machine: the documents chalkctl delivers carry no root
+	// hash.
 	Image *schema.Metadata
+	// inv is the inventory the config comes from, which reads an image in a registry once.
+	inv *Inventory
 }
 
 // Node builds a node's config from its files and the inventory's image of it: their documents,
@@ -63,11 +68,11 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 			docs = append(docs, d)
 		}
 	}
-	imageName, imageDir, err := inv.Image(name)
+	imageName, source, err := inv.Image(name)
 	if err != nil {
 		return nil, err
 	}
-	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: imageDir}
+	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: source.Directory, ImageOCI: source.OCI, inv: inv}
 	for _, d := range docs {
 		if d.APIVersion == config.KubernetesAPI && d.Kind == "Node" {
 			node, _ := d.Object["spec"].(map[string]any)
@@ -112,13 +117,35 @@ var rootHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // StaticAddresses are the node's static addresses, as its Network documents give them.
 func (c *NodeConfig) StaticAddresses() []string { return config.StaticAddresses(c.Documents) }
 
-// Resolve reads the metadata.json of the node's image directory once: the image's platform,
-// variant and root hash, which chalkctl checks images and nodes against. The node's documents
-// stay as its files give them, so its config's version does not change with every build of its
-// image.
+// Artifact is the node's image in a registry, read once per inventory.
+func (c *NodeConfig) Artifact() (*ociimage.Artifact, error) {
+	if c.ImageOCI == "" || c.inv == nil {
+		return nil, fmt.Errorf("the image %s of node %s comes from no registry", c.ImageName, c.Name)
+	}
+	a, err := c.inv.Artifact(c.ImageOCI)
+	if err != nil {
+		return nil, fmt.Errorf("the image %s of node %s: %w", c.ImageName, c.Name, err)
+	}
+	return a, nil
+}
+
+// Resolve reads the metadata.json of the node's image once, from its directory or from the
+// contract layer of its image in a registry: the image's platform, variant and root hash, which
+// chalkctl checks images and nodes against. The node's documents stay as its files give them, so
+// its config's version does not change with every build of its image.
 func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	if c.Image != nil {
 		return *c.Image, nil
+	}
+	if c.ImageOCI != "" {
+		a, err := c.Artifact()
+		if err != nil {
+			return schema.Metadata{}, err
+		}
+		// Read checked it against the image's header: its root hash and platform.
+		md := a.Metadata
+		c.Image = &md
+		return md, nil
 	}
 	file := filepath.Join(c.ImageDir, "metadata.json")
 	md, err := schema.ReadMetadata(c.ImageDir)

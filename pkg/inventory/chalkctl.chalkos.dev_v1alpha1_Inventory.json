@@ -36,13 +36,18 @@
               "source": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["directory"],
-                "description": "Where the image comes from.",
+                "oneOf": [{ "required": ["directory"] }, { "required": ["oci"] }],
+                "description": "Where the image comes from: exactly one of directory and oci.",
                 "properties": {
                   "directory": {
                     "type": "string",
                     "minLength": 1,
                     "description": "Directory of an image build as nix build makes it, holding its metadata.json; a relative directory is relative to the inventory's directory."
+                  },
+                  "oci": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Reference of the image in an OCI registry, naming the registry and a tag or a digest, such as ghcr.io/example/node-metal:v1 or the repository@sha256:… chalkbuild push prints. chalkctl resolves a tag to its digest once per command and reads the image's header and contract layer with the credentials of docker's config; install and upgrade send only an image from a directory."
                   }
                 }
               }

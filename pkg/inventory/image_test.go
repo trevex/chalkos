@@ -4,6 +4,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
 
 // images is an inventory whose nodes take their images from each place one may be named: cp1
@@ -46,9 +49,9 @@ func TestImage(t *testing.T) {
 		"w2":  {"node-gpu", filepath.Join(filepath.Dir(dir), "builds", "node-gpu")},
 		"w3":  {"node-metal", filepath.Join(dir, "images", "node-metal")},
 	} {
-		name, imageDir, err := inv.Image(node)
-		if err != nil || name != want.name || imageDir != want.dir {
-			t.Errorf("image of %s = %s, %s, %v; want %s, %s", node, name, imageDir, err, want.name, want.dir)
+		name, src, err := inv.Image(node)
+		if err != nil || name != want.name || src.Directory != want.dir || src.OCI != "" {
+			t.Errorf("image of %s = %s, %+v, %v; want %s, %s", node, name, src, err, want.name, want.dir)
 		}
 	}
 	if _, _, err := inv.Image("w9"); err == nil || !strings.Contains(err.Error(), "has no node w9") {
@@ -94,6 +97,12 @@ func TestLoadRefusesImages(t *testing.T) {
 			"node cp1 names the image node-arm, which the inventory does not define"},
 		"an image without a directory": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {}}",
 			"directory"},
+		"an image of two sources": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {directory: images/node-metal, oci: registry.example/lab/node-metal:v1}}",
+			"oneOf"},
+		"an OCI reference without a tag": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {oci: registry.example/lab/node-metal}}",
+			"is no image reference with a registry and a tag or digest"},
+		"an OCI reference without a registry": {"node-metal: {source: {directory: images/node-metal}}", "node-metal: {source: {oci: \"lab/node-metal:v1\"}}",
+			"is no image reference with a registry and a tag or digest"},
 		"an image name in caps": {"    node-metal: {source:", "    Node-metal: {source:", "Node-metal"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -106,5 +115,44 @@ func TestLoadRefusesImages(t *testing.T) {
 				t.Errorf("Load = %v, want an error naming %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestOCIImageReadOnce reads an image in a registry once for all the nodes that run it: the first
+// resolves its tag to its manifest's digest, and the others take what it read.
+func TestOCIImageReadOnce(t *testing.T) {
+	host, manifests := ocitest.CountingRegistry(t)
+	ref := host + "/lab/node-metal:v1"
+	root := strings.Repeat("ab", 32)
+	md := `{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
+	c := ociimage.Contract{Metadata: []byte(md), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("[Partition]\n")}}
+	pinned := ocitest.Push(t, ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal"}, c), ref)
+	manifests.Store(0)
+	dir := t.TempDir()
+	inv := strings.Replace(images, "node-metal: {source: {directory: images/node-metal}}", `node-metal: {source: {oci: "`+ref+`"}}`, 1)
+	inv = strings.Replace(inv, "    w3: {groups: [rack]}\n", "    w3: {groups: [rack]}\n    w4: {}\n", 1)
+	write(t, filepath.Join(dir, "chalkos.yaml"), inv)
+	loaded, err := Load(filepath.Join(dir, "chalkos.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range []string{"w3", "w4"} {
+		nc, err := loaded.Node(node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if nc.ImageOCI != ref || nc.ImageDir != "" {
+			t.Errorf("%s runs %q from %q", node, nc.ImageOCI, nc.ImageDir)
+		}
+		got, err := nc.Resolve()
+		if err != nil || got.Platform != "metal" || got.Variant != "node" || got.RootHash != root {
+			t.Errorf("Resolve(%s) = %+v, %v", node, got, err)
+		}
+		if a, err := nc.Artifact(); err != nil || a.Reference != pinned {
+			t.Errorf("Artifact(%s) = %+v, %v; want %s", node, a, err, pinned)
+		}
+	}
+	if n := manifests.Load(); n != 1 {
+		t.Errorf("the registry answered %d manifest requests, want 1", n)
 	}
 }

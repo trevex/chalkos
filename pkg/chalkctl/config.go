@@ -188,7 +188,7 @@ func checkRules(c contract, next, old []config.Document, node string) error {
 }
 
 // imageContractOf is the contract of the node's image in the inventory, as built for the platform
-// its directory's metadata.json gives.
+// its metadata.json gives.
 func (c *cluster) imageContractOf(name string) (contract, error) {
 	nc, err := c.config(name)
 	if err != nil {
@@ -198,10 +198,27 @@ func (c *cluster) imageContractOf(name string) (contract, error) {
 	if err != nil {
 		return contract{}, err
 	}
-	ct, err := imageContract(nc.ImageDir)
+	ct, err := inventoryContract(nc)
 	if err != nil {
 		return contract{}, err
 	}
 	ct.platform = md.Platform
 	return ct, nil
+}
+
+// inventoryContract is the contract of a node's image in the inventory: that of its directory,
+// or of the contract layer of its image in a registry.
+func inventoryContract(nc *inventory.NodeConfig) (contract, error) {
+	if nc.ImageOCI == "" {
+		return imageContract(nc.ImageDir)
+	}
+	a, err := nc.Artifact()
+	if err != nil {
+		return contract{}, err
+	}
+	c, err := newContract(a.Contract.Schemas, a.Contract.ImageJSON)
+	if err != nil {
+		return contract{}, fmt.Errorf("%s: %w", a.Reference, err)
+	}
+	return c, nil
 }

@@ -253,6 +253,31 @@ func TestLabInventory(t *testing.T) {
 	}
 }
 
+// TestLabNodesRefuseOCIImages refuses a node whose image comes from a registry: chalklab boots
+// images from directories.
+func TestLabNodesRefuseOCIImages(t *testing.T) {
+	dir := t.TempDir()
+	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "chalkos.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(data), "node-kvm: {source: {directory: images/node-kvm}}", "node-kvm: {source: {oci: registry.example/lab/node-kvm:v1}}", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inventory.Load(lf.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := labNodes(inv, lf); err == nil || !strings.Contains(err.Error(), "chalklab boots images from directories, but the image node-kvm of cp1 comes from the registry, registry.example/lab/node-kvm:v1") {
+		t.Errorf("labNodes = %v", err)
+	}
+}
+
 // TestCreateKeys writes the lab's Secure Boot keys for its owner alone, and enrolls their
 // certificates in the firmware's variables with Secure Boot on.
 func TestCreateKeys(t *testing.T) {

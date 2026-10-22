@@ -549,6 +549,9 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 	if err != nil {
 		return nil, err
 	}
+	if err := fromDirectory(nc, "upgrade"); err != nil {
+		return nil, err
+	}
 	md, err := nc.Resolve()
 	if err != nil {
 		return nil, err

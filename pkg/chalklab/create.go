@@ -216,6 +216,9 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.LabNode, map[string]
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", lf.path, err)
 		}
+		if nc.ImageOCI != "" {
+			return nil, nil, fmt.Errorf("chalklab boots images from directories, but the image %s of %s comes from the registry, %s; name its directory in the inventory", nc.ImageName, name, nc.ImageOCI)
+		}
 		md, err := nc.Resolve()
 		if err != nil {
 			return nil, nil, err

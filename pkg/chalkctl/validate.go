@@ -86,7 +86,7 @@ func validateNode(inv *inventory.Inventory, name string) (string, []string, erro
 	if err != nil {
 		return "", nil, err
 	}
-	c, err := imageContract(nc.ImageDir)
+	c, err := inventoryContract(nc)
 	if err != nil {
 		return "", nil, fmt.Errorf("node %s: %w", name, err)
 	}

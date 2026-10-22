@@ -153,7 +153,8 @@ func (c *cluster) declares(name, platform string) string {
 	return fmt.Sprintf("its image %s is built for %s", nc.ImageName, platform)
 }
 
-// imageDir is the directory of the node's image in the inventory.
+// imageDir is the directory of the node's image in the inventory; an image in a registry is
+// refused, as install sends only an image from a directory.
 func (c *cluster) imageDir(name string) (string, error) {
 	if c.inv == nil {
 		return "", errors.New("the image comes from --image without an inventory, which names the nodes' image directories; pass --inventory")
@@ -162,7 +163,19 @@ func (c *cluster) imageDir(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := fromDirectory(nc, "install"); err != nil {
+		return "", err
+	}
 	return nc.ImageDir, nil
+}
+
+// fromDirectory refuses a node whose image in the inventory comes from a registry, for a command
+// that sends the image to the node itself, which it reads from a directory.
+func fromDirectory(nc *inventory.NodeConfig, command string) error {
+	if nc.ImageOCI == "" {
+		return nil
+	}
+	return fmt.Errorf("the image %s of %s comes from the registry, %s, but chalkctl %s sends only an image from a directory; name the image's directory in the inventory, or pass --image", nc.ImageName, nc.Name, nc.ImageOCI, command)
 }
 
 // sameBuild refuses an image taken from the directory of a node's image whose store has another
