@@ -65,7 +65,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
 | `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
-| `cmd/chalkos-render` | Renders the outputs of the `chalkosLib.render.template` and `.documents` helpers on a node, in an output's sandbox. |
+| `cmd/chalkos-render` | Renders the outputs of the `chalkosLib.render.template` and `.documents` helpers and the built-in output `networkd` on a node, in an output's sandbox. |
 | `cmd/chalkos-rules` | Checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units and outputs the image has, and every output renders its examples and passes its check. |
 | `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, runs as a systemd generator for the other volumes, and prints the storage facts the storage kinds' rules read. |
 | `cmd/docgen` | Writes the command reference and checks the commands the documentation shows. |
@@ -97,7 +97,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/vip` | Adds a VIP to an interface and announces it. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the [lab](../reference/glossary.md#lab)'s supervisor, for chalklab and the end-to-end tests. |
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
-| `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: networkd units, chrony's servers, the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, renders the outputs at boot, and reads the image's grants and effects. |
+| `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, renders the outputs at boot, networkd's units and chrony's servers among them, and reads the image's grants and effects. |
 | `outputs` | Renders and checks the image's [outputs](../reference/glossary.md#output) in a sandbox of their own, as an unprivileged user, swaps them in by a symlink rename, and records their hashes and failures. |
 | `pki` | The [secrets file](../reference/glossary.md#secrets-file), the OS CA and [node CA](../reference/glossary.md#node-ca), client and [node certificates](../reference/glossary.md#node-certificate), client roles. |
 | `rules` | Compiles the [change rules](../reference/glossary.md#change-rule) of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |

@@ -36,12 +36,13 @@ spec:
 
 The schemas of these kinds are generated from the gperf tables of the image's own systemd, so
 they accept exactly the sections and keys its networkd accepts, and
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a misspelled key before the
-node sees it. Each key records its networkd spelling, from which chalkd renders the units when it
-receives the config and keeps them on [STATE](../reference/glossary.md#state). At every boot
-`chalkos-config.service` writes them to `/run/systemd/network`, where they take precedence over
-the image's. [Config kinds](../reference/kinds.md#network) lists every section with its networkd
-name.
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md) refuses a misspelled key, or a
+value that spans lines, before the node sees it. Each key records its networkd spelling, from
+which the built-in [output](outputs-and-effects.md#which-outputs-does-chalkos-declare) `networkd`
+renders the units into `/run/systemd/network`, where they take precedence over the image's.
+chalkd renders them for every delivery before it changes anything, and `chalkos-config.service`
+renders them at every boot before networkd starts. [Config kinds](../reference/kinds.md#network)
+lists every section with its networkd name.
 
 The image brings one unit of its own, NixOS's `99-ethernet-default-dhcp`, which runs DHCP on every
 physical Ethernet interface that no earlier unit matches. A node whose config holds no `Network`

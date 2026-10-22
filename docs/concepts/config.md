@@ -458,16 +458,16 @@ addresses, so a `Network` change that drops one keeps the control plane from sta
 `chalkos-config.service` applies the running image's slot at every boot, before the network
 starts, and chalkd applies a new set the same way after every `apply-config` to the running image:
 
-- it writes the networkd units to `/run/systemd/network`, where they take precedence over the
-  image's own;
-- it writes the time servers for chrony and sets the hostname;
+- it sets the hostname;
 - it writes the Kubernetes configuration chalkd and the kubelet read;
 - it writes each document to `/run/chalkos/config/<group>/<Kind>/<name>.json`, except `Secret`
   and `Addon` documents;
 - it writes, for each unit granted kinds, the values that the `secretRef` fields of those kinds
   name into the unit's credentials;
 - it renders the image's outputs, which a delivery checks before it changes anything, as
-  [Outputs and effects](outputs-and-effects.md#what-happens-on-a-delivery) describes.
+  [Outputs and effects](outputs-and-effects.md#what-happens-on-a-delivery) describes; the
+  built-in outputs write the networkd units to `/run/systemd/network`, where they take
+  precedence over the image's own, and the time servers for chrony.
 
 The storage section is machine state: only chalkd writes `storage.json`, when a config that
 changes the storage is delivered, and every boot sets up the volumes it records.
@@ -493,8 +493,9 @@ config files from the documents instead, and chalkd checks them before a deliver
 anything, so a document the service would reject is refused with the delivery. An effect,
 [`chalkos.effects`](../reference/options.md#chalkoseffects), restarts or reloads the service
 when its outputs change, or when a CEL rule holds; a grant restarts nothing.
-[Outputs and effects](outputs-and-effects.md) describes both, the effects chalkos declares for
-networkd, chrony and the kubelet among them. `apply-config` prints the units it restarted.
+[Outputs and effects](outputs-and-effects.md) describes both, the outputs chalkos declares for
+networkd and chrony and its effects for them and the kubelet among them. `apply-config` prints
+the units it restarted.
 
 ## How do secrets reach a service?
 

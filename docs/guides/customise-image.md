@@ -550,6 +550,9 @@ settings break the node:
 - chalkd, `chalkos-config.service`, `chalkos-health.service` and systemd-networkd are what
   install, configure and upgrade the node. An image that disables or replaces them builds, and
   the node then cannot be installed or upgraded.
+- The outputs `networkd` and `chrony` render the node's network and time servers, and own
+  `/run/systemd/network` and `/run/chalkos/outputs/chrony`, so your outputs take other names and
+  directories; the image's evaluation refuses a directory that two outputs share.
 - `mkImages` sets `chalkos.variant.name`, `chalkos.platform.name`, `chalkos.kubernetes.enable`
   and `chalkos.maintenance.osCA` from the variant's and platform's names,
   [`variants.<name>.kubernetes`](../reference/options.md#variantskubernetes) and

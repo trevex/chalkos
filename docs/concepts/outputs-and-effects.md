@@ -80,9 +80,9 @@ output's `user` and `group` with its `mode`, `root:root 0644` by default.
 The first swap removes a directory it finds at `dir`, so `dir` is a clean path below `/run`, a
 tmpfs, whose components start with no dot. It stays out of `/run/chalkos`, which holds the node's
 config and credentials, except for `/run/chalkos/outputs/<name>` and the paths below it, and it
-is neither another output's `dir` nor inside one. `/run/systemd/network` is a valid `dir`, for
-example. The image's evaluation refuses a `dir` that breaks these rules, and chalkd refuses an
-`outputs.json` that holds one.
+is neither another output's `dir` nor inside one. `/run/systemd/network`, the `dir` of the
+built-in output `networkd`, is one such path. The image's evaluation refuses a `dir` that breaks
+these rules, and chalkd refuses an `outputs.json` that holds one.
 
 ### Why are renderers pure?
 
@@ -266,14 +266,41 @@ failed, the hash is `none`. A render that passes clears the failure, the check o
 place's config included, and an output no render has passed since the node booted shows `none`
 and `not rendered yet`.
 
+## Which outputs does chalkos declare?
+
+Every image renders the node's network and time servers as two outputs of its own, so a delivery
+checks them as it checks an extension's, and every boot renders them before networkd and chrony
+start:
+
+| Output | Inputs | Files | Check |
+| --- | --- | --- | --- |
+| `networkd` | `Network`, `NetDev`, `Link` | One unit per document in `/run/systemd/network`, named as the document with the suffix of its kind, such as `10-uplink.network`. | None. |
+| `chrony` | `TimeSync` | `servers.sources` in `/run/chalkos/outputs/chrony`, one `server` line per server of the `TimeSync`, or chalkos's own servers without a `TimeSync`. | `chronyd -p` parses the file, and every line must be a `server` directive of a host name or address, as the template writes them. |
+
+The `networkd` output's renderer, `chalkos-render networkd`, reads each key's networkd name from
+the image's schemas of the networkd kinds, so the units follow from the documents alone and say
+exactly what networkd's own names would. networkd has no offline validator, so the output has no
+check: the schemas accept exactly the sections and keys of the image's networkd, and refuse a
+value that spans lines, which would start another key in the unit. Its units take precedence
+over the image's own in `/etc/systemd/network`. The output owns `/run/systemd/network`: a unit
+written there by other means is gone once the link replaces the directory.
+
+The `chrony` output is a template of `chalkosLib.render.template`, and chrony reads its file from
+the output's `dir`, a `sourcedir` of its configuration. The servers DHCP announces are no output,
+because they come from the network at runtime: `chalkos-chrony-dhcp.service` writes them, when
+the `TimeSync` takes them.
+
+The image's build renders both outputs from examples of their own and runs the check of
+`chrony`. Their names are chalkos's, so an extension's output takes another.
+
 ## Which effects does chalkos declare?
 
-chalkos's own units take effects of their own, which `when` rules express:
+chalkos's own units take effects of their own, on the built-in outputs or on `when` rules:
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
-| `networkd` | The networkd units chalkd writes differ from those before the delivery: a `Network`, `NetDev` or `Link` document changed, a `Secret` one of them references, or a boot left other units. | Reloads `systemd-networkd.service`. |
-| `chrony` | The `TimeSync`'s servers change, or the sources file chalkd writes differs from the one before the delivery. | Runs `chronyc reload sources` while `chronyd.service` is active. |
+| `networkd` | The output `networkd` changed: a `Network`, `NetDev` or `Link` document changed, or the units networkd reads differ from those the delivery renders, as after a boot whose render failed. | Reloads `systemd-networkd.service`. |
+| `chrony` | The output `chrony` changed: the `TimeSync`'s servers changed, or the file chrony reads differs from the one the delivery renders. | Runs `chronyc reload sources` while `chronyd.service` is active. |
 | `chrony-dhcp` | The `TimeSync`'s spec changes. | Restarts `chalkos-chrony-dhcp.service`. |
 | `registry-mirrors`, `controlplane-ports` | A `RegistryMirror` or a `Node` changes. | Restart `chalkos-registry-mirrors.service` or `chalkos-controlplane.service`. |
 | `kubernetes` | The `Node`, the `Host`, the `Address=` values of the `Network` documents' `[Network]` sections, the `Cluster` or `Flannel` document, the cluster file or the share changes, but not for a share that differs in its node CA alone. | Restarts and starts `chalkos-kubernetes.service` and `kubelet.service`. |

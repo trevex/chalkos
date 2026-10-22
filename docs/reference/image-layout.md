@@ -184,7 +184,7 @@ readable by root alone.
 | Path | Written by | What it holds |
 | --- | --- | --- |
 | `config/<root-hash>/` | install, Upgrade, ApplyConfig | The config slot of the image whose store has the root hash, which its boot loads: a symbolic link to a directory beside it, which a new set replaces as a whole. An Upgrade forgets the slots of the images no UKI on the ESP boots, and with them a slot an upgrade wrote before a crash kept its image from being activated. |
-| `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's [identity](glossary.md#identity) on that image, which its config translates to and the boot applies: hostname, network units, storage, Kubernetes and time settings. |
+| `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's [identity](glossary.md#identity) on that image, which its config translates to and the boot applies: hostname, static addresses, storage and Kubernetes settings. |
 | `config/<root-hash>/delivered/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The slot's config documents as delivered, which GetConfig returns with secrets hashed; `Secret` documents in `delivered/secrets/<name>.json`. |
 | `config/<root-hash>/documents/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The same documents with their schemas' defaults filled in, which the node's services read; `Secret` documents in `documents/secrets/<name>.json`. |
 | `config/<root-hash>/version` | install, Upgrade, ApplyConfig | The SHA-256 of the slot's config as delivered, which Status reports. |
@@ -271,7 +271,8 @@ another disk carrying the same image or the same labels for its own.
 | `/run/chalkos/outputs/.status.json` | Each output's hash and last render or check failure, which status reports. |
 | `/run/chalkd/effects-baseline.json` | The config, facts and output hashes the effects compare with while a delivery that failed part way is not applied whole. |
 | `/run/chalkos/storage-status.json` | What the last storage setup found on each disk. |
-| `/run/chalkos/chrony/identity.sources` | The time servers of the config, for chrony. |
+| `/run/chalkos/outputs/chrony/servers.sources` | The time servers of the config, for chrony, which the built-in output `chrony` renders. |
+| `/run/systemd/network` | The networkd units of the config, which the built-in output `networkd` renders, a link below `/run/chalkos/outputs/.rendered`. |
 | `/run/chalkos/chrony-dhcp/dhcp.sources` | The time servers DHCP announced, for chrony, when the node's `TimeSync` takes them with `spec.dhcp`; empty otherwise. |
 | `/run/containerd/certs.d/<registry>/hosts.toml` | The mirrors of a registry, which containerd reads on every pull, from the node's `RegistryMirror` documents. |
 | `/run/chalkos/kubernetes/manifests` | The static pods chalkd renders on a control plane. |

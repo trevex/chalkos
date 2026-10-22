@@ -274,8 +274,6 @@ They, and the rules of the built-in effects, read these facts:
 | `disks` | `chalkos-storage facts disks` | For each volume with a disk of its own, whether its disk is pinned and plugged in, and what a changed reference finds. |
 | `fallback` | `chalkos-storage facts fallback` | Whether a fallback secret was sent, and whether it opens the node's fallback keyslot. |
 | `cluster` | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster as chalkd last wrote it, which the kubelet's rules compare before and after a delivery; declared on images with Kubernetes. |
-| `networkUnits` | `chalkos-hash-files /run/systemd/network` | The SHA-256 of the names and contents of the networkd units chalkd writes, which hold the values of their `secretRef` fields. |
-| `timeSources` | `chalkos-hash-files /run/chalkos/chrony/identity.sources` | The SHA-256 of the time sources file chalkd writes for chrony. |
 
 ## Limits
 
@@ -283,8 +281,8 @@ They, and the rules of the built-in effects, read these facts:
   items of a list or the values of a map; it is declared on the list or the map, which a kind's
   rule or a field's rule compares whole. Lists are not matched item by item by a key.
 - An effect's rule compares documents as written, so a change that makes no difference to the
-  unit still counts: an `Address=` value whose prefix length alone changes restarts the kubelet,
-  and adding a `TimeSync` that names chalkos's own servers reloads chrony's sources.
+  unit still counts: an `Address=` value whose prefix length alone changes restarts the kubelet.
+  An effect on an [output](outputs-and-effects.md) fires on the rendered files instead.
 - Rules compare the config with the running image's config alone. The one check that reads another
   slot's config is that of a storage change of the running image's config, which evaluates the
   storage rules against the staged image's slot as it would be written again.
