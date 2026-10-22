@@ -53,7 +53,7 @@ type Spec struct {
 	Images map[string]Image `json:"images,omitempty"`
 	// All is what every node gets: the image of the nodes whose groups and own entry name none,
 	// and the config files every node gets first.
-	All    Group            `json:"all,omitempty"`
+	All    Group            `json:"all,omitzero"`
 	Groups map[string]Group `json:"groups,omitempty"`
 	Nodes  map[string]Node  `json:"nodes,omitempty"`
 }
