@@ -259,10 +259,15 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // alertShaped reports whether err may hide the node's TLS alert: an alert of any kind, or a
-// connection the node closed or reset.
+// connection the node closed or reset. When the alert closes the connection before the first
+// request takes a stream, http2 returns an unexported sentinel that wraps nothing, so only its
+// text identifies it.
 func alertShaped(err error) bool {
 	var op *net.OpError
 	if errors.As(err, &op) && op.Op == "remote error" {
+		return true
+	}
+	if strings.Contains(err.Error(), "http2: client conn could not be established") {
 		return true
 	}
 	for _, closed := range []error{io.EOF, io.ErrUnexpectedEOF, syscall.ECONNRESET, syscall.EPIPE} {

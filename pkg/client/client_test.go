@@ -332,3 +332,15 @@ func TestRefusesCertificateForAnUnknownIssuerAlone(t *testing.T) {
 		t.Error("a bad certificate alert is a refusal for an unknown issuer")
 	}
 }
+
+// TestAlertShapedConnNotEstablished covers the node's alert closing the connection before the
+// first request takes a stream: http2 then returns a sentinel error that wraps nothing.
+func TestAlertShapedConnNotEstablished(t *testing.T) {
+	err := fmt.Errorf("unavailable: %w", errors.New("http2: client conn could not be established"))
+	if !alertShaped(err) {
+		t.Errorf("alertShaped(%v) = false, want true", err)
+	}
+	if alertShaped(errors.New("http2: no cached connection was available")) {
+		t.Error("an unrelated http2 error is alert-shaped")
+	}
+}
