@@ -156,8 +156,8 @@ read. See [The image](../concepts/image.md).
 
 What a delivery does to the node's services once it is applied: restart or reload units, run a
 command or act on chalkd's loops, as [`chalkos.effects`](options.md#chalkoseffects) declares it.
-An effect fires when one of its [outputs](#output) changed, or when its CEL rule, like a
-[change rule](#change-rule), holds. See
+An effect fires when one of its [outputs](#output) or the documents of one of its kinds changed,
+or when its CEL rule, like a [change rule](#change-rule), holds. See
 [Outputs and effects](../concepts/outputs-and-effects.md#what-is-an-effect).
 
 ## ESP { #esp }

@@ -272,7 +272,7 @@ such as `.spec.missing.name`, fails the render. Declare the output in the module
 ```nix
 chalkos.outputs.bird-conf = {
   inputs = [ "Peer" ];
-  render = chalkosLib.render.template ./bird.conf.tmpl;
+  render = lib.chalkos.render.template ./bird.conf.tmpl;
   check = "${pkgs.bird2}/bin/bird -p -c $OUT/bird.conf";
   examples = ./examples;
   user = "bird";
@@ -282,8 +282,8 @@ chalkos.outputs.bird-conf = {
 ```
 
 - `inputs` names the kinds the renderer reads.
-- `render` is the program that writes the files into `$OUT`.
-  [`chalkosLib.render.template`](../concepts/outputs-and-effects.md#which-renderers-does-chalkoslib-offer)
+- `render` is the renderer that writes the files into `$OUT`.
+  [`lib.chalkos.render.template`](../concepts/outputs-and-effects.md#which-renderers-does-libchalkos-offer)
   renders a template into a file named as the template less `.tmpl`, here `bird.conf`.
 - `check` runs in the renderer's sandbox against the rendered files. `bird -p` parses the config
   and exits with status 1 on an error, which refuses the delivery.
@@ -321,7 +321,6 @@ The whole module:
   config,
   lib,
   pkgs,
-  chalkosLib,
   ...
 }:
 let
@@ -348,7 +347,7 @@ in
 
   chalkos.outputs.bird-conf = {
     inputs = [ "Peer" ];
-    render = chalkosLib.render.template ./bird.conf.tmpl;
+    render = lib.chalkos.render.template ./bird.conf.tmpl;
     check = "${pkgs.bird2}/bin/bird -p -c $OUT/bird.conf";
     examples = ./examples;
     user = "bird";
@@ -356,7 +355,7 @@ in
     mode = "0640";
   };
   # bird reads its config again on birdc configure, which keeps the sessions a restart would drop.
-  chalkos.effects.bird = chalkosLib.reloadOn [ "bird-conf" ] [ "bird.service" ];
+  chalkos.effects.bird = lib.chalkos.reloadOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
 
   users.users.bird = {
     isSystemUser = true;
@@ -376,11 +375,13 @@ in
 }
 ```
 
-`chalkosLib.reloadOn [ "bird-conf" ] [ "bird.service" ]` is the effect
-`{ on = [ "bird-conf" ]; reload = [ "bird.service" ]; }`: once a delivery is applied, chalkd
-reloads `bird.service` when the files of `bird-conf` changed, and `chalkosLib.restartOn` restarts
-units the same way. Name units by their full names, as `bird.service`; the image build fails on an
-effect whose unit the image does not define, and the evaluation on an `on` that names no output.
+`lib.chalkos.reloadOn { outputs = [ "bird-conf" ]; } [ "bird.service" ]` is the effect
+`{ outputs = [ "bird-conf" ]; kinds = [ ]; reload = [ "bird.service" ]; }`: once a delivery is
+applied, chalkd reloads `bird.service` when the files of `bird-conf` changed, and
+`lib.chalkos.restartOn` restarts units the same way. An effect's `kinds` fires on a kind's
+documents instead, for a service that reads them itself when it starts. Name units by their full
+names, as `bird.service`; the image build fails on an effect whose unit the image does not define,
+and the evaluation on an `outputs` that names no output.
 
 A change of a node's neighbours needs no new image:
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers the new `Peer`
@@ -473,26 +474,24 @@ chalkos.kinds.Peer.rules = [
 ];
 ```
 
-A rule on one field goes into the field's `x-chalkos-rules`. The homelab's `Rack` kind, in
+A rule on one field goes into the `rules` of the field's `lib.chalkos.mkOption`, which takes the
+same rules as a kind's `rules`. The homelab's `Rack` kind, in
 [`extensions/rack.nix`](https://github.com/trevex/chalkos/blob/main/examples/homelab/extensions/rack.nix),
 refuses a rack location that differs from the one a rack survey wrote to the node, which
 [`chalkos.facts`](../reference/options.md#chalkosfacts) declares as the fact `rackSurvey`:
 
 ```nix
-chalkos.kinds.Rack.spec.location =
-  lib.mkOption {
-    type = lib.types.nonEmptyStr;
-    example = "rack-a/u12";
-    description = "Rack and height unit the node is mounted in.";
-  }
-  // {
-    "x-chalkos-rules" = [
-      {
-        rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
-        messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
-      }
-    ];
-  };
+chalkos.kinds.Rack.spec.location = lib.chalkos.mkOption {
+  type = lib.types.nonEmptyStr;
+  example = "rack-a/u12";
+  description = "Rack and height unit the node is mounted in.";
+  rules = [
+    {
+      rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
+      messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
+    }
+  ];
+};
 chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";
 ```
 

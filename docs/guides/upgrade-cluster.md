@@ -52,7 +52,10 @@ hash. In the homelab example:
       images = chalkos.lib.mkImages {
         revision = self.rev or self.dirtyRev or null;
         platforms = [ "metal" ];
-        variants.node.modules = [ ./extensions/rack.nix ];
+        variants.node.modules = [
+          ./extensions/rack.nix
+          ./extensions/hardware.nix
+        ];
       };
     in
     {

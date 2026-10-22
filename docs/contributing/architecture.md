@@ -65,7 +65,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
 | `cmd/chalkd` | Dispatches the four commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `prepare-kubernetes` (chalkos-kubernetes.service) and `health` (chalkos-health.service), and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
-| `cmd/chalkos-render` | Renders the outputs of the `chalkosLib.render.template` and `.documents` helpers and the built-in output `networkd` on a node, in an output's sandbox. |
+| `cmd/chalkos-render` | Renders the outputs of the `lib.chalkos.render.template` and `.documents` renderers and the built-in output `networkd` on a node, in an output's sandbox. |
 | `cmd/chalkos-rules` | Checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units and outputs the image has, and every output renders its examples and passes its check. |
 | `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, runs as a systemd generator for the other volumes, and prints the storage facts the storage kinds' rules read. |
 | `cmd/docgen` | Writes the command reference and checks the commands the documentation shows. |
@@ -141,11 +141,11 @@ it has no `completion` command.
 
 | Directory | What it holds |
 | --- | --- |
-| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds` and the chalkcfg commands of their `get`), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, the helpers of `chalkosLib` and chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade, the VXLAN rule. |
+| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, storage), `kinds/` (`chalkos.kinds` and the chalkcfg commands of their `get`), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, Kubernetes, upgrade, the VXLAN rule. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
-| `lib/` | `mkImages` (`images.nix`) and its arguments as module options (`images-arguments.nix`). |
+| `lib/` | `mkImages` (`images.nix`), its arguments as module options (`images-arguments.nix`), and `chalkos.nix`, the `lib.chalkos` of every image's modules. |
 
 ## Layout rules
 

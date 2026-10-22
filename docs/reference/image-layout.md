@@ -261,7 +261,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/kubernetes/image.json` | What the image fixes about Kubernetes: its release, the images of its components and its pod network, on images with Kubernetes. chalkd builds the node's cluster from it and the node's config. |
 | `/etc/chalkos/services.json` | The units granted config kinds, from [`systemd.services.<unit>.chalkos.kinds`](options.md#systemdserviceschalkoskinds). |
 | `/etc/chalkos/outputs.json` | The image's outputs, from [`chalkos.outputs`](options.md#chalkosoutputs): each one's input kinds, renderer, check, directory, owner and mode. |
-| `/etc/chalkos/effects.json` | What a delivery does to the node's services, from [`chalkos.effects`](options.md#chalkoseffects), with the outputs and the rules that fire each effect. |
+| `/etc/chalkos/effects.json` | What a delivery does to the node's services, from [`chalkos.effects`](options.md#chalkoseffects), with the outputs, the kinds and the rules that fire each effect. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |

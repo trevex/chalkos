@@ -18,26 +18,24 @@ rules of the same kind which changes fire them.
 
 ## Where are rules declared?
 
-A field declares rules on its option, under `x-chalkos-rules`, and a kind declares rules over its
-documents in [`chalkos.kinds.<name>.rules`](../reference/options.md#chalkoskindsrules). The
-image build writes a field's rules into the field's property of the kind's JSON Schema and a kind's
-rules into the schema's `x-chalkos-kind`. The homelab's `Rack` kind declares a rule on its only
-field:
+A field declares rules in the `rules` of `lib.chalkos.mkOption`, which declares its option, and a
+kind declares rules over its documents in
+[`chalkos.kinds.<name>.rules`](../reference/options.md#chalkoskindsrules). Both take the
+attributes below. The image build writes a field's rules into the field's property of the kind's
+JSON Schema and a kind's rules into the schema's `x-chalkos-kind`. The homelab's `Rack` kind
+declares a rule on its only field:
 
 ```nix
-chalkos.kinds.Rack.spec.location =
-  lib.mkOption {
-    type = lib.types.nonEmptyStr;
-    description = "Rack and height unit the node is mounted in.";
-  }
-  // {
-    "x-chalkos-rules" = [
-      {
-        rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
-        messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
-      }
-    ];
-  };
+chalkos.kinds.Rack.spec.location = lib.chalkos.mkOption {
+  type = lib.types.nonEmptyStr;
+  description = "Rack and height unit the node is mounted in.";
+  rules = [
+    {
+      rule = "facts.rackSurvey == null || self == facts.rackSurvey.location";
+      messageExpression = ''"the survey found the node at " + facts.rackSurvey.location + ", not at " + self + "; fix the location, or survey the node again"'';
+    }
+  ];
+};
 ```
 
 A rule has these attributes:
@@ -215,8 +213,9 @@ extensions of cel-go, and chalkos's address and size functions:
 ## Which changes restart or reload a unit?
 
 A delivery restarts or reloads a unit by an [effect](outputs-and-effects.md#what-is-an-effect),
-which fires when an output it names changed or when its `when` rule holds. A `when` rule is CEL
-like a change rule and serves a trigger that no output renders, here the node's Kubernetes share:
+which fires when an output it names changed, when the documents of a kind it names changed, or
+when its `when` rule holds. A `when` rule is CEL like a change rule and serves a trigger that
+neither an output nor a kind's documents carry, here the node's Kubernetes share:
 
 ```nix
 chalkos.effects.cert-agent = {
@@ -283,6 +282,7 @@ They, and the rules of the built-in effects, read these facts:
 - An effect's rule compares documents as written, so a change that makes no difference to the
   unit still counts: an `Address=` value whose prefix length alone changes restarts the kubelet.
   An effect on an [output](outputs-and-effects.md) fires when the output's rendered files change.
+  An effect on a kind fires on any change of its documents as written, as a rule does.
 - Rules compare the config with the running image's config alone. The one check that reads another
   slot's config is that of a storage change of the running image's config, which evaluates the
   storage rules against the staged image's slot as it would be written again.

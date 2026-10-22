@@ -7,12 +7,12 @@ description: "How a node renders and checks its services' config files before a 
 
 An output is a set of config files for a service, rendered from a node's
 [config documents](../reference/glossary.md#config-document) by a program of the image, and an
-effect is what a delivery does to the node's services when an output changes: restart a unit,
-reload it or run a command. chalkd renders and checks every output before a delivery changes the
-node, so a document that would give a service a file it rejects is refused with the delivery,
-and the node keeps running its old config. The model follows reactive programming: documents are
-the sources, outputs are values derived from them, and effects are the actions that follow a
-change of a value.
+effect is what a delivery does to the node's services when an output or a kind's documents
+change: restart a unit, reload it or run a command. chalkd renders and checks every output before
+a delivery changes the node, so a document that would give a service a file it rejects is refused
+with the delivery, and the node keeps running its old config. The model follows reactive
+programming: documents are the sources, outputs are values derived from them, and effects are the
+actions that follow a change of a value.
 
 An image declares the three parts in its NixOS modules:
 
@@ -21,7 +21,7 @@ An image declares the three parts in its NixOS modules:
 - An output, [`chalkos.outputs.<name>`](../reference/options.md#chalkosoutputs), derives files from
   documents and checks them.
 - An effect, [`chalkos.effects.<name>`](../reference/options.md#chalkoseffects), restarts, reloads
-  or runs something when outputs change, or when a CEL condition holds.
+  or runs something when outputs or the documents of kinds change, or when a CEL condition holds.
 
 ## What does a grant give a unit?
 
@@ -93,26 +93,28 @@ are the files the delivery checked. A renderer that read node state, such as an 
 address, could render a file at boot that no delivery checked, so outputs read documents alone; a
 service that needs node state renders that part itself.
 
-### Which renderers does chalkosLib offer?
+### Which renderers does lib.chalkos offer?
 
-Extensions call the helpers of the module argument `chalkosLib`:
+`lib.chalkos.render` builds the common renderers. Each is a value that an output's `render` turns
+into the program's command; `render` also takes a command or a package directly:
 
-| Helper | Renders |
+| Renderer | Renders |
 | --- | --- |
-| `chalkosLib.render.template ./bird.conf.tmpl` | A Go `text/template`, executed on the input, into one file named as the template less `.tmpl`. Besides Go's own functions it has `join`, `quote`, `json` and `default`, and a key a document lacks, or that holds null, prints as nothing and is replaced by `default`; a key below a missing one fails the render. |
-| `chalkosLib.render.jq ./peers.jq` | A jq program, whose output becomes one file named as the program less `.jq`; a string is written raw. |
-| `chalkosLib.render.documents [ "Rack" ]` | The documents of the kinds as they are, each as `<Kind>/<name>.json`, for a service that reads its config at runtime and needs an effect when it changes. |
+| `lib.chalkos.render.template ./bird.conf.tmpl` | A Go `text/template`, executed on the input, into one file named as the template less `.tmpl`. Besides Go's own functions it has `join`, `quote`, `json` and `default`, and a key a document lacks, or that holds null, prints as nothing and is replaced by `default`; a key below a missing one fails the render. |
+| `lib.chalkos.render.jq ./peers.jq` | A jq program, whose output becomes one file named as the program less `.jq`; a string is written raw. |
+| `lib.chalkos.render.documents [ "Rack" ]` | The documents of the kinds as they are, each as `<Kind>/<name>.json`, for a service that reads them from a directory of its own choosing. A unit granted the kinds reads them below `/run/chalkos/config` without an output, and an effect on the kinds restarts or reloads it when they change. |
 
 Any program of the store renders too, such as a script from `pkgs.writeShellScript`.
 
 ## What is an effect?
 
-An effect is an action a delivery takes once it is applied. It fires when one of the outputs its
-`on` names changed, or when its CEL `when` holds:
+An effect is an action a delivery takes once it is applied. It fires when one of its `outputs`
+changed, when the documents of one of its `kinds` changed, or when its CEL `when` holds:
 
 | Option | Meaning |
 | --- | --- |
-| `on` | Outputs, by name. An output changed when the hash of its files differs from the one before the delivery, or when the values of the Secrets its input documents reference differ, so a rotated password fires the effect although the rendered file names the same credential. |
+| `outputs` | Outputs, by name. An output changed when the hash of its files differs from the one before the delivery, or when the values of the Secrets its input documents reference differ, so a rotated password fires the effect although the rendered file names the same credential. |
+| `kinds` | Config kinds, by name. A kind changed when a document of the kind was added, removed or changed, or when a value of a Secret one of its documents references changed. `Secret` and `Addon` cannot be effect kinds: a Secret counts through the kinds that reference it, and chalkd applies `Addon` documents itself. |
 | `when` | A CEL expression over `config` and `oldConfig`, `facts.<name>` and `oldFacts.<name>`, and `node.name`, for a trigger that no output renders, such as the node's Kubernetes share. |
 | `restart` | Units to restart, by their full names. |
 | `reload` | Units to reload with `systemctl reload`. |
@@ -120,11 +122,16 @@ An effect is an action a delivery takes once it is applied. It fires when one of
 | `start` | Whether the units of `restart` start when they do not run, as for a unit whose condition only the delivery meets. |
 | `chalkd` | `restart` or `reload`, for chalkd's control-plane loops, which run inside chalkd and have no unit of their own. |
 
-An effect has `on`, `when`, or both, and fires when either holds. `chalkosLib.restartOn` and
-`chalkosLib.reloadOn` build the common case:
+An effect has at least one of `outputs`, `kinds` and `when`, and fires when any of them does.
+A service that reads its kinds' documents when it starts needs no output, because an effect on
+those kinds restarts it. `lib.chalkos.restartOn` and `lib.chalkos.reloadOn` build the common case
+from the outputs and kinds to watch and the units to act on:
 
 ```nix
-chalkos.effects.bird = chalkosLib.reloadOn [ "bird-conf" ] [ "bird.service" ];
+chalkos.effects.bird = lib.chalkos.reloadOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
+chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
+  "rack-location.service"
+];
 ```
 
 chalkd takes the effects that fire together, in this order:
@@ -176,7 +183,7 @@ sequenceDiagram
    fails refuses the delivery, and nothing on the node has changed.
 3. chalkd writes the slot, the storage and the identity.
 4. chalkd swaps each output's link to the staged files.
-5. chalkd takes the effects whose outputs changed or whose rule holds.
+5. chalkd takes the effects whose outputs or kinds changed or whose rule holds.
 
 Until a delivery is applied whole, the effects compare with the baseline, the state from before
 the first delivery that failed part way, in `/run/chalkd/effects-baseline.json`, readable by root
@@ -225,8 +232,8 @@ examples do not cover.
 The image build's `chalkos-rules check`, which also compiles the [change rules](rules.md), refuses
 an image when:
 
-- an effect's `on` names something that is not an output, which the image's evaluation refuses
-  first;
+- an effect's `outputs` names something that is not an output, or its `kinds` a kind the image
+  does not declare, a `Secret` or an `Addon`, which the image's evaluation refuses first;
 - an effect restarts or reloads a unit the image does not define;
 - an output's `inputs` name a kind the image does not declare, or a `Secret` or `Addon`;
 - an output's renderer or check is no program of the image's store;
@@ -285,7 +292,7 @@ value that spans lines, which would start another key in the unit. Its units tak
 over the image's own in `/etc/systemd/network`. The output owns `/run/systemd/network`: a unit
 written there by other means is gone once the link replaces the directory.
 
-The `chrony` output is a template of `chalkosLib.render.template`, and chrony reads its file from
+The `chrony` output is a template of `lib.chalkos.render.template`, and chrony reads its file from
 the output's `dir`, a `sourcedir` of its configuration. The servers DHCP announces are no output,
 because they come from the network at runtime: `chalkos-chrony-dhcp.service` writes them, when
 the `TimeSync` takes them.
