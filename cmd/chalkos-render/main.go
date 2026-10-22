@@ -1,0 +1,164 @@
+// Command chalkos-render is the renderer of the outputs the helpers of chalkosLib.render build.
+// chalkd runs it in the sandbox of an output: it reads the output's input as JSON on standard
+// input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}, and writes files into
+// $OUT, the only path it may write.
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"text/template"
+)
+
+const usage = `usage: chalkos-render template TEMPLATE FILE
+       chalkos-render documents KIND...
+
+template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
+the template has the functions join, quote, json and default. documents writes each document of
+the kinds KIND as $OUT/<Kind>/<name>.json.`
+
+func main() {
+	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
+		fmt.Fprintln(os.Stderr, "chalkos-render: "+err.Error())
+		os.Exit(1)
+	}
+}
+
+// errUsage is a command line chalkos-render does not take.
+var errUsage = errors.New(usage)
+
+func run(args []string, stdin io.Reader, out string) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	if out == "" {
+		return errors.New("$OUT names no directory to write")
+	}
+	in, err := readInput(stdin)
+	if err != nil {
+		return err
+	}
+	switch {
+	case args[0] == "template" && len(args) == 3:
+		return renderTemplate(args[1], args[2], in, out)
+	case args[0] == "documents" && len(args) > 1:
+		return writeDocuments(args[1:], in, out)
+	}
+	return errUsage
+}
+
+// readInput reads the input with its numbers exact, as documents hold them.
+func readInput(r io.Reader) (map[string]any, error) {
+	dec := json.NewDecoder(r)
+	dec.UseNumber()
+	var in map[string]any
+	if err := dec.Decode(&in); err != nil {
+		return nil, fmt.Errorf("read the input: %w", err)
+	}
+	return in, nil
+}
+
+// funcs are the template's functions beside text/template's own.
+var funcs = template.FuncMap{
+	// join joins the values of a list, each as it prints, with sep.
+	"join": func(sep string, list []any) string {
+		parts := make([]string, len(list))
+		for i, v := range list {
+			parts[i] = fmt.Sprint(v)
+		}
+		return strings.Join(parts, sep)
+	},
+	// quote is a value as a double-quoted string with Go's escapes.
+	"quote": func(v any) string { return strconv.Quote(fmt.Sprint(v)) },
+	// json is a value as JSON.
+	"json": func(v any) (string, error) {
+		b, err := json.Marshal(v)
+		return string(b), err
+	},
+	// default is v, or d when v is missing, null, empty or false.
+	"default": func(d, v any) any {
+		if empty(v) {
+			return d
+		}
+		return v
+	},
+}
+
+func empty(v any) bool {
+	if v == nil {
+		return true
+	}
+	r := reflect.ValueOf(v)
+	switch r.Kind() {
+	case reflect.String, reflect.Slice, reflect.Map:
+		return r.Len() == 0
+	case reflect.Bool:
+		return !r.Bool()
+	}
+	return false
+}
+
+// renderTemplate writes the template at path, executed on in, to out/file. A key the documents
+// lack reads as missing, which default replaces.
+func renderTemplate(path, file string, in map[string]any, out string) error {
+	text, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	tmpl, err := template.New(filepath.Base(path)).Funcs(funcs).Option("missingkey=zero").Parse(string(text))
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, in); err != nil {
+		return err
+	}
+	return writeFile(out, file, buf.Bytes())
+}
+
+// writeDocuments writes each document of kinds in in as out/<Kind>/<name>.json.
+func writeDocuments(kinds []string, in map[string]any, out string) error {
+	byKind, _ := in["documents"].(map[string]any)
+	for _, kind := range kinds {
+		docs, ok := byKind[kind].([]any)
+		if !ok {
+			return fmt.Errorf("the output's inputs hold no kind %s", kind)
+		}
+		for _, d := range docs {
+			obj, _ := d.(map[string]any)
+			meta, _ := obj["metadata"].(map[string]any)
+			name, _ := meta["name"].(string)
+			if name == "" || strings.ContainsAny(name, "/\x00") || name == "." || name == ".." {
+				return fmt.Errorf("a %s document has no name to name its file by", kind)
+			}
+			b, err := json.MarshalIndent(obj, "", "  ")
+			if err != nil {
+				return err
+			}
+			if err := writeFile(out, filepath.Join(kind, name+".json"), append(b, '\n')); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// writeFile writes data to out/rel, which must stay below out.
+func writeFile(out, rel string, data []byte) error {
+	if !filepath.IsLocal(rel) {
+		return fmt.Errorf("%q is no file name below $OUT", rel)
+	}
+	path := filepath.Join(out, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
