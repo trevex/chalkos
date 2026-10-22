@@ -184,6 +184,10 @@ type Sandbox struct{}
 // manager reaches systemd's manager without the system bus.
 const manager = "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/systemd/private"
 
+// stopMargin is how much longer than a program's timeout chalkd waits for systemd-run, so the
+// unit's own timeout stops the program first and its result says so.
+const stopMargin = 10 * time.Second
+
 // sandbox holds the properties of the units Sandbox runs.
 var sandbox = []string{
 	"--property=User=" + RenderUser,
@@ -240,9 +244,20 @@ func (Sandbox) Run(ctx context.Context, p Program) error {
 		}
 	}
 	unit := "chalkos-render-" + filepath.Ext(p.Out)[1:] + ".service"
-	_, err := facts.RunCommand(ctx, sandboxArgs(unit, p, input), nil, facts.MaxOutput, manager)
+	waitCtx, cancel := context.WithTimeout(ctx, p.Timeout+stopMargin)
+	defer cancel()
+	_, err := facts.RunCommand(waitCtx, sandboxArgs(unit, p, input), nil, facts.MaxOutput, manager)
+	// What follows asks the manager about the unit, as long as it answers.
 	systemctl := func(args ...string) ([]byte, error) {
-		return facts.RunCommand(context.Background(), append([]string{"systemctl"}, args...), nil, facts.MaxOutput, manager)
+		ctx, cancel := context.WithTimeout(context.Background(), stopMargin)
+		defer cancel()
+		return facts.RunCommand(ctx, append([]string{"systemctl"}, args...), nil, facts.MaxOutput, manager)
+	}
+	if waitCtx.Err() != nil {
+		// systemd-run is gone, and the unit may run on.
+		systemctl("stop", unit)
+		systemctl("reset-failed", unit)
+		return fmt.Errorf("%s: %w", unit, waitCtx.Err())
 	}
 	var exit *facts.CommandError
 	if !errors.As(err, &exit) {
@@ -259,6 +274,9 @@ func (Sandbox) Run(ctx context.Context, p Program) error {
 		if k, v, ok := strings.Cut(line, "="); ok {
 			props[k] = v
 		}
+	}
+	if props["Result"] == "timeout" {
+		return fmt.Errorf("%s: %w", unit, context.DeadlineExceeded)
 	}
 	status := "exit " + props["ExecMainStatus"]
 	if r := props["Result"]; r != "exit-code" && r != "" {
@@ -508,15 +526,13 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 // a failed program wrote to standard error, or the unit whose journal holds it.
 func (r Renderer) run(ctx context.Context, name, what, command string, stdin []byte, out string) error {
 	timeout := cmp.Or(r.Timeout, facts.Timeout)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	argv := strings.Fields(command)
 	err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == "renderer", Timeout: timeout})
 	var failed *ProgramError
 	switch {
 	case err == nil:
 		return nil
-	case ctx.Err() == context.DeadlineExceeded:
+	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Errorf("its %s did not finish within %s", what, timeout)
 	case errors.As(err, &failed):
 		if failed.Unit != "" {
