@@ -71,8 +71,18 @@ func TestSignDirectory(t *testing.T) {
 	}
 	write(t, filepath.Join(in, "installer.iso"), string(raw))
 	write(t, filepath.Join(in, "installer.iso.json"), string(partitions))
+	// A store's files are read-only, which proves copySparse's chmod is needed: without it,
+	// signing a disk image copied this way would fail to open it for writing.
+	for _, name := range []string{"chalkos.raw", "installer.iso"} {
+		if err := os.Chmod(filepath.Join(in, name), 0o444); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	out := filepath.Join(dir, "signed", "out")
+	if err := os.Mkdir(filepath.Dir(out), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	signed, err := SignDirectory(context.Background(), in, out, key, cert)
 	if err != nil {
 		t.Fatal(err)
@@ -94,6 +104,9 @@ func TestSignDirectory(t *testing.T) {
 	}
 	if after, _ := os.ReadFile(filepath.Join(in, "chalkos.raw")); !bytes.Equal(after, raw) {
 		t.Error("signing changed the image directory's raw image")
+	}
+	if after, _ := os.ReadFile(filepath.Join(in, "installer.iso")); !bytes.Equal(after, raw) {
+		t.Error("signing changed the image directory's ISO")
 	}
 }
 
@@ -120,5 +133,23 @@ func TestSignDirectoryRefuses(t *testing.T) {
 	}
 	if _, err := os.Stat(out); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a failed signing left %s: %v", out, err)
+	}
+	missing := filepath.Join(dir, "missing", "out")
+	if _, err := SignDirectory(context.Background(), in, missing, key, other); err == nil {
+		t.Error("SignDirectory with a missing parent directory succeeded")
+	}
+}
+
+// TestSignDirectoryBracketInPath signs an image directory whose path holds characters that are
+// wildcards to filepath.Glob, which diskImages must not use to find a directory's disk images.
+func TestSignDirectoryBracketInPath(t *testing.T) {
+	needSigningTools(t)
+	dir := t.TempDir()
+	key, cert := imagetest.Signer(t, dir, "db")
+	in := filepath.Join(dir, "in[1]")
+	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
+	out := filepath.Join(dir, "out[1]")
+	if _, err := SignDirectory(context.Background(), in, out, key, cert); err != nil {
+		t.Fatal(err)
 	}
 }

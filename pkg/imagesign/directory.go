@@ -3,8 +3,10 @@ package imagesign
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,14 +16,17 @@ import (
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// SignDirectory copies the image directory in to out and signs the boot loader and UKIs of the
-// copy's disk images with the Secure Boot db key and its certificate: the raw image, which
-// repart-output.json describes, and an ISO beside it, which <name>.iso.json describes, as the
-// installer's directory holds. Disk images are copied without their holes and the other entries
-// with symlinks resolved, so out holds no link into in, which stays as it is. It then checks the
-// UKI and the boot loader of each disk image against cert, as firmware with cert in db would. out
-// must not exist, and is removed again when anything fails. SignDirectory returns the names of
-// the disk images it signed.
+// SignDirectory copies the image directory in into a new directory next to out and signs the boot
+// loader and UKIs of the copy's disk images with the Secure Boot db key and its certificate: the
+// raw image, which repart-output.json describes, and an ISO beside it, which <name>.iso.json
+// describes, as the installer's directory holds. Disk images are copied without their holes and
+// the other entries with symlinks resolved, so the copy holds no link into in, which stays as it
+// is. SignDirectory checks the UKI and the boot loader of each disk image against cert, as
+// firmware with cert in db would, and only once every disk image is signed and verified does it
+// rename the copy to out. out must not exist and its parent directory must, or SignDirectory
+// refuses before copying anything; the copy is removed again on any later failure, including out
+// appearing while it was being built. SignDirectory returns the names of the disk images it
+// signed.
 func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, err error) {
 	info, err := os.Stat(in)
 	if err != nil {
@@ -30,21 +35,26 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 	if !info.IsDir() {
 		return nil, fmt.Errorf("%s is no image directory", in)
 	}
+	if _, err := os.Stat(out); err == nil {
+		return nil, fmt.Errorf("%s exists; signing writes a new directory", out)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	parent := filepath.Dir(out)
+	parentInfo, err := os.Stat(parent)
+	if err != nil {
+		return nil, err
+	}
+	if !parentInfo.IsDir() {
+		return nil, fmt.Errorf("%s is no directory", parent)
+	}
 	disks, err := diskImages(in)
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+	if _, err := os.Stat(key); err != nil {
 		return nil, err
 	}
-	if err := os.Mkdir(out, 0o755); err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(out)
-		}
-	}()
 	certPEM, err := os.ReadFile(cert)
 	if err != nil {
 		return nil, err
@@ -53,13 +63,22 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", cert, err)
 	}
-	if err := copyTree(ctx, in, out); err != nil {
+	tmp, err := os.MkdirTemp(parent, "."+filepath.Base(out)+"-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(tmp)
+		}
+	}()
+	if err := copyTree(ctx, in, tmp); err != nil {
 		return nil, err
 	}
 	var names []string
 	for _, d := range disks {
-		raw := filepath.Join(out, d.name)
-		parts, err := image.ReadPartitions(filepath.Join(out, d.partitions))
+		raw := filepath.Join(tmp, d.name)
+		parts, err := image.ReadPartitions(filepath.Join(tmp, d.partitions))
 		if err != nil {
 			return nil, err
 		}
@@ -75,6 +94,14 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 		}
 		names = append(names, d.name)
 	}
+	if _, err := os.Stat(out); err == nil {
+		return nil, fmt.Errorf("%s appeared while signing", out)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	if err := os.Rename(tmp, out); err != nil {
+		return nil, err
+	}
 	return names, nil
 }
 
@@ -82,25 +109,48 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 type diskImage struct{ name, partitions string }
 
 // diskImages finds the disk images of an image directory: its one raw image, which
-// repart-output.json describes, and each ISO, which the .json file named after it describes.
+// repart-output.json describes, and each ISO, which the .json file named after it describes. It
+// checks that every disk's partitions file exists before SignDirectory copies anything.
 func diskImages(dir string) ([]diskImage, error) {
-	raws, err := filepath.Glob(filepath.Join(dir, "*.raw"))
-	if err != nil || len(raws) != 1 {
-		return nil, fmt.Errorf("want exactly one .raw image in %s, found %v", dir, raws)
-	}
-	disks := []diskImage{{filepath.Base(raws[0]), "repart-output.json"}}
-	isos, err := filepath.Glob(filepath.Join(dir, "*.iso"))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
+	var raws, isos []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		switch filepath.Ext(e.Name()) {
+		case ".raw":
+			raws = append(raws, e.Name())
+		case ".iso":
+			isos = append(isos, e.Name())
+		}
+	}
+	if len(raws) != 1 {
+		return nil, fmt.Errorf("want exactly one .raw image in %s, found %v", dir, raws)
+	}
+	disks := []diskImage{{raws[0], "repart-output.json"}}
 	for _, iso := range isos {
-		disks = append(disks, diskImage{filepath.Base(iso), filepath.Base(iso) + ".json"})
+		disks = append(disks, diskImage{iso, iso + ".json"})
+	}
+	for _, d := range disks {
+		if _, err := os.Stat(filepath.Join(dir, d.partitions)); err != nil {
+			return nil, err
+		}
 	}
 	return disks, nil
 }
 
+// errNotFileOrDir is copyTree's error for a directory entry that is, once a symlink is resolved,
+// neither a regular file nor a directory, such as a FIFO or a socket.
+var errNotFileOrDir = errors.New("not a regular file or a directory")
+
 // copyTree copies the entries of the directory src into dst with symlinks resolved: disk images
-// without their holes, other files and directories by their content.
+// without their holes, other files and directories by their content. It refuses a dangling
+// symlink and any entry that resolves to neither a regular file nor a directory, rather than, for
+// a FIFO, blocking on a reader that never comes.
 func copyTree(ctx context.Context, src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -110,9 +160,9 @@ func copyTree(ctx context.Context, src, dst string) error {
 		from, to := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
 		info, err := os.Stat(from)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", from, err)
 		}
-		switch ext := filepath.Ext(e.Name()); {
+		switch {
 		case info.IsDir():
 			if err := os.Mkdir(to, 0o755); err != nil {
 				return err
@@ -120,7 +170,9 @@ func copyTree(ctx context.Context, src, dst string) error {
 			if err := copyTree(ctx, from, to); err != nil {
 				return err
 			}
-		case ext == ".raw" || ext == ".iso":
+		case !info.Mode().IsRegular():
+			return fmt.Errorf("%s: %w", from, errNotFileOrDir)
+		case filepath.Ext(e.Name()) == ".raw" || filepath.Ext(e.Name()) == ".iso":
 			if err := copySparse(ctx, from, to); err != nil {
 				return err
 			}
@@ -180,6 +232,8 @@ func verify(ctx context.Context, raw string, espOffset int64, certs []*x509.Cert
 	return nil
 }
 
+// verifyFile checks one EFI binary against the Secure Boot database db, as firmware would when
+// deciding whether to run it.
 func verifyFile(path string, db uki.Database) error {
 	f, err := os.Open(path)
 	if err != nil {
