@@ -25,13 +25,19 @@ func mtools(t *testing.T, args ...string) {
 	}
 }
 
+// open opens an image's parts and, when that succeeds, registers their removal on the test's
+// cleanup so a later failure in the test cannot leak the temporary directory OpenParts made.
 func open(t *testing.T, dir string, bootLoader bool) (*image.Parts, error) {
 	t.Helper()
 	parts, err := image.ReadPartitions(filepath.Join(dir, "repart-output.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return image.OpenParts(context.Background(), filepath.Join(dir, "chalkos.raw"), parts, bootLoader)
+	p, err := image.OpenParts(context.Background(), filepath.Join(dir, "chalkos.raw"), parts, bootLoader)
+	if p != nil {
+		t.Cleanup(func() { p.Close() })
+	}
+	return p, err
 }
 
 // TestOpenParts reads an image's store, its UKI and boot loader and the architecture both are
@@ -58,7 +64,6 @@ func TestOpenParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer upgrade.Close()
 	if upgrade.BootLoader != "" {
 		t.Error("the boot loader was copied without being asked for")
 	}
@@ -77,11 +82,9 @@ func TestOpenPartsRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
 	if _, err := open(t, dir, true); err == nil || !strings.Contains(err.Error(), "the image's boot loader is built for arm64, its UKI for x86-64") {
 		t.Fatalf("OpenParts = %v, want the boot loader refused", err)
 	}
-	p, err := open(t, dir, false)
-	if err != nil {
+	if _, err := open(t, dir, false); err != nil {
 		t.Fatal(err)
 	}
-	p.Close()
 }
 
 // TestOpenPartsRefusesAUKIOfAnotherStore refuses an image whose UKI's usrhash names another store.

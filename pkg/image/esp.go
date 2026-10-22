@@ -21,7 +21,8 @@ type Binaries struct {
 }
 
 // ExtractBinaries copies the UKI off the image's ESP into dir and, with bootLoader, the boot loader
-// of the UKI's architecture, which must be built for that architecture too.
+// of the UKI's architecture, which must be built for that architecture too. Whatever it writes into
+// dir, including a UKI copy left behind when a later step fails, is the caller's to remove.
 func ExtractBinaries(ctx context.Context, raw string, espOffset int64, dir string, bootLoader bool) (Binaries, error) {
 	var b Binaries
 	var err error
