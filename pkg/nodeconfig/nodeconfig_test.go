@@ -381,11 +381,11 @@ func TestLoadWritesTheCluster(t *testing.T) {
 	}
 }
 
-// A set without a Kubernetes document leaves no cluster file, and says why.
-func TestLoadWithoutKubernetesDocument(t *testing.T) {
-	l := kubernetesLoader(t, strings.SplitN(kubernetesConfig, "---\napiVersion: kubernetes.chalkos.dev", 2)[0])
+// A set without a Cluster document leaves no cluster file, and says why.
+func TestLoadWithoutClusterDocument(t *testing.T) {
+	l := kubernetesLoader(t, "apiVersion: kubernetes.chalkos.dev"+strings.SplitN(kubernetesConfig, "---\napiVersion: kubernetes.chalkos.dev", 2)[1])
 	write(t, l.ClusterFile, "{}")
-	if err := l.Load(); err == nil || !strings.Contains(err.Error(), "no Kubernetes") {
+	if err := l.Load(); err == nil || !strings.Contains(err.Error(), "no Cluster") {
 		t.Fatalf("err = %v", err)
 	}
 	if _, err := os.Stat(l.ClusterFile); !os.IsNotExist(err) {
