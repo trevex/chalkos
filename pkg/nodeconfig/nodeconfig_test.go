@@ -214,11 +214,13 @@ func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 func TestReadEffects(t *testing.T) {
 	l, _ := newTestLoader(t)
 	write(t, l.Effects, `{"networkd": {"when": "facts.units != oldFacts.units", "reload": ["systemd-networkd.service"]},
-	  "kubelet": {"on": ["cluster"], "restart": ["kubelet.service"], "start": true, "chalkd": "restart"}}`)
+	  "kubelet": {"outputs": ["cluster"], "restart": ["kubelet.service"], "start": true, "chalkd": "restart"},
+	  "rack": {"kinds": ["Rack"], "restart": ["rack.service"]}}`)
 	got, err := ReadEffects(l.Effects)
 	want := map[string]Effect{
 		"networkd": {When: "facts.units != oldFacts.units", Reload: []string{"systemd-networkd.service"}},
-		"kubelet":  {On: []string{"cluster"}, Restart: []string{"kubelet.service"}, Start: true, Chalkd: ChalkdRestart},
+		"kubelet":  {Outputs: []string{"cluster"}, Restart: []string{"kubelet.service"}, Start: true, Chalkd: ChalkdRestart},
+		"rack":     {Kinds: []string{"Rack"}, Restart: []string{"rack.service"}},
 	}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("effects = %+v, %v; want %+v", got, err, want)
@@ -234,7 +236,7 @@ func TestReadEffects(t *testing.T) {
 // its PATH or the image's store.
 func TestReadEffectsRefuses(t *testing.T) {
 	for name, tc := range map[string]struct{ effect, want string }{
-		"no trigger":             {`{"reload": ["a.service"]}`, "effect e: it has neither on nor when"},
+		"no trigger":             {`{"reload": ["a.service"]}`, "effect e: it has none of outputs, kinds and when"},
 		"no action":              {`{"when": "true"}`, "effect e: it restarts, reloads and runs nothing"},
 		"a unit without suffix":  {`{"when": "true", "restart": ["kubelet"]}`, `"kubelet" is no unit name`},
 		"a chalkd action":        {`{"when": "true", "chalkd": "stop"}`, `chalkd is "stop", not restart or reload`},
@@ -242,8 +244,9 @@ func TestReadEffectsRefuses(t *testing.T) {
 		"outside the store":      {`{"when": "true", "run": "/usr/bin/chronyc reload sources"}`, `the command "/usr/bin/chronyc reload sources" names /usr/bin/chronyc, which is neither`},
 		"a relative path":        {`{"when": "true", "run": "bin/chronyc reload"}`, "names bin/chronyc, which is neither"},
 		"a bare program":         {`{"when": "true", "run": "chronyc reload sources"}`, ""},
-		"a program of the store": {`{"on": ["x"], "run": "/nix/store/x-chrony/bin/chronyc reload sources"}`, ""},
+		"a program of the store": {`{"outputs": ["x"], "run": "/nix/store/x-chrony/bin/chronyc reload sources"}`, ""},
 		"chalkd alone":           {`{"when": "true", "chalkd": "reload"}`, ""},
+		"kinds alone":            {`{"kinds": ["Rack"], "restart": ["a.service"]}`, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			l, _ := newTestLoader(t)

@@ -128,7 +128,7 @@ func configServer(t *testing.T) (*Server, *fakeRunner) {
 		"networkd": networkdOutput(t, s),
 		"chrony":   chronyOutput(t, s),
 	})
-	writeEffects(t, s, `{"demo": {"on": ["demo"], "restart": ["demo.service"]}}`)
+	writeEffects(t, s, `{"demo": {"outputs": ["demo"], "restart": ["demo.service"]}}`)
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
 		t.Fatal(err)
@@ -221,6 +221,31 @@ func TestApplyConfig(t *testing.T) {
 	}
 	if !slices.Contains(files, "demo.example.org/Demo/one.json") || slices.ContainsFunc(files, func(f string) bool { return strings.Contains(f, "Secret") }) {
 		t.Errorf("/run/chalkos/config holds %v", files)
+	}
+}
+
+// An effect on a kind fires when a document of the kind changes, or a Secret one of them
+// references, and not when another kind changes.
+func TestApplyConfigTakesEffectsOnKinds(t *testing.T) {
+	for name, tc := range map[string]struct {
+		next string
+		want bool
+	}{
+		"a changed Demo":   {strings.Replace(baseConfig, "name: first", "name: second", 1), true},
+		"a rotated Secret": {strings.Replace(baseConfig, "token: s3cret", "token: n3w", 1), true},
+		"another kind":     {baseConfig + timeSyncConfig, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := configServer(t)
+			writeEffects(t, s, `{"demo-kind": {"kinds": ["Demo"], "restart": ["kind.service"]}}`)
+			resp, err := sendConfig(s, tc.next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := slices.Contains(resp.RestartedUnits, "kind.service"); got != tc.want {
+				t.Errorf("restarted %v; want kind.service among them: %v", resp.RestartedUnits, tc.want)
+			}
+		})
 	}
 }
 
@@ -318,13 +343,13 @@ func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	s, r := configServer(t)
 	write(t, s.Loader.Effects, `{
-	  "demo": {"on": ["demo"], "restart": ["demo.service"]},
-	  "demo-reload": {"on": ["demo"], "reload": ["demo.service"], "run": "democtl reload"},
-	  "logger": {"on": ["demo"], "reload": ["logger.service"]},
+	  "demo": {"outputs": ["demo"], "restart": ["demo.service"]},
+	  "demo-reload": {"outputs": ["demo"], "reload": ["demo.service"], "run": "democtl reload"},
+	  "logger": {"outputs": ["demo"], "reload": ["logger.service"]},
 	  "stopped": {"when": "true", "reload": ["stopped.service"]},
 	  "watcher": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name", "restart": ["watcher.service"]},
-	  "starter": {"on": ["demo"], "restart": ["starter.service"], "start": true},
-	  "broken": {"on": ["demo"], "restart": ["broken.service"]},
+	  "starter": {"outputs": ["demo"], "restart": ["starter.service"], "start": true},
+	  "broken": {"outputs": ["demo"], "restart": ["broken.service"]},
 	  "idle": {"when": "false", "restart": ["idle.service"]}
 	}`)
 	r.rules = append(r.rules,
@@ -445,8 +470,8 @@ func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 func TestApplyConfigFailingReloadNamesTheUnit(t *testing.T) {
 	s, r := configServer(t)
 	writeEffects(t, s, `{
-	  "logger": {"on": ["demo"], "reload": ["logger.service"]},
-	  "demo": {"on": ["demo"], "restart": ["demo.service"]}
+	  "logger": {"outputs": ["demo"], "reload": ["logger.service"]},
+	  "demo": {"outputs": ["demo"], "restart": ["demo.service"]}
 	}`)
 	r.rules = append(r.rules, rule{prefix: "systemctl reload logger.service", err: errors.New("exit status 1")})
 	_, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))

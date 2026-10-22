@@ -72,10 +72,10 @@ func hideValues(data map[string]any) map[string]any {
 	return hidden
 }
 
-// kindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets
+// KindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets
 // they reference, so a kind's hash changes when one of its documents does or a Secret one of them
 // references. Secrets have no entry of their own. schemas tell which fields are secretRefs.
-func kindHashes(docs []Document, schemas *schema.Schemas) (map[string]string, error) {
+func KindHashes(docs []Document, schemas *schema.Schemas) (map[string]string, error) {
 	secrets := map[string]Document{}
 	byKind := map[string][]Document{}
 	for _, d := range docs {
@@ -107,15 +107,15 @@ func kindHashes(docs []Document, schemas *schema.Schemas) (map[string]string, er
 }
 
 // ChangedKinds names, sorted, the kinds whose documents differ between before and after, or a
-// Secret one of them references, by their kindHashes; a kind in neither set is unchanged. A unit
+// Secret one of them references, by their KindHashes; a kind in neither set is unchanged. A unit
 // that reads a kind's documents reads the values its secretRefs name too, which the documents
 // alone do not show, so a change rule cannot tell this from config and oldConfig.
 func ChangedKinds(before, after []Document, schemas *schema.Schemas) ([]string, error) {
-	was, err := kindHashes(before, schemas)
+	was, err := KindHashes(before, schemas)
 	if err != nil {
 		return nil, err
 	}
-	gets, err := kindHashes(after, schemas)
+	gets, err := KindHashes(after, schemas)
 	if err != nil {
 		return nil, err
 	}

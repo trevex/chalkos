@@ -77,7 +77,7 @@ func TestCheck(t *testing.T) {
 		"a unit without its suffix":            {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true", "reload": ["greeter"]}}`, `"greeter" is no unit name, such as bird.service`},
 		"an empty command":                     {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true", "run": " "}}`, "effect e: the command to run is empty"},
 		"an effect that does nothing":          {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true"}}`, "effect e: it restarts, reloads and runs nothing"},
-		"an effect nothing triggers":           {greeting(fieldRule, kindRule), lock, `{"e": {"restart": ["greeter.service"]}}`, "effect e: it has neither on nor when"},
+		"an effect nothing triggers":           {greeting(fieldRule, kindRule), lock, `{"e": {"restart": ["greeter.service"]}}`, "effect e: it has none of outputs, kinds and when"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := check(image(t, files(tc.schema, tc.facts, tc.effects)), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -111,7 +111,7 @@ func withOutput(t *testing.T, files map[string]string, render, check string, exa
 	os.WriteFile(filepath.Join(scripts, "check"), []byte("set -e\n"+check+"\n"), 0o644)
 	files["outputs.json"] = `{"greeting": {"inputs": ["Greeting"], "render": "` + sh + " " + filepath.Join(scripts, "render") + `",
 	  "check": "` + sh + " " + filepath.Join(scripts, "check") + `", "dir": "/run/chalkos/outputs/greeting", "user": "nobody", "group": "nobody", "mode": "0644"}}`
-	files["effects.json"] = `{"greeter": {"on": ["greeting"], "restart": ["greeter.service"]}}`
+	files["effects.json"] = `{"greeter": {"outputs": ["greeting"], "restart": ["greeter.service"]}}`
 	files["examples.json"] = `{"greeting": "` + filepath.Join(scripts, "examples") + `"}`
 	for name, text := range examples {
 		path := filepath.Join(scripts, "examples", name)
@@ -155,10 +155,22 @@ func TestCheckOutputs(t *testing.T) {
 		}(), `output greeting: the renderer "/bin/sh `},
 		"an effect on no output": {func() map[string]string {
 			f := withOutput(t, base(), render, accepts, nil)
-			f["effects.json"] = `{"greeter": {"on": ["greting"], "restart": ["greeter.service"]}}`
+			f["effects.json"] = `{"greeter": {"outputs": ["greting"], "restart": ["greeter.service"]}}`
 			delete(f, "examples.json")
 			return f
-		}(), "effect greeter: on names greting, which is no output of the image; its outputs are greeting"},
+		}(), "effect greeter: outputs names greting, which is no output of the image; its outputs are greeting"},
+		"an effect on an undeclared kind": {func() map[string]string {
+			f := withOutput(t, base(), render, accepts, nil)
+			f["effects.json"] = `{"greeter": {"kinds": ["Peer"], "restart": ["greeter.service"]}}`
+			delete(f, "examples.json")
+			return f
+		}(), "effect greeter: the image declares no kind Peer"},
+		"an effect on Secret documents": {func() map[string]string {
+			f := withOutput(t, base(), render, accepts, nil)
+			f["effects.json"] = `{"greeter": {"kinds": ["Secret"], "restart": ["greeter.service"]}}`
+			delete(f, "examples.json")
+			return f
+		}(), "effect greeter: an effect does not fire on Secret documents"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := check(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {

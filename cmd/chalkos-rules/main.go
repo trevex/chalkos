@@ -1,7 +1,8 @@
 // Command chalkos-rules checks an image when it is built: every change rule its schemas declare
 // and every rule of its effects compiles, within the cost limit, and reads only facts the image
 // declares, each a file or a program of the image's store; every effect acts on units the image
-// defines and outputs it declares; and every output renders its examples and passes its check.
+// defines, outputs it declares and kinds its schemas declare; and every output renders its
+// examples and passes its check.
 package main
 
 import (
@@ -30,9 +31,9 @@ Checks the files of the directory IMAGE, as an image's build lays them out: sche
 directory of its schemas; facts.json, effects.json and outputs.json, the image's own;
 examples.json, the examples directory of each output by name; and units/, its systemd units.
 Every rule of the schemas and of the effects compiles and reads only facts facts.json declares,
-every unit an effect restarts or reloads is one of units/, every output on names exists and
-reads kinds the schemas declare, and each output renders each of its examples and passes its
-check.`
+every unit an effect restarts or reloads is one of units/, every effect's outputs and kinds name
+an output or a kind that exists, every output reads kinds the schemas declare, and each output
+renders each of its examples and passes its check.`
 
 func main() {
 	if len(os.Args) != 3 || os.Args[1] != "check" {
@@ -174,8 +175,8 @@ func sortedNames[V any](m map[string]V) []string {
 }
 
 // checkOutputs refuses an output whose programs are not of the image's store or whose inputs are
-// kinds the image does not declare, or that a unit cannot read, and an effect whose on names no
-// output.
+// kinds the image does not declare, or that a unit cannot read, and an effect whose outputs name
+// no output or whose kinds are not the image's.
 func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effects map[string]nodeconfig.Effect) []error {
 	kinds := map[string]bool{}
 	for _, k := range s.Kinds() {
@@ -199,9 +200,17 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effects
 		}
 	}
 	for _, name := range sortedNames(effects) {
-		for _, o := range effects[name].On {
+		for _, o := range effects[name].Outputs {
 			if _, ok := defs[o]; !ok {
-				errs = append(errs, fmt.Errorf("effect %s: on names %s, which is no output of the image; its outputs are %s", name, o, declared(defs)))
+				errs = append(errs, fmt.Errorf("effect %s: outputs names %s, which is no output of the image; its outputs are %s", name, o, declared(defs)))
+			}
+		}
+		for _, kind := range effects[name].Kinds {
+			switch {
+			case kind == "Secret" || kind == "Addon":
+				errs = append(errs, fmt.Errorf("effect %s: an effect does not fire on %s documents", name, kind))
+			case !kinds[kind]:
+				errs = append(errs, fmt.Errorf("effect %s: the image declares no kind %s", name, kind))
 			}
 		}
 	}

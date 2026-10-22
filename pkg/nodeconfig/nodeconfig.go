@@ -38,11 +38,13 @@ type Service struct {
 }
 
 // Effect is what a delivery does to the node's services, as /etc/chalkos/effects.json records
-// it: when one of the outputs On changed, or the CEL rule When holds, chalkd reloads the units of
-// Reload, runs Run, restarts the units of Restart, starting them too with Start, and acts on its
-// own loops as Chalkd says, restart or reload.
+// it: when one of the outputs Outputs changed, the documents of one of the kinds Kinds did, or the
+// CEL rule When holds, chalkd reloads the units of Reload, runs Run, restarts the units of
+// Restart, starting them too with Start, and acts on its own loops as Chalkd says, restart or
+// reload.
 type Effect struct {
-	On      []string `json:"on"`
+	Outputs []string `json:"outputs"`
+	Kinds   []string `json:"kinds"`
 	When    string   `json:"when"`
 	Restart []string `json:"restart"`
 	Reload  []string `json:"reload"`
@@ -323,8 +325,8 @@ func readJSON(path string, v any) error {
 // splits Run on spaces, with no shell quoting, and runs the first word, a program of its PATH or
 // of the image's store.
 func (e Effect) Check() error {
-	if len(e.On) == 0 && e.When == "" {
-		return errors.New("it has neither on nor when, so nothing triggers it")
+	if len(e.Outputs) == 0 && len(e.Kinds) == 0 && e.When == "" {
+		return errors.New("it has none of outputs, kinds and when, so nothing triggers it")
 	}
 	if len(e.Restart) == 0 && len(e.Reload) == 0 && e.Run == "" && e.Chalkd == "" {
 		return errors.New("it restarts, reloads and runs nothing")

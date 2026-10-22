@@ -16,16 +16,19 @@ import (
 )
 
 // baseline is what the effects compare a delivery with while an earlier one is not applied
-// whole: the running slot's config, the facts the rules read and the states of the outputs, as
-// they were before the first delivery that failed part way. What that delivery applied, such as a share or a slot, is
-// then no reason for a retry to find nothing changed. It holds what the rules see alone: the
-// documents with their secret values hashed, as config.Redact hashes them, and the facts as their
-// definitions keep them, the share's keys among them as hashes. A reboot, which clears /run,
-// starts every unit anyway.
+// whole: the running slot's config, the facts the rules read and the states of the outputs and
+// the hashes of the kinds, as they were before the first delivery that failed part way. What that
+// delivery applied, such as a share or a slot, is then no reason for a retry to find nothing
+// changed. It holds what the rules see alone: the documents with their secret values hashed, as
+// config.Redact hashes them, and the facts as their definitions keep them, the share's keys among
+// them as hashes. A reboot, which clears /run, starts every unit anyway.
 type baseline struct {
 	Documents []map[string]any         `json:"documents"`
 	Facts     map[string]baselineFact  `json:"facts"`
 	Outputs   map[string]outputs.State `json:"outputs"`
+	// Kinds are the hashes of the kinds' documents, by kind, as config.KindHashes gives them. A
+	// baseline an older chalkd wrote has none, which makes every effect on a kind due.
+	Kinds map[string]string `json:"kinds"`
 }
 
 // baselineFact is a fact as a rule read it: its value, or why it could not be loaded, which says
@@ -54,9 +57,9 @@ func readBaseline(path string) (b baseline, found bool, err error) {
 }
 
 // newBaseline records old, the running slot's config, the facts the rules read, names, as f
-// loads them, and the states of the outputs the node serves.
-func newBaseline(old []config.Document, names []string, f rules.Facts, states map[string]outputs.State) baseline {
-	b := baseline{Facts: map[string]baselineFact{}, Outputs: states}
+// loads them, the states of the outputs the node serves and the hashes of old's kinds.
+func newBaseline(old []config.Document, names []string, f rules.Facts, states map[string]outputs.State, kinds map[string]string) baseline {
+	b := baseline{Facts: map[string]baselineFact{}, Outputs: states, Kinds: kinds}
 	for _, d := range config.Redact(old) {
 		b.Documents = append(b.Documents, d.Object)
 	}

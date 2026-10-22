@@ -128,7 +128,7 @@ func TestKindHashes(t *testing.T) {
 	s := imageSchemas(t)
 	hashes := func(yaml string) map[string]string {
 		t.Helper()
-		h, err := kindHashes(parseDocs(t, yaml), s)
+		h, err := KindHashes(parseDocs(t, yaml), s)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -179,11 +179,11 @@ kind: Secret
 metadata: {name: spare}
 spec: {data: {token: unused}}
 `
-	before, err := kindHashes(parseDocs(t, unreferenced), s)
+	before, err := KindHashes(parseDocs(t, unreferenced), s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := kindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s)
+	after, err := KindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s)
 	if err != nil {
 		t.Fatal(err)
 	}

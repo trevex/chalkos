@@ -34,6 +34,10 @@ type effects struct {
 	before   rules.Facts
 	// outputs are the states of the outputs before the delivery, by name.
 	outputs map[string]outputs.State
+	// kinds are the hashes of the kinds' documents before the delivery, by kind, and schemas the
+	// schemas that tell their secretRefs.
+	kinds   map[string]string
+	schemas *schema.Schemas
 }
 
 // effectsOf compiles the rules of the running image's effects for a delivery to the node called
@@ -42,16 +46,16 @@ type effects struct {
 // delivery without config keeps old. The image's build compiled the rules already, so one that
 // does not compile is the node's own failure.
 // The rules compare with the baseline instead while there is one, as a delivery that failed part
-// way left it; otherwise effectsOf records old and the facts as the baseline, which consume
-// removes once the delivery is applied whole, and refused once it is refused before it changed
-// anything. A retry, or another delivery, then takes the effects of what the failed delivery
-// changed already too.
+// way left it; otherwise effectsOf records old and the facts, and the outputs' states and the
+// kinds' hashes, as the baseline, which consume removes once the delivery is applied whole, and
+// refused once it is refused before it changed anything. A retry, or another delivery, then takes
+// the effects of what the failed delivery changed already too.
 func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string) (*effects, error) {
 	defs, err := nodeconfig.ReadEffects(s.Loader.Effects)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	e := &effects{defs: defs, node: name, next: next, old: old}
+	e := &effects{defs: defs, node: name, next: next, old: old, schemas: schemas}
 	var errs []error
 	for _, effect := range slices.Sorted(maps.Keys(defs)) {
 		// An effect without a rule fires on its outputs alone.
@@ -74,11 +78,14 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 		log.Printf("the baseline of the effects: %v; comparing with the running slot", err)
 	}
 	if found {
-		e.old, e.oldHashed, e.before, e.outputs = b.documents(), true, b, b.Outputs
+		e.old, e.oldHashed, e.before, e.outputs, e.kinds = b.documents(), true, b, b.Outputs, b.Kinds
 		return e, nil
 	}
 	if e.outputs, err = s.Loader.OutputStates(old, schemas); err != nil {
 		return nil, failed(connect.CodeInternal, "the outputs the node serves: %v", err)
+	}
+	if e.kinds, err = config.KindHashes(old, schemas); err != nil {
+		return nil, failed(connect.CodeInternal, "the kinds the node runs: %v", err)
 	}
 	before, err := s.factsFor(ctx, next, old, secret)
 	if err != nil {
@@ -87,7 +94,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 	e.before = before
 	// Every fact the rules read loads now, before anything changes. One that cannot be loaded keeps
 	// its error, which makes the rules that read it due.
-	if err := newBaseline(old, e.factNames(), before, e.outputs).write(s.Paths.EffectsBaseline); err != nil {
+	if err := newBaseline(old, e.factNames(), before, e.outputs, e.kinds).write(s.Paths.EffectsBaseline); err != nil {
 		return nil, failed(connect.CodeInternal, "record the config, facts and outputs the effects compare with: %v", err)
 	}
 	e.recorded = true
@@ -117,9 +124,10 @@ func (e *effects) oldConfig() map[string]any {
 }
 
 // due returns the names of the effects due once the delivery is applied, sorted: those of whose
-// outputs one has a state in states, the outputs swapped in, other than before, and those whose
-// rule holds, loading the facts as they are now. A rule that cannot be evaluated counts as true,
-// and goes to the journal and to warnings, which say why without the values it read.
+// outputs one has a state in states, the outputs swapped in, other than before, those one of
+// whose kinds' documents, or a Secret they reference, changed, and those whose rule holds,
+// loading the facts as they are now. A rule that cannot be evaluated counts as true, and goes to
+// the journal and to warnings, which say why without the values it read.
 func (s *Server) due(ctx context.Context, e *effects, states map[string]outputs.State, secret string) (due, warnings []string, err error) {
 	after, err := s.factsFor(ctx, e.next, nil, secret)
 	if err != nil {
@@ -138,8 +146,14 @@ func (s *Server) due(ctx context.Context, e *effects, states map[string]outputs.
 	for _, r := range ruled {
 		due = append(due, r.Name)
 	}
+	kinds, err := config.KindHashes(e.next, e.schemas)
+	if err != nil {
+		return nil, nil, failed(connect.CodeInternal, "the kinds of the delivery: %v", err)
+	}
 	for name, d := range e.defs {
-		if slices.ContainsFunc(d.On, func(o string) bool { st, ok := states[o]; return ok && st != e.outputs[o] }) {
+		changedOutput := slices.ContainsFunc(d.Outputs, func(o string) bool { st, ok := states[o]; return ok && st != e.outputs[o] })
+		changedKind := slices.ContainsFunc(d.Kinds, func(k string) bool { return kinds[k] != e.kinds[k] })
+		if changedOutput || changedKind {
 			due = append(due, name)
 		}
 	}
