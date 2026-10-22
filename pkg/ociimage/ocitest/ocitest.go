@@ -3,10 +3,13 @@ package ocitest
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -67,4 +70,32 @@ func Push(t testing.TB, img v1.Image, ref string) string {
 		t.Fatal(err)
 	}
 	return pinned
+}
+
+// AuthRegistry is Registry that answers only requests with the user and the password, as a
+// private registry does, and asks for them with a Basic challenge otherwise. It gives the test a
+// docker config holding them, through DOCKER_CONFIG, so that Push and Read authenticate with the
+// default keychain as chalkbuild and chalkctl do; the test must not run in parallel.
+func AuthRegistry(t testing.TB, user, password string) string {
+	t.Helper()
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, ok := r.BasicAuth(); !ok || u != user || p != password {
+			w.Header().Set("WWW-Authenticate", `Basic realm="ocitest"`)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			io.WriteString(w, `{"errors": [{"code": "UNAUTHORIZED", "message": "authentication required"}]}`)
+			return
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
+	dir := t.TempDir()
+	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"auths": {"`+host+`": {"auth": "`+auth+`"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_CONFIG", dir)
+	return host
 }

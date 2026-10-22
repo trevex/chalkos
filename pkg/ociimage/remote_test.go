@@ -50,6 +50,22 @@ func TestPushAndRead(t *testing.T) {
 	if want, _ := ociimage.ReadContractDir(in); !reflect.DeepEqual(a.Contract, want) {
 		t.Errorf("contract = %+v, want %+v", a.Contract, want)
 	}
+	storeLayer, err := ociimage.Layer(img, ociimage.StoreType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDigest, err := storeLayer.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSize, err := storeLayer.Size()
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc, err := a.Descriptor(ociimage.StoreType)
+	if err != nil || desc.Digest != wantDigest || desc.Size != wantSize {
+		t.Errorf("Descriptor(StoreType) = %+v, %v; want digest %s, size %d", desc, err, wantDigest, wantSize)
+	}
 }
 
 // TestReadRefuses refuses a reference without a tag, a container image, an index, an unknown

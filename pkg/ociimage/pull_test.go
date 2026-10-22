@@ -1,0 +1,258 @@
+package ociimage_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
+)
+
+// testParts is the parts an upgrade pulls of an image ocitest.Image builds: store, hash tree and
+// UKI, each a few bytes.
+func testParts() []ociimage.Part {
+	var parts []ociimage.Part
+	for _, p := range []struct {
+		mediaType types.MediaType
+		data      string
+	}{{ociimage.StoreType, "store"}, {ociimage.HashTreeType, "hash tree"}, {ociimage.UKIType, "uki"}} {
+		sum := sha256.Sum256([]byte(p.data))
+		parts = append(parts, ociimage.Part{MediaType: p.mediaType, Size: int64(len(p.data)), SHA256: sum[:]})
+	}
+	return parts
+}
+
+// pushSmall pushes a small chalkos image to the registry at host and returns its reference by
+// digest, its header, and the parts an upgrade pulls of it: store, hash tree and UKI.
+func pushSmall(t *testing.T, host string) (string, ociimage.Header, []ociimage.Part) {
+	t.Helper()
+	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	img := ocitest.Image(t, h, ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}})
+	ref := ocitest.Push(t, img, host+"/lab/node-metal:v1")
+	return ref, h, testParts()
+}
+
+// servedBlobs is a registry from memory that records the digests of the blobs it serves.
+func servedBlobs(t *testing.T) (string, *sync.Map) {
+	t.Helper()
+	var served sync.Map
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok && r.Method == http.MethodGet {
+			served.Store(digest, true)
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return strings.TrimPrefix(srv.URL, "http://"), &served
+}
+
+// TestPull reads the parts of an image by digest, one after the other.
+func TestPull(t *testing.T) {
+	ref, h, parts := pushSmall(t, ocitest.Registry(t))
+	p, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	got, err := io.ReadAll(p)
+	if err != nil || string(got) != "storehash treeuki" {
+		t.Errorf("read %q, %v", got, err)
+	}
+}
+
+// TestPullRefuses refuses a reference by tag, an image whose header or layers are not those
+// wanted, and a manifest the registry does not hold, naming the reference.
+func TestPullRefuses(t *testing.T) {
+	host := ocitest.Registry(t)
+	ref, h, parts := pushSmall(t, host)
+	if _, err := ociimage.NewPull(context.Background(), host+"/lab/node-metal:v1", authn.Anonymous, h, parts); err == nil || !strings.Contains(err.Error(), "is no image reference by digest") {
+		t.Errorf("by tag: %v", err)
+	}
+	other := sha256.Sum256([]byte("other"))
+	kvm := h
+	kvm.Platform = "kvm"
+	for _, tc := range []struct {
+		name  string
+		ref   string
+		h     ociimage.Header
+		parts []ociimage.Part
+		want  string
+	}{
+		{"another header", ref, kvm, parts, "its header describes"},
+		{"another hash tree", ref, h, []ociimage.Part{parts[0], {MediaType: ociimage.HashTreeType, Size: 9, SHA256: other[:]}, parts[2]}, "its application/vnd.chalkos.image.hash-tree.v1 layer is sha256:"},
+		{"an unknown digest", host + "/lab/node-metal@sha256:" + strings.Repeat("0", 64), h, parts, "MANIFEST_UNKNOWN"},
+	} {
+		p, err := ociimage.NewPull(context.Background(), tc.ref, authn.Anonymous, tc.h, tc.parts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = io.ReadAll(p)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), tc.ref) {
+			t.Errorf("%s: %v, want %q and the reference", tc.name, err, tc.want)
+		}
+	}
+}
+
+// TestPullRefusesASwappedManifest serves a chalkos image through a proxy that answers a fetch of
+// its pinned digest with a different chalkos image's manifest, bytes an attacker who controls (or
+// sits in front of) a registry might substitute once a tag has already resolved to a digest.
+// go-containerregistry hashes the manifest bytes it receives and refuses them when they do not
+// match the digest the caller asked for, so a Pull of the pinned reference must fail rather than
+// silently stream the swapped image's layers.
+func TestPullRefusesASwappedManifest(t *testing.T) {
+	ctx := context.Background()
+	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	other := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("cd", 32), Architecture: "x86-64", Platform: "metal"}
+	c := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+	a := ocitest.Image(t, h, c)
+	b := ocitest.Image(t, other, c)
+	digestA, err := a.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestB, err := b.RawManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/manifests/"+digestA.String()) {
+			w.Header().Set("Content-Type", string(types.OCIManifestSchema1))
+			w.Write(manifestB)
+			return
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	tagRef, err := name.ParseReference(host + "/chalkos/x:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(tagRef, a); err != nil {
+		t.Fatal(err)
+	}
+	pinnedRef := host + "/chalkos/x@" + digestA.String()
+	p, err := ociimage.NewPull(ctx, pinnedRef, authn.Anonymous, h, testParts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
+		t.Errorf("swapped manifest: %v, want a digest mismatch", err)
+	}
+}
+
+// TestPullRefusesATamperedLayer serves a chalkos image through a proxy that answers a fetch of
+// its store layer's blob with bytes other than those its digest names, truncated or tampered,
+// bytes an attacker who controls (or sits in front of) a registry might substitute after the
+// manifest has already been checked against the header and parts wanted. go-containerregistry
+// hashes every byte of a blob it streams and fails once it has read to the blob's end if the hash
+// does not match the digest asked for, so Read must surface that error rather than hand the
+// caller bytes that do not match the pulled image.
+func TestPullRefusesATamperedLayer(t *testing.T) {
+	store := sha256.Sum256([]byte("store"))
+	blobPath := "/blobs/sha256:" + hex.EncodeToString(store[:])
+	for _, tc := range []struct {
+		name  string
+		serve string
+	}{
+		{"tampered", "xtore"}, // same length as "store", different bytes
+		{"truncated", "sto"},  // shorter than "store"
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, blobPath) {
+					io.WriteString(w, tc.serve)
+					return
+				}
+				reg.ServeHTTP(w, r)
+			}))
+			defer srv.Close()
+			host := strings.TrimPrefix(srv.URL, "http://")
+			ref, h, parts := pushSmall(t, host)
+			p, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, h, parts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := io.ReadAll(p)
+			if err == nil {
+				t.Fatalf("read %q, want an error before the layer's end", got)
+			}
+			if !strings.Contains(err.Error(), "checksum") {
+				t.Errorf("%s layer: %v, want a checksum mismatch", tc.name, err)
+			}
+		})
+	}
+}
+
+// TestPullWithCredentials pulls from a registry that asks for credentials with the user and
+// password given, and is refused anonymously.
+func TestPullWithCredentials(t *testing.T) {
+	ref, h, parts := pushSmall(t, ocitest.AuthRegistry(t, "ci-bot", "s3cret"))
+	p, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "UNAUTHORIZED") {
+		t.Errorf("anonymously: %v", err)
+	}
+	p, err = ociimage.NewPull(context.Background(), ref, &authn.Basic{Username: "ci-bot", Password: "s3cret"}, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
+		t.Errorf("with credentials: %q, %v", got, err)
+	}
+}
+
+// TestPullSkips passes over the store and hash tree without fetching them.
+func TestPullSkips(t *testing.T) {
+	host, served := servedBlobs(t)
+	ref, h, parts := pushSmall(t, host)
+	p, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Skip(parts[0].Size + parts[1].Size); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := io.ReadAll(p); err != nil || string(got) != "uki" {
+		t.Errorf("after the skip: %q, %v", got, err)
+	}
+	store := sha256.Sum256([]byte("store"))
+	if _, ok := served.Load("sha256:" + hex.EncodeToString(store[:])); ok {
+		t.Error("the store was fetched")
+	}
+}
+
+// TestPullContextCanceled refuses to fetch the manifest once its context is canceled, rather than
+// hang or silently succeed.
+func TestPullContextCanceled(t *testing.T) {
+	ref, h, parts := pushSmall(t, ocitest.Registry(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p, err := ociimage.NewPull(ctx, ref, authn.Anonymous, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadAll(p); err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled context: %v, want context.Canceled", err)
+	}
+}

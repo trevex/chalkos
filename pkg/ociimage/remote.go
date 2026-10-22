@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -55,6 +56,13 @@ type Artifact struct {
 	Header    Header
 	Contract  Contract
 	Metadata  schema.Metadata
+	// Manifest is the image's manifest, whose layers' descriptors Descriptor finds.
+	Manifest v1.Manifest
+}
+
+// Descriptor is the descriptor of the artifact's layer of the media type: its digest and size.
+func (a *Artifact) Descriptor(mediaType types.MediaType) (v1.Descriptor, error) {
+	return find(&a.Manifest, mediaType)
 }
 
 // Read resolves ref, by tag or by digest, to its manifest's digest and reads the header and the
@@ -90,5 +98,10 @@ func Read(ctx context.Context, ref string) (*Artifact, error) {
 	if err := describes(a.Metadata, a.Header); err != nil {
 		return nil, fmt.Errorf("%s: the contract layer's %w", ref, err)
 	}
+	m, err := img.Manifest()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ref, err)
+	}
+	a.Manifest = *m
 	return a, nil
 }
