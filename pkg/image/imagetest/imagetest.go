@@ -4,13 +4,20 @@ package imagetest
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
@@ -92,6 +99,25 @@ func Write(t testing.TB, dir string, img Image) []byte {
 	}
 	write(t, filepath.Join(dir, "repart-output.json"), parts)
 	return root
+}
+
+// Signer writes a Secure Boot db key, name.key, and its self-signed certificate, name.crt, into
+// dir and returns their paths.
+func Signer(t testing.TB, dir, name string) (key, cert string) {
+	t.Helper()
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: name}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &k.PublicKey, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, cert = filepath.Join(dir, name+".key"), filepath.Join(dir, name+".crt")
+	write(t, key, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}))
+	write(t, cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	return key, cert
 }
 
 // write writes a file, making its directory.
