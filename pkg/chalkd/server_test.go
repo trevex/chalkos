@@ -38,6 +38,7 @@ import (
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -180,7 +181,11 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 			RunDir:          filepath.Join(root, "run", "chalkos"),
 			NetworkDir:      filepath.Join(root, "run", "network"),
 			ChronySources:   filepath.Join(root, "run", "chalkos", "chrony", "identity.sources"),
-			Consumers:       filepath.Join(root, "consumers.json"),
+			Services:        filepath.Join(root, "services.json"),
+			Effects:         filepath.Join(root, "effects.json"),
+			Outputs:         filepath.Join(root, "outputs.json"),
+			Render:          outputs.Renderer{Root: filepath.Join(root, "run", "chalkos", "outputs"), Run: outputs.Direct{}},
+			NodeCertificate: filepath.Join(root, "state", "chalkd", NodeCertificateFile),
 			Slots:           filepath.Join(root, "state", "config"),
 			Cmdline:         filepath.Join(root, "cmdline"),
 			Schemas:         filepath.Join(root, "schemas"),
@@ -205,27 +210,41 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...testDisk) (*Server, 
 	writeSchemas(t, s.Loader.Schemas)
 	s.Facts = storageFacts{s}
 	writeFacts(t, s)
-	writeConsumers(t, s, "{}")
+	writeServices(t, s, "{}")
+	writeEffects(t, s, "{}")
 	return s, r
 }
 
-// writeConsumers declares the consumers of the default image, whose rules the tests carry out,
-// and those of extra, a JSON object of consumers by unit, at the test server's path.
-func writeConsumers(t *testing.T, s *Server, extra string) {
+// writeEffects declares the effects of the default image, which the tests carry out, and those
+// of extra, a JSON object of effects by name, at the test server's path.
+func writeEffects(t *testing.T, s *Server, extra string) {
 	t.Helper()
-	var consumers, more map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(readFile(t, "../../test/fixtures/kinds/consumers.json")), &consumers); err != nil {
+	writeMerged(t, s.Loader.Effects, "../../test/fixtures/kinds/effects.json", extra)
+}
+
+// writeServices grants the kinds the default image's units read, and those of extra, a JSON object
+// of grants by unit, at the test server's path.
+func writeServices(t *testing.T, s *Server, extra string) {
+	t.Helper()
+	writeMerged(t, s.Loader.Services, "../../test/fixtures/kinds/services.json", extra)
+}
+
+// writeMerged writes the JSON object of the fixture with the keys of extra added to path.
+func writeMerged(t *testing.T, path, fixture, extra string) {
+	t.Helper()
+	var base, more map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(readFile(t, fixture)), &base); err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Unmarshal([]byte(extra), &more); err != nil {
 		t.Fatal(err)
 	}
-	maps.Copy(consumers, more)
-	data, err := json.Marshal(consumers)
+	maps.Copy(base, more)
+	data, err := json.Marshal(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Loader.Consumers, string(data))
+	write(t, path, string(data))
 }
 
 // storageFacts runs the commands of the storage facts in the test, as chalkos-storage facts would,
@@ -274,7 +293,7 @@ func hashFiles(path string) ([]byte, error) {
 	return json.Marshal(hex.EncodeToString(h.Sum(nil)))
 }
 
-// writeFacts declares the facts of the built-in kinds' and consumers' rules as an image does, at
+// writeFacts declares the facts of the built-in kinds' rules and effects as an image does, at
 // the test server's paths; the cluster file only once the server writes one.
 func writeFacts(t *testing.T, s *Server) {
 	t.Helper()

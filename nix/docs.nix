@@ -83,7 +83,11 @@ let
   kindSchemas = imageSystem.config.system.build.chalkosSchemas;
   imageOptions =
     (pkgs.nixosOptionsDoc {
-      options = { inherit (imageSystem.options) chalkos; };
+      # chalkos's options, and the grant of a unit, which the node modules add to systemd's.
+      options = {
+        inherit (imageSystem.options) chalkos;
+        systemd.services = imageSystem.options.systemd.services;
+      };
       transformOptions =
         opt:
         linkDeclarations opt

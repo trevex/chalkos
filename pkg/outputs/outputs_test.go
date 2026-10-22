@@ -27,7 +27,6 @@ func script(t *testing.T, body string) string {
 }
 
 // def is an output of the Demo kind that the test's user owns, with the renderer and check given.
-// Read accepts programs of the store alone, which the definitions here do not pass through.
 func def(t *testing.T, root, render, check string) Definition {
 	t.Helper()
 	return Definition{
@@ -279,12 +278,12 @@ func TestLive(t *testing.T) {
 	}
 }
 
-// Read refuses programs outside the store, a relative dir and a mode that is no octal number.
+// Read refuses programs that are no absolute paths, a relative dir and a mode that is no octal number.
 func TestRead(t *testing.T) {
 	for name, tc := range map[string]struct{ json, want string }{
 		"fine":     {`{"a": {"inputs": [], "render": "/nix/store/x/bin/r a", "dir": "/run/a", "user": "root", "group": "root", "mode": "0644"}}`, ""},
-		"renderer": {`{"a": {"render": "r", "dir": "/run/a", "mode": "0644"}}`, `output a: the renderer "r" is no program of the image's store`},
-		"check":    {`{"a": {"render": "/nix/store/x", "check": "/bin/true", "dir": "/run/a", "mode": "0644"}}`, `output a: the check "/bin/true" is no program`},
+		"renderer": {`{"a": {"render": "r", "dir": "/run/a", "mode": "0644"}}`, `output a: the renderer "r" names no program by its absolute path`},
+		"check":    {`{"a": {"render": "/nix/store/x", "check": "true", "dir": "/run/a", "mode": "0644"}}`, `output a: the check "true" names no program`},
 		"dir":      {`{"a": {"render": "/nix/store/x", "dir": "run/a", "mode": "0644"}}`, `the dir "run/a" is no absolute, clean path`},
 		"mode":     {`{"a": {"render": "/nix/store/x", "dir": "/run/a", "mode": "rw"}}`, `the mode "rw" is no octal file mode`},
 	} {

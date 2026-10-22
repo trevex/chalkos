@@ -81,15 +81,16 @@ func Read(path string) (map[string]Definition, error) {
 	return defs, nil
 }
 
-// check refuses a definition chalkd could not carry out: programs outside the image's store, a
-// relative dir or a mode that is no octal number.
+// check refuses a definition chalkd could not carry out: a program that is no absolute path, a
+// relative dir or a mode that is no octal number. The image's build checks that the programs are
+// of its store.
 func (d Definition) check() error {
 	for _, p := range []struct{ what, command string }{{"renderer", d.Render}, {"check", d.Check}} {
 		if p.what == "check" && p.command == "" {
 			continue
 		}
-		if argv := strings.Fields(p.command); len(argv) == 0 || !strings.HasPrefix(argv[0], "/nix/store/") {
-			return fmt.Errorf("the %s %q is no program of the image's store", p.what, p.command)
+		if argv := strings.Fields(p.command); len(argv) == 0 || !filepath.IsAbs(argv[0]) {
+			return fmt.Errorf("the %s %q names no program by its absolute path", p.what, p.command)
 		}
 	}
 	if !filepath.IsAbs(d.Dir) || filepath.Clean(d.Dir) != d.Dir {
@@ -342,6 +343,9 @@ type Staged struct {
 // a service reads; what an earlier render left staged is removed first.
 func (r Renderer) Render(ctx context.Context, defs map[string]Definition, in Input) (*Staged, []Failure) {
 	s := &Staged{root: r.Root, defs: defs, staging: map[string]string{}, states: map[string]State{}}
+	if len(defs) == 0 {
+		return s, nil
+	}
 	staging := filepath.Join(r.Root, ".staging")
 	var failures []Failure
 	fail := func(name string, err error) {
@@ -519,6 +523,9 @@ func (s *Staged) States() map[string]State {
 // ones and never a mix. The files the old link named are removed. It records each swapped
 // output's hash in the status.
 func (s *Staged) Swap() error {
+	if len(s.staging) == 0 {
+		return nil
+	}
 	rendered := filepath.Join(s.root, ".rendered")
 	if err := os.MkdirAll(rendered, 0o755); err != nil {
 		return err

@@ -77,7 +77,7 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 	}
 }
 
-// node renew prints why a consumer's rule could not be evaluated as a warning, as apply-config
+// node renew prints why the rule of an effect could not be evaluated as a warning, as apply-config
 // does.
 func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
 	ta := newTestApp(t)
@@ -87,22 +87,22 @@ func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
 	}
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
-	var consumers map[string]any
-	raw, err := os.ReadFile(s.Loader.Consumers)
+	var effects map[string]any
+	raw, err := os.ReadFile(s.Loader.Effects)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(raw, &consumers); err != nil {
+	if err := json.Unmarshal(raw, &effects); err != nil {
 		t.Fatal(err)
 	}
-	consumers["report"] = map[string]any{"kinds": []string{}, "restart": map[string]any{"when": `config["chalkos.dev/v1alpha1"].Node.missing.spec.type == "worker"`}}
-	data, _ := json.Marshal(consumers)
-	writeFile(t, s.Loader.Consumers, string(data))
+	effects["report"] = map[string]any{"when": `config["chalkos.dev/v1alpha1"].Node.missing.spec.type == "worker"`, "restart": []string{"report.service"}}
+	data, _ := json.Marshal(effects)
+	writeFile(t, s.Loader.Effects, string(data))
 	addr := ta.nodeWithCertificate(t, s, cert)
 	if err := ta.run(context.Background(), ta.args([]string{"node", "renew", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	want := "chalkctl: warning: n1: the rule of report restart: a rule cannot be evaluated: no such key; taking its effect all the same\n"
+	want := "chalkctl: warning: n1: the rule of effect report: a rule cannot be evaluated: no such key; taking the effect all the same\n"
 	if ta.stderr.String() != want {
 		t.Errorf("stderr = %q, want %q", ta.stderr, want)
 	}

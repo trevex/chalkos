@@ -15,6 +15,7 @@ callPackage ./go-module.nix { } {
     ../pkg/kubernetes
     ../pkg/networkdschema
     ../pkg/nodeconfig
+    ../pkg/outputs
     ../pkg/pki
     ../pkg/rules
     ../pkg/schema

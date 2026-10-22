@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
+	"strings"
 
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -89,4 +92,28 @@ func jsonValue(v any) any {
 		return nil
 	}
 	return out
+}
+
+// renderOutputs renders and checks the running image's outputs from docs, the config a delivery
+// makes, for the node called name, and stages them; schemas tell the secretRef fields of docs,
+// the running image's when nil. The delivery has changed nothing yet, so a failure refuses it
+// whole and leaves the outputs the node serves; the status records it. What the renderers and
+// checks wrote to standard error goes to the journal alone.
+func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas) (*outputs.Staged, error) {
+	staged, failures, err := s.Loader.RenderOutputs(ctx, name, docs, schemas)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "the running image's outputs: %v", err)
+	}
+	if len(failures) > 0 {
+		staged.Discard()
+		if err := outputs.RecordFailures(s.Loader.Render.Root, failures); err != nil {
+			log.Printf("record the outputs' failures: %v", err)
+		}
+		msgs := make([]string, len(failures))
+		for i, f := range failures {
+			msgs[i] = f.Error()
+		}
+		return nil, failed(connect.CodeFailedPrecondition, "%s", strings.Join(msgs, "; "))
+	}
+	return staged, nil
 }

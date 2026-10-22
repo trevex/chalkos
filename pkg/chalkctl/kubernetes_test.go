@@ -121,7 +121,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if share, err := kpki.ParseShare(data); err != nil || share.Node() != "n1" {
 		t.Errorf("share on the node: %v", err)
 	}
-	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet") {
+	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
 		t.Errorf("node ran %v", r.calls)
 	}
 
@@ -130,7 +130,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes kubelet") {
+	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
 		t.Error("apply-config without --kubernetes-share restarted the kubelet")
 	}
 }

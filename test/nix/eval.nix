@@ -358,8 +358,8 @@ lib.runTests {
             && lib.elem "multi-user.target" c.systemd.services.chalkos-chrony-dhcp.wantedBy
             && lib.elem "systemd-networkd.service" c.systemd.services.chalkos-chrony-dhcp.after;
           dhcpDir = lib.elem "d /run/chalkos/chrony-dhcp 0755 root root - -" c.systemd.tmpfiles.rules;
-          dhcpConsumer =
-            (builtins.fromJSON c.environment.etc."chalkos/consumers.json".text).chalkos-chrony-dhcp.kinds;
+          dhcpGrant =
+            (builtins.fromJSON c.environment.etc."chalkos/services.json".text).chalkos-chrony-dhcp.kinds;
           dhcpReadsConfig = lib.hasInfix "chalkcfg get TimeSync" c.systemd.services.chalkos-chrony-dhcp.script;
           # Active after it ran, so chalkd's try-restart runs it again; a link's change restarts it.
           dhcpRerunsOnChange =
@@ -390,7 +390,7 @@ lib.runTests {
       dhcpPath = true;
       dhcpAtBoot = true;
       dhcpDir = true;
-      dhcpConsumer = [ "TimeSync" ];
+      dhcpGrant = [ "TimeSync" ];
       dhcpReadsConfig = true;
       dhcpRerunsOnChange = true;
       chalkdHasChronyc = true;
@@ -726,8 +726,8 @@ lib.runTests {
         # ships no objects of its own.
         addonObjects = config.environment.etc ? "chalkos/kubernetes/manifests.json";
         etcdDir = lib.elem "d /var/lib/etcd 0700 root root -" config.systemd.tmpfiles.rules;
-        consumer =
-          (builtins.fromJSON config.environment.etc."chalkos/consumers.json".text).chalkos-controlplane.kinds;
+        grant =
+          (builtins.fromJSON config.environment.etc."chalkos/services.json".text).chalkos-controlplane.kinds;
         beforeKubernetes = lib.all (u: lib.elem u config.systemd.services.chalkos-controlplane.before) [
           "chalkos-kubernetes.service"
           "kubelet.service"
@@ -749,7 +749,7 @@ lib.runTests {
       markedPorts = true;
       addonObjects = false;
       etcdDir = false;
-      consumer = [ "Node" ];
+      grant = [ "Node" ];
       beforeKubernetes = true;
       etcdMount = "/var/lib/etcd";
       kubeletEtcdMount = "/var/lib/etcd";
@@ -914,14 +914,14 @@ lib.runTests {
     let
       config = worker [ ];
       unit = config.systemd.services.chalkos-registry-mirrors;
-      consumers = builtins.fromJSON config.environment.etc."chalkos/consumers.json".text;
+      services = builtins.fromJSON config.environment.etc."chalkos/services.json".text;
     in
     {
       expr = {
         baked = lib.any (lib.hasPrefix "containerd/certs.d") (lib.attrNames config.environment.etc);
         configPath =
           config.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.images".registry.config_path;
-        consumer = consumers.chalkos-registry-mirrors.kinds;
+        grant = services.chalkos-registry-mirrors.kinds;
         beforeContainerd =
           lib.elem "containerd.service" unit.before && lib.elem "containerd.service" unit.wantedBy;
         afterConfig = lib.elem "chalkos-config.service" unit.after;
@@ -929,7 +929,7 @@ lib.runTests {
       expected = {
         baked = false;
         configPath = "/run/containerd/certs.d";
-        consumer = [ "RegistryMirror" ];
+        grant = [ "RegistryMirror" ];
         beforeContainerd = true;
         afterConfig = true;
       };

@@ -11,7 +11,7 @@ import (
 
 func effect(t *testing.T, when string) *Effect {
 	t.Helper()
-	e, err := CompileEffect("demo", Restart, when)
+	e, err := CompileEffect("demo", when)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func dueUnits(effects []*Effect, in EffectInput) ([]string, []error) {
 	return out, errs
 }
 
-// An effect sees the kinds that changed, the config before and after the delivery with its
+// An effect sees the config before and after the delivery with its
 // Secrets hashed, and the facts before and after it.
 func TestEffectVariables(t *testing.T) {
 	secret := func(value string) config.Document {
@@ -43,8 +43,6 @@ func TestEffectVariables(t *testing.T) {
 		when string
 		due  bool
 	}{
-		"a changed kind":      {`"Demo" in changedKinds`, true},
-		"an unchanged kind":   {`"Other" in changedKinds`, false},
 		"config":              {`config["t.example.org/v1"].Demo.a.spec.replicas == 2`, true},
 		"oldConfig":           {`oldConfig["t.example.org/v1"].Demo.a.spec.replicas == 1`, true},
 		"a field compared":    {`config["t.example.org/v1"].Demo.a.spec != oldConfig["t.example.org/v1"].Demo.a.spec`, true},
@@ -56,7 +54,7 @@ func TestEffectVariables(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := EffectInput{
-				Documents: next, Old: old, ChangedKinds: []string{"Demo"},
+				Documents: next, Old: old,
 				Facts:    &fakeFacts{values: map[string]any{"share": map[string]any{"kind": "worker"}}},
 				OldFacts: &fakeFacts{},
 			}
@@ -81,12 +79,12 @@ func TestEffectNodeName(t *testing.T) {
 // An effect loads a fact when it reads it, from the facts after the delivery or from those before
 // it, so one whose first operand of || holds loads none.
 func TestEffectLoadsFactsLazily(t *testing.T) {
-	e := effect(t, `"Demo" in changedKinds || facts.share != oldFacts.share`)
+	e := effect(t, `node.name == "n1" || facts.share != oldFacts.share`)
 	if !slices.Equal(e.Facts, []string{"share"}) {
 		t.Errorf("facts = %v", e.Facts)
 	}
 	after, before := &fakeFacts{}, &fakeFacts{}
-	if got, errs := dueUnits([]*Effect{e}, EffectInput{ChangedKinds: []string{"Demo"}, Facts: after, OldFacts: before}); len(errs) > 0 || len(got) != 1 {
+	if got, errs := dueUnits([]*Effect{e}, EffectInput{Node: "n1", Facts: after, OldFacts: before}); len(errs) > 0 || len(got) != 1 {
 		t.Errorf("due = %v, %v", got, errs)
 	}
 	if after.loads["share"] != 0 || before.loads["share"] != 0 {
@@ -114,13 +112,13 @@ func TestEffectThatFailsIsDue(t *testing.T) {
 		Facts:     &fakeFacts{errs: map[string]error{"share": errors.New("not JSON")}},
 	}
 	got, errs := dueUnits(effects, in)
-	if !slices.Equal(got, []string{"demo restart", "demo restart", "demo restart"}) {
+	if !slices.Equal(got, []string{"effect demo", "effect demo", "effect demo"}) {
 		t.Errorf("due = %v", got)
 	}
 	want := []string{
-		"demo restart: a rule cannot be evaluated: no such key",
-		"demo restart: cannot check: fact share: not JSON",
-		"demo restart: a rule yields string, not a bool",
+		"effect demo: a rule cannot be evaluated: no such key",
+		"effect demo: cannot check: fact share: not JSON",
+		"effect demo: a rule yields string, not a bool",
 	}
 	var msgs []string
 	for _, err := range errs {
@@ -136,19 +134,19 @@ func TestEffectThatFailsIsDue(t *testing.T) {
 
 func TestCompileEffectErrors(t *testing.T) {
 	for name, tc := range map[string]struct{ when, want string }{
-		"syntax":            {"changedKinds ==", "Syntax error"},
-		"not a bool":        {"size(changedKinds)", "yields int, not bool"},
+		"syntax":            {"config ==", "Syntax error"},
+		"not a bool":        {"size(config)", "yields int, not bool"},
 		"a kind's variable": {"size(documents) > 0", "undeclared reference to 'documents'"},
 		"a field's":         {"self == oldSelf", "undeclared reference to 'self'"},
 		"facts by index":    {`facts["share"] == null`, "facts are read by name, as facts.<name>"},
 		"oldFacts alone":    {`oldFacts == null`, "oldFacts are read by name, as oldFacts.<name>"},
 		"has":               {`has(oldFacts.share)`, "has() does not apply to oldFacts"},
 		"empty":             {" ", "the rule is empty"},
-		"costly":            {`changedKinds.all(a, changedKinds.all(b, changedKinds.all(c, a + b + c != "")))`, "more than the limit"},
+		"costly":            {`config.all(a, config.all(b, config.all(c, a + b + c != "")))`, "more than the limit"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := CompileEffect("demo", Reload, tc.when)
-			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.HasPrefix(err.Error(), "demo reload: rule ") {
+			_, err := CompileEffect("demo", tc.when)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.HasPrefix(err.Error(), "effect demo: rule ") {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})

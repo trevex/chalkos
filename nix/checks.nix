@@ -1042,11 +1042,11 @@ in
       touch $out
     '';
 
-  # An image builds only when its rules compile and read the facts it declares. The test image's
-  # Greeting and the homelab example's Rack bring extension kinds with their own rules and facts,
-  # and the Greeting's unit a restart rule of its own; a rule that does not compile, one that
-  # reads a fact no module declares and a consumer's rule that does not compile fail the check of
-  # their image.
+  # An image builds only when its rules compile and read the facts it declares, and its effects
+  # act on units it defines. The test image's Greeting and the homelab example's Rack bring
+  # extension kinds with their own rules, facts and effects; a rule that does not compile, one
+  # that reads a fact no module declares, an effect's rule that does not compile and an effect on
+  # a unit the image lacks fail the check of their image.
   rules =
     let
       build =
@@ -1067,10 +1067,21 @@ in
       };
       broken = build [ (demo "documents ==") ];
       undeclared = build [ (demo "facts.missing == null") ];
-      brokenConsumer = build [
+      brokenEffect = build [
         {
           systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
-          chalkos.consumers.bird.restart.when = "changedKinds ==";
+          chalkos.effects.bird = {
+            when = "config ==";
+            restart = [ "bird.service" ];
+          };
+        }
+      ];
+      undefinedUnit = build [
+        {
+          chalkos.effects.bird = {
+            when = "true";
+            restart = [ "bird.service" ];
+          };
         }
       ];
     in
@@ -1083,11 +1094,10 @@ in
         ];
       }
       ''
-        chalkos-rules check ${homelab.chalkosSchemas} ${homelab.chalkosFacts} ${homelab.chalkosConsumers} | grep -q rackSurvey
-        # refused <image> <message>: the check of the image's schemas, facts and consumers fails,
-        # and says why.
+        chalkos-rules check ${homelab.chalkosRulesImage} | grep -q rackSurvey
+        # refused <image> <message>: the check of the image's files fails, and says why.
         refused() {
-          if chalkos-rules check "$1/schemas" "$1/facts.json" "$1/consumers.json" 2>err; then
+          if chalkos-rules check "$1" 2>err; then
             echo "error: chalkos-rules accepted $1" >&2
             exit 1
           fi
@@ -1097,19 +1107,10 @@ in
             exit 1
           fi
         }
-        # image <dir> <schemas> <facts> <consumers>: links an image's files into dir.
-        image() {
-          mkdir "$1"
-          ln -s "$2" "$1/schemas"
-          ln -s "$3" "$1/facts.json"
-          ln -s "$4" "$1/consumers.json"
-        }
-        image broken ${broken.chalkosSchemas} ${broken.chalkosFacts} ${broken.chalkosConsumers}
-        image undeclared ${undeclared.chalkosSchemas} ${undeclared.chalkosFacts} ${undeclared.chalkosConsumers}
-        image consumer ${brokenConsumer.chalkosSchemas} ${brokenConsumer.chalkosFacts} ${brokenConsumer.chalkosConsumers}
-        refused broken 'Demo: rule "documents ==": ERROR: <input>:1:13: Syntax error'
-        refused undeclared 'Demo: rule "facts.missing == null" reads facts.missing, which the image does not declare'
-        refused consumer 'bird restart: rule "changedKinds ==": ERROR: <input>:1:16: Syntax error'
+        refused ${broken.chalkosRulesImage} 'Demo: rule "documents ==": ERROR: <input>:1:13: Syntax error'
+        refused ${undeclared.chalkosRulesImage} 'Demo: rule "facts.missing == null" reads facts.missing, which the image does not declare'
+        refused ${brokenEffect.chalkosRulesImage} 'effect bird: rule "config ==": ERROR: <input>:1:10: Syntax error'
+        refused ${undefinedUnit.chalkosRulesImage} 'effect bird: the image defines no unit bird.service'
         # The command of the networkd units' fact prints null for a path that is missing, and a
         # hash that follows the names and contents of a directory's files, or a file's content.
         hash=${lib.head (lib.splitString " " testing.nixos.test-metal.config.chalkos.facts.networkUnits.command)}

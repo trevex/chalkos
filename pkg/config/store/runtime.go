@@ -15,14 +15,14 @@ import (
 
 // WriteRuntime writes a config set for the node's services. Its documents go below runDir/config as
 // <group>/<Kind>/<name>.json, readable by all, except Secrets and the documents that stay stored,
-// such as Addons; replacing the directory removes any an earlier write left. For each consumer,
-// a unit by name with the kinds it reads, the values the secretRefs of those kinds' documents
+// such as Addons; replacing the directory removes any an earlier write left. For each granted
+// unit, by name with the kinds it reads, the values the secretRefs of those kinds' documents
 // name go to runDir/credentials/<unit>/<secret>.<key>, readable by root alone, which the unit
-// loads with LoadCredential=secret:<that directory>. Every consumer gets its directory, empty
+// loads with LoadCredential=secret:<that directory>. Every granted unit gets its directory, empty
 // when it references no secret, because systemd refuses to start a unit whose credential path
 // is missing. schemas tell which fields are secretRefs; nil when docs is empty.
-func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas, consumers map[string][]string) error {
-	creds, err := credentials(docs, schemas, consumers)
+func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas, units map[string][]string) error {
+	creds, err := credentials(docs, schemas, units)
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas
 
 // CheckCredentials refuses a set whose secretRefs could not all become credential files: a key
 // that is no file name, or two references that would share a file name. It checks every
-// reference in the set, whichever units read them, so it needs no consumer map.
+// reference in the set, whichever units read them, so it needs no map of units.
 func CheckCredentials(docs []config.Document, schemas *schema.Schemas) error {
 	seen := map[string]config.SecretRef{}
 	for _, d := range docs {
@@ -64,7 +64,7 @@ func CheckCredentials(docs []config.Document, schemas *schema.Schemas) error {
 }
 
 // credentials returns, by unit, the files of the values its kinds' secretRefs name.
-func credentials(docs []config.Document, schemas *schema.Schemas, consumers map[string][]string) (map[string]map[string][]byte, error) {
+func credentials(docs []config.Document, schemas *schema.Schemas, units map[string][]string) (map[string]map[string][]byte, error) {
 	data := map[string]map[string]string{}
 	for _, d := range docs {
 		if d.IsSecret() {
@@ -72,9 +72,9 @@ func credentials(docs []config.Document, schemas *schema.Schemas, consumers map[
 		}
 	}
 	out := map[string]map[string][]byte{}
-	for unit, kinds := range consumers {
+	for unit, kinds := range units {
 		if !validName(unit) {
-			return nil, fmt.Errorf("the consumer %q is no unit name", unit)
+			return nil, fmt.Errorf("the granted unit %q is no unit name", unit)
 		}
 		files := map[string][]byte{}
 		for _, d := range docs {
@@ -97,7 +97,7 @@ func credentials(docs []config.Document, schemas *schema.Schemas, consumers map[
 	return out, nil
 }
 
-// CredentialPrefix is the ID a consumer's LoadCredential= gives its credentials directory. systemd
+// CredentialPrefix is the ID a granted unit's LoadCredential= gives its credentials directory. systemd
 // loads each file in it as the credential <CredentialPrefix>_<file>, so the Nix module's
 // LoadCredential= must use the same prefix for checkCredential to hold.
 const CredentialPrefix = "secret"

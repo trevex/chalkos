@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -421,6 +423,33 @@ func TestInstallRefusesConfig(t *testing.T) {
 			c.edit(h)
 			if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+// TestInstallInPlaceChecksTheOutputs: an install in place renders and checks the running image's
+// outputs before it installs anything, and leaves no output in place, which the boot that
+// follows renders.
+func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
+	for name, tc := range map[string]struct{ check, want string }{
+		"a check that passes": {`grep -q first "$OUT/demo.json"`, ""},
+		"a check that fails":  {`grep -q second "$OUT/demo.json"`, "output demo: its check refused the rendered files (exit 1)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := newTestServer(t, maintenance, vda)
+			writeSchemas(t, s.Loader.Schemas)
+			writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, tc.check)})
+			installed := false
+			s.InPlace = func(context.Context, install.Request) error { installed = true; return nil }
+			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+			h.Config = baseConfig
+			err := sendInstall(t, s, h, nil)
+			if tc.want == "" && (err != nil || !installed) || tc.want != "" && (installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want)) {
+				t.Errorf("install: %v, installed %v; want %q", err, installed, tc.want)
+			}
+			if _, err := os.Lstat(filepath.Join(s.Loader.Render.Root, "demo")); !os.IsNotExist(err) {
+				t.Errorf("the install swapped the output in: %v", err)
 			}
 		})
 	}

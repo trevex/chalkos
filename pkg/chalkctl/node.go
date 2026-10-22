@@ -682,8 +682,8 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	return nil
 }
 
-// warnDelivery prints why a restart or reload rule of the node's consumers could not be evaluated,
-// whose effect the node took all the same.
+// warnDelivery prints why the rule of one of the node's effects could not be evaluated, whose
+// effect the node took all the same.
 func (a *app) warnDelivery(name string, resp *nodev1.ApplyConfigResponse) {
 	for _, w := range resp.GetWarnings() {
 		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", name, w)

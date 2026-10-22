@@ -10,6 +10,7 @@ callPackage ./go-module.nix { } {
     ../pkg/identity
     ../pkg/kubernetes
     ../pkg/nodeconfig
+    ../pkg/outputs
     ../pkg/rules
     ../pkg/schema
     ../pkg/storage

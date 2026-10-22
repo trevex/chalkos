@@ -5,12 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 const nodeIdentity = `{
@@ -29,13 +33,14 @@ func newTestLoader(t *testing.T) (Loader, *string) {
 	l := Loader{
 		RunDir:      filepath.Join(root, "run", "chalkos"),
 		NetworkDir:  filepath.Join(root, "run", "systemd", "network"),
-		Consumers:   filepath.Join(root, "etc", "consumers.json"),
+		Services:    filepath.Join(root, "etc", "services.json"),
+		Effects:     filepath.Join(root, "etc", "effects.json"),
 		Slots:       filepath.Join(root, "state", "config"),
 		Cmdline:     filepath.Join(root, "cmdline"),
 		Schemas:     filepath.Join(root, "etc", "schemas"),
 		SetHostname: func(name string) error { hostname = name; return nil },
 	}
-	write(t, l.Consumers, "{}")
+	write(t, l.Services, "{}")
 	write(t, l.Cmdline, "init=/x usrhash="+running+"\n")
 	return l, &hostname
 }
@@ -216,10 +221,10 @@ func copySchemas(t *testing.T, dir string) {
 func TestLoadWritesConfig(t *testing.T) {
 	l, _ := newTestLoader(t)
 	copySchemas(t, l.Schemas)
-	write(t, l.Consumers, `{
-	  "demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}},
-	  "idle": {"kinds": ["Host"], "restart": {"when": "\"Host\" in changedKinds"}},
-	  "reloaded": {"kinds": [], "reload": {"when": "true", "command": "systemctl reload reloaded"}}
+	write(t, l.Services, `{
+	  "demo": {"kinds": ["Demo"]},
+	  "idle": {"kinds": ["Host"]},
+	  "reloaded": {"kinds": []}
 	}`)
 	writeSlot(t, l, running, nodeIdentity, loaderConfig)
 
@@ -250,7 +255,7 @@ func TestLoadWritesConfig(t *testing.T) {
 func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	l, _ := newTestLoader(t)
 	writeSlot(t, l, running, nodeIdentity, "")
-	write(t, l.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "\"Demo\" in changedKinds"}}}`)
+	write(t, l.Services, `{"demo": {"kinds": ["Demo"]}}`)
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
@@ -259,53 +264,55 @@ func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	}
 }
 
-// ReadConsumers reads each consumer's kinds and rules.
-func TestReadConsumers(t *testing.T) {
+// ReadEffects reads each effect's triggers and actions.
+func TestReadEffects(t *testing.T) {
 	l, _ := newTestLoader(t)
-	write(t, l.Consumers, `{"networkd": {"kinds": [], "restart": {"when": "false", "start": false},
-	  "reload": {"when": "\"Network\" in changedKinds", "command": "networkctl reload"}}}`)
-	got, err := ReadConsumers(l.Consumers)
-	want := map[string]Consumer{"networkd": {
-		Kinds:   []string{},
-		Restart: Restart{When: "false"},
-		Reload:  Reload{When: `"Network" in changedKinds`, Command: "networkctl reload"},
-	}}
+	write(t, l.Effects, `{"networkd": {"when": "facts.units != oldFacts.units", "reload": ["systemd-networkd.service"]},
+	  "kubelet": {"on": ["cluster"], "restart": ["kubelet.service"], "start": true, "chalkd": "restart"}}`)
+	got, err := ReadEffects(l.Effects)
+	want := map[string]Effect{
+		"networkd": {When: "facts.units != oldFacts.units", Reload: []string{"systemd-networkd.service"}},
+		"kubelet":  {On: []string{"cluster"}, Restart: []string{"kubelet.service"}, Start: true, Chalkd: ChalkdRestart},
+	}
 	if err != nil || !reflect.DeepEqual(got, want) {
-		t.Errorf("consumers = %+v, %v; want %+v", got, err, want)
+		t.Errorf("effects = %+v, %v; want %+v", got, err, want)
+	}
+	if got, err := ReadEffects(filepath.Join(t.TempDir(), "missing.json")); err != nil || len(got) != 0 {
+		t.Errorf("a missing file: %v, %v", got, err)
 	}
 }
 
-// ReadConsumers refuses a reload rule whose command names no program chalkd can run: chalkd
-// splits the command on spaces and runs the first word, from its PATH or the image's store.
-func TestReadConsumersRefusesReloadCommands(t *testing.T) {
-	for name, tc := range map[string]struct{ command, want string }{
-		"empty":                  {"", "consumer networkd: the reload command is empty"},
-		"spaces":                 {"  ", "consumer networkd: the reload command is empty"},
-		"outside the store":      {"/usr/bin/networkctl reload", `the reload command "/usr/bin/networkctl reload" names /usr/bin/networkctl, which is neither`},
-		"a relative path":        {"bin/networkctl reload", "names bin/networkctl, which is neither"},
-		"a bare program":         {"networkctl reload", ""},
-		"a program of the store": {"/nix/store/x-systemd/bin/networkctl reload", ""},
+// ReadEffects refuses an effect chalkd could not carry out: one nothing triggers, one that does
+// nothing, a unit that is no unit name, a chalkd action it does not know and a command that names
+// no program it can run, since chalkd splits the command on spaces and runs the first word, from
+// its PATH or the image's store.
+func TestReadEffectsRefuses(t *testing.T) {
+	for name, tc := range map[string]struct{ effect, want string }{
+		"no trigger":             {`{"reload": ["a.service"]}`, "effect e: it has neither on nor when"},
+		"no action":              {`{"when": "true"}`, "effect e: it restarts, reloads and runs nothing"},
+		"a unit without suffix":  {`{"when": "true", "restart": ["kubelet"]}`, `"kubelet" is no unit name`},
+		"a chalkd action":        {`{"when": "true", "chalkd": "stop"}`, `chalkd is "stop", not restart or reload`},
+		"spaces":                 {`{"when": "true", "run": "  "}`, "effect e: the command to run is empty"},
+		"outside the store":      {`{"when": "true", "run": "/usr/bin/chronyc reload sources"}`, `the command "/usr/bin/chronyc reload sources" names /usr/bin/chronyc, which is neither`},
+		"a relative path":        {`{"when": "true", "run": "bin/chronyc reload"}`, "names bin/chronyc, which is neither"},
+		"a bare program":         {`{"when": "true", "run": "chronyc reload sources"}`, ""},
+		"a program of the store": {`{"on": ["x"], "run": "/nix/store/x-chrony/bin/chronyc reload sources"}`, ""},
+		"chalkd alone":           {`{"when": "true", "chalkd": "reload"}`, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			l, _ := newTestLoader(t)
-			write(t, l.Consumers, `{"networkd": {"kinds": [], "reload": {"when": "true", "command": "`+tc.command+`"}}}`)
-			_, err := ReadConsumers(l.Consumers)
+			write(t, l.Effects, `{"e": `+tc.effect+`}`)
+			_, err := ReadEffects(l.Effects)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})
 	}
-	// A consumer without a reload rule takes no command.
-	l, _ := newTestLoader(t)
-	write(t, l.Consumers, `{"demo": {"kinds": ["Demo"], "restart": {"when": "true"}}}`)
-	if _, err := ReadConsumers(l.Consumers); err != nil {
-		t.Errorf("a consumer without a reload rule: %v", err)
-	}
 }
 
 func TestApplyWritesNoKeyCredentials(t *testing.T) {
 	l, _ := newTestLoader(t)
-	write(t, l.Consumers, `{"report": {"keys": ["hostname"], "restart": {"when": "true"}}}`)
+	write(t, l.Services, `{"report": {"keys": ["hostname"]}}`)
 	if err := l.Apply([]byte(nodeIdentity)); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +360,7 @@ func kubernetesLoader(t *testing.T, documents string) Loader {
 	t.Helper()
 	l, _ := newTestLoader(t)
 	copySchemas(t, l.Schemas)
-	root := filepath.Dir(filepath.Dir(l.Consumers))
+	root := filepath.Dir(filepath.Dir(l.Services))
 	l.KubernetesImage = filepath.Join(root, "etc", "kubernetes", "image.json")
 	l.ClusterFile = filepath.Join(root, "run", "chalkos", "kubernetes", "cluster.json")
 	write(t, l.KubernetesImage, kubernetesImage)
@@ -417,5 +424,67 @@ func TestLoadWithoutSetOrKubernetesRemovesTheCluster(t *testing.T) {
 	}
 	if _, err := os.Stat(l.ClusterFile); !os.IsNotExist(err) {
 		t.Errorf("without Kubernetes: kept the cluster file: %v", err)
+	}
+}
+
+// outputLoader is a loader whose image renders the output demo from the Demo documents with the
+// shell commands given, for the node its certificate on STATE names, w1.
+func outputLoader(t *testing.T, render string) Loader {
+	t.Helper()
+	l, _ := newTestLoader(t)
+	copySchemas(t, l.Schemas)
+	root := filepath.Dir(filepath.Dir(l.Services))
+	l.Render = outputs.Renderer{Root: filepath.Join(l.RunDir, "outputs"), Run: outputs.Direct{}}
+	l.Outputs = filepath.Join(root, "etc", "outputs.json")
+	l.NodeCertificate = filepath.Join(root, "state", "chalkd", "node.pem")
+	cert, err := pki.NewCA("w1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, l.NodeCertificate, cert.Key+cert.Certificate)
+	script := filepath.Join(t.TempDir(), "render")
+	write(t, script, "#!/bin/sh\nset -e\n"+render+"\n")
+	if err := os.Chmod(script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defs, _ := json.Marshal(map[string]outputs.Definition{"demo": {
+		Inputs: []string{"Demo"}, Render: script, Dir: filepath.Join(l.RunDir, "outputs", "demo"),
+		User: strconv.Itoa(os.Getuid()), Group: strconv.Itoa(os.Getgid()), Mode: "0644",
+	}})
+	write(t, l.Outputs, string(defs))
+	writeSlot(t, l, running, nodeIdentity, loaderConfig)
+	return l
+}
+
+// Load renders every output of the running slot's documents and swaps it in, as /run starts
+// empty at boot, for the node its certificate names.
+func TestLoadRendersOutputs(t *testing.T) {
+	l := outputLoader(t, `cat > "$OUT/demo.json"`)
+	if err := l.Load(); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, filepath.Join(l.RunDir, "outputs", "demo", "demo.json"))
+	if !strings.Contains(got, `"name":"w1"`) || !strings.Contains(got, `"name":"first"`) || strings.Contains(got, "s3cret") {
+		t.Errorf("the output = %s", got)
+	}
+	st, err := outputs.ReadStatus(l.Render.Root)
+	if err != nil || st["demo"].Hash == "" || st["demo"].Error != "" {
+		t.Errorf("status = %+v, %v", st, err)
+	}
+}
+
+// A renderer that fails at boot fails the load, which fails chalkos-config and so the boot's
+// health check, after the rest of the config is applied; the status names the output.
+func TestLoadFailsForAFailingOutput(t *testing.T) {
+	l := outputLoader(t, `exit 2`)
+	err := l.Load()
+	if err == nil || !strings.Contains(err.Error(), "output demo: its renderer failed (exit 2)") {
+		t.Fatalf("err = %v, want the output named", err)
+	}
+	if got := read(t, filepath.Join(l.RunDir, "node.json")); got != nodeIdentity {
+		t.Errorf("node.json = %s, want the identity applied all the same", got)
+	}
+	if st, _ := outputs.ReadStatus(l.Render.Root); st["demo"].Error != "its renderer failed (exit 2); see the node's journal" {
+		t.Errorf("status = %+v", st)
 	}
 }

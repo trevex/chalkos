@@ -168,7 +168,7 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	}
 }
 
-// TestRefusedTrustLeavesTheBaseline checks that OS CAs refused once the consumers' rules loaded
+// TestRefusedTrustLeavesTheBaseline checks that OS CAs refused once the effects loaded
 // leave no baseline of their own, which would make the next delivery compare with a state nothing
 // changed, and leave one an earlier delivery that failed part way recorded as it was.
 func TestRefusedTrustLeavesTheBaseline(t *testing.T) {

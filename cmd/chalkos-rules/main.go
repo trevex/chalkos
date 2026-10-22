@@ -1,6 +1,7 @@
-// Command chalkos-rules checks the rules of an image when it is built: every change rule its
-// schemas declare and every restart and reload rule of its consumers compiles, within the cost
-// limit, and reads only facts the image declares, each a file or a program of the image's store.
+// Command chalkos-rules checks an image when it is built: every change rule its schemas declare
+// and every rule of its effects compiles, within the cost limit, and reads only facts the image
+// declares, each a file or a program of the image's store; and every effect acts on units the
+// image defines.
 package main
 
 import (
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -17,33 +19,34 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-const usage = `usage: chalkos-rules check SCHEMAS FACTS CONSUMERS
+const usage = `usage: chalkos-rules check IMAGE
 
-Compiles every rule of the schemas directory SCHEMAS and every restart and reload rule of
-CONSUMERS, an image's consumers.json, and checks that each reads only the facts FACTS, an image's
-facts.json, declares.`
+Checks the files of the directory IMAGE, as an image's build lays them out: schemas/, the
+directory of its schemas; facts.json, effects.json, the image's own; and units/, its systemd
+units. Every rule of the schemas and of the effects compiles and reads only facts facts.json
+declares, and every unit an effect restarts or reloads is one of units/.`
 
 func main() {
-	if len(os.Args) != 5 || os.Args[1] != "check" {
+	if len(os.Args) != 3 || os.Args[1] != "check" {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
-	if err := check(os.Args[2], os.Args[3], os.Args[4], os.Stdout); err != nil {
+	if err := check(os.Args[2], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "chalkos-rules: "+err.Error())
 		os.Exit(1)
 	}
 }
 
-func check(schemasDir, factsFile, consumersFile string, out io.Writer) error {
-	s, err := schema.LoadSchemas(schemasDir)
+func check(image string, out io.Writer) error {
+	s, err := schema.LoadSchemas(filepath.Join(image, "schemas"))
 	if err != nil {
 		return err
 	}
-	defs, err := facts.Read(factsFile)
+	defs, err := facts.Read(filepath.Join(image, "facts.json"))
 	if err != nil {
 		return err
 	}
-	consumers, err := nodeconfig.ReadConsumers(consumersFile)
+	effects, err := nodeconfig.ReadEffects(filepath.Join(image, "effects.json"))
 	if err != nil {
 		return err
 	}
@@ -71,23 +74,42 @@ func check(schemasDir, factsFile, consumersFile string, out io.Writer) error {
 			reads(p.Where(), p.Rule.Rule, p.Facts)
 		}
 	}
-	effects := 0
-	for _, unit := range sortedNames(consumers) {
-		c := consumers[unit]
-		for _, r := range []struct{ action, when string }{{rules.Restart, c.Restart.When}, {rules.Reload, c.Reload.When}} {
-			e, err := rules.CompileEffect(unit, r.action, r.when)
-			if err != nil {
-				errs = append(errs, err)
-				continue
+	compiled := 0
+	for _, name := range sortedNames(effects) {
+		e := effects[name]
+		for _, unit := range slices.Concat(e.Restart, e.Reload) {
+			if err := checkUnit(image, unit); err != nil {
+				errs = append(errs, fmt.Errorf("effect %s: %w", name, err))
 			}
-			reads(e.Where(), e.When, e.Facts)
-			effects++
 		}
+		if e.When == "" {
+			continue
+		}
+		p, err := rules.CompileEffect(name, e.When)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		reads(p.Where(), p.When, p.Facts)
+		compiled++
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	fmt.Fprintf(out, "%d rules and %d consumer rules compile, reading the facts %s\n", len(set.Programs), effects, declared(read))
+	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s\n", len(set.Programs), compiled, declared(read))
+	return nil
+}
+
+// checkUnit refuses a unit the image does not define, which a delivery could not restart or
+// reload.
+func checkUnit(image, unit string) error {
+	if _, err := os.Stat(filepath.Join(image, "units", unit)); err != nil {
+		hint := ""
+		if !strings.Contains(unit, ".") {
+			hint = fmt.Sprintf("; did you mean %s.service?", unit)
+		}
+		return fmt.Errorf("the image defines no unit %s%s", unit, hint)
+	}
 	return nil
 }
 

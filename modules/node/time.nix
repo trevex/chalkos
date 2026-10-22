@@ -52,7 +52,10 @@ in
   # The service stays active after it ran, so chalkd's try-restart runs it again when the
   # TimeSync changes. A path unit does not start an active service again, so a change of the
   # links' state restarts it.
-  chalkos.consumers.chalkos-chrony-dhcp.kinds = [ "TimeSync" ];
+  chalkos.effects.chrony-dhcp = {
+    when = cel.specsChanged "time.chalkos.dev/v1alpha1" "TimeSync";
+    restart = [ "chalkos-chrony-dhcp.service" ];
+  };
   systemd.paths.chalkos-chrony-dhcp = {
     wantedBy = [ "multi-user.target" ];
     after = [ "chalkos-config.service" ];
@@ -70,6 +73,7 @@ in
   };
   systemd.services.chalkos-chrony-dhcp = {
     description = "Pass the time servers DHCP announced to chrony";
+    chalkos.kinds = [ "TimeSync" ];
     wantedBy = [ "multi-user.target" ];
     after = [
       "chalkos-config.service"
@@ -106,11 +110,11 @@ in
   # The sources file holds the TimeSync's servers, or chalkos's own without a TimeSync, so chrony
   # reads it again when they change, or when the file differs from the one before the delivery,
   # as one a slot written before the documents were kept gave from its identity alone; whether
-  # the servers DHCP announces count is chalkos-chrony-dhcp's. A chronyd that does not run reads
-  # it when it starts.
-  chalkos.consumers.chronyd.reload = {
+  # the servers DHCP announces count is chalkos-chrony-dhcp's. chronyc, on chalkd's PATH, tells the
+  # chronyd every node runs.
+  chalkos.effects.chrony = {
     when = "${servers "config"} != ${servers "oldConfig"} || facts.timeSources != oldFacts.timeSources";
-    command = "chronyc reload sources";
+    run = "chronyc reload sources";
   };
   chalkos.facts.timeSources.command = "${hashFiles} ${sources}/identity.sources";
 

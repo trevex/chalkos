@@ -575,13 +575,13 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	}
 	s.Loader.RunDir = filepath.Join(root, "run")
 	s.Loader.NetworkDir = filepath.Join(root, "network")
-	// The consumers of the default image, whose rules the node carries out.
-	s.Loader.Consumers = filepath.Join(root, "consumers.json")
-	consumers, err := os.ReadFile("../../test/fixtures/kinds/consumers.json")
+	// The effects of the default image, which the node carries out.
+	s.Loader.Effects = filepath.Join(root, "effects.json")
+	effects, err := os.ReadFile("../../test/fixtures/kinds/effects.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, s.Loader.Consumers, string(consumers))
+	writeFile(t, s.Loader.Effects, string(effects))
 	s.Loader.SetHostname = func(string) error { return nil }
 	// The node runs the image of the root hash abab…, whose slot holds the identity alone.
 	s.Loader.Slots = filepath.Join(root, "state", "config")
@@ -643,14 +643,14 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	// The node's slot held no documents, so the config's Network is new: networkd reloads, and
-	// the units of the default image that read the node's static addresses restart.
+	// The node's slot held no documents, so the config's Network is new: the units of the default
+	// image that read the node's static addresses restart. The node declares no facts, so the
+	// effect on networkd's units, whose hash is one, does not fire.
 	if !reflect.DeepEqual(r.calls, []string{
 		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
-		"systemctl show --property=ActiveState --value systemd-networkd",
-		"systemctl show --property=ActiveState --value chalkos-kubernetes",
-		"systemctl show --property=ActiveState --value kubelet",
-		"networkctl reload", "systemctl restart chalkos-kubernetes kubelet",
+		"systemctl show --property=ActiveState --value chalkos-kubernetes.service",
+		"systemctl show --property=ActiveState --value kubelet.service",
+		"systemctl restart chalkos-kubernetes.service kubelet.service",
 	}) {
 		t.Errorf("node ran %v", r.calls)
 	}
@@ -672,31 +672,31 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	}
 }
 
-// apply-config prints why a consumer's rule could not be evaluated as a warning, without the
+// apply-config prints why the rule of an effect could not be evaluated as a warning, without the
 // values it read; the node took the rule's effect all the same.
 func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
-	var consumers map[string]any
-	raw, err := os.ReadFile(s.Loader.Consumers)
+	var effects map[string]any
+	raw, err := os.ReadFile(s.Loader.Effects)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(raw, &consumers); err != nil {
+	if err := json.Unmarshal(raw, &effects); err != nil {
 		t.Fatal(err)
 	}
-	consumers["report"] = map[string]any{"kinds": []string{}, "restart": map[string]any{"when": `config["chalkos.dev/v1alpha1"].Cluster.missing.spec.endpoint == ""`}}
-	data, _ := json.Marshal(consumers)
-	writeFile(t, s.Loader.Consumers, string(data))
+	effects["report"] = map[string]any{"when": `config["chalkos.dev/v1alpha1"].Cluster.missing.spec.endpoint == ""`, "restart": []string{"report.service"}}
+	data, _ := json.Marshal(effects)
+	writeFile(t, s.Loader.Effects, string(data))
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	want := "chalkctl: warning: n1: the rule of report restart: a rule cannot be evaluated: no such key; taking its effect all the same\n"
+	want := "chalkctl: warning: n1: the rule of effect report: a rule cannot be evaluated: no such key; taking the effect all the same\n"
 	if ta.stderr.String() != want {
 		t.Errorf("stderr = %q, want %q", ta.stderr, want)
 	}
-	if !slices.Contains(r.calls, "systemctl try-restart report") {
+	if !slices.Contains(r.calls, "systemctl try-restart report.service") {
 		t.Errorf("node ran %v, want report restarted", r.calls)
 	}
 }

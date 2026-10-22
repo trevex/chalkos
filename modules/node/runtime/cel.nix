@@ -1,9 +1,7 @@
-# CEL that the restart and reload rules of consumers share. A rule reads config and oldConfig,
-# each a config by apiVersion, kind and name, changedKinds and node.
+# CEL that the rules of effects share. A rule reads config and oldConfig, each a config by
+# apiVersion, kind and name, and node.
 { lib }:
 rec {
-  # Whether one of the kinds changed: one of its documents, or a Secret one of them references.
-  anyChanged = kinds: lib.concatMapStringsSep " || " (kind: ''"${kind}" in changedKinds'') kinds;
   # The documents of a kind in the config c by name, none when c holds none of the kind.
   documents =
     c: apiVersion: kind:

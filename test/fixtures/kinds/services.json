@@ -1,0 +1,17 @@
+{
+  "chalkos-chrony-dhcp": {
+    "kinds": [
+      "TimeSync"
+    ]
+  },
+  "chalkos-controlplane": {
+    "kinds": [
+      "Node"
+    ]
+  },
+  "chalkos-registry-mirrors": {
+    "kinds": [
+      "RegistryMirror"
+    ]
+  }
+}

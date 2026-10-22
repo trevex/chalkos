@@ -1663,10 +1663,10 @@ type ApplyConfigResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Storage changes that were applied.
 	Changes []*StorageChange `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
-	// Units the delivery restarted, as the restart rules of the image's consumers say.
+	// Units the delivery restarted, as the image's effects say.
 	RestartedUnits []string `protobuf:"bytes,2,rep,name=restarted_units,json=restartedUnits,proto3" json:"restarted_units,omitempty"`
-	// Why a restart or reload rule of a consumer could not be evaluated, without the values it
-	// read; the delivery took the rule's effect all the same.
+	// Why the rule of an effect could not be evaluated, without the values it read; the delivery
+	// took the effect all the same.
 	Warnings      []string `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

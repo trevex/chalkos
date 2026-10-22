@@ -178,8 +178,8 @@ a node cordoned otherwise as it is.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `changes` | repeated [`StorageChange`](#message-storagechange) | Storage changes that were applied. |
-| `restarted_units` | repeated `string` | Units the delivery restarted, as the restart rules of the image's consumers say. |
-| `warnings` | repeated `string` | Why a restart or reload rule of a consumer could not be evaluated, without the values it read; the delivery took the rule's effect all the same. |
+| `restarted_units` | repeated `string` | Units the delivery restarted, as the image's effects say. |
+| `warnings` | repeated `string` | Why the rule of an effect could not be evaluated, without the values it read; the delivery took the effect all the same. |
 
 ### BootImage { #message-bootimage }
 

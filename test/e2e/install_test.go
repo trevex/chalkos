@@ -23,8 +23,8 @@ import (
 // TestInstallInPlace installs the test image where it runs and checks the installed node: VAR
 // is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
 // certificates of the OS CA and honours their roles, and config applies additive storage
-// changes live and refuse destructive ones. An extension kind reaches its consumer with its
-// secret, and an apply that changes it restarts the consumer.
+// changes live and refuse destructive ones. An extension kind reaches the unit granted it, with
+// its secret, and an apply that changes it restarts the unit.
 func TestInstallInPlace(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)

@@ -67,9 +67,9 @@ type Paths struct {
 	FailedBoot string
 	// Facts is where the image declares the facts its rules read.
 	Facts string
-	// EffectsBaseline, below /run, is what the consumers' rules of a delivery that failed part way
-	// compare with until a delivery is applied whole: the config and the facts as they were before
-	// the first delivery that failed.
+	// EffectsBaseline, below /run, is what the effects of a delivery that failed part way
+	// compare with until a delivery is applied whole: the config, the facts and the outputs as they
+	// were before the first delivery that failed.
 	EffectsBaseline string
 }
 

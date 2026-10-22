@@ -260,7 +260,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
-	// The rules and the consumers' rules see the node by the name its node certificate gives.
+	// The rules, the effects and the renderers see the node by the name its node certificate gives.
 	name, err := s.name()
 	if err != nil {
 		return nil, err
@@ -312,8 +312,9 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			}
 		}
 	}
-	// The consumers' rules compare the delivery with the running slot, and the facts as they are
-	// once it is applied with the facts as they were, which load before anything changes.
+	// The effects compare the delivery with the running slot, the facts as they are once it is
+	// applied with the facts as they were, which load before anything changes, and the outputs
+	// rendered from it with those the node serves.
 	next := prev.Documents
 	if !keep {
 		next = r.next.Documents
@@ -322,6 +323,14 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
+	// Every output renders from the delivered documents and passes its check before anything
+	// changes, so a delivery a service would reject is refused whole.
+	staged, err := s.renderOutputs(ctx, name, next, r.schemas)
+	if err != nil {
+		s.refused(fx)
+		return nil, err
+	}
+	defer staged.Discard()
 	if len(m.Trust) > 0 {
 		if share == nil {
 			// A control plane keeps renewing node certificates with the node CA it holds.
@@ -370,8 +379,8 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	}
 	// The slot comes last, documents and identity in one rename: until it is written, STATE holds
 	// the identity and the set the node ran before, which a boot applies whole, and a retry applies
-	// the identity and the consumers' config again. Until a delivery is applied whole, its
-	// consumers' rules compare with the baseline effectsOf recorded, so a retry restarts what they
+	// the identity and the granted units' config again. Until a delivery is applied whole, its
+	// effects compare with the baseline effectsOf recorded, so a retry restarts what they
 	// ask for whatever the failed attempt wrote. storage.json, written before, is the machine's
 	// rather than an image's: applyStorage records the section once its additive changes are made,
 	// so a retry finds them recorded and makes none twice.
@@ -382,7 +391,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 			return nil, failed(connect.CodeInternal, "store the config: %v", err)
 		}
 	}
-	restarted, warnings, err := s.consume(ctx, fx, !keep, m.FallbackSecret)
+	restarted, warnings, err := s.consume(ctx, fx, staged, !keep, m.FallbackSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -573,7 +582,7 @@ func (s *Server) stopUnits(ctx context.Context, units []string) error {
 }
 
 // applyIdentity applies the identity data: the networkd units and the time servers it gives,
-// which networkd and chrony read again as their consumers' rules say. The running slot records
+// which networkd and chrony read again as their effects say. The running slot records
 // it, with the config it came from, once the delivery is applied.
 func (s *Server) applyIdentity(data []byte) error {
 	if err := s.Loader.Apply(data); err != nil {

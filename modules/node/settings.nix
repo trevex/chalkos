@@ -27,8 +27,8 @@
     };
     default = { };
     description = ''
-      chalkos's options of the image: `chalkos.cni`, `chalkos.consumers`, `chalkos.debug`,
-      `chalkos.disk`, `chalkos.kernel`, `chalkos.kinds`, `chalkos.kubernetes`,
+      chalkos's options of the image: `chalkos.cni`, `chalkos.debug`, `chalkos.disk`,
+      `chalkos.effects`, `chalkos.kernel`, `chalkos.kinds`, `chalkos.kubernetes`,
       `chalkos.maintenance`, `chalkos.platform`, `chalkos.upgrade` and `chalkos.variant`, which the
       node modules declare. Extensions declare options of their own under other names.
     '';

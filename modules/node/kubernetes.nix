@@ -201,25 +201,37 @@ in
     # Apart from the rest: the condition reads chalkos, so it can guard values below chalkos but
     # not a definition of chalkos as a whole.
     {
-      chalkos.consumers = lib.mkIf enable {
-        chalkos-registry-mirrors.kinds = [ "RegistryMirror" ];
-        chalkos-controlplane.kinds = [ "Node" ];
+      chalkos.effects = lib.mkIf enable {
+        # The registry mirrors and the control plane's ports read their kinds' documents when
+        # they start; neither kind references a Secret.
+        registry-mirrors = {
+          when = cel.specsChanged kubernetesAPI "RegistryMirror";
+          restart = [ "chalkos-registry-mirrors.service" ];
+        };
+        controlplane-ports = {
+          when = cel.specsChanged kubernetesAPI "Node";
+          restart = [ "chalkos-controlplane.service" ];
+        };
         # Both start too: a node runs no kubelet until it holds a share, which the delivery of
         # its first one changes.
-        chalkos-kubernetes.restart = {
+        kubernetes = {
           when = kubernetesChanged;
-          start = true;
-        };
-        kubelet.restart = {
-          when = kubernetesChanged;
+          restart = [
+            "chalkos-kubernetes.service"
+            "kubelet.service"
+          ];
           start = true;
         };
         # chalkd's Kubernetes loops, which chalkd starts again itself: every loop reads the
         # cluster when it starts, and the control plane's loop reads the share and applies the
         # control plane's objects.
-        chalkd = {
-          restart.when = clusterChanged;
-          reload.when = "${shareChanged} || ${addonsApplied}";
+        chalkd-cluster = {
+          when = clusterChanged;
+          chalkd = "restart";
+        };
+        chalkd-share = {
+          when = "${shareChanged} || ${addonsApplied}";
+          chalkd = "reload";
         };
       };
       # The cluster file chalkd writes, which the kubelet's rules compare.
@@ -312,6 +324,7 @@ in
 
       systemd.services.chalkos-registry-mirrors = {
         description = "Write containerd's registry mirrors from the config";
+        chalkos.kinds = [ "RegistryMirror" ];
         wantedBy = [ "containerd.service" ];
         before = [ "containerd.service" ];
         after = [ "chalkos-config.service" ];
@@ -404,6 +417,7 @@ in
 
       systemd.services.chalkos-controlplane = {
         description = "Open the control plane's ports and make etcd's directory by the node's type";
+        chalkos.kinds = [ "Node" ];
         wantedBy = [ "multi-user.target" ];
         after = [
           "chalkos-config.service"

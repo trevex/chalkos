@@ -33,8 +33,8 @@ func readFile(t *testing.T, path string) string {
 
 func TestWriteRuntime(t *testing.T) {
 	run := t.TempDir()
-	consumers := map[string][]string{"demo": {"Demo"}, "idle": {"Host"}}
-	if err := WriteRuntime(run, parse(t, set), demoSchemas(t), consumers); err != nil {
+	units := map[string][]string{"demo": {"Demo"}, "idle": {"Host"}}
+	if err := WriteRuntime(run, parse(t, set), demoSchemas(t), units); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, filepath.Join(run, "config", "demo.example.org", "Demo", "one.json")); !strings.Contains(got, `"name":"first"`) {
@@ -61,7 +61,7 @@ func TestWriteRuntime(t *testing.T) {
 
 	// The Demo no longer references the Secret: its value leaves the unit's directory.
 	unreferenced := strings.Replace(set, "token: {secretRef: {name: demo, key: token}}", "token: null", 1)
-	if err := WriteRuntime(run, parse(t, unreferenced), demoSchemas(t), consumers); err != nil {
+	if err := WriteRuntime(run, parse(t, unreferenced), demoSchemas(t), units); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(cred); !os.IsNotExist(err) {
@@ -129,8 +129,8 @@ spec: {name: two, token: {secretRef: {name: a, key: b.c}}}
 // is removed.
 func TestWriteRuntimeLeavesOutAddons(t *testing.T) {
 	run := t.TempDir()
-	consumers := map[string][]string{"demo": {"Demo"}}
-	if err := WriteRuntime(run, parse(t, set), demoSchemas(t), consumers); err != nil {
+	units := map[string][]string{"demo": {"Demo"}}
+	if err := WriteRuntime(run, parse(t, set), demoSchemas(t), units); err != nil {
 		t.Fatal(err)
 	}
 	addons := filepath.Join(run, "config", "kubernetes.chalkos.dev", "Addon")
@@ -146,7 +146,7 @@ kind: Addon
 metadata: {name: manifests}
 spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}}]}
 `
-	if err := WriteRuntime(run, parse(t, withAddon), demoSchemas(t), consumers); err != nil {
+	if err := WriteRuntime(run, parse(t, withAddon), demoSchemas(t), units); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(run, "config", "kubernetes.chalkos.dev")); !os.IsNotExist(err) {

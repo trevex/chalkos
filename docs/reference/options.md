@@ -511,195 +511,6 @@ one of “flannel”, “none”
 
 
 
-### chalkos\.consumers
-
-
-
-Services, by name, that read config kinds, or that a delivery restarts or reloads\. A
-consumer named ` chalkd ` is chalkd itself, which acts on its rules in-process: a reload
-starts the control plane’s loop again, and a restart every Kubernetes loop\.
-
-
-
-*Type:*
-attribute set of (submodule)
-
-
-
-*Default:*
-
-```nix
-{ }
-```
-
-*Declared by:*
- - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
-
-
-
-### chalkos\.consumers\.\<name>\.kinds
-
-
-
-Config kinds the unit reads, by name: attributes of ` chalkos.kinds `, or networkd’s
-` Network `, ` NetDev ` and ` Link `\. The documents of a kind of ` chalkos.kinds ` are in its
-` dir `, networkd’s below ` /run/chalkos/config/networkd.chalkos.dev `\. The values their
-` secretRef ` fields name are the unit’s credentials ` secret_<secret>.<key> `\. A unit of
-no kinds reads no documents and loads no credentials, and has its ` restart ` and
-` reload ` rules alone\.
-
-
-
-*Type:*
-list of string
-
-
-
-*Default:*
-
-```nix
-[ ]
-```
-
-
-
-*Example:*
-
-```nix
-[
-  "BGPPeering"
-]
-```
-
-*Declared by:*
- - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
-
-
-
-### chalkos\.consumers\.\<name>\.reload\.command
-
-
-
-Command, with its arguments, that reloads the unit\. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd’s PATH, or an absolute path in the image’s store\.
-
-
-
-*Type:*
-non-empty string
-
-
-
-*Default:*
-
-```nix
-"systemctl reload <name>"
-```
-
-
-
-*Example:*
-
-```nix
-"networkctl reload"
-```
-
-*Declared by:*
- - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
-
-
-
-### chalkos\.consumers\.\<name>\.reload\.when
-
-
-
-CEL expression that is true when a delivery reloads the unit, with the variables of ` restart.when `\. chalkd reloads each such unit that is active before it restarts any, and does not reload a unit it restarts\.
-
-
-
-*Type:*
-non-empty string
-
-
-
-*Default:*
-
-```nix
-"false"
-```
-
-
-
-*Example:*
-
-```nix
-"changedKinds.exists(k, k in [\"Link\", \"NetDev\", \"Network\"])"
-```
-
-*Declared by:*
- - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
-
-
-
-### chalkos\.consumers\.\<name>\.restart\.start
-
-
-
-Start the unit when it does not run, with ` systemctl restart ` instead of ` try-restart `, as for a unit whose condition only the delivery meets\.
-
-
-
-*Type:*
-boolean
-
-
-
-*Default:*
-
-```nix
-false
-```
-
-*Declared by:*
- - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
-
-
-
-### chalkos\.consumers\.\<name>\.restart\.when
-
-
-
-CEL expression that is true when a delivery restarts the unit\. Besides ` config `,
-` oldConfig ` and ` changedKinds `, the names of the kinds whose documents, or the
-Secrets they reference, differ between the two, it reads the node’s name as
-` node.name `, ` facts.<name> ` after the delivery and ` oldFacts.<name> ` before it\.
-` false ` never restarts the unit\. chalkd restarts every unit whose rule is true in
-one ` systemctl try-restart `, the units with ` restart.start ` set in one
-` systemctl restart ` instead, which starts them when they do not run, and a unit
-that failed with ` reset-failed ` and ` restart `\.
-
-
-
-*Type:*
-non-empty string
-
-
-
-*Default:*
-` "<kind>" in changedKinds || … ` for each of ` kinds `, or ` false ` for a unit of no kinds
-
-
-
-*Example:*
-
-```nix
-"\"BGPPeering\" in changedKinds || facts.share != oldFacts.share"
-```
-
-*Declared by:*
- - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
-
-
-
 ### chalkos\.debug\.tools
 
 
@@ -823,6 +634,261 @@ null or string
 
 *Declared by:*
  - [modules/node/base/disk\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/disk.nix)
+
+
+
+### chalkos\.effects
+
+
+
+What a delivery does to the node’s services, by a name of the effect’s own\. Once a
+delivery is applied, chalkd takes every effect one of whose outputs ` on ` changed, or
+whose ` when ` holds: it reloads the units
+of their ` reload `, runs their ` run `, restarts the units of their ` restart `, and acts on
+its own loops as their ` chalkd ` says\. An effect exists only when it is declared\.
+
+
+
+*Type:*
+attribute set of (submodule)
+
+
+
+*Default:*
+
+```nix
+{ }
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.chalkd
+
+
+
+What the effect does to chalkd’s control-plane loops, which run inside chalkd and have
+no unit of their own: ` reload ` starts the control plane’s loop again, which reads the
+share and applies the control plane’s objects, and ` restart ` every Kubernetes loop,
+which read the cluster when they start\.
+
+
+
+*Type:*
+null or one of “restart”, “reload”
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.on
+
+
+
+Names of outputs of ` chalkos.outputs `\. The effect fires when one of them changed: when
+the hash of its files differs from the one before the delivery, or the values of the
+Secrets its input documents reference do, so a rotated password fires the effect even
+though the rendered files stay the same\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "bird-conf"
+]
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.reload
+
+
+
+Units the effect reloads with ` systemctl reload `, before chalkd restarts any\. chalkd reloads only a unit that is active, and not one it restarts\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "systemd-networkd.service"
+]
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.restart
+
+
+
+Units the effect restarts, by their full names\. chalkd restarts the units of every due
+effect in one ` systemctl try-restart `, those of an effect with ` start ` in one
+` systemctl restart `, and a unit that failed with ` reset-failed ` and ` restart `\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "bird.service"
+]
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.run
+
+
+
+Command, with its arguments, the effect runs after the reloads and before the restarts\. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd’s PATH, or an absolute path in the image’s store\.
+
+
+
+*Type:*
+null or non-empty string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"chronyc reload sources"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.start
+
+
+
+Start the units of ` restart ` that do not run, with ` systemctl restart ` instead of ` try-restart `, as for a unit whose condition only the delivery meets\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.effects\.\<name>\.when
+
+
+
+CEL expression that is true when a delivery takes the effect, for a trigger that no
+output renders; the effect fires when ` when ` holds or one of ` on ` changed\. It reads
+` config ` and
+` oldConfig `, the node’s config after and before the delivery, each by apiVersion, kind
+and name with every Secret value replaced by its SHA-256, the node’s name as
+` node.name `, and ` facts.<name> ` after the delivery and ` oldFacts.<name> ` before it\.
+
+
+
+*Type:*
+null or non-empty string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"facts.share != oldFacts.share"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
 
 
 
@@ -1598,6 +1664,265 @@ null
 
 
 
+### chalkos\.outputs
+
+
+
+Config files of the node’s services, by a name of the output’s own, each rendered from
+documents by a program of the image’s store\. chalkd renders and checks every output
+before a delivery changes anything, and refuses the delivery when one fails; once the
+delivery is stored it swaps the files in, and the effects of ` chalkos.effects ` that name
+a changed output fire\. ` chalkos-config.service ` renders them at boot, before services
+start, and fails when one fails\.
+
+
+
+*Type:*
+attribute set of (submodule)
+
+
+
+*Default:*
+
+```nix
+{ }
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.check
+
+
+
+Shell commands, run by bash with ` set -e ` in the renderer’s sandbox, that check the
+rendered files in ` $OUT `\. A failure refuses the delivery before it changes anything,
+and at boot fails ` chalkos-config.service `\.
+
+
+
+*Type:*
+null or strings concatenated with “\\n”
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"${pkgs.bird}/bin/bird -p -c $OUT/bird.conf"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.dir
+
+
+
+Where services read the output’s files: a link that chalkd replaces in one rename, so
+a service reads the files of one render, never a mix of two\. Refer to it as
+` config.chalkos.outputs.<name>.dir `, so a misspelled name fails the evaluation\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"/run/chalkos/outputs/<name>"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.examples
+
+
+
+Directory of config files, YAML or JSON, each one example of a node’s documents\. The
+image’s build renders and checks the output from each, as the node ` example `, and fails
+when one fails\.
+
+
+
+*Type:*
+null or absolute path
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+./examples
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.group
+
+
+
+Group of the output’s files and directories\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"root"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.inputs
+
+
+
+Config kinds, by name as for a grant, whose documents the renderer reads\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "Peer"
+]
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.mode
+
+
+
+Mode of the output’s files; its directories are 0755\.
+
+
+
+*Type:*
+string matching the pattern 0?\[0-7]{3}
+
+
+
+*Default:*
+
+```nix
+"0644"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.render
+
+
+
+Program of the image’s store, with its arguments, that renders the output\. It reads
+` {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}} ` on standard input,
+the documents of each kind of ` inputs ` sorted by name, with their schema defaults and
+without any Secret’s values, and writes the output’s files into ` $OUT `, the only path
+it may write\. It runs in the sandbox of command facts and must finish within 30
+seconds; the files may take 16 MiB, and hold no links\. The same documents must give the
+same files: chalkd renders every output again at boot\.
+
+
+
+*Type:*
+non-empty string or package convertible to it
+
+
+
+*Example:*
+
+```nix
+chalkosLib.render.template ./bird.conf.tmpl
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
+### chalkos\.outputs\.\<name>\.user
+
+
+
+Owner of the output’s files and directories\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"root"
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
+
+
+
 ### chalkos\.platform\.name
 
 
@@ -1785,5 +2110,44 @@ null
 
 *Declared by:*
  - [modules/node/settings\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/settings.nix)
+
+
+
+### systemd\.services\.\<name>\.chalkos\.kinds
+
+
+
+Config kinds the unit reads, by name: attributes of ` chalkos.kinds `, or networkd’s
+` Network `, ` NetDev ` and ` Link `\. The documents of a kind of ` chalkos.kinds ` are in its
+` dir `, networkd’s below ` /run/chalkos/config/networkd.chalkos.dev `, and ` chalkcfg ` is
+on the unit’s ` PATH `\. The values their ` secretRef ` fields name are the unit’s
+credentials ` secret_<secret>.<key> `\. A grant never restarts the unit: an effect of
+` chalkos.effects ` does\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "Peer"
+]
+```
+
+*Declared by:*
+ - [modules/node/runtime/default\.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/default.nix)
 
 

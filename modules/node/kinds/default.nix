@@ -16,7 +16,6 @@ let
   getLib = import ./get.nix { inherit lib; };
   chalkcfg = pkgs.callPackage ../../../nix/chalkcfg.nix { };
   chalkos-rules = pkgs.callPackage ../../../nix/chalkos-rules.nix { };
-  cel = import ../runtime/cel.nix { inherit lib; };
   hashFiles = pkgs.callPackage ../../../nix/chalkos-hash-files.nix { };
   cfg = config.chalkos.kinds;
 
@@ -179,10 +178,18 @@ let
           { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
       ) factsCfg;
   factsFile = pkgs.writeText "chalkos-facts.json" (builtins.toJSON facts);
-  # The image builds only when every rule of its schemas and of its consumers compiles, within the
-  # cost limit, and reads facts the image declares.
+  # The files of the image chalkos-rules checks, laid out as it reads them; units holds every
+  # systemd unit of the image, the upstream ones among them.
+  rulesImage = pkgs.linkFarm "chalkos-rules-image" {
+    schemas = schemas;
+    "facts.json" = factsFile;
+    "effects.json" = config.system.build.chalkosEffects;
+    units = config.environment.etc."systemd/system".source;
+  };
+  # The image builds only when every rule of its schemas and of its effects compiles, within the
+  # cost limit, and reads facts the image declares, and its effects act on units it defines.
   rulesCheck = pkgs.runCommand "chalkos-rules-check" { nativeBuildInputs = [ chalkos-rules ]; } ''
-    chalkos-rules check ${schemas} ${factsFile} ${config.system.build.chalkosConsumers}
+    chalkos-rules check ${rulesImage}
     touch $out
   '';
 
@@ -370,6 +377,7 @@ in
     system.build.chalkosFacts = factsFile;
     system.build.chalkosFactDefinitions = facts;
     system.build.chalkosRulesCheck = rulesCheck;
+    system.build.chalkosRulesImage = rulesImage;
     system.checks = [ rulesCheck ];
     system.build.chalkosKinds = map (k: {
       apiVersion = "${k.group}/${k.version}";
@@ -379,12 +387,13 @@ in
     environment.etc."chalkos/facts.json".source = factsFile;
 
     # The config loader writes the networkd units of the node's networkd documents, with the
-    # values their secretRefs name, so networkd reads them again when one of those changes, or
-    # when the units differ from those before the delivery: a boot whose config loader failed
-    # left others, or a slot written before the documents were kept holds the units alone.
-    chalkos.consumers.systemd-networkd.reload = {
-      when = "${cel.anyChanged networkd.kinds} || facts.networkUnits != oldFacts.networkUnits";
-      command = "networkctl reload";
+    # values their secretRefs name, so networkd reads them again when the units differ from those
+    # before the delivery: a document or a Secret one of them references changed, a boot whose
+    # config loader failed left others, or a slot written before the documents were kept holds
+    # the units alone. networkd reloads on systemctl reload as on networkctl reload.
+    chalkos.effects.networkd = {
+      when = "facts.networkUnits != oldFacts.networkUnits";
+      reload = [ "systemd-networkd.service" ];
     };
     # The hash of the units the config loader writes, which hold secret values.
     chalkos.facts.networkUnits.command = "${hashFiles} /run/systemd/network";

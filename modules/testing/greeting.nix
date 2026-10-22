@@ -13,6 +13,7 @@
 }:
 let
   greeting = config.chalkos.kinds.Greeting;
+  cel = import ../node/runtime/cel.nix { inherit lib; };
 in
 {
   chalkos.kinds.Greeting = {
@@ -45,14 +46,13 @@ in
     };
   };
   chalkos.facts.greetingLock.file = "/run/chalktest-greeting-lock.json";
-  chalkos.consumers.chalktest-greeting = {
-    kinds = [ "Greeting" ];
-    # The default rule, "Greeting" in changedKinds, held back by the lock: the unit goes on
-    # logging the locked message with the token it read.
-    restart.when = ''"Greeting" in changedKinds && facts.greetingLock == null'';
+  chalkos.effects.chalktest-greeting = {
+    when = "${cel.specsChanged "greeting.example.org/v1alpha1" "Greeting"} || ${cel.specs "config" "chalkos.dev/v1alpha1" "Secret"} != ${cel.specs "oldConfig" "chalkos.dev/v1alpha1" "Secret"}";
+    restart = [ "chalktest-greeting.service" ];
   };
   systemd.services.chalktest-greeting = {
     description = "Log the node's Greeting for chalklab tests";
+    chalkos.kinds = [ "Greeting" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";

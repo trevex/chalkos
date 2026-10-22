@@ -27,27 +27,44 @@ let
       };
     };
   withDemo = image [ demoModule ];
-  # A unit that reads the Demo kind and networkd's Network.
-  kindConsumerModule = {
-    systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
-    chalkos.consumers.bird.kinds = [
-      "Demo"
-      "Network"
-    ];
+  # A unit granted the Demo kind and networkd's Network.
+  grantModule = {
+    systemd.services.bird = {
+      serviceConfig.ExecStart = "/bin/true";
+      chalkos.kinds = [
+        "Demo"
+        "Network"
+      ];
+    };
   };
-  withKindConsumer = image [
+  withGrant = image [
     demoModule
-    kindConsumerModule
+    grantModule
   ];
-  consumersOf = config: builtins.fromJSON config.environment.etc."chalkos/consumers.json".text;
-  consumerOf =
+  etcJSON =
+    file: config:
+    builtins.fromJSON (builtins.unsafeDiscardStringContext config.environment.etc."chalkos/${file}".text);
+  servicesOf = etcJSON "services.json";
+  effectsOf = etcJSON "effects.json";
+  outputsOf = etcJSON "outputs.json";
+  grantOf =
     kinds:
     image [
       demoModule
       {
-        systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
-        chalkos.consumers.bird.kinds = kinds;
+        systemd.services.bird = {
+          serviceConfig.ExecStart = "/bin/true";
+          chalkos.kinds = kinds;
+        };
       }
+    ];
+  # An image with the module given beside the Demo kind and the unit bird.
+  withBird =
+    module:
+    image [
+      demoModule
+      { systemd.services.bird.serviceConfig.ExecStart = "/bin/true"; }
+      module
     ];
   # Forces the schemas an image ships, and with them the checks of its kinds' names.
   schemasOf = config: config.system.build.chalkosSchemas.drvPath;
@@ -641,11 +658,15 @@ lib.runTests {
       "storage.chalkos.dev_v1alpha1_Volume.json"
     ];
   };
-  # chalkd's tests carry out the built-in consumers' rules from this fixture, so it is the
-  # consumers.json of the default image.
-  testBuiltinConsumersMatchFixture = {
-    expr = consumersOf kubernetesImage;
-    expected = builtins.fromJSON (builtins.readFile ../fixtures/kinds/consumers.json);
+  # chalkd's tests carry out the built-in effects and grants from these fixtures, so they are the
+  # effects.json and services.json of the default image.
+  testBuiltinEffectsMatchFixture = {
+    expr = effectsOf kubernetesImage;
+    expected = builtins.fromJSON (builtins.readFile ../fixtures/kinds/effects.json);
+  };
+  testBuiltinServicesMatchFixture = {
+    expr = servicesOf kubernetesImage;
+    expected = builtins.fromJSON (builtins.readFile ../fixtures/kinds/services.json);
   };
   testReservedGroupFails = {
     expr = fails (
@@ -673,8 +694,8 @@ lib.runTests {
         ]).chalkos.kinds.Host.group;
     expected = true;
   };
-  testKindConsumerLoadsItsSecrets = {
-    expr = withKindConsumer.systemd.services.bird.serviceConfig.LoadCredential;
+  testGrantLoadsItsSecrets = {
+    expr = withGrant.systemd.services.bird.serviceConfig.LoadCredential;
     expected = [ "secret:/run/chalkos/credentials/bird" ];
   };
   # A shell on a node queries the config with chalkcfg; the installer has no config to query.
@@ -686,135 +707,197 @@ lib.runTests {
     expr = hasChalkcfg installer.environment.systemPackages;
     expected = false;
   };
-  testKindConsumerHasChalkcfgOnPath = {
-    expr = hasChalkcfg withKindConsumer.systemd.services.bird.path;
+  testGrantHasChalkcfgOnPath = {
+    expr = hasChalkcfg withGrant.systemd.services.bird.path;
     expected = true;
   };
-  # By default a unit restarts when one of its kinds changes, and never reloads.
-  testKindConsumerRecordedForChalkd = {
-    expr = (consumersOf withKindConsumer).bird;
+  # A grant reaches chalkd, and restarts nothing: there is no effect of its own.
+  testGrantRecordedForChalkd = {
+    expr = {
+      service = (servicesOf withGrant).bird;
+      effect = (effectsOf withGrant) ? bird;
+    };
     expected = {
-      kinds = [
+      service.kinds = [
         "Demo"
         "Network"
       ];
-      restart = {
-        when = ''"Demo" in changedKinds || "Network" in changedKinds'';
-        start = false;
-      };
-      reload = {
-        when = "false";
-        command = "systemctl reload bird";
-      };
+      effect = false;
     };
   };
-  testConsumerRulesReachChalkd = {
+  testEffectsReachChalkd = {
     expr =
-      (consumersOf (image [
-        {
-          systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
-          chalkos.consumers.bird = {
-            restart = {
-              when = "facts.share != oldFacts.share";
-              start = true;
-            };
-            reload = {
-              when = ''changedKinds.exists(k, k in ["Link", "NetDev", "Network"])'';
-              command = "birdc configure";
-            };
-          };
-        }
-      ])).bird;
+      (effectsOf (withBird {
+        chalkos.effects.bird = {
+          when = "facts.share != oldFacts.share";
+          restart = [ "bird.service" ];
+          start = true;
+          run = "birdc configure";
+          chalkd = "reload";
+        };
+      })).bird;
     expected = {
-      kinds = [ ];
-      restart = {
-        when = "facts.share != oldFacts.share";
-        start = true;
-      };
-      reload = {
-        when = ''changedKinds.exists(k, k in ["Link", "NetDev", "Network"])'';
-        command = "birdc configure";
-      };
+      on = [ ];
+      when = "facts.share != oldFacts.share";
+      restart = [ "bird.service" ];
+      reload = [ ];
+      run = "birdc configure";
+      start = true;
+      chalkd = "reload";
     };
   };
-  # The image's rules check compiles the consumers' rules too.
-  testRulesCheckReadsTheConsumers = {
-    expr = lib.hasInfix "chalkos-consumers.json" withKindConsumer.system.build.chalkosRulesCheck.buildCommand;
-    expected = true;
-  };
-  testRestartOnChangeIsGone = {
+  # An output reaches chalkd with its check as a script of the store.
+  testOutputsReachChalkd =
+    let
+      config = withBird {
+        chalkos.outputs.bird-conf = {
+          inputs = [ "Demo" ];
+          render = "/nix/store/x-render/bin/render";
+          check = ''grep -q protocol "$OUT/bird.conf"'';
+          user = "bird";
+        };
+        chalkos.effects.bird = {
+          on = [ "bird-conf" ];
+          reload = [ "bird.service" ];
+        };
+      };
+      output = (outputsOf config).bird-conf;
+    in
+    {
+      expr = {
+        inherit (output)
+          inputs
+          render
+          dir
+          user
+          group
+          mode
+          ;
+        check = lib.hasSuffix "-chalkos-output-bird-conf-check" output.check;
+        on = (effectsOf config).bird.on;
+        dirOption = config.chalkos.outputs.bird-conf.dir;
+      };
+      expected = {
+        inputs = [ "Demo" ];
+        render = "/nix/store/x-render/bin/render";
+        dir = "/run/chalkos/outputs/bird-conf";
+        user = "bird";
+        group = "root";
+        mode = "0644";
+        check = true;
+        on = [ "bird-conf" ];
+        dirOption = "/run/chalkos/outputs/bird-conf";
+      };
+    };
+  # An effect's on names outputs alone, so a misspelled one fails the evaluation.
+  testOnRefusesANameThatIsNoOutput = {
     expr = fails (
-      consumersOf (image [
-        {
-          systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
-          chalkos.consumers.bird = {
-            kinds = [ "Demo" ];
-            restartOnChange = false;
-          };
-        }
-      ])
+      effectsOf (withBird {
+        chalkos.effects.bird = {
+          on = [ "bird-cnf" ];
+          reload = [ "bird.service" ];
+        };
+      })
     );
     expected = true;
   };
-  testKindConsumerWithServiceDoesNotWarn = {
-    expr = withKindConsumer.warnings;
+  testEffectWithoutTriggerFails = {
+    expr = fails (effectsOf (withBird { chalkos.effects.bird.restart = [ "bird.service" ]; }));
+    expected = true;
+  };
+  testEffectWithoutActionFails = {
+    expr = fails (effectsOf (withBird { chalkos.effects.bird.when = "true"; }));
+    expected = true;
+  };
+  testOutputOfUnknownKindFails = {
+    expr = fails (
+      outputsOf (withBird {
+        chalkos.outputs.bird-conf = {
+          inputs = [ "Nope" ];
+          render = "/nix/store/x-render/bin/render";
+        };
+      })
+    );
+    expected = true;
+  };
+  testOutputOfSecretFails = {
+    expr = fails (
+      outputsOf (withBird {
+        chalkos.outputs.bird-conf = {
+          inputs = [ "Secret" ];
+          render = "/nix/store/x-render/bin/render";
+        };
+      })
+    );
+    expected = true;
+  };
+  testOutputNameIsPlain = {
+    expr = fails (
+      outputsOf (withBird {
+        chalkos.outputs."Bird.conf".render = "/nix/store/x-render/bin/render";
+      })
+    );
+    expected = true;
+  };
+  # The image's rules check reads the effects, the outputs and the units.
+  testRulesCheckReadsTheImage = {
+    expr = lib.hasInfix "chalkos-rules-image" withGrant.system.build.chalkosRulesCheck.buildCommand;
+    expected = true;
+  };
+  testConsumersAreGone = {
+    expr = fails (servicesOf (withBird { chalkos.consumers.bird.kinds = [ "Demo" ]; }));
+    expected = true;
+  };
+  testGrantWithServiceDoesNotWarn = {
+    expr = withGrant.warnings;
     expected = [ ];
   };
-  testKindConsumerWithoutServiceWarns = {
+  testGrantWithoutServiceWarns = {
     expr =
-      lib.any (lib.hasInfix "chalkos.consumers.orphan")
+      lib.any (lib.hasInfix "systemd.services.orphan.chalkos.kinds")
         (image [
-          { chalkos.consumers.orphan.kinds = [ "Network" ]; }
+          { systemd.services.orphan.chalkos.kinds = [ "Network" ]; }
         ]).warnings;
     expected = true;
   };
-  testKindConsumerOfUnknownKindFails = {
-    expr = fails (consumersOf (consumerOf [ "Nope" ]));
+  testGrantOfUnknownKindFails = {
+    expr = fails (servicesOf (grantOf [ "Nope" ]));
     expected = true;
   };
-  # A consumer of no kinds reads no documents, so it gets no credentials, no chalkcfg and no
-  # warning, whose unit may come from systemd.packages.
-  testConsumerOfNoKindsLoadsNoCredentials = {
+  # A unit granted no kinds reads no documents, so it gets no credentials and no chalkcfg.
+  testUngrantedUnitLoadsNoCredentials = {
     expr =
       let
-        config = image [
-          {
-            systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
-            chalkos.consumers.bird.reload.when = "true";
-            chalkos.consumers.systemd-journald.reload.when = "true";
-          }
-        ];
+        config = withBird { };
       in
       {
         credentials = config.systemd.services.bird.serviceConfig ? LoadCredential;
         chalkcfg = hasChalkcfg config.systemd.services.bird.path;
-        warnings = config.warnings;
-        restart = (consumersOf config).bird.restart.when;
+        service = (servicesOf config) ? bird;
       };
     expected = {
       credentials = false;
       chalkcfg = false;
-      warnings = [ ];
-      restart = "false";
+      service = false;
     };
   };
-  testKindConsumerOfSecretFails = {
-    expr = fails (consumersOf (consumerOf [ "Secret" ]));
+  testGrantOfSecretFails = {
+    expr = fails (servicesOf (grantOf [ "Secret" ]));
     expected = true;
   };
   # Addon documents never reach /run, so no unit reads them.
-  testKindConsumerOfAddonFails = {
-    expr = fails (consumersOf (consumerOf [ "Addon" ]));
+  testGrantOfAddonFails = {
+    expr = fails (servicesOf (grantOf [ "Addon" ]));
     expected = true;
   };
   testUnknownKindFailsTheUnits = {
-    expr = fails (consumerOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
+    expr = fails (grantOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
     expected = true;
   };
   # Units read config kinds alone: there are no identity keys to read.
   testDottedConsumersAreGone = {
     expr = fails (
-      consumersOf (image [
+      servicesOf (image [
         {
           systemd.services.bird.serviceConfig.ExecStart = "/bin/true";
           chalkos.node.consumers.bird.keys = [ "hostname" ];
