@@ -197,7 +197,8 @@ var sandbox = []string{
 	"--property=ProtectSystem=strict",
 	"--property=ProtectHome=yes",
 	"--property=ProtectProc=invisible",
-	"--property=PrivateTmp=yes",
+	// A private /tmp, small enough that a renderer cannot fill memory through it.
+	"--property=TemporaryFileSystem=/tmp:size=16M,mode=1777",
 	"--property=PrivateDevices=yes",
 	"--property=PrivateNetwork=yes",
 	"--property=ProtectKernelTunables=yes",

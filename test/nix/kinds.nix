@@ -949,6 +949,28 @@ lib.runTests {
       none = false;
     };
   };
+  # The outputs' files are on a tmpfs of their own, with room for each output's files twice and
+  # one more; an image without outputs mounts none.
+  testOutputsTmpfs = {
+    expr = {
+      outputs =
+        (withBird {
+          chalkos.outputs.bird-conf.render = "/nix/store/x-render/bin/render";
+          chalkos.outputs.bird-peers.render = "/nix/store/x-render/bin/render";
+        }).fileSystems."/run/chalkos/outputs".options;
+      none = withDemo.fileSystems ? "/run/chalkos/outputs";
+    };
+    expected = {
+      outputs = [
+        "mode=0755"
+        "nosuid"
+        "nodev"
+        "size=80M"
+        "nr_inodes=81920"
+      ];
+      none = false;
+    };
+  };
   # The image's rules check reads the effects, the outputs and the units.
   testRulesCheckReadsTheImage = {
     expr = lib.hasInfix "chalkos-rules-image" withGrant.system.build.chalkosRulesCheck.buildCommand;

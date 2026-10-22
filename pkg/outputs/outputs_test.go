@@ -355,6 +355,7 @@ func TestSandboxArgs(t *testing.T) {
 		"--property=PrivateDevices=yes",
 		"--property=ProtectHome=yes",
 		"--property=ProtectSystem=strict",
+		"--property=TemporaryFileSystem=/tmp:size=16M,mode=1777",
 		"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
 		"--property=TimeoutStartSec=30000ms",
 		"--property=ReadWritePaths=/run/chalkos/outputs/.staging/demo.1",

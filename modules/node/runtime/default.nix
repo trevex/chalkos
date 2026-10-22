@@ -162,6 +162,8 @@ let
     };
 
   outputs = config.chalkos.outputs;
+  # Where chalkd renders the outputs, outputs.DefaultRoot.
+  outputsRoot = "/run/chalkos/outputs";
   # Why chalkd may not replace dir, the dir of the output name, with a link, or null: dir must be a
   # clean path below /run, a tmpfs, whose components start with no dot, as the links and
   # directories chalkd keeps beside the outputs' do, and stay out of /run/chalkos, which holds the
@@ -399,6 +401,26 @@ in
         description = "chalkos output renderers";
       };
       groups.chalkos-render = { };
+    };
+    # The outputs' files, those the node serves and those a render stages, on a tmpfs of their
+    # own, so a renderer that writes without end fills it and not /run. An output's files may
+    # take 16 MiB, chalkd's MaxSize, and each output may have both, with room for one more.
+    fileSystems = lib.mkIf (outputs != { }) {
+      ${outputsRoot} = {
+        device = "tmpfs";
+        fsType = "tmpfs";
+        options =
+          let
+            room = 2 * lib.length (lib.attrNames outputs) + 1;
+          in
+          [
+            "mode=0755"
+            "nosuid"
+            "nodev"
+            "size=${toString (room * 16)}M"
+            "nr_inodes=${toString (room * 16384)}"
+          ];
+      };
     };
   };
 }

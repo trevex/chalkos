@@ -58,9 +58,11 @@ The renderer runs in a sandbox, as a transient unit of the unprivileged system u
 `chalkos-render`, without capabilities, devices or network. The system is read-only, and STATE,
 `/var`, and the config, credentials and Kubernetes keys chalkd writes below `/run/chalkos` are
 hidden, so a renderer cannot read a secret value even by path. `$OUT`, an empty directory the user
-owns, is the only path it may write besides a private `/tmp`. It must finish within 30 seconds,
-and its files may take 16 MiB and hold no links, because chalkd sets their owner afterwards and
-must not follow a link to a file the output does not own.
+owns, is the only path it may write besides a private `/tmp` of 16 MiB. It must finish within
+30 seconds, and its files may take 16 MiB and hold no links, because chalkd sets their owner
+afterwards and must not follow a link to a file the output does not own. The outputs' files,
+staged and served, are on a tmpfs of their own at `/run/chalkos/outputs`, with room for every
+output's files twice and 16 MiB more, so a renderer that writes without end cannot fill `/run`.
 
 An output's `check` runs in the same sandbox against the rendered files, as a script of bash with
 `set -e`. It reads the files as the renderer wrote them, before chalkd gives them the output's
