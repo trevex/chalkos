@@ -17,15 +17,22 @@ certificates, the API server denies every write by its kubelet (system:node:&lt;
 it from registering its Node again and from renewing its kubelet client certificate, and chalkctl
 rotate skips it.
 
-The node's certificates stay valid until they expire. Its kubelet can still read from the API
-server, which grants a node with no Node and no pods almost nothing. A control plane's disk holds
-the node CA's and the Kubernetes CA's keys: if a control plane's disk was stolen, rotate os-ca and
-kubernetes-ca with chalkctl rotate as well. A cluster without Kubernetes keeps no revoked nodes:
-there, revoking a node means not renewing its node certificate, and chalkctl rotate os-ca cuts it
-off at once.
+The node's certificates stay valid until they expire, and the API server's admission sees writes
+alone. So the node's kubelet can still read what every kubelet may: Services, Endpoints and
+EndpointSlices, and a few cluster-scoped kinds such as Nodes and RuntimeClasses. The Secrets and
+ConfigMaps of the pods bound to it stay readable to it until the pod garbage collector deletes
+those pods, shortly after their Node is gone.
 
-A control plane revokes the node: --via, or the first one that answers. The command needs an
-admin client file or the secrets file.
+Revoking a control plane does not cut it off: its disk holds the node CA's and the Kubernetes
+CA's keys. The command refuses a node that is still an etcd member, and the control plane --via
+names; take such a node out with chalkctl etcd leave, or chalkctl etcd remove-member once it is
+gone, then rotate os-ca and kubernetes-ca with chalkctl rotate. --force revokes it all the same.
+The same rotations cut off whoever stole a control plane's disk. A cluster without Kubernetes
+keeps no revoked nodes: there, revoking a node means not renewing its node certificate, and
+chalkctl rotate os-ca cuts it off at once.
+
+A control plane revokes the node: --via, or the first other one that answers. The command needs
+an admin client file or the secrets file.
 
 ```
 chalkctl node revoke <node> [flags]
@@ -43,11 +50,12 @@ chalkctl node revoke <node> [flags]
 ```
       --address string     address of the node's chalkd, host or host:port (default the node's address in the inventory)
       --config string      client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)
+      --force              revoke the node although it is a control plane: an etcd member, or the one --via names
   -h, --help               help for revoke
       --identity strings   age identity file to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       --inventory string   inventory naming the cluster's nodes, their addresses and their config files (default chalkos.yaml in the current directory, when it exists)
       --secrets string     secrets file, encrypted with age or not, or - to read it from standard input
-      --via string         control plane that revokes the node (default the first one that answers)
+      --via string         control plane that revokes the node (default the first other one that answers)
 ```
 
 ## SEE ALSO

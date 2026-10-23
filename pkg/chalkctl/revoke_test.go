@@ -215,3 +215,48 @@ func TestNodeRenewWithoutControlPlanes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Revoking a control plane does not cut it off: node revoke refuses the control plane it asks,
+// unless forced.
+func TestNodeRevokeRefusesAControlPlane(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "CA keys") || !strings.Contains(err.Error(), "chalkctl etcd leave n1") || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("revoking the control plane asked: %v", err)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 0 {
+		t.Errorf("the refusal revoked %v", list)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1", "--force"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
+		t.Errorf("revoked nodes %v, want n1", list)
+	}
+}
+
+func TestEtcdMemberRefusal(t *testing.T) {
+	members := []*nodev1.EtcdMember{{Name: "cp1"}, {Name: "cp2", Learner: true}, {}}
+	for name, want := range map[string]bool{"cp1": true, "cp2": true, "w1": false, "": false} {
+		err := etcdMemberRefusal(name, members)
+		if (err != nil) != want {
+			t.Errorf("%q: %v, want refused %v", name, err, want)
+		}
+		if err != nil && (!strings.Contains(err.Error(), "chalkctl etcd remove-member "+name) || !strings.Contains(err.Error(), "chalkctl rotate os-ca")) {
+			t.Errorf("%q: %v, want the remedy named", name, err)
+		}
+	}
+}
+
+// A cluster without control planes keeps no revoked nodes.
+func TestNodeRevokeWithoutControlPlanes(t *testing.T) {
+	ta := newTestApp(t)
+	for _, cmd := range []string{"revoke", "unrevoke"} {
+		err := ta.run(context.Background(), []string{"node", cmd, "w1", "--inventory", ta.inventory})
+		if err == nil || !strings.Contains(err.Error(), "keeps no revoked nodes") || !strings.Contains(err.Error(), "chalkctl rotate os-ca") {
+			t.Errorf("node %s: %v", cmd, err)
+		}
+	}
+}

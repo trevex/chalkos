@@ -31,17 +31,36 @@ func (a *app) nodeRevokeCommand() *cobra.Command {
 		Example: nodeRevokeExample,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRevoke(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
-	cmd.Flags().StringVar(&f.via, "via", "", "control plane that revokes the node (default the first one that answers)")
+	fs := cmd.Flags()
+	fs.StringVar(&f.via, "via", "", "control plane that revokes the node (default the first other one that answers)")
+	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane: an etcd member, or the one --via names")
 	return cmd
 }
 
 func (a *app) nodeRevoke(ctx context.Context, f revokeFlags, pos []string) error {
 	if len(pos) != 1 {
-		return errors.New("usage: chalkctl node revoke <node> [--via NODE]")
+		return errors.New("usage: chalkctl node revoke <node> [--via NODE] [--force]")
+	}
+	name := pos[0]
+	if err := a.keepsRevokedNodes(ctx, f); err != nil {
+		return err
+	}
+	if f.via == name && !f.force {
+		return fmt.Errorf("%s is the control plane asked to revoke it; %s", name, controlPlaneRevocation(name))
 	}
 	var resp *nodev1.RevokeNodeResponse
-	err := a.throughControlPlane(ctx, f.node, f.via, "", func(conn *client.Conn) error {
-		r, err := conn.RevokeNode(ctx, connect.NewRequest(&nodev1.RevokeNodeRequest{Node: pos[0]}))
+	// A control plane is not asked to revoke itself.
+	err := a.throughControlPlane(ctx, f.node, f.via, name, func(conn *client.Conn) error {
+		if !f.force {
+			m, err := conn.EtcdMembers(ctx, connect.NewRequest(&nodev1.EtcdMembersRequest{}))
+			if err != nil {
+				return err
+			}
+			if err := etcdMemberRefusal(name, m.Msg.Members); err != nil {
+				return err
+			}
+		}
+		r, err := conn.RevokeNode(ctx, connect.NewRequest(&nodev1.RevokeNodeRequest{Node: name}))
 		if err == nil {
 			resp = r.Msg
 		}
@@ -54,7 +73,44 @@ func (a *app) nodeRevoke(ctx context.Context, f revokeFlags, pos []string) error
 	if !resp.NodeDeleted {
 		deleted = "it had no Node object to delete"
 	}
-	fmt.Fprintf(a.stdout, "revoked node %s (since %s); %s\n", pos[0], resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), deleted)
+	fmt.Fprintf(a.stdout, "revoked node %s (since %s); %s\n", name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), deleted)
+	return nil
+}
+
+// etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane.
+func etcdMemberRefusal(name string, members []*nodev1.EtcdMember) error {
+	for _, m := range members {
+		if name != "" && m.Name == name {
+			return fmt.Errorf("%s is still an etcd member; %s", name, controlPlaneRevocation(name))
+		}
+	}
+	return nil
+}
+
+// controlPlaneRevocation says why revoking a control plane does not cut it off, and what does.
+func controlPlaneRevocation(name string) string {
+	return fmt.Sprintf("revoking a control plane does not cut it off, because it holds the CA keys: take it out of etcd with "+
+		"chalkctl etcd leave %s, or chalkctl etcd remove-member %s if it is gone, then rotate its CAs with chalkctl rotate os-ca "+
+		"and chalkctl rotate kubernetes-ca; pass --force to revoke it anyway", name, name)
+}
+
+// keepsRevokedNodes refuses a cluster whose inventory names no control plane, which keeps no
+// revoked nodes, unless --via names a node to ask.
+func (a *app) keepsRevokedNodes(ctx context.Context, f revokeFlags) error {
+	if f.via != "" {
+		return nil
+	}
+	c, err := loadCluster(ctx, f.node.cluster)
+	if err != nil || c.partial {
+		return err
+	}
+	switch names, err := c.nodesOf(identity.KindControlPlane, ""); {
+	case err != nil:
+		return err
+	case len(names) == 0:
+		return fmt.Errorf("the cluster %s has no control-plane node, so it keeps no revoked nodes: "+
+			"a node without Kubernetes is revoked by not renewing its node certificate, and chalkctl rotate os-ca cuts it off at once", c.name)
+	}
 	return nil
 }
 
@@ -76,6 +132,9 @@ func (a *app) nodeUnrevokeCommand() *cobra.Command {
 func (a *app) nodeUnrevoke(ctx context.Context, f revokeFlags, pos []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: chalkctl node unrevoke <node> [--via NODE] [--force]")
+	}
+	if err := a.keepsRevokedNodes(ctx, f); err != nil {
+		return err
 	}
 	var resp *nodev1.UnrevokeNodeResponse
 	err := a.throughControlPlane(ctx, f.node, f.via, "", func(conn *client.Conn) error {
