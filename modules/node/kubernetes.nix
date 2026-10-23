@@ -16,6 +16,8 @@ let
   kubelet = pkgs.runCommand "kubelet-${k.package.version}" { } ''
     install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet
   '';
+  # Where chalkd writes the node's Kubernetes files; credprovider.Dir in Go is its
+  # credential-provider directory.
   run = "/run/chalkos/kubernetes";
   flannel = config.chalkos.cni.provider == "flannel";
 
@@ -200,6 +202,16 @@ in
           when = "${cel.specsChanged ociAPI "Mirror"} || ${cel.specsChanged ociAPI "Registry"}";
           restart = [ "chalkos-registry-mirrors.service" ];
         };
+        # The kubelet reads its credential provider's config when it starts and caches answers, so
+        # a Registry change, or a change of a password it references, writes the files again and
+        # starts the kubelet again, which empties the cache; its pods keep running.
+        registry-credentials = {
+          kinds = [ "Registry" ];
+          restart = [
+            "chalkos-registry-credentials.service"
+            "kubelet.service"
+          ];
+        };
         # The control plane's ports read the Node document when they start; it references no
         # Secret.
         controlplane-ports = {
@@ -333,6 +345,22 @@ in
         };
       };
 
+      # The kubelet's credential provider, which is chalkd, and the node's registry credentials,
+      # from the Registry documents and the passwords chalkd gives the unit. chalkd keeps the
+      # credentials in a directory readable by root alone.
+      systemd.services.chalkos-registry-credentials = {
+        description = "Write the kubelet's registry credentials from the config";
+        chalkos.kinds = [ "Registry" ];
+        wantedBy = [ "multi-user.target" ];
+        before = [ "kubelet.service" ];
+        after = [ "chalkos-config.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          ExecStart = "${lib.getExe chalkd} registry-credentials";
+        };
+      };
+
       systemd.tmpfiles.rules = [
         "d /var/lib/cni/net.d 0755 root root -"
       ];
@@ -379,10 +407,14 @@ in
           "containerd.service"
           "network-online.target"
         ];
-        requires = [ "chalkos-kubernetes.service" ];
+        requires = [
+          "chalkos-kubernetes.service"
+          "chalkos-registry-credentials.service"
+        ];
         after = [
           "containerd.service"
           "chalkos-kubernetes.service"
+          "chalkos-registry-credentials.service"
           "network-online.target"
         ];
         unitConfig = {
@@ -397,14 +429,18 @@ in
           pkgs.iproute2
         ];
         serviceConfig = {
-          EnvironmentFile = "${run}/kubelet/flags";
+          EnvironmentFile = [
+            "${run}/kubelet/flags"
+            "${run}/credential-provider/flags"
+          ];
           # chalkd's preparation writes the configuration and the flags, the cluster's extra flags
-          # of the kubelet last.
+          # of the kubelet last; chalkos-registry-credentials the credential provider's flags.
           ExecStart = lib.concatStringsSep " " [
             "${kubelet}/bin/kubelet"
             "--config=${run}/kubelet/config.json"
             "--kubeconfig=${run}/kubelet/kubeconfig"
             "--cert-dir=/var/lib/kubelet/pki"
+            "$KUBELET_CREDENTIAL_PROVIDER_ARGS"
             "$KUBELET_ARGS"
           ];
           Restart = "always";

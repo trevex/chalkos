@@ -760,6 +760,7 @@ lib.runTests {
           kubelet = config.systemd.services ? kubelet;
           containerd = config.virtualisation.containerd.enable;
           prepare = config.systemd.services ? chalkos-kubernetes;
+          credentials = config.systemd.services ? chalkos-registry-credentials;
         };
       in
       {
@@ -773,11 +774,13 @@ lib.runTests {
         kubelet = false;
         containerd = false;
         prepare = false;
+        credentials = false;
       };
       worker = {
         kubelet = true;
         containerd = true;
         prepare = true;
+        credentials = true;
       };
       prepare = true;
     };
@@ -1085,6 +1088,49 @@ lib.runTests {
       noFullPackage = true;
     };
   };
+  # The kubelet's credential provider: a unit granted the Registry kind writes its files before the
+  # kubelet, which reads its flags, and a Registry change starts both again.
+  testRegistryCredentialsUnit =
+    let
+      config = worker [ ];
+      unit = config.systemd.services.chalkos-registry-credentials;
+      kubelet = config.systemd.services.kubelet;
+      services = builtins.fromJSON config.environment.etc."chalkos/services.json".text;
+      effects = builtins.fromJSON config.environment.etc."chalkos/effects.json".text;
+    in
+    {
+      expr = {
+        grant = services.chalkos-registry-credentials.kinds;
+        credentials = unit.serviceConfig.LoadCredential;
+        command = lib.hasSuffix "/bin/chalkd registry-credentials" unit.serviceConfig.ExecStart;
+        beforeKubelet =
+          lib.elem "kubelet.service" unit.before
+          && lib.elem "chalkos-registry-credentials.service" kubelet.requires
+          && lib.elem "chalkos-registry-credentials.service" kubelet.after;
+        afterConfig = lib.elem "chalkos-config.service" unit.after;
+        flags =
+          lib.elem "/run/chalkos/kubernetes/credential-provider/flags" kubelet.serviceConfig.EnvironmentFile
+          && lib.hasInfix "$KUBELET_CREDENTIAL_PROVIDER_ARGS $KUBELET_ARGS" kubelet.serviceConfig.ExecStart;
+        effect = {
+          inherit (effects.registry-credentials) kinds restart;
+        };
+      };
+      expected = {
+        grant = [ "Registry" ];
+        credentials = [ "secret:/run/chalkos/credentials/chalkos-registry-credentials" ];
+        command = true;
+        beforeKubelet = true;
+        afterConfig = true;
+        flags = true;
+        effect = {
+          kinds = [ "Registry" ];
+          restart = [
+            "chalkos-registry-credentials.service"
+            "kubelet.service"
+          ];
+        };
+      };
+    };
   # VXLAN is accepted only to the addresses chalkd picks: its preparation fills a table of its own
   # that marks such packets, and the firewall accepts the mark. The firewall runs on nftables and
   # its reloads replace its own table only.

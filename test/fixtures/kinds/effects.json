@@ -82,6 +82,21 @@
     "start": false,
     "when": ""
   },
+  "registry-credentials": {
+    "chalkd": "",
+    "kinds": [
+      "Registry"
+    ],
+    "outputs": [],
+    "reload": [],
+    "restart": [
+      "chalkos-registry-credentials.service",
+      "kubelet.service"
+    ],
+    "run": "",
+    "start": false,
+    "when": ""
+  },
   "registry-mirrors": {
     "chalkd": "",
     "kinds": [],
