@@ -141,7 +141,8 @@ func blockDocuments(lines []string) ([]blockDocument, int, error) {
 // to outDir, named by the page's path with / as _ and the block's first line. A block whose title
 // names a .nix file is a whole file, written as <page>_<line>.nix. A block without such a title is
 // a fragment, written as <page>_<line>.fragment.nix: an expression, or the attributes of a module,
-// which parse only within braces.
+// which parse only within braces. A block of snippet includes alone is left out: the site puts the
+// included file's lines there, and the image build that file belongs to evaluates it.
 func writeNix(dir, outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
@@ -156,6 +157,9 @@ func writeNix(dir, outDir string) error {
 			return err
 		}
 		for _, b := range blocks {
+			if snippetsOnly(b.lines) {
+				continue
+			}
 			kind := ".fragment"
 			if strings.HasSuffix(b.title, ".nix") {
 				kind = ""
@@ -167,6 +171,24 @@ func writeNix(dir, outDir string) error {
 		}
 	}
 	return nil
+}
+
+// snippetInclude matches a line of pymdownx.snippets that includes a file or a section of one.
+var snippetInclude = regexp.MustCompile(`^\s*--8<--\s`)
+
+// snippetsOnly tells whether a block's lines, but for blank ones, are all snippet includes.
+func snippetsOnly(lines []string) bool {
+	found := false
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if !snippetInclude.MatchString(l) {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // problem reports err at a block's first line; the lines of an error that lists several causes

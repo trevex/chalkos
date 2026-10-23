@@ -41,7 +41,8 @@ func TestCheckYAML(t *testing.T) {
 }
 
 // A block titled with a .nix file is written as a whole file and the other as a fragment, under
-// the page's path and its first line; the plan's are not written.
+// the page's path and its first line; the plan's, and a block that only includes a section of a
+// file, are not written.
 func TestWriteNix(t *testing.T) {
 	out := t.TempDir()
 	if err := writeNix("testdata/snippets/docs", out); err != nil {
