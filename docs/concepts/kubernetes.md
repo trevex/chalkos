@@ -138,9 +138,21 @@ spec:
 ```
 
 `chalkos-registry-mirrors.service` writes containerd's
-`/run/containerd/certs.d/<registry>/hosts.toml` from them before containerd starts and whenever
-they change; containerd reads those files on every pull. An `http://` endpoint needs a `Registry`
-of its host with `insecure: true`, since nothing authenticates what a plain HTTP endpoint serves.
+`/run/containerd/certs.d/<registry>/hosts.toml` from the `Mirror` and
+[`Registry`](../reference/kinds.md#registry) documents, before containerd starts and whenever
+they change; containerd reads those files on every pull. Each file lists the endpoints as the
+`Mirror` names them, then the registry itself. A registry whose `Registry` sets `insecure` is
+reached over HTTP, and gets a file even without a `Mirror`. An `http://` endpoint needs a
+`Registry` of its host with `insecure: true`, since nothing authenticates what a plain HTTP
+endpoint serves.
+
+containerd sends every endpoint that asks for credentials, and the token service such an endpoint
+names, the credentials the kubelet gives it for the image's registry, such as those of an
+`imagePullSecret`. A mirror of an authenticated registry therefore receives that registry's
+credentials, so give its endpoints the trust the registry has. The credentials of an endpoint's
+own `Registry` do not reach containerd. chalkd, which pulls OS images through the same `Mirror`
+documents, authenticates each endpoint with the `Registry` of the endpoint's host instead, as
+[Pull through a mirror](../guides/publish-images.md#pull-through-a-mirror) describes.
 
 ## How does the control plane run?
 

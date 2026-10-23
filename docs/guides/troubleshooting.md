@@ -185,9 +185,14 @@ Pods stay in `ErrImagePull` or `ImagePullBackOff`. containerd pulls through the 
 node's [`Mirror`](../reference/kinds.md#mirror) documents and then the registry itself. Read
 `containerd.service`'s log on the node for the URL that failed.
 `chalkos-registry-mirrors.service` writes the endpoints to
-`/run/containerd/certs.d/<registry>/hosts.toml`; its log shows when it could not. An `http://`
-endpoint needs a `Registry` of its host with `insecure: true`, and a cluster without internet
-access needs every image in a mirror.
+`/run/containerd/certs.d/<registry>/hosts.toml` from the `Mirror` and
+[`Registry`](../reference/kinds.md#registry) documents; its log shows when it could not. An
+`http://` endpoint needs a `Registry` of its host with `insecure: true`, and a cluster without
+internet access needs every image in a mirror.
+
+chalkd pulls an install's or an upgrade's image through the same endpoints. When the pull fails,
+its error names the source it ended at, followed by `after the mirror <endpoint>: <error>` for
+each endpoint it passed over.
 
 ### Pods on different nodes cannot reach each other
 

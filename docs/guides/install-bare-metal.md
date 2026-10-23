@@ -215,8 +215,9 @@ chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 
 When the inventory names the node's image in a registry, by `source.oci`, chalkctl sends the
 image's reference by digest in place of its parts, and the installer pulls the image from the
-registry itself. The machine then needs a route and DNS to the registry, and the config needs the
-registry's credentials unless the registry serves the image anonymously.
+registry itself. The machine then needs a route and DNS to the registry or to an endpoint of its
+[`Mirror`](../reference/kinds.md#mirror), and the config needs the registry's credentials unless
+the registry serves the image anonymously.
 [Install from the registry](publish-images.md#install-from-the-registry) covers the details.
 
 On the machine, the installer:

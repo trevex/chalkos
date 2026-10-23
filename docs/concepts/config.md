@@ -75,7 +75,7 @@ schemas.
 | --- | --- | --- | --- |
 | [`Host`](../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
-| [`Registry`](../reference/kinds.md#registry) | `oci.chalkos.dev` | any | Credentials chalkd pulls images of one registry host with |
+| [`Registry`](../reference/kinds.md#registry) | `oci.chalkos.dev` | any | Credentials chalkd pulls images of one registry or mirror host with, and whether chalkd and containerd reach that host over plain HTTP |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
@@ -96,9 +96,10 @@ Some kinds depend on the image or the node:
   images with Kubernetes, and `Flannel` only on those built with flannel as their pod network, so
   a document of one of them is an unknown kind on any other image. A node without Kubernetes has
   no type.
-- A `Registry` authenticates chalkd's pull of an install's or an upgrade's image, so it exists on
-  every image; a `Mirror` names the endpoints containerd and chalkd try before a registry itself,
-  and exists on every image too.
+- `Registry` and `Mirror` exist on every image, because chalkd reads them for the pull of an
+  install's or an upgrade's image, and containerd's mirror configuration is written from them. A
+  `Registry` gives a host's credentials and allows plain HTTP to it; a `Mirror` names the
+  endpoints chalkd and containerd try before a registry itself.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
   suffix, so `10-uplink` becomes `/run/systemd/network/10-uplink.network` and networkd's order by
   file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with `MACAddress=`

@@ -74,10 +74,11 @@ holds it, so the signing key stays on the machine that ran chalkbuild.
 An image the inventory names in a registry, by `source.oci`, is pulled by each node. chalkctl
 resolves the reference to a digest once, reads the manifest, the header and the contract, and
 sends each node the reference by that digest with the header's sizes and SHA-256 sums of the
-store, hash tree and UKI. chalkd pulls those layers and checks them against what chalkctl sent.
-It authenticates with the [`Registry`](../reference/kinds.md#registry) for the registry's host,
-from the config the upgrade delivers or else the config it runs, and pulls over HTTPS unless that
-`Registry` sets `insecure`. [Publish images to a registry](../guides/publish-images.md#upgrade-from-the-registry)
+store, hash tree and UKI. chalkd pulls those layers, through the node's
+[`Mirror`](../reference/kinds.md#mirror) of the registry if it has one, and checks them against
+what chalkctl sent. It authenticates to each host with the
+[`Registry`](../reference/kinds.md#registry) of that host, from the config the upgrade delivers
+or else the config it runs, and pulls over HTTPS unless that `Registry` sets `insecure`. [Publish images to a registry](../guides/publish-images.md#upgrade-from-the-registry)
 covers the steps.
 
 Before it sends anything, chalkctl checks each image against the cluster:

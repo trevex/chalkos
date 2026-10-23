@@ -446,8 +446,9 @@ new image.
 Nodes pull the control plane's images, etcd, CoreDNS and the pause image from `registry.k8s.io`,
 and flannel from `ghcr.io`. A
 [`Mirror`](../reference/kinds.md#mirror) document puts endpoints in front of one registry host;
-containerd tries them in order and falls back to the registry. A cluster without internet access
-needs every image in a mirror, including those the image options
+containerd tries them in order and falls back to the registry. chalkd uses the same mirrors for
+OS images, as [Pull through a mirror](publish-images.md#pull-through-a-mirror) describes. A
+cluster without internet access needs every image in a mirror, including those the image options
 [`chalkos.kubernetes.images`](../reference/options.md#chalkoskubernetesimagesetcd) and
 [`chalkos.cni.flannel.image`](../reference/options.md#chalkoscniflannelimage) name.
 

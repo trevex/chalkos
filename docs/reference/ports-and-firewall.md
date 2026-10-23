@@ -132,7 +132,7 @@ between the nodes.
 | Destination | Port | Protocol | Purpose |
 | --- | --- | --- | --- |
 | Container registries, or the endpoints their [`Mirror`](kinds.md#mirror) documents name | 443, or the endpoint's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. An endpoint may use plain HTTP when a [`Registry`](kinds.md#registry) of its host sets `spec.insecure`. |
-| The registry of an install's or upgrade's image, when the inventory names the image in a registry | 443, or the port of the image reference | TCP | chalkd pulling the image, on the installer during `chalkctl install` and on the node during `chalkctl upgrade`. Plain HTTP only when the host's [`Registry`](kinds.md#registry) sets `spec.insecure`. |
+| The registry of an install's or upgrade's image, when the inventory names the image in a registry, or the endpoints of its [`Mirror`](kinds.md#mirror) | 443, or the port of the image reference or the endpoint | TCP | chalkd pulling the image, on the installer during `chalkctl install` and on the node during `chalkctl upgrade`. Plain HTTP only when the [`Registry`](kinds.md#registry) of the host or endpoint sets `spec.insecure`. |
 | Time servers of the [`TimeSync`](kinds.md#timesync) document's `spec.servers` | 4460 | TCP | NTS key exchange, for servers with `nts`, the default. |
 | Time servers | 123, or the server's `port` | UDP | NTP. |
 | DNS resolvers of the node's network | 53 | UDP and TCP | Names of registries and time servers. |

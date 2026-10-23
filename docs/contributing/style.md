@@ -310,7 +310,7 @@ Commands, options and API methods link to their generated page on first use per 
   methods (`api.md#method-upgrade`), `message-` for messages
   (`api.md#message-installheader`, `api.md#message-installheadersystemdefinitionsentry`) and
   `enum-` for enums (`api.md#enum-mode`).
-- A kind's anchor is its name in lower case: `kinds.md#systemdisk`, `kinds.md#registrymirror`,
+- A kind's anchor is its name in lower case: `kinds.md#systemdisk`, `kinds.md#mirror`,
   `kinds.md#inventory`. Link the kind's section on its first use per page.
 
 From a page outside `reference/`, prefix the paths with `../reference/`.

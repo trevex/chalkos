@@ -33,7 +33,8 @@ without Secure Boot.
 
 Today chalkbuild publishes an image as an OCI artefact, and `chalkctl install` on the installer
 and `chalkctl upgrade` both have the node pull an image the inventory names in a registry,
-authenticated by a [`Registry`](../reference/kinds.md#registry) document. The plan adds a check
+through the endpoints of a [`Mirror`](../reference/kinds.md#mirror) when the node has one, and
+authenticated by a [`Registry`](../reference/kinds.md#registry) document for each host. The plan adds a check
 of a signature of the artefact itself.
 
 ### An in-cluster upgrade controller
