@@ -1,15 +1,66 @@
 ---
-title: "Contributing"
+title: "Contribute"
 description: "How to contribute to chalkos: what a change needs and where to start"
 ---
 
-# Contributing
+# Contribute
 
-chalkos takes changes as pull requests against `main` on
-[GitHub](https://github.com/trevex/chalkos). A change is ready when it carries the tests that
-prove it at the cheapest level that can, the documentation it affects, formatted code, and
-passing flake checks for what it touches. This page lists those requirements; the pages below
-it explain the development loop, the tests and the code.
+These pages are for contributors who change chalkos itself. chalkos takes changes as pull requests
+against `main` on [GitHub](https://github.com/trevex/chalkos). A change is ready when it carries
+its tests, the documentation it affects, formatted code, and passing flake checks for what it
+touches.
+
+<div class="grid cards" markdown>
+
+-   :material-laptop: __Development setup__
+
+    ---
+
+    The development shell, the repository layout and the commands of a development loop.
+
+    [:octicons-arrow-right-24: Read](development.md)
+
+-   :material-test-tube: __Testing__
+
+    ---
+
+    Unit, namespace, evaluation and end-to-end tests, and when to write which.
+
+    [:octicons-arrow-right-24: Read](testing.md)
+
+-   :material-sitemap: __Architecture for developers__
+
+    ---
+
+    Where the code lives: the Go packages, the Nix modules and how they talk to each other.
+
+    [:octicons-arrow-right-24: Read](architecture.md)
+
+-   :material-file-document-edit: __Writing documentation__
+
+    ---
+
+    How to write, build, check and preview the documentation.
+
+    [:octicons-arrow-right-24: Read](writing-docs.md)
+
+-   :material-format-text: __Style guide__
+
+    ---
+
+    The rules every documentation page follows.
+
+    [:octicons-arrow-right-24: Read](style.md)
+
+-   :material-map-marker-path: __Roadmap and known limits__
+
+    ---
+
+    What chalkos does not do yet, and what is planned.
+
+    [:octicons-arrow-right-24: Read](roadmap.md)
+
+</div>
 
 ## Where to start
 
@@ -55,14 +106,3 @@ optional scope and a summary in the imperative, such as
 The body, when there is one, says what changed and why. Commit messages and code comments stand
 on their own for a reviewer: they carry no trailers and no references to plans, tasks or
 milestones.
-
-## The contributing pages
-
-- [Development setup](development.md): the development shell, the repository's directories and
-  the commands of a development loop.
-- [Testing](testing.md): the kinds of tests, when to write which, and how to run them.
-- [Architecture for developers](architecture.md): the Go packages, the Nix modules and how
-  they connect.
-- [Writing documentation](writing-docs.md): how the site is built, generated and checked.
-- [Style guide](style.md): the rules every page follows.
-- [Roadmap and known limits](roadmap.md): what chalkos does not do yet.

@@ -135,3 +135,48 @@ certificates in place, so no certificate of a running cluster expires unattended
 changes only when an operator runs `chalkctl rotate`, which replaces it in
 rotation phases that keep every node reachable; rotating is
 also how access is revoked. See [Certificates](../how-it-works/node/certificates.md).
+
+## Where chalkos fits
+
+chalkos suits machines that should run as appliances: bare metal or virtual machines under KVM,
+where every node of a variant boots the same verified image, nobody logs in to change it, and an
+upgrade either becomes healthy or rolls back by itself. Today its nodes run Kubernetes. It suits
+teams that already describe systems in Nix, because a variant can use any NixOS module. Only the
+images need Nix. chalkctl reads the YAML files and the image directories a build produced, so the
+machine that installs and operates the nodes needs no Nix.
+
+chalkos is a poor fit where a node needs hand changes or interactive logins. Today it is also a
+poor fit for machines that are neither x86-64 bare metal nor KVM virtual machines. Nodes have no
+SSH and no shell. Debugging goes through the node API and, on a Kubernetes node,
+`kubectl debug node/<node>`.
+
+## Compared with Talos
+
+chalkos follows the operating model of [Talos Linux](https://www.talos.dev/): an immutable OS
+without logins, managed through a mutual-TLS API with a client file of a client role (reader,
+operator or admin), A/B upgrades, and a control plane that holds its virtual IP through an etcd
+election. It differs where Nix changes the trade-offs:
+
+| Topic | Talos | chalkos |
+| --- | --- | --- |
+| Configuration | One machine configuration per node in Talos's own YAML schema, applied through the API. | YAML documents in the style of Kubernetes objects, one kind per concern, such as `Node`, `Network`, `SystemDisk` and `Cluster`, which an inventory assigns to nodes. chalkctl and chalkd check them against the JSON Schemas the image carries, and a NixOS module in the image can declare a kind of its own. |
+| Images | One image for every node, extended with signed system extensions. | One image per variant and platform, built from NixOS modules, so a GPU variant carries the GPU drivers and the others do not. The kernel is nixpkgs's, with its modules filtered per image, so the binary cache keeps working. |
+| Node certificates | Control planes hold the root CA's key. | Control planes hold a node CA, an intermediate that may issue only server and client certificates. The OS CA's key stays in the secrets file. |
+| Upgrades | The node pulls an installer image from a registry. | chalkctl streams an image Nix built to chalkd, or chalkd pulls it from a registry by the digest chalkctl names, and writes it into the inactive slot. |
+| Maturity | Released, with images for many clouds, hypervisors and boards. | Unreleased; bare metal and KVM on x86-64. |
+
+## Compared with NixOS
+
+A NixOS machine changes in place: `nixos-rebuild` builds a new generation into a writable Nix
+store on the machine and switches to it. A chalkos node has neither a Nix daemon nor
+`switch-to-configuration`. Its store is a read-only erofs file system that dm-verity checks block
+by block. Its root is a tmpfs and its `/etc` is read-only, so the running system is exactly the
+image that was built and signed. A change to its software becomes a new image. chalkd writes it
+into the inactive slot and boots it with boot counting, and a boot that does not become healthy
+returns to the image before without anyone at the console.
+
+The module system stays from NixOS. A variant's modules are ordinary NixOS modules, so services,
+kernel settings and packages are declared as on any NixOS machine. The cost is that every change
+to a node's software is an image upgrade with a reboot. Only a node's config changes without one:
+hostname, network, labels, taints, storage, time servers, the cluster's Kubernetes settings and
+extension documents.

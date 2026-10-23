@@ -5,20 +5,74 @@ description: "Commands, config kinds, mkImages and image options, the node API a
 
 # Reference
 
-Most reference pages are generated from the code, so they describe what the code does;
-`nix run .#docgen` writes them, and the `docs-generated` check fails when they are out of date.
+These pages are for anyone who needs an exact name, field, default or port while working with
+chalkos. `nix run .#docgen` generates the command line, config kinds, options and node API pages
+from the code, and the `docs-generated` check fails when they are out of date.
 
-- [Command line](cli/index.md): every command of `chalkctl`, `chalklab` and `chalkcfg`, from their
-  help.
-- [Config kinds](kinds.md): the fields of every config kind an image accepts, and of the inventory
-  and the lab file, from their schemas.
-- [mkImages and image options](options.md): the arguments of `chalkos.lib.mkImages` and the options
-  of the images it builds.
-- [Node API](api.md): the API chalkd serves on every node.
+<div class="grid cards" markdown>
 
-The other pages are written by hand:
+-   :material-console: __Command line__
 
-- [Image and partition layout](image-layout.md): the partitions of a node and the files of an image.
-- [Ports and firewall](ports-and-firewall.md): what a node listens on and who needs to reach it.
-- [os-release fields](os-release.md): the fields chalkos adds to os-release.
-- [Glossary](glossary.md): the terms these pages use, each with a short definition.
+    ---
+
+    Every command of `chalkctl`, `chalklab`, `chalkbuild` and `chalkcfg`, from their help.
+
+    [:octicons-arrow-right-24: Read](cli/index.md)
+
+-   :material-code-json: __Config kinds__
+
+    ---
+
+    The fields of every config kind an image accepts, and of the inventory and the lab file.
+
+    [:octicons-arrow-right-24: Read](kinds.md)
+
+-   :material-tune: __mkImages and image options__
+
+    ---
+
+    The arguments of `chalkos.lib.mkImages` and the options of the images it builds.
+
+    [:octicons-arrow-right-24: Read](options.md)
+
+-   :material-api: __Node API__
+
+    ---
+
+    The API chalkd serves on every node, generated from its protobuf definition.
+
+    [:octicons-arrow-right-24: Read](api.md)
+
+-   :material-harddisk: __Image and partition layout__
+
+    ---
+
+    The partitions of an installed node and the files of an image.
+
+    [:octicons-arrow-right-24: Read](image-layout.md)
+
+-   :material-lan: __Ports and firewall__
+
+    ---
+
+    Every port a node listens on, who needs to reach it, and how the firewall treats it.
+
+    [:octicons-arrow-right-24: Read](ports-and-firewall.md)
+
+-   :material-information-outline: __os-release fields__
+
+    ---
+
+    The fields chalkos adds to `/etc/os-release` and the UKI's os-release, and what reads them.
+
+    [:octicons-arrow-right-24: Read](os-release.md)
+
+-   :material-book-alphabet: __Glossary__
+
+    ---
+
+    The terms these pages use, each with a short definition.
+
+    [:octicons-arrow-right-24: Read](glossary.md)
+
+</div>
