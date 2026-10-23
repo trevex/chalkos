@@ -57,6 +57,79 @@
     ]
   },
   {
+    "apiVersion": "admissionregistration.k8s.io/v1",
+    "kind": "ValidatingAdmissionPolicy",
+    "metadata": {
+      "name": "chalkos-revoked-nodes"
+    },
+    "spec": {
+      "failurePolicy": "Fail",
+      "matchConditions": [
+        {
+          "expression": "request.userInfo.username.startsWith(\"system:node:\")",
+          "name": "node"
+        }
+      ],
+      "matchConstraints": {
+        "resourceRules": [
+          {
+            "apiGroups": [
+              "*"
+            ],
+            "apiVersions": [
+              "*"
+            ],
+            "operations": [
+              "CREATE",
+              "UPDATE",
+              "DELETE",
+              "CONNECT"
+            ],
+            "resources": [
+              "*/*"
+            ]
+          }
+        ]
+      },
+      "paramKind": {
+        "apiVersion": "v1",
+        "kind": "ConfigMap"
+      },
+      "validations": [
+        {
+          "expression": "!has(params.data) || !(variables.node in params.data)",
+          "message": "the node is revoked",
+          "messageExpression": "\"node \" + variables.node + \" is revoked since \" + params.?data[?variables.node].orValue(\"an unknown time\")",
+          "reason": "Forbidden"
+        }
+      ],
+      "variables": [
+        {
+          "expression": "request.userInfo.username.substring(12)",
+          "name": "node"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "admissionregistration.k8s.io/v1",
+    "kind": "ValidatingAdmissionPolicyBinding",
+    "metadata": {
+      "name": "chalkos-revoked-nodes"
+    },
+    "spec": {
+      "paramRef": {
+        "name": "chalkos-revoked-nodes",
+        "namespace": "kube-system",
+        "parameterNotFoundAction": "Allow"
+      },
+      "policyName": "chalkos-revoked-nodes",
+      "validationActions": [
+        "Deny"
+      ]
+    }
+  },
+  {
     "apiVersion": "v1",
     "kind": "ServiceAccount",
     "metadata": {

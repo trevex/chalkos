@@ -1,6 +1,6 @@
 // Package addons renders the Kubernetes objects chalkos applies to every cluster before the
-// cluster's own manifests: RBAC for chalkos's identities, kube-proxy, flannel when it is the pod
-// network, and CoreDNS.
+// cluster's own manifests: RBAC for chalkos's identities, the admission policy that shuts out
+// revoked nodes, kube-proxy, flannel when it is the pod network, and CoreDNS.
 package addons
 
 import (
@@ -11,18 +11,19 @@ import (
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
 type object = map[string]any
 
-// Render returns the objects in the order the control plane applies them: RBAC, kube-proxy, the
-// pod network, the cluster DNS.
+// Render returns the objects in the order the control plane applies them: RBAC, the revoked
+// nodes' policy, kube-proxy, the pod network, the cluster DNS.
 func Render(c kubernetes.Cluster) ([]map[string]any, error) {
 	families, err := c.Families()
 	if err != nil {
 		return nil, err
 	}
-	out := rbac()
+	out := append(rbac(), revokedNodes()...)
 	proxy, err := kubeProxy(c, families)
 	if err != nil {
 		return nil, err
@@ -82,6 +83,53 @@ func rbac() []object {
 			subject("Group", "system:nodes")),
 		// The API server reaches kubelets for logs, exec and port forwarding.
 		clusterRoleBinding("chalkos:apiserver-kubelet", "system:kubelet-api-admin", subject("User", "chalkos:kube-apiserver-kubelet-client")),
+	}
+}
+
+// revokedNodes denies every write by a revoked node: its kubelet can no longer update its Node
+// or its pods, renew its client certificate through a CSR or ask for a serving certificate. The
+// parameters are the revoked nodes' ConfigMap, which chalkd writes when it revokes a node; the
+// add-ons leave it out, so applying them never resets it. While it is missing, the binding admits
+// everything. The policy fails closed, so its expressions must not fail for a node that is not
+// revoked, whatever the ConfigMap holds.
+func revokedNodes() []object {
+	return []object{
+		{
+			"apiVersion": "admissionregistration.k8s.io/v1",
+			"kind":       "ValidatingAdmissionPolicy",
+			"metadata":   object{"name": revoked.Name},
+			"spec": object{
+				"failurePolicy": "Fail",
+				"paramKind":     object{"apiVersion": "v1", "kind": "ConfigMap"},
+				// Subresources too: the kubelet writes nodes/status and pods/status.
+				"matchConstraints": object{"resourceRules": []any{object{
+					"apiGroups":   []any{"*"},
+					"apiVersions": []any{"*"},
+					"resources":   []any{"*/*"},
+					"operations":  []any{"CREATE", "UPDATE", "DELETE", "CONNECT"},
+				}}},
+				"matchConditions": []any{object{"name": "node", "expression": `request.userInfo.username.startsWith("system:node:")`}},
+				"variables":       []any{object{"name": "node", "expression": "request.userInfo.username.substring(12)"}},
+				"validations": []any{object{
+					// The ConfigMap has no data once the last node is unrevoked.
+					"expression": "!has(params.data) || !(variables.node in params.data)",
+					// The time is shown as it is stored, readable or not.
+					"messageExpression": `"node " + variables.node + " is revoked since " + params.?data[?variables.node].orValue("an unknown time")`,
+					"message":           "the node is revoked",
+					"reason":            "Forbidden",
+				}},
+			},
+		},
+		{
+			"apiVersion": "admissionregistration.k8s.io/v1",
+			"kind":       "ValidatingAdmissionPolicyBinding",
+			"metadata":   object{"name": revoked.Name},
+			"spec": object{
+				"policyName":        revoked.Name,
+				"paramRef":          object{"name": revoked.Name, "namespace": revoked.Namespace, "parameterNotFoundAction": "Allow"},
+				"validationActions": []any{"Deny"},
+			},
+		},
 	}
 }
 

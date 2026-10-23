@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -9,10 +10,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"log"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
 // request is a certificate request; fields left empty take the values of node w1.
@@ -206,5 +212,87 @@ func TestApproverForgetsDeletedRequests(t *testing.T) {
 	}
 	if len(a.refused) != 0 {
 		t.Errorf("refused %v after the request was deleted", a.refused)
+	}
+}
+
+// A revoked node's serving certificate requests stay pending, whatever the time it is listed
+// with; the other nodes' are approved. A list that cannot be read approves nothing.
+func TestApproverLeavesRevokedNodesPending(t *testing.T) {
+	w2 := testNode("w2",
+		corev1.NodeAddress{Type: corev1.NodeInternalIP, Address: "192.168.100.13"},
+		corev1.NodeAddress{Type: corev1.NodeHostName, Address: "w2"},
+	)
+	w3 := testNode("w3",
+		corev1.NodeAddress{Type: corev1.NodeInternalIP, Address: "192.168.100.14"},
+		corev1.NodeAddress{Type: corev1.NodeHostName, Address: "w3"},
+	)
+	at := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		list revoked.List
+		err  error
+		want map[string]bool
+		log  []string
+	}{
+		"revoked": {
+			list: revoked.List{"w1": at, "w2": {}},
+			want: map[string]bool{"w1-serving": false, "w2-serving": false, "w3-serving": true},
+			log: []string{
+				"leaving certificate request w1-serving pending: node w1 is revoked since 2026-10-23T10:00:00Z",
+				"leaving certificate request w2-serving pending: node w2 is revoked\n",
+			},
+		},
+		"unreadable list": {
+			err:  errors.New("timeout"),
+			want: map[string]bool{"w1-serving": false, "w2-serving": false, "w3-serving": false},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cs := fake.NewClientset(w1, w2, w3,
+				request{}.csr(t, "w1-serving"),
+				request{username: "system:node:w2", names: []string{"w2"}, ips: []string{"192.168.100.13"}}.csr(t, "w2-serving"),
+				request{username: "system:node:w3", names: []string{"w3"}, ips: []string{"192.168.100.14"}}.csr(t, "w3-serving"),
+			)
+			var logs bytes.Buffer
+			log.SetOutput(&logs)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
+			a := &Approver{Client: cs, Revoked: func(context.Context) (revoked.List, error) { return tc.list, tc.err }}
+			err := a.Once(context.Background())
+			if (err != nil) != (tc.err != nil) || (err != nil && !strings.Contains(err.Error(), "timeout")) {
+				t.Errorf("err = %v, want %v", err, tc.err)
+			}
+			for csr, want := range tc.want {
+				got, err := cs.CertificatesV1().CertificateSigningRequests().Get(context.Background(), csr, metav1.GetOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if decided(got) != want {
+					t.Errorf("%s: decided %v, want %v", csr, decided(got), want)
+				}
+			}
+			for _, want := range tc.log {
+				if !strings.Contains(logs.String(), want) {
+					t.Errorf("log lacks %q:\n%s", want, logs.String())
+				}
+			}
+		})
+	}
+}
+
+// Without a function of its own, the approver reads the revoked nodes from its client.
+func TestApproverReadsRevokedNodesFromTheCluster(t *testing.T) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: revoked.Namespace, Name: revoked.Name},
+		Data:       map[string]string{"w1": "2026-10-23T10:00:00Z"},
+	}
+	cs := fake.NewClientset(w1, cm, request{}.csr(t, "w1-serving"))
+	if err := (&Approver{Client: cs}).Once(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cs.CertificatesV1().CertificateSigningRequests().Get(context.Background(), "w1-serving", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decided(got) {
+		t.Errorf("approved the revoked node's request: %v", got.Status.Conditions)
 	}
 }

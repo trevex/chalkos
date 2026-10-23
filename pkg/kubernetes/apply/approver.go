@@ -9,6 +9,7 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
@@ -16,6 +17,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
 const (
@@ -90,9 +93,11 @@ func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node
 }
 
 // Approver approves kubelet serving certificate requests that Approvable accepts and leaves
-// the others pending.
+// the others pending, as it does those of revoked nodes.
 type Approver struct {
 	Client kubernetes.Interface
+	// Revoked returns the revoked nodes; nil reads them through Client. Tests replace it.
+	Revoked func(context.Context) (revoked.List, error)
 	// refused remembers the requests already logged as refused.
 	refused map[string]bool
 }
@@ -121,12 +126,19 @@ func (a *Approver) Once(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The revoked nodes are read once a pass, and only when a request awaits a decision.
+	revokedNodes := sync.OnceValues(func() (revoked.List, error) {
+		if a.Revoked != nil {
+			return a.Revoked(ctx)
+		}
+		return revoked.Load(ctx, a.Client)
+	})
 	exists := map[string]bool{}
 	var errs []error
 	for i := range list.Items {
 		csr := &list.Items[i]
 		exists[csr.Name] = true
-		if err := a.review(ctx, csr); err != nil {
+		if err := a.review(ctx, csr, revokedNodes); err != nil {
 			errs = append(errs, fmt.Errorf("certificate request %s: %w", csr.Name, err))
 		}
 	}
@@ -138,13 +150,22 @@ func (a *Approver) Once(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// review approves one request if Approvable accepts it.
-func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSigningRequest) error {
+// review approves one request if Approvable accepts it and its node is not revoked. While the
+// revoked nodes cannot be read, it leaves the request pending and returns the error.
+func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, revokedNodes func() (revoked.List, error)) error {
 	if csr.Spec.SignerName != certificatesv1.KubeletServingSignerName || decided(csr) {
 		return nil
 	}
 	var node *corev1.Node
 	if name, ok := strings.CutPrefix(csr.Spec.Username, nodeUserPrefix); ok && name != "" {
+		list, err := revokedNodes()
+		if err != nil {
+			return fmt.Errorf("left pending: %w", err)
+		}
+		if at, ok := list[name]; ok {
+			a.leavePending(csr, revokedError(name, at))
+			return nil
+		}
 		n, err := a.Client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 		switch {
 		case err == nil:
@@ -154,10 +175,7 @@ func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSi
 		}
 	}
 	if err := Approvable(csr, node); err != nil {
-		if !a.refused[csr.Name] {
-			log.Printf("leaving certificate request %s pending: %v", csr.Name, err)
-			a.refused[csr.Name] = true
-		}
+		a.leavePending(csr, err)
 		return nil
 	}
 	csr.Status.Conditions = append(csr.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{
@@ -181,4 +199,20 @@ func decided(csr *certificatesv1.CertificateSigningRequest) bool {
 		}
 	}
 	return false
+}
+
+// leavePending logs, once for each request, why it stays pending.
+func (a *Approver) leavePending(csr *certificatesv1.CertificateSigningRequest, why error) {
+	if !a.refused[csr.Name] {
+		log.Printf("leaving certificate request %s pending: %v", csr.Name, why)
+		a.refused[csr.Name] = true
+	}
+}
+
+// revokedError says that the node is revoked, and since when if the time is known.
+func revokedError(name string, at time.Time) error {
+	if at.IsZero() {
+		return fmt.Errorf("node %s is revoked", name)
+	}
+	return fmt.Errorf("node %s is revoked since %s", name, at.Format(revoked.TimeFormat))
 }
