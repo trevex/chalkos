@@ -314,5 +314,7 @@ kubelet's journal, `chalkctl logs cp1 --unit=kubelet.service`.
 
 - [Run a highly available control plane](ha-control-plane.md).
 - [Upgrade Kubernetes](upgrade-kubernetes.md) to a new release.
+- [Change a node's config](../operate/change-config.md) covers previews, refusals and the
+  services a change restarts.
 - [Kubernetes on chalkos](../how-it-works/kubernetes/kubernetes.md) explains what runs on each node
   and what the control plane applies.

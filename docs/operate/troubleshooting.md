@@ -130,8 +130,8 @@ endpoint needs a `Registry` of its host with `insecure: true`.
 
 On the shipped variant, symptoms of Kubernetes show in the status's Kubernetes line or in
 kubectl: a node with no address, a control plane that waits for bootstrap or does not finish
-joining, failing `kubectl logs`, pods that cannot reach each other, and a Node without a pod
-range. [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) covers each one.
+joining, failing `kubectl logs`, pending kubelet certificate requests, pods that cannot reach each
+other, a Node without a pod range, and a kubelet certificate lost with VAR. [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) covers each one.
 
 ## What to put in a bug report
 
