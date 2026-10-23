@@ -359,7 +359,8 @@ clients with a certificate from the [OS CA](#os-ca). See
 ## OCI image { #oci-image }
 
 A chalkos image published to a registry as one OCI artifact, whose header and contract chalkctl
-reads from the registry when the [inventory](#inventory) names the image by reference. See
+reads from the registry when the [inventory](#inventory) names the image by reference, and which
+nodes pull in an [upgrade](#upgrade). See
 [Publish images to a registry](../guides/publish-images.md).
 
 ## Operator { #operator }

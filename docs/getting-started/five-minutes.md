@@ -115,8 +115,9 @@ through it. See [Architecture](../concepts/architecture.md) and
 ## Upgrades replace the whole image
 
 An upgrade starts with a new build: `nix build` writes a new image directory where the inventory's
-images point. `chalkctl upgrade` streams each node the image the inventory names for it, with the
-node's config, and chalkd writes it into the inactive slot. The node checks the config against the
+images point. `chalkctl upgrade` streams each node the image the inventory names for it, or has
+the node pull it from a registry, and sends the node's config with it. chalkd writes the image
+into the inactive slot. The node checks the config against the
 new image's schemas before the image becomes its next boot, then reboots into it with [boot
 counting](../reference/glossary.md#boot-counting): a boot that passes the [health
 check](../reference/glossary.md#health-check) is [blessed](../reference/glossary.md#blessed-boot),

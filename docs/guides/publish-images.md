@@ -12,15 +12,17 @@ the [UKI](../reference/glossary.md#uki), the boot loader and the contract, which
 config the image accepts. [`chalkctl validate`](../reference/cli/chalkctl_validate.md),
 [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and
 [`chalkctl status`](../reference/cli/chalkctl_status.md) read the image's header and contract from
-the registry. This guide builds the artifact with `mkImages`, signs it, pushes it with
-[chalkbuild](../reference/glossary.md#chalkbuild) and names it in the inventory.
+the registry, and [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) has each node pull
+the image from it. This guide builds the artifact with `mkImages`, signs it, pushes it with
+[chalkbuild](../reference/glossary.md#chalkbuild), names it in the inventory, gives the nodes the
+registry's credentials and upgrades them from it.
 
-!!! note "Install and upgrade take a directory"
+!!! note "Install takes a directory"
 
-    `chalkctl upgrade` and an install from the installer send an image from its directory, so they
-    refuse a node whose image the inventory names in a registry. A node that runs its image
-    already installs in place either way. Keep a directory source for the image, or pass `--image`
-    with its directory, for those commands.
+    An install from the installer sends the image from its directory, so it refuses a node whose
+    image the inventory names in a registry. A node that runs its image already installs in place
+    either way. Keep a directory source for the image, or pass `--image` with its directory, for
+    an install.
 
 ## Before you begin
 
@@ -113,10 +115,72 @@ ghcr.io/example/node-metal@sha256:<digest> (node on metal, root hash 2ece03b0fa0
 for each node whose config is valid. The digest is that of the manifest chalkctl read, so it names
 the image that was checked even when the inventory names a tag.
 
+## Give the nodes the registry's credentials
+
+A node authenticates its pull with a [`Registry`](../reference/kinds.md#registry) document of its
+config, whose `host` is the registry's host as the image reference names it. A public registry
+that serves the image anonymously needs no `Registry`. The password comes from a `Secret`, so add
+both documents to a file every node gets:
+
+```yaml title="cluster/registry.yaml"
+apiVersion: chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: ghcr}
+spec:
+  host: ghcr.io
+  username: example-bot
+  password: {secretRef: {name: registry, key: token}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: registry}
+spec:
+  data: {token: <token>}
+```
+
+The config holds one `Registry` per host. A `Registry` gives `username` and `password` together,
+or neither to pull from the host anonymously. chalkd matches the host in any case and as image
+references name registries, so `docker.io` matches `index.docker.io`. It takes the `Registry`
+documents of the config the upgrade delivers, or, when the upgrade carries no config, those of
+the config the node runs.
+
+chalkd pulls over HTTPS only and trusts the certificate authorities of the image's system trust
+store; a `Registry` adds no CA of its own. A registry that serves only plain HTTP, such as one in
+a lab, needs `insecure: true` in its `Registry`, also when the registry has a private or loopback
+address. With it, the credentials and the image travel unencrypted, so anyone on the network path
+can read the credentials. The image stays protected, because the node checks every byte against
+the digests chalkctl read and against the root hash. Set `insecure` only for a registry on a
+trusted network, such as a lab.
+
+## Upgrade from the registry
+
+`chalkctl upgrade` resolves the inventory's reference to a digest once and sends each node the
+reference by that digest, so every node pulls the same image even when the tag moves during the
+run:
+
+```sh
+chalkctl upgrade
+```
+
+chalkctl reads only the manifest, the header and the contract from the registry; each node pulls
+the store, the hash tree and the UKI itself, so a node needs a connection to the registry, as
+[Ports and firewall](../reference/ports-and-firewall.md#connections-a-node-makes) lists. chalkd
+checks the pulled header and layer digests against the ones chalkctl sent, then checks the layers
+as it checks a streamed image: their SHA-256 sums, the store against the root hash, and the UKI
+against the firmware's db and dbx when Secure Boot is enforced. A layer whose registry sends no
+data for two minutes stops that node's upgrade. A node that has the image staged already gets it
+without contacting the registry.
+
+A node whose chalkd predates pulling stops the run before any node is drained, and chalkctl names
+it. Upgrade such a node once to an image from a directory, with `--image` or a directory source in
+the inventory, then run the upgrade from the registry again.
+
 ## What next
 
 - [Sign images for Secure Boot](secure-boot-signing.md) creates the db key and gets the firmware
   to trust it.
 - [`chalkbuild oci`](../reference/cli/chalkbuild_oci.md) writes a layout from an image directory
   outside Nix.
-- [Upgrade a cluster](upgrade-cluster.md) rolls an image from its directory through the nodes.
+- [Upgrade a cluster](upgrade-cluster.md) rolls an image through the nodes, from a registry or a
+  directory.
+- [Upgrades](../concepts/upgrades.md) explains what each node checks before the image boots.

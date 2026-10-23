@@ -120,6 +120,12 @@ and [chalkd](../reference/glossary.md#chalkd) refuses one that is not before it 
 Sign each build with `chalkbuild sign` before the upgrade; chalkctl sends the image as the
 directory holds it and checks no signature. An upgrade leaves the node's boot loader as it is.
 
+The inventory can name an image in a registry instead, by `source.oci`. chalkctl then sends each
+node the image's reference by digest, and the node pulls the image with the credentials of its
+[`Registry`](../reference/kinds.md#registry) for the registry's host, then checks it as it checks a
+streamed image. [Publish images to a registry](publish-images.md) covers pushing the signed image,
+the credentials and the upgrade.
+
 ## Run the upgrade
 
 Run the command in the inventory's directory, or name the inventory with `--inventory`. It

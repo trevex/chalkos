@@ -71,6 +71,17 @@ chalkctl upgrade --image=<image-dir> --max-unavailable=2
 copy of the one `nix build` produced. In both cases chalkctl sends the image as the directory
 holds it, so the signing key stays on the machine that ran chalkbuild.
 
+An image the inventory names in a registry, by `source.oci`, is pulled by each node. chalkctl
+resolves the reference to a digest once, reads the manifest, the header and the contract, and
+sends each node the reference by that digest with the header's sizes and SHA-256 sums of the
+store, hash tree and UKI. chalkd pulls those layers and checks them against what chalkctl sent.
+It authenticates with the [`Registry`](../reference/kinds.md#registry) for the registry's host,
+from the config the upgrade delivers or else the config it runs, and pulls over HTTPS unless that
+`Registry` sets `insecure`. A chalkd from before pulling cannot take such an upgrade, so chalkctl
+refuses the run before it drains any node; upgrading that node once from a directory fixes it.
+[Publish images to a registry](../guides/publish-images.md#upgrade-from-the-registry) covers the
+steps.
+
 Before it sends anything, chalkctl checks each image against the cluster:
 
 - the UKI boots the store the image holds: its `usrhash=` equals the store's root hash;
@@ -78,6 +89,9 @@ Before it sends anything, chalkctl checks each image against the cluster:
   generation, and names a variant and platform;
 - the config the inventory gives each node that gets the image suits the `schemas/` and
   `image.json` in the image's directory, as an install checks the config it delivers.
+
+For an image in a registry, chalkctl checks the config against the artifact's contract and reads
+no UKI, so the node alone checks the UKI's `usrhash=` and os-release.
 
 chalkctl checks no signature. Each node checks the UKI against its firmware's db and dbx before it
 writes anything, when Secure Boot is enforced, and refuses an unsigned or wrongly signed one.
@@ -214,7 +228,8 @@ For each node, chalkctl:
 1. reads what the node runs and its boot status;
 2. on a control plane, checks that etcd keeps its quorum while the node reboots;
 3. on a worker, drains the node;
-4. streams the image, unless the node has it installed already;
+4. streams the image, or tells the node to pull it from the registry, unless the node has it
+   installed already;
 5. on a control plane, drains the node;
 6. reboots the node;
 7. waits until the node runs the new image's root hash, its boot was found healthy and its Node is
@@ -374,6 +389,10 @@ to any image, which then runs as root with [STATE](../reference/glossary.md#stat
 [PCR 7](../reference/glossary.md#pcr-7) alone.
 [Security model](security.md) explains the consequences.
 
+An image a node pulls from a registry passes the same checks as a streamed one, against the
+digests and root hash chalkctl read, so the registry needs no more trust than a directory an image
+is streamed from.
+
 After a [rotation](../reference/glossary.md#rotation) of the [OS
 CA](../reference/glossary.md#os-ca), images rebuilt from the new `secrets.pub.json` and rolled out
 with `chalkctl upgrade` bring the trust of [maintenance
@@ -384,7 +403,8 @@ later.
 
 - Every node receives the whole compressed store, about 300 MiB with the hash tree and UKI. There
   are no delta updates, and nodes do not share a download.
-- Images travel only through chalkctl's stream. Nodes do not pull images from a registry.
+- Installs take an image only through chalkctl's stream; upgrades pull from a registry or
+  stream.
 - An upgrade never updates systemd-boot.
 - chalkctl does not check Kubernetes's
   [version skew policy](https://kubernetes.io/releases/version-skew-policy/) beyond upgrading

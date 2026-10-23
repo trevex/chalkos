@@ -75,6 +75,7 @@ schemas.
 | --- | --- | --- | --- |
 | [`Host`](../reference/kinds.md#host) | `chalkos.dev` | at most one | The node's hostname, which defaults to the node's name |
 | [`Secret`](../reference/kinds.md#secret) | `chalkos.dev` | any | Secret values by key, for the fields that reference them |
+| [`Registry`](../reference/kinds.md#registry) | `chalkos.dev` | any | Credentials chalkd pulls images of one registry host with |
 | [`SystemDisk`](../reference/kinds.md#systemdisk) | `storage.chalkos.dev` | exactly one | The system disk, the size of [VAR](../reference/glossary.md#var) and the encryption of the node's partitions |
 | [`Volume`](../reference/kinds.md#volume) | `storage.chalkos.dev` | any | A further [volume](../reference/glossary.md#volume): its disk, size, format, mount point and encryption |
 | [`TimeSync`](../reference/kinds.md#timesync) | `time.chalkos.dev` | at most one | Time servers, and whether those DHCP announces are used too |
@@ -95,6 +96,9 @@ Some kinds depend on the image or the node:
   `Addon` exist on images with Kubernetes, and `Flannel` only on those built with flannel as their
   pod network, so a document of one of them is an unknown kind on any other image. A node without
   Kubernetes has no type.
+- A `Registry` authenticates chalkd's pull of an upgrade's image, so it exists on every image.
+  containerd does not use it; `RegistryMirror` configures the mirrors of the container images
+  containerd pulls.
 - A `Network`, `NetDev` or `Link` document's `metadata.name` is the unit file's name without its
   suffix, so `10-uplink` becomes `/run/systemd/network/10-uplink.network` and networkd's order by
   file name holds. Sections and keys are networkd's own in camelCase: `[Match]` with `MACAddress=`
@@ -278,8 +282,10 @@ An image published to a registry is named by its reference in `source.oci` inste
 [`chalkbuild push`](../reference/cli/chalkbuild_push.md) prints it. Each image sets exactly one of
 `directory` and `oci`. A reference by tag is resolved to a digest once per command, so one command
 reads one image. `chalkctl validate`, `apply-config` and `status` read the image's header and
-contract from the registry. Upgrade, and install on a node that runs the installer, send only an
-image from a directory, so they refuse a node whose image has an `oci` source.
+contract from the registry. `chalkctl upgrade` has each node pull the image by its digest, with
+the credentials of the node's [`Registry`](../reference/kinds.md#registry) for the registry's
+host. An install on a node that runs the installer sends only an image from a directory, so it
+refuses a node whose image has an `oci` source.
 
 ```yaml
 node-metal: {source: {oci: ghcr.io/example/node-metal@sha256:<digest>}}

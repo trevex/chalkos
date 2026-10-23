@@ -271,9 +271,10 @@ chalkctl issued them at install. [Kubernetes on chalkos](kubernetes.md) describe
 ### Upgrades
 
 An upgrade replaces the whole image at once.
-[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) sends each node the image the inventory
-names for it, or the one `--image` gives, chalkd writes it into the inactive slot, and the node
-boots it with [boot counting](../reference/glossary.md#boot-counting). If the new image does not
+[`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) gives each node the image the inventory
+names for it, or the one `--image` gives: it streams an image from a directory, and has the node
+pull an image the inventory names in a registry. chalkd writes the image into the inactive slot,
+and the node boots it with [boot counting](../reference/glossary.md#boot-counting). If the new image does not
 become healthy within its tries, the node falls back to the image it ran before.
 [Upgrades](upgrades.md) and [Boot, health and rollback](boot-and-rollback.md) explain both halves.
 
@@ -282,8 +283,9 @@ become healthy within its tries, the node falls back to the image it ran before.
 - chalkos does not enrol Secure Boot keys on nodes. The firmware must trust the signer of the
   images before the install; only chalklab enrols keys, its own, in its VMs. Installing does not
   check that Secure Boot is on.
-- Images reach nodes only through chalkctl's stream over the node API. There is no pull from a
-  registry and no update server.
+- An install reaches a node only through chalkctl's stream over the node API. An upgrade is
+  streamed or pulled from a registry, and only when chalkctl starts it; there is no update
+  server.
 - Nodes have no shell access. Debugging goes through the node API's logs and status, or a
   privileged pod with [`chalkos.debug.tools`](../reference/options.md#chalkosdebugtools).
 - An image without an OS CA accepts any client in maintenance mode. Build images with mkImages'
