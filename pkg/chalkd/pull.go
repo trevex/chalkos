@@ -48,7 +48,7 @@ func newPull(ctx context.Context, ref string, h upgrade.Header, docs []config.Do
 	if h.BootLoaderSize > 0 {
 		parts = append(parts, ociimage.Part{MediaType: ociimage.BootLoaderType, Size: h.BootLoaderSize, SHA256: h.BootLoaderSHA256})
 	}
-	return ociimage.NewPull(ctx, ref, auth, insecure, want, parts)
+	return ociimage.NewPull(ctx, ref, []ociimage.Source{{Auth: auth, Insecure: insecure}}, want, parts)
 }
 
 // registryDocuments are the documents whose Registry documents authenticate the pull of ref: the

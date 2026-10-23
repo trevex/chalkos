@@ -1145,7 +1145,7 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	clear(l.writes)
 	served.Clear()
 	h := img.header
-	pull, err := ociimage.NewPull(context.Background(), ref, authn.Anonymous, true, oh, []ociimage.Part{
+	pull, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{{Auth: authn.Anonymous, Insecure: true}}, oh, []ociimage.Part{
 		{MediaType: ociimage.StoreType, Size: h.StoreSize, SHA256: h.StoreSHA256},
 		{MediaType: ociimage.HashTreeType, Size: h.VeritySize, SHA256: h.VeritySHA256},
 		{MediaType: ociimage.UKIType, Size: h.UKISize, SHA256: h.UKISHA256},
