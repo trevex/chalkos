@@ -192,7 +192,7 @@ trust the registry has. An `http://` endpoint, allowed by an `insecure` `Registr
 receives them over plain HTTP. The credentials of an endpoint's own `Registry` do not reach containerd.
 chalkd, which pulls OS images through the same `Mirror` documents, authenticates each endpoint
 with the `Registry` of the endpoint's host instead, and sends each host only its own credentials,
-as [Pull through a mirror](../../build/publish-images.md#pull-through-a-mirror) describes. The
+as [Pull through a mirror](../../operate/registries.md#pull-through-a-mirror) describes. The
 [`e2e-kubernetes`](../../contribute/testing.md#end-to-end-tests) check pins this behaviour: its
 worker pulls a private image through a mirror endpoint that accepts only the credentials of the
 image's registry.

@@ -51,7 +51,7 @@ The command that prepares the images Nix builds for a cluster's nodes. `chalkbui
 a copy of an [image directory](#image-directory) with the Secure Boot [db](#db-and-dbx) key, on
 the machine that holds the key, and checks the copy against the db certificate. It never talks
 to nodes. See [its commands](cli/chalkbuild.md) and
-[Sign images for Secure Boot](../build/secure-boot-signing.md).
+[Sign images for Secure Boot](../build/sign-images.md).
 
 ## chalkcfg { #chalkcfg }
 

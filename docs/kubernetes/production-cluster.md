@@ -142,7 +142,7 @@ images, and the nodes that run the GPU images name theirs in the inventory, on t
 group: a node's own `imageName` wins over its groups', which win over `spec.all.imageName`, and a
 node in two groups that name different images is refused.
 Every variant is built for every platform the flake names, so name only the platforms you run.
-[Customise an image](../build/customise-image.md) adds modules to a variant.
+[Variants and platforms](../build/variants-and-platforms.md) adds modules to a variant.
 
 ## Choose the number of control planes
 
@@ -322,7 +322,7 @@ Set `spec.encryption.mode: none` only for machines in a place you trust physical
 Every image a node boots is signed with a Secure Boot db
 key, and the firmware boots it only when the key's certificate is in db. chalkos does not enrol
 keys in the firmware: you enrol the certificate yourself, through the firmware's setup or your
-vendor's tools, before the first install. [Sign images for Secure Boot](../build/secure-boot-signing.md)
+vendor's tools, before the first install. [Sign images for Secure Boot](../build/sign-images.md)
 covers the keys and the enrolment.
 
 Treat the db key as fixed for the cluster's lifetime. PCR 7 measures which db certificate
@@ -447,7 +447,7 @@ Nodes pull the control plane's images, etcd, CoreDNS and the pause image from `r
 and flannel from `ghcr.io`. A
 [`Mirror`](../reference/kinds.md#mirror) document puts endpoints in front of one registry host;
 containerd tries them in order and falls back to the registry. chalkd uses the same mirrors for
-OS images, as [Pull through a mirror](../build/publish-images.md#pull-through-a-mirror) describes. A
+OS images, as [Pull through a mirror](../operate/registries.md#pull-through-a-mirror) describes. A
 cluster without internet access needs every image in a mirror, including those the image options
 [`chalkos.kubernetes.images`](../reference/options.md#chalkoskubernetesimagesetcd) and
 [`chalkos.cni.flannel.image`](../reference/options.md#chalkoscniflannelimage) name.

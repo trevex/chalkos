@@ -89,15 +89,6 @@ Secure Boot and publishing to a registry.
 
     [:octicons-arrow-right-24: Read](guard-changes.md)
 
--   :material-wrench: __Customise an image__
-
-    ---
-
-    Add packages, services, kernel modules, variants, config kinds and checked service config to a
-    cluster's images.
-
-    [:octicons-arrow-right-24: Read](customise-image.md)
-
 -   :material-disc: __Customise the installer__
 
     ---
@@ -110,17 +101,27 @@ Secure Boot and publishing to a registry.
 
     ---
 
-    Create a db signing key, enrol it in the firmware, and sign the images and the installer with
-    it.
+    An optional step: create a db key, sign a copy of each image and the installer, and name the
+    signed copy in the inventory.
 
-    [:octicons-arrow-right-24: Read](secure-boot-signing.md)
+    [:octicons-arrow-right-24: Read](sign-images.md)
 
 -   :material-cloud-upload: __Publish images to a registry__
 
     ---
 
-    Build an image as an OCI artifact, sign it, push it, and name it in the inventory.
+    Build an image as an OCI layout, sign it if the nodes need it, push it and name its digest in
+    the inventory.
 
     [:octicons-arrow-right-24: Read](publish-images.md)
+
+-   :material-check-decagram: __Test and roll out an image__
+
+    ---
+
+    Check an image and the nodes' config, upgrade the nodes, and confirm their outputs and
+    services.
+
+    [:octicons-arrow-right-24: Read](test-and-roll-out.md)
 
 </div>

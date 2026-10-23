@@ -26,7 +26,7 @@ PodDisruptionBudgets.
   too, but delivers no config: each node carries its own over.
 - The Secure Boot db
   key and certificate and chalkbuild, when your nodes
-  enforce Secure Boot. [Sign images for Secure Boot](../build/secure-boot-signing.md) explains the keys.
+  enforce Secure Boot. [Sign images for Secure Boot](../build/sign-images.md) explains the keys.
 - Three control planes, for an upgrade without API downtime. A cluster with one or two needs
   `--allow-downtime`, described below.
 - [Upgrades](../how-it-works/node/upgrades.md) explains the mechanism this guide drives.
@@ -124,8 +124,8 @@ The inventory can name an image in a registry instead, by `source.oci`. chalkctl
 node the image's reference by digest, and the node pulls the image, through the endpoints of its
 [`Mirror`](../reference/kinds.md#mirror) of the registry if it has one and with the credentials
 of its [`Registry`](../reference/kinds.md#registry) for each host, then checks it as it checks a
-streamed image. [Publish images to a registry](../build/publish-images.md) covers pushing the signed image,
-the credentials, mirrors and the upgrade.
+streamed image. [Publish images to a registry](../build/publish-images.md) covers pushing the image
+and the upgrade, and [Registries and mirrors](registries.md) the credentials and mirrors.
 
 ## Run the upgrade
 

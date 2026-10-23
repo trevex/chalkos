@@ -142,7 +142,7 @@ files in detail.
 
 The image is unsigned. A node that does not enforce Secure Boot installs it as it is. Nodes that
 enforce Secure Boot need a signed copy, which
-[Sign images for Secure Boot](secure-boot-signing.md) makes on a machine that holds the key, so
+[Sign images for Secure Boot](sign-images.md) makes on a machine that holds the key, so
 the key never enters `/nix/store`.
 
 chalkos does not wrap image conversion. `qemu-img convert -f raw -O qcow2` makes a qcow2 disk for

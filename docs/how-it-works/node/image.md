@@ -257,7 +257,7 @@ The image is unsigned, and the signing key never enters `/nix/store`.
 [`chalkbuild sign`](../../reference/cli/chalkbuild_sign.md) signs a copy of the image directory: the
 boot loader and the UKIs on the raw image's ESP. chalkctl installs and upgrades nodes that enforce
 Secure Boot with the signed copy.
-[Sign images for Secure Boot](../../build/secure-boot-signing.md) covers the keys.
+[Sign images for Secure Boot](../../build/sign-images.md) covers the keys.
 
 `mkImages` also builds each image as an OCI artifact, `oci.<variant>-<platform>`: an OCI image
 layout that holds the store, the hash tree, the UKI, the boot loader and the contract as layers.
@@ -284,6 +284,6 @@ then have the node pull it.
 - [Security model](security.md) for what Secure Boot and dm-verity protect against.
 - [Image and partition layout](../../reference/image-layout.md) and
   [os-release fields](../../reference/os-release.md) for the details.
-- [Customise an image](../../build/customise-image.md),
+- [Your first image flake](../../build/first-image.md),
   [Add software, drivers and kernel modules](../../build/add-software.md) and
-  [Sign images for Secure Boot](../../build/secure-boot-signing.md) for the tasks.
+  [Sign images for Secure Boot](../../build/sign-images.md) for the tasks.

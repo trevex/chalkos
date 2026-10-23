@@ -64,7 +64,7 @@ or any certificate of its signature dbx lists, and any binary at all while dbx h
 cannot read. A node therefore never reboots into an image its firmware would refuse.
 chalkctl checks no signatures; it sends the image as it is,
 and the node's check is the one that refuses an unsigned or wrongly signed image. The
-[signing guide](../../build/secure-boot-signing.md) creates the key and enrols it.
+[signing guide](../../build/sign-images.md) creates the key and enrols it.
 
 ## What does Secure Boot do for upgrades?
 
@@ -255,7 +255,7 @@ tools to an image for that.
 ## Limits
 
 - chalkos does not enrol Secure Boot keys. The operator enrols the db certificate in each
-  machine's firmware, as the [signing guide](../../build/secure-boot-signing.md) shows; only
+  machine's firmware, as the [signing guide](../../build/sign-images.md) shows; only
   chalklab enrols keys, its own, in its virtual machines.
   Installing does not check that Secure Boot is on.
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it
@@ -282,7 +282,7 @@ tools to an image for that.
 - [Certificates](certificates.md): every CA and certificate, renewal, rotation and revocation.
 - [Storage and encryption](storage.md): the encrypted volumes and their keyslots.
 - [The image](image.md): the store, dm-verity and the UKI.
-- [Sign images for Secure Boot](../../build/secure-boot-signing.md).
+- [Sign images for Secure Boot](../../build/sign-images.md).
 - [Rotate certificates and CAs](../../operate/rotate-certificates.md).
 - [Node API](../../reference/api.md), [`chalkctl config new`](../../reference/cli/chalkctl_config_new.md)
   and [`chalkctl gen secrets`](../../reference/cli/chalkctl_gen_secrets.md).

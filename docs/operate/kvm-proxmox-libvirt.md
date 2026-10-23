@@ -29,7 +29,7 @@ You need:
   [`osCA`](../reference/options.md#osca) argument of `mkImages` set to `./secrets.pub.json`, as
   in [Install on bare metal](install-bare-metal.md#before-you-begin).
 - A Secure Boot db key and certificate, `db.key` and
-  `db.crt`, from [Sign images for Secure Boot](../build/secure-boot-signing.md), and
+  `db.crt`, from [Sign images for Secure Boot](../build/sign-images.md), and
   chalkbuild, which signs images with them. On a VM you own
   the firmware's UEFI variables, so you enrol the certificate yourself, as shown below.
 - A KVM host with QEMU, OVMF built with Secure Boot and SMM support, and swtpm. libvirt and
@@ -372,7 +372,7 @@ On Proxmox, the VM's summary shows the addresses the agent reports.
   how each variant's image is built for each, and
   [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) the install in
   place.
-- [Sign images for Secure Boot](../build/secure-boot-signing.md) covers the key's life and why it must
+- [Sign images for Secure Boot](../build/sign-images.md) covers the key's life and why it must
   not change for an installed node.
 - [Install on bare metal](install-bare-metal.md) continues with bootstrap, kubeconfigs and
   recovery keys.

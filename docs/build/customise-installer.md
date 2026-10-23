@@ -5,29 +5,35 @@ description: "Give the installer static addresses, VLANs, bonds, drivers or firm
 
 # Customise the installer
 
-The cluster's installer takes its addresses by DHCP on
-every Ethernet port and carries the drivers of the base
-module groups. When a machine has no DHCP on its
-network, sits on a VLAN, needs a bond, or has a network card or storage controller the installer
-cannot drive, add NixOS modules to the installer with the
-[`installer.modules`](../reference/options.md#installermodules) argument of `chalkos.lib.mkImages`,
-build it again and sign it. The change affects the installer alone; the images of the
-variants and installed nodes stay as they are. `mkImages`
-builds one installer, which installs the images of every platform.
+This page is for an image author whose machines need more from the installer than DHCP and the
+base drivers. At the end the cluster's installer gives a machine a static address, a VLAN or a
+bond, drives its network card and storage controller, and writes its console where the BMC shows
+it. One installer still serves the whole cluster.
 
-The settings go into the image because under Secure Boot
-the kernel command line is part of the signed UKI, so you cannot
-add `ip=` or a driver option at the boot menu, and there is nothing on the medium to edit after
-signing. Whatever differs between machines goes into the installer and is matched at boot by MAC
-address or interface name. One installer then serves the whole cluster: each machine finds the
+The installer takes its addresses by DHCP on every Ethernet port and carries the drivers of the
+base module groups. A machine without DHCP on its network, on a VLAN, with a bond, or with a card
+the installer cannot drive needs NixOS modules of its own in the installer. The
+[`installer.modules`](../reference/options.md#installermodules) argument of `chalkos.lib.mkImages`
+adds them. They change the installer alone: the variants' images and the installed nodes stay as
+they are. `mkImages` builds one installer, which installs the images of every platform.
+
+The settings go into the installer's image because the kernel command line is part of the UKI.
+Under Secure Boot the UKI is signed, so the boot menu cannot add `ip=` or a driver option, and
+nothing on the medium can change after signing. Whatever differs between machines goes into the
+installer and is matched at boot by MAC address or interface name. Each machine then finds the
 network configuration written for it, and the others fall back to DHCP.
 
 ## Before you begin
 
-You need the flake that builds the cluster's images with `mkImages`, with
-[`osCA`](../reference/options.md#osca) set, the db key and
-certificate from [Sign images for Secure Boot](secure-boot-signing.md), and the MAC addresses of
-the machines' ports, from the BMC, the firmware setup or the machines' labels.
+You need:
+
+- The flake that builds the cluster's images with `mkImages`, with
+  [`osCA`](../reference/options.md#osca) set.
+- The MAC addresses of the machines' ports, from the BMC, the firmware setup or the machines'
+  labels.
+- For machines that enforce Secure Boot, the db key and certificate of
+  [Sign images for Secure Boot](sign-images.md).
+
 [Install on bare metal](../operate/install-bare-metal.md) builds the unchanged installer.
 
 ## Add a module to the installer
@@ -48,15 +54,12 @@ images = chalkos.lib.mkImages {
 packages.x86_64-linux.installer = images.installer;
 ```
 
-The installer does not carry `modules`, the modules every variant gets: it holds no config, so
+The installer does not carry `modules`, the modules every variant gets. It holds no config, so
 modules that read config have nothing to do there.
 
 ## Give a machine a static address
 
-The installer configures its network with systemd-networkd. Its default network file,
-`99-ethernet-default-dhcp`, runs DHCP on every Ethernet port; networkd applies the first file in
-name order that matches a port, so a file with a lower number takes the port over. Write one per
-machine, matched by the MAC address of its port:
+Write a network file per machine, matched by the MAC address of its port:
 
 ```nix title="installer.nix"
 {
@@ -69,12 +72,15 @@ machine, matched by the MAC address of its port:
 }
 ```
 
+The installer configures its network with systemd-networkd. Its default network file,
+`99-ethernet-default-dhcp`, runs DHCP on every Ethernet port. networkd applies the first file in
+name order that matches a port, so `10-cp1` takes the port over.
+
 The options are NixOS's
 [`systemd.network`](https://nixos.org/manual/nixos/stable/options#opt-systemd.network.networks)
-options, whose sections and keys a node's `Network` documents carry in camelCase. Giving a
-machine the address its node will have after the install lets chalkctl reach it without
-`--address`, at the address the inventory names for the
-node.
+options, whose sections and keys a node's `Network` documents carry in camelCase. Give a machine
+the address its node has after the install. chalkctl then reaches it at the address the inventory
+names for the node, without `--address`.
 
 ## Put the installer on a VLAN
 
@@ -165,19 +171,18 @@ them:
 }
 ```
 
-The build fails on a module name the kernel does not have, so a typo shows at build time, not at
-the machine. `linux-firmware` holds the firmware of every vendor and adds several hundred MiB;
-[Add software, drivers and kernel modules](add-software.md) shows how to find the right module and take
-only the firmware files a card needs. The installer only needs to reach the network and see the
+The build fails on a module name the kernel does not have, so a typo shows at build time.
+`linux-firmware` holds the firmware of every vendor and adds several hundred MiB.
+[Add software, drivers and kernel modules](add-software.md) shows how to find the right module and
+take only the firmware files a card needs. The installer only needs to reach the network and see the
 target disk. The image the node runs needs the same drivers, in its variant's or platform's
 modules.
 
 ## Change the console
 
 The installer writes its console to the screen and to the first serial port, `ttyS0`. Linux sends
-kernel messages to every console on the command line, but
-chalkd's lines, with the fingerprint and the addresses, go to the
-last one only. A machine whose BMC shows serial-over-LAN on the second port needs that port last:
+kernel messages to every console on the command line. chalkd's lines, with the fingerprint and
+the addresses, go to the last one only. A machine whose BMC shows serial-over-LAN on the second port needs that port last:
 
 ```nix title="installer.nix"
 { lib, ... }:
@@ -189,17 +194,16 @@ last one only. A machine whose BMC shows serial-over-LAN on the second port need
 `lib.mkAfter` places the entry after the installer's own `console=` entries. A plain list would
 come before them, leaving `ttyS0` last.
 
-## What the installer must keep
+## The installer keeps chalkd in installer mode
 
 The modules may change anything a NixOS module can, except three things that make the image the
 installer. The build fails with a message when a module disables `chalkd.service`, changes its
-`CHALKD_INSTALLER` environment variable, or sets `chalkos.platform.name`: the installer runs
-chalkd in installer mode and installs images of every platform.
+`CHALKD_INSTALLER` environment variable, or sets `chalkos.platform.name`. The installer runs
+chalkd in installer mode, and installs images of every platform.
 
-## Build and sign the installer
+## Build the installer and sign a copy
 
-Build the installer and sign a copy of its directory, as in
-[Install on bare metal](../operate/install-bare-metal.md#sign-the-installer):
+Build the installer:
 
 ```console
 $ nix build .#installer -o installer
@@ -207,26 +211,29 @@ $ ls installer
 chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metadata.json  repart-output.json
 ```
 
+Machines without Secure Boot boot `installer/chalkos-installer.iso` as it is. For machines that
+enforce Secure Boot, sign a copy, as
+[Sign images for Secure Boot](sign-images.md#sign-the-installer) does:
+
 ```sh
 rm -rf installer-signed
-chalkbuild sign --key=db.key --cert=db.crt installer installer-signed
+chalkbuild sign --key db.key --cert db.crt installer installer-signed
 ```
 
-[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs the copy's raw image and ISO, and
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs the copy's raw image and ISO. It
 refuses an output directory that exists, so the first command removes the copy of an earlier
 build. Write `installer-signed/chalkos-installer.iso` to the stick.
 
-Sign the installer with the key the nodes' images are signed with: the installer seals each
-node's STATE to PCR 7 as
-measured under the installer, and an image signed with another key asks for the
+Sign the installer with the key that signs the nodes' images. The installer seals each node's
+STATE to PCR 7 as measured under the installer, so an image signed with another key asks for the
 recovery key on its first boot.
 
-The installer also carries the OS CA of the
-`secrets.pub.json` that the `osCA` argument names, and accepts only clients whose certificate
-chains to it. After an OS CA rotation with
-[`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), build and sign the installer and the
-images again, since images carry the OS CA too. An installer or image in maintenance mode built
-before the rotation refuses chalkctl's new certificate, and chalkctl says so:
+The installer carries the OS CA of the `secrets.pub.json` that the `osCA` argument names. It
+accepts only clients whose certificate chains to that CA. After an OS CA rotation with
+[`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), build the installer and the images again,
+and sign them again where the nodes need it, because images carry the OS CA too. An installer or
+image in maintenance mode built before the rotation refuses chalkctl's new certificate, and
+chalkctl says so:
 `the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's
 certificate; build the image and the installer media again from the current secrets.pub.json`.
 
@@ -246,7 +253,7 @@ installer reaches the network and drives the storage controller:
 chalkctl disks --address=10.0.0.11 --fingerprint=<fingerprint> --secrets=secrets.age
 ```
 
-A disk that is missing from the list needs its controller's driver; a machine whose console shows
+A disk that is missing from the list needs its controller's driver. A machine whose console shows
 `addresses none yet` matched no network file, or its port has no driver.
 
 ## What next
@@ -254,6 +261,6 @@ A disk that is missing from the list needs its controller's driver; a machine wh
 - [Install on bare metal](../operate/install-bare-metal.md) continues with the install.
 - [Add software, drivers and kernel modules](add-software.md) adds the same drivers to the images the
   installed nodes run.
-- [Sign images for Secure Boot](secure-boot-signing.md) covers the db key.
+- [Sign images for Secure Boot](sign-images.md) covers the db key.
 - [Architecture](../how-it-works/node/architecture.md#how-does-a-machine-become-a-node) explains what
   the installer does during an install.

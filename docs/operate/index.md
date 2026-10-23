@@ -6,7 +6,8 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 # Operate nodes
 
 These pages are for operators who run nodes with chalkctl and YAML files. They cover installing
-nodes, adding storage, upgrading, rotating certificates, recovering a node and troubleshooting.
+nodes, adding storage, upgrading, pulling images from registries, rotating certificates,
+recovering a node and troubleshooting.
 Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernetes/index.md).
 
 <div class="grid cards" markdown>
@@ -42,6 +43,14 @@ Planning and setting up a Kubernetes cluster is in [Run Kubernetes](../kubernete
     Roll a new image through a cluster node by node, including a new Kubernetes version.
 
     [:octicons-arrow-right-24: Read](upgrade-cluster.md)
+
+-   :material-database-arrow-down: __Registries and mirrors__
+
+    ---
+
+    Give nodes the credentials of a private registry, and pull images through a mirror.
+
+    [:octicons-arrow-right-24: Read](registries.md)
 
 -   :material-certificate: __Rotate certificates and CAs__
 

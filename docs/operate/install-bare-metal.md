@@ -34,7 +34,7 @@ You need:
   [requirements](../get-started/requirements.md) list the rest.
 - A Secure Boot db key and certificate, `db.key` and
   `db.crt`, and the certificate enrolled in each machine's firmware.
-  [Sign images for Secure Boot](../build/secure-boot-signing.md) creates them and explains the enrolment,
+  [Sign images for Secure Boot](../build/sign-images.md) creates them and explains the enrolment,
   which chalkos does not do for you.
 - chalkbuild, which signs the images, on the machine that
   holds `db.key`, from `nix shell github:trevex/chalkos#chalkbuild` or
@@ -378,7 +378,7 @@ chalkctl reports the installer's refusal as its error. The common ones:
 
 - [Architecture](../how-it-works/node/architecture.md) follows an install step by step through chalkctl,
   chalkd and the disk.
-- [Sign images for Secure Boot](../build/secure-boot-signing.md) and
+- [Sign images for Secure Boot](../build/sign-images.md) and
   [Customise the installer](../build/customise-installer.md) prepare the media for more machines.
 - [Run a highly available control plane](../kubernetes/ha-control-plane.md) adds the second and third control
   planes.

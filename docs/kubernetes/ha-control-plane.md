@@ -26,7 +26,7 @@ member, removing one and replacing a failed machine.
   [Install on bare metal](../operate/install-bare-metal.md) describes.
 - The control planes' image signed with the Secure Boot db
   key the machines' firmware trusts, in the directory the inventory names, as
-  [Sign images for Secure Boot](../build/secure-boot-signing.md) describes.
+  [Sign images for Secure Boot](../build/sign-images.md) describes.
 
 ## Define three control planes and the VIP
 
