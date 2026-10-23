@@ -156,7 +156,9 @@ func (a *app) nodeUnrevoke(ctx context.Context, f revokeFlags, pos []string) err
 }
 
 // unrevokedLine says what unrevoking the node revoked at means, with the CAs that predate the
-// revocation; at is zero when the time is unknown.
+// revocation; at is zero when the time is unknown. When the old node's certificates work again,
+// it says how the old node comes back: a kubelet whose Node was deleted never registers it again
+// until it restarts.
 func unrevokedLine(name string, at time.Time, stale []string) string {
 	when := "its revocation, at an unknown time,"
 	if !at.IsZero() {
@@ -169,8 +171,10 @@ func unrevokedLine(name string, at time.Time, stale []string) string {
 	if len(stale) > 1 {
 		verb = "were"
 	}
-	return fmt.Sprintf("unrevoked node %s; its certificates from before %s work again until they expire: the %s %s not rotated since",
-		name, when, strings.Join(stale, " and "), verb)
+	return fmt.Sprintf("unrevoked node %s; its certificates from before %s work again until they expire: the %s %s not rotated since\n"+
+		"the old %s's kubelet does not register its Node again by itself: reboot it with chalkctl reboot %s, or restart its kubelet; "+
+		"a node installed afresh as %s registers as usual",
+		name, when, strings.Join(stale, " and "), verb, name, name, name)
 }
 
 // revokedLines are the status lines of the nodes a control plane lists as revoked, or of why

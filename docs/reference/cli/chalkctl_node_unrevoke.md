@@ -14,10 +14,18 @@ node's certificates then work again too, unless the CAs they chain to were rotat
 revocation: chalkd trusts every node CA the OS CA signed, and the kubelet's certificates chain to
 the Kubernetes CA. The control plane therefore refuses while the OS CA or the Kubernetes CA
 predates the revocation, and names the rotations missing. --force unrevokes the node anyway, and
-its old certificates work again until they expire.
+its old certificates work again until they expire. The check looks at the OS CA and the
+Kubernetes CA alone. A former control plane's etcd and front-proxy certificates are beyond
+revocation either way: they stay valid until chalkctl rotate kubernetes-ca, which replaces those
+CAs along with the Kubernetes CA, has finished.
 
 To reuse a revoked node's name safely, rotate both CAs first, then unrevoke it:
-chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish.
+chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish. A node installed
+afresh under the name then joins as usual.
+
+The old node does not come back by itself after a forced unrevoke: its kubelet registers its Node
+once as it starts, and not again when the Node is deleted, as the revocation did. Reboot the old
+node with chalkctl reboot, or restart its kubelet.
 
 A control plane unrevokes the node: --via, or the first one that answers. The command needs an
 admin client file or the secrets file.
@@ -34,6 +42,7 @@ chalkctl node unrevoke <node> [flags]
 
   # Let the old w1 back in, certificates and all.
   chalkctl node unrevoke w1 --force
+  chalkctl reboot w1
 ```
 
 ## Options

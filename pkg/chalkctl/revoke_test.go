@@ -100,7 +100,7 @@ func TestNodeUnrevoke(t *testing.T) {
 	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--force"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	want := "unrevoked node w2; its certificates from before " + future.Format(time.RFC3339) + " work again until they expire: the os-ca and kubernetes-ca were not rotated since\n"
+	want := "unrevoked node w2; its certificates from before " + future.Format(time.RFC3339) + " work again until they expire: the os-ca and kubernetes-ca were not rotated since\n" + reregister("w2") + "\n"
 	if got := ta.stdout.String(); got != want {
 		t.Errorf("forced: stdout = %q, want %q", got, want)
 	}
@@ -122,8 +122,8 @@ func TestUnrevokedLine(t *testing.T) {
 		want  string
 	}{
 		{at, nil, "unrevoked node w1; the certificates it held before 2026-10-23T12:00:00Z are no longer trusted"},
-		{at, []string{"os-ca"}, "unrevoked node w1; its certificates from before 2026-10-23T12:00:00Z work again until they expire: the os-ca was not rotated since"},
-		{time.Time{}, []string{"os-ca", "kubernetes-ca"}, "unrevoked node w1; its certificates from before its revocation, at an unknown time, work again until they expire: the os-ca and kubernetes-ca were not rotated since"},
+		{at, []string{"os-ca"}, "unrevoked node w1; its certificates from before 2026-10-23T12:00:00Z work again until they expire: the os-ca was not rotated since\n" + reregister("w1")},
+		{time.Time{}, []string{"os-ca", "kubernetes-ca"}, "unrevoked node w1; its certificates from before its revocation, at an unknown time, work again until they expire: the os-ca and kubernetes-ca were not rotated since\n" + reregister("w1")},
 	} {
 		if got := unrevokedLine("w1", tc.at, tc.stale); got != tc.want {
 			t.Errorf("unrevokedLine(%v, %v) = %q, want %q", tc.at, tc.stale, got, tc.want)
@@ -259,4 +259,10 @@ func TestNodeRevokeWithoutControlPlanes(t *testing.T) {
 			t.Errorf("node %s: %v", cmd, err)
 		}
 	}
+}
+
+// reregister is the line that tells how the old node registers its Node again.
+func reregister(name string) string {
+	return "the old " + name + "'s kubelet does not register its Node again by itself: reboot it with chalkctl reboot " + name +
+		", or restart its kubelet; a node installed afresh as " + name + " registers as usual"
 }
