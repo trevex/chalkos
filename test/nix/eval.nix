@@ -398,6 +398,12 @@ lib.runTests {
             c.systemd.services.chalkos-chrony-dhcp.serviceConfig.RemainAfterExit
             && c.systemd.paths.chalkos-chrony-dhcp.pathConfig.Unit == "chalkos-chrony-dhcp-links.service"
             && lib.hasSuffix "systemctl restart chalkos-chrony-dhcp.service" c.systemd.services.chalkos-chrony-dhcp-links.serviceConfig.ExecStart;
+          # A burst of link changes, as a CNI's interfaces bring at boot, starts the units more
+          # often than systemd's default limits allow; none of the three may fail for it.
+          dhcpUnlimited =
+            c.systemd.paths.chalkos-chrony-dhcp.pathConfig.TriggerLimitIntervalSec == 0
+            && c.systemd.services.chalkos-chrony-dhcp-links.startLimitIntervalSec == 0
+            && c.systemd.services.chalkos-chrony-dhcp.startLimitIntervalSec == 0;
           chalkdHasChronyc = lib.elem c.services.chrony.package c.systemd.services.chalkd.path;
           # chrony's effect, on its output, runs a script of chalkd's PATH, which leaves a chronyd
           # that does not run.
@@ -457,6 +463,7 @@ lib.runTests {
       dhcpGrant = [ "TimeSync" ];
       dhcpReadsConfig = true;
       dhcpRerunsOnChange = true;
+      dhcpUnlimited = true;
       chalkdHasChronyc = true;
       reloadSources = true;
       output = {

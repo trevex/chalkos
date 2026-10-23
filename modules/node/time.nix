@@ -71,16 +71,22 @@ in
     when = cel.specsChanged "time.chalkos.dev/v1alpha1" "TimeSync";
     restart = [ "chalkos-chrony-dhcp.service" ];
   };
+  # A CNI brings up several links at once at boot, each a change of /run/systemd/netif/links, and
+  # every change restarts chalkos-chrony-dhcp. systemd's default limits fail the path and both
+  # services on such a burst, and a failed path passes on no later change; the units are cheap
+  # and run the same each time, so none of them is limited.
   systemd.paths.chalkos-chrony-dhcp = {
     wantedBy = [ "multi-user.target" ];
     after = [ "chalkos-config.service" ];
     pathConfig = {
       PathChanged = "/run/systemd/netif/links";
       Unit = "chalkos-chrony-dhcp-links.service";
+      TriggerLimitIntervalSec = 0;
     };
   };
   systemd.services.chalkos-chrony-dhcp-links = {
     description = "Pass the time servers DHCP announced to chrony after a link changed";
+    startLimitIntervalSec = 0;
     serviceConfig = {
       Type = "oneshot";
       ExecStart = "${config.systemd.package}/bin/systemctl restart chalkos-chrony-dhcp.service";
@@ -88,6 +94,7 @@ in
   };
   systemd.services.chalkos-chrony-dhcp = {
     description = "Pass the time servers DHCP announced to chrony";
+    startLimitIntervalSec = 0;
     chalkos.kinds = [ "TimeSync" ];
     wantedBy = [ "multi-user.target" ];
     after = [

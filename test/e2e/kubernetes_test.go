@@ -128,6 +128,10 @@ func TestKubernetesCluster(t *testing.T) {
 	}
 	for _, name := range []string{"cp1", "w1"} {
 		synchronised(t, nodes[name], name)
+		// flannel's links come up as a burst, which once failed chrony's DHCP units.
+		if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
+			t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
+		}
 	}
 	readerClientFile(t, nodes["w1"], filepath.Join(dir, "reader.json"))
 	// The checks of the nodes and of the cluster's networking, again after cp1's reboot. cp1 has
