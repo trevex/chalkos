@@ -66,6 +66,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if h.Source != nil {
 		var err error
 		if pull, err = s.pullInstall(ctx, stream, h); err != nil {
+			log.Printf("install failed: %v", plain(err))
 			return nil, err
 		}
 		defer pull.Close()
@@ -136,14 +137,22 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 // pullInstall prepares the pull of the image an install from the installer names in a registry.
 // The client sends no chunks of that image. chalkd authenticates with the Registry of the
 // reference's host among the documents of the config the header delivers, the only config the
-// installer has. It fetches the manifest, the header and the contract layer before the install
-// changes anything, and fills the header's schemas, image.json and repart definitions from that
-// contract layer, which the manifest's digest pins; the header must carry none of its own.
+// installer has. It checks the header's image first, then fetches the manifest, the header and
+// the contract layer before the install changes anything, and fills the header's schemas,
+// image.json and repart definitions from that contract layer, which the manifest's digest pins;
+// the header must carry none of its own. Install logs each refusal as it returns it.
 func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[nodev1.InstallRequest], h *nodev1.InstallHeader) (*ociimage.Pull, error) {
 	ref := h.GetSource().GetOci().GetReference()
-	switch {
-	case ref == "":
+	img := imageHeader(h.Image)
+	if ref == "" {
 		return nil, failed(connect.CodeInvalidArgument, "the header's source names no image in a registry")
+	}
+	if err := img.Validate(); err != nil {
+		return nil, failed(connect.CodeInvalidArgument, "the image: %v", err)
+	}
+	switch {
+	case img.BootLoaderSize == 0:
+		return nil, failed(connect.CodeInvalidArgument, "the image brings no boot loader, which an install writes to the ESP")
 	case len(h.Schemas) > 0 || len(h.KubernetesImage) > 0 || len(h.SystemDefinitions) > 0:
 		return nil, failed(connect.CodeInvalidArgument, "an install that pulls its image takes the schemas, image.json and repart definitions from the image's contract layer; the header must carry none")
 	case h.Config == "":
@@ -160,14 +169,13 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 	if err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "install: pull %s: parse the config: %v", ref, err)
 	}
-	pull, err := newPull(ctx, ref, imageHeader(h.Image), docs)
+	pull, err := newPull(ctx, ref, img, docs)
 	if err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "install: %v", err)
 	}
 	c, err := pull.Contract()
 	if err != nil {
 		pull.Close()
-		log.Printf("install failed: %v", err)
 		return nil, failed(connect.CodeFailedPrecondition, "install: %v", err)
 	}
 	h.Schemas, h.KubernetesImage = c.Schemas, c.ImageJSON

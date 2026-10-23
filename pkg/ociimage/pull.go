@@ -271,7 +271,7 @@ func (p *Pull) image(ctx context.Context) (v1.Image, error) {
 
 // Contract fetches the manifest and the header, refusing them as the first read does, and reads
 // the image's contract layer, refusing one whose metadata.json describes another image than the
-// header. Reads after it fetch the manifest no more.
+// header. Reads after it succeeded fetch the manifest no more.
 func (p *Pull) Contract() (Contract, error) {
 	ctx, cancel := context.WithTimeout(p.ctx, manifestTimeout)
 	defer cancel()
@@ -279,7 +279,6 @@ func (p *Pull) Contract() (Contract, error) {
 	if err != nil {
 		return Contract{}, fmt.Errorf("pull %s: %w", p.ref, err)
 	}
-	p.checked = true
 	// The remote image fetches its layers with the context of the manifest's fetch, so the
 	// contract layer is read before that context ends.
 	c, err := ReadContract(img)
@@ -293,5 +292,6 @@ func (p *Pull) Contract() (Contract, error) {
 	if err := describes(md, p.want); err != nil {
 		return Contract{}, fmt.Errorf("pull %s: the contract layer's %w", p.ref, err)
 	}
+	p.checked = true
 	return c, nil
 }

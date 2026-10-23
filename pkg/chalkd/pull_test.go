@@ -7,13 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/registry"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -273,9 +279,21 @@ func TestInstallPullsTheImage(t *testing.T) {
 }
 
 // TestInstallPassesOverAStoreItHolds lets the install pass over the store and hash tree of a
-// pulled image without reading them, as it does for a slot an earlier attempt wrote.
+// pulled image without fetching them, as it does for a slot an earlier attempt wrote.
 func TestInstallPassesOverAStoreItHolds(t *testing.T) {
-	host := ocitest.Registry(t)
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	var mu sync.Mutex
+	var blobs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok && r.Method == http.MethodGet {
+			mu.Lock()
+			blobs = append(blobs, digest)
+			mu.Unlock()
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
 	var rest []byte
@@ -296,6 +314,16 @@ func TestInstallPassesOverAStoreItHolds(t *testing.T) {
 	if string(rest) != "ukiboot loader" {
 		t.Errorf("after the store: %q", rest)
 	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, part := range []string{"store", "hash tree"} {
+		if digest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(part))); slices.Contains(blobs, digest) {
+			t.Errorf("fetched the %s, %s, among %v", part, digest, blobs)
+		}
+	}
+	if uki := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("uki"))); !slices.Contains(blobs, uki) {
+		t.Errorf("did not fetch the UKI, %s, among %v", uki, blobs)
+	}
 }
 
 // TestInstallRefusesAPull refuses an install that pulls its image with the image's contract or
@@ -311,6 +339,10 @@ func TestInstallRefusesAPull(t *testing.T) {
 		want    string
 		inPlace bool
 	}{
+		"without a reference":     {edit: func(h *nodev1.InstallHeader) { h.Source.GetOci().Reference = "" }, code: connect.CodeInvalidArgument, want: "names no image in a registry"},
+		"without config":          {edit: func(h *nodev1.InstallHeader) { h.Config = "" }, code: connect.CodeInvalidArgument, want: "the header delivers no config"},
+		"without a boot loader":   {edit: func(h *nodev1.InstallHeader) { h.Image.BootLoader = nil }, code: connect.CodeInvalidArgument, want: "brings no boot loader"},
+		"of an invalid image":     {edit: func(h *nodev1.InstallHeader) { h.Image.ImageId = "" }, code: connect.CodeInvalidArgument, want: "the image: the image's ID and platform are required"},
 		"with schemas":            {edit: func(h *nodev1.InstallHeader) { h.Schemas = fixtureSchemas(t) }, code: connect.CodeInvalidArgument, want: "takes the schemas, image.json and repart definitions from the image's contract layer"},
 		"with image.json":         {edit: func(h *nodev1.InstallHeader) { h.KubernetesImage = []byte(testImage) }, code: connect.CodeInvalidArgument, want: "the header must carry none"},
 		"with definitions":        {edit: func(h *nodev1.InstallHeader) { h.SystemDefinitions = map[string]string{"x.conf": ""} }, code: connect.CodeInvalidArgument, want: "the header must carry none"},
@@ -343,6 +375,9 @@ func TestInstallRefusesAPull(t *testing.T) {
 				chunks = []byte("store")
 			}
 			err := sendInstall(t, s, h, chunks)
+			if err == nil {
+				t.Fatalf("install succeeded, want %v and %q", tc.code, tc.want)
+			}
 			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("install = %v, want %v and %q", err, tc.code, tc.want)
 			}

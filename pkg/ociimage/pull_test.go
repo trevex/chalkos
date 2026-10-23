@@ -383,9 +383,10 @@ func TestPullContract(t *testing.T) {
 }
 
 // TestPullContractRefuses refuses an image whose header is not the one wanted, and one whose
-// contract's metadata.json describes another image than its header, naming the reference.
+// contract's metadata.json describes another image than its header, naming the reference. A read
+// after a refused contract checks the manifest again.
 func TestPullContractRefuses(t *testing.T) {
-	host := ocitest.Registry(t)
+	host, manifests := ocitest.CountingRegistry(t)
 	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
 	for name, tc := range map[string]struct{ metadataRoot, wantPlatform, want string }{
 		"another-header":   {strings.Repeat("ab", 32), "kvm", "its header describes"},
@@ -402,6 +403,11 @@ func TestPullContractRefuses(t *testing.T) {
 			}
 			if _, err := p.Contract(); err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), ref) {
 				t.Errorf("Contract = %v, want an error naming %s and %q", err, ref, tc.want)
+			}
+			before := manifests.Load()
+			p.Read(make([]byte, 1))
+			if n := manifests.Load() - before; n != 1 {
+				t.Errorf("the read after the refused contract fetched %d manifests, want 1", n)
 			}
 		})
 	}
