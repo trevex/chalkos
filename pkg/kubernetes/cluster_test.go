@@ -187,7 +187,7 @@ func TestClusterValidate(t *testing.T) {
 }
 
 // The kubelet's extra flags come after chalkos's own, so they would override where it finds its
-// configuration and credentials, the node's name, addresses, labels and taints, and who may use
+// configuration, credentials and credential provider, the node's name, addresses, labels and taints, and who may use
 // its API. The components take _ for -, so the names are refused in either spelling.
 func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	valid, err := ReadCluster(writeFile(t, clusterJSON))
@@ -197,7 +197,8 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	// Written out rather than read from ProtectedKubeletFlags, so a flag dropped from it fails here.
 	for _, flag := range []string{
 		"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
-		"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override", "kubeconfig", "node-ip",
+		"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
+		"image-credential-provider-bin-dir", "image-credential-provider-config", "kubeconfig", "node-ip",
 		"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
 		"tls-cert-file", "tls-private-key-file",
 	} {

@@ -173,3 +173,22 @@ spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: d
 		}
 	}
 }
+
+// TestCredentialSecrets reads a secretRef's value from the file systemd loads it as, and nothing
+// without the file or the directory.
+func TestCredentialSecrets(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "secret_hub.token"), []byte("s3cret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secret := CredentialSecrets(dir)
+	if v, ok := secret(config.SecretRef{Name: "hub", Key: "token"}); !ok || v != "s3cret" {
+		t.Errorf("hub.token = %q, %v", v, ok)
+	}
+	if _, ok := secret(config.SecretRef{Name: "hub", Key: "nope"}); ok {
+		t.Error("a missing file gave a value")
+	}
+	if _, ok := CredentialSecrets("")(config.SecretRef{Name: "hub", Key: "token"}); ok {
+		t.Error("no directory gave a value")
+	}
+}

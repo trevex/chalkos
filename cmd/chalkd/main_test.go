@@ -251,3 +251,34 @@ spec: {registry: docker.io, endpoints: ["http://10.0.0.5:5000"]}
 		t.Errorf("containerd-hosts printed %q, want %q", out.String(), want)
 	}
 }
+
+// TestRegistryCredentials writes the kubelet's credential provider files from the node's Registry
+// documents, with the password from the unit's credentials, and no password into the files
+// the kubelet's config and flags are.
+func TestRegistryCredentials(t *testing.T) {
+	runDir, creds, out := t.TempDir(), t.TempDir(), filepath.Join(t.TempDir(), "credential-provider")
+	docs, err := config.Parse(strings.NewReader(`apiVersion: oci.chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: hub}
+spec: {host: docker.io, username: hub-bot, password: {secretRef: {name: hub, key: token}}}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteRuntime(runDir, docs, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(creds, "secret_hub.token"), "hub-s3cret")
+	if err := registryCredentials(runDir, creds, out); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "credentials.json"))
+	if want := `{"docker.io":{"username":"hub-bot","password":"hub-s3cret"}}`; err != nil || string(data) != want {
+		t.Errorf("credentials.json = %s, %v; want %s", data, err, want)
+	}
+	for _, f := range []string{"config.json", "flags"} {
+		if data, err := os.ReadFile(filepath.Join(out, f)); err != nil || strings.Contains(string(data), "hub-s3cret") {
+			t.Errorf("%s = %s, %v", f, data, err)
+		}
+	}
+}

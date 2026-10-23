@@ -30,6 +30,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/store"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -53,7 +54,10 @@ commands:
                                    file saying where VXLAN may arrive
   containerd-hosts                 print containerd's hosts.toml of each registry the node's
                                    Mirror and Registry documents name, each after a line
-                                   "=== <directory>"`
+                                   "=== <directory>"
+  registry-credentials             write the kubelet's credential provider config and the node's
+                                   registry credentials from its Registry documents
+  credential-provider              answer the kubelet's request for an image's credentials`
 
 func main() {
 	log.SetFlags(0)
@@ -78,6 +82,10 @@ func main() {
 		err = knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
 	case "containerd-hosts":
 		err = containerdHosts(os.Stdout, "/run/chalkos")
+	case "registry-credentials":
+		err = registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), credprovider.Dir)
+	case "credential-provider":
+		err = credprovider.Provide(credprovider.Dir, os.Stdin, os.Stdout)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
@@ -429,4 +437,24 @@ func addresses() string {
 		return "none yet"
 	}
 	return strings.Join(ips, " ")
+}
+
+// registryCredentials writes the kubelet's credential provider files into dir from the node's
+// Registry documents below runDir, with the passwords among the unit's credentials, which systemd
+// loads into the directory credentials: the unit is granted the Registry kind. The provider is
+// this chalkd.
+func registryCredentials(runDir, credentials, dir string) error {
+	docs, err := store.ReadRuntime(runDir)
+	if err != nil {
+		return err
+	}
+	r, err := config.RegistriesOf(docs, store.CredentialSecrets(credentials))
+	if err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	return credprovider.Write(dir, filepath.Dir(exe), r.Logins)
 }

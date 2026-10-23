@@ -148,12 +148,13 @@ func ParseCluster(data []byte) (Cluster, error) {
 var ProtectedAPIServerFlags = []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"}
 
 // ProtectedKubeletFlags are the kubelet's flags chalkos sets: where it finds its configuration,
-// credentials, certificates and static pods, the node's name, addresses, labels and taints, and
-// who may use its API. Extra flags come last on the kubelet's command line, so they would
-// override them.
+// credentials, credential provider, certificates and static pods, the node's name, addresses,
+// labels and taints, and who may use its API. Extra flags come last on the kubelet's command
+// line, so they would override them.
 var ProtectedKubeletFlags = []string{
 	"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
-	"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override", "kubeconfig", "node-ip",
+	"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
+	"image-credential-provider-bin-dir", "image-credential-provider-config", "kubeconfig", "node-ip",
 	"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
 	"tls-cert-file", "tls-private-key-file",
 }

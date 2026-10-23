@@ -201,10 +201,11 @@ Some flags are refused, also spelt with `_` for `-`, which the components accept
 server's `anonymous-auth`, `authentication-config`, `authorization-mode` and
 `enable-bootstrap-token-auth`, which decide who may do what, and the kubelet's `anonymous-auth`,
 `authentication-token-webhook`, `authorization-mode`, `bootstrap-kubeconfig`, `cert-dir`,
-`client-ca-file`, `config`, `config-dir`, `hostname-override`, `kubeconfig`, `node-ip`,
+`client-ca-file`, `config`, `config-dir`, `hostname-override`,
+`image-credential-provider-bin-dir`, `image-credential-provider-config`, `kubeconfig`, `node-ip`,
 `node-labels`, `pod-manifest-path`, `read-only-port`, `register-with-taints`,
 `rotate-certificates`, `tls-cert-file` and `tls-private-key-file`, which set where it finds its
-configuration, credentials and static pods, the node's name, addresses, labels and taints, and
+configuration, credentials, credential provider and static pods, the node's name, addresses, labels and taints, and
 who may use its API. A node's labels and taints come from its `Node` document instead.
 
 ## How does a cluster start?
