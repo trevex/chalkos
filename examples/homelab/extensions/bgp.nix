@@ -13,20 +13,30 @@ let
   bird = config.services.bird.package;
   # bird reads no password from a file, and its strings take no escapes: this writes each of the
   # unit's credentials as a constant of bird's config, named as the credential, which bird.conf's
-  # password lines name. A value with a quote or a line break fails the unit.
+  # password lines name. A name outside letters, digits, '.', '_' and '-', or a value with a quote
+  # or a line break, fails the unit. The constants go to a new file that replaces the old one, so
+  # bird never reads a file half written or emptied by a failed run.
   credentials = pkgs.writeShellApplication {
     name = "bird-credentials";
     text = ''
       shopt -s nullglob
       umask 077
+      tmp=$(mktemp /run/bird/credentials.conf.XXXXXX)
+      trap 'rm -f "$tmp"' EXIT
       for file in "''${CREDENTIALS_DIRECTORY-}"/secret_*; do
-        value=$(<"$file")
-        if [[ $value == *[$'"\n']* ]]; then
-          echo "''${file##*/}: bird takes no password with a quote or a line break" >&2
+        name=''${file##*/}
+        if [[ ! ''${name#secret_} =~ ^[A-Za-z0-9._-]+$ ]]; then
+          echo "$name: bird takes a credential name of letters, digits, '.', '_' and '-' alone" >&2
           exit 1
         fi
-        printf "define '%s' = \"%s\";\n" "''${file##*/}" "$value"
-      done >/run/bird/credentials.conf
+        value=$(<"$file")
+        if [[ $value == *[$'"\n']* ]]; then
+          echo "$name: bird takes no password with a quote or a line break" >&2
+          exit 1
+        fi
+        printf "define '%s' = \"%s\";\n" "$name" "$value"
+      done >"$tmp"
+      mv "$tmp" /run/bird/credentials.conf
     '';
   };
 in
@@ -37,10 +47,12 @@ in
     version = "v1alpha1";
     multiple = true;
     spec = {
+      # The address lands in bird.conf, so the pattern accepts an IPv4 or IPv6 address and
+      # nothing that could end bird's statement.
       address = lib.mkOption {
-        type = lib.types.nonEmptyStr;
+        type = lib.types.strMatching "([0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7}";
         example = "10.0.0.1";
-        description = "Address of the neighbour.";
+        description = "IPv4 or IPv6 address of the neighbour.";
       };
       # --8<-- [start:rule]
       # A neighbour's AS number is part of who it is: a new one is a new Peer.
